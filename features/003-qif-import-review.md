@@ -28,6 +28,18 @@ Ask the owner for access when needed. Keep private exports out of the repository
 
 Future design must specify each supported dialect, preserve source evidence, normalize into the exact-money model, and define occurrence-aware duplicate review across formats so importing another export of the same activity cannot silently double-count or discard legitimate repeats. Matching counts or totals alone do not prove record identity. Parser mappings, resource limits and verification cases remain to be designed before those implementations.
 
+## Accepted source-evidence direction — 2026-10-25
+
+The owner accepted preserving original imports in their native formats and comparing a shared structured source interpretation. Retain exact QIF/QFX/other source bytes inside the document's encrypted storage; converting to QIF must not replace or erase the original. A parser or conversion defect must remain investigable from retained evidence.
+
+Separate original evidence, parsed source facts and editable ledger interpretations. Matching uses source facts for the target account, with exact money/currency and occurrence identity, rather than the user's edited payee, date or effective amount. Different formats may omit or express fields differently; common fields alone do not establish unique identity.
+
+One transaction can be associated with multiple source occurrences from different imports. Renaming an imported payee changes the editable interpretation without altering either the original facts or the associations. Confirming a later export as evidence of the same transaction adds an association, not another monetary posting. Preserve the match basis and user decision so an incorrect association can be explained and corrected.
+
+Proposed relational realization: an import stores its original bytes; source-occurrence rows identify locations within it and parsed facts; a transaction has a stable identity; an association table links that identity to its source occurrences. These are conceptual responsibilities, not adopted table names or a migration plan. The current QIF experiment preserves bytes and revisions but does not implement the future multi-format association model.
+
+Removing a transaction from the ledger should retain imported evidence and persistent history. The proposed future removal record would let reimports surface a match to a previously removed transaction for review. Exact committed deletion/reversal semantics, reimport decisions, association correction, and their atomic history behavior remain unresolved; no automatic resurrection or suppression policy is selected here.
+
 ## Proposed import pipeline
 
 1. Preserve source bytes and record boundaries with import identity and parser diagnostics inside encrypted storage.

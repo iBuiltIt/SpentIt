@@ -40,6 +40,13 @@ struct ImportModel::Worker {
     QString path,filter;
     int sort=0; bool descending=false;
     QVariantMap selected,receipt;
+    // Session-local verified reads. Every mutation (including a failed command)
+    // invalidates these before execution. The exclusive gateway owns all writes.
+    QVariantMap metadata;
+    std::optional<app::Account> cachedAccount;
+    std::optional<std::vector<app::LedgerRow>> cachedLedger;
+    std::shared_ptr<const app::LedgerView> cachedView;
+    void invalidate() {metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
     std::size_t selectedOrdinal=0;
     std::int64_t selectedRevision=0;
@@ -57,6 +64,26 @@ struct ImportModel::Worker {
         selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},
             {"source",evidencePreview(std::string_view(bytes).substr(source.begin,source.end-source.begin))}};
         if(source.diagnostic) selected["diagnostic"]=text(qif::message(source.diagnostic->issue));
+        // Copy only parsed, supported evidence. Raw bytes remain separately visible;
+        // an unavailable source date must never be replaced by a guessed value.
+        QVariantList fields;
+        if(source.transaction || source.repairable) {
+            const auto add=[&](QString label,QString field,QString value,int split=-1) {
+                fields.push_back(QVariantMap{{"label",label},{"field",field},{"value",value},{"split",split}});
+            };
+            if(!source.date.empty()) add("Date (ISO, using import date order)","date",text(source.date));
+            add("Payee","payee",text(source.payee));
+            add("Memo","memo",text(source.memo));
+            if(source.original_amount) add("Original total","total",money(*source.original_amount));
+            for(std::size_t i=0;i<source.source_allocations.size();++i) {
+                const auto& a=source.source_allocations[i];
+                const auto prefix=QString("Source split %1 → editor split %1: ").arg(i+1);
+                add(prefix+"category","category",text(a.category),static_cast<int>(i));
+                add(prefix+"memo","memo",text(a.memo),static_cast<int>(i));
+                add(prefix+"amount","amount",money(a.amount),static_cast<int>(i));
+            }
+        }
+        selected["sourceFields"]=fields;
         auto row=repo.row({batch,ordinal});
         if(!row.draft) {
             if(source.repairable && !row.source.repairable) selected["diagnostic"]=selected["diagnostic"].toString()+" — repair requires a new experimental dataset; this older dataset was not migrated.";
@@ -76,7 +103,8 @@ struct ImportModel::Worker {
         selected["editable"]=found->state==app::BatchState::pending;
         selected["decision"]=static_cast<int>(row.decision.disposition);
         QVariantList candidates;
-        for(const auto& id:row.candidates) {
+        // Committed/discarded rows are read-only and have no duplicate actions.
+        if(found->state==app::BatchState::pending) for(const auto& id:row.candidates) {
             auto prior=repo.row(id);
             const auto basis=imports::candidate_basis(row.source,prior.source);
             candidates.push_back(QVariantMap{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},
@@ -85,57 +113,63 @@ struct ImportModel::Worker {
         selected["candidates"]=candidates;
         if(row.decision.duplicate_of) selected["duplicate"]=text(row.decision.duplicate_of->batch)+" / "+QString::number(row.decision.duplicate_of->ordinal+1);
     }
-    std::pair<QVariantMap,QVariantList> snapshot() {
-        QVariantMap state{{"active",active},{"path",path},{"selected",selected},{"receipt",receipt}}; QVariantList rows;
-        if(!active) return {state,rows};
-        auto& repo=gateway->repository(); const auto acct=repo.account();
-        state["name"]=text(acct.name); state["currency"]=text(acct.currency.code());
-        state["openingDate"]=text(acct.opening_date); state["opening"]=money(acct.opening);
-        state["frozen"]=acct.frozen; state["confirmed"]=acct.opening_confirmed;
-        state["committed"]=money(repo.committed_balance()); const auto projection=repo.projected_balance();
-        state["projectionAvailable"]=projection.has_value(); state["projected"]=projection?money(*projection):"Incomplete — review import";
-        state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
-        QVariantList batches;
-        for(const auto& b:repo.batches()) {
-            QVariantMap info{{"id",text(b.id)},{"count",static_cast<int>(b.count)},{"status",b.state==app::BatchState::pending?"Draft":b.state==app::BatchState::committed?"Committed":"Discarded"},{"blocked",b.blocked}};
-            if(b.blocked) {
-                const auto parsed=qif::parse(repo.evidence(b.id),b.profile,acct.currency);
-                QStringList diagnostics;
-                if(parsed.diagnostic) diagnostics<<text(qif::message(parsed.diagnostic->issue))+" at byte "+QString::number(parsed.diagnostic->offset);
-                for(std::size_t i=0;i<parsed.records.size() && diagnostics.size()<100;++i) if(parsed.records[i].diagnostic)
-                    diagnostics<<"Record "+QString::number(i+1)+": "+text(qif::message(parsed.records[i].diagnostic->issue));
-                info["diagnostics"]=diagnostics.join('\n');
+    std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot() {
+        QVariantMap state{{"active",active},{"path",path}};
+        if(!active) return {state,{}};
+        auto& repo=gateway->repository();
+        if(metadata.isEmpty()) {
+            cachedAccount=repo.account();const auto& acct=*cachedAccount;
+            state["name"]=text(acct.name); state["currency"]=text(acct.currency.code());
+            state["openingDate"]=text(acct.opening_date); state["opening"]=money(acct.opening);
+            state["frozen"]=acct.frozen; state["confirmed"]=acct.opening_confirmed;
+            state["committed"]=money(repo.committed_balance()); const auto projection=repo.projected_balance();
+            state["projectionAvailable"]=projection.has_value(); state["projected"]=projection?money(*projection):"Incomplete — review import";
+            QVariantList batches;
+            for(const auto& b:repo.batches()) {
+                QVariantMap info{{"id",text(b.id)},{"count",static_cast<int>(b.count)},{"status",b.state==app::BatchState::pending?"Draft":b.state==app::BatchState::committed?"Committed":"Discarded"},{"blocked",b.blocked}};
+                if(b.blocked) {
+                    const auto parsed=qif::parse(repo.evidence(b.id),b.profile,acct.currency);
+                    QStringList diagnostics;
+                    if(parsed.diagnostic) diagnostics<<text(qif::message(parsed.diagnostic->issue))+" at byte "+QString::number(parsed.diagnostic->offset);
+                    for(std::size_t i=0;i<parsed.records.size() && diagnostics.size()<100;++i) if(parsed.records[i].diagnostic)
+                        diagnostics<<"Record "+QString::number(i+1)+": "+text(qif::message(parsed.records[i].diagnostic->issue));
+                    info["diagnostics"]=diagnostics.join('\n');
+                }
+                batches.push_back(info);
+                if(b.state==app::BatchState::pending) state["pending"]=info;
             }
-            batches.push_back(info);
-            if(b.state==app::BatchState::pending) state["pending"]=info;
-        }
-        state["batches"]=batches;
-        // Reconstruct the latest receipt after restart, including a commit whose
-        // durable completion happened before the prior process could acknowledge it.
-        for(const auto& b:repo.batches()) if(b.state==app::BatchState::committed) {
-            const auto result=repo.outcome("commit-"+b.id+"-"+std::to_string(b.revision-1));
-            if(result) receipt={{"operation",text(result->operation)},{"included",static_cast<int>(result->included)},
-                {"excluded",static_cast<int>(result->excluded)},{"before",money(result->before)},
-                {"change",money(result->change)},{"after",money(result->after)}};
-        }
-        state["receipt"]=receipt;
+            state["batches"]=batches;
+            // Reconstruct the latest receipt after restart, including a commit whose
+            // durable completion happened before the prior process could acknowledge it.
+            for(const auto& b:repo.batches()) if(b.state==app::BatchState::committed) {
+                const auto result=repo.outcome("commit-"+b.id+"-"+std::to_string(b.revision-1));
+                if(result) receipt={{"operation",text(result->operation)},{"included",static_cast<int>(result->included)},
+                    {"excluded",static_cast<int>(result->excluded)},{"before",money(result->before)},
+                    {"change",money(result->change)},{"after",money(result->after)}};
+            }
+            state["receipt"]=receipt;
+            metadata=state;
+        } else state=metadata;
+        state["selected"]=selected;
+        state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
+        state["selectedIndex"]=-1;
         // Never substitute a partial projected ledger for an authoritative one.
-        if(projected && !projection) return {state,rows};
-        auto view=app::ledger_view(acct,repo.ledger(projected),filter.toStdString(),sort,descending);
-        state["withdrawals"]=money(view.withdrawals); state["deposits"]=money(view.deposits);
-        for(auto i:view.order) {
-            const auto& r=view.rows[i]; const auto& t=r.draft.transaction;
-            auto row=draft(r.draft); const auto amount=t.effective_total();
-            row["batch"]=text(r.identity.batch);row["ordinal"]=static_cast<int>(r.identity.ordinal);
-            row["status"]=r.committed?"Committed":"Draft";
-            row["category"]=t.allocations().size()==1?text(t.allocations()[0].category):"Split";
-            row["withdrawal"]=amount.units()<0?money(amount).mid(1):"";
-            row["deposit"]=amount.units()>=0?money(amount):"";
-            row["balance"]=money(view.balances[i]); rows.push_back(row);
+        if(projected && !state.value("projectionAvailable").toBool()) return {state,{}};
+        if(!cachedView) {
+            if(!cachedLedger) cachedLedger=repo.ledger(projected);
+            cachedView=std::make_shared<const app::LedgerView>(app::ledger_view(*cachedAccount,*cachedLedger,filter.toStdString(),sort,descending));
         }
-        return {state,rows};
+        state["withdrawals"]=money(cachedView->withdrawals);state["deposits"]=money(cachedView->deposits);
+        if(selected.contains("ordinal")) {
+            for(std::size_t position=0;position<cachedView->order.size();++position) {
+                const auto& id=cachedView->rows[cachedView->order[position]].identity;
+                if(id.batch==selectedBatch && id.ordinal==selectedOrdinal) {state["selectedIndex"]=static_cast<int>(position);break;}
+            }
+        }
+        return {state,cachedView};
     }
     void execute(const QString& action,const QVariantMap& a) {
+        if(action!="query" && action!="inspect" && action!="evidence" && action!="backup") invalidate();
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -201,7 +235,17 @@ struct ImportModel::Worker {
             }
             if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal);
         } else if(action=="backup") gateway->backup(str(a.value("path")));
-        else if(action=="query") {filter=a.value("filter").toString();sort=a.value("sort",0).toInt();descending=a.value("descending",false).toBool();projected=a.value("projected",true).toBool();}
+        else if(action=="query") {
+            if(a.contains("restoreSelection")) {
+                const auto restore=a.value("restoreSelection").toMap();
+                if(restore.contains("ordinal")) inspect(str(restore.value("batch")),restore.value("ordinal").toUInt());
+                else {selected.clear();selectedBatch.clear();selectedOrdinal=0;}
+            }
+            const auto nextProjected=a.value("projected",true).toBool();
+            if(projected!=nextProjected) cachedLedger.reset();
+            cachedView.reset();
+            filter=a.value("filter").toString();sort=a.value("sort",0).toInt();descending=a.value("descending",false).toBool();projected=nextProjected;
+        }
         else throw std::invalid_argument("Unknown application command");
     }
 };
@@ -212,25 +256,58 @@ ImportModel::~ImportModel() {pool_.waitForDone();worker_->gateway->close();}
 QStringList ImportModel::currencies() const {QStringList out;for(const auto& c:supported_currencies())out<<text(c.code);return out;}
 QString ImportModel::suggestedPath() const {return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/SpentIt/Experimental.spentit";}
 QString ImportModel::localPath(const QUrl& url) const {return url.toLocalFile();}
-int ImportModel::rowCount(const QModelIndex& p) const {return p.isValid()?0:static_cast<int>(rows_.size());}
-QVariant ImportModel::data(const QModelIndex& i,int role) const {return i.isValid() && i.row()>=0 && i.row()<rows_.size() && role==Qt::UserRole?rows_[i.row()]:QVariant{};}
+int ImportModel::selectedRowIndex() const {return state_.value("selectedIndex",-1).toInt();}
+QVariantMap ImportModel::rowIdentity(int row) const {
+    if(row<0 || row>=rowCount()) return {};
+    const auto& id=rows_->rows[rows_->order[static_cast<std::size_t>(row)]].identity;
+    return {{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};
+}
+int ImportModel::occurrenceIndex(const QString& batch,int ordinal) const {
+    if(!rows_ || ordinal<0) return -1;
+    const auto id=batch.toStdString();
+    for(std::size_t i=0;i<rows_->order.size();++i) {
+        const auto& occurrence=rows_->rows[rows_->order[i]].identity;
+        if(occurrence.batch==id && occurrence.ordinal==static_cast<std::size_t>(ordinal)) return static_cast<int>(i);
+    }
+    return -1;
+}
+int ImportModel::rowCount(const QModelIndex& p) const {return p.isValid() || !rows_?0:static_cast<int>(rows_->order.size());}
+QVariant ImportModel::data(const QModelIndex& index,int role) const {
+    if(!index.isValid() || index.row()<0 || index.row()>=rowCount() || role!=Qt::UserRole) return {};
+    const auto i=rows_->order[static_cast<std::size_t>(index.row())];
+    const auto& r=rows_->rows[i];const auto& t=r.draft.transaction;const auto amount=t.effective_total();
+    // QML requests only visible delegates: no per-account QVariant tree.
+    auto row=draft(r.draft);
+    row["batch"]=text(r.identity.batch);row["ordinal"]=static_cast<int>(r.identity.ordinal);
+    row["status"]=r.committed?"Committed":"Draft";
+    row["category"]=t.allocations().size()==1?text(t.allocations()[0].category):"Split";
+    row["withdrawal"]=amount.units()<0?money(amount).mid(1):"";
+    row["deposit"]=amount.units()>=0?money(amount):"";
+    row["balance"]=money(rows_->balances[i]);
+    return row;
+}
 QHash<int,QByteArray> ImportModel::roleNames() const {return {{Qt::UserRole,"record"}};}
 void ImportModel::command(const QString& action,const QVariantMap& args) {
     if(busy_) return;
     busy_=true;error_.clear();emit changed();
-    struct Result {QVariantMap state;QVariantList rows;QString error;bool success=false;};
+    struct Result {QVariantMap state;std::shared_ptr<const app::LedgerView> rows;QString error;bool success=false;};
     auto* watcher=new QFutureWatcher<Result>(this);
     connect(watcher,&QFutureWatcher<Result>::finished,this,[this,watcher,action]{
-        auto result=watcher->result();watcher->deleteLater();beginResetModel();rows_=std::move(result.rows);endResetModel();
+        auto result=watcher->result();watcher->deleteLater();
+        if(rows_!=result.rows) {
+            beginResetModel();auto retired=std::move(rows_);rows_=std::move(result.rows);endResetModel();
+            // Destruction of large retired snapshots must not stall the UI thread.
+            pool_.start([retired=std::move(retired)]{});
+        }
         state_=std::move(result.state);error_=std::move(result.error);busy_=false;emit changed();emit completed(action,result.success);
     });
     watcher->setFuture(QtConcurrent::run(&pool_,[worker=worker_,action,args]{
         Result result; bool unlock=false;
         try {worker->execute(action,args);result.success=true;}
-        catch(const app::UnlockRequired& e){result.error=QString::fromUtf8(e.what());unlock=true;}
-        catch(const std::exception& e){result.error=QString::fromUtf8(e.what());}
+        catch(const app::UnlockRequired& e){worker->invalidate();result.error=QString::fromUtf8(e.what());unlock=true;}
+        catch(const std::exception& e){worker->invalidate();result.error=QString::fromUtf8(e.what());}
         try {auto snapshot=worker->snapshot();result.state=std::move(snapshot.first);result.rows=std::move(snapshot.second);}
-        catch(const std::exception&){result.error="Unable to refresh verified dataset state. Close and reopen before continuing.";worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();result.state={{"active",false},{"path",worker->path}};result.success=false;}
+        catch(const std::exception&){worker->invalidate();result.error="Unable to refresh verified dataset state. Close and reopen before continuing.";worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();result.state={{"active",false},{"path",worker->path}};result.success=false;}
         result.state["unlockRequired"]=unlock;return result;
     }));
 }

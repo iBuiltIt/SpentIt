@@ -118,4 +118,13 @@ All 13 engine/session/model/QML/interaction CTest entries passed in Debug, Relea
 
 ## Accepted durable-import experiment — 2026-10-25
 
-The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. Headless import commands and ledger queries now have a bounded writable UI; full navigation, row-expanded editing and selection behavior remain incomplete.
+The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. Headless import commands and ledger queries now have a bounded writable UI; one selected record now expands inline with parsed source-field copying. Simultaneous read-only split views are now implemented in the durable UI. Full navigation and broader selection behavior remain incomplete; see the [implementation and verification](../doc/import-ui.md#inline-editing-and-source-copying).
+
+## Durable UI performance follow-up — 2026-10-25
+
+The [bounded native workload report](../doc/import-ui-performance.md) records 100,000/200,000-row measurements through the real durable model and QML view. Read-only queries reuse verified ledger data, presentation maps are created on demand, and large retired views are released on the worker. Atomic saves, full document verification and financial semantics are unchanged. This does not complete the broader acceptance criteria or establish responsiveness on other platforms.
+
+
+## Durable filter return follow-up — 2026-10-25
+
+The durable UI now implements the accepted search-return behavior for its existing literal filter: retain the pre-filter occurrence/view unless a result is explicitly inspected, then retain and reveal that result when clearing. Clear and Escape honor Save / Discard / Stay. See [scope and verification](../doc/import-ui.md#filter-return-navigation--2026-10-25). This does not implement the proposed query language, multiselection or full navigation shell.

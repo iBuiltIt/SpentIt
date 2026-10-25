@@ -77,11 +77,11 @@ The existing storage-independent sheet Debug build also passed 17/17 entries aft
 
 ## Remaining work
 
-- The optional [durable UI](import-ui.md) now implements setup/unlocking, bounded file reading, source previews, duplicate selection, durable draft editing, opening confirmation, receipts, close/reopen and backup/copy. Full row-expanded editing, source-field copying, navigation/selection behavior and large-UI measurements remain.
+- The optional [durable UI](import-ui.md) now implements setup/unlocking, bounded file reading, source previews, duplicate selection, durable draft editing, opening confirmation, receipts, close/reopen and backup/copy. Inline editing and parsed source-field copying are implemented. Simultaneous read-only split expansions are now implemented; full navigation/selection behavior remains. Bounded native large-UI measurements are now in the [performance report](import-ui-performance.md).
 - The UI gateway implements default-on optional protection and a public raw key with password-domain separation. Installation-independent SQLCipher recovery is tested; older direct-headless credential APIs remain unchanged. See the [credential convention](import-ui.md#portable-credential-convention-v1).
 - Settings stores the selected dataset path. All operations use one worker and switching is disabled while busy. Mid-operation cancellation and broader recovery UX remain incomplete.
 - Bounded date and split-total repair is implemented in schema 2, as described below. Other malformed records remain blocked for discard/reimport. There is no partial commit or migration of older datasets.
-- Bounded UI/restart/backup tests now exist; accessibility and supported-platform validation remain incomplete. Large-workload measurements here cover only headless commands.
+- Bounded UI/restart/backup tests now exist; accessibility and supported-platform validation remain incomplete. Large-workload measurements in this document cover only headless commands; the [durable UI report](import-ui-performance.md) records separate native measurements.
 - Broader QIF dialects, QFX/ASO/QBO/OFX, rules, transfers, category reports, committed editing/reversal, password changes, migrations and final architecture/license decisions remain outside this milestone.
 
 Fault injection covers the enumerated synthetic paths, not physical power removal, every filesystem, all error combinations, or a universal absence of leaks. The import wrapper now has its own backup crash and publication-boundary tests; see below. The older prototype's backup tests remain separate.

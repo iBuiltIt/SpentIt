@@ -16,6 +16,11 @@ using namespace spentit;
 class ImportUiTests : public QObject {
     Q_OBJECT
     QTemporaryDir settings;
+    static QQuickItem* visualItem(QQuickItem* parent,const QString& name) {
+        if(parent->objectName()==name) return parent;
+        for(auto* child:parent->childItems()) if(auto* found=visualItem(child,name)) return found;
+        return nullptr;
+    }
     static QVariantMap selected(const ImportModel& m) { return m.state().value("selected").toMap(); }
     static QString fixture(const QString& dir,const QByteArray& bytes) {
         const auto path=dir+"/synthetic.qif";QFile file(path);if(!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size())qFatal("Fixture failed");return path;
@@ -80,6 +85,8 @@ private slots:
         run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
         run(m,"import",{{"path",fixture(dir.path(),"D31/02/2026\nT-10\nPDate repair\n^\nD1/3/2026\nT-20\nSFood\n$-19\n^\n")},{"profile","DMY"}});
         QVERIFY(selected(m).value("repair").toBool());QVERIFY(selected(m).value("editable").toBool());
+        for(const auto& field:selected(m).value("sourceFields").toList())
+            QVERIFY(field.toMap().value("field").toString()!="date");
         auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         QVERIFY(QTest::qWaitForWindowExposed(window));QTest::qWait(100);
         if(qEnvironmentVariableIsSet("SPENTIT_REPAIR_SCREENSHOT")) QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REPAIR_SCREENSHOT")));
@@ -137,6 +144,246 @@ private slots:
         g->create((dir.path()+"/protected").toStdString(),true,storage::public_document_key,"Synthetic",Currency("CAD"),"2026-10-25");g->close();
         QVERIFY_THROWS_EXCEPTION(app::UnlockRequired,g->open((dir.path()+"/protected").toStdString(),{}));
         g->open((dir.path()+"/protected").toStdString(),std::string(storage::public_document_key));g->close();
+    }
+    void cachedViewsRemainCurrent() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/one");
+        run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
+        const auto file=fixture(dir.path(),"D2/1/2026\nT-10\nPFirst\nLFood\n^\nD3/1/2026\nT20\nPSecond\nLIncome\n^\n");
+        run(m,"import",{{"path",file},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch");
+        for(int i=0;i<3;++i) {
+            run(m,"query",{{"projected",false}});QCOMPARE(m.rowCount(),1);
+            QCOMPARE(m.state().value("deposits").toString(),"100.00");
+            run(m,"query",{{"projected",true},{"filter","First"},{"sort",5},{"descending",true}});
+            QCOMPARE(m.rowCount(),1);QCOMPARE(m.state().value("withdrawals").toString(),"-10.00");
+            QCOMPARE(m.data(m.index(0),Qt::UserRole).toMap().value("balance").toString(),"90.00");
+        }
+        run(m,"opening",{{"date","2026-01-01"},{"amount","200.00"}});
+        QCOMPARE(m.state().value("committed").toString(),"200.00");
+        QCOMPARE(m.data(m.index(0),Qt::UserRole).toMap().value("balance").toString(),"190.00");
+        auto edit=selected(m).value("draft").toMap();edit["total"]="-11.00";
+        run(m,"save",edit,false);QCOMPARE(m.state().value("projected").toString(),"210.00");
+        auto splits=edit.value("splits").toList();auto split=splits[0].toMap();split["amount"]="-11.00";splits[0]=split;edit["splits"]=splits;
+        run(m,"save",edit);QCOMPARE(m.state().value("withdrawals").toString(),"-11.00");
+        QCOMPARE(m.data(m.index(0),Qt::UserRole).toMap().value("balance").toString(),"189.00");
+        run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"209.00");
+        QVERIFY(!selected(m).value("editable").toBool());
+        QVERIFY(selected(m).value("candidates").toList().isEmpty());
+        run(m,"query",{{"projected",false},{"filter","First"}});QCOMPARE(m.state().value("withdrawals").toString(),"-11.00");
+        run(m,"import",{{"path",file},{"profile","DMY"}}); // Identical evidence is excluded.
+        QCOMPARE(m.state().value("projected").toString(),"209.00");
+        run(m,"decide");QCOMPARE(m.state().value("projected").toString(),"199.00");
+        run(m,"query",{{"projected",true},{"filter","First"}});QCOMPARE(m.rowCount(),2);
+        run(m,"decide",{{"duplicate",true},{"batch",batch},{"ordinal",0}});
+        QCOMPARE(m.rowCount(),1);QCOMPARE(m.state().value("projected").toString(),"209.00");
+        run(m,"discard");QCOMPARE(m.state().value("projected").toString(),"209.00");
+        run(m,"close");create(m,dir.path()+"/two");
+        QCOMPARE(m.rowCount(),1);QVERIFY(selected(m).isEmpty());QCOMPARE(m.state().value("committed").toString(),"0.00");
+        run(m,"close");run(m,"open",{{"path",dir.path()+"/one"}});
+        QCOMPARE(m.state().value("committed").toString(),"209.00");QCOMPARE(m.rowCount(),3);
+    }
+    void inlineRecycling() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");
+        QByteArray bytes;
+        for(int i=0;i<80;++i) bytes+="D1/1/2026\nT-1\nPRow "+QByteArray::number(i)+"\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        auto* editor=root->findChild<QQuickItem*>("transactionEditor");QVERIFY(editor);
+        auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
+        QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(editor->property("inlineRow").toBool());
+        payee->setProperty("text","Survives recycling");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
+        ledger->setProperty("contentY",2000);QTest::qWait(100);
+        ledger->setProperty("contentY",0);QTest::qWait(100);
+        QCOMPARE(payee->property("text").toString(),"Survives recycling");QVERIFY(root->property("dirty").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
+        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Survives recycling");
+        // Qt pointer dispatch on a visible ledger row opens that occurrence.
+        run(m,"inspect",{{"batch",selected(m).value("batch")},{"ordinal",1}});
+        QTest::qWait(100);ledger->setProperty("contentY",0);QTest::qWait(100);
+        const auto point=ledger->mapToScene(QPointF(100,17)).toPoint();
+        QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,point);
+        QTRY_VERIFY(!m.busy());QCOMPARE(selected(m).value("ordinal").toInt(),0);
+    }
+    void searchReturnNavigation() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");
+        QByteArray bytes;
+        for(int i=0;i<80;++i) bytes+="D1/1/2026\nT-1\nPRow "+QByteArray::number(i)+"\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        auto* search=root->findChild<QQuickItem*>("ledgerSearch");QVERIFY(search);
+        auto click=[&](const char* name){return QMetaObject::invokeMethod(root->findChild<QObject*>(name),"clicked");};
+        QTest::qWait(100);ledger->setProperty("contentY",1000);QTest::qWait(100);
+        int beforeIndex=-1;
+        QVERIFY(QMetaObject::invokeMethod(ledger,"indexAt",Q_RETURN_ARG(int,beforeIndex),Q_ARG(qreal,1),Q_ARG(qreal,ledger->property("contentY").toDouble()+1)));
+        const auto beforeIdentity=m.rowIdentity(beforeIndex);
+        search->setProperty("text","No matching transaction");QVERIFY(click("applyFilter"));QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.rowCount(),0);QCOMPARE(selected(m).value("ordinal").toInt(),0);
+        QVERIFY(QMetaObject::invokeMethod(root,"query",Q_ARG(QVariant,QVariant(1)),Q_ARG(QVariant,QVariant(true))));QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.state().value("sort").toInt(),1);
+        // Inspecting whole-file evidence must not count as choosing a search result.
+        run(m,"evidence",{{"batch",batch}});
+        QVERIFY(click("clearFilter"));QTRY_VERIFY(!m.busy());QTest::qWait(100);
+        QCOMPARE(selected(m).value("ordinal").toInt(),0);QCOMPARE(m.rowCount(),81);
+        QCOMPARE(m.state().value("sort").toInt(),0);QVERIFY(!m.state().value("descending").toBool());
+        int afterIndex=-1;
+        QVERIFY(QMetaObject::invokeMethod(ledger,"indexAt",Q_RETURN_ARG(int,afterIndex),Q_ARG(qreal,1),Q_ARG(qreal,ledger->property("contentY").toDouble()+1)));
+        QCOMPARE(m.rowIdentity(afterIndex),beforeIdentity);
+        search->setProperty("text","Row 7");QVERIFY(click("applyFilter"));QTRY_VERIFY(!m.busy());
+        run(m,"inspect",{{"batch",batch},{"ordinal", 70}});
+        QVERIFY(click("clearFilter"));QTRY_VERIFY(!m.busy());QTest::qWait(100);
+        QCOMPARE(selected(m).value("ordinal").toInt(),70);QCOMPARE(m.rowCount(),81);
+        QVERIFY(m.selectedRowIndex()>=0);
+        auto* editor=root->findChild<QQuickItem*>("transactionEditor");QVERIFY(editor);
+        const auto editorTop=editor->mapToItem(ledger,QPointF(0,0)).y();
+        QVERIFY(editorTop>=0 && editorTop<ledger->height());
+        QCOMPARE(m.rowIdentity(m.selectedRowIndex()).value("ordinal").toInt(),70);
+        QCOMPARE(m.occurrenceIndex(batch.toString(),70),m.selectedRowIndex());
+        QVERIFY(m.rowIdentity(-1).isEmpty());QCOMPARE(m.occurrenceIndex("missing",0),-1);
+        // A dirty edit must resolve before clearing a filter.
+        search->setProperty("text","Row 7");QVERIFY(click("applyFilter"));QTRY_VERIFY(!m.busy());
+        auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
+        payee->setProperty("text","Unsaved search edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
+        QVERIFY(click("clearFilter"));auto* dialog=root->findChild<QObject*>("unsavedDialog");QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(click("guardStay"));
+        QCOMPARE(search->property("text").toString(),"Row 7");QVERIFY(root->property("dirty").toBool());
+        auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);
+        total->setProperty("text","bad");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));
+        QVERIFY(click("clearFilter"));QVERIFY(click("guardSave"));QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());
+        QCOMPARE(search->property("text").toString(),"Row 7");QVERIFY(root->property("dirty").toBool());
+        QVERIFY(click("clearFilter"));QVERIFY(click("guardDiscard"));QTRY_VERIFY(!m.busy());
+        QCOMPARE(search->property("text").toString(),"");QVERIFY(!root->property("dirty").toBool());
+        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Row 70");
+        search->setProperty("text","Row 7");QVERIFY(click("applyFilter"));QTRY_VERIFY(!m.busy());
+        payee->setProperty("text","Saved on search return");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
+        QVERIFY(click("clearFilter"));QVERIFY(click("guardSave"));QTRY_VERIFY(!m.busy());
+        QTRY_COMPARE(search->property("text").toString(),"");QVERIFY(!root->property("dirty").toBool());
+        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Saved on search return");
+        search->setProperty("text","Row 7");QVERIFY(click("applyFilter"));QTRY_VERIFY(!m.busy());
+        run(m,"close");create(m,dir.path()+"/other");
+        QVERIFY(root->property("searchReturn").isNull());QCOMPARE(search->property("text").toString(),"");
+    }
+    void readOnlySplitViews() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");
+        QByteArray bytes;
+        for(int i=0;i<80;++i) bytes+="D1/1/2026\nT-10\nPRow "+QByteArray::number(i)+"\nSExpense\nECharge\n$-12\nSRefund\nEAdjustment\n$2\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        // Keep the editor offscreen so several other split rows are visible.
+        run(m,"inspect",{{"batch",batch},{"ordinal",79}});
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
+        payee->setProperty("text","Unsaved editor");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
+        QTest::qWait(100);QVERIFY(QMetaObject::invokeMethod(ledger,"positionViewAtBeginning"));QTest::qWait(100);
+        auto item=[&](const QString& name){return visualItem(window->contentItem(),name);};
+        QTRY_VERIFY(item("splitToggle_0"));
+        auto* toggle=item("splitToggle_0");
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene(QPointF(toggle->width()/2,17)).toPoint());
+        QTRY_VERIFY(item("splitPreview_0") && item("splitPreview_0")->height()>0);
+        QTRY_VERIFY(item("splitToggle_1"));
+        QVERIFY(QMetaObject::invokeMethod(item("splitToggle_1"),"clicked"));
+        QTRY_VERIFY(item("splitPreview_1") && item("splitPreview_1")->height()>0);
+        if(qEnvironmentVariableIsSet("SPENTIT_SPLITS_SCREENSHOT")) QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_SPLITS_SCREENSHOT")));
+        QCOMPARE(selected(m).value("ordinal").toInt(),79);
+        QCOMPARE(payee->property("text").toString(),"Unsaved editor");QVERIFY(root->property("dirty").toBool());
+        QCOMPARE(m.state().value("projected").toString(),"-800.00");
+        const auto splits=m.data(m.index(0,0),Qt::UserRole).toMap().value("splits").toList();
+        QCOMPARE(splits[0].toMap().value("amount").toString(),"-12.00");
+        QCOMPARE(splits[1].toMap().value("amount").toString(),"2.00");
+        ledger->setProperty("contentY",2000);QTest::qWait(100);
+        QTest::qWait(100);QVERIFY(QMetaObject::invokeMethod(ledger,"positionViewAtBeginning"));QTest::qWait(100);
+        QTRY_VERIFY(item("splitPreview_0") && item("splitPreview_0")->height()>0);
+        run(m,"query",{{"projected",true},{"filter","Row 0"},{"sort",1},{"descending",true}});
+        QTRY_VERIFY(item("splitPreview_0") && item("splitPreview_0")->height()>0);
+        QCOMPARE(payee->property("text").toString(),"Unsaved editor");
+        run(m,"query",{{"projected",true},{"filter","Row 1"}});
+        QTRY_VERIFY(item("splitPreview_1") && item("splitPreview_1")->height()>0);
+        QVERIFY(QMetaObject::invokeMethod(item("splitToggle_1"),"clicked"));
+        QTRY_COMPARE(item("splitPreview_1")->height(),0);
+        // Closing clears view-only identities, including when the next dataset uses the same ordinals.
+        run(m,"close");create(m,dir.path()+"/other");
+        run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        run(m,"inspect",{{"batch",selected(m).value("batch")},{"ordinal",79}});
+        QTest::qWait(100);QVERIFY(QMetaObject::invokeMethod(ledger,"positionViewAtBeginning"));QTest::qWait(100);
+        QTRY_VERIFY(item("splitPreview_0"));QCOMPARE(item("splitPreview_0")->height(),0);
+    }
+    void inlineSourceCopy() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");
+        run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
+        const QByteArray bytes="D2/1/2026\nT-10\nPOriginal\nMSource memo\nSFood\n$-10\n^\nD3/1/2026\nT20\nPSecond\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch");
+        const auto evidence=selected(m).value("source");
+        auto* editor=root->findChild<QQuickItem*>("transactionEditor");QVERIFY(editor);
+        auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
+        auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QTRY_VERIFY(editor->property("inlineRow").toBool());
+        QCOMPARE(m.selectedRowIndex(),1); // Opening balance precedes the import.
+        auto edit=selected(m).value("draft").toMap();edit["payee"]="Corrected";edit["total"]="-11.00";
+        auto splits=edit.value("splits").toList();auto split=splits[0].toMap();split["amount"]="-11.00";splits[0]=split;edit["splits"]=splits;
+        run(m,"save",edit);
+        auto* toggle=root->findChild<QObject*>("sourceToggle");QVERIFY(toggle);toggle->setProperty("checked",true);
+        QTRY_VERIFY(visualItem(window->contentItem(),"copySource_payee_-1"));
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"copySource_payee_-1"),"clicked"));
+        QCOMPARE(payee->property("text").toString(),"Original");QVERIFY(root->property("dirty").toBool());
+        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Corrected");
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"copySource_total_-1"),"clicked"));
+        QCOMPARE(total->property("text").toString(),"-10.00");
+        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());
+        QVERIFY(!m.error().isEmpty());QVERIFY(root->property("dirty").toBool());
+        QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"-11.00");
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"copySource_amount_0"),"clicked"));
+        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
+        QCOMPARE(selected(m).value("source"),evidence);
+        QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"-10.00");
+        // Identity follows sorting; filtering the row out retains an accessible editor.
+        run(m,"query",{{"sort",1},{"descending",true},{"projected",true}});
+        QTRY_VERIFY(editor->property("inlineRow").toBool());
+        QCOMPARE(m.data(m.index(m.selectedRowIndex()),Qt::UserRole).toMap().value("ordinal").toInt(),0);
+        run(m,"query",{{"filter","Second"},{"projected",true}});
+        QCOMPARE(m.selectedRowIndex(),-1);QTRY_VERIFY(!editor->property("inlineRow").toBool());
+        QCOMPARE(editor->parentItem()->objectName(),"reviewPanel");
+        run(m,"query",{{"projected",true}});QTRY_VERIFY(editor->property("inlineRow").toBool());
+        // A failed navigation save cannot switch to another occurrence.
+        total->setProperty("text","bad");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));
+        QVERIFY(QMetaObject::invokeMethod(root,"inspectRecord",Q_ARG(QVariant,batch),Q_ARG(QVariant,QVariant(1))));
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardSave"),"clicked"));
+        QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QCOMPARE(selected(m).value("ordinal").toInt(),0);
+        QVERIFY(root->property("dirty").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root,"inspectRecord",Q_ARG(QVariant,batch),Q_ARG(QVariant,QVariant(1))));
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardDiscard"),"clicked"));
+        QTRY_VERIFY(!m.busy());QCOMPARE(selected(m).value("ordinal").toInt(),1);
+        QCOMPARE(payee->property("text").toString(),"Second");
+        run(m,"close");run(m,"open",{{"path",dir.path()+"/doc"}});
+        run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        QCOMPARE(selected(m).value("source"),evidence);
+        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Original");
+        run(m,"commit");QVERIFY(!selected(m).value("editable").toBool());
+        toggle->setProperty("checked",true);
+        QTRY_VERIFY(visualItem(window->contentItem(),"copySource_payee_-1"));
+        QVERIFY(!visualItem(window->contentItem(),"copySource_payee_-1")->property("enabled").toBool());
+        QTest::qWait(100);
+        if(qEnvironmentVariableIsSet("SPENTIT_INLINE_SCREENSHOT")) QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INLINE_SCREENSHOT")));
     }
     void qmlEditorNavigation() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());

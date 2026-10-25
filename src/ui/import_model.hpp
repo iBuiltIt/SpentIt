@@ -1,5 +1,6 @@
 #pragma once
 #include <spentit/document_gateway.hpp>
+#include <spentit/import_view.hpp>
 #include <QAbstractListModel>
 #include <QThreadPool>
 #include <QVariantMap>
@@ -24,13 +25,16 @@ public:
     QHash<int,QByteArray> roleNames() const override;
     Q_INVOKABLE void command(const QString& action,const QVariantMap& args={});
     Q_INVOKABLE QString localPath(const QUrl&) const;
+    Q_INVOKABLE int selectedRowIndex() const;
+    Q_INVOKABLE QVariantMap rowIdentity(int row) const;
+    Q_INVOKABLE int occurrenceIndex(const QString& batch, int ordinal) const;
 signals: void changed(); void completed(QString action,bool success);
 private:
     struct Worker;
     std::shared_ptr<Worker> worker_;
     QThreadPool pool_;
     QVariantMap state_;
-    QVariantList rows_;
+    std::shared_ptr<const spentit::app::LedgerView> rows_;
     bool busy_=false;
     QString error_;
 };

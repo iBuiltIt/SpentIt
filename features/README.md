@@ -26,7 +26,7 @@ Acceptance criteria are verification obligations, not by themselves reports of p
 | [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Period comparisons, category totals, reproducible filters |
 | [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | Free-access intent, resale restriction, unresolved project license |
 | [008 — Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) | active | Per-account commits, protected drafts, matching provenance, repair, removal, navigation |
-| [009 — First durable import workflow](009-durable-import-milestone.md) | active | Accepted one-account experimental scope, headless parser/storage/reconciliation, bounded setup/review UI and date/split-total repair; remaining milestone work |
+| [009 — First durable import workflow](009-durable-import-milestone.md) | active | Accepted one-account experimental scope, headless parser/storage/reconciliation, bounded setup/review UI, inline editing/source copying, split previews, filter-return navigation, date/split-total repair and measured durable-UI workloads; remaining milestone work |
 
 ## Initial design sequence (proposed)
 
