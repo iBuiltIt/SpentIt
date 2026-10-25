@@ -1,0 +1,7 @@
+add_executable(spentit_engine_tests engine_tests.cpp)
+target_link_libraries(spentit_engine_tests PRIVATE SpentIt::engine)
+set_target_properties(spentit_engine_tests PROPERTIES CXX_EXTENSIONS OFF)
+spentit_compiler_options(spentit_engine_tests)
+foreach(case IN ITEMS decimal arithmetic splits corrections boundaries catalog historical editing editing_boundaries)
+  add_test(NAME engine.${case} COMMAND spentit_engine_tests ${case})
+endforeach()

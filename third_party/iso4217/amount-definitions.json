@@ -1,0 +1,1004 @@
+[
+  {
+    "id": "six-2026-09-17:AED",
+    "code": "AED",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:AFN",
+    "code": "AFN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ALL",
+    "code": "ALL",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:AMD",
+    "code": "AMD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:AOA",
+    "code": "AOA",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ARS",
+    "code": "ARS",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:AUD",
+    "code": "AUD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:AWG",
+    "code": "AWG",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:AZN",
+    "code": "AZN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BAM",
+    "code": "BAM",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BBD",
+    "code": "BBD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BDT",
+    "code": "BDT",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BHD",
+    "code": "BHD",
+    "scale": 3,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BIF",
+    "code": "BIF",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BMD",
+    "code": "BMD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BND",
+    "code": "BND",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BOB",
+    "code": "BOB",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BOV",
+    "code": "BOV",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BRL",
+    "code": "BRL",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BSD",
+    "code": "BSD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BTN",
+    "code": "BTN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BWP",
+    "code": "BWP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BYN",
+    "code": "BYN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:BZD",
+    "code": "BZD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CAD",
+    "code": "CAD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CDF",
+    "code": "CDF",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CHE",
+    "code": "CHE",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CHF",
+    "code": "CHF",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CHW",
+    "code": "CHW",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CLF",
+    "code": "CLF",
+    "scale": 4,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CLP",
+    "code": "CLP",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CNY",
+    "code": "CNY",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:COP",
+    "code": "COP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:COU",
+    "code": "COU",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CRC",
+    "code": "CRC",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CUP",
+    "code": "CUP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CVE",
+    "code": "CVE",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:CZK",
+    "code": "CZK",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:DJF",
+    "code": "DJF",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:DKK",
+    "code": "DKK",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:DOP",
+    "code": "DOP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:DZD",
+    "code": "DZD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:EGP",
+    "code": "EGP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ERN",
+    "code": "ERN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ETB",
+    "code": "ETB",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:EUR",
+    "code": "EUR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:FJD",
+    "code": "FJD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:FKP",
+    "code": "FKP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:GBP",
+    "code": "GBP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:GEL",
+    "code": "GEL",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:GHS",
+    "code": "GHS",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:GIP",
+    "code": "GIP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:GMD",
+    "code": "GMD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:GNF",
+    "code": "GNF",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:GTQ",
+    "code": "GTQ",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:GYD",
+    "code": "GYD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:HKD",
+    "code": "HKD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:HNL",
+    "code": "HNL",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:HTG",
+    "code": "HTG",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:HUF",
+    "code": "HUF",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:IDR",
+    "code": "IDR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ILS",
+    "code": "ILS",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:INR",
+    "code": "INR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:IQD",
+    "code": "IQD",
+    "scale": 3,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:IRR",
+    "code": "IRR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ISK",
+    "code": "ISK",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:JMD",
+    "code": "JMD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:JOD",
+    "code": "JOD",
+    "scale": 3,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:JPY",
+    "code": "JPY",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KES",
+    "code": "KES",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KGS",
+    "code": "KGS",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KHR",
+    "code": "KHR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KMF",
+    "code": "KMF",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KPW",
+    "code": "KPW",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KRW",
+    "code": "KRW",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KWD",
+    "code": "KWD",
+    "scale": 3,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KYD",
+    "code": "KYD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:KZT",
+    "code": "KZT",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:LAK",
+    "code": "LAK",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:LBP",
+    "code": "LBP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:LKR",
+    "code": "LKR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:LRD",
+    "code": "LRD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:LSL",
+    "code": "LSL",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:LYD",
+    "code": "LYD",
+    "scale": 3,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MAD",
+    "code": "MAD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MDL",
+    "code": "MDL",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MGA",
+    "code": "MGA",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MKD",
+    "code": "MKD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MMK",
+    "code": "MMK",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MNT",
+    "code": "MNT",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MOP",
+    "code": "MOP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MRU",
+    "code": "MRU",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MUR",
+    "code": "MUR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MVR",
+    "code": "MVR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MWK",
+    "code": "MWK",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MXN",
+    "code": "MXN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MXV",
+    "code": "MXV",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MYR",
+    "code": "MYR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:MZN",
+    "code": "MZN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:NAD",
+    "code": "NAD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:NGN",
+    "code": "NGN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:NIO",
+    "code": "NIO",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:NOK",
+    "code": "NOK",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:NPR",
+    "code": "NPR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:NZD",
+    "code": "NZD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:OMR",
+    "code": "OMR",
+    "scale": 3,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:PAB",
+    "code": "PAB",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:PEN",
+    "code": "PEN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:PGK",
+    "code": "PGK",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:PHP",
+    "code": "PHP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:PKR",
+    "code": "PKR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:PLN",
+    "code": "PLN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:PYG",
+    "code": "PYG",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:QAR",
+    "code": "QAR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:RON",
+    "code": "RON",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:RSD",
+    "code": "RSD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:RUB",
+    "code": "RUB",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:RWF",
+    "code": "RWF",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SAR",
+    "code": "SAR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SBD",
+    "code": "SBD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SCR",
+    "code": "SCR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SDG",
+    "code": "SDG",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SEK",
+    "code": "SEK",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SGD",
+    "code": "SGD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SHP",
+    "code": "SHP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SLE",
+    "code": "SLE",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SOS",
+    "code": "SOS",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SRD",
+    "code": "SRD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SSP",
+    "code": "SSP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:STN",
+    "code": "STN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SVC",
+    "code": "SVC",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SYP",
+    "code": "SYP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:SZL",
+    "code": "SZL",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:THB",
+    "code": "THB",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:TJS",
+    "code": "TJS",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:TMT",
+    "code": "TMT",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:TND",
+    "code": "TND",
+    "scale": 3,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:TOP",
+    "code": "TOP",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:TRY",
+    "code": "TRY",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:TTD",
+    "code": "TTD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:TWD",
+    "code": "TWD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:TZS",
+    "code": "TZS",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:UAH",
+    "code": "UAH",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:UGX",
+    "code": "UGX",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:USD",
+    "code": "USD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:USN",
+    "code": "USN",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:UYI",
+    "code": "UYI",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:UYU",
+    "code": "UYU",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:UYW",
+    "code": "UYW",
+    "scale": 4,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:UZS",
+    "code": "UZS",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:VED",
+    "code": "VED",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:VES",
+    "code": "VES",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:VND",
+    "code": "VND",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:VUV",
+    "code": "VUV",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:WST",
+    "code": "WST",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:XAD",
+    "code": "XAD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:XAF",
+    "code": "XAF",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:XCD",
+    "code": "XCD",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:XCG",
+    "code": "XCG",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:XOF",
+    "code": "XOF",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:XPF",
+    "code": "XPF",
+    "scale": 0,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:YER",
+    "code": "YER",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ZAR",
+    "code": "ZAR",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ZMW",
+    "code": "ZMW",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-2026-09-17:ZWG",
+    "code": "ZWG",
+    "scale": 2,
+    "source": "list-one-2026-09-17.xml"
+  },
+  {
+    "id": "six-amendment-180:BGN",
+    "code": "BGN",
+    "scale": 2,
+    "source": "amendment-180.pdf"
+  },
+  {
+    "id": "six-amendment-174:HRK",
+    "code": "HRK",
+    "scale": 2,
+    "source": "amendment-174.pdf"
+  }
+]

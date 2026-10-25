@@ -1,0 +1,40 @@
+# Normalize text in the repository and use LF checkouts across platforms.
+* text=auto eol=lf
+
+*.c text diff=cpp
+*.cc text diff=cpp
+*.cpp text diff=cpp
+*.h text diff=cpp
+*.hpp text diff=cpp
+*.inc text diff=cpp
+*.qml text
+*.cmake text
+CMakeLists.txt text
+*.json text
+*.xml text
+*.md text whitespace=-blank-at-eol
+*.txt text
+*.py text diff=python
+*.sh text
+
+# Native Windows scripts, if introduced, need CRLF checkouts.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Preserve binary assets and pinned upstream documents byte for byte.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+*.xz binary
+*.7z binary
+
+# Preserve byte-exact upstream evidence used by provenance/hash checks.
+third_party/iso4217/*.xml -text -eol -whitespace

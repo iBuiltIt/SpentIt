@@ -1,0 +1,77 @@
+# Out-of-source CMake builds, dependency downloads and generated artifacts
+/build/
+/build-*/
+/cmake-build-*/
+/out/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+Testing/
+compile_commands.json
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.dSYM/
+*.app/
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# Local editor settings and caches
+/.idea/
+/.vscode/
+/.vs/
+.cache/
+__pycache__/
+*.py[cod]
+.venv/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Local agent settings and credentials
+/.codex/
+/.agents/
+/.aws/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime documents, bank exports, database sidecars and backups.
+# Never add personal data. Deliberately synthetic fixtures matching these
+# patterns need explicit review and a narrow exception before tracking.
+/private/
+/local-data/
+*.spentit
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.qif
+*.ofx
+*.qfx
+*.qbo
+*.bak
+*.backup
+*.log

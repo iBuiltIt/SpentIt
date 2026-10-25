@@ -1,0 +1,8 @@
+add_executable(spentit_storage_tests storage_tests.cpp)
+target_link_libraries(spentit_storage_tests PRIVATE spentit_storage_prototype spentit_sqlcipher)
+set_target_properties(spentit_storage_tests PROPERTIES CXX_EXTENSIONS OFF)
+spentit_compiler_options(spentit_storage_tests)
+foreach(case IN ITEMS basics io crashes backup backup_failures validation backup_crashes stage_failures)
+  add_test(NAME storage.${case} COMMAND spentit_storage_tests ${case})
+  set_tests_properties(storage.${case} PROPERTIES TIMEOUT 600)
+endforeach()

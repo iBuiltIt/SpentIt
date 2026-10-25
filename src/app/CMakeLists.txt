@@ -1,0 +1,4 @@
+add_library(spentit_sheet_session STATIC sheet_session.cpp)
+target_include_directories(spentit_sheet_session PUBLIC include)
+target_link_libraries(spentit_sheet_session PUBLIC SpentIt::engine)
+spentit_compiler_options(spentit_sheet_session)

@@ -1,0 +1,6 @@
+add_library(spentit_engine STATIC money.cpp transaction.cpp split_editor.cpp)
+add_library(SpentIt::engine ALIAS spentit_engine)
+target_include_directories(spentit_engine PUBLIC include)
+target_compile_features(spentit_engine PUBLIC cxx_std_20)
+set_target_properties(spentit_engine PROPERTIES CXX_EXTENSIONS OFF)
+spentit_compiler_options(spentit_engine)
