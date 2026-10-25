@@ -26,6 +26,7 @@ Acceptance criteria are verification obligations, not by themselves reports of p
 | [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Period comparisons, category totals, reproducible filters |
 | [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | Free-access intent, resale restriction, unresolved project license |
 | [008 — Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) | active | Per-account commits, protected drafts, matching provenance, repair, removal, navigation |
+| [009 — First durable import workflow](009-durable-import-milestone.md) | active | Accepted one-account experimental scope, headless parser/storage/reconciliation subset and remaining UI work |
 
 ## Initial design sequence (proposed)
 
@@ -43,3 +44,7 @@ The owner approved documenting the main UI layout and follow-up decisions on 202
 The owner also accepted the [transfer lifecycle](008-transfer-matching-and-lifecycle.md): commits are explicit per account; committing an origin protects its generated destination draft without committing it. Matching, repair, provenance-dependent removal, and counterpart navigation are documented there. Feature 005 also records selection/view restoration when search clears. These requirements remain unimplemented.
 
 The owner subsequently authorized the [synthetic sheet prototype](../doc/sheet-prototype.md). Its bounded scope is implemented and verified on macOS, with 100,000/200,000-row workload measurements. Production UI behavior, persistence integration and final Qt adoption remain open; feature 005 stays active.
+
+The owner authorized preparing the [first durable import milestone design](009-durable-import-milestone.md). The owner subsequently accepted its five policy groups, including a smaller first vertical slice with rules, transfers and category reports deferred. QIF will be completed first. Future QFX, ASO, QBO and OFX support is an accepted requirement, with detailed dialects and implementation deferred. The owner has matching private exports of the same real-world dataset in those four formats for possible future comparison. The owner clarified that each running application has one active dataset, selected by a Settings path, and can close it and open another. No application-wide instance limit is required; exclusive document locking remains in place. The owner subsequently gave Go; [headless implementation](../doc/durable-import.md) is in progress and writable UI integration remains incomplete.
+
+The owner also accepted [optional-password setup and recovery](001-documents-storage-security.md#accepted-setup-unlock-and-recovery-behavior--2026-10-25): protection defaults on, no-password mode deliberately waives confidentiality using a documented public format key, and setup suggests a browsable Documents/SpentIt location. These requirements are not implemented yet.

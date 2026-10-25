@@ -2,7 +2,7 @@
 
 A local, single-user desktop application in development for understanding spending through reliable imports, reviewable categorization, and explainable reports.
 
-Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCipher storage/recovery prototype, and an optional synthetic Qt Quick transaction-sheet prototype. **There is no production financial-document application yet.** Prototype data is synthetic; sheet edits last only for the running session.
+Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCipher storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet prototype, and a partial headless durable QIF workflow. **There is no production financial-document application yet.** Prototype data is synthetic; sheet edits last only for the running session.
 
 ## Start here
 
@@ -10,6 +10,7 @@ Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCip
 - [Engine build and tests](doc/building.md)
 - [Transaction-sheet prototype: build, run, and measurements](doc/sheet-prototype.md)
 - [Encrypted-storage prototype](doc/storage-prototype.md)
+- [Headless durable QIF workflow](doc/durable-import.md)
 - [Feature requirements and open decisions](features/README.md)
 - [Contributor instructions](AGENTS.md) and [dependency boundaries](doc/project-layout.md)
 

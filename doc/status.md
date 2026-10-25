@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-25
 
-SpentIt has a buildable C++20 financial engine, an optional isolated encrypted-storage/recovery prototype, and an optional synthetic Qt Quick transaction-sheet prototype. **There is no production financial-document application yet.**
+SpentIt has a buildable C++20 financial engine, an optional isolated encrypted-storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet prototype, and a partial headless durable QIF workflow. **There is no production financial-document application yet.**
 
 ## Implemented engine
 
@@ -36,14 +36,34 @@ Plain C++ session use cases remain independent of Qt. The Qt adapter performs ge
 
 ## Remaining product work
 
-All [feature documents](../features/README.md) remain **active**. Features 001, 002 and 005 have bounded implemented subsets. Production accounts, balance ordering, transfer semantics, actual QIF parsing/duplicate review, rules, reports and durable application/UI use cases do not exist. The synthetic sheet conventions do not settle those designs. The prototype does not implement full document lifecycle, application instance locking, draft editing/discard, undo, password changes, migrations, or their recovery workflows. It is not intended for personal financial data.
+All [feature documents](../features/README.md) remain **active**. Features 001, 002 and 005 have bounded implemented subsets. Production accounts, transfers, rules, reports and durable UI use cases do not exist. The new experimental headless QIF workflow implements a bounded parser, duplicate review commands, one account and deterministic ledger ordering; it does not complete these product features. The synthetic sheet conventions do not settle those designs. The original storage prototype does not implement full document lifecycle or draft editing/discard. The new headless import experiment adds durable draft edits/discard, but writable UI, full document lifecycle, undo, password changes, migrations and their recovery workflows remain incomplete. It is not intended for personal financial data.
 
 The [project layout](project-layout.md) is realized for engine, optional storage, synthetic app/UI, their tests, build support and reference/dependency metadata. Qt Quick/QML is used only in the sheet experiment; final adoption and PCRE2 remain proposals. SQLCipher is selected for the prototype only. Linux is unverified; the storage prototype is POSIX-only and explicitly does not build on Windows. No portability or general responsiveness claim is made; bounded macOS sheet measurements are recorded separately.
 
 The owner's licensing intent remains permanent free access, prohibition on selling SpentIt or derivatives, and free internal business use. Exact terms remain unresolved; no project license has been selected or added. Third-party notices are retained separately. See [licensing and distribution](../features/007-licensing-and-distribution.md).
 
-Next product work requires choosing the next bounded milestone and settling its material questions. The engine and storage experiments do not settle the final application schema, UI or distribution design.
+The next bounded milestone has been selected; its remaining material questions must be settled before dependent implementation. The engine and storage experiments do not settle the final application schema, UI or distribution design.
+
+## Accepted next milestone scope — 2026-10-25
+
+The owner authorized a design for the [first durable import workflow](../features/009-durable-import-milestone.md): one-account QIF evidence, duplicate review, durable draft edits, explicit commit and exact ledger reconciliation. The owner accepted all five policy groups: bounded QIF profile/resource limits, duplicate review, whole-batch scope, durable saves/evidence retention, opening-balance freeze and chronology/balance modes, with Qt Quick/SQLCipher continued for the experiment. Rules, transfers and category reports are deferred; transfer-bearing imports block commit. QIF will be completed first. Future QFX, ASO, QBO and OFX support is an accepted requirement, with detailed dialects and implementation deferred. The owner has matching private exports of the same real-world dataset in those four formats for possible future comparison. The owner clarified that each running application has one active dataset, selected by a Settings path, and can close it and open another. No application-wide instance limit is required; exclusive document locking remains in place. Private samples are available from the owner on request; no paths or contents are recorded and none were inspected for this update. The owner subsequently authorized implementation. The [headless subset](durable-import.md) now implements the bounded parser, encrypted source/draft revisions, duplicate review, commit receipts/retries, opening confirmation/freeze and ledger reconciliation. Writable UI integration, Settings dataset-path selection, document switching and malformed-record repair remain incomplete.
+
+Design verification: all 34 relative link targets across the new milestone, feature index and this status document exist; `git diff --check` passed. The proposal was compared with features 001–006 and 008 and the inspected prototype interfaces, storage constraints and existing test assertions. No runtime tests were run for this documentation-only change, and no milestone acceptance criterion is claimed implemented or verified.
+
+Headless implementation verification: Debug, Release and ASan/UBSan each passed 31/31 engine/parser/storage/import/ledger tests on macOS arm64. The unchanged sheet Debug configuration passed 17/17 checks. Synthetic 100,000/200,000-row durable measurements and exact fault-injection counts are recorded in the [implementation report](durable-import.md). The local toolchain lacks libFuzzer's runtime, so coverage-guided fuzzing remains unverified; deterministic mutation tests ran under sanitizers. No private samples were accessed. This is partial milestone progress, not a completed writable application.
 
 ## Version control baseline — 2026-10-25
 
 The project is tracked in a local Git repository on `main`. The initial snapshot includes source, tests, requirements, verification records, dependency notices and pinned currency references. Ignore rules exclude generated builds, local settings and common sensitive/runtime files; attributes define text line endings, binary assets and byte-preserved upstream XML. See [repository conventions](../README.md). No remote publication or project-license selection is part of this setup.
+
+## Optional-password setup clarification — 2026-10-25
+
+The owner accepted optional password protection, checked by default, and a browsable Documents/SpentIt location during setup. No-password mode knowingly waives confidentiality and must use a documented fixed public unlock mechanism recoverable without the original installation; it must not depend on a machine-local secret or collide with user passwords. Unlock selection and file/corruption errors have separate handling. See [accepted requirements and recovery obligations](../features/001-documents-storage-security.md#accepted-setup-unlock-and-recovery-behavior--2026-10-25). These are requirements only: the headless API still requires an explicit password, and the no-password path and UI remain unimplemented.
+
+## Next-session starting point — 2026-10-25
+
+Continue feature 009 with setup/unlocking and the durable import UI. Manual owner verification of the headless foundation is not a prerequisite; its recorded automated checks support moving on, while the remaining gaps in the [implementation report](durable-import.md#remaining-work) still apply. Plan owner review using synthetic imports after the UI supports review/edit, restart and explicit commit. Do not use private financial exports for routine tests.
+
+Read [document setup/unlock/recovery requirements](../features/001-documents-storage-security.md#accepted-setup-unlock-and-recovery-behavior--2026-10-25), [sheet requirements](../features/005-transaction-sheet-navigation.md), the [milestone](../features/009-durable-import-milestone.md), [QIF profile](../features/009-qif-profile.md) and implementation report before changing code. There is no application-wide instance-limit decision outstanding. Each running app has one active dataset, selected by Settings; document locks prevent simultaneous writers. Optional-password mode, a portable public unlock key, and password-versus-file-error routing are accepted behavior but still need implementation and recovery tests. Existing protection-mode changes, migrations and forgotten-password recovery are not implied.
+
+The headless implementation and documentation are part of this handoff. Inspect Git status and recent commits to identify the saved baseline and preserve any subsequent working-tree changes. No publication or license selection was authorized. The handoff update changed documentation only; runtime results above come from the recorded implementation runs, not a new test run.

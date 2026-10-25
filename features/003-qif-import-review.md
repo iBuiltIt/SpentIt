@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: none; requirements and proposed design only.
+Implementation: partial; bounded QIF parser and optional headless encrypted import/review/commit experiment. No writable import UI or general format compatibility. See [implemented scope and verification](../doc/durable-import.md).
 
 ## Accepted requirements
 
@@ -17,6 +17,16 @@ Implementation: none; requirements and proposed design only.
 - [Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) applies to both import orders and searches committed and uncommitted counterparts. Preserve new bank evidence when matching a generated movement; do not treat that evidence as an ordinary duplicate to discard.
 - Commits are explicit per account. An origin commit protects its generated destination draft without committing it. Clearing the destination workspace retains such protected drafts; discarding an uncommitted origin removes its purely generated counterpart. Protected drafts affect projected balances only.
 - Flag unmatched generated counterparts for manual matching or acceptance as valid pending entries; neither action implicitly commits them.
+
+## Accepted future import formats
+
+The owner confirmed QIF-first sequencing on 2026-10-25. After the bounded QIF milestone, SpentIt must also support **QFX, ASO, QBO and OFX**. The owner's bank offers these formats but not QIF. This extends the eventual import scope; it does not add these parsers to the current milestone or claim that their dialects are already understood.
+
+The owner has the same real-world account activity exported separately in all four formats. These matching exports may help compare interpretation, record counts, exact amounts, dates, references and preserved evidence across formats. Their equivalence is owner-reported, not independently verified; format-specific omissions, identifiers and semantics must be investigated rather than assumed. In particular, the ASO extension alone does not establish its encoding or grammar. The separate QIF samples are not asserted to contain this same dataset.
+
+Ask the owner for access when needed. Keep private exports out of the repository and routine automated tests; never record their filenames, paths or contents or move/modify the originals. Prefer synthetic equivalents for repeatable cross-format regression tests. Follow the [private-sample handling contract](009-durable-import-milestone.md#private-sample-availability). No samples were opened for this documentation update.
+
+Future design must specify each supported dialect, preserve source evidence, normalize into the exact-money model, and define occurrence-aware duplicate review across formats so importing another export of the same activity cannot silently double-count or discard legitimate repeats. Matching counts or totals alone do not prove record identity. Parser mappings, resource limits and verification cases remain to be designed before those implementations.
 
 ## Proposed import pipeline
 
@@ -72,3 +82,7 @@ $-29.17
 ## Reference
 
 - [GnuCash QIF format notes](https://github.com/Gnucash/gnucash/blob/stable/gnucash/import-export/qif-imp/file-format.txt)
+
+## Accepted durable-import experiment — 2026-10-25
+
+The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The headless subset is implemented; the full workflow remains incomplete.

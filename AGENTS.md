@@ -45,9 +45,11 @@ Use relative links between repository documents. Do not rely on chat history, pr
 ## Security and recovery discipline
 
 - Use established cryptographic libraries and supported interfaces. Do not invent encryption or password derivation schemes.
+- Optional no-password mode is an explicit owner-approved waiver of confidentiality, using a documented public format key recoverable without the original installation. Do not describe it as confidential or silently apply it to password-protected data; see [document setup and recovery](features/001-documents-storage-security.md#accepted-setup-unlock-and-recovery-behavior--2026-10-25).
 - Keep documents, drafts, source records, and change history encrypted at rest. Review journals, temporary storage, logs, diagnostics, exports, and backups for leakage.
 - Never log passwords, keys, full financial records, or sensitive query parameters. Do not commit real statements, account identifiers, databases, credentials, or private fixtures.
 - Use synthetic or deliberately sanitized fixtures that preserve the relevant edge cases.
+- The owner has private QIF samples and matching QFX/ASO/QBO/OFX exports of one real-world dataset and can be asked for access when needed. Do not record their paths, filenames or contents, move the originals, or commit them. Prefer synthetic structural fixtures; private samples are not routine automated test inputs. See [sample handling](features/009-durable-import-milestone.md#private-sample-availability).
 - Treat imported files and regex patterns as untrusted input. Bound resource consumption; distinguish invalid input and execution failure from a valid empty result.
 - Do not disable integrity or durability mechanisms to make benchmarks faster or the file layout simpler.
 - Test backups by restoring them. Do not assume a live copy of a database's main file is a valid backup.
@@ -69,6 +71,6 @@ Use relative links between repository documents. Do not rely on chat history, pr
 
 ## Scope and licensing
 
-The implemented milestones are a standalone C++ financial engine, CMake build/test setup, a pinned currency catalog, engine split editing, retained historical-currency definitions, an optional synthetic-data SQLCipher storage/recovery prototype, and an optional synthetic Qt Quick transaction-sheet experiment. See `doc/status.md` for verified scope. Further implementation must follow the requested scope; this guidance does not authorize publication or selection of a final license.
+The implemented milestones are a standalone C++ financial engine, CMake build/test setup, a pinned currency catalog, engine split editing, retained historical-currency definitions, an optional synthetic-data SQLCipher storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet experiment, and a partial headless durable QIF import workflow. See `doc/status.md` for verified scope. Further implementation must follow the requested scope; this guidance does not authorize publication or selection of a final license.
 
 The owner wants public GitHub availability and permanent free access: selling SpentIt or its derivatives is prohibited, while businesses may use it internally for free. **The earlier Unlicense preference is superseded; exact licensing terms remain unresolved.** Preserve this distinction rather than imposing a blanket ban on commercial use. See `features/007-licensing-and-distribution.md`. Do not add an Unlicense, GPL, or other license without an explicit decision. Do not represent source visibility as open-source licensing or assume third-party libraries inherit our license.

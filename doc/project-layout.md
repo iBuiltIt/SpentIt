@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-25
 
-State: selected organizational direction; the standalone `spentit_engine` library, optional `spentit_storage_prototype`, optional synthetic app/UI libraries and sheet executable, and their tests now exist. The user prefers `src/`. The structure below reserves responsibilities, not a requirement to create empty directories or speculative abstractions.
+State: selected organizational direction; the standalone `spentit_engine` library, optional `spentit_storage_prototype`, optional synthetic app/UI libraries and sheet executable, the headless durable-import experiment, and their tests now exist. The user prefers `src/`. The structure below reserves responsibilities, not a requirement to create empty directories or speculative abstractions.
 
 ## Planned layout
 
@@ -93,3 +93,7 @@ Exact class names, file splits, private/public header organization, target granu
 ## Synthetic sheet experiment
 
 With `SPENTIT_SHEET_PROTOTYPE=ON`, `spentit_sheet_session` links only the engine; `spentit_sheet_model` links that session plus Qt Core/Concurrent; `spentit_sheet_prototype` adds Qt Quick/QML presentation and executable wiring. No prototype UI target links concrete storage. Session and Qt interaction tests live in `tests/app/` and `tests/ui/`. These are synthetic use cases, not the eventual document/persistence interfaces. See [scope and verification](sheet-prototype.md).
+
+## Headless durable import experiment
+
+`SPENTIT_IMPORT_WORKFLOW` adds `spentit_import_store` and `spentit_import_view`, requiring the existing optional SQLCipher dependency setup. Engine parsing/review validation remain in `spentit_engine`. `src/app/include/spentit/import_repository.hpp` defines complete synchronous atomic command contracts without Qt or SQL. Storage implements that boundary; the plain application ledger-view target links only the engine. The existing UI remains storage-independent. See [actual scope and verification](durable-import.md).

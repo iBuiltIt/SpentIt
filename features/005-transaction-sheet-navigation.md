@@ -28,6 +28,8 @@ This is the owner's current intended layout, expected to evolve through use. It 
 - A toolbar spans the window above both panes and stays visible when navigation is hidden. It contains a sidebar hide/show control, Back and Forward controls for the session's visited right-pane screens, a title identifying the current view, and a search field with a magnifying-glass control at the right.
 - The sidebar can be resized horizontally or completely hidden/restored with its toolbar control or a keyboard shortcut. Its maximum width is less than the window width, leaving room for content. Exact limits and shortcut are unresolved.
 - The sidebar contains Accounts above Reports, separated by a draggable horizontal divider that controls their heights. Each list scrolls independently when its contents exceed its allocated height.
+- First-run setup and the password-entry/dataset-browser screen follow the [document setup and recovery requirements](001-documents-storage-security.md#accepted-setup-unlock-and-recovery-behavior--2026-10-25), including optional password protection and a browsable suggested Documents/SpentIt location.
+- Settings includes the path specifying which dataset to load. Each running application has one active dataset; users can close it and open another. See [document lifecycle](001-documents-storage-security.md). This does not establish an application-wide instance limit.
 - Fixed controls at the bottom open Settings, the category editor, and the rules editor in the right pane. A gear is intended for Settings; the other icons remain undecided.
 - Accounts and Reports each have a `+` control. Clicking an account or report selects its right-pane display. Right-click offers rename and the appropriate removal action; nonempty accounts are archived, not deleted (see [account semantics](002-accounts-money-splits.md)).
 - Adding an account appends an inline name editor at the bottom of the account list and scrolls it into view. Enter creates the named account using the document's base/home currency, with an editable special Opening Balance entry dated today and initially zero. Currency correction is a separate deliberate modal action described in feature 002.
@@ -107,9 +109,13 @@ All 13 engine/session/model/QML/interaction CTest entries passed in Debug, Relea
 - Same-date chronological ordering; multiple pending-batch projections and persistence of the sidebar balance toggle. Sorting/filtering and the two balance states are settled above.
 - Accessibility, keyboard shortcuts, exact column/pane sizing and persistence, narrow-window fallback, large-data performance targets, and supported OS versions.
 - Search grammar, regex activation/flags, date ambiguity and range boundaries, QIF-prefix scope, records without source evidence, keyboard/multiselection during search, and restoration if the selected transaction no longer exists.
-- Settings contents (beyond the date-format preference), category/rules editor contents, and report-generator contents. Ask the owner when each is designed.
+- Settings contents (beyond the date-format preference and dataset-load path), category/rules editor contents, and report-generator contents. Ask the owner when each is designed.
 
 ## References
 
 - [Qt supported platforms](https://doc.qt.io/qt-6/supported-platforms.html)
 - [Qt Quick TableView and delegate reuse](https://doc.qt.io/qt-6/qml-qtquick-tableview.html)
+
+## Accepted durable-import experiment — 2026-10-25
+
+The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. Headless import commands and ledger queries now exist, but no writable import UI is connected.

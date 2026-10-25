@@ -82,3 +82,7 @@ Verification: nine engine groups passed in Debug, Release and ASan/UBSan on the 
 ## Reference
 
 - [Real-world mixed-sign paycheck splits](https://info.quicken.com/sim/setting-up-a-paycheck-series-with-splits)
+
+## Accepted durable-import experiment — 2026-10-25
+
+The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The [headless experiment](../doc/durable-import.md) implements one experimental account, opening-balance confirmation/freeze and exact reconciliation; production account behavior remains incomplete.
