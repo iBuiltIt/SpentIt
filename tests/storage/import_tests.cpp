@@ -94,23 +94,90 @@ void backup(){
     {auto s=ImportStore::open(d.path/"committed",password);check(s.commit("first",0,"restored-op").after.units()==12069);s.verify();}
     const auto before=bytes(d.path/"committed");fails([&]{ImportStore::open(d.path/"committed","wrong");});check(bytes(d.path/"committed")==before);no_leaks(d.path);
 }
+const std::string repair_source="D31/02/2026\nT-10\nPRepair date\n^\nD1/3/2026\nT-20\nPSplit repair\nSFood\n$-19\n^\n";
+imports::DraftRow repaired_row(const qif::Record& source,std::string date,std::int64_t amount) {
+    return {std::move(date),source.payee,source.memo,
+        Transaction::corrected_import(*source.original_amount,Money(amount,cad),{{"Food","explicit repair",Money(amount,cad)}})};
+}
+void repairs(){
+    Directory d;
+    {auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(10000,cad));
+        s.ingest("prior","D1/2/2026\nT-10\nPPrior\n^\n",qif::DateOrder::dmy);s.commit("prior",0,"prior-op");
+        s.ingest("repair",repair_source,qif::DateOrder::dmy);
+        const auto original=s.row({"repair",0});check(!original.draft && original.source.repairable);
+        auto edit=repaired_row(original.source,"2026-02-28",-1000);
+        auto invalid=edit;invalid.date="2026-02-31";fails([&]{s.save({"repair",0},0,invalid);});
+        invalid=edit;invalid.transaction=Transaction::imported(Money(-999,cad),{{"","",Money(-999,cad)}});
+        fails([&]{s.save({"repair",0},0,invalid);});check(!s.row({"repair",0}).draft);
+        s.save({"repair",0},0,edit);check(s.batches().back().blocked && !s.projected_balance());
+        check(s.row({"repair",0}).source.diagnostic.has_value());
+        check(s.row({"repair",0}).candidates.size()==1);
+        check(s.row({"repair",0}).source.date.empty());
+        check(imports::candidate_basis(s.row({"repair",0}).source,s.row({"prior",0}).source)==imports::MatchBasis::same_amount_unknown_date);
+        s.save({"repair",1},1,repaired_row(s.row({"repair",1}).source,"2026-03-01",-2100));
+        check(!s.batches().back().blocked && !s.projected_balance());
+        fails([&]{s.commit("repair",2,"repair-op");});
+        s.decide({"repair",0},2,{imports::Disposition::duplicate,imports::Occurrence{"prior",0}});
+        s.decide({"repair",1},3,{imports::Disposition::include,{}});
+        check(s.projected_balance()->units()==6900);s.backup_to(d.path/"pending",password);s.verify();}
+    {auto s=ImportStore::open(d.path/"doc",password);check(s.evidence("repair")==repair_source);
+        check(s.row({"repair",1}).draft->transaction.original_imported_amount()->units()==-2000);
+        fails([&]{s.save({"repair",1},1,repaired_row(s.row({"repair",1}).source,"2026-03-01",-2000));});
+        auto receipt=s.commit("repair",4,"repair-op");check(receipt.included==1 && receipt.excluded==1 && receipt.after.units()==6900);
+        s.backup_to(d.path/"committed",password);}
+    for(const auto* name:{"pending","committed"}){auto s=ImportStore::open(d.path/name,password);
+        check(s.commit("repair",4,"repair-op").after.units()==6900);s.verify();}
+    {auto s=ImportStore::open(d.path/"doc",password);
+        s.ingest("again",repair_source,qif::DateOrder::dmy);
+        check(s.batches().back().blocked); // no auto-repair or silent exclusion
+        s.discard("again",0);s.verify();}
+    // A repairable first diagnostic must not hide later unsupported content.
+    {auto s=create(d.path/"unsafe");s.ingest("bad","D31/02/2026\nT-10\nL[Other]\n^\n",qif::DateOrder::dmy);
+        check(!s.row({"bad",0}).source.repairable);
+        auto edit=repaired_row(s.row({"bad",0}).source,"2026-02-28",-1000);
+        fails([&]{s.save({"bad",0},0,edit);});check(s.batches()[0].blocked);s.verify();}
+    {auto s=create(d.path/"header");s.ingest("bad","D31/02/2026\nT-10\n^\n!Type:Invst\n",qif::DateOrder::dmy);
+        s.save({"bad",0},0,repaired_row(s.row({"bad",0}).source,"2026-02-28",-1000));
+        s.decide({"bad",0},1,{imports::Disposition::include,{}});check(s.batches()[0].blocked);s.verify();}
+    {auto s=create(d.path/"unknown-date");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("bad","D31/02/2026\nT-10\n^\n",qif::DateOrder::dmy);
+        s.save({"bad",0},0,repaired_row(s.row({"bad",0}).source,"2026-02-28",-1000));
+        s.decide({"bad",0},1,{imports::Disposition::include,{}});s.commit("bad",2,"op");
+        s.ingest("new","D1/4/2026\nT-10\n^\n",qif::DateOrder::dmy);
+        check(s.row({"new",0}).decision.disposition==imports::Disposition::unresolved);
+        check(s.row({"new",0}).candidates.size()==1);s.verify();}
+    // Schema 1 remains readable without an implicit upgrade and cannot store repairs.
+    {auto s=create(d.path/"legacy");s.ingest("bad","D31/02/2026\nT-10\n^\n",qif::DateOrder::dmy);}
+    {sqlite3* db=nullptr;check(sqlite3_open((d.path/"legacy").c_str(),&db)==SQLITE_OK);
+        check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
+        check(sqlite3_exec(db,"PRAGMA user_version=1",nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);}
+    const auto legacy=bytes(d.path/"legacy");
+    {auto s=ImportStore::open(d.path/"legacy",password);check(!s.row({"bad",0}).source.repairable);
+        fails([&]{s.save({"bad",0},0,repaired_row(s.row({"bad",0}).source,"2026-02-28",-1000));});}
+    check(bytes(d.path/"legacy")==legacy);
+    no_leaks(d.path);
+}
 void operation(ImportStore& s,int kind){
     if(kind==0)s.ingest("new",source,qif::DateOrder::dmy);
     if(kind==1){auto r=*s.row({"first",0}).draft;r.payee="edited";s.save({"first",0},0,r);}
     if(kind==2)s.discard("first",0);
+    if(kind==4)s.save({"first",0},0,repaired_row(s.row({"first",0}).source,"2026-02-28",-1000));
     if(kind==3)s.commit("first",0,"op");
 }
-void setup(const fs::path& path,int kind){if(kind==0){auto s=create(path);}else prepare(path);}
+void setup(const fs::path& path,int kind){if(kind==0){auto s=create(path);}else if(kind==4){auto s=create(path);s.ingest("first","D31/02/2026\nT-10\n^\n",qif::DateOrder::dmy);}else prepare(path);}
 void recovered(const fs::path& path,int kind){
     auto s=ImportStore::open(path,password);s.verify();
     if(kind==0){check(s.batches().size()<=1);s.ingest("new",source,qif::DateOrder::dmy);check(s.batches().size()==1);}
     if(kind==1){const auto b=s.batches().at(0);check(b.revision==0 || b.revision==1);check(s.row({"first",0}).draft->payee==(b.revision==0?marker:"edited"));}
     if(kind==2){const auto b=s.batches().at(0);check(b.state==app::BatchState::pending || b.state==app::BatchState::discarded);s.discard("first",0);check(s.committed_balance().units()==10000);}
+    if(kind==4){const auto b=s.batches()[0];check(b.revision==0 || b.revision==1);
+        check(s.row({"first",0}).draft.has_value()==(b.revision==1));check(b.blocked==(b.revision==0));
+        if(b.revision==0)operation(s,4);check(!s.projected_balance());s.verify();}
     if(kind==3){check(s.committed_balance().units()==10000 || s.committed_balance().units()==12069);check(s.commit("first",0,"op").after.units()==12069);check(s.ledger(false).size()==2);}
 }
 void io(bool crash){
     fault_vfs::install();
-    for(int kind=0;kind<4;++kind){
+    for(int kind=0;kind<5;++kind){
         int count=0;
         {Directory d;setup(d.path/"doc",kind);auto s=ImportStore::open(d.path/"doc",password);fault_vfs::arm(-1);operation(s,kind);count=fault_vfs::seen;fault_vfs::disarm();}
         check(count>0);
@@ -128,23 +195,76 @@ void io(bool crash){
         }
         std::cout<<"operation "<<kind<<": "<<count<<" fault positions\n";
     }
-    if(crash)for(auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){
-        Directory d;prepare(d.path/"doc");const auto child=fork();check(child>=0);
-        if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.observer([&](ImportPhase p){if(p==phase)_exit(72);});s.commit("first",0,"op");_exit(0);}
+    if(crash)for(int kind:{3,4})for(auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){
+        Directory d;setup(d.path/"doc",kind);const auto child=fork();check(child>=0);
+        if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.observer([&](ImportPhase p){if(p==phase)_exit(72);});operation(s,kind);_exit(0);}
         int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
-        {auto s=ImportStore::open(d.path/"doc",password);check(s.outcome("op").has_value()==(phase==ImportPhase::after_commit));}
-        recovered(d.path/"doc",3);
+        {auto s=ImportStore::open(d.path/"doc",password);check((kind==3?s.outcome("op").has_value():s.row({"first",0}).draft.has_value())==(phase==ImportPhase::after_commit));}
+        recovered(d.path/"doc",kind);
     }
 }
-void backup_failures(){
+void backup_failures(bool crash=false){
     fault_vfs::install();int count=0;
     {Directory d;prepare(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);fault_vfs::arm(-1);s.backup_to(d.path/"baseline",password);count=fault_vfs::seen;fault_vfs::disarm();}
     for(int n=1;n<=count;++n){
         Directory d;prepare(d.path/"doc");std::string prior;
-        {auto s=ImportStore::open(d.path/"doc",password);s.backup_to(d.path/"prior",password);prior=bytes(d.path/"prior");fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.backup_to(d.path/"candidate",password);}catch(const ImportError&){}fault_vfs::disarm();s.verify();}
+        {auto s=ImportStore::open(d.path/"doc",password);s.backup_to(d.path/"prior",password);prior=bytes(d.path/"prior");}
+        if(crash){
+            const auto child=fork();check(child>=0);
+            if(child==0){auto s=ImportStore::open(d.path/"doc",password);fault_vfs::arm(n,SQLITE_IOERR_WRITE,true,true);s.backup_to(d.path/"candidate",password);_exit(0);}
+            int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71);
+        }else{
+            auto s=ImportStore::open(d.path/"doc",password);fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
+            fails([&]{s.backup_to(d.path/"candidate",password);});check(fault_vfs::fired);fault_vfs::disarm();s.verify();
+        }
         check(bytes(d.path/"prior")==prior);auto restored=ImportStore::open(d.path/"prior",password);check(restored.projected_balance()->units()==12069);no_leaks(d.path);
+        auto original=ImportStore::open(d.path/"doc",password);check(original.evidence("first")==source);
+        original.backup_to(d.path/"retry",password);
+        auto retry=ImportStore::open(d.path/"retry",password);check(retry.projected_balance()->units()==12069);
     }
     std::cout<<"backup: "<<count<<" fault positions\n";
+}
+void backup_publication(){
+    for(bool committed:{false,true})for(bool crash:{false,true})
+    for(auto phase:{BackupPhase::before_publish,BackupPhase::before_publish_sync,
+                   BackupPhase::before_cleanup,BackupPhase::before_cleanup_sync,BackupPhase::complete}){
+        Directory d;prepare(d.path/"doc");
+        {auto s=ImportStore::open(d.path/"doc",password);
+            if(committed)s.commit("first",0,"op");
+            s.backup_to(d.path/"prior",password);}
+        const auto prior=bytes(d.path/"prior"),original=bytes(d.path/"doc");
+        bool reached=false;
+        const auto inject=[&](BackupPhase p){if(p==phase){reached=true;if(crash)_exit(73);throw ImportError(SQLITE_IOERR,"Injected publication boundary failure");}};
+        if(crash){
+            const auto child=fork();check(child>=0);
+            if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.backup_to(d.path/"candidate",password,inject);_exit(0);}
+            int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==73);
+        }else{
+            auto s=ImportStore::open(d.path/"doc",password);
+            fails([&]{s.backup_to(d.path/"candidate",password,inject);});check(reached);
+        }
+        check(bytes(d.path/"prior")==prior && bytes(d.path/"doc")==original);
+        const bool published=phase!=BackupPhase::before_publish;
+        const bool cleaned=phase==BackupPhase::before_cleanup_sync || phase==BackupPhase::complete;
+        check(fs::exists(d.path/"candidate")==published);
+        check(fs::exists(d.path/"candidate.partial")==!cleaned);
+        // An interrupted link/unlink publication leaves two names for one inode.
+        // Normal opens must still reject it; recover a separate copy, never
+        // weaken hard-link validation or silently remove retained evidence.
+        if(published && !cleaned)fails([&]{ImportStore::open(d.path/"candidate",password);});
+        fs::copy_file(d.path/(published?"candidate":"candidate.partial"),d.path/"recovered");
+        for(const auto* name:{"doc","prior","recovered"}){
+            auto s=ImportStore::open(d.path/name,password);s.verify();check(s.evidence("first")==source);
+            check(s.committed_balance().units()==(committed?12069:10000));
+            check(s.projected_balance()->units()==12069);
+            check(s.outcome("op").has_value()==committed);
+        }
+        {auto s=ImportStore::open(d.path/"recovered",password);check(s.commit("first",0,"op").after.units()==12069);check(s.ledger(false).size()==2);}
+        {auto s=ImportStore::open(d.path/"doc",password);s.backup_to(d.path/"retry",password);}
+        {auto s=ImportStore::open(d.path/"retry",password);check(s.projected_balance()->units()==12069);}
+        no_leaks(d.path);
+    }
+    std::cout<<"backup publication: 20 boundary cases\n";
 }
 void opening_policy(){
     Directory d;auto s=create(d.path/"doc");s.ingest("one",source,qif::DateOrder::dmy);
@@ -173,7 +293,7 @@ void benchmark(std::size_t n){
 }
 int main(int argc,char** argv){try{
     const std::string mode=argc>1?argv[1]:"";
-    if(mode=="basics")basics();else if(mode=="review")review();else if(mode=="errors")errors();else if(mode=="backup")backup();
-    else if(mode=="io")io(false);else if(mode=="crashes")io(true);else if(mode=="backup_failures")backup_failures();else if(mode=="validation")validation();else if(mode=="opening")opening_policy();else if(mode=="benchmark")benchmark(argc>2?std::stoul(argv[2]):100000);else return 2;
+    if(mode=="basics")basics();else if(mode=="review")review();else if(mode=="repairs")repairs();else if(mode=="errors")errors();else if(mode=="backup")backup();
+    else if(mode=="io")io(false);else if(mode=="crashes")io(true);else if(mode=="backup_failures")backup_failures();else if(mode=="backup_crashes")backup_failures(true);else if(mode=="backup_publication")backup_publication();else if(mode=="validation")validation();else if(mode=="opening")opening_policy();else if(mode=="benchmark")benchmark(argc>2?std::stoul(argv[2]):100000);else return 2;
     std::cout<<"Import "<<mode<<" passed\n";
 }catch(const ImportError& e){std::cerr<<"Storage code "<<e.code()<<": "<<e.what()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

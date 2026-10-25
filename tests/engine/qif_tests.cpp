@@ -15,6 +15,13 @@ void invalid(std::string_view s,Issue issue) {
 }
 const std::string wise="D10/08/2026\nNCARD-SYNTHETIC-001\nT-29.31\nPSynthetic Transit\nMExample Person\nEWise Charges for: CARD-SYNTHETIC-001\n$-0.14\nECARD-SYNTHETIC-001\n$-29.17\n^\n";
 void basics() {
+    auto badDate=parse_dmy("D31/02/2026\nT-10\n^\n");
+    check(badDate.records[0].repairable && !badDate.records[0].transaction && badDate.records[0].original_amount->units()==-1000);
+    auto badSplit=parse_dmy("D1/1/2026\nT-10\nSFood\n$-9\n^\n");
+    check(badSplit.records[0].repairable && badSplit.records[0].source_allocations[0].amount.units()==-900);
+    for(const auto& raw:{"D31/02/2026\nT-10\nL[Other]\n^\n", "D31/02/2026\nTbad\n^\n", "D31/02/2026\nT-10\nU-10\n^\n", "T-10\n^\n", "D31/02/2026\nT-10\nSFood\n^\n"})
+        check(!parse_dmy(raw).records[0].repairable);
+
     auto r=parse_dmy(wise); check(r.valid() && r.records.size()==1);
     const auto& rec=r.records[0]; check(rec.date=="2026-08-10" && rec.begin==0 && rec.end==wise.size());
     check(rec.transaction->original_imported_amount()->units()==-2931);

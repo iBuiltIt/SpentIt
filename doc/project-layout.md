@@ -97,3 +97,7 @@ With `SPENTIT_SHEET_PROTOTYPE=ON`, `spentit_sheet_session` links only the engine
 ## Headless durable import experiment
 
 `SPENTIT_IMPORT_WORKFLOW` adds `spentit_import_store` and `spentit_import_view`, requiring the existing optional SQLCipher dependency setup. Engine parsing/review validation remain in `spentit_engine`. `src/app/include/spentit/import_repository.hpp` defines complete synchronous atomic command contracts without Qt or SQL. Storage implements that boundary; the plain application ledger-view target links only the engine. The existing UI remains storage-independent. See [actual scope and verification](durable-import.md).
+
+## Durable import UI boundary
+
+With `SPENTIT_IMPORT_UI=ON`, `spentit_import_model` links the application ledger target and Qt Core/Concurrent, not concrete storage. The plain `DocumentGateway` contract supplies lifecycle/backup and the existing repository commands; its storage implementation owns the credential convention. `spentit_import_experiment` composes the adapter with the Qt model and QML. A private serial worker owns document operations; the UI has no SQL. The synthetic sheet targets remain separately optional. See [UI implementation and limits](import-ui.md).

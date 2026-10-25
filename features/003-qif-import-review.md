@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: partial; bounded QIF parser and optional headless encrypted import/review/commit experiment. No writable import UI or general format compatibility. See [implemented scope and verification](../doc/durable-import.md).
+Implementation: partial; bounded QIF parser and optional headless encrypted import/review/commit experiment. A bounded [writable import UI](../doc/import-ui.md) now connects review/edit/commit; general format compatibility remains incomplete. See [implemented scope and verification](../doc/durable-import.md).
 
 ## Accepted requirements
 
@@ -85,4 +85,8 @@ $-29.17
 
 ## Accepted durable-import experiment — 2026-10-25
 
-The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The headless subset is implemented; the full workflow remains incomplete.
+The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The headless subset, bounded writable UI and date/split-total repair are implemented; the full workflow remains incomplete.
+
+## Bounded repair implementation — 2026-10-25
+
+The owner selected date and split-total repair first. New experimental schema-2 datasets now support explicit validated repair, retained original evidence/diagnostics, durable history and separate duplicate review. Missing/invalid amounts and unsupported constructs remain blocked; schema-1 documents remain readable without migration. See [the milestone scope](009-durable-import-milestone.md#accepted-bounded-record-repair--2026-10-25) and [implementation/verification](../doc/durable-import.md#bounded-record-repair).

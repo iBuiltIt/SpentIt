@@ -85,7 +85,8 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency) 
     bool split_started=false, has_s=false, has_e=false, any=false;
     unsigned addresses=0;
     std::size_t split_count=0;
-    auto error = [&](Issue issue,std::size_t at) { if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at}; };
+    bool repair_allowed=true;
+    auto error = [&](Issue issue,std::size_t at) { if(issue!=Issue::date && issue!=Issue::split_total) repair_allowed=false; if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at}; };
     auto category_check = [&](std::string_view value,std::size_t at) {
         if (value.find_first_of("[]") != value.npos) error(Issue::transfer,at);
         else if (!supported_category(value)) error(Issue::category_class,at);
@@ -106,14 +107,18 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency) 
             if (!seen['D'] || !seen['T']) error(Issue::missing_field,start);
             if (has_s || has_e || (split_started && allocations.empty())) error(Issue::split_structure,start);
             if (!allocations.empty() && !category.empty() && category != "--Split--") error(Issue::split_structure,start);
-            if (!r.diagnostic && total) {
-                if (allocations.empty()) allocations.push_back({category,r.memo,*total});
+            r.original_amount=total;
+            if (total && allocations.empty() && !split_started) allocations.push_back({category,r.memo,*total});
+            r.source_allocations=allocations;
+            if (repair_allowed && total) {
                 try { r.transaction=Transaction::imported(*total,std::move(allocations)); }
                 catch (const FinancialError&) { error(Issue::split_total,start); }
             }
+            r.repairable=r.diagnostic.has_value() && repair_allowed && total.has_value();
+            if(r.diagnostic) r.transaction.reset();
             r.end=pos; out.records.push_back(std::move(r)); r=Record{}; r.begin=pos;
             seen.fill(false); total.reset(); allocations.clear(); category.clear(); split_category.clear(); split_memo.clear();
-            split_started=has_s=has_e=any=false; addresses=0; split_count=0; continue;
+            split_started=has_s=has_e=any=false; repair_allowed=true; addresses=0; split_count=0; continue;
         }
         any=true;
         if (line.empty()) { error(Issue::empty_record,start); continue; }

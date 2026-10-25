@@ -25,7 +25,7 @@ Implementation: partial; optional SQLCipher synthetic-data storage/recovery prot
 - Losing/reinstalling the app or moving intact no-password files to another machine must not lose access. A compatible app or documented SQLCipher-based recovery tool must open them without the old installation. Verify this with restored synthetic copies and no original Settings/credentials. This does not repair corrupt/missing data or provide forgotten-password recovery for protected datasets.
 - Opening first handles missing/inaccessible paths and other identifiable file errors. Attempt the reserved no-password unlock/verification path; if authentication cannot be established, offer password entry or Browse. A successful unlock is followed by format/schema, integrity and financial validation before activating the dataset. A known unsupported format, corruption after unlocking or I/O failure follows error reporting, not a password retry loop. Some authentication failures cannot distinguish a wrong key from damaged encrypted input: say unable to unlock rather than claim the password is definitely wrong. Never modify or replace files merely because opening failed.
 
-The current headless API still requires an explicit nonempty password. The setup/unlock UI, reserved public-key mechanism and installation-independent recovery checks above are not implemented or verified yet. Changing an existing dataset's protection mode remains part of the separately designed password-change/recovery workflow; setup choice does not authorize an unsafe in-place conversion.
+The direct headless API retains its original explicit credential convention. The optional [durable UI gateway](../doc/import-ui.md) now implements setup/unlock, a reserved public raw key, password-domain separation and installation-independent recovery checks. Changing an existing dataset's protection mode remains part of the separately designed password-change/recovery workflow; setup choice does not authorize an unsafe in-place conversion.
 
 ## Proposed design
 
@@ -77,4 +77,4 @@ Selected prototype settings: SQLCipher 4.19.0 with OpenSSL, SQLCipher 4 compatib
 
 ## Accepted durable-import experiment — 2026-10-25
 
-The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The headless subset is implemented; writable UI integration remains incomplete.
+The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The headless subset and bounded setup/review UI are implemented; full lifecycle and milestone scope remain incomplete.

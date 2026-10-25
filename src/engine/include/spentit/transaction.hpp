@@ -14,6 +14,7 @@ struct Allocation {
 class Transaction {
 public:
     static Transaction imported(Money original, std::vector<Allocation> allocations);
+    static Transaction corrected_import(Money original, Money total, std::vector<Allocation> allocations);
     static Transaction manual(Money total, std::vector<Allocation> allocations);
     Transaction corrected(Money total, std::vector<Allocation> allocations) const;
     const Money& effective_total() const noexcept { return total_; }

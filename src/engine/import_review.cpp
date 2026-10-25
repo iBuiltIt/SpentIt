@@ -12,19 +12,21 @@ void text(std::string_view value) {
 }
 }
 EvidenceKey evidence_key(const qif::Record& source) {
-    if (source.diagnostic || !source.transaction || !source.transaction->original_imported_amount()) invalid();
-    const auto& amount=*source.transaction->original_imported_amount();
+    if ((!source.transaction && !source.repairable) || !source.original_amount) invalid();
+    const auto& amount=*source.original_amount;
     return {source.date,amount.currency().definition_id(),amount.units(),source.payee,source.reference};
 }
 std::optional<MatchBasis> candidate_basis(const qif::Record& a,const qif::Record& b) {
     const auto x=evidence_key(a),y=evidence_key(b);
-    if(x.date!=y.date || x.definition!=y.definition || x.original_units!=y.original_units) return {};
+    if(x.definition!=y.definition || x.original_units!=y.original_units) return {};
+    if(x.date.empty() || y.date.empty()) return MatchBasis::same_amount_unknown_date;
+    if(x.date!=y.date) return {};
     return x==y ? MatchBasis::same_source_fields : MatchBasis::same_date_amount;
 }
 void validate_draft(const qif::Record& source,const DraftRow& edit) {
-    if (source.diagnostic || !source.transaction) invalid();
-    if (edit.transaction.original_imported_amount()!=source.transaction->original_imported_amount()) invalid();
-    source.transaction->effective_total().require_compatible(edit.transaction.effective_total());
+    if ((!source.transaction && !source.repairable) || !source.original_amount) invalid();
+    if (edit.transaction.original_imported_amount()!=source.original_amount) invalid();
+    source.original_amount->require_compatible(edit.transaction.effective_total());
     if (edit.date.size()!=10 || edit.date[4]!='-' || edit.date[7]!='-') invalid();
     if (qif::date(edit.date.substr(8,2)+"/"+edit.date.substr(5,2)+"/"+edit.date.substr(0,4),qif::DateOrder::dmy)!=edit.date) invalid();
     text(edit.payee); text(edit.memo);

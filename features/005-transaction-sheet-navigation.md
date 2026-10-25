@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: partial, synthetic experiment only. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. No production UI/persistence is implemented. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
+Implementation: partial, synthetic sheet plus a separate bounded durable import review UI. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Accepted requirements
 
@@ -118,4 +118,4 @@ All 13 engine/session/model/QML/interaction CTest entries passed in Debug, Relea
 
 ## Accepted durable-import experiment — 2026-10-25
 
-The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. Headless import commands and ledger queries now exist, but no writable import UI is connected.
+The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. Headless import commands and ledger queries now have a bounded writable UI; full navigation, row-expanded editing and selection behavior remain incomplete.

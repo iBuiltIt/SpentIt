@@ -75,3 +75,7 @@ Desktop.ini
 *.bak
 *.backup
 *.log
+
+# Authored synthetic owner-review fixtures; no private bank data.
+!/tests/fixtures/qif/durable-review-synthetic.qif
+!/tests/fixtures/qif/durable-repair-synthetic.qif

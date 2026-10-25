@@ -55,6 +55,9 @@ public:
     virtual BatchInfo ingest(std::string_view id, std::string_view bytes, qif::DateOrder) = 0;
     virtual std::string evidence(std::string_view batch) const = 0;
     virtual RowView row(const imports::Occurrence&) const = 0;
+    // A repairable source may initially have no draft. Its first validated save
+    // preserves original evidence and creates an unresolved duplicate decision.
+    // Unsupported diagnostics and legacy schemas must reject such a save.
     virtual void save(const imports::Occurrence&, std::int64_t expected_revision, const imports::DraftRow&) = 0;
     virtual void decide(const imports::Occurrence&, std::int64_t expected_revision, const imports::Decision&) = 0;
     virtual void discard(std::string_view batch, std::int64_t expected_revision) = 0;

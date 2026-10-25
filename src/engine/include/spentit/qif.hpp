@@ -29,6 +29,11 @@ struct Record {
     std::size_t begin = 0, end = 0;
     std::string date, payee, memo, reference, cleared;
     std::optional<Transaction> transaction;
+    // Parsed evidence only: allocations may not balance and are never postings.
+    std::optional<Money> original_amount;
+    std::vector<Allocation> source_allocations;
+    // True only if every record error is a date or split-total error.
+    bool repairable = false;
     std::optional<Diagnostic> diagnostic;
 };
 struct Result {

@@ -1,0 +1,52 @@
+#include <spentit/storage_document_gateway.hpp>
+#include <algorithm>
+namespace spentit::storage {
+namespace {
+std::string password_key(std::string_view password) {
+    if(password.empty() || password.size()>1000 || !qif::valid_utf8(password) || password.find('\0')!=password.npos)
+        throw std::invalid_argument("Password must contain 1–1000 UTF-8 bytes without NUL");
+    // Domain separation prevents user input from being interpreted as a raw key.
+    return "SpentIt/password/v1:" + std::string(password);
+}
+std::filesystem::path document_path(const std::filesystem::path& path) {
+    // Resolve platform aliases in parent directories, but never follow a document symlink.
+    std::error_code error;
+    const auto absolute=std::filesystem::absolute(path,error);
+    if(error) throw std::runtime_error("Cannot resolve dataset location");
+    const auto parent=std::filesystem::canonical(absolute.parent_path(),error);
+    if(error) throw std::runtime_error("Dataset directory is missing or inaccessible");
+    return parent/absolute.filename();
+}
+class Gateway final : public app::DocumentGateway {
+    std::unique_ptr<ImportStore> store_;
+    std::string key_;
+public:
+    ~Gateway() override { close(); }
+    void close() override { store_.reset(); std::fill(key_.begin(),key_.end(),'\0'); key_.clear(); }
+    void create(const std::filesystem::path& p,bool protected_mode,std::string_view password,
+                std::string_view name,const Currency& currency,std::string_view today) override {
+        if(store_) throw std::logic_error("Close the current dataset first");
+        auto key=protected_mode?password_key(password):std::string(public_document_key);
+        auto created=ImportStore::create(document_path(p),key,name,currency,today);
+        store_=std::make_unique<ImportStore>(std::move(created)); key_=std::move(key);
+    }
+    void open(const std::filesystem::path& p,std::optional<std::string> password) override {
+        if(store_) throw std::logic_error("Close the current dataset first");
+        auto key=password?password_key(*password):std::string(public_document_key);
+        try {
+            auto opened=ImportStore::open(document_path(p),key);
+            store_=std::make_unique<ImportStore>(std::move(opened)); key_=std::move(key);
+        } catch(const ImportAuthenticationError&) {
+            throw app::UnlockRequired();
+        }
+    }
+    app::ImportRepository& repository() override {
+        if(!store_) throw std::logic_error("No dataset is open"); return *store_;
+    }
+    void backup(const std::filesystem::path& p) override {
+        if(!store_) throw std::logic_error("No dataset is open"); store_->backup_to(document_path(p),key_);
+    }
+};
+}
+std::unique_ptr<app::DocumentGateway> document_gateway() { return std::make_unique<Gateway>(); }
+}

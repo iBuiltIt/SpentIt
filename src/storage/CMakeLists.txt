@@ -32,7 +32,7 @@ set_target_properties(spentit_storage_prototype PROPERTIES CXX_EXTENSIONS OFF)
 spentit_compiler_options(spentit_storage_prototype)
 
 if(SPENTIT_IMPORT_WORKFLOW)
-add_library(spentit_import_store STATIC import_store.cpp)
+add_library(spentit_import_store STATIC import_store.cpp document_gateway.cpp)
 target_include_directories(spentit_import_store PUBLIC include "${PROJECT_SOURCE_DIR}/src/app/include")
 target_link_libraries(spentit_import_store PUBLIC SpentIt::engine PRIVATE spentit_sqlcipher)
 set_target_properties(spentit_import_store PROPERTIES CXX_EXTENSIONS OFF)
