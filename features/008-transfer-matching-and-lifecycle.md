@@ -6,6 +6,8 @@ Implementation: none; accepted product behavior with unresolved design details. 
 
 ## Accepted requirements
 
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+
 ### Transfer entry and provenance
 
 Accounts appear as distinguishable transfer destinations in the category selector. Selecting an account makes the transaction a transfer and initiates matching/linking to that account. If a counterpart exists, link it rather than create another movement. Otherwise create a counterpart in the destination account's **uncommitted log**, recording which originating transaction caused its creation.

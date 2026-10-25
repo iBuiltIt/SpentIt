@@ -27,6 +27,9 @@ Acceptance criteria are verification obligations, not by themselves reports of p
 | [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | Free-access intent, resale restriction, unresolved project license |
 | [008 — Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) | active | Per-account commits, protected drafts, matching provenance, repair, removal, navigation |
 | [009 — First durable import workflow](009-durable-import-milestone.md) | active | Accepted one-account experimental scope, headless parser/storage/reconciliation, bounded setup/review UI, inline editing/source copying, split previews, filter-return navigation, date/split-total repair and measured durable-UI workloads; remaining milestone work |
+| [010 — Categories and selection](010-categories-and-selection.md) | active | Shallow category hierarchy, quarterly-review rationale, Amazon, QIF-safe names, account destinations, neutral income/expense classification; proposed catalog and open decisions |
+
+Category work is ahead-of-roadmap discussion, recorded in [010 — Categories and selection](010-categories-and-selection.md). It preserves the owner's proposed list and rationale, accepted shallow hierarchy and neutral categories, QIF naming constraints, and unresolved catalog details. It does not expand the current import milestone.
 
 ## Initial design sequence (proposed)
 

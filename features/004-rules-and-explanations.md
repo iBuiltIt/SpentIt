@@ -6,6 +6,8 @@ Implementation: none; requirements and proposed design only.
 
 ## Accepted requirements
 
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+
 - Regex matching is a core requirement.
 - Rules are displayed and edited in a sheet-style interface.
 - Rules can normalize displayed payees, assign categories, and populate memos from source data.

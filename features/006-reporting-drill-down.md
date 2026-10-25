@@ -6,6 +6,8 @@ Implementation: none; requirements and proposed design only.
 
 ## Accepted requirements
 
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+
 - Report spending by time period, including last year, this year, and comparisons between them.
 - Show categories ordered from most costly to least costly.
 - Double-click a category to inspect the transactions included in that category and period.
@@ -38,6 +40,6 @@ Initially show separate totals per currency. Consolidated home-currency totals r
 ## Open questions
 
 - Fiscal versus calendar years, year-to-date defaults, date-boundary conventions, and leap-day comparison.
-- Refund/net-spending policy, category hierarchy rollups, account selection, and sorting of credits.
+- Refund/net-spending and income policy, detailed rollup presentation/filter behavior, account selection, and sorting of credits. Feature 010 accepts one grouping level, non-assignable parents, and descendant rollups; it does not settle refund treatment.
 - Additional criteria such as payee, memo, note, or amount range.
 - Charts, exports, saved-report configuration/creation-dialog details, and consolidated CAD reporting remain unspecified. The sidebar entry point for saved reports is accepted.

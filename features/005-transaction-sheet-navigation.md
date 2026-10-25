@@ -6,6 +6,8 @@ Implementation: partial, synthetic sheet plus a separate bounded durable import 
 
 ## Accepted requirements
 
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+
 - Portable, responsive desktop UI with a consistent appearance on macOS, Linux, and Windows.
 - Sidebar exposes accounts and setup areas such as accounts and rules.
 - Sheet columns: Date, Payee, Category, Withdrawal, Deposit, Balance. Committed and draft views must be distinguishable.

@@ -6,6 +6,8 @@ Implementation: partial; exact in-memory money, validated allocations, and origi
 
 ## Accepted requirements
 
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+
 - New accounts inherit the document's base/home currency. Creating an account by entering its name in the sidebar adds a special Opening Balance entry dated today with amount zero; the user can edit its date and amount. Opening balances are excluded from income/spending reports.
 - Accounts containing transactions can be closed/archived while retaining history and linked transfers. Deletion is reserved for empty accounts; the treatment of an untouched automatically created zero opening entry must be defined.
 - Allow intentional correction of a mistakenly assigned account currency even after import and commit. This is reassignment, not exchange-rate conversion: for example, an amount entered as CAD 20.00 can be corrected to GBP 20.00. Do not require starting over merely because transactions exist.
