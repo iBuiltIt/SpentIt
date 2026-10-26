@@ -88,3 +88,8 @@ Verification: nine engine groups passed in Debug, Release and ASan/UBSan on the 
 ## Accepted durable-import experiment — 2026-10-25
 
 The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The [headless experiment](../doc/durable-import.md) implements one experimental account, opening-balance confirmation/freeze and exact reconciliation; production account behavior remains incomplete.
+
+
+## Category metadata extension — 2026-10-25
+
+The bounded schema-5 workflow adds optional stable category bindings, allocation identities, retained source associations and explicit field ownership to the existing exact allocation values. Amount/currency/sum invariants are unchanged. Current category paths are resolved separately from retained labels. See [category implementation](../doc/categories.md). This does not implement multi-account transfers, currency reassignment or category reports. The optional [rules preview adapter](../doc/rules-engine.md) preserves dates, amounts, allocation structure and identities while proposing only classification/display changes; durable rule application remains unfinished.

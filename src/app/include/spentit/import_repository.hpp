@@ -1,5 +1,8 @@
 #pragma once
 #include <spentit/import_review.hpp>
+#include <spentit/operation_context.hpp>
+#include <spentit/committed_changes.hpp>
+#include <spentit/category_catalog.hpp>
 #include <functional>
 #include <optional>
 
@@ -15,7 +18,7 @@ struct Account {
     std::int64_t revision;
     bool opening_confirmed;
 };
-enum class BatchState { pending, committed, discarded };
+enum class BatchState { pending, committed, discarded, captured };
 struct BatchInfo {
     std::string id;
     qif::DateOrder profile;
@@ -23,6 +26,7 @@ struct BatchInfo {
     std::int64_t revision;
     std::size_t count;
     bool blocked;
+    bool processing_incomplete=false;
 };
 struct RowView {
     imports::Occurrence identity;
@@ -30,6 +34,7 @@ struct RowView {
     std::optional<imports::DraftRow> draft;
     imports::Decision decision;
     std::vector<imports::Occurrence> candidates;
+    bool review_stale=false;
 };
 struct Receipt {
     std::string operation, batch;
@@ -53,6 +58,14 @@ public:
     // Same identity+bytes+profile is retry; different content is a conflict.
     // Identical pending bytes/profile returns the existing pending batch.
     virtual BatchInfo ingest(std::string_view id, std::string_view bytes, qif::DateOrder) = 0;
+    // Controlled ingestion may durably retain evidence before interpretations.
+    // Existing retained input is returned without implicitly resuming it.
+    virtual BatchInfo ingest_controlled(std::string_view id,std::string_view bytes,qif::DateOrder profile,OperationContext& context) {
+        context.seal(); return ingest(id,bytes,profile);
+    }
+    virtual BatchInfo resume(std::string_view,std::int64_t,OperationContext&) {
+        throw std::logic_error("This document does not support resuming retained evidence");
+    }
     virtual std::string evidence(std::string_view batch) const = 0;
     virtual RowView row(const imports::Occurrence&) const = 0;
     // A repairable source may initially have no draft. Its first validated save
@@ -65,7 +78,26 @@ public:
     // together. operation+batch+revision identifies content frozen at that revision.
     virtual Receipt commit(std::string_view batch, std::int64_t expected_revision, std::string_view operation) = 0;
     virtual std::optional<Receipt> outcome(std::string_view operation) const = 0;
+    // Only a durable, transaction-free read may resolve an uncertain acknowledgement.
+    // Storage overrides this to reject an unclosed/failed rollback transaction.
+    virtual std::optional<Receipt> durable_outcome(std::string_view operation) const { return outcome(operation); }
     virtual std::vector<LedgerRow> ledger(bool projected) const = 0;
+    virtual bool categories_supported() const { return false; }
+    virtual CategoryCatalog category_catalog() const { throw std::logic_error("Categories require a new dataset"); }
+    virtual CategoryPreview preview_category_change(const CategoryRequest&) const { throw std::logic_error("Categories require a new dataset"); }
+    virtual CategoryReceipt apply_category_change(std::string_view,const CategoryRequest&,std::int64_t) { throw std::logic_error("Categories require a new dataset"); }
+    virtual std::optional<CategoryReceipt> category_change_outcome(std::string_view) const { throw std::logic_error("Categories require a new dataset"); }
+    virtual std::vector<CategoryReceipt> category_history(std::string_view) const { throw std::logic_error("Categories require a new dataset"); }
+    virtual CategoryDisplay resolve_category(std::string_view) const { throw std::logic_error("Categories require a new dataset"); }
+    virtual bool committed_changes_supported() const { return false; }
+    virtual CommittedEntry committed_entry(const imports::Occurrence&) const { throw std::logic_error("Committed changes require a new dataset"); }
+    virtual std::vector<CommittedHistoryItem> committed_history(const imports::Occurrence&) const { throw std::logic_error("Committed history is unavailable"); }
+    // Descending operation sequence; before_sequence=0 starts at newest. Limit 1..100.
+    virtual std::vector<CommittedChangeSummary> committed_changes(std::int64_t before_sequence=0,std::size_t limit=50) const { (void)before_sequence;(void)limit;throw std::logic_error("Committed history is unavailable"); }
+    virtual ChangePreview preview_committed_change(const ChangeRequest&) const { throw std::logic_error("Committed changes require a new dataset"); }
+    virtual ChangeReceipt apply_committed_change(std::string_view,const ChangeRequest&,const EntryToken&,std::int64_t) { throw std::logic_error("Committed changes require a new dataset"); }
+    virtual ChangeReceipt apply_committed_change_with_catalog(std::string_view op,const ChangeRequest& request,const EntryToken& token,std::int64_t sequence,std::int64_t catalog_revision) { if(catalog_revision!=0)throw std::logic_error("Catalog-aware changes unavailable");return apply_committed_change(op,request,token,sequence); }
+    virtual std::optional<ChangeReceipt> committed_change_outcome(std::string_view) const { throw std::logic_error("Committed changes require a new dataset"); }
     virtual Money committed_balance() const = 0;
     // No authoritative projection exists while the pending batch is blocked/unresolved.
     virtual std::optional<Money> projected_balance() const = 0;

@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: partial, headless foundation plus optional durable UI experiment. The owner accepted the five policy groups and explicitly authorized implementation on 2026-10-25. The bounded parser, encrypted draft/review/commit commands and ledger reconciliation now exist; a bounded [setup/review UI](../doc/import-ui.md) connects them and new schema-2 datasets support date/split-total repair. The review UI now includes inline editing, parsed source-field copying, simultaneous read-only split previews and literal-filter return navigation; see the [bounded scope and verification](../doc/import-ui.md#inline-editing-and-source-copying). Remaining scope is incomplete. See [implementation and verification](../doc/durable-import.md).
+Implementation: partial, headless foundation plus optional durable UI experiment. The owner accepted the five policy groups and explicitly authorized implementation on 2026-10-25. The bounded parser, encrypted draft/review/commit commands and ledger reconciliation now exist; a bounded [setup/review UI](../doc/import-ui.md) connects them and schemas 2 and 3 support date/split-total repair. The review UI now includes inline editing, parsed source-field copying, simultaneous read-only split previews and literal-filter return navigation; see the [bounded scope and verification](../doc/import-ui.md#inline-editing-and-source-copying). Remaining scope is incomplete. See [implementation and verification](../doc/durable-import.md).
 
 ## Objective and existing evidence
 
@@ -134,7 +134,7 @@ The owner selected explicit repair of malformed dates and split-total mismatches
 
 The implemented schema-2 experiment offers editable interpretations only when **all** errors in that record belong to the selected repair scope, even when the first displayed diagnostic masks later errors. Save validates the supplied date and exact allocation sum, preserving the raw bytes, original parsed amount, first diagnostic and append-only correction history. An invalid original date stays unavailable in original-date evidence; the corrected date belongs to the interpretation. The first saved repair requires a separate Include as new or explicit duplicate choice. Same-original-amount candidates with unavailable original dates are labeled as uncertain; no inferred date or automatic exclusion is introduced. File-level errors and other unresolved records still block the entire batch.
 
-New datasets use experimental schema 2. Schema-1 datasets remain readable and support their existing commands, but repairs require a new dataset; no migration is attempted. Backup preserves the source schema. Older executables reject schema 2. See the [repair contract and verification](../doc/durable-import.md#bounded-record-repair) and [UI workflow](../doc/import-ui.md#record-repair).
+Date/split-total repair was introduced in experimental schema 2 and remains supported in schemas 3–5. Schema-1 datasets remain readable and support their existing commands, but repairs require a new dataset; no migration is attempted. Backup preserves the source schema. Older executables reject schema 2. See the [repair contract and verification](../doc/durable-import.md#bounded-record-repair) and [UI workflow](../doc/import-ui.md#record-repair).
 
 ## Durable workload measurement follow-up — 2026-10-25
 
@@ -149,3 +149,13 @@ The durable ledger now allows multiple saved split previews alongside one active
 ## Filter return follow-up — 2026-10-25
 
 The bounded review UI now restores selection and view after clearing its literal filter, or retains an explicitly inspected result. Clear/Escape respect unsaved-edit navigation and dataset isolation. See [behavior and verification](../doc/import-ui.md#filter-return-navigation--2026-10-25). Broader navigation, cancellation and recovery UX remain incomplete.
+
+
+## Coordinated cancellation and navigation follow-up — 2026-10-25
+
+The [coordinated roadmap](../doc/roadmap.md) authorizes continuing routine implementation with delegated agents. The durable UI now has bounded account/Settings navigation, a resizable/hideable sidebar, guarded Back/Forward, operation phases and commit-outcome recovery. Experimental schema 3 adds retained evidence with explicit Resume/Discard when controlled import processing does not finish; captured imports contribute no financial rows or authoritative projection. Schemas 1 and 2 remain readable without automatic migration. See the [storage contract](../doc/durable-import.md#retained-evidence-and-cooperative-cancellation--2026-10-25) and [UI follow-up](../doc/import-ui.md#coordinated-navigation-and-operation-recovery--2026-10-25). The implementation and verification records distinguish this bounded scope from remaining product work. This does not implement multi-account navigation, committed editing, rules, transfers, general search or reports.
+
+
+## Subsequent bounded extensions — 2026-10-25
+
+The original milestone deferrals above describe its initial scope. Subsequent schema-4 ordinary committed correction/removal/Undo is recorded in [feature 011](011-committed-editing-and-reversal.md), and schema-5 category management/assignments in [feature 010](010-categories-and-selection.md). New datasets use schema 5; schemas 1–4 remain readable without migration. The optional [rules evaluator/preview adapter](../doc/rules-engine.md) is independently verified, but durable rules editing/application remains unimplemented. General search, transfers, reports and multi-account documents are still deferred.

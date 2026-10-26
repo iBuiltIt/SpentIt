@@ -4,10 +4,11 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 ApplicationWindow {
     id: window
-    width: 1220; height: 850; minimumWidth:1100; minimumHeight:750; visible: true
+    width: 1440; height: 850; minimumWidth:1100; minimumHeight:750; visible: true
     title: "SpentIt — durable QIF experiment (synthetic data only)"
     property var s: workflow.state
     property var selected: s.selected || ({})
+    property bool processingIncomplete: !!s.pending && !!s.pending.processingIncomplete
     // View state belongs to occurrence identities, never recycled delegates.
     property var splitViews: ({})
     function splitKey(record) { return JSON.stringify([record.batch, record.ordinal]) }
@@ -27,12 +28,78 @@ ApplicationWindow {
             ledger.contentY+=saved.offset
         } else ledger.positionViewAtBeginning()
     }
+    // Navigation is local to this document; pages stay alive to retain ledger view state.
+    property string currentPage: "ledger"
+    property var navigation: ["ledger"]
+    property int navigationIndex: 0
+    property bool sidebarVisible: true
+    function resetNavigation() {
+        currentPage="ledger"; navigation=["ledger"]; navigationIndex=0
+    }
+    function navigate(page) {
+        if(workflow.busy || !s.active || page===currentPage) return
+        guard(function(){
+            let entries=navigation.slice(0,navigationIndex+1)
+            entries.push(page);navigation=entries;navigationIndex=entries.length-1;currentPage=page
+        })
+    }
+    function revealHistoryOperation(operation) {
+        let entries=s.entryHistory||[]
+        for(let i=0;i<entries.length;i++) if(entries[i].operation===operation) {
+            entryHistoryList.positionViewAtIndex(i,ListView.Contain);return
+        }
+    }
+    function traverseNavigation(delta) {
+        let destination=navigationIndex+delta
+        if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
+        guard(function(){navigationIndex=destination;currentPage=navigation[destination]})
+    }
+    Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
+    Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
+    Shortcut {sequences:[StandardKey.Forward];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(1)}
+    property bool payeeTouched: false
+    property bool memoTouched: false
+    property bool categoryDirty: false
+    property string categoryAction: ""
+    property string categoryFormId: ""
+    property string categoryFormRevision: ""
+    property int pickerIndex: -1
+    function loadCategoryForm() {
+        let c=s.categorySelected||{}
+        categoryFormId=c.id||"";categoryFormRevision=s.catalogRevision||""
+        categoryName.text=c.name||"";categoryParent.currentIndex=0
+        for(let i=0;i<categoryParent.model.length;i++) if(categoryParent.model[i].id===(c.parent||""))categoryParent.currentIndex=i
+        categoryKind.currentIndex=c.group?1:0;categoryAction="";categoryDirty=false
+    }
+    function newCategory() {
+        categoryFormId="";categoryFormRevision=s.catalogRevision||"";categoryName.clear();categoryParent.currentIndex=0;categoryKind.currentIndex=0;categoryAction="create";categoryDirty=true
+    }
+    function categoryParents() {
+        return [{id:"",path:"Standalone / no parent"}].concat((s.categories||[]).filter(function(c){return c.group && !c.archived && !c.deleted}))
+    }
+    function saveCategoryForm(action) {
+        workflow.command("preview_category",{action:action||categoryAction,id:categoryFormId,revision:categoryFormRevision,
+            name:categoryName.text,parent:categoryKind.currentIndex===1?"":categoryParent.currentIndex>=0?categoryParent.model[categoryParent.currentIndex].id:"",group:categoryKind.currentIndex===1})
+    }
+    function openCategoryPicker(index) {
+        pickerIndex=index;let row=splitModel.get(index);unmappedCategory.text=row.category;categorySearch.clear();categoryPicker.open()
+    }
+    function chooseCategory(id,path) {
+        if(pickerIndex<0 || pickerIndex>=splitModel.count)return
+        splitModel.setProperty(pickerIndex,"category",path)
+        splitModel.setProperty(pickerIndex,"categoryId",id)
+        splitModel.setProperty(pickerIndex,"bindingRevision",id?(s.catalogRevision||""):"")
+        splitModel.setProperty(pickerIndex,"categoryDisplay",id?path:path?"Unmapped: "+path:"Uncategorized")
+        splitModel.setProperty(pickerIndex,"categoryTouched",true);dirty=true;categoryPicker.close()
+    }
+    property bool committedEditing: false
+    property bool editEnabled: !!selected.editable || (committedEditing && !!selected.canCorrect)
     property bool dirty: false
     property var pendingAction: null
     property bool allowClose: false
     property bool closingRequested: false
     property bool settingUp: false
-    function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else action() }
+    function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else if(categoryDirty) {pendingAction=action;categoryUnsaved.open()} else action() }
     function loadEditor() {
         let d=selected.draft
         splitModel.clear()
@@ -40,19 +107,21 @@ ApplicationWindow {
             editDate.text=d.date; editPayee.text=d.payee; editMemo.text=d.memo; editTotal.text=d.total
             for(let a of d.splits) splitModel.append(a)
         }
-        dirty=false
+        dirty=false;committedEditing=false;payeeTouched=false;memoTouched=false
     }
     function inspectRecord(batch, ordinal) { guard(function(){workflow.command("inspect",{batch:batch,ordinal:ordinal})}) }
     function copySource(field) {
-        if (!selected.editable || workflow.busy) return
+        if (!editEnabled || workflow.busy) return
         if (field.split >= 0) {
             if (field.split >= splitModel.count) return
             splitModel.setProperty(field.split, field.field, field.value)
+            if(field.field==="category") {splitModel.setProperty(field.split,"categoryId","");splitModel.setProperty(field.split,"bindingRevision","");splitModel.setProperty(field.split,"categoryDisplay",field.value?"Unmapped: "+field.value:"Uncategorized");splitModel.setProperty(field.split,"categoryTouched",true)}
+            if(field.field==="memo")splitModel.setProperty(field.split,"memoTouched",true)
         } else {
             switch (field.field) {
             case "date": editDate.text=field.value; break
-            case "payee": editPayee.text=field.value; break
-            case "memo": editMemo.text=field.value; break
+            case "payee": editPayee.text=field.value;payeeTouched=true; break
+            case "memo": editMemo.text=field.value;memoTouched=true; break
             case "total": editTotal.text=field.value; break
             default: return
             }
@@ -61,8 +130,8 @@ ApplicationWindow {
     }
     function saveEditor() {
         let splits=[]
-        for(let i=0;i<splitModel.count;i++) {let a=splitModel.get(i);splits.push({category:a.category,memo:a.memo,amount:a.amount})}
-        workflow.command("save", {date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits})
+        for(let i=0;i<splitModel.count;i++) {let a=splitModel.get(i);splits.push({category:a.category,memo:a.memo,amount:a.amount,categoryId:a.categoryId||"",bindingRevision:a.bindingRevision||"",allocationId:a.allocationId||"",categoryTouched:!!a.categoryTouched,memoTouched:!!a.memoTouched})}
+        workflow.command(committedEditing?"preview_change":"save", {kind:"correct",date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits,payeeTouched:payeeTouched,memoTouched:memoTouched})
     }
     onClosing: function(close) {
         if(allowClose) return
@@ -79,8 +148,9 @@ ApplicationWindow {
             ledger.currentIndex=workflow.selectedRowIndex()
             if (action==="inspect" || action==="import")
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
-            if(!success && action==="save") {pendingAction=null;projected.checked=s.mode!=="Committed"}
+            if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
+            if(!s.active) {changePreview.close();categoryChangePreview.close();categoryPicker.close();pendingAction=null;dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -99,15 +169,20 @@ ApplicationWindow {
             if(success && action==="inspect" && searchReturn && workflow.selectedRowIndex()>=0)
                 searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
-                searchReturn=null;pendingSearch=null;appliedFilter="";search.clear()
+                searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
             }
             if(success) {
                 projected.checked=s.mode!=="Committed"
-                if(action==="save") {
+                if(action==="preview_category") categoryChangePreview.open()
+                if(action==="category_select" || action==="apply_category")loadCategoryForm()
+                if(action==="apply_category") {categoryChangePreview.close();categoryDirty=false;if(!dirty)loadEditor();if(pendingAction){let next=pendingAction;pendingAction=null;next()}}
+                if(action==="preview_change") changePreview.open()
+                if(action==="apply_change") changePreview.close()
+                if(["inspect","entry_history","import","resume","save","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change"].indexOf(action)>=0) loadEditor()
+                if(action==="save" || action==="apply_change") {
                     dirty=false
                     if(pendingAction) {let next=pendingAction;pendingAction=null;next()}
                 }
-                if(action!=="query" && action!=="backup") loadEditor()
                 if(action==="create" || action==="unlock") {password.text="";confirmation.text="";unlockPassword.text=""}
                 if(action==="close") {if(closingRequested){allowClose=true;Qt.callLater(function(){window.close()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
@@ -122,11 +197,11 @@ ApplicationWindow {
     FileDialog { id:importDialog; title:"Import synthetic QIF"; nameFilters:["QIF files (*.qif)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),profile:profile.currentText}) }
     FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save backup / restored copy to a NEW file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
     Dialog {
-        id:unsaved;objectName:"unsavedDialog"; title:"Unsaved draft edit"; modal:true; anchors.centerIn:parent
+        id:unsaved;objectName:"unsavedDialog"; title:committedEditing?"Unsaved committed correction":"Unsaved draft edit"; modal:true; anchors.centerIn:parent
         ColumnLayout {
             Label {textFormat:Text.PlainText;text:"Save the edit, discard its changes, or stay here?"}
             RowLayout {
-                Button {objectName:"guardSave";text:"Save";onClicked:{unsaved.close();saveEditor()}}
+                Button {objectName:"guardSave";text:committedEditing?"Review correction":"Save";onClicked:{unsaved.close();saveEditor()}}
                 Button {objectName:"guardDiscard";text:"Discard";onClicked:{unsaved.close();loadEditor();let next=pendingAction;pendingAction=null;if(next)next()}}
                 Button {objectName:"guardStay";text:"Stay";onClicked:{unsaved.close();pendingAction=null;projected.checked=s.mode!=="Committed"}}
             }
@@ -134,9 +209,89 @@ ApplicationWindow {
         onRejected:{pendingAction=null;projected.checked=s.mode!=="Committed"}
     }
     Dialog {
-        id:discardDialog;title:"Discard pending import?";modal:true;anchors.centerIn:parent
+        id:changePreview;objectName:"committedChangePreview";modal:true;anchors.centerIn:parent
+        width:Math.min(window.width-48,820);height:Math.min(window.height-80,650)
+        title:(s.changePreview||{}).title||"Review committed change"
+        onRejected:{pendingAction=null;workflow.command("cancel_change")}
+        ColumnLayout {
+            anchors.fill:parent
+            Label {textFormat:Text.PlainText;text:"This changes the current ledger interpretation. Original evidence and earlier history are retained; no new bank payment is created.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {objectName:"changeBalanceImpact";textFormat:Text.PlainText;text:(s.changePreview||{}).balanceImpact||"";font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ScrollView {
+                id:previewScroll;Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth
+                ColumnLayout {
+                    width:previewScroll.availableWidth
+                    Repeater {
+                        model:(s.changePreview||{}).snapshots||[]
+                        ColumnLayout {
+                            required property var modelData
+                            Layout.fillWidth:true
+                            Label {textFormat:Text.PlainText;text:modelData.label;font.bold:true}
+                            Label {textFormat:Text.PlainText;text:modelData.summary;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                            ListView {
+                                id:previewAllocations;model:modelData.splits;clip:true;reuseItems:true
+                                Layout.fillWidth:true;Layout.preferredHeight:Math.min(150,contentHeight)
+                                ScrollBar.vertical:ScrollBar {}
+                                delegate:Label {required property var modelData;width:previewAllocations.width;textFormat:Text.PlainText;text:modelData.category+" · "+modelData.memo+" · "+modelData.amount;wrapMode:Text.Wrap}
+                            }
+                        }
+                    }
+                }
+            }
+            Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Button {objectName:"applyCommittedChange";text:(s.changePreview||{}).applyLabel||"Apply";enabled:!workflow.busy && !!(s.changePreview||{}).id;onClicked:workflow.command("apply_change",{preview:s.changePreview.id})}
+                Button {objectName:"cancelCommittedChange";text:"Cancel";enabled:!workflow.busy;onClicked:{changePreview.close();pendingAction=null;workflow.command("cancel_change")}}
+            }
+        }
+    }
+    Dialog {
+        id:categoryUnsaved;objectName:"categoryUnsavedDialog";title:"Unsaved category edit";modal:true;anchors.centerIn:parent
+        standardButtons:Dialog.NoButton
+        RowLayout {
+            Button {objectName:"categoryGuardSave";text:"Review save";onClicked:{categoryUnsaved.close();saveCategoryForm()}}
+            Button {objectName:"categoryGuardDiscard";text:"Discard";onClicked:{categoryUnsaved.close();loadCategoryForm();let next=pendingAction;pendingAction=null;if(next)next()}}
+            Button {objectName:"categoryGuardStay";text:"Stay";onClicked:{categoryUnsaved.close();pendingAction=null}}
+        }
+        onRejected:pendingAction=null
+    }
+    Dialog {
+        id:categoryChangePreview;objectName:"categoryChangePreview";title:"Review category change";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,680)
+        onRejected:{pendingAction=null;workflow.command("cancel_category_preview")}
+        ColumnLayout {
+            width:categoryChangePreview.availableWidth
+            Label {textFormat:Text.PlainText;text:(s.categoryPreview||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:"Renaming or moving changes the current category names and grouping used for past transactions. Original source and recorded history remain unchanged. Archiving hides choices for new assignments and retains existing assignments.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;color:"#a02020"}
+            RowLayout {
+                Button {objectName:"applyCategoryChange";text:"Apply category change";enabled:!workflow.busy && !!(s.categoryPreview||{}).id;onClicked:workflow.command("apply_category",{preview:s.categoryPreview.id})}
+                Button {objectName:"cancelCategoryChange";text:"Cancel";enabled:!workflow.busy;onClicked:{categoryChangePreview.close();pendingAction=null;workflow.command("cancel_category_preview")}}
+            }
+        }
+    }
+    Dialog {
+        id:categoryPicker;objectName:"categoryPicker";title:"Choose allocation category";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700);height:Math.min(window.height-80,650)
+        ColumnLayout {
+            anchors.fill:parent
+            Label {textFormat:Text.PlainText;text:pickerIndex>=0 && pickerIndex<splitModel.count?"Current: "+splitModel.get(pickerIndex).categoryDisplay:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            TextField {id:categorySearch;objectName:"categoryPickerSearch";placeholderText:"Search parent or leaf name";Layout.fillWidth:true;maximumLength:256;Accessible.name:"Category search"}
+            ListView {
+                id:pickerChoices;Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:true
+                model:(s.categories||[]).filter(function(c){return !c.deleted && !c.archived && c.path.toLowerCase().indexOf(categorySearch.text.toLowerCase())>=0})
+                ScrollBar.vertical:ScrollBar {}
+                delegate:Button {required property var modelData;width:pickerChoices.width;text:modelData.path+(modelData.group?" (group)":"");enabled:modelData.assignable;objectName:"pickCategory_"+modelData.id;onClicked:chooseCategory(modelData.id,modelData.path)}
+            }
+            Button {objectName:"chooseUncategorized";text:"Uncategorized";onClicked:chooseCategory("","")}
+            TextField {id:unmappedCategory;objectName:"unmappedCategoryText";placeholderText:"Explicit unmapped classification text";Layout.fillWidth:true;Accessible.name:"Unmapped category text"}
+            Button {objectName:"chooseUnmapped";text:"Keep as unmapped text";enabled:unmappedCategory.text.length>0;onClicked:chooseCategory("",unmappedCategory.text)}
+            Label {text:"Groups cannot receive allocations. Account transfer destinations are unavailable in this milestone.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Button {text:"Cancel";onClicked:categoryPicker.close()}
+        }
+    }
+    Dialog {
+        id:discardDialog;objectName:"discardImportDialog";width:Math.min(window.width-48,640);title:"Discard pending import?";modal:true;anchors.centerIn:parent
         standardButtons:Dialog.Ok|Dialog.Cancel
-        Label {textFormat:Text.PlainText;text:"Remove the draft projection. Encrypted source evidence and history are retained."}
+        Label {width:discardDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:processingIncomplete?"Discard this incomplete import. Encrypted source evidence and history are retained.":"Remove the draft projection. Encrypted source evidence and history are retained."}
         onAccepted:workflow.command("discard")
     }
     Dialog {
@@ -148,9 +303,18 @@ ApplicationWindow {
     ColumnLayout {
         anchors.fill:parent;anchors.margins:12;spacing:8
         RowLayout {
-            Label {textFormat:Text.PlainText;text:s.active ? s.name+" · "+s.currency : "Dataset setup and unlocking";font.pixelSize:20;Layout.fillWidth:true}
+            Button {objectName:"sidebarToggle";text:sidebarVisible?"Hide sidebar":"Show sidebar";visible:!!s.active;onClicked:sidebarVisible=!sidebarVisible;Accessible.name:text+" (Ctrl+Shift+B)"}
+            Button {objectName:"navigationBack";text:"Back";visible:!!s.active;enabled:!workflow.busy && navigationIndex>0;onClicked:traverseNavigation(-1)}
+            Button {objectName:"navigationForward";text:"Forward";visible:!!s.active;enabled:!workflow.busy && navigationIndex+1<navigation.length;onClicked:traverseNavigation(1)}
+            Label {textFormat:Text.PlainText;text:s.active ? s.name+" · "+s.currency : "Dataset setup and unlocking";font.pixelSize:20;elide:Text.ElideRight;Layout.fillWidth:true}
             BusyIndicator {running:workflow.busy;visible:running;implicitHeight:30}
-            Button {text:"Settings / close dataset";visible:!!s.active;enabled:!workflow.busy;onClicked:guard(function(){workflow.command("close")})}
+            Button {objectName:"settingsNavigation";text:"Settings";visible:!!s.active;enabled:!workflow.busy;onClicked:navigate("settings")}
+        }
+        RowLayout {
+            visible:workflow.busy;Layout.fillWidth:true
+            Label {objectName:"operationPhase";textFormat:Text.PlainText;text:workflow.phase;Layout.fillWidth:true;wrapMode:Text.Wrap;Accessible.name:text}
+            Label {text:"Cancellation requested…";visible:workflow.cancellationRequested}
+            Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
         }
         Label {textFormat:Text.PlainText;text:"Experimental · synthetic inputs only · no password reset";color:"#855100"}
         Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
@@ -190,11 +354,141 @@ ApplicationWindow {
                 }
             }
         }
-        ColumnLayout {
-            visible:!!s.active;Layout.fillWidth:true;Layout.fillHeight:true;enabled:!workflow.busy
+        SplitView {
+            id:shell;objectName:"durableShell"
+            visible:!!s.active;Layout.fillWidth:true;Layout.fillHeight:true
+            orientation:Qt.Horizontal
+            Pane {
+                id:sidebar;objectName:"accountSidebar";visible:sidebarVisible
+                SplitView.preferredWidth:200;SplitView.minimumWidth:140;SplitView.maximumWidth:Math.max(140,Math.min(360,shell.width*0.35))
+                ColumnLayout {
+                    anchors.fill:parent
+                    Label {text:"Accounts";font.bold:true}
+                    Button {
+                        objectName:"accountNavigation";Layout.fillWidth:true
+                        text:s.name||"";highlighted:currentPage==="ledger";enabled:!workflow.busy
+                        contentItem:Label {text:parent.text;color:currentPage==="ledger"?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
+                        Accessible.name:"Open account "+(s.name||"")
+                        onClicked:navigate("ledger")
+                    }
+                    Label {textFormat:Text.PlainText;text:(s.mode==="Projected"?"Projected":"Committed")+" balance";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                    Label {textFormat:Text.PlainText;text:(s.currency||"")+" "+(s.mode==="Projected"?(s.projected||"Unavailable"):(s.committed||""));Layout.fillWidth:true;wrapMode:Text.Wrap;font.bold:true}
+                    Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
+                    Button {objectName:"historyNavigation";text:"Committed changes";Layout.fillWidth:true;visible:!!s.committedChangesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("history");workflow.command("history")})}
+                    Item {Layout.fillHeight:true}
+                    Button {objectName:"sidebarSettings";text:"Settings";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="settings";onClicked:navigate("settings")}
+                }
+            }
+            Item {
+                SplitView.fillWidth:true
+                ScrollView {
+                    id:categoryPage;objectName:"categoryPage";anchors.fill:parent;visible:currentPage==="categories";contentWidth:availableWidth;enabled:!workflow.busy
+                    ColumnLayout {
+                        width:categoryPage.availableWidth;spacing:10
+                        Label {text:"Categories";font.pixelSize:20}
+                        Label {text:"Create your own categories. Groups contain leaves; standalone leaves are also assignable. No starter names are added automatically.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        RowLayout {
+                            TextField {id:catalogSearch;placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256}
+                            CheckBox {id:showArchivedCategories;text:"Show archived / deleted"}
+                            Button {objectName:"newCategory";text:"New category";onClicked:guard(newCategory)}
+                        }
+                        ListView {
+                            id:catalogList;objectName:"catalogList";Layout.fillWidth:true;Layout.preferredHeight:220;clip:true;reuseItems:true
+                            model:(s.categories||[]).filter(function(c){return (showArchivedCategories.checked || (!c.archived && !c.deleted)) && c.path.toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0})
+                            ScrollBar.vertical:ScrollBar {}
+                            delegate:Button {required property var modelData;width:catalogList.width;text:modelData.path+(modelData.group?" (group)":"")+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"");objectName:"editCategory_"+modelData.id;onClicked:guard(function(){workflow.command("category_select",{id:modelData.id})})}
+                        }
+                        Label {textFormat:Text.PlainText;text:(s.categorySelected||{}).path||"New category";font.bold:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        RowLayout {
+                            visible:categoryFormId.length>0 && !(s.categorySelected||{}).deleted
+                            Button {objectName:"renameCategory";text:"Rename";enabled:!categoryDirty;onClicked:categoryAction="rename"}
+                            Button {objectName:"moveCategory";text:"Move";visible:!(s.categorySelected||{}).group;enabled:!categoryDirty;onClicked:categoryAction="move"}
+                            Button {objectName:"archiveCategory";text:(s.categorySelected||{}).ownArchived?"Unarchive":"Archive";enabled:!categoryDirty;onClicked:saveCategoryForm((s.categorySelected||{}).ownArchived?"unarchive":"archive")}
+                            Button {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryDirty;onClicked:saveCategoryForm("delete")}
+                        }
+                        TextField {id:categoryName;objectName:"categoryName";visible:categoryAction==="create" || categoryAction==="rename";placeholderText:"Category name";Layout.fillWidth:true;onTextEdited:categoryDirty=true;Accessible.name:"Category name"}
+                        ComboBox {id:categoryKind;objectName:"categoryKind";visible:categoryAction==="create";model:["Assignable leaf","Non-assignable group"];onActivated:categoryDirty=true}
+                        ComboBox {id:categoryParent;objectName:"categoryParent";visible:categoryAction==="move" || (categoryAction==="create" && categoryKind.currentIndex===0);model:categoryParents();textRole:"path";Layout.fillWidth:true;onActivated:categoryDirty=true}
+                        RowLayout {
+                            visible:categoryAction.length>0
+                            Button {objectName:"saveCategory";text:"Review category save";enabled:categoryDirty;onClicked:saveCategoryForm()}
+                            Button {objectName:"cancelCategoryEdit";text:"Cancel edit";onClicked:loadCategoryForm()}
+                        }
+                        Label {textFormat:Text.PlainText;text:(s.categoryReceipt||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {text:"Definition history";visible:(s.categoryHistory||[]).length>0;font.bold:true}
+                        ListView {
+                            id:categoryAudit;model:s.categoryHistory||[];Layout.fillWidth:true;Layout.preferredHeight:Math.min(180,contentHeight);clip:true;reuseItems:true;ScrollBar.vertical:ScrollBar {}
+                            delegate:Label {required property string modelData;width:categoryAudit.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
+                        }
+                    }
+                }
+                ScrollView {
+                    id:historyPage;objectName:"committedHistoryPage";anchors.fill:parent;visible:currentPage==="history";contentWidth:availableWidth;enabled:!workflow.busy
+                    ColumnLayout {
+                        width:historyPage.availableWidth;spacing:10
+                        Label {text:"Committed changes";font.pixelSize:20}
+                        Label {text:"Corrections, removals and Undo operations. Balances below describe each operation when it was applied.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Button {text:"Refresh history";onClicked:workflow.command("history")}
+                        Label {text:"No committed corrections or removals yet.";visible:(s.history||[]).length===0}
+                        ListView {
+                            id:historyIndex;objectName:"committedHistoryIndex";model:s.history||[];clip:true;reuseItems:true
+                            Layout.fillWidth:true;Layout.preferredHeight:Math.min(200,contentHeight)
+                            ScrollBar.vertical:ScrollBar {}
+                            delegate:RowLayout {
+                                required property var modelData
+                                width:historyIndex.width
+                                Label {textFormat:Text.PlainText;text:modelData.summary;Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
+                                Button {text:"Inspect history";onClicked:workflow.command("entry_history",{batch:modelData.batch,ordinal:modelData.ordinal})}
+                            }
+                        }
+                        Button {objectName:"moreCommittedHistory";text:"Older changes";visible:!!s.historyMore;onClicked:workflow.command("history",{before:s.historyCursor,append:true})}
+                        Label {textFormat:Text.PlainText;text:s.historyTitle||"";font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Button {text:"Inspect current record and source";visible:!!selected.committed;onClicked:navigate("ledger")}
+                        ListView {
+                            id:entryHistoryList;objectName:"entryHistoryList";model:s.entryHistory||[];clip:true;reuseItems:true;spacing:8
+                            Layout.fillWidth:true;Layout.preferredHeight:Math.min(480,contentHeight)
+                            ScrollBar.vertical:ScrollBar {}
+                            delegate:Frame {
+                                required property var modelData
+                                width:entryHistoryList.width
+                                contentItem:ColumnLayout {
+                                    Label {textFormat:Text.PlainText;text:modelData.summary;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                                    ScrollView {
+                                        Layout.fillWidth:true;Layout.preferredHeight:150;contentWidth:availableWidth
+                                        TextArea {text:modelData.details;readOnly:true;selectByMouse:true;textFormat:TextEdit.PlainText;wrapMode:TextEdit.Wrap}
+                                    }
+                                    Label {textFormat:Text.PlainText;text:modelData.undoReason;visible:!modelData.undoEligible;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                                    Button {objectName:"undo_"+modelData.operation;text:"Review Undo…";enabled:modelData.undoEligible;onClicked:workflow.command("preview_change",{kind:"undo",operation:modelData.operation,batch:modelData.batch,ordinal:modelData.ordinal})}
+                                }
+                            }
+                        }
+                    }
+                }
+                ScrollView {
+                    id:activeSettings;objectName:"activeSettings";anchors.fill:parent;visible:currentPage==="settings";enabled:!workflow.busy;contentWidth:availableWidth
+                    ColumnLayout {
+                        width:activeSettings.availableWidth;spacing:12
+                        Label {text:"Dataset settings";font.pixelSize:20}
+                        Label {text:"Active dataset";font.bold:true}
+                        Label {textFormat:Text.PlainText;text:s.path||"";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere}
+                        Label {text:"Close this dataset before opening another. Saved drafts and committed records remain in the dataset.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        Button {objectName:"closeDataset";text:"Close dataset / choose another…";onClicked:guard(function(){workflow.command("close")})}
+                        Label {text:"Backup and recovery";font.bold:true}
+                        Label {text:"Save a validated backup or working copy to a new file. To restore, close this dataset, open the backup, and save a working copy to a new location.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        Button {objectName:"settingsBackup";text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
+                        Button {objectName:"returnToLedger";text:"Return to account";onClicked:navigate("ledger")}
+                    }
+                }
+                ScrollView {
+                    id:ledgerScroll;anchors.fill:parent;visible:currentPage==="ledger";clip:true
+                    // Keep controls reachable in a narrow window or with a wide sidebar.
+                    contentWidth:Math.max(1080,availableWidth);contentHeight:availableHeight
+                    ColumnLayout {
+            id:ledgerPage;objectName:"ledgerPage"
+            width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight;enabled:!workflow.busy
             Label {textFormat:Text.PlainText;text:s.path || "";elide:Text.ElideMiddle;Layout.fillWidth:true}
             RowLayout {
-                Label {textFormat:Text.PlainText;text:"Committed: "+(s.committed||"")+"   Projected: "+(s.projected||"");Layout.fillWidth:true}
+                Label {textFormat:Text.PlainText;text:"Committed: "+(s.committed||"")+"   Projected: "+(s.projected||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
                 ComboBox {id:profile;Layout.preferredWidth:200;model:["Choose date order","DMY","MDY"];Accessible.name:"QIF date order"}
                 Button {text:"Import QIF…";enabled:profile.currentIndex>0 && !s.pending;onClicked:guard(function(){importDialog.open()})}
                 Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
@@ -209,21 +503,28 @@ ApplicationWindow {
             RowLayout {
                 ComboBox {id:batchPicker;model:s.batches||[];textRole:"id";Layout.preferredWidth:240;Accessible.name:"Import batch"}
                 SpinBox {id:recordNumber;from:1;to:batchPicker.currentIndex>=0?Math.max(1,batchPicker.model[batchPicker.currentIndex].count):1;editable:true;Accessible.name:"Source record number"}
-                Button {text:"Review record";enabled:batchPicker.currentIndex>=0 && batchPicker.model[batchPicker.currentIndex].count>0;onClicked:inspectRecord(batchPicker.model[batchPicker.currentIndex].id,recordNumber.value-1)}
-                Button {text:"Source file";enabled:batchPicker.currentIndex>=0;onClicked:guard(function(){workflow.command("evidence",{batch:batchPicker.model[batchPicker.currentIndex].id});sourceToggle.checked=true})}
-                Label {textFormat:Text.PlainText;text:batchPicker.currentIndex>=0?batchPicker.model[batchPicker.currentIndex].status:"No imports"}
+                Button {objectName:"reviewRecord";text:"Review record";enabled:batchPicker.currentIndex>=0 && batchPicker.model[batchPicker.currentIndex].count>0 && !batchPicker.model[batchPicker.currentIndex].processingIncomplete;onClicked:inspectRecord(batchPicker.model[batchPicker.currentIndex].id,recordNumber.value-1)}
+                Button {objectName:"viewSourceFile";text:"Source file";enabled:batchPicker.currentIndex>=0;onClicked:guard(function(){workflow.command("evidence",{batch:batchPicker.model[batchPicker.currentIndex].id});sourceToggle.checked=true})}
+                Label {visible:!processingIncomplete;textFormat:Text.PlainText;text:batchPicker.currentIndex>=0?batchPicker.model[batchPicker.currentIndex].status:"No imports";Layout.minimumWidth:0;elide:Text.ElideRight}
                 Item {Layout.fillWidth:true}
-                Button {text:"Discard batch…";enabled:!!s.pending;onClicked:guard(function(){discardDialog.open()})}
-                Button {text:"Commit batch…";enabled:!!s.pending && !!s.projectionAvailable && !!s.confirmed;onClicked:guard(function(){commitDialog.open()})}
+                Button {objectName:"resumeImport";text:"Resume import";visible:processingIncomplete;onClicked:guard(function(){workflow.command("resume",{batch:s.pending.id,revision:s.pending.revision})})}
+                Button {objectName:"discardImport";text:"Discard batch…";enabled:!!s.pending;onClicked:guard(function(){discardDialog.open()})}
+                Button {objectName:"commitImport";text:"Commit batch…";enabled:!!s.pending && !processingIncomplete && !!s.projectionAvailable && !!s.confirmed;onClicked:guard(function(){commitDialog.open()})}
             }
-            Label {textFormat:Text.PlainText;visible:!!s.pending && !!s.pending.blocked;text:s.pending && s.pending.blocked ? "BLOCKED — no partial commit. Inspect each record. Date and split-total repairs are available in new datasets; other errors require discard/reimport.\n"+(s.pending.diagnostics||""):"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;maximumLineCount:5;elide:Text.ElideRight}
+            Label {
+                objectName:"incompleteImportNotice";visible:processingIncomplete;Layout.fillWidth:true;wrapMode:Text.Wrap
+                textFormat:Text.PlainText;color:"#855100"
+                text:processingIncomplete?"Import processing is incomplete. Original source evidence is saved ("+s.pending.count+" parsed records). No draft amounts have been added and the projected balance is unavailable. Resume to prepare the draft for review, inspect the source file, or discard this import while retaining its evidence.":""
+            }
+            Label {textFormat:Text.PlainText;visible:!!s.pending && !!s.pending.blocked && !processingIncomplete;text:s.pending && s.pending.blocked ? "BLOCKED — no partial commit. Inspect each record. Date and split-total repairs are available in new datasets; other errors require discard/reimport.\n"+(s.pending.diagnostics||""):"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;maximumLineCount:5;elide:Text.ElideRight}
+            Label {objectName:"committedChangeReceipt";textFormat:Text.PlainText;text:(s.changeReceipt||{}).summary||"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? "Committed "+s.receipt.operation+" · included "+s.receipt.included+", excluded "+s.receipt.excluded+" · "+s.receipt.before+" + ("+s.receipt.change+") = "+s.receipt.after:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 CheckBox {id:projected;checked:true;text:"Projected ledger";onClicked:guard(query)}
                 TextField {id:search;objectName:"ledgerSearch";placeholderText:"Literal whole-record filter";maximumLength:256;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger filter"}
                 Button {objectName:"applyFilter";text:"Apply filter";onClicked:guard(query)}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
-                Label {textFormat:Text.PlainText;text:"Mode: "+(s.mode||"")}
+                Label {textFormat:Text.PlainText;text:"Mode: "+(s.mode||"");Layout.minimumWidth:0;elide:Text.ElideRight}
             }
             RowLayout {
                 Repeater {model:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
@@ -273,7 +574,7 @@ ApplicationWindow {
                         delegate:Row {
                             required property var modelData
                             width:splitPreview.width;height:30;spacing:8
-                            Label {textFormat:Text.PlainText;text:modelData.category || "Uncategorized";width:parent.width*0.25;elide:Text.ElideRight}
+                            Label {textFormat:Text.PlainText;text:s.categoriesSupported?modelData.categoryDisplay:(modelData.category || "Uncategorized");width:parent.width*0.25;elide:Text.ElideRight}
                             Label {textFormat:Text.PlainText;text:modelData.memo;width:parent.width*0.5;elide:Text.ElideRight}
                             Label {textFormat:Text.PlainText;text:modelData.amount;width:parent.width*0.2;horizontalAlignment:Text.AlignRight}
                         }
@@ -286,6 +587,9 @@ ApplicationWindow {
             Item {
                 id:reviewPanel;objectName:"reviewPanel"
                 Layout.fillWidth:true;Layout.preferredHeight:editor.visible && !editor.inlineRow?editor.height:0
+            }
+                    }
+                }
             }
         }
     }
@@ -302,15 +606,22 @@ ApplicationWindow {
             anchors.fill:parent;contentWidth:availableWidth
             ColumnLayout {
                 width:editor.availableWidth
-                Label {textFormat:Text.PlainText;text:(selected.ordinal===undefined?"Source file":"Record "+(selected.ordinal+1))+" · "+(selected.batch||"")+" · "+(selected.editable?"Durable draft editor":"Read only")+" · original "+(selected.original||"");wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {textFormat:Text.PlainText;text:(selected.ordinal===undefined?"Source file":"Record "+(selected.ordinal+1))+" · "+(selected.batch||"")+" · "+(committedEditing?"Committed correction":selected.removed?"Removed record":selected.editable?"Durable draft editor":"Read only")+" · original "+(selected.original||"");wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.diagnostic||"";color:"#a02020";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {textFormat:Text.PlainText;text:selected.committed && !s.committedChangesSupported?"Committed changes require a new schema-4 experimental dataset. This dataset has not been migrated.":"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                RowLayout {
+                    visible:!!selected.committed && !committedEditing
+                    Button {objectName:"editCommitted";text:"Edit committed record";visible:!!selected.canCorrect;onClicked:committedEditing=true}
+                    Button {objectName:"removeCommitted";text:"Remove transaction…";visible:!!selected.canCorrect;onClicked:workflow.command("preview_change",{kind:"remove"})}
+                    Button {objectName:"showEntryHistory";text:"History";visible:!!s.committedChangesSupported;onClicked:guard(function(){navigate("history");workflow.command("entry_history",{batch:selected.batch,ordinal:selected.ordinal})})}
+                }
                 RowLayout {
                     visible:!!selected.draft
-                    TextField {id:editDate;objectName:"durableDate";placeholderText:"YYYY-MM-DD";readOnly:!selected.editable;onAccepted:if(selected.editable)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
-                    TextField {id:editPayee;objectName:"durablePayee";placeholderText:"Payee";readOnly:!selected.editable;onAccepted:if(selected.editable)saveEditor();onTextEdited:dirty=true;Layout.fillWidth:true;Accessible.name:"Payee"}
-                    TextField {id:editTotal;objectName:"durableTotal";placeholderText:"Exact total";readOnly:!selected.editable;onAccepted:if(selected.editable)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
+                    TextField {id:editDate;objectName:"durableDate";placeholderText:"YYYY-MM-DD";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
+                    TextField {id:editPayee;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
+                    TextField {id:editTotal;objectName:"durableTotal";placeholderText:"Exact total";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
                 }
-                TextField {id:editMemo;visible:!!selected.draft;placeholderText:"Memo";readOnly:!selected.editable;onAccepted:if(selected.editable)saveEditor();onTextEdited:dirty=true;Layout.fillWidth:true;Accessible.name:"Memo"}
+                TextField {id:editMemo;visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
                 Repeater {
                     model:splitModel
                     RowLayout {
@@ -318,29 +629,31 @@ ApplicationWindow {
                         required property string category
                         required property string memo
                         required property string amount
-                        TextField {text:category;placeholderText:"Category";readOnly:!selected.editable;onAccepted:if(selected.editable)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);dirty=true} Accessible.name:"Split category"}
-                        TextField {text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!selected.editable;onAccepted:if(selected.editable)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);dirty=true} Accessible.name:"Split memo"}
-                        TextField {text:amount;placeholderText:"Exact split amount";readOnly:!selected.editable;onAccepted:if(selected.editable)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
-                        Button {text:"Remove";visible:!!selected.editable;onClicked:{splitModel.remove(index);dirty=true}}
+                        Button {objectName:"splitCategory_"+index;visible:!!s.categoriesSupported;text:(index>=0 && index<splitModel.count ? splitModel.get(index).categoryDisplay : "")||"Uncategorized";enabled:editEnabled;onClicked:openCategoryPicker(index)}
+                        TextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
+                        TextField {text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
+                        TextField {objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Exact split amount";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
+                        Button {text:"Remove";visible:editEnabled;onClicked:{splitModel.remove(index);dirty=true}}
                     }
                 }
                 RowLayout {
-                    visible:!!selected.editable
-                    Button {text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0"});dirty=true}}
-                    Button {objectName:"saveDraft";text:selected.repair?"Save repair":"Save draft";onClicked:saveEditor()}
+                    visible:editEnabled
+                    Button {text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
+                    Button {objectName:"saveDraft";text:committedEditing?"Review correction…":selected.repair?"Save repair":"Save draft";onClicked:saveEditor()}
                     Button {text:"Cancel edit";onClicked:loadEditor()}
-                    Label {textFormat:Text.PlainText;text:dirty?"Unsaved changes":selected.repair?"Repair not yet saved":"Last saved revision"}
+                    Label {textFormat:Text.PlainText;text:dirty?"Unsaved changes":committedEditing?"No correction applied":selected.repair?"Repair not yet saved":"Last saved revision"}
                 }
                 RowLayout {
                     visible:!!selected.editable && !selected.repair
-                    Label {textFormat:Text.PlainText;text:selected.decision===0?"Unresolved match":selected.decision===2?"Excluded duplicate: "+(selected.duplicate||""):"Include as new"}
-                    Button {text:"Include as new";onClicked:guard(function(){workflow.command("decide",{duplicate:false})})}
-                    ComboBox {id:candidate;model:selected.candidates||[];textRole:"label";Layout.fillWidth:true;Accessible.name:"Duplicate occurrence"}
-                    Button {text:"Exclude against selected occurrence";enabled:candidate.currentIndex>=0;onClicked:guard(function(){let c=candidate.model[candidate.currentIndex];workflow.command("decide",{duplicate:true,batch:c.batch,ordinal:c.ordinal})})}
+                    Label {textFormat:Text.PlainText;text:selected.decision===0?"Unresolved match":selected.decision===2?(selected.removedDuplicate?"Keep removed: ":"Excluded duplicate: ")+(selected.duplicate||""):"Include as new"}
+                    Button {objectName:"includeSeparate";text:"Include as separate transaction";onClicked:guard(function(){workflow.command("decide",{duplicate:false})})}
+                    ComboBox {id:candidate;objectName:"duplicateCandidate";model:selected.candidates||[];textRole:"label";Layout.fillWidth:true;Accessible.name:"Duplicate occurrence"}
+                    Button {objectName:"inspectRemovalHistory";text:"Inspect removal history";visible:candidate.currentIndex>=0 && !!candidate.model[candidate.currentIndex].removed;onClicked:guard(function(){let c=candidate.model[candidate.currentIndex];navigate("history");workflow.command("entry_history",{batch:c.batch,ordinal:c.ordinal})})}
+                    Button {objectName:"excludeDuplicate";text:candidate.currentIndex>=0 && candidate.model[candidate.currentIndex].removed?"Keep removed":"Exclude against selected occurrence";enabled:candidate.currentIndex>=0;onClicked:guard(function(){let c=candidate.model[candidate.currentIndex];workflow.command("decide",{duplicate:true,batch:c.batch,ordinal:c.ordinal})})}
                 }
                 CheckBox {id:sourceToggle;objectName:"sourceToggle";text:"Show immutable QIF source"}
                 Label {
-                    visible:sourceToggle.checked;Layout.fillWidth:true;wrapMode:Text.Wrap
+                    visible:sourceToggle.checked && (selected.sourceFields||[]).length>0;Layout.fillWidth:true;wrapMode:Text.Wrap
                     text:"Parsed source fields — double-click or use Copy to edit. Dates use the import date order; amounts use the account scale. Copies are unsaved and must pass validation. Split destinations are numbered by their current editor position."
                     textFormat:Text.PlainText
                 }
@@ -354,11 +667,11 @@ ApplicationWindow {
                         Label {
                             text:sourceField.value.length?sourceField.value:"(empty)";textFormat:Text.PlainText
                             Layout.fillWidth:true;wrapMode:Text.Wrap
-                            MouseArea {anchors.fill:parent;enabled:!!selected.editable;onDoubleClicked:copySource(sourceField)}
+                            MouseArea {anchors.fill:parent;enabled:editEnabled;onDoubleClicked:copySource(sourceField)}
                         }
                         Button {
                             text:"Copy to edit";objectName:"copySource_"+sourceField.field+"_"+sourceField.split
-                            enabled:!!selected.editable && (sourceField.split<0 || sourceField.split<splitModel.count)
+                            enabled:editEnabled && (sourceField.split<0 || sourceField.split<splitModel.count)
                             Accessible.name:"Copy "+sourceField.label+" to edit"
                             onClicked:copySource(sourceField)
                         }

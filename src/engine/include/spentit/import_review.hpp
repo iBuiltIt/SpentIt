@@ -29,6 +29,7 @@ struct Decision {
 struct DraftRow {
     std::string date, payee, memo;
     Transaction transaction;
+    FieldOwnership payee_owner=FieldOwnership::untracked,memo_owner=FieldOwnership::untracked;
 };
 void validate_draft(const qif::Record& source, const DraftRow& edited);
 // Explicitly selecting Include is always allowed. Duplicate choices must refer to

@@ -33,7 +33,7 @@ The Qt/OpenSSL prefixes above are macOS Homebrew examples; use the installed dep
 7. Reimport the same file. Both occurrences are visibly excluded against their prior occurrences; committing this reviewed batch contributes zero. An explicit Include as new override is available. Other possible matches require a chosen prior occurrence or explicit inclusion.
 8. Save a backup to a new destination. To restore into a separate working document, open that backup, use **Backup / restore copy** to publish another new file, close it, then open the restored file. Backup preserves the current protection mode and does not replace destinations. Password-protected backups need their original password.
 
-The ledger supports explicit committed/projected modes, literal whole-record filtering, six-column sorting, and filtered signed-withdrawal/deposit totals. Chronological balances come from the application ledger calculation and stay attached to their rows. Drafts, duplicate dispositions and unavailable projections are labeled explicitly. Committed rows are read-only. Double-click a contributing ledger row to expand its editor inline, or select an import/record number to inspect it; excluded occurrences remain reachable through the import selector.
+The ledger supports explicit committed/projected modes, literal whole-record filtering, six-column sorting, and filtered signed-withdrawal/deposit totals. Chronological balances come from the application ledger calculation and stay attached to their rows. Drafts, duplicate dispositions and unavailable projections are labeled explicitly. Committed inspection is read-only until an explicit committed-edit action; see [committed changes](committed-changes.md). Double-click a contributing ledger row to expand its editor inline, or select an import/record number to inspect it; excluded occurrences remain reachable through the import selector.
 
 Blocked imports retain evidence and display diagnostics. Whole-file or record source previews are read-only, capped at 64 KiB with an explicit byte-count notice; non-UTF-8/NUL-containing previews use hex rather than replacement decoding. The complete bounded source remains in encrypted storage. New schema-2 datasets support explicit date and split-total repair as described below; other errors still require discard/reimport, and blocked batches cannot partially commit. Discarding a batch requires confirmation and retains its evidence/history.
 
@@ -49,7 +49,7 @@ Commit IDs are derived from batch identity and expected revision. Receipts are l
 
 ## Portable credential convention v1
 
-The UI uses the existing experimental application ID `1397770577`, schema version `2` for new datasets (`1` remains readable), and SQLCipher 4 settings from [the headless report](durable-import.md). It adds a versioned credential convention, without rewriting existing documents:
+The UI uses the existing experimental application ID `1397770577`, schema version `5` for new datasets (`1`–`4` remain readable without migration), and SQLCipher 4 settings from [the headless report](durable-import.md). It adds a versioned credential convention, without rewriting existing documents:
 
 - No-password mode supplies this exact ASCII raw-key specification to `sqlite3_key`:
 
@@ -75,7 +75,7 @@ PRAGMA integrity_check;
 PRAGMA foreign_key_check;
 ```
 
-Expect application ID `1397770577`, schema `1` or `2`, no cipher/foreign-key error rows, and `ok` from SQLite integrity checking. These SQL checks alone do not establish all financial invariants: use a compatible SpentIt build's full verification before editing, and retain the original backup. A protected document instead needs the password with the exact v1 prefix through the supported key API; do not put private passwords in shell history. This procedure cannot repair damaged/missing files or recover a forgotten password. Do not copy only the main file of a live database; use the application's validated backup operation.
+Expect application ID `1397770577`, schema `1`, `2`, `3`, `4` or `5`, no cipher/foreign-key error rows, and `ok` from SQLite integrity checking. These SQL checks alone do not establish all financial invariants: use a compatible SpentIt build's full verification before editing, and retain the original backup. A protected document instead needs the password with the exact v1 prefix through the supported key API; do not put private passwords in shell history. This procedure cannot repair damaged/missing files or recover a forgotten password. Do not copy only the main file of a live database; use the application's validated backup operation.
 
 ## Verification and remaining work
 
@@ -87,7 +87,7 @@ A restored no-password backup was opened through the SQLCipher C API using only 
 
 Tests and smoke launches use temporary synthetic files and isolated Settings; no private exports are accessed. Existing headless fault/crash/backup sweeps remain in the 33-entry suite. No new claim is made for physical power loss, all filesystems, or cancellation at every instruction boundary.
 
-Remaining scope includes repair beyond dates/split-total mismatches, the full resizable navigation shell, multiselection and broader search behavior, accessibility review, mid-operation cancellation, packaging, and Linux/Windows validation. Source previews are bounded rather than a full-file editor. The UI now reuses verified ledger data for read-only queries and builds presentation maps for requested rows. Native 100,000/200,000-row measurements and remaining long operations are documented in the [performance report](import-ui-performance.md); these bounded measurements do not establish general responsiveness. Password changes, legacy credential conversion and migrations remain outside this implementation.
+Remaining scope includes repair beyond dates/split-total mismatches, the full multi-account/report navigation shell, multiselection and broader search behavior, accessibility review, cancellation of other long operations, packaging, and Linux/Windows validation. The bounded account/Settings shell and cooperative opening/import cancellation are described below. Source previews are bounded rather than a full-file editor. The UI now reuses verified ledger data for read-only queries and builds presentation maps for requested rows. Native 100,000/200,000-row measurements and remaining long operations are documented in the [performance report](import-ui-performance.md); these bounded measurements do not establish general responsiveness. Password changes, legacy credential conversion and migrations remain outside this implementation.
 
 ## Walkthrough regression follow-up — 2026-10-25
 
@@ -109,7 +109,7 @@ Verification: the repair model/QML flow passed within the 36-entry Debug, Releas
 
 ## Inline editing and source copying
 
-The durable ledger now expands its selected transaction inline. There is one persistent editor outside the recycled delegates, visually placed beneath the matching row by batch/occurrence identity. Sorting retains that identity. A record absent from the displayed ledger (blocked, excluded, discarded, filtered out, or hidden by committed mode) remains accessible through the review panel below the ledger. Whole-file evidence also uses that panel. Committed records remain read-only. Other split records can now be expanded independently for read-only viewing; see below.
+The durable ledger now expands its selected transaction inline. There is one persistent editor outside the recycled delegates, visually placed beneath the matching row by batch/occurrence identity. Sorting retains that identity. A record absent from the displayed ledger (blocked, excluded, discarded, filtered out, or hidden by committed mode) remains accessible through the review panel below the ledger. Whole-file evidence also uses that panel. Committed records initially open read-only; the later [committed-change workflow](committed-changes.md) provides explicit editing. Other split records can now be expanded independently for read-only viewing; see below.
 
 Enable **Show immutable QIF source** to see parsed source fields alongside the retained raw preview. Double-click a parsed value or activate **Copy to edit** to copy into the unsaved editor. Dates are ISO dates interpreted using the original import date order; money is formatted at the account currency scale. An unavailable original date has no copy action. Unsupported malformed records do not expose parsed copy fields. Payee, memo, total, and split category/memo/amount are supported; fields without an editable counterpart remain in the raw evidence view.
 
@@ -140,3 +140,28 @@ Viewport restoration uses occurrence identity rather than a row number or absolu
 Verification on 2026-10-25: Debug, Release and ASan/UBSan builds succeeded; affected `import.ui` and `import.qml` CTest entries passed in all three, using `cmake --build build/import-ui-<configuration> -j 3` and `ctest --test-dir build/import-ui-<configuration> -R 'import.(ui|qml)$' --output-on-failure`. Final build/test logs had no compiler, Qt or sanitizer diagnostics. The full 37-entry suite was not rerun.
 
 New regressions cover no-match restoration, stable viewport occurrence despite coordinate-origin changes, restoring sort after changes during search, source-file inspection not counting as result selection, selected-result visibility, invalid identity lookup, Stay, rejected Save, Discard, successful Save, and dataset isolation. Existing split/source/edit/navigation regressions also passed. An intermediate run logged a Qt delegate cancellation warning during a shrinking filtered-model reset; clearing the transient delegate index before reset removed it in the final runs, while preserving the workflow's occurrence identity. Native accessibility and Linux/Windows remain unverified.
+
+## Coordinated navigation and operation recovery — 2026-10-25
+
+The durable UI now has a resizable/hideable account sidebar, persistent navigation controls, and document-local Back/Forward history between the account ledger and active dataset Settings. Both pages stay alive so navigation preserves the ledger view. Navigation uses Save / Discard / Stay; a failed save leaves the editor and current page intact. Closing/opening a document resets navigation history. Settings exposes the current path, validated backup/copy and explicit closing before choosing another dataset. The one-account experiment does not expose unavailable account, category, rule or report commands. Narrow windows can scroll the ledger horizontally; this is a bounded fallback rather than the final responsive product design.
+
+Operation feedback identifies the current phase without inventing percentage completion. Opening is cooperatively cancellable between authentication/verification stages and validation units; a cancelled candidate releases its lock, never becomes active and does not replace the startup path. Individual SQL and parser calls are not interrupted by this first opening implementation. A late cancellation racing activation is checked before activation. Saved work remains intact.
+
+Commit remains non-cancellable once dispatched. If its call throws, the worker queries the same deterministic operation identity: a verified receipt is shown as committed; a verified absent outcome leaves the saved draft available; an unreadable outcome closes the session and requires reopening to resolve durable state before retry. No fresh operation identity is substituted for an uncertain attempt.
+
+The separate `import.navigation` regression covers sidebar hiding/restoration, navigation history, selected occurrence retention, Stay, Discard, failed Save, successful durable Save, and navigation reset across datasets. Additional UI regressions cover opening cancellation checkpoints/lock release, late activation cancellation, preservation of an existing saved draft, and before/after/unknown commit acknowledgement failures. All 40 registered tests passed in Debug, Release and ASan/UBSan; the affected tests passed again after final refinements as recorded in project status. Native macOS recovery checks passed 4/4 with the rendered incomplete-import screen inspected.
+
+
+## Committed corrections, removal and Undo — 2026-10-25
+
+New schema-4 datasets support explicit committed editing with exact before/after previews, removal that preserves evidence/history, and strict Undo that explains dependency conflicts. The Committed changes page discovers removed entries and retains original publications. Guarded navigation waits for preview and durable Apply. Reimporting a removed entry requires an explicit Keep removed or Include decision; stale exclusions require reconfirmation. The C++ worker owns typed commands, freshness tokens and operation identities. See [implementation, recovery and limits](committed-changes.md). Schemas 1–3 remain readable but do not enable these commands.
+
+
+## Category management and selection — 2026-10-25
+
+New schema-5 datasets expose a guarded Categories editor and allocation picker with active leaves, Uncategorized and unmapped text. Rename/move updates current ledger display and literal filtering without changing retained source or historical labels. Archived assignments remain readable and survive unrelated edits; groups are never assignable. See [behavior, recovery and verification limits](categories.md). Older formats retain their earlier UI capabilities. Durable rules editing/application and combined text/date/source search remain unfinished.
+
+
+### Recorded interaction limitation
+
+A rare Qt `DelegateModel::cancel: index out range` warning was observed during the existing filter-reset test, reproducing in one of eight targeted Release repetitions. Occurrence/viewport assertions passed. A proposed workaround was rejected by broader viewport tests and fully reverted; final restored seven-entry UI regression checks passed with clean logs. The warning is not claimed fixed and belongs in the remaining search/ledger interaction review. It does not change the accepted search-return behavior or establish a financial-data failure.

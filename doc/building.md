@@ -60,3 +60,15 @@ The optional SQLCipher target adds eight storage groups. Its exact dependency pi
 ## Synthetic sheet follow-up — 2026-10-25
 
 The optional Qt Quick target and its 13-test Debug/Release/ASan/UBSan results, native scrolling measurements and workload limits are documented in [sheet prototype verification](sheet-prototype.md). These do not add Qt to engine-only builds or establish a production application.
+
+## Optional bounded rules engine
+
+With a development installation of PCRE2 10.49 (8-bit Unicode library) discoverable through pkg-config:
+
+```sh
+cmake -S . -B build/rules-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSPENTIT_RULES=ON
+cmake --build build/rules-debug
+ctest --test-dir build/rules-debug --output-on-failure
+```
+
+This builds the ordinary engine/parser tests plus regex, deterministic rule evaluation and pure application-preview tests. It does not enable a rules editor or save/apply rule results to a document. `SPENTIT_RULES=ON` can also be added to the existing import-UI configuration for combined verification. The core engine alone still requires no PCRE2 dependency. See [dependency provenance](../third_party/pcre2/README.md) and [scope/resource contracts](rules-engine.md). Packaging that dependency and other-platform validation remain unfinished.

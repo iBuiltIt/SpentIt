@@ -1,5 +1,6 @@
 #pragma once
 #include <spentit/money.hpp>
+#include <spentit/category.hpp>
 #include <optional>
 #include <vector>
 
@@ -8,6 +9,10 @@ struct Allocation {
     std::string category;
     std::string memo;
     Money amount;
+    std::optional<CategoryBinding> category_binding={};
+    std::string identity={};
+    std::optional<std::size_t> source_ordinal={};
+    FieldOwnership category_owner=FieldOwnership::untracked,memo_owner=FieldOwnership::untracked;
 };
 
 // Validated in-memory value, not a persisted transaction or an import evidence record.

@@ -2,11 +2,11 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: requirements and discussion only; no category catalog, hierarchy, or account-destination picker is implemented. Current engine allocations carry category text; the bounded QIF workflow validates that text against its restricted import profile.
+Implementation: bounded schema-5 catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Account transfer destinations and category reports remain unimplemented. See [implementation and recovery](../doc/categories.md).
 
 ## Purpose and roadmap position
 
-The owner discussed categories ahead of their implementation milestone. Preserve these decisions for category editing, selection, rules, and reporting work; this does not expand the current durable-import milestone or authorize implementation. Read alongside [accounts and splits](002-accounts-money-splits.md), [rules](004-rules-and-explanations.md), [transaction navigation](005-transaction-sheet-navigation.md), [reporting](006-reporting-drill-down.md), and [transfers](008-transfer-matching-and-lifecycle.md).
+The owner discussed categories ahead of their implementation milestone. Preserve these decisions for category editing, selection, rules, and reporting work; implementation is now authorized under the coordinated roadmap, subject to the accepted lifecycle policy below. Read alongside [accounts and splits](002-accounts-money-splits.md), [rules](004-rules-and-explanations.md), [transaction navigation](005-transaction-sheet-navigation.md), [reporting](006-reporting-drill-down.md), and [transfers](008-transfer-matching-and-lifecycle.md).
 
 The organizing principle is useful distinctions that the owner can reliably make from statements at a sustainable review effort. Review may happen only every three months. Do not require receipt reconstruction or fine-grained purchase classification merely to satisfy a theoretically uniform taxonomy.
 
@@ -66,18 +66,18 @@ This preserves the supplied grouping and labels, including alternatives separate
 
 The owner's later clarification prefers names such as Utilities: Phones and Utilities: TV & Streaming. Travel is an explicit grouping parent with no direct allocations. Auto must be discoverable directly. The original heading-plus-prefix arrangement is not permission to introduce three levels.
 
-## Proposed implementation direction — not yet adopted
+## Implementation direction and deferred options
 
 - Store stable category identities and explicit parent relationships; render a path such as Travel: Flights without making mutable text the identity.
 - Match picker searches against both parent and leaf names: Auto reveals its leaves; Parking finds Auto: Parking & Tolls. Show enough context to distinguish identically named leaves, and make parents non-assignable.
-- Offer an editable starter set rather than a compulsory taxonomy. Final seed behavior and exact names need agreement.
+- Starter categories remain optional and editable; this bounded implementation starts with an empty catalog so unresolved starter names do not become financial assumptions.
 - Optional trip/project tags could collect meals, taxis, shopping, and flights for one holiday across categories. This was discussed but not adopted; do not add tags or require them as part of category implementation.
 
 ## Open questions for the implementing agent
 
 - Reconcile the original headings with the accepted depth limit. Is Auto a top-level parent alongside Transportation? Similarly, how should Medical relate to Health & Wellness? Do not silently add an extra hierarchy level or a separate presentation-section system. The suggestion to make Auto top-level was not explicitly resolved.
-- Finalize QIF-safe leaf spellings without changing their intended meaning. Decide whether standalone assignable categories are allowed and how they appear alongside groups.
-- Specify stable identity, name uniqueness, rename/move/archive/delete behavior, and migration from existing free-text categories. Preserve allocations, source evidence, and history; decide how reorganizing categories affects historical reports.
+- Finalize QIF-safe leaf spellings without changing their intended meaning. Standalone assignable categories are accepted; their presentation beside groups is an implementation choice.
+- Implement the accepted lifecycle policy below with stable identities, retained evidence/history, and explicit mapping of existing free text. No automatic document migration is authorized.
 - Define parent expansion/filter behavior and Uncategorized representation, while preserving exact allocation-level reconciliation and currency separation.
 - Settle refund/net-spending and income reporting policy separately; do not infer it from a name or amount sign alone.
 - Mortgage and Auto Payment labels do not settle loan-principal, interest, or cash-flow reporting policy.
@@ -94,6 +94,16 @@ The owner's later clarification prefers names such as Utilities: Phones and Util
 
 ## Verification and implementation limits
 
-Documentation-only discussion capture. Existing category text storage, restricted QIF validation, and the related feature requirements were inspected. No runtime behavior changed, and none of the future acceptance criteria above are claimed verified.
+The original discussion was documentation-only. The later schema-5 subset is described in the implementation report above; configuration-specific verification is recorded in [project status](../doc/status.md). Category-report reconciliation and account-destination behavior remain future acceptance obligations.
 
 Documentation validation: all 93 relative link file targets across the eight changed documents resolved, and `git diff --check` passed. Runtime tests were not run because this change only records requirements and discussion.
+
+## Accepted lifecycle policy for coordinated implementation — 2026-10-25
+
+Use stable category identities with optional standalone assignable leaves and one non-assignable parent level. Siblings have unique names; top-level leaves and groups share a namespace, while different parents may have equally named leaves. Renaming or moving a category preserves its identity and allocation assignments. Current ledger/report views for any financial period use the current names and hierarchy, while original import evidence and recorded change history retain their earlier labels/definitions.
+
+For example, moving Parking & Tolls from Auto to Travel would move last year's parking allocations into Travel in a newly generated current report. The owner accepted this current-taxonomy behavior. Refund/income and historical-as-of reporting remain separate policies.
+
+Archive removes a category from new assignment choices but keeps existing allocations, balances, history and report visibility. Delete only never-referenced empty entries, retaining definition audit; otherwise use archive. Do not merge or reclassify allocations implicitly. Existing free-text classifications remain visibly unmapped until deliberate mapping; do not silently convert them to Uncategorized. A committed allocation reassignment uses the accepted committed-correction history rather than catalog renaming.
+
+The starter catalog remains optional/proposed so its unresolved headings and final spellings do not prevent the model and editor from being implemented. This accepted lifecycle policy does not settle transfer behavior or reporting sign/refund policy.

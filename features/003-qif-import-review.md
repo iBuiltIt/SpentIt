@@ -38,7 +38,7 @@ One transaction can be associated with multiple source occurrences from differen
 
 Proposed relational realization: an import stores its original bytes; source-occurrence rows identify locations within it and parsed facts; a transaction has a stable identity; an association table links that identity to its source occurrences. These are conceptual responsibilities, not adopted table names or a migration plan. The current QIF experiment preserves bytes and revisions but does not implement the future multi-format association model.
 
-Removing a transaction from the ledger should retain imported evidence and persistent history. The proposed future removal record would let reimports surface a match to a previously removed transaction for review. Exact committed deletion/reversal semantics, reimport decisions, association correction, and their atomic history behavior remain unresolved; no automatic resurrection or suppression policy is selected here.
+Removing a transaction from the ledger retains imported evidence and persistent history. The owner subsequently accepted ordinary correction/removal/strict Undo and explicit removed-record reimport review in [feature 011](011-committed-editing-and-reversal.md), now implemented in the bounded one-account QIF workflow. A removed match is neither automatically restored nor silently suppressed. Cross-format association correction, transfer changes and broader evidence reconciliation remain unresolved.
 
 ## Proposed import pipeline
 

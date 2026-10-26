@@ -101,3 +101,8 @@ With `SPENTIT_SHEET_PROTOTYPE=ON`, `spentit_sheet_session` links only the engine
 ## Durable import UI boundary
 
 With `SPENTIT_IMPORT_UI=ON`, `spentit_import_model` links the application ledger target and Qt Core/Concurrent, not concrete storage. The plain `DocumentGateway` contract supplies lifecycle/backup and the existing repository commands; its storage implementation owns the credential convention. `spentit_import_experiment` composes the adapter with the Qt model and QML. A private serial worker owns document operations; the UI has no SQL. The synthetic sheet targets remain separately optional. See [UI implementation and limits](import-ui.md).
+
+
+## Bounded category and rules extensions
+
+The category types/name validation remain in the standard-C++ engine; SQLCipher catalog/history and assignment metadata remain behind the application repository interface, with Qt editor/picker code in the UI. Optional `SPENTIT_RULES` adds `SpentIt::rules`, privately linked to pinned-version PCRE2, while the core `SpentIt::engine` keeps no third-party software dependency. The plain `spentit_rule_preview` application target links that rules library and reconstructs financially unchanged proposals without SQL or Qt. Durable rule persistence and application are not yet implemented. See [categories](categories.md) and [rules engine](rules-engine.md).

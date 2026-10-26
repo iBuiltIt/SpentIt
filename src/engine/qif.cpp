@@ -26,8 +26,10 @@ std::string_view message(Issue issue) noexcept {
     }
     return "Invalid QIF input";
 }
-bool valid_utf8(std::string_view s) noexcept {
+static bool checked_utf8(std::string_view s,const std::function<void()>& checkpoint) {
+    std::size_t next_checkpoint=0;
     for (std::size_t i = 0; i < s.size();) {
+        if(checkpoint && i>=next_checkpoint) {checkpoint();next_checkpoint=i+4096;}
         const auto c = static_cast<unsigned char>(s[i++]);
         if (c < 0x80) continue;
         unsigned n = 0, cp = 0, min = 0;
@@ -45,6 +47,7 @@ bool valid_utf8(std::string_view s) noexcept {
     }
     return true;
 }
+bool valid_utf8(std::string_view s) noexcept { return checked_utf8(s,{}); }
 bool supported_category(std::string_view text) noexcept { return text.find_first_of("[]/|") == text.npos; }
 std::string date(std::string_view s, DateOrder order) {
     auto fail = []() -> void { throw std::invalid_argument("Invalid QIF date/profile"); };
@@ -66,13 +69,15 @@ bool Result::valid() const noexcept {
     for (const auto& r : records) if (r.diagnostic || !r.transaction) return false;
     return true;
 }
-Result parse(std::string_view bytes, DateOrder order, const Currency& currency) {
+Result parse(std::string_view bytes, DateOrder order, const Currency& currency,const std::function<void()>& checkpoint) {
+    if(checkpoint) checkpoint();
     if (order != DateOrder::dmy && order != DateOrder::mdy) throw std::invalid_argument("Invalid QIF profile");
     Result out;
     auto file_error = [&](Issue issue, std::size_t offset) { out.diagnostic = Diagnostic{issue,offset}; if (issue == Issue::resource_limit) out.admissible = false; };
     if (bytes.size() > max_file) { file_error(Issue::resource_limit,0); return out; }
-    if (!valid_utf8(bytes)) { file_error(Issue::encoding,0); return out; }
+    if (!checked_utf8(bytes,checkpoint)) { file_error(Issue::encoding,0); return out; }
     for (std::size_t i=0;i<bytes.size();++i) {
+        if(checkpoint && i % 4096 == 0) checkpoint();
         auto c = static_cast<unsigned char>(bytes[i]);
         if ((c < 32 && c != '\n' && c != '\t' && c != '\r') || c == 127 ||
             (c == '\r' && (i+1 == bytes.size() || bytes[i+1] != '\n'))) { file_error(Issue::encoding,i); return out; }
@@ -94,6 +99,7 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency) 
     std::size_t pos = bytes.starts_with("\xef\xbb\xbf") ? 3 : 0;
     r.begin=pos;
     while (pos < bytes.size()) {
+        if(checkpoint) checkpoint();
         const auto start=pos, newline=bytes.find('\n',pos);
         pos = newline == bytes.npos ? bytes.size() : newline+1;
         auto line=bytes.substr(start,(newline == bytes.npos ? bytes.size() : newline)-start);
@@ -109,6 +115,9 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency) 
             if (!allocations.empty() && !category.empty() && category != "--Split--") error(Issue::split_structure,start);
             r.original_amount=total;
             if (total && allocations.empty() && !split_started) allocations.push_back({category,r.memo,*total});
+            r.has_source_splits=split_started;
+            r.source_category=category;
+            for(std::size_t index=0;index<allocations.size();++index){auto& allocation=allocations[index];allocation.identity="source-"+std::to_string(index);allocation.source_ordinal=index;allocation.category_owner=FieldOwnership::source;allocation.memo_owner=FieldOwnership::source;}
             r.source_allocations=allocations;
             if (repair_allowed && total) {
                 try { r.transaction=Transaction::imported(*total,std::move(allocations)); }

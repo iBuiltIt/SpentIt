@@ -31,10 +31,15 @@ public:
         store_=std::make_unique<ImportStore>(std::move(created)); key_=std::move(key);
     }
     void open(const std::filesystem::path& p,std::optional<std::string> password) override {
+        app::OperationContext context; open_controlled(p,std::move(password),context);
+    }
+    void open_controlled(const std::filesystem::path& p,std::optional<std::string> password,const app::OperationContext& context) override {
+        context.checkpoint("Opening dataset");
         if(store_) throw std::logic_error("Close the current dataset first");
         auto key=password?password_key(*password):std::string(public_document_key);
         try {
-            auto opened=ImportStore::open(document_path(p),key);
+            auto opened=ImportStore::open(document_path(p),key,&context);
+            context.checkpoint();
             store_=std::make_unique<ImportStore>(std::move(opened)); key_=std::move(key);
         } catch(const ImportAuthenticationError&) {
             throw app::UnlockRequired();

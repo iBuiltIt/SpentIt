@@ -1,6 +1,7 @@
 #pragma once
 #include <spentit/transaction.hpp>
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -27,13 +28,14 @@ bool valid_utf8(std::string_view text) noexcept;
 bool supported_category(std::string_view text) noexcept;
 struct Record {
     std::size_t begin = 0, end = 0;
-    std::string date, payee, memo, reference, cleared;
+    std::string date, payee, memo, reference, cleared, source_category;
     std::optional<Transaction> transaction;
     // Parsed evidence only: allocations may not balance and are never postings.
     std::optional<Money> original_amount;
     std::vector<Allocation> source_allocations;
     // True only if every record error is a date or split-total error.
     bool repairable = false;
+    bool has_source_splits = false;
     std::optional<Diagnostic> diagnostic;
 };
 struct Result {
@@ -42,5 +44,5 @@ struct Result {
     bool admissible = true; // Resource rejection: do not persist this source.
     bool valid() const noexcept;
 };
-Result parse(std::string_view bytes, DateOrder order, const Currency& currency);
+Result parse(std::string_view bytes, DateOrder order, const Currency& currency, const std::function<void()>& checkpoint = {});
 } // namespace spentit::qif

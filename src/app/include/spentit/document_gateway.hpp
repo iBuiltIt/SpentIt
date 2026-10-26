@@ -1,5 +1,6 @@
 #pragma once
 #include <spentit/import_repository.hpp>
+#include <spentit/operation_context.hpp>
 #include <filesystem>
 #include <memory>
 namespace spentit::app {
@@ -13,6 +14,12 @@ public:
     virtual void create(const std::filesystem::path&, bool protected_mode, std::string_view password,
                         std::string_view name, const Currency&, std::string_view today) = 0;
     virtual void open(const std::filesystem::path&, std::optional<std::string> password) = 0;
+    virtual void open_controlled(const std::filesystem::path& path, std::optional<std::string> password,
+                                 const OperationContext& context) {
+        context.checkpoint("Opening dataset");
+        open(path,std::move(password));
+        try { context.checkpoint(); } catch (...) { close(); throw; }
+    }
     virtual void close() = 0;
     virtual ImportRepository& repository() = 0;
     // Backup/restore publishes a new document with the current protection mode.

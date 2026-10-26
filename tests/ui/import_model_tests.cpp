@@ -13,6 +13,44 @@
 #include <QFont>
 #include <sqlite3.h>
 using namespace spentit;
+// Delegates every real storage operation; only caller acknowledgement and
+// outcome-query failures are injected. These tests never replace durability.
+class OutcomeGateway final : public app::DocumentGateway, public app::ImportRepository {
+public:
+    std::unique_ptr<app::DocumentGateway> inner=storage::document_gateway();
+    enum Fault { none, before, after, unknown } fault=none;
+    bool attempted=false,cancelAfterOpen=false;
+    app::ImportRepository& repo() const { return inner->repository(); }
+    void create(const std::filesystem::path& p,bool mode,std::string_view pw,std::string_view name,const Currency& c,std::string_view day) override {inner->create(p,mode,pw,name,c,day);}
+    void open(const std::filesystem::path& p,std::optional<std::string> pw) override {inner->open(p,std::move(pw));}
+    void open_controlled(const std::filesystem::path& p,std::optional<std::string> pw,const app::OperationContext& c) override {inner->open_controlled(p,std::move(pw),c);if(cancelAfterOpen)c.request();}
+    void close() override {inner->close();}
+    void backup(const std::filesystem::path& p) override {inner->backup(p);}
+    app::ImportRepository& repository() override {return *this;}
+    app::Account account() const override {return repo().account();}
+    void opening(std::int64_t r,std::string_view d,const Money& m) override {repo().opening(r,d,m);}
+    std::vector<app::BatchInfo> batches() const override {return repo().batches();}
+    app::BatchInfo ingest(std::string_view id,std::string_view b,qif::DateOrder p) override {return repo().ingest(id,b,p);}
+    std::string evidence(std::string_view b) const override {return repo().evidence(b);}
+    app::RowView row(const imports::Occurrence& o) const override {return repo().row(o);}
+    void save(const imports::Occurrence& o,std::int64_t r,const imports::DraftRow& d) override {repo().save(o,r,d);}
+    void decide(const imports::Occurrence& o,std::int64_t r,const imports::Decision& d) override {repo().decide(o,r,d);}
+    void discard(std::string_view b,std::int64_t r) override {repo().discard(b,r);}
+    app::Receipt commit(std::string_view b,std::int64_t r,std::string_view op) override {
+        attempted=true;
+        if(fault==before) throw std::runtime_error("Injected failure before commit");
+        auto receipt=repo().commit(b,r,op);
+        if(fault==after || fault==unknown) throw std::runtime_error("Injected lost commit acknowledgement");
+        return receipt;
+    }
+    std::optional<app::Receipt> outcome(std::string_view op) const override {
+        if(attempted && fault==unknown) throw std::runtime_error("Injected outcome lookup failure");
+        return repo().outcome(op);
+    }
+    std::vector<app::LedgerRow> ledger(bool p) const override {return repo().ledger(p);}
+    Money committed_balance() const override {return repo().committed_balance();}
+    std::optional<Money> projected_balance() const override {return repo().projected_balance();}
+};
 class ImportUiTests : public QObject {
     Q_OBJECT
     QTemporaryDir settings;
@@ -38,6 +76,79 @@ private slots:
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
     void init() {QSettings().clear();}
+    void cancellationBoundaries() {
+        QTemporaryDir dir; const auto path=dir.path()+"/doc";
+        ImportModel m(storage::document_gateway());create(m,path);run(m,"close");
+        const auto startup=QSettings().value("datasetPath");
+        bool requested=false;
+        auto cancel=connect(&m,&ImportModel::changed,&m,[&]{if(m.canCancel() && !requested){requested=true;m.requestCancel();}});
+        run(m,"open",{{"path",path}},false);
+        QVERIFY(requested);QVERIFY(m.error().contains("cancelled"));QVERIFY(!m.state().value("active").toBool());
+        QCOMPARE(QSettings().value("datasetPath"),startup);
+        disconnect(cancel);run(m,"open",{{"path",path}});
+        const auto source=fixture(dir.path(),"D1/1/2026\nT1.00\nPSynthetic\n^\n");
+        requested=false;
+        cancel=connect(&m,&ImportModel::changed,&m,[&]{if(m.canCancel() && !requested){requested=true;m.requestCancel();}});
+        run(m,"import",{{"path",source},{"profile","DMY"}},false);
+        QVERIFY(requested);QVERIFY(m.state().value("batches").toList().isEmpty());
+        disconnect(cancel);run(m,"import",{{"path",source},{"profile","DMY"}});
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        auto edit=selected(m).value("draft").toMap();edit["total"]="2.00";
+        auto splits=edit.value("splits").toList();auto allocation=splits[0].toMap();allocation["amount"]="2.00";splits[0]=allocation;edit["splits"]=splits;run(m,"save",edit);
+        const auto saved=selected(m);const auto pending=m.state().value("pending");
+        requested=false;cancel=connect(&m,&ImportModel::changed,&m,[&]{if(m.canCancel() && !requested){requested=true;m.requestCancel();}});
+        run(m,"import",{{"path",source},{"profile","DMY"}},false);disconnect(cancel);
+        QCOMPARE(selected(m),saved);QCOMPARE(m.state().value("pending"),pending);QCOMPARE(m.state().value("projected").toString(),"2.00");
+        run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("projected").toString(),"2.00");
+        bool sealed=false;
+        auto late=connect(&m,&ImportModel::changed,&m,[&]{if(m.busy()){sealed=true;QVERIFY(!m.canCancel());m.requestCancel();QVERIFY(!m.cancellationRequested());}});
+        run(m,"commit");disconnect(late);QVERIFY(sealed);QCOMPARE(m.state().value("committed").toString(),"2.00");
+    }
+    void cancelledOpenActivation() {
+        QTemporaryDir dir;const auto path=dir.path()+"/doc";
+        auto gateway=std::make_unique<OutcomeGateway>();auto* injected=gateway.get();
+        ImportModel m(std::move(gateway));create(m,path);run(m,"close");
+        QSettings().setValue("datasetPath",dir.path()+"/previous");const auto prior=QSettings().value("datasetPath");
+        injected->cancelAfterOpen=true;run(m,"open",{{"path",path}},false);
+        QVERIFY(!m.state().value("active").toBool());QCOMPARE(QSettings().value("datasetPath"),prior);
+        QVERIFY(m.error().contains("cancelled"));
+        {auto independent=storage::document_gateway();independent->open(path.toStdString(),std::nullopt);independent->close();}
+        injected->cancelAfterOpen=false;run(m,"open",{{"path",path}});QVERIFY(m.state().value("active").toBool());
+    }
+    void controlledStorageOpen() {
+        QTemporaryDir dir;const auto path=(std::filesystem::canonical(dir.path().toStdString())/"doc").string();
+        {auto store=storage::ImportStore::create(path,"synthetic","Account",Currency("CAD"),"2026-01-01");
+         store.ingest("one","D1/1/2026\nT1.00\nPSynthetic\n^\n",qif::DateOrder::dmy);}
+        QFile file(QString::fromStdString(path));QVERIFY(file.open(QIODevice::ReadOnly));const auto original=file.readAll();file.close();
+        for(const auto phase:{"Opening dataset","Verifying dataset integrity","Verifying import evidence","Verifying category history","Verifying committed change history"}) {
+            app::OperationContext context;bool reached=false;
+            context.progress=[&](std::string_view value){if(value==phase){reached=true;context.request();}};
+            QVERIFY_THROWS_EXCEPTION(app::OperationCancelled,storage::ImportStore::open(path,"synthetic",&context));
+            QVERIFY(reached);
+            {auto store=storage::ImportStore::open(path,"synthetic");QCOMPARE(store.batches().size(),std::size_t(1));}
+            QVERIFY(file.open(QIODevice::ReadOnly));QCOMPARE(file.readAll(),original);file.close();
+        }
+    }
+    void commitOutcomeRecovery() {
+        for(auto fault:{OutcomeGateway::before,OutcomeGateway::after,OutcomeGateway::unknown}) {
+            QTemporaryDir dir;const auto path=dir.path()+"/doc";
+            auto gateway=std::make_unique<OutcomeGateway>();auto* injected=gateway.get();
+            ImportModel m(std::move(gateway));create(m,path);
+            const auto source=fixture(dir.path(),"D1/1/2026\nT1.00\nPSynthetic\n^\n");
+            run(m,"import",{{"path",source},{"profile","DMY"}});
+            run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+            injected->fault=fault;run(m,"commit",{},fault==OutcomeGateway::after);
+            if(fault==OutcomeGateway::before) {QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("committed").toString(),"0.00");QVERIFY(!m.state().value("pending").toMap().isEmpty());}
+            if(fault==OutcomeGateway::after) {QCOMPARE(m.state().value("receipt").toMap().value("change").toString(),"1.00");QCOMPARE(m.state().value("committed").toString(),"1.00");}
+            if(fault==OutcomeGateway::unknown) {QVERIFY(!m.state().value("active").toBool());QVERIFY(m.error().contains("uncertain"));}
+            injected->fault=OutcomeGateway::none;
+            if(m.state().value("active").toBool())run(m,"close");
+            run(m,"open",{{"path",path}});
+            if(fault==OutcomeGateway::before) run(m,"commit");
+            QCOMPARE(m.state().value("committed").toString(),"1.00");QCOMPARE(m.rowCount(),2);
+            QCOMPARE(m.state().value("receipt").toMap().value("included").toInt(),1);
+        }
+    }
     void durableWorkflow() {
         QTemporaryDir dir;const auto path=dir.path()+"/document";
         QFile walkthrough(QString::fromUtf8(SPENTIT_REVIEW_FIXTURE));QVERIFY(walkthrough.open(QIODevice::ReadOnly));

@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: none; requirements and proposed design only.
+Implementation: bounded standalone evaluation engine under verification; durable rule definitions, preview/apply and editor are not yet implemented. See [engineering contract](../doc/rules-engine.md).
 
 ## Accepted requirements
 
@@ -18,13 +18,13 @@ Category hierarchy, naming, neutral income/expense classification, and account d
 
 ## Proposed design
 
-Use PCRE2 directly where needed to control execution limits. A rule includes identity, enabled state, priority, scope, input field, regex/options, actions, and continuation behavior. Record the applied rule version and field contributions so explanations remain meaningful after later rule edits.
+Use PCRE2 directly where needed to control execution limits. A rule includes identity, enabled state, ordered position, scope, input field, regex/options and actions. The accepted bounded policy below replaces configurable continuation with first assignment per field. Record the applied rule version and field contributions so explanations remain meaningful after later rule edits.
 
 Evaluate matches against defined source fields by default. Make parent-category inheritance explicit; do not replace source split memos or recursively rerun arbitrary rules. Specify phases/dependencies before implementation. Capture replacement, case sensitivity, Unicode semantics, and empty-field behavior require explicit contracts.
 
 Preview changes before applying edited rules. Do not silently recategorize committed history. When several rules contributed, show each rule and its changes rather than pretending one rule explains the entire row. Preserve manual overrides unless the user explicitly chooses to replace them.
 
-Classify feedback separately: multiple rules matching can be compatible; competing assignments to the same field can be a conflict; later matches can be shadowed by an earlier stopping rule. Evaluate concrete overlaps on existing transactions and test cases. Do not claim exhaustive overlap detection for arbitrary PCRE2 expressions or unseen inputs.
+Classify feedback separately: multiple rules matching can be compatible; competing assignments to the same field can be a conflict; later assignments can be shadowed by an earlier field winner. Evaluate concrete overlaps on existing transactions and test cases. Do not claim exhaustive overlap detection for arbitrary PCRE2 expressions or unseen inputs.
 
 Example: a payee matching `Tfl Travel.*` yields Transport; a split memo matching `Wise Charges for:.*` yields Service Fees; a split matching `CARD-.*` explicitly inherits Transport from its parent's classification.
 
@@ -42,11 +42,23 @@ Bound pattern/input size and matching resources, provide cancellation, and keep 
 
 ## Open questions
 
-- First-match, last-match, or per-field precedence; explicit stop/continue defaults.
-- Parent classification phase and dependency-cycle rejection.
+- Per-field first assignment and fixed phases are accepted below; no configurable stop/continue is planned initially.
+- Implement explicit parent classification in the fixed transaction-then-split phases without recursive dependencies.
 - Regex flags, replacement syntax, rule versioning, manual-override semantics, and transaction/split selection in the editor.
-- Scope of rule commit versus draft commit: rule changes may be document-global and must not be ambiguously coupled to discarding an import.
+- Rule Save is accepted as document-global and independent of draft commit/discard; implement and verify that separation.
 
 ## Reference
 
 - [PCRE2 API and resource controls](https://www.pcre.org/current/doc/html/pcre2api.html)
+
+## Accepted bounded evaluation policy — 2026-10-25
+
+Run fixed transaction-then-split phases against immutable imported fields; do not recursively match normalized outputs. Within a phase, the first matching rule assigning a field wins, while later rules may still assign other fields. Show compatible overlaps, competing assignments and shadowed assignments distinctly. Manual field edits, including deliberate blanks, remain protected unless the user explicitly replaces them in a preview.
+
+Saving rules durably versions document-wide definitions independently of import state. Discarding an import does not discard saved rules. Preview and Apply are separate: apply the complete chosen pending-record scope atomically, preserving field provenance and previous values. Reapplication recomputes rule-owned fields from source facts while retaining manual fields, and previews removal of obsolete derived results as well as new assignments. Existing committed records never change automatically; bulk committed reapplication is deferred.
+
+Initial actions change displayed payees, memos and assignable category identities only. They do not change financial dates, amounts, split structure or transfer relationships. Matching defaults to case-insensitive UTF-8 regex search with explicit anchors for whole-field matching. Invalid expressions, resource failures and oversized results are visible operation errors. Capture-template syntax and measured resource limits are engineering contracts to specify before implementation.
+
+For the Wise-shaped example, source payee `^Tfl Travel.*` supplies display payee TfL and parent classification Transport. Source split memo `^Wise Charges for:` assigns Service Fees; `^CARD-` explicitly inherits the parent classification. The -29.31 total remains exactly -0.14 plus -29.17; parent classification never creates another allocation. A single-allocation transaction's category action targets that allocation. Missing parent classification leaves inheritance unapplied with an explanation.
+
+Source-split rules require stable retained source-allocation associations, not current ordinal guesses. Manually created splits are excluded from source-split matching initially and retain manual classification. Catalog lifecycle and starter names remain governed separately by feature 010. The owner accepted this bounded policy on 2026-10-25. Concrete capture-template syntax, resource limits and persistence contracts remain engineering work.

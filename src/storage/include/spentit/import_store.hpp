@@ -1,5 +1,6 @@
 #pragma once
 #include <spentit/import_repository.hpp>
+#include <spentit/operation_context.hpp>
 #include <filesystem>
 #include <memory>
 
@@ -14,7 +15,7 @@ class ImportAuthenticationError final : public ImportError {
 public:
     explicit ImportAuthenticationError(int code):ImportError(code,"Unable to authenticate encrypted dataset"){}
 };
-enum class ImportPhase { before_commit, after_commit };
+enum class ImportPhase { before_commit, after_commit, materialize_row };
 // Fault-test seam: no UI durability acknowledgement is sent through this hook.
 using ImportObserver=std::function<void(ImportPhase)>;
 enum class BackupPhase { before_publish, before_publish_sync, before_cleanup,
@@ -26,7 +27,7 @@ class ImportStore final : public app::ImportRepository {
 public:
     static ImportStore create(const std::filesystem::path&,std::string_view password,
                               std::string_view name,const Currency&,std::string_view today);
-    static ImportStore open(const std::filesystem::path&,std::string_view password);
+    static ImportStore open(const std::filesystem::path&,std::string_view password, const app::OperationContext* = nullptr);
     ~ImportStore();
     ImportStore(ImportStore&&) noexcept;
     ImportStore& operator=(ImportStore&&) noexcept;
@@ -34,6 +35,8 @@ public:
     void opening(std::int64_t,std::string_view,const Money&) override;
     std::vector<app::BatchInfo> batches() const override;
     app::BatchInfo ingest(std::string_view,std::string_view,qif::DateOrder) override;
+    app::BatchInfo ingest_controlled(std::string_view,std::string_view,qif::DateOrder,app::OperationContext&) override;
+    app::BatchInfo resume(std::string_view,std::int64_t,app::OperationContext&) override;
     std::string evidence(std::string_view) const override;
     app::RowView row(const imports::Occurrence&) const override;
     void save(const imports::Occurrence&,std::int64_t,const imports::DraftRow&) override;
@@ -41,10 +44,26 @@ public:
     void discard(std::string_view,std::int64_t) override;
     app::Receipt commit(std::string_view,std::int64_t,std::string_view) override;
     std::optional<app::Receipt> outcome(std::string_view) const override;
+    std::optional<app::Receipt> durable_outcome(std::string_view) const override;
     std::vector<app::LedgerRow> ledger(bool) const override;
+    bool categories_supported() const override;
+    app::CategoryCatalog category_catalog() const override;
+    app::CategoryPreview preview_category_change(const app::CategoryRequest&) const override;
+    app::CategoryReceipt apply_category_change(std::string_view,const app::CategoryRequest&,std::int64_t) override;
+    std::optional<app::CategoryReceipt> category_change_outcome(std::string_view) const override;
+    std::vector<app::CategoryReceipt> category_history(std::string_view) const override;
+    app::CategoryDisplay resolve_category(std::string_view) const override;
+    app::ChangeReceipt apply_committed_change_with_catalog(std::string_view,const app::ChangeRequest&,const app::EntryToken&,std::int64_t,std::int64_t) override;
+    bool committed_changes_supported() const override;
+    app::CommittedEntry committed_entry(const imports::Occurrence&) const override;
+    std::vector<app::CommittedHistoryItem> committed_history(const imports::Occurrence&) const override;
+    std::vector<app::CommittedChangeSummary> committed_changes(std::int64_t before_sequence=0,std::size_t limit=50) const override;
+    app::ChangePreview preview_committed_change(const app::ChangeRequest&) const override;
+    app::ChangeReceipt apply_committed_change(std::string_view,const app::ChangeRequest&,const app::EntryToken&,std::int64_t) override;
+    std::optional<app::ChangeReceipt> committed_change_outcome(std::string_view) const override;
     Money committed_balance() const override;
     std::optional<Money> projected_balance() const override;
-    void verify() const;
+    void verify(const app::OperationContext* = nullptr) const;
     void backup_to(const std::filesystem::path&,std::string_view password,
                    const BackupObserver& observer = {}) const;
     void observer(ImportObserver);
@@ -52,7 +71,13 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
     explicit ImportStore(std::unique_ptr<Impl>);
+    imports::DraftRow canonical_draft(const imports::Occurrence&,const imports::DraftRow&,const std::optional<imports::DraftRow>&,std::int64_t,bool entry,bool check_assignment=true) const;
+    void verify_categories(const app::OperationContext* context) const;
+    app::EntrySnapshot entry_snapshot(const imports::Occurrence&,std::int64_t) const;
+    std::vector<app::DependencyStamp> dependencies(const imports::Occurrence&,std::int64_t history_before=0) const;
+    void verify_committed(const app::OperationContext* = nullptr) const;
+    void populate(std::string_view,std::string_view,const qif::Result&,std::int64_t,const app::OperationContext*);
     app::RowView load_row(const imports::Occurrence&, bool candidates) const;
-    static ImportStore connect(const std::filesystem::path&,std::string_view,bool);
+    static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr);
 };
 } // namespace spentit::storage
