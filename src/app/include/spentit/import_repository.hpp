@@ -3,6 +3,7 @@
 #include <spentit/operation_context.hpp>
 #include <spentit/committed_changes.hpp>
 #include <spentit/category_catalog.hpp>
+#include <spentit/rule_commands.hpp>
 #include <functional>
 #include <optional>
 
@@ -101,5 +102,14 @@ public:
     virtual Money committed_balance() const = 0;
     // No authoritative projection exists while the pending batch is blocked/unresolved.
     virtual std::optional<Money> projected_balance() const = 0;
+    virtual bool rules_supported() const { return false; }
+    virtual RuleImage rule_image() const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual std::vector<RuleTombstone> rule_tombstones() const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual RuleSaveReceipt save_rules(std::string_view,const RuleSaveRequest&,std::int64_t,const OperationContext&) { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual std::optional<RuleSaveReceipt> rule_save_outcome(std::string_view) const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual RulePreviewResult preview_pending_rules(const RulePreviewRequest&,const OperationContext&) const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual RuleApplyReceipt apply_pending_rules(std::string_view,const RuleApplyRequest&,const OperationContext&) { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual std::optional<RuleApplyReceipt> rule_apply_outcome(std::string_view) const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual RuleMatch match_saved_rules(const imports::Occurrence&,const OperationContext&) const { throw std::logic_error("Rules require a new experimental dataset"); }
 };
 } // namespace spentit::app

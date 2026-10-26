@@ -21,7 +21,8 @@ struct OperationContext {
         if(!phase.empty() && progress) progress(phase);
         if(state.load()==requested) throw OperationCancelled();
     }
-    void seal() {
+    // state is mutable so a const command can seal the shared gate.
+    void seal() const {
         auto expected=available;
         if(!state.compare_exchange_strong(expected,sealed) && expected==requested) throw OperationCancelled();
     }

@@ -5,10 +5,41 @@ bool same_draft(const imports::DraftRow& a,const imports::DraftRow& b) {
     for(std::size_t i=0;i<aa.size();++i)if(aa[i].category_binding!=bb[i].category_binding || aa[i].identity!=bb[i].identity || aa[i].source_ordinal!=bb[i].source_ordinal || aa[i].category_owner!=bb[i].category_owner || aa[i].memo_owner!=bb[i].memo_owner || aa[i].category_rule!=bb[i].category_rule || aa[i].memo_rule!=bb[i].memo_rule || aa[i].category!=bb[i].category || aa[i].memo!=bb[i].memo || aa[i].amount!=bb[i].amount)return false;
     return true;
 }
-void store_entry(sqlite3* db,const imports::Occurrence& id,const app::EntrySnapshot& snapshot) {
+#ifdef SPENTIT_RULES_STORAGE
+void check_rule_transition(const imports::DraftRow& before,const imports::DraftRow& after,bool apply,bool replace_manual) {
+    auto mark_ok=[&](FieldOwnership owner,const std::optional<RuleMark>& mark){if(owner!=FieldOwnership::source && owner!=FieldOwnership::manual && owner!=FieldOwnership::rule)fail(SQLITE_CORRUPT);if((owner==FieldOwnership::rule)!=mark.has_value())fail(SQLITE_CORRUPT,"Rule provenance does not match its ownership");};
+    auto field=[&](FieldOwnership before_owner,const std::optional<RuleMark>& before_mark,const std::string& before_text,const std::optional<CategoryBinding>& before_binding,FieldOwnership after_owner,const std::optional<RuleMark>& after_mark,const std::string& after_text,const std::optional<CategoryBinding>& after_binding,bool category){
+        mark_ok(before_owner,before_mark);mark_ok(after_owner,after_mark);
+        const bool same_value=before_text==after_text && (!category || before_binding==after_binding);
+        if(!apply){
+            if(before_owner==FieldOwnership::rule){if(after_owner==FieldOwnership::rule){if(!same_value || before_mark!=after_mark)fail(SQLITE_CORRUPT);}else if(after_owner==FieldOwnership::manual){if(after_mark)fail(SQLITE_CORRUPT);}else fail(SQLITE_CORRUPT);}
+            else if(after_owner==FieldOwnership::rule)fail(SQLITE_CORRUPT);
+            else if(before_owner==FieldOwnership::manual && after_owner!=FieldOwnership::manual)fail(SQLITE_CORRUPT,"Manual ownership was silently removed");
+        }else{
+            if(before_owner==FieldOwnership::manual && after_owner==FieldOwnership::rule){if(!replace_manual)fail(SQLITE_CORRUPT);}
+            else if(before_owner==FieldOwnership::manual && after_owner!=FieldOwnership::manual)fail(SQLITE_CORRUPT,"Manual ownership was silently removed");
+            else if(before_owner==FieldOwnership::rule && after_owner==FieldOwnership::manual)fail(SQLITE_CORRUPT);
+            else if(before_owner==FieldOwnership::source && after_owner==FieldOwnership::manual)fail(SQLITE_CORRUPT);
+            if((before_owner==after_owner && (before_owner==FieldOwnership::source || before_owner==FieldOwnership::manual) && !same_value) || (after_owner==FieldOwnership::rule && !after_mark) || (before_owner==FieldOwnership::rule && after_owner==FieldOwnership::source && after_mark))fail(SQLITE_CORRUPT);
+        }
+    };
+    field(before.payee_owner,before.payee_rule,before.payee,{},after.payee_owner,after.payee_rule,after.payee,{},false);
+    field(before.memo_owner,before.memo_rule,before.memo,{},after.memo_owner,after.memo_rule,after.memo,{},false);
+    const auto& left=before.transaction.allocations();const auto& right=after.transaction.allocations();
+    if(apply){
+        if(before.date!=after.date || before.transaction.effective_total()!=after.transaction.effective_total() || before.transaction.original_imported_amount()!=after.transaction.original_imported_amount() || left.size()!=right.size())fail(SQLITE_CORRUPT);
+        for(std::size_t i=0;i<left.size();++i){if(left[i].identity!=right[i].identity || left[i].source_ordinal!=right[i].source_ordinal || left[i].amount!=right[i].amount)fail(SQLITE_CORRUPT);field(left[i].memo_owner,left[i].memo_rule,left[i].memo,{},right[i].memo_owner,right[i].memo_rule,right[i].memo,{},false);field(left[i].category_owner,left[i].category_rule,left[i].category,left[i].category_binding,right[i].category_owner,right[i].category_rule,right[i].category,right[i].category_binding,true);}
+        return;
+    }
+    std::map<std::string,const Allocation*> previous;
+    for(const auto& allocation:left)if(!previous.emplace(allocation.identity,&allocation).second)fail(SQLITE_CORRUPT);
+    for(const auto& allocation:right){auto found=previous.find(allocation.identity);if(found==previous.end()){if(allocation.category_owner==FieldOwnership::rule || allocation.memo_owner==FieldOwnership::rule || allocation.category_rule || allocation.memo_rule)fail(SQLITE_CORRUPT);continue;}field(found->second->memo_owner,found->second->memo_rule,found->second->memo,{},allocation.memo_owner,allocation.memo_rule,allocation.memo,{},false);field(found->second->category_owner,found->second->category_rule,found->second->category,found->second->category_binding,allocation.category_owner,allocation.category_rule,allocation.category,allocation.category_binding,true);}
+}
+#endif
+void store_entry(sqlite3* db,const imports::Occurrence& id,const app::EntrySnapshot& snapshot,std::optional<std::int64_t> ruleset) {
     Statement row(db,"INSERT INTO entry_revisions VALUES(?,?,?,?,?,?,?,?)");row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,snapshot.revision);row.integer(4,snapshot.active?1:0);row.text(5,snapshot.draft.date);row.text(6,snapshot.draft.payee);row.text(7,snapshot.draft.memo);row.integer(8,snapshot.draft.transaction.effective_total().units());row.done();
     std::int64_t position=0;for(const auto& a:snapshot.draft.transaction.allocations()){Statement allocation(db,"INSERT INTO entry_allocations VALUES(?,?,?,?,?,?,?)");allocation.text(1,id.batch);allocation.integer(2,integer(id.ordinal));allocation.integer(3,snapshot.revision);allocation.integer(4,position++);allocation.text(5,a.category);allocation.text(6,a.memo);allocation.integer(7,a.amount.units());allocation.done();}
-    save_metadata(db,id,snapshot.revision,snapshot.draft,true);
+    save_metadata(db,id,snapshot.revision,snapshot.draft,true,ruleset);
     Statement head(db,snapshot.revision==0?"INSERT INTO entry_heads VALUES(?,?,?)":"UPDATE entry_heads SET revision=?3 WHERE batch=?1 AND ordinal=?2");head.text(1,id.batch);head.integer(2,integer(id.ordinal));head.integer(3,snapshot.revision);head.done();
 }
 void append_financial(sqlite3* db,std::string_view operation,app::ChangeKind kind,const imports::Occurrence& id,std::int64_t prior,std::int64_t result,const Money& before,const Money& change,const Money& after,std::string_view undo,std::int64_t preview,std::int64_t catalog) {
@@ -75,9 +106,18 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
     // write transaction. Exclusive document ownership serializes all commands.
     const auto preview=preview_committed_change(request);
     if(preview.expected!=expected || preview.preview_sequence!=preview_sequence || preview.catalog_revision!=catalog_revision)fail(SQLITE_CONSTRAINT,"Preview changed; refresh before applying");
+    std::optional<std::int64_t> restored_ruleset;
+#ifdef SPENTIT_RULES_STORAGE
+    // A clearing correction has no provenance row, so Undo must name the snapshot it restores.
+    if(rules_format(impl_->db) && request.kind==app::ChangeKind::undo){
+        const auto& draft=preview.after_entry.draft;bool any=draft.payee_rule.has_value() || draft.memo_rule.has_value();
+        if(!any)for(const auto& allocation:draft.transaction.allocations())if(allocation.category_rule || allocation.memo_rule)any=true;
+        if(any){const auto original=committed_change_outcome(request.undo_of);Statement mark(impl_->db,"SELECT ruleset_revision FROM entry_rule_fields WHERE batch=? AND ordinal=? AND revision=?");mark.text(1,request.identity.batch);mark.integer(2,integer(request.identity.ordinal));mark.integer(3,original->before_entry.revision);if(!mark.row())fail(SQLITE_CORRUPT,"Rule provenance does not match its ownership");restored_ruleset=mark.integer(0);}
+    }
+#endif
     Atomic transaction(impl_->db);
     if(committed_entry(request.identity).token!=expected || financial_sequence(impl_->db)!=preview_sequence || (categories_supported()?catalog_sequence(impl_->db):0)!=catalog_revision)fail(SQLITE_CONSTRAINT,"Preview changed; refresh before applying");
-    store_entry(impl_->db,request.identity,preview.after_entry);
+    store_entry(impl_->db,request.identity,preview.after_entry,restored_ruleset);
     append_financial(impl_->db,operation,request.kind,request.identity,preview.before_entry.revision,preview.after_entry.revision,preview.before,preview.change,preview.after,request.undo_of,preview_sequence,catalog_revision);
     for(const auto& dependency:expected.dependencies){Statement d(impl_->db,"INSERT INTO change_dependencies VALUES(?,?,?,?)");d.text(1,operation);d.text(2,dependency.batch);d.integer(3,dependency.revision);d.integer(4,static_cast<int>(dependency.state));d.done();}
     impl_->finish(transaction);return *committed_change_outcome(operation);
@@ -112,7 +152,7 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
         if(origin>revision)fail(SQLITE_CORRUPT);
         Statement original(impl_->db,"SELECT v.duplicate_batch,v.duplicate_ordinal,e.kind,s.target_revision,s.target_active,s.review_revision FROM versions v JOIN events e ON e.batch=v.batch AND e.revision=v.revision JOIN review_stamps s USING(batch,ordinal,revision) WHERE v.batch=? AND v.ordinal=? AND v.revision=? AND v.decision=2");original.text(1,batch_id);original.integer(2,ordinal);original.integer(3,origin);
         if(!original.row() || original.bytes(0)!=target.batch || original.integer(1)!=integer(target.ordinal) || (original.bytes(2)!="ingest" && original.bytes(2)!="materialize" && original.bytes(2)!="decide") || original.integer(3)!=reviews.integer(3) || original.integer(4)!=reviews.integer(4) || original.integer(5)!=origin)fail(SQLITE_CORRUPT);
-        if(origin!=revision){if(reviews.bytes(9)!="save")fail(SQLITE_CORRUPT);Statement previous(impl_->db,"SELECT s.target_revision,s.target_active,s.review_revision,v.duplicate_batch,v.duplicate_ordinal FROM versions v LEFT JOIN review_stamps s USING(batch,ordinal,revision) WHERE v.batch=? AND v.ordinal=? AND v.revision<? ORDER BY v.revision DESC LIMIT 1");previous.text(1,batch_id);previous.integer(2,ordinal);previous.integer(3,revision);if(!previous.row() || previous.null(0) || previous.integer(0)!=reviews.integer(3) || previous.integer(1)!=reviews.integer(4) || previous.integer(2)!=origin || previous.bytes(3)!=target.batch || previous.integer(4)!=integer(target.ordinal))fail(SQLITE_CORRUPT);}
+        if(origin!=revision){if(reviews.bytes(9)!="save" && reviews.bytes(9)!="apply_rules")fail(SQLITE_CORRUPT);Statement previous(impl_->db,"SELECT s.target_revision,s.target_active,s.review_revision,v.duplicate_batch,v.duplicate_ordinal FROM versions v LEFT JOIN review_stamps s USING(batch,ordinal,revision) WHERE v.batch=? AND v.ordinal=? AND v.revision<? ORDER BY v.revision DESC LIMIT 1");previous.text(1,batch_id);previous.integer(2,ordinal);previous.integer(3,revision);if(!previous.row() || previous.null(0) || previous.integer(0)!=reviews.integer(3) || previous.integer(1)!=reviews.integer(4) || previous.integer(2)!=origin || previous.bytes(3)!=target.batch || previous.integer(4)!=integer(target.ordinal))fail(SQLITE_CORRUPT);}
         Statement then(impl_->db,"SELECT o.result_revision FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE o.batch=? AND (o.kind=0 OR o.ordinal=?) AND h.sequence<? ORDER BY h.sequence DESC LIMIT 1");then.text(1,target.batch);then.integer(2,integer(target.ordinal));then.integer(3,reviews.integer(8));if(!then.row() || then.integer(0)!=reviews.integer(3) || entry_snapshot(target,then.integer(0)).active!=(reviews.integer(4)!=0))fail(SQLITE_CORRUPT,"Invalid review target history");
     }
     std::map<imports::Occurrence,std::int64_t> heads;Money balance=account().opening;std::int64_t prior_sequence=0,prior_order=0;std::size_t snapshot_count=0;
@@ -137,7 +177,11 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
             if(head==heads.end() || receipt->before_entry.revision!=head->second || receipt->after_entry.revision!=head->second+1 || operations.integer(10)!=prior_sequence || receipt->result_token.dependencies!=dependencies(receipt->identity,order))fail(SQLITE_CORRUPT,"Invalid committed change dependencies");
             const auto& before=receipt->before_entry;const auto& after=receipt->after_entry;
             const Money zero(0,currency);const auto delta=(after.active?after.draft.transaction.effective_total():zero)-(before.active?before.draft.transaction.effective_total():zero);if(delta!=receipt->change)fail(SQLITE_CORRUPT);
-            if(kind==app::ChangeKind::correct){if(!before.active || !after.active || !receipt->undo_of.empty())fail(SQLITE_CORRUPT);}
+            if(kind==app::ChangeKind::correct){if(!before.active || !after.active || !receipt->undo_of.empty())fail(SQLITE_CORRUPT);
+#ifdef SPENTIT_RULES_STORAGE
+                if(rules_format(impl_->db))check_rule_transition(before.draft,after.draft,false,false);
+#endif
+            }
             else if(kind==app::ChangeKind::remove){if(!before.active || after.active || !same_draft(before.draft,after.draft) || !receipt->undo_of.empty())fail(SQLITE_CORRUPT);}
             else if(kind==app::ChangeKind::undo){const auto original=committed_change_outcome(receipt->undo_of);if(!original || original->sequence>=sequence || original->identity!=receipt->identity || original->after_entry.revision!=before.revision || original->result_token.dependencies!=receipt->result_token.dependencies || original->before_entry.active!=after.active || !same_draft(original->before_entry.draft,after.draft))fail(SQLITE_CORRUPT,"Invalid strict Undo history");}
             else fail(SQLITE_CORRUPT);

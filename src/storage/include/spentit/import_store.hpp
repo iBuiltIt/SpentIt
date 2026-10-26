@@ -63,6 +63,15 @@ public:
     std::optional<app::ChangeReceipt> committed_change_outcome(std::string_view) const override;
     Money committed_balance() const override;
     std::optional<Money> projected_balance() const override;
+    bool rules_supported() const override;
+    app::RuleImage rule_image() const override;
+    std::vector<app::RuleTombstone> rule_tombstones() const override;
+    app::RuleSaveReceipt save_rules(std::string_view,const app::RuleSaveRequest&,std::int64_t,const app::OperationContext&) override;
+    std::optional<app::RuleSaveReceipt> rule_save_outcome(std::string_view) const override;
+    app::RulePreviewResult preview_pending_rules(const app::RulePreviewRequest&,const app::OperationContext&) const override;
+    app::RuleApplyReceipt apply_pending_rules(std::string_view,const app::RuleApplyRequest&,const app::OperationContext&) override;
+    std::optional<app::RuleApplyReceipt> rule_apply_outcome(std::string_view) const override;
+    app::RuleMatch match_saved_rules(const imports::Occurrence&,const app::OperationContext&) const override;
     void verify(const app::OperationContext* = nullptr) const;
     void backup_to(const std::filesystem::path&,std::string_view password,
                    const BackupObserver& observer = {}) const;
@@ -76,6 +85,7 @@ private:
     app::EntrySnapshot entry_snapshot(const imports::Occurrence&,std::int64_t) const;
     std::vector<app::DependencyStamp> dependencies(const imports::Occurrence&,std::int64_t history_before=0) const;
     void verify_committed(const app::OperationContext* = nullptr) const;
+    void verify_rules(const app::OperationContext* = nullptr) const;
     void populate(std::string_view,std::string_view,const qif::Result&,std::int64_t,const app::OperationContext*);
     app::RowView load_row(const imports::Occurrence&, bool candidates) const;
     static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr);
