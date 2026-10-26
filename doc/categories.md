@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-25
 
-State: bounded experimental category catalog verified on available macOS configurations. Rules-disabled import documents are schema 5. Rules-enabled import documents are schema 6 and keep this catalog. The owner accepted the [category lifecycle policy](../features/010-categories-and-selection.md). This implements a catalog, editor and allocation picker within the existing one-account QIF experiment. It does not implement category reports, account transfer destinations, automatic starter categories, a rules sheet, or migrations.
+State: bounded experimental category catalog verified on available macOS configurations. Rules-disabled import documents are schema 5. Rules-enabled import documents are schema 6 and keep this catalog. The owner accepted the [category lifecycle policy](../features/010-categories-and-selection.md). This implements a catalog, editor and allocation picker within the existing one-account QIF experiment. It does not implement category reports, account transfer destinations, automatic starter categories, or migrations. The rules page is specified in [durable rules](durable-rules.md).
 
 ## Identity, organization and history
 

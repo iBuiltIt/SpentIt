@@ -73,4 +73,19 @@ ctest --test-dir build/rules-debug --output-on-failure
 
 This builds the ordinary engine/parser tests plus regex, deterministic rule evaluation and pure application-preview tests. It does not build the import store, so it does not save or apply rules and it does not build a rules editor. The core engine alone still requires no PCRE2 dependency. See [dependency provenance](../third_party/pcre2/README.md) and [scope/resource contracts](rules-engine.md). Packaging that dependency and other-platform validation remain unfinished.
 
-Schema 6 Save and Apply are built by adding `SPENTIT_RULES=ON` to the durable-import configuration (`SPENTIT_STORAGE_PROTOTYPE=ON` and `SPENTIT_IMPORT_WORKFLOW=ON`, with the pinned SQLCipher source). That configuration registers the `rulestore.*` tests. The same import configuration with `SPENTIT_RULES=OFF` still creates schema 5 and registers `import.schema_gate`. Neither configuration builds the rules sheet. Debug results for the schema 6 tests are in [project status](status.md). Release and sanitizer runs of those tests are not recorded.
+Schema 6 Save and Apply are built by adding `SPENTIT_RULES=ON` to the durable-import configuration (`SPENTIT_STORAGE_PROTOTYPE=ON` and `SPENTIT_IMPORT_WORKFLOW=ON`, with the pinned SQLCipher source). That configuration registers the `rulestore.*` tests. The same import configuration with `SPENTIT_RULES=OFF` still creates schema 5 and registers `import.schema_gate`. The standalone `build/rules-debug` tree above does not build the import store or the sheet.
+
+The rules sheet is a separate import-UI tree with both `SPENTIT_IMPORT_UI=ON` and `SPENTIT_RULES=ON`. Do not turn rules on in `build/import-ui-debug`: that tree stays rules-off and still creates schema 5. The prefixes below are the same Homebrew examples as the [import UI build](import-ui.md).
+
+```sh
+cmake -S . -B build/import-ui-rules-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_PREFIX_PATH=/opt/homebrew \
+  -DOPENSSL_ROOT_DIR=/opt/homebrew/opt/openssl@3 \
+  -DSPENTIT_STORAGE_PROTOTYPE=ON -DSPENTIT_IMPORT_WORKFLOW=ON \
+  -DSPENTIT_IMPORT_UI=ON -DSPENTIT_RULES=ON \
+  -DSPENTIT_SQLCIPHER_SOURCE="$PWD/build/dependencies/sqlcipher-build"
+cmake --build build/import-ui-rules-debug
+ctest --test-dir build/import-ui-rules-debug --output-on-failure -R '^(import.rules_ui|import.category_ui|import.qml)$'
+```
+
+That rules-on Debug invocation passed `import.rules_ui`, `import.category_ui`, and `import.qml`. The rules-off Debug tree `build/import-ui-debug` then passed `import.ui`, `import.navigation`, `import.recovery_ui`, `import.committed_ui`, `import.category_ui`, and `import.qml`. Times are in [project status](status.md). Release and sanitizer runs of schema 6 and of the sheet are not recorded.

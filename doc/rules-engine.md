@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-25
 
-State: bounded standalone engine and pure application preview adapter implemented. Schema 6 Save, Preview, and Apply persistence is implemented in the rules-enabled import store and verified in Debug only, as recorded in [project status](status.md). The sheet editor is not implemented. The owner accepted the [bounded rules policy](../features/004-rules-and-explanations.md). This document records the evaluator contracts. The storage contract is [durable rules](durable-rules.md).
+State: bounded standalone engine and pure application preview adapter implemented. Schema 6 Save, Preview, and Apply persistence is implemented in the rules-enabled import store and verified in Debug only, as recorded in [project status](status.md). The rules sheet is `147a5be`, verified in Debug only. Release and ASan/UBSan coverage of the sheet are not recorded. The owner accepted the [bounded rules policy](../features/004-rules-and-explanations.md). This document records the evaluator contracts. The storage and sheet contract is [durable rules](durable-rules.md).
 
 ## Matching and derived fields
 
@@ -14,7 +14,7 @@ Ordered transaction rules run first, then source-split rules. First assignment t
 
 The engine receives explicit retained source associations. Reordering current splits does not change which source memo a rule sees. New manual splits have no source association and are excluded from source-split matching. The interface contains no monetary amounts or financial dates, so it cannot change money, dates or split structure.
 
-Reapplication recomputes source/rule-owned fields from original facts. Manually owned fields, including blanks, remain protected unless replacement was explicitly requested for the preview. Replacement only changes fields receiving a matching rule action; unmatched manual fields remain intact. Each applied field records rule identity/version. The pure application adapter reconstructs proposed DraftRows with exact amounts, dates, structure, allocation identities and binding snapshots preserved. It requires retained field provenance for existing rule-owned fields and emits new provenance alongside the proposal. Schema 6 stores those marks and replays saved rule versions during verify. The sheet does not display that history yet.
+Reapplication recomputes source/rule-owned fields from original facts. Manually owned fields, including blanks, remain protected unless replacement was explicitly requested for the preview. Replacement only changes fields receiving a matching rule action; unmatched manual fields remain intact. Each applied field records rule identity/version. The pure application adapter reconstructs proposed DraftRows with exact amounts, dates, structure, allocation identities and binding snapshots preserved. It requires retained field provenance for existing rule-owned fields and emits new provenance alongside the proposal. Schema 6 stores those marks and replays saved rule versions during verify. The sheet shows the current preview's overlap and removal text for the records just evaluated. It does not display the full saved-version history that verify replays.
 
 ## Resource and error contract
 
@@ -28,8 +28,8 @@ The current engineering limits are explicit rejection boundaries, not truncation
 
 All selected inputs are validated before producing a result. Cancellation checks run during validation and matching. Invalid patterns, invalid input, exhausted resources, cancellation, invalid templates and dependency/internal failures are distinguished from a valid non-match. No partial result is returned when the chosen scope fails.
 
-Limits must be measured and surfaced by the eventual editor/application workflow; passing small engine tests is not a claim of representative-workload responsiveness. The installed PCRE2 library is not instrumented by SpentIt's sanitizer flag. Packaging and other-platform verification remain open.
+The rules page prints these published limits. Printing them is not a measurement of representative-workload responsiveness. The installed PCRE2 library is not instrumented by SpentIt's sanitizer flag. Packaging and other-platform verification remain open.
 
 ## Verification
 
-Standalone Debug, Release and ASan/UBSan each passed all 16 registered engine/parser/regex/evaluation/application-preview cases. Coverage includes exact financial preservation, aggregate-allocation bounds, validation cancellation, manual blanks, obsolete rule results, source-association reorder/forgery and explicit replacement. Final builds and sanitizer logs were clean. Schema 6 Save and Apply have a separate Debug `rulestore.*` run, recorded in [project status](status.md). That run is not Release or sanitizer evidence, and no UI rule behavior has been verified.
+Standalone Debug, Release and ASan/UBSan each passed all 16 registered engine/parser/regex/evaluation/application-preview cases. Coverage includes exact financial preservation, aggregate-allocation bounds, validation cancellation, manual blanks, obsolete rule results, source-association reorder/forgery and explicit replacement. Final builds and sanitizer logs were clean. Schema 6 Save and Apply have a separate Debug `rulestore.*` run, recorded in [project status](status.md). The rules sheet has a separate Debug `import.rules_ui` run, also recorded there. Neither run is Release or sanitizer evidence.

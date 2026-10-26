@@ -4,23 +4,25 @@
 |---|---|
 | Author | SpentIt contributor (placeholder) |
 | Date | 2026-10-25 |
-| Status | Storage implemented in `9b7cf40`. Sheet not started. |
+| Status | Storage is `9b7cf40`. The sheet is `147a5be`, verified in Debug. |
 | Package | Roadmap package 5, rules half only |
 | Schema | New rules-enabled documents **6**. Schemas 1–5 stay readable and are not rewritten. |
 
 ## Implementation status — 2026-10-25
 
-Schema 6 Save, Preview, and Apply are in the rules-enabled import store, with the `rulestore.*` Debug results recorded in [project status](status.md). The design below remains the contract for the unfinished sheet. Do not read the design's earlier "what is missing" wording as a claim that the store is absent. Release, ASan/UBSan, and the UI are not done. The next session implements the sheet in this working session and does not spawn a fresh designer, reviewer, and implementer chain.
+Schema 6 Save, Preview, and Apply are in the rules-enabled import store (`9b7cf40`), with the `rulestore.*` Debug results recorded in [project status](status.md). The rules sheet is `147a5be`. Debug `import.rules_ui` passed, as recorded in project status. The design below remains the contract that implementation followed. Sentences that say the sheet or the store is missing describe the repository before that work. Release, ASan/UBSan, search, committed reapplication, other platforms, PCRE2 sanitizer coverage, and physical power loss are not done. The next package is search and ledger completion.
 
 ## Overview
 
-The bounded rules evaluator and the pure application preview adapter are implemented and verified. Schema 6 adds the document-scoped ruleset, Save, and atomic pending Apply. Still missing is the sheet editor with explicit Save and Discard, and the UI that calls those store commands.
+The bounded rules evaluator and the pure application preview adapter are implemented and verified. Schema 6 adds the document-scoped ruleset, Save, and atomic pending Apply. The sheet editor is `147a5be`: list, reorder, enable, edit, explicit Save and Discard, and Preview separate from Apply. It is verified in Debug only. Search, committed reapplication, Release, and ASan/UBSan remain undone.
 
 This design adds that integration inside the existing one-account QIF experiment. New experimental documents use schema 6 and keep every schema-5 category and committed-change capability. Schemas 1–5 open unchanged and reject rule commands. Apply calls the existing `app::preview_rules` / `rules::RuleSet::evaluate` path. It does not introduce a second pattern language, and it does not modify committed rows, money, dates, split structure, or transfer relationships.
 
 Rule definitions are immutable versions addressed by a stable identity and a monotonic per-rule version. The live ordered list is a mutable head. Draft and committed snapshots gain field marks pointing at those versions. Later edits and deletions do not rewrite old marks, so an explanation can still name the rule version that wrote a field.
 
 ## Background and motivation
+
+This section records the repository as found when the design was written. The implementation status above is the current state.
 
 `features/004-rules-and-explanations.md` and `doc/rules-engine.md` record the accepted evaluation policy and the engineering contracts. `rules::RuleSet::evaluate` (`src/engine/rules.cpp`) already implements transaction-then-split phases, per-field first assignment, manual protection, source-allocation identity, and the explanation effects `applied`, `compatible`, `competing`, `manual_protected`, and `missing_parent`. `app::preview_rules` (`src/app/rule_preview.cpp`) rebuilds a `DraftRow` from that result without changing amounts, dates, allocation identities, or source ordinals. Its header states the integration obligation directly: the adapter performs no repository write, and durable Apply must check revisions again.
 
@@ -1095,7 +1097,7 @@ Already settled, and intentionally not asked again: category taxonomy and lifecy
 - `src/app/include/spentit/rule_preview.hpp`, `src/app/rule_preview.cpp`
 - `src/storage/import_store.cpp`, `src/storage/category_store.inc`, `src/storage/committed_store.inc`
 - `src/ui/import_model.hpp`, `src/ui/import_model.cpp`, `src/ui/ImportMain.qml`
-- `tests/engine/rules_tests.cpp`, `tests/app/rule_preview_tests.cpp`, `tests/storage/category_tests.cpp`
+- `tests/engine/rules_tests.cpp`, `tests/app/rule_preview_tests.cpp`, `tests/storage/category_tests.cpp`, `tests/ui/rule_ui_tests.cpp`
 
 ## PR Plan
 

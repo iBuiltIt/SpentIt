@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: bounded evaluator and pure preview adapter verified. Schema 6 Save, Preview, and Apply are implemented in the rules-enabled import store and verified in Debug only. The sheet editor is not implemented. See [engineering contract](../doc/rules-engine.md) and [durable rules](../doc/durable-rules.md).
+Implementation: bounded evaluator and pure preview adapter verified. Schema 6 Save, Preview, and Apply are implemented in the rules-enabled import store and verified in Debug only. The rules sheet is `147a5be` and verified in Debug only (`import.rules_ui`). Release and ASan/UBSan are not recorded. See [engineering contract](../doc/rules-engine.md) and [durable rules](../doc/durable-rules.md).
 
 ## Accepted requirements
 

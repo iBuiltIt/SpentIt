@@ -21,7 +21,7 @@ Acceptance criteria are verification obligations, not by themselves reports of p
 | [001 — Documents, storage, and security](001-documents-storage-security.md) | active | Local documents, encryption, persistence, backup, recovery, history |
 | [002 — Accounts, money, and splits](002-accounts-money-splits.md) | active | Currency setup, exact money, balances, transfers, allocation invariants |
 | [003 — QIF import and review](003-qif-import-review.md) | active | Immutable source, duplicate recognition, durable drafts, atomic commit |
-| [004 — Rules and explanations](004-rules-and-explanations.md) | active | Accepted phase/precedence/manual-protection policy; evaluator, preview adapter, and schema-6 Save/Apply verified in Debug; rules sheet not implemented |
+| [004 — Rules and explanations](004-rules-and-explanations.md) | active | Accepted phase/precedence/manual-protection policy; evaluator, preview adapter, schema-6 Save/Apply, and the rules sheet verified in Debug; the sheet is `147a5be`; Release, sanitizers, search, and committed reapplication remain open |
 | [005 — Transaction sheet and navigation](005-transaction-sheet-navigation.md) | active | Accepted main layout, inline editing, balance toggle, search direction, navigation |
 | [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Period comparisons, category totals, reproducible filters |
 | [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | Free-access intent, resale restriction, unresolved project license |

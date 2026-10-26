@@ -159,9 +159,13 @@ New schema-4 datasets support explicit committed editing with exact before/after
 
 ## Category management and selection — 2026-10-25
 
-New schema-5 datasets expose a guarded Categories editor and allocation picker with active leaves, Uncategorized and unmapped text. Rename/move updates current ledger display and literal filtering without changing retained source or historical labels. Archived assignments remain readable and survive unrelated edits; groups are never assignable. See [behavior, recovery and verification limits](categories.md). Older formats retain their earlier UI capabilities. Durable rules editing/application and combined text/date/source search remain unfinished.
+New schema-5 datasets expose a guarded Categories editor and allocation picker with active leaves, Uncategorized and unmapped text. Rename/move updates current ledger display and literal filtering without changing retained source or historical labels. Archived assignments remain readable and survive unrelated edits; groups are never assignable. See [behavior, recovery and verification limits](categories.md). Older formats retain their earlier UI capabilities. Combined text/date/source search remains unfinished. The rules page is recorded below.
 
 
 ### Recorded interaction limitation
 
 A rare Qt `DelegateModel::cancel: index out range` warning was observed during the existing filter-reset test, reproducing in one of eight targeted Release repetitions. Occurrence/viewport assertions passed. A proposed workaround was rejected by broader viewport tests and fully reverted; final restored seven-entry UI regression checks passed with clean logs. The warning is not claimed fixed and belongs in the remaining search/ledger interaction review. It does not change the accepted search-return behavior or establish a financial-data failure.
+
+## Rules sheet — 2026-10-25
+
+When the import UI is built with `SPENTIT_RULES=ON`, a schema-6 document shows a sidebar rules page. The page lists, reorders, enables, and edits rules. Save and Discard cover the whole image. Preview is separate from Apply. A schema-5 document does not show the page. The rules-off import UI build still creates schema 5 and does not register `import.rules_ui`. The UI does not construct a ruleset or execute SQL. Debug evidence and the next-package handoff are in [project status](status.md). The contract is [durable rules](durable-rules.md). Release and sanitizer runs of the sheet are not recorded.
