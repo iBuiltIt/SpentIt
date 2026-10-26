@@ -37,16 +37,26 @@ ApplicationWindow {
     property string currentPage: "ledger"
     property var navigation: ["ledger"]
     property int navigationIndex: 0
+    property var navigationAccounts: [""]
+    property var pendingAccountNavigation: null
+    property bool addingAccount: false
+    property string accountCreationId: ""
+    property string accountCreationDate: ""
     property bool sidebarVisible: true
     function resetNavigation() {
-        currentPage="ledger"; navigation=["ledger"]; navigationIndex=0
+        currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
     }
     function navigate(page) {
         if(workflow.busy || !s.active || page===currentPage) return
         guard(function(){
             let entries=navigation.slice(0,navigationIndex+1)
-            entries.push(page);navigation=entries;navigationIndex=entries.length-1;currentPage=page
+            entries.push(page);navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage=page
         })
+    }
+    function chooseAccount(id) {
+        if(workflow.busy) return
+        if(id===s.accountId) {navigate("ledger");return}
+        guard(function(){workflow.command("select_account",{id:id})})
     }
     function revealHistoryOperation(operation) {
         let entries=s.entryHistory||[]
@@ -57,7 +67,12 @@ ApplicationWindow {
     function traverseNavigation(delta) {
         let destination=navigationIndex+delta
         if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
-        guard(function(){navigationIndex=destination;currentPage=navigation[destination]})
+        guard(function(){
+            if(navigationAccounts[destination]!==s.accountId) {
+                pendingAccountNavigation={index:destination,page:navigation[destination]}
+                workflow.command("select_account",{id:navigationAccounts[destination]})
+            } else {navigationIndex=destination;currentPage=navigation[destination]}
+        })
     }
     Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
     Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
@@ -317,7 +332,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {bulkDialog.close();changePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {addingAccount=false;bulkDialog.close();changePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -339,7 +354,15 @@ ApplicationWindow {
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
             }
+            if(!success && action==="select_account")pendingAccountNavigation=null
             if(success) {
+                if(action==="select_account" || action==="create_account") {
+                    addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter="";search.clear()
+                    if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
+                    else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
+                    loadEditor();loadRulesForm();loadCategoryForm()
+                    if(currentPage==="history")Qt.callLater(function(){workflow.command("history")})
+                }
                 if(action==="preview_bulk")bulkDialog.open()
                 if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
                 projected.checked=s.mode!=="Committed"
@@ -578,19 +601,37 @@ ApplicationWindow {
                 ColumnLayout {
                     anchors.fill:parent
                     Label {text:"Accounts";font.bold:true}
-                    Button {
-                        objectName:"accountNavigation";Layout.fillWidth:true
-                        text:s.name||"";highlighted:currentPage==="ledger";enabled:!workflow.busy
-                        contentItem:Label {text:parent.text;color:currentPage==="ledger"?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
-                        Accessible.name:"Open account "+(s.name||"")
-                        onClicked:navigate("ledger")
+                    ScrollView {
+                        id:accountScroll;Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth;clip:true
+                        ColumnLayout {
+                            width:accountScroll.availableWidth
+                            Repeater {
+                                model:s.accounts||[]
+                                Button {
+                                    required property var modelData
+                                    objectName:modelData.id===s.accountId?"accountNavigation":"accountNavigation_"+modelData.id
+                                    Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
+                                    highlighted:modelData.id===s.accountId && currentPage==="ledger"
+                                    contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
+                                    Accessible.name:"Open account "+modelData.name
+                                    onClicked:chooseAccount(modelData.id)
+                                }
+                            }
+                            TextField {
+                                id:newAccountName;objectName:"newAccountName";visible:addingAccount;Layout.fillWidth:true;enabled:!workflow.busy
+                                placeholderText:"Account name · Enter";Accessible.name:"New account name"
+                                onAccepted:if(text.length>0)workflow.command("create_account",{id:accountCreationId,name:text,currency:s.homeCurrency,date:accountCreationDate})
+                                Keys.onEscapePressed:addingAccount=false
+                            }
+                            Button {text:"Cancel";visible:addingAccount;enabled:!workflow.busy;onClicked:addingAccount=false}
+                            Button {objectName:"newAccount";text:"+ New account";Layout.fillWidth:true;visible:!addingAccount;enabled:!workflow.busy && !!s.nextAccountId;onClicked:guard(function(){accountCreationId=s.nextAccountId;accountCreationDate=Qt.formatDate(new Date(),"yyyy-MM-dd");newAccountName.clear();addingAccount=true;Qt.callLater(function(){newAccountName.forceActiveFocus();accountScroll.ScrollBar.vertical.position=1})})}
+                        }
                     }
                     Label {textFormat:Text.PlainText;text:(s.mode==="Projected"?"Projected":"Committed")+" balance";Layout.fillWidth:true;wrapMode:Text.Wrap}
                     Label {textFormat:Text.PlainText;text:(s.currency||"")+" "+(s.mode==="Projected"?(s.projected||"Unavailable"):(s.committed||""));Layout.fillWidth:true;wrapMode:Text.Wrap;font.bold:true}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
                     Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.rulesSupported;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(!rulesDirty)workflow.command("rules_load")})}
                     Button {objectName:"historyNavigation";text:"Committed changes";Layout.fillWidth:true;visible:!!s.committedChangesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("history");workflow.command("history")})}
-                    Item {Layout.fillHeight:true}
                     Button {objectName:"sidebarSettings";text:"Settings";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="settings";onClicked:navigate("settings")}
                 }
             }

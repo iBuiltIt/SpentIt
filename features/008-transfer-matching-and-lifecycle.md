@@ -1,8 +1,8 @@
 # 008 — Transfer matching and lifecycle
 
 Status: **active**  
-Last updated: 2026-10-25  
-Implementation: none; accepted product behavior with unresolved design details. The current engine and storage prototype do not implement accounts, transfer matching, or protected drafts.
+Last updated: 2026-10-26  
+Implementation: the [multi-account prerequisite](../doc/accounts.md) is implemented in the durable QIF experiment. Transfer relationships, matching, generated counterparts and protected drafts remain unimplemented; accepted product behavior and unresolved design details follow.
 
 ## Accepted requirements
 
@@ -53,6 +53,24 @@ Deletion/reversal depends on provenance and state:
 
 For both manual and automatic links, a match icon navigates to the counterpart in the other account's ledger, selects it, and brings it on-screen. The counterpart's match icon navigates back. Toolbar Back also returns to the previous ledger location. Navigation respects the [Save / Discard / Stay contract](005-transaction-sheet-navigation.md). Final icon artwork is unspecified.
 
+## Accepted first implementation scope — 2026-10-26
+
+The owner accepted these five decisions for the first transfer package:
+
+1. **Destination-first commit is allowed.** Explicitly committing the generated destination protects its linked origin draft from workspace clearing. It does not commit the origin. Protection therefore works in either commit order; creation provenance remains unchanged.
+2. **Matching initially requires explicit confirmation.** Suggest candidates for review rather than automatically linking them. Preserve both bank records and their own posting dates. Differing amounts require review; confirmation must not silently correct either amount. Automatic matching confidence and mismatch-resolution commands remain later design work.
+3. **Generated dates are provisional.** Initially copy the origin date and visibly identify it as provisional. Review the destination bank posting date when independent evidence arrives, preserving the original evidence and prior interpretation.
+4. **Transfers belong to allocations.** Support a destination account per allocation, with each counterpart linked to its originating allocation. A split transaction can therefore contain ordinary categories and transfers to multiple destinations. Do not infer identity from allocation position or combine repeated equal allocations.
+5. **Cross-currency transfers are deferred.** The first package must reject them with an explicit unsupported-operation error. Do not infer exchange rates or reinterpret amounts. This bounds implementation; it does not remove the broader product requirement.
+
+These decisions settle the corresponding first-scope questions below. They do not authorize automatic matching, silent mismatch repair, or cascade removal of committed or independently supported entries. Detailed correction, unlink, Fix match and reversal behavior involving committed entries or later edits remains a separate decision gate.
+
+### Implementation starting point
+
+Inspection on 2026-10-26 found a singleton account table in `src/storage/import_store.cpp`, an account-less command boundary in `src/app/include/spentit/import_repository.hpp`, and QIF tests that explicitly reject transfer destinations in `tests/engine/qif_tests.cpp`. Existing allocation metadata already carries stable identities. The subsequent [account-scoped implementation](../doc/accounts.md) replaces the singleton restriction and adds account ownership to batches. Transfer destinations are still rejected; this prerequisite does not implement transfers.
+
+Proposed sequence: introduce account identities and account-scoped import/ledger operations in a new experimental format; then allocation-linked same-currency transfers, symmetric draft protection, and explicit evidence matching. Integrate each complete operation with history, retry identities, backup restoration and interruption tests before exposing it in the durable UI. No migration or backward-compatibility work is required before the owner-announced release gate.
+
 ## Proposed implementation direction
 
 Represent source provenance, transfer relationships, and each account entry's commit state separately. A single committed flag for an entire transfer cannot express the accepted lifecycle. Protection needs a durable relationship to the committed origin; merely disabling a UI delete button is insufficient. Exact schema, identifiers, command APIs, and match algorithm are not selected by these requirements.
@@ -76,10 +94,10 @@ Keep transfer recognition distinct from ordinary duplicate suppression: a matchi
 
 ## Open questions
 
-- Match confidence, date windows, references/normalization, duplicate multiplicity, ambiguous candidates, and cross-currency/fee matching.
-- Transfer allocations within split transactions, multiple destinations, and how counterpart identity maps to allocations.
-- Generated counterpart date and other field defaults before its bank evidence arrives, and reconciliation of differing dates/amounts/memos without losing either source.
-- Committing the generated destination before the origin; cancelling only the destination side while both are ordinary drafts; multi-batch selection and ordering.
+- Candidate ranking, date windows, references/normalization, duplicate multiplicity and ambiguous candidates. Initial links require explicit confirmation; automatic matching and cross-currency/fee matching remain deferred.
+- Detailed matching when independently imported evidence groups multiple transfer allocations differently. Per-allocation destinations and counterpart links are accepted.
+- Generated counterpart field defaults other than the accepted provisional origin date, and explicit reconciliation of differing amounts/memos without losing either source.
+- Cancelling only the destination side while both are ordinary drafts; multi-batch selection and ordering. Destination-first commit with protection of the origin draft is accepted.
 - Detailed edit/unlink/reversal rules once both accounts are committed, once independent evidence has arrived, or after later edits; preview and conflict handling must preserve independently supported records.
 - How pending evidence attachments and repair proposals interact with discarding an import; draft review must not silently alter committed interpretations or links.
 - Exact attention/protection labels, acceptance-state persistence, and navigation when an existing filter hides the counterpart.

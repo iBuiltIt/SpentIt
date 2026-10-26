@@ -32,6 +32,10 @@ public:
     ImportStore(ImportStore&&) noexcept;
     ImportStore& operator=(ImportStore&&) noexcept;
     app::Account account() const override;
+    std::vector<app::Account> accounts() const override;
+    void select_account(std::int64_t) override;
+    std::optional<app::AccountCreation> account_creation_outcome(std::int64_t) const override;
+    app::Account create_account(std::int64_t,std::string_view,const Currency&,std::string_view) override;
     void opening(std::int64_t,std::string_view,const Money&) override;
     std::vector<app::BatchInfo> batches() const override;
     app::BatchInfo ingest(std::string_view,std::string_view,qif::DateOrder) override;
@@ -82,6 +86,9 @@ public:
                    const BackupObserver& observer = {}) const;
     void observer(ImportObserver);
 private:
+    app::Account account_by_id(std::int64_t) const;
+    app::Account account_for_batch(std::string_view) const;
+    void require_account(std::string_view) const;
     struct Impl;
     std::unique_ptr<Impl> impl_;
     explicit ImportStore(std::unique_ptr<Impl>);

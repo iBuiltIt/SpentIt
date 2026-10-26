@@ -157,13 +157,9 @@ void repairs(){
         s.ingest("new","D1/4/2026\nT-10\n^\n",qif::DateOrder::dmy);
         check(s.row({"new",0}).decision.disposition==imports::Disposition::unresolved);
         check(s.row({"new",0}).candidates.size()==1);s.verify();}
-    // Schema 1 remains readable without an implicit upgrade and cannot store repairs.
-    legacy_create(d.path/"legacy",1);
-    {auto s=ImportStore::open(d.path/"legacy",password);s.ingest("bad","D31/02/2026\nT-10\n^\n",qif::DateOrder::dmy);}
-    const auto legacy=bytes(d.path/"legacy");
-    {auto s=ImportStore::open(d.path/"legacy",password);check(!s.row({"bad",0}).source.repairable);
-        fails([&]{s.save({"bad",0},0,repaired_row(s.row({"bad",0}).source,"2026-02-28",-1000));});}
-    check(bytes(d.path/"legacy")==legacy);
+    // Disposable pre-release formats are rejected without modifying evidence.
+    legacy_create(d.path/"legacy",1);const auto legacy=bytes(d.path/"legacy");
+    fails([&]{ImportStore::open(d.path/"legacy",password);});check(bytes(d.path/"legacy")==legacy);
     no_leaks(d.path);
 }
 void cancellation(){
@@ -263,14 +259,7 @@ void cancellation(){
         app::OperationContext retry;const auto resumed=s.resume("invalid",0,retry);check(resumed.blocked && resumed.count==0);
         fails([&]{s.commit("invalid",1,"invalid-op");});s.discard("invalid",1);s.verify();
     }
-    // Genuine old schemas, not a new-schema file with a changed version label.
-    for(int version:{1,2}) {
-        Directory old;legacy_create(old.path/"doc",version);
-        {auto s=ImportStore::open(old.path/"doc",password);s.opening(0,"2026-08-01",Money(0,cad));
-            app::OperationContext context;check(s.ingest_controlled("old",source,qif::DateOrder::dmy,context).revision==0);
-            auto row=*s.row({"old",0}).draft;row.payee="Legacy edited";s.save({"old",0},0,row);s.commit("old",1,"old-op");s.backup_to(old.path/"copy",password);}
-        {auto s=ImportStore::open(old.path/"copy",password);check(s.committed_balance().units()==2069);s.verify();}
-    }
+    for(int version:{1,2}) {Directory old;legacy_create(old.path/"doc",version);const auto before=bytes(old.path/"doc");fails([&]{ImportStore::open(old.path/"doc",password);});check(bytes(old.path/"doc")==before);}
     no_leaks(d.path);
 }
 void operation(ImportStore& s,int kind){

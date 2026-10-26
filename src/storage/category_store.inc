@@ -169,8 +169,8 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
             imports::DraftRow draft=entry?entry_snapshot(id,revision).draft:*load_row(id,false).draft;
             if(!entry){ // Load an arbitrary historical draft revision, not only its head.
                 Statement fields(impl_->db,"SELECT date,payee,memo,total FROM versions WHERE batch=? AND ordinal=? AND revision=?");fields.text(1,id.batch);fields.integer(2,integer(id.ordinal));fields.integer(3,revision);if(!fields.row())fail(SQLITE_CORRUPT);
-                std::vector<Allocation> aa;Statement values(impl_->db,"SELECT category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");values.text(1,id.batch);values.integer(2,integer(id.ordinal));values.integer(3,revision);while(values.row())aa.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),account().currency)});
-                draft={fields.bytes(0),fields.bytes(1),fields.bytes(2),Transaction::corrected_import(*source.original_amount,Money(fields.integer(3),account().currency),std::move(aa))};load_metadata(impl_->db,id,revision,draft,false);
+                std::vector<Allocation> aa;Statement values(impl_->db,"SELECT category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");values.text(1,id.batch);values.integer(2,integer(id.ordinal));values.integer(3,revision);while(values.row())aa.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),account_for_batch(id.batch).currency)});
+                draft={fields.bytes(0),fields.bytes(1),fields.bytes(2),Transaction::corrected_import(*source.original_amount,Money(fields.integer(3),account_for_batch(id.batch).currency),std::move(aa))};load_metadata(impl_->db,id,revision,draft,false);
             }
             if((draft.payee_owner==FieldOwnership::source && draft.payee!=source.payee) || (draft.memo_owner==FieldOwnership::source && draft.memo!=source.memo))fail(SQLITE_CORRUPT);
             std::int64_t order=0;bool undo=false;std::optional<std::int64_t> prior_revision;

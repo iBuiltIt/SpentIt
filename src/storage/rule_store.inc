@@ -224,6 +224,7 @@ std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     Statement row(impl_->db,"SELECT batch,batch_before,batch_after,ruleset_revision,catalog_revision,replace_manual,evaluated,changed_count FROM rule_applications WHERE id=?");row.text(1,operation);
     if(!row.row()){if(command_taken(impl_->db,operation))fail(SQLITE_CONSTRAINT,other_command);return {};}
+    require_account(row.bytes(0));
     return app::RuleApplyReceipt{std::string(operation),row.bytes(0),row.integer(1),row.integer(2),row.integer(3),row.integer(4),row.integer(5)!=0,static_cast<std::size_t>(row.integer(6)),static_cast<std::size_t>(row.integer(7))};
 }
 app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreviewRequest& request,const app::OperationContext& context) const {
@@ -389,8 +390,8 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
             const auto revision_at=versions.integer(0);
             const auto source=load_row(id,false).source;
             std::vector<Allocation> allocations;Statement values(impl_->db,"SELECT category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");values.text(1,id.batch);values.integer(2,integer(id.ordinal));values.integer(3,revision_at);
-            while(values.row()) allocations.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),account().currency)});
-            imports::DraftRow draft{versions.bytes(1),versions.bytes(2),versions.bytes(3),Transaction::corrected_import(*source.original_amount,Money(versions.integer(4),account().currency),std::move(allocations))};
+            while(values.row()) allocations.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),account_for_batch(id.batch).currency)});
+            imports::DraftRow draft{versions.bytes(1),versions.bytes(2),versions.bytes(3),Transaction::corrected_import(*source.original_amount,Money(versions.integer(4),account_for_batch(id.batch).currency),std::move(allocations))};
             load_metadata(impl_->db,id,revision_at,draft,false);
             const bool marked=any_mark(draft);
             Statement provenance(impl_->db,"SELECT 1 FROM draft_rule_fields WHERE batch=? AND ordinal=? AND revision=?");provenance.text(1,id.batch);provenance.integer(2,integer(id.ordinal));provenance.integer(3,revision_at);

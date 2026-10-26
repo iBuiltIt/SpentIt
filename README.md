@@ -2,7 +2,7 @@
 
 A local, single-user desktop application in development for understanding spending through reliable imports, reviewable categorization, and explainable reports.
 
-Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCipher storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet prototype, and a partial durable QIF workflow with setup/review UI, categories, rules, combined search, multiselection, and atomic committed bulk changes with group Undo. **There is no production financial-document application yet.** Experiments use synthetic inputs. The standalone sheet is session-only; the durable import UI persists drafts, committed changes, and history. Experimental formats need no migration or compatibility support until the owner explicitly announces a release.
+Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCipher storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet prototype, and a partial durable QIF workflow with setup/review UI, multiple account workspaces, categories, rules, combined search, multiselection, and atomic committed bulk changes with group Undo. **There is no production financial-document application yet.** Experiments use synthetic inputs. The standalone sheet is session-only; the durable import UI persists drafts, committed changes, and history. Experimental formats need no migration or compatibility support until the owner explicitly announces a release.
 
 ## Start here
 
@@ -11,6 +11,7 @@ Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCip
 - [Transaction-sheet prototype: build, run, and measurements](doc/sheet-prototype.md)
 - [Encrypted-storage prototype](doc/storage-prototype.md)
 - [Durable QIF workflow](doc/durable-import.md) and [setup/review UI](doc/import-ui.md)
+- [Account-scoped workflow and current experimental formats](doc/accounts.md)
 - [Search and bulk ledger contract](doc/search-ledger.md)
 - [Current handoff and next-work gates](doc/roadmap.md#handoff--2026-10-26)
 - [Feature requirements and open decisions](features/README.md)

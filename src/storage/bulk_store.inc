@@ -1,4 +1,4 @@
-bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="7";}
+bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="8";}
 std::string ImportStore::bulk_group(std::string_view operation) const {if(!bulk_supported())return {};Statement group(impl_->db,"SELECT operation FROM bulk_members WHERE entry_operation=?");group.text(1,operation);return group.row()?group.bytes(0):std::string{};}
 namespace {
 constexpr const char* bulk_refresh="Bulk preview changed; refresh before applying";
@@ -15,16 +15,18 @@ bool same_preview(const app::BulkPreview& a,const app::BulkPreview& b){
 }
 }
 std::optional<app::BulkReceipt> ImportStore::bulk_outcome(std::string_view operation) const {
-    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes require a new schema-7 dataset");
+    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes require a new schema-8 dataset");
     if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement group(impl_->db,"SELECT kind,category,undo_of,preview_sequence,catalog_revision,count FROM bulk_operations WHERE id=?");group.text(1,operation);
     if(!group.row()){Statement used(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");used.text(1,operation);if(used.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
-    const auto currency=account().currency;const Money zero(0,currency);
+    Statement owner(impl_->db,"SELECT o.batch FROM bulk_members m JOIN ledger_operations o ON o.id=m.entry_operation WHERE m.operation=? ORDER BY m.position LIMIT 1");owner.text(1,operation);if(!owner.row())fail(SQLITE_CORRUPT);require_account(owner.bytes(0));
+    const auto currency=account_for_batch(owner.bytes(0)).currency;const Money zero(0,currency);
     app::BulkReceipt receipt{std::string(operation),{static_cast<app::ChangeKind>(group.integer(0)),{},group.bytes(1),group.bytes(2)},{},zero,zero,zero,group.integer(3),group.integer(4)};
     Statement members(impl_->db,"SELECT position,entry_operation FROM bulk_members WHERE operation=? ORDER BY position");members.text(1,operation);
     while(members.row()){
         if(members.integer(0)!=integer(receipt.entries.size()) || receipt.entries.size()>=4096)fail(SQLITE_CORRUPT,"Invalid bulk membership");
         const auto entry=committed_change_outcome(members.bytes(1));if(!entry)fail(SQLITE_CORRUPT,"Missing bulk member history");
+        if(account_for_batch(entry->identity.batch).identity!=account_for_batch(owner.bytes(0)).identity)fail(SQLITE_CORRUPT,"Bulk members span accounts");
         if(entry->kind!=receipt.request.kind || entry->sequence!=receipt.preview_sequence+integer(receipt.entries.size())+1)fail(SQLITE_CORRUPT,"Bulk history is not contiguous");
         if(receipt.entries.empty()){if(entry->operation!=operation)fail(SQLITE_CORRUPT);receipt.before=entry->before;}else if(entry->before!=receipt.after)fail(SQLITE_CORRUPT);
         receipt.after=entry->after;receipt.request.identities.push_back(entry->identity);receipt.entries.push_back(*entry);
@@ -35,7 +37,7 @@ std::optional<app::BulkReceipt> ImportStore::bulk_outcome(std::string_view opera
     return receipt;
 }
 app::BulkPreview ImportStore::preview_bulk(const app::BulkRequest& request) const {
-    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes require a new schema-7 dataset");bulk_bound(request);
+    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes require a new schema-8 dataset");bulk_bound(request);
     if(request.kind!=app::ChangeKind::correct && request.kind!=app::ChangeKind::remove && request.kind!=app::ChangeKind::undo)fail(SQLITE_CONSTRAINT,"Invalid bulk action");
     if((request.kind!=app::ChangeKind::correct && !request.category.empty()) || (request.kind!=app::ChangeKind::undo && !request.undo_of.empty()))fail(SQLITE_CONSTRAINT,"Invalid bulk fields");
     const auto epoch=catalog_sequence(impl_->db),sequence=financial_sequence(impl_->db);const auto before=committed_balance();

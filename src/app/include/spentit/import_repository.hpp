@@ -18,6 +18,13 @@ struct Account {
     bool frozen;
     std::int64_t revision;
     bool opening_confirmed;
+    std::int64_t identity=1;
+};
+struct AccountCreation {
+    std::int64_t identity;
+    std::string name;
+    Currency currency;
+    std::string date;
 };
 enum class BatchState { pending, committed, discarded, captured };
 struct BatchInfo {
@@ -53,6 +60,15 @@ class ImportRepository {
 public:
     virtual ~ImportRepository() = default;
     virtual Account account() const = 0;
+    // Serial-worker session selection; commands never span accounts implicitly.
+    virtual std::vector<Account> accounts() const { return {account()}; }
+    virtual void select_account(std::int64_t id) { if(id!=account().identity) throw std::logic_error("Unknown account"); }
+    virtual Account create_account(std::int64_t, std::string_view, const Currency&, std::string_view) {
+        throw std::logic_error("Multiple accounts require a new dataset");
+    }
+    virtual std::optional<AccountCreation> account_creation_outcome(std::int64_t) const {
+        throw std::logic_error("Account creation outcome is unavailable");
+    }
     // expected revision prevents stale opening-balance edits; frozen after commit.
     virtual void opening(std::int64_t expected, std::string_view date, const Money&) = 0;
     virtual std::vector<BatchInfo> batches() const = 0;

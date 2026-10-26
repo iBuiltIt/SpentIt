@@ -390,6 +390,11 @@ struct ImportModel::Worker {
         if(metadata.isEmpty()) {
             cachedAccount=repo.account();const auto& acct=*cachedAccount;
             state["committedChangesSupported"]=repo.committed_changes_supported();state["categoriesSupported"]=repo.categories_supported();
+            state["accountId"]=QString::number(acct.identity);
+            QVariantList accountList;std::int64_t last=0;
+            for(const auto& item:repo.accounts()){accountList.push_back(QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())}});last=std::max(last,item.identity);}
+            state["accounts"]=accountList;state["homeCurrency"]=accountList.isEmpty()?QString():accountList.front().toMap().value("currency");
+            state["nextAccountId"]=last==INT64_MAX?QString():QString::number(last+1);
             state["name"]=text(acct.name); state["currency"]=text(acct.currency.code());
             state["openingDate"]=text(acct.opening_date); state["opening"]=money(acct.opening);
             state["frozen"]=acct.frozen; state["confirmed"]=acct.opening_confirmed;
@@ -545,7 +550,34 @@ struct ImportModel::Worker {
         if(action=="close") {gateway->close();clearChanges();active=false;selected.clear();receipt.clear();selectedBatch.clear();filter.clear();projected=true;sort=0;descending=false;return;}
         if(!active) throw std::logic_error("Open a dataset first");
         auto& repo=gateway->repository();
-        if(action=="category_list") {catalog();}
+        if(action=="select_account" || action=="create_account") {
+            bool valid=false;const auto id=a.value("id").toString().toLongLong(&valid);
+            if(!valid || id<=0)throw std::invalid_argument("Choose a valid account");
+            if(action=="create_account") {
+                // Identity and date come from the unchanged creation request, so
+                // retry after a lost acknowledgement cannot create another account.
+                const auto name=str(a.value("name")),date=str(a.value("date"));const Currency currency(str(a.value("currency")));
+                try {repo.create_account(id,name,currency,date);}
+                catch(...) {
+                    const auto failure=std::current_exception();std::optional<app::AccountCreation> saved;
+                    try {saved=repo.account_creation_outcome(id);}
+                    catch(...) {
+                        gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();
+                        throw std::runtime_error("Account creation could not be confirmed. Reopen and inspect the account list before retrying.");
+                    }
+                    if(!saved || saved->name!=name || saved->currency!=currency || saved->date!=date)std::rethrow_exception(failure);
+                }
+            }
+            try {repo.select_account(id);}
+            catch(...) {
+                if(action!="create_account")throw;
+                gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();
+                throw std::runtime_error("Account was created durably, but could not be selected. Reopen and inspect the account list before retrying.");
+            }
+            selected.clear();selectedBatch.clear();receipt.clear();clearChanges();
+            selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;sort=0;descending=false;
+        }
+        else if(action=="category_list") {catalog();}
         else if(action=="category_select") {selectCategory(str(a.value("id")));}
         else if(action=="cancel_category_preview") {preparedCategory.reset();categoryOperation.clear();categoryPreview.clear();}
         else if(action=="preview_category") {
@@ -946,7 +978,8 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         catch(const std::exception&){
             worker->invalidate();
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
-            result.error=(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved durably, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."
+            result.error=(action=="create_account" && result.success)?"Account was created durably, but its view could not be refreshed. Reopen and inspect the account list before retrying."
+                :(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved durably, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."
                 :(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Committed change "+worker->changeReceipt.value("operation").toString()+" was saved durably, but the refreshed ledger could not be loaded. Reopen and inspect committed history; do not apply the change again."
                 :(action=="rules_apply" && !ruleOperation.isEmpty())?ruleApplyRefreshFailure(ruleOperation)
                 :(action=="rules_save" && !ruleOperation.isEmpty())?ruleSaveRefreshFailure(ruleOperation)

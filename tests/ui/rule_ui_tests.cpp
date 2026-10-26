@@ -85,22 +85,15 @@ class RuleUiTests : public QObject {
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("RuleUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
     void init(){QSettings().clear();qunsetenv("SPENTIT_RULE_CANCEL_WINDOW");qunsetenv("SPENTIT_RULE_REFRESH_FAIL");}
-    void schema6ShowsRulesAndSchema5HidesThem(){
-        Session legacy;writeSchema5(legacy.path());
-        run(legacy.model,"open",{{"path",legacy.path()}});
-        QVERIFY(legacy.model.state().value("categoriesSupported").toBool());
-        QVERIFY(!legacy.model.state().value("rulesSupported").toBool());
-        QVERIFY(object(legacy.root,"rulesNavigation"));
-        QVERIFY(!object(legacy.root,"rulesNavigation")->property("visible").toBool());
-        QSettings().remove("datasetPath");QSettings().sync();
-        Session current;createDocument(current,"Synthetic rules");
+    void currentFormatShowsRulesAndOldFormatIsRejected(){
+        Session current;createDocument(current,"Current rules");
         QVERIFY(current.model.state().value("rulesSupported").toBool());
         QVERIFY(object(current.root,"rulesNavigation")->property("visible").toBool());
-        const auto limits=object(current.root,"ruleLimits")->property("text").toString();
-        QVERIFY(limits.contains("128 rules"));QVERIFY(limits.contains("4096 byte pattern"));QVERIFY(limits.contains("65536 byte field"));
-        QVERIFY(limits.contains("65536 byte template"));QVERIFY(limits.contains("4096 records"));QVERIFY(limits.contains("4096 allocations"));
-        QVERIFY(limits.contains("16384 scope allocations"));
-        QVERIFY(click(current.root,"rulesNavigation"));wait(current.model);QCOMPARE(page(current.root),"rules");
+        run(current.model,"close");QSettings().clear();
+        Session legacy;writeSchema5(legacy.path());
+        run(legacy.model,"open",{{"path",legacy.path()}},false);
+        QVERIFY(!legacy.model.state().value("active").toBool());
+        QVERIFY(legacy.model.error().contains("Unsupported experimental format"));
     }
     void saveDiscardStayAndDraftPrecedesRules(){
         Session s;createDocument(s,"Synthetic rule guards");

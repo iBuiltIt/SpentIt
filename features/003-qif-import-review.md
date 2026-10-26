@@ -1,7 +1,7 @@
 # 003 — QIF import and review
 
 Status: **active**  
-Last updated: 2026-10-25  
+Last updated: 2026-10-26  
 Implementation: partial; bounded QIF parser and optional headless encrypted import/review/commit experiment. A bounded [writable import UI](../doc/import-ui.md) now connects review/edit/commit; general format compatibility remains incomplete. See [implemented scope and verification](../doc/durable-import.md).
 
 ## Accepted requirements
@@ -38,7 +38,7 @@ One transaction can be associated with multiple source occurrences from differen
 
 Proposed relational realization: an import stores its original bytes; source-occurrence rows identify locations within it and parsed facts; a transaction has a stable identity; an association table links that identity to its source occurrences. These are conceptual responsibilities, not adopted table names or a migration plan. The current QIF experiment preserves bytes and revisions but does not implement the future multi-format association model.
 
-Removing a transaction from the ledger retains imported evidence and persistent history. The owner subsequently accepted ordinary correction/removal/strict Undo and explicit removed-record reimport review in [feature 011](011-committed-editing-and-reversal.md), now implemented in the bounded one-account QIF workflow. A removed match is neither automatically restored nor silently suppressed. Cross-format association correction, transfer changes and broader evidence reconciliation remain unresolved.
+Removing a transaction from the ledger retains imported evidence and persistent history. The owner subsequently accepted ordinary correction/removal/strict Undo and explicit removed-record reimport review in [feature 011](011-committed-editing-and-reversal.md), now implemented per account in the bounded QIF workflow. A removed match is neither automatically restored nor silently suppressed. Cross-format association correction, transfer changes and broader evidence reconciliation remain unresolved.
 
 ## Proposed import pipeline
 
@@ -102,3 +102,7 @@ The owner accepted the bounded policies in [feature 009](009-durable-import-mile
 ## Bounded repair implementation — 2026-10-25
 
 The owner selected date and split-total repair first. New experimental schema-2 datasets now support explicit validated repair, retained original evidence/diagnostics, durable history and separate duplicate review. Missing/invalid amounts and unsupported constructs remain blocked; schema-1 documents remain readable without migration. See [the milestone scope](009-durable-import-milestone.md#accepted-bounded-record-repair--2026-10-25) and [implementation/verification](../doc/durable-import.md#bounded-record-repair).
+
+## Account-scoped follow-up — 2026-10-26
+
+The [multi-account prerequisite](../doc/accounts.md) gives each account an independent pending import, duplicate review and ordinary history. Identical source bytes in another account are not automatically excluded. This does not implement transfer evidence attachment or multi-account QIF files. Earlier experimental formats are now rejected without migration; the earlier dated schema-compatibility notes are historical.

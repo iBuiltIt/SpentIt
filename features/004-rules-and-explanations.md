@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-26  
-Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply and rules sheet implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. New rules-enabled documents use schema 7 for bulk ledger receipts. See [status and verification](../doc/status.md), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Bulk committed rule reapplication remains deferred.
+Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply and rules sheet implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use schema 8 for account-scoped imports, rules and bulk receipts. See [status and verification](../doc/status.md), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Bulk committed rule reapplication remains deferred.
 
 ## Accepted requirements
 

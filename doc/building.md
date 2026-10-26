@@ -92,7 +92,7 @@ That rules-on Debug invocation passed `import.rules_ui`, `import.category_ui`, a
 
 ## Search and bulk follow-up — 2026-10-26
 
-Import-workflow builds now require pinned PCRE2 10.49 for search, even when `SPENTIT_RULES=OFF`. Engine-only builds remain dependency-free. New rules-enabled documents use schema 7 for atomic bulk changes; this pre-release phase has no migration obligation.
+Import-workflow builds now require pinned PCRE2 10.49 for search, even when `SPENTIT_RULES=OFF`. Engine-only builds remain dependency-free. The search checkpoint introduced schema 7 for atomic bulk changes. Current formats are described in the [account follow-up](#account-scoped-follow-up--2026-10-26); this pre-release phase has no migration obligation.
 
 Use the import-UI configuration above with binary directories `build/search-debug`, `build/search-release`, and `build/search-sanitized`. Select `CMAKE_BUILD_TYPE=Debug`, `Release`, and `Debug` respectively; set `SPENTIT_SANITIZERS=ON` for the last. Keep all the same storage/import/UI/rules flags and dependency paths. `cmake --build <directory> -j 3` builds each tree. The new registered checks are `import.search`, `rulestore.bulk`, `rulestore.bulk_io`, and `rulestore.bulk_crashes`; import UI tests also cover selection, source search, bulk previews and recovery.
 
@@ -106,3 +106,23 @@ ctest --test-dir build/search-release --output-on-failure -j 2 \
 The same selection was run in the sanitizer tree. The excluded older fault sweeps had already passed in the full 72-case schema-6 baseline; the new bulk and rules fault sweeps are included. Do not describe this as a full 76-case schema-7 suite. Final targeted rebuilds/reruns and the corrected sanitizer-test issue are recorded in [project status](status.md).
 
 `build/search-release/src/app/spentit_search_benchmark 100000` (or `200000`) checks and times synthetic in-memory application queries, including copy/sort/filter/totals. It excludes database/source-file I/O and Qt rendering. See [results and limits](status.md).
+
+## Account-scoped follow-up — 2026-10-26
+
+Use the same rules-enabled Debug, Release and ASan/UBSan configurations above. Current format behavior and limitations are in [accounts](accounts.md); actual results are in [status](status.md#account-scoped-durable-workflow--2026-10-26). The rules-off build uses schema 9, while rules-enabled builds use schema 8. Neither opens earlier experimental layouts.
+
+The selected functional run was:
+
+```sh
+ctest --test-dir build/import-ui-rules-debug \
+  -E '(\.io|\.crashes|_io|_crashes|backup_failures|backup_crashes|storage\.)' \
+  --output-on-failure -j 3
+```
+
+Equivalent Release and sanitizer invocations used their respective build directories. The new account failure sweeps are `accounts.io` and `accounts.crashes`; `accounts.basics` and `accounts.validation` cover isolation/replay and corruption. They are not substitutes for platform validation or the full existing fault suite. The final affected account/UI invocation selected:
+
+```sh
+ctest --test-dir build/import-ui-rules-release \
+  -R '^(accounts\.|import.(ui|navigation|recovery_ui|committed_ui|category_ui|rules_ui|qml|benchmark_smoke)$)' \
+  --output-on-failure -j 3
+```

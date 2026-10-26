@@ -110,3 +110,7 @@ The category types/name validation remain in the standard-C++ engine; SQLCipher 
 ## Search and bulk ledger boundary — 2026-10-26
 
 `spentit_regex` owns the reusable bounded PCRE2 adapter; both optional rules and the import workflow link it. `spentit_import_view` privately links that adapter for the independently testable query parser/evaluator, with no SQL or Qt dependency. `SpentIt::engine` keeps its dependency-free boundary. The import worker loads immutable QIF evidence through the repository and publishes completed query snapshots. Schema-7 group receipts and bulk writes stay behind complete `ImportRepository` commands; QML does not loop over single-record writes or calculate authoritative totals. See [search/ledger contracts](search-ledger.md).
+
+## Account-scoped commands — 2026-10-26
+
+Account enumeration, creation, durable creation-outcome lookup and session selection are exposed through `ImportRepository`. The existing import worker owns selection; storage scopes batches, money and financial commands and verifies all accounts. QML contains no SQL or authoritative money calculations. See [account behavior and limits](accounts.md).

@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-26
 
-State: bounded experimental category catalog verified on available macOS configurations. Rules-disabled import documents are schema 5. Rules-enabled import documents are schema 7 and keep this catalog. The owner accepted the [category lifecycle policy](../features/010-categories-and-selection.md). This implements a catalog, editor and allocation picker within the existing one-account QIF experiment. It does not implement category reports, account transfer destinations, automatic starter categories, or migrations. The rules page is specified in [durable rules](durable-rules.md).
+State: bounded experimental category catalog verified on available macOS configurations. Rules-disabled import documents are schema 9. Rules-enabled import documents are schema 8 and keep this catalog. The owner accepted the [category lifecycle policy](../features/010-categories-and-selection.md). This implements a catalog, editor and allocation picker within the selected account of the durable QIF experiment. It does not implement category reports, account transfer destinations, automatic starter categories, or migrations. The rules page is specified in [durable rules](durable-rules.md).
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 
@@ -26,7 +26,7 @@ Schema 5 also retains stable allocation identities, explicit original source-all
 
 Category preview is read-only. Apply writes its definition revision, head, catalog revision, operation receipt and shared history order atomically. A repeated operation identity with identical content returns its durable result; conflicting reuse fails. Failed or uncertain acknowledgements use the same durable outcome identity. The UI preserves failed form edits; an unreadable outcome requires explicit reopen rather than assuming success or rollback.
 
-Rules-disabled import builds create schema 5. Rules-enabled import builds create schema 7, which includes this catalog, rule definitions and bulk group receipts. Schemas 1–4 remain readable with their earlier capabilities and do not expose catalog commands. Schema 5 remains readable and does not expose rule commands. There is no automatic migration. Authenticated version/shape mismatches are rejected. Backups retain the actual format and category/assignment history. Original import evidence and financial receipts remain immutable.
+Current builds use the [account-scoped formats](accounts.md): schema 9 without rules or schema 8 with rules and bulk receipts. The category catalog remains document-wide. Earlier experimental layouts are rejected without migration. Authenticated version/shape mismatches are rejected. Backups retain all accounts and category/assignment history; original import evidence and financial receipts remain immutable.
 
 ## UI and verification boundary
 

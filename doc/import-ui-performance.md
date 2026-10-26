@@ -4,7 +4,7 @@ Last updated: 2026-10-26
 
 This is a bounded synthetic benchmark of the experimental durable UI, not a production readiness or portability claim. The owner selected 100,000 transactions as representative and 200,000 as the stress case. These are workload sizes, not new record limits.
 
-These native durable-UI measurements predate current schema 7. Separate 2026-10-26 Release application-search measurements covered 100,000/200,000 synthetic rows and are recorded in [status](status.md#search-selection-and-atomic-bulk-ledger-changes--2026-10-26). Those measurements exclude database/source-file loading and Qt rendering; do not substitute them for current native UI or replay-performance evidence.
+These native durable-UI measurements predate both the schema-7 search checkpoint and the current account-scoped formats. Separate 2026-10-26 Release application-search measurements covered 100,000/200,000 synthetic rows and are recorded in [status](status.md#search-selection-and-atomic-bulk-ledger-changes--2026-10-26). Those measurements exclude database/source-file loading and Qt rendering; do not substitute them for current native UI or replay-performance evidence.
 
 ## Reproduction and measurement boundary
 

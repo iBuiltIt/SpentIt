@@ -4,7 +4,7 @@ Last updated: 2026-10-26
 
 This is a partial implementation of [feature 009](../features/009-durable-import-milestone.md), authorized by the owner's Go. It is an optional synthetic-data experiment, not a production financial-document application. The existing sheet is still session-only. No private exports were opened or copied.
 
-Current extensions include [ordinary committed changes](committed-changes.md), [categories](categories.md), [durable rules](durable-rules.md), and [search/atomic bulk operations](search-ledger.md). The earlier milestone boundaries and dated results below are historical, not a statement that these extensions are absent. Experimental formats are disposable until an owner-announced release; no migration or upgrade infrastructure is required.
+Current extensions include [multiple account workspaces](accounts.md), [ordinary committed changes](committed-changes.md), [categories](categories.md), [durable rules](durable-rules.md), and [search/atomic bulk operations](search-ledger.md). The earlier milestone boundaries and dated results below are historical, not a statement that these extensions are absent. Experimental formats are disposable until an owner-announced release; no migration or upgrade infrastructure is required.
 
 ## Implemented boundaries
 
@@ -12,7 +12,7 @@ The engine owns the [bounded banking QIF profile](../features/009-qif-profile.md
 
 The `SPENTIT_IMPORT_WORKFLOW` option adds `spentit_import_store`, `spentit_import_view` and tests; it requires `SPENTIT_STORAGE_PROTOTYPE` for the existing pinned SQLCipher build. Engine-only builds include the parser and its tests without Qt or SQLCipher. The current search extension also requires the pinned PCRE2 adapter; the core engine remains dependency-free.
 
-Each document contains one account with a retained currency definition and an explicit Opening Balance. Setup starts with zero, using the date supplied by the application. Confirming even a zero opening balance is required before first commit. A subsequent opening-balance edit increments any pending batch's revision, so an older commit request cannot silently use a changed starting balance. The first commit freezes the opening balance.
+Each document can contain multiple accounts, each with a retained currency definition and an explicit Opening Balance. Imports, duplicate candidates and balances are scoped to the selected account; see the [account contract](accounts.md). Setup starts with zero, using the date supplied by the application. Confirming even a zero opening balance is required before first commit. A subsequent opening-balance edit increments any pending batch's revision, so an older commit request cannot silently use a changed starting balance. The first commit freezes the opening balance.
 
 Evidence bytes, parser version and date profile are immutable. Valid source records retain their own bytes, source fields and stable occurrence/sequence identity. Saved interpretations and review decisions append immutable versions and ordered allocations; failed saves leave prior versions intact. Batch state transitions and events share the same physical transaction. Discard retains encrypted evidence and removes the projection. Parser diagnostics are deterministically regenerated from the retained bytes using the pinned profile version; unsupported parser/schema versions are rejected.
 
@@ -137,4 +137,4 @@ Schema 4 extends this experiment with [current committed interpretations, remova
 
 ## Category catalog and allocation metadata — 2026-10-25
 
-Schema 5 adds the bounded [category catalog and assignment workflow](categories.md), with immutable definition history, current taxonomy resolution, explicit unmapped labels and stable source-allocation metadata. Schema 4 retains committed-change support; earlier formats retain their existing capabilities. No automatic migration occurs. The subsequent [durable rules integration](durable-rules.md) persists rule definitions and explicitly applies results to pending drafts; current schema 7 also retains bulk receipts.
+Schema 5 adds the bounded [category catalog and assignment workflow](categories.md), with immutable definition history, current taxonomy resolution, explicit unmapped labels and stable source-allocation metadata. Those earlier-format capability statements describe the historical checkpoint; current account-scoped builds reject earlier layouts without migration. The subsequent [durable rules integration](durable-rules.md) persists rule definitions and explicitly applies results to pending drafts; current schema 8 retains bulk receipts and account-scoped operations.

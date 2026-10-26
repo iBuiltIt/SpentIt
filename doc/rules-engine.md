@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-26
 
-State: bounded evaluator, preview adapter, schema-6 Save/Apply, and rules sheet implemented. The rules-enabled `3f94fe6` baseline passed all 72 cases in Release and ASan/UBSan on 2026-10-26, closing the earlier Debug-only gap. New rules-enabled documents now use schema 7 for [bulk ledger receipts](search-ledger.md). See [project status](status.md) for current verification and remaining limitations. The accepted [rules policy](../features/004-rules-and-explanations.md) and [durable-rules contract](durable-rules.md) remain unchanged.
+State: bounded evaluator, preview adapter, schema-6 Save/Apply, and rules sheet implemented. The rules-enabled `3f94fe6` baseline passed all 72 cases in Release and ASan/UBSan on 2026-10-26, closing the earlier Debug-only gap. Current rules-enabled documents use schema 8 with [account-scoped workspaces](accounts.md) and [bulk ledger receipts](search-ledger.md). See [project status](status.md) for current verification and remaining limitations. The accepted [rules policy](../features/004-rules-and-explanations.md) and [durable-rules contract](durable-rules.md) remain unchanged.
 
 ## Matching and derived fields
 

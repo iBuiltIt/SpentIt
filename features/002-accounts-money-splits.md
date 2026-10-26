@@ -1,8 +1,10 @@
 # 002 — Accounts, money, and splits
 
 Status: **active**  
-Last updated: 2026-10-25  
+Last updated: 2026-10-26  
 Implementation: partial; exact in-memory money, validated allocations, and original/effective totals are implemented. The pinned ISO currency catalog and engine remainder editing are also implemented. Production accounts, transfers and UI remain unimplemented; a separate [synthetic sheet experiment](../doc/sheet-prototype.md) exercises the engine. The optional storage prototype now round-trips the engine subset; production account/document persistence remains unimplemented.
+
+The [account-scoped durable workflow](../doc/accounts.md) now adds account creation/selection, independent drafts and ordinary financial histories. Account lifecycle/currency reassignment and transfer relationships remain unfinished.
 
 ## Accepted requirements
 

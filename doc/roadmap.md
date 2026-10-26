@@ -8,7 +8,7 @@ This is sequencing guidance, not a claim that the listed work exists. [Project s
 
 ## Current checkpoint — 2026-10-26
 
-The schema-6 verification gap is closed in Release and ASan/UBSan. The bounded search/ledger package now implements the owner-approved grammar, multiselection, and schema-7 atomic committed category/removal/group Undo; see [contract](search-ledger.md) and [verification](status.md). The next substantive package is transfer lifecycle work after its remaining policy gates are resolved. The owner has not requested starting that package in this work.
+The schema-6 verification gap is closed in Release and ASan/UBSan. The bounded search/ledger package now implements the owner-approved grammar, multiselection, and schema-7 atomic committed category/removal/group Undo; see [contract](search-ledger.md) and [verification](status.md). The next substantive package is transfer lifecycle work. The owner requested proceeding and accepted its first five scope decisions on 2026-10-26; see [feature 008](../features/008-transfer-matching-and-lifecycle.md#accepted-first-implementation-scope--2026-10-26). The [multi-account prerequisite](accounts.md) is implemented; transfer links, generated/protected drafts and matching remain unfinished. Remaining committed repair/reversal policies still require decisions.
 
 Experimental formats are disposable until the owner explicitly announces a release. Migration, upgrade and backward-compatibility work are not pre-release obligations. Historical roadmap entries below retain the sequence and original checkpoints, not a requirement to build upgrade infrastructure now.
 
@@ -29,7 +29,7 @@ Independent packages may run concurrently with clear file ownership. Integrate a
 ## Concrete input gates
 
 - Committed changes: ordinary correction/removal, removed-record review and strict Undo are accepted and implemented in the bounded scope. Remaining gates concern linked transfers and other explicitly deferred operations.
-- Transfers: destination-first commit, matching disagreements, generated dates, split destinations, and cross-currency policy.
+- Transfers: destination-first commit with symmetric draft protection, explicit matching confirmation, provisional origin dates, per-allocation destinations and initial cross-currency rejection are accepted. Remaining gates include mismatch-resolution commands, destination-only draft cancellation, and committed repair/unlink/reversal with independent evidence or later edits.
 - Categories/rules: current taxonomy, lifecycle, rule precedence/phases, manual protection and independent rule Save are accepted. Do not re-ask these decisions. Bulk committed reapplication remains deferred.
 - Search/ledger: grammar, inclusive date boundaries, original-record scope, multiselection and bounded committed bulk behavior were accepted on 2026-10-26 and implemented. Broader feature-005 UI scope remains active.
 - Reports: refund/income treatment, comparison boundaries, currency policy, and requested report-creation contents.
@@ -48,11 +48,24 @@ The owner then accepted the ordinary committed-change policy in feature 011. The
 
 ## Handoff — 2026-10-26
 
-The authorized verification-gap and bounded search/ledger package is complete. Read [status](status.md#search-selection-and-atomic-bulk-ledger-changes--2026-10-26), [search/ledger contract](search-ledger.md), and [build/test scope](building.md#search-and-bulk-follow-up--2026-10-26) before continuing. Do not re-ask the accepted search grammar, dates, selection, committed-only/all-allocation bulk policy, or pre-release format policy.
+The multi-account prerequisite is implemented and verified within the [recorded test scope](status.md#account-scoped-durable-workflow--2026-10-26). Read [account contracts and limits](accounts.md), [build commands](building.md#account-scoped-follow-up--2026-10-26), and [accepted transfer requirements](../features/008-transfer-matching-and-lifecycle.md) before continuing. The owner authorized proceeding with implementation; routine work does not need another Go.
 
-- The schema-6/rules-sheet baseline passed 72/72 in Release and ASan/UBSan. Current schema-7 verification selected 60 of 76 cases; every selected case has a passing result across initial and corrected runs, including bulk I/O/crash sweeps. The final eight affected UI checks passed in Debug, Release and ASan/UBSan. A test-only temporary-lifetime defect was corrected; do not describe the initial sanitizer run as clean or claim a full 76-case pass.
-- A Qt delegate-reset warning remains with passing behavior assertions. Disabling reuse did not fix it; detaching the model broke viewport tests and was reverted. Final rendered checks were offscreen; native testing could not create a window because the execution session had no screens. Linux, Windows, accessibility, physical power loss and installed-PCRE2 sanitizer instrumentation remain unverified.
-- New rules-enabled documents use experimental schema 7; rules-off builds use schema 5. There are no released datasets. Do not add migration, upgrade or backward-compatibility work until the owner announces a release. Current-format correctness, durability and recovery still apply.
-- The next substantive roadmap package is transfer lifecycle work, requiring the remaining decisions in [feature 008](../features/008-transfer-matching-and-lifecycle.md): destination-first commit, disagreements, generated dates, split destinations and cross-currency policy. It has not been started or authorized by this package. Reports follow their own policy gates. Broader sheet design and committed rule reapplication remain deferred.
+### What is ready
+
+- Account creation/selection, independent pending imports and ordinary committed histories, account-local duplicate recognition, exact per-account balances, backup restoration, and guarded sidebar/Back/Forward navigation are implemented. Categories and saved rules remain document-wide; Apply and bulk commands are scoped to one account.
+- Rules-enabled builds create/open schema 8; rules-off builds create/open schema 9. These are separate experimental layouts. Earlier formats and the other build's layout are rejected without migration. There are no released datasets; do not add compatibility infrastructure before the owner-announced release gate.
+- All 58 selected functional cases have passing results in Debug, Release and ASan/UBSan across initial and corrected runs. Initial runs passed 56/58; two test-harness issues were corrected. Account I/O/crash sweeps additionally cover 17 creation and 125 second-account commit write/sync positions, both durable boundaries, retry and reopened verification. Final UI refinements passed in all three configurations and rules-off Debug. Do not claim a full 80-case suite pass or a clean first run.
+- Rendering was inspected offscreen. The intermittent Qt delegate-reset warning remains; previous workarounds regressed viewport behavior. Native interaction, Linux/Windows, full accessibility, physical power loss, installed-PCRE2 sanitizer instrumentation and representative multi-account performance remain unverified.
+
+### Resume here
+
+1. Continue the first same-currency transfer slice; do not redo account creation or ordinary committed editing. The parser still rejects transfer destinations, and no transfer links, generated counterparts or protected drafts exist yet.
+2. Use stable account and allocation identities for relationships. Keep generated provenance separate from immutable bank evidence; attaching imported evidence must not create another financial movement or silently suppress it as an ordinary duplicate. Read the existing account-scoped store, application command boundary and account tests before extending them.
+3. Implement complete transfer operations through one storage transaction, including relationship/history changes and protection of the opposite draft. Do not implement cross-account operations as a UI loop of independently committed commands. Add interruption, retry, corruption and restored-backup cases for both account commit orders before exposing the operations.
+4. Integrate counterpart navigation with the guarded account navigation. Per-account selection/search/viewport restoration is still missing; account switches currently clear that view state. Account rename/archive/delete, currency reassignment, per-account sidebar balance layout and reports remain separate unfinished work.
+
+Do not re-ask the five accepted transfer choices: either account may commit first and protect the other draft; initial matches require explicit confirmation; generated dates start at the origin date and are provisional; destinations and counterpart links belong to allocations; cross-currency transfers are initially rejected explicitly. Search grammar, inclusive dates, multiselection, committed-only/all-allocation bulk behavior and the pre-release format policy are also accepted.
+
+Ask only when dependent work reaches the remaining financial gates: amount-disagreement resolution, destination-only cancellation while both sides are drafts, differently grouped counterpart allocations, and committed repair/unlink/reversal involving independent evidence or later edits. Do not infer cascade deletion or automatic amount correction. These gates do not block independent work on the accepted lifecycle.
 
 No private financial inputs were used. No license, publication, or release decision was made.

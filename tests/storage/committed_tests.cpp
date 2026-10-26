@@ -260,22 +260,9 @@ void legacy_create(const fs::path& path,int version) {
     check(sqlite3_step(insert)==SQLITE_DONE);check(sqlite3_finalize(insert)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
 }
 void legacy() {
-    for(int version:{1,2,3}) {
-        Directory dir;legacy_create(dir.path/"doc",version);
-        {
-            auto store=ImportStore::open(dir.path/"doc",password);check(!store.committed_changes_supported());
-            store.opening(0,"2026-08-01",Money(10000,cad));
-            app::OperationContext context;store.ingest_controlled("first",source,qif::DateOrder::dmy,context);
-            auto edit=*store.row(first).draft;edit.payee="Legacy save";
-            store.save(first,revision(store,"first"),edit);store.commit("first",revision(store,"first"),"publication-first");
-            rejects([&]{store.preview_committed_change(removal(first));});
-            check(store.committed_balance().units()==12069);store.backup_to(dir.path/"copy",password);
-        }
-        const auto before=bytes(dir.path/"copy");
-        {auto copy=ImportStore::open(dir.path/"copy",password);copy.verify();check(!copy.committed_changes_supported());}
-        check(bytes(dir.path/"copy")==before);no_leaks(dir.path);
-    }
+    for(int version:{1,2,3}) {Directory dir;legacy_create(dir.path/"doc",version);const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);}
 }
+
 void validation() {
     const char* damage[] = {
         // Consistent allocation/total tampering still conflicts with operation history.

@@ -19,7 +19,7 @@ class OutcomeGateway final : public app::DocumentGateway, public app::ImportRepo
 public:
     std::unique_ptr<app::DocumentGateway> inner=storage::document_gateway();
     enum Fault { none, before, after, unknown } fault=none;
-    bool attempted=false,cancelAfterOpen=false;
+    bool attempted=false,cancelAfterOpen=false,failAccountRefresh=false,failAccountSelection=false;
     app::ImportRepository& repo() const { return inner->repository(); }
     void create(const std::filesystem::path& p,bool mode,std::string_view pw,std::string_view name,const Currency& c,std::string_view day) override {inner->create(p,mode,pw,name,c,day);}
     void open(const std::filesystem::path& p,std::optional<std::string> pw) override {inner->open(p,std::move(pw));}
@@ -28,6 +28,16 @@ public:
     void backup(const std::filesystem::path& p) override {inner->backup(p);}
     app::ImportRepository& repository() override {return *this;}
     app::Account account() const override {return repo().account();}
+    std::vector<app::Account> accounts() const override {if(attempted && failAccountRefresh)throw std::runtime_error("Injected account refresh failure");return repo().accounts();}
+    void select_account(std::int64_t id) override {if(attempted && failAccountSelection)throw std::runtime_error("Injected selection failure");repo().select_account(id);}
+    app::Account create_account(std::int64_t id,std::string_view name,const Currency& c,std::string_view date) override {
+        attempted=true;if(fault==before)throw std::runtime_error("Injected failure before account creation");
+        auto result=repo().create_account(id,name,c,date);
+        if(fault==after || fault==unknown)throw std::runtime_error("Injected lost account acknowledgement");return result;
+    }
+    std::optional<app::AccountCreation> account_creation_outcome(std::int64_t id) const override {
+        if(attempted && fault==unknown)throw std::runtime_error("Injected account outcome failure");return repo().account_creation_outcome(id);
+    }
     void opening(std::int64_t r,std::string_view d,const Money& m) override {repo().opening(r,d,m);}
     std::vector<app::BatchInfo> batches() const override {return repo().batches();}
     app::BatchInfo ingest(std::string_view id,std::string_view b,qif::DateOrder p) override {return repo().ingest(id,b,p);}
@@ -71,6 +81,58 @@ class ImportUiTests : public QObject {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
     }
 private slots:
+    void accountOutcomeRecovery() {
+        for(const auto fault:{OutcomeGateway::before,OutcomeGateway::after,OutcomeGateway::unknown}) {
+            QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));
+            const auto path=dir.path()+"/doc";create(m,path);seam->fault=fault;
+            run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}},fault==OutcomeGateway::after);
+            if(fault==OutcomeGateway::unknown){QVERIFY(!m.state().value("active").toBool());QVERIFY(m.error().contains("could not be confirmed"));}
+            else {QVERIFY(m.state().value("active").toBool());run(m,"close");}
+            seam->fault=OutcomeGateway::none;seam->attempted=false;run(m,"open",{{"path",path}});
+            QCOMPARE(m.state().value("accounts").toList().size(),fault==OutcomeGateway::before?1:2);
+        }
+        QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));
+        const auto path=dir.path()+"/doc";create(m,path);seam->failAccountRefresh=true;
+        run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}},false);
+        QVERIFY(!m.state().value("active").toBool());QVERIFY(m.error().contains("created durably"));
+        seam->failAccountRefresh=false;run(m,"open",{{"path",path}});QCOMPARE(m.state().value("accounts").toList().size(),2);
+        seam->failAccountSelection=true;
+        run(m,"create_account",{{"id","3"},{"name","Another"},{"currency","CAD"},{"date","2026-01-01"}},false);
+        QVERIFY(!m.state().value("active").toBool());QVERIFY(m.error().contains("created durably"));
+        seam->failAccountSelection=false;run(m,"open",{{"path",path}});QCOMPARE(m.state().value("accounts").toList().size(),3);
+    }
+    void accounts() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        const auto path=dir.path()+"/doc";create(m,path);
+        run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
+        const auto source=fixture(dir.path(),"D1/5/2026\nT-10\nPSynthetic\n^\n");
+        run(m,"import",{{"path",source},{"profile","DMY"}});const auto original=selected(m).value("batch").toString();
+        run(m,"create_account",{{"id","2"},{"name","Japan"},{"currency","JPY"},{"date","2026-01-01"}});
+        QCOMPARE(m.state().value("accountId").toString(),QString("2"));QCOMPARE(m.state().value("accounts").toList().size(),2);
+        QCOMPARE(m.state().value("currency").toString(),QString("JPY"));QVERIFY(selected(m).isEmpty());QCOMPARE(m.rowCount(),1);
+        run(m,"opening",{{"date","2026-01-01"},{"amount","500"}});run(m,"import",{{"path",source},{"profile","DMY"}});
+        QCOMPARE(m.state().value("projected").toString(),QString("490"));
+        root->setProperty("dirty",true);
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseAccount",Q_ARG(QVariant,QString("1"))));
+        auto* dialog=root->findChild<QObject*>("unsavedDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardStay"),"clicked"));QCOMPARE(m.state().value("accountId").toString(),QString("2"));
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseAccount",Q_ARG(QVariant,QString("1"))));
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardDiscard"),"clicked"));QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.state().value("accountId").toString(),QString("1"));QCOMPARE(m.state().value("projected").toString(),QString("90.00"));
+        QCOMPARE(m.state().value("pending").toMap().value("id").toString(),original);QVERIFY(selected(m).isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,-1)));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("accountId").toString(),QString("2"));
+        QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,1)));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("accountId").toString(),QString("1"));
+        run(m,"commit");run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),QString("500"));run(m,"commit");
+        run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("committed").toString(),QString("90.00"));
+        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),QString("490"));
+        if(qEnvironmentVariableIsSet("SPENTIT_ACCOUNTS_SCREENSHOT")){QTest::qWait(150);auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_ACCOUNTS_SCREENSHOT")));}
+        auto* add=root->findChild<QObject*>("newAccount");QVERIFY(add);QVERIFY(QMetaObject::invokeMethod(add,"clicked"));
+        auto* name=root->findChild<QObject*>("newAccountName");QVERIFY(name);QTRY_VERIFY(name->property("visible").toBool());name->setProperty("text","Savings");
+        QVERIFY(QMetaObject::invokeMethod(name,"accepted"));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("accounts").toList().size(),3);QCOMPARE(m.state().value("currency").toString(),QString("CAD"));QCOMPARE(m.state().value("opening").toString(),QString("0.00"));QVERIFY(!m.state().value("confirmed").toBool());
+    }
     void bulkInteractions() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
@@ -299,7 +361,7 @@ private slots:
         QCOMPARE(sqlite3_step(query),SQLITE_ROW);QCOMPARE(sqlite3_column_int64(query,0),123);sqlite3_finalize(query);
         QCOMPARE(sqlite3_exec(raw,"PRAGMA user_version=99",nullptr,nullptr,nullptr),SQLITE_OK);QCOMPARE(sqlite3_close(raw),SQLITE_OK);
         ImportModel unsupported(storage::document_gateway());run(unsupported,"open",{{"path",dir.path()+"/portable"}},false);
-        QVERIFY(!unsupported.state().value("unlockRequired").toBool());QVERIFY(unsupported.error().contains("Unsupported document schema"));
+        QVERIFY(!unsupported.state().value("unlockRequired").toBool());QVERIFY(unsupported.error().contains("Unsupported experimental format"));
         g=storage::document_gateway();
         g->create((dir.path()+"/protected").toStdString(),true,storage::public_document_key,"Synthetic",Currency("CAD"),"2026-10-25");g->close();
         QVERIFY_THROWS_EXCEPTION(app::UnlockRequired,g->open((dir.path()+"/protected").toStdString(),{}));

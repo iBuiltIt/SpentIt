@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-26  
-Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and schema-7 atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
+Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Accepted requirements
 
@@ -144,3 +144,7 @@ The [bounded native workload report](../doc/import-ui-performance.md) records 10
 ## Durable filter return follow-up — 2026-10-25
 
 The durable UI now implements the accepted search-return behavior for its existing literal filter: retain the pre-filter occurrence/view unless a result is explicitly inspected, then retain and reveal that result when clearing. Clear and Escape honor Save / Discard / Stay. See [scope and verification](../doc/import-ui.md#filter-return-navigation--2026-10-25). This does not implement the proposed query language, multiselection or full navigation shell.
+
+## Account navigation follow-up — 2026-10-26
+
+The durable UI now includes a scrolling account list, inline name entry using the setup currency, independent durable account workspaces and guarded switching/Back/Forward. The [account contract](../doc/accounts.md) records verification and limits. Account switches currently reset selection/search/viewport; counterpart navigation, account lifecycle actions, report panes and the full sidebar balance layout remain unfinished.

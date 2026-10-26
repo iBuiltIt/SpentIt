@@ -2,13 +2,13 @@
 
 Last updated: 2026-10-26
 
-State: bounded experimental implementation verified on available macOS configurations. The owner accepted [feature 011](../features/011-committed-editing-and-reversal.md). This implements ordinary one-account corrections, removal and strict Undo. It does not implement transfer changes, opening-balance changes, currency reassignment, rules, multi-account documents or migrations.
+State: bounded experimental implementation verified on available macOS configurations. The owner accepted [feature 011](../features/011-committed-editing-and-reversal.md). This implements ordinary per-account corrections, removal and strict Undo. It does not implement transfer changes, opening-balance changes, currency reassignment, transfer-aware Undo or migrations.
 
 The current follow-up supports committed bulk category changes/removal and strict atomic group Undo, including retained group history after reopening. See [search and ledger](search-ledger.md) for the accepted scope, retry/recovery semantics and verification. The original single-row implementation details and historical verification below remain useful; experimental-format compatibility is not an obligation before the owner announces a release.
 
 ## Current interpretation and retained history
 
-Schema 4 introduced this workflow; new rules-off documents use schema 5 with the [category extension](categories.md), and rules-enabled documents use schema 7 with rule provenance and atomic bulk receipts. Schemas 1–3 remain readable and keep their existing import/repair/cancellation capabilities; they explicitly reject new committed-change commands. No existing document is upgraded automatically. Authenticated version/shape mismatches are rejected before storage-setting changes, preventing a relabeled newer document from silently ignoring its committed revisions. The fixed schema-3 compatibility fixture was captured from the verified schema-3 SQL; the earlier fixture matches the original schema-2 SQL, with schema-1 behavior tested separately.
+Schema 4 introduced this workflow. Current [account-scoped formats](accounts.md) retain it in schema 8 with rules/bulk receipts and schema 9 without rules. Earlier experimental layouts are rejected without migration. Version/shape checks run before storage-setting changes. Historical compatibility fixtures now verify rejection and preservation of their contents.
 
 Original source evidence, original import versions and import receipts remain immutable. Schema 4 stores complete committed entry revisions and a current head for each included occurrence. Revision zero is its original included publication. A correction appends a current interpretation; removal appends an inactive interpretation; eligible Undo appends the earlier state as a new revision. Removed entries remain available through history and source inspection. Actual bank refunds remain separate imported transactions.
 
