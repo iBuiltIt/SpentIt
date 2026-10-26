@@ -1,4 +1,5 @@
 #include <spentit/rule_preview.hpp>
+#include <spentit/rule_commands.hpp>
 #include <map>
 #include <set>
 
@@ -77,19 +78,25 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
     for(std::size_t i=0;i<inputs.size();++i) {
         const auto& input=inputs[i];auto& result=evaluated[i];auto after=input.draft;std::vector<RuleProvenance> provenance;
         auto remember=[&](RuleField field,const std::string& allocation,const auto& value){if(value.contribution)provenance.push_back({field,allocation,*value.contribution});};
+        auto marked=[&](const auto& value)->std::optional<RuleMark>{
+            if(owner(value.ownership)!=FieldOwnership::rule)return {};
+            if(!value.contribution)invalid("Rule-owned field lacks retained provenance");
+            return RuleMark{value.contribution->rule,value.contribution->version};
+        };
         after.payee=result.record.payee.value;after.memo=result.record.memo.value;
         after.payee_owner=owner(result.record.payee.ownership);after.memo_owner=owner(result.record.memo.ownership);
+        after.payee_rule=marked(result.record.payee);after.memo_rule=marked(result.record.memo);
         remember(RuleField::payee,"",result.record.payee);remember(RuleField::memo,"",result.record.memo);
         auto allocations=after.transaction.allocations();
         for(std::size_t j=0;j<allocations.size();++j) {
             auto& a=allocations[j];const auto& fields=result.record.allocations[j];
-            a.memo=fields.memo.value;a.memo_owner=owner(fields.memo.ownership);
+            a.memo=fields.memo.value;a.memo_owner=owner(fields.memo.ownership);a.memo_rule=marked(fields.memo);
             // A protected manual binding keeps its original label/revision snapshot.
             if(fields.category.ownership!=rules::Ownership::manual) {
                 if(fields.category.value.identity.empty()) {a.category_binding.reset();a.category=fields.category.value.unmapped;}
                 else {a.category_binding=CategoryBinding{fields.category.value.identity,catalog.revision};a.category=paths.at(fields.category.value.identity);}
             }
-            a.category_owner=owner(fields.category.ownership);
+            a.category_owner=owner(fields.category.ownership);a.category_rule=marked(fields.category);
             remember(RuleField::allocation_memo,a.identity,fields.memo);remember(RuleField::allocation_category,a.identity,fields.category);
         }
         after.transaction=after.transaction.corrected(after.transaction.effective_total(),std::move(allocations));
@@ -97,5 +104,29 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
         proposals.push_back({input.identity,std::move(after),std::move(provenance),std::move(result.explanations)});
     }
     return proposals;
+}
+std::vector<RuleFieldDiff> rule_field_diffs(const imports::DraftRow& before,const RuleProposal& proposal) {
+    const auto& after=proposal.after;std::vector<RuleFieldDiff> diffs;
+    auto consider=[&](RuleField field,const std::string& allocation,const std::string& before_text,const std::string& after_text,FieldOwnership before_owner,FieldOwnership after_owner,const std::optional<RuleMark>& before_mark,const std::optional<RuleMark>& after_mark) {
+        if(before_text==after_text && before_owner==after_owner && before_mark==after_mark)return;
+        const bool removed=before_mark.has_value() && before_mark!=after_mark;
+        const bool assigned=after_owner==FieldOwnership::rule && (before_mark!=after_mark || before_owner!=after_owner || before_text!=after_text);
+        diffs.push_back({field,allocation,before_text,after_text,before_owner,after_owner,before_mark,after_mark,removed,assigned});
+    };
+    consider(RuleField::payee,"",before.payee,after.payee,before.payee_owner,after.payee_owner,before.payee_rule,after.payee_rule);
+    consider(RuleField::memo,"",before.memo,after.memo,before.memo_owner,after.memo_owner,before.memo_rule,after.memo_rule);
+    const auto& left=before.transaction.allocations();const auto& right=after.transaction.allocations();
+    if(left.size()!=right.size())invalid("Allocation identities do not line up");
+    std::map<std::string,const Allocation*> by_identity;
+    for(const auto& allocation:right)if(allocation.identity.empty() || !by_identity.emplace(allocation.identity,&allocation).second)invalid("Allocation identities do not line up");
+    std::set<std::string> seen;
+    for(const auto& allocation:left) {
+        if(allocation.identity.empty() || !seen.insert(allocation.identity).second)invalid("Allocation identities do not line up");
+        auto found=by_identity.find(allocation.identity);if(found==by_identity.end())invalid("Allocation identities do not line up");
+        const auto& other=*found->second;
+        consider(RuleField::allocation_memo,allocation.identity,allocation.memo,other.memo,allocation.memo_owner,other.memo_owner,allocation.memo_rule,other.memo_rule);
+        consider(RuleField::allocation_category,allocation.identity,allocation.category,other.category,allocation.category_owner,other.category_owner,allocation.category_rule,other.category_rule);
+    }
+    return diffs;
 }
 }

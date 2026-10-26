@@ -6,6 +6,11 @@
 namespace spentit {
 enum class CategoryKind { group, leaf };
 enum class FieldOwnership { untracked, source, manual, rule };
+struct RuleMark {
+    std::string identity;
+    std::int64_t version = 0;
+    bool operator==(const RuleMark&) const = default;
+};
 struct CategoryBinding {
     std::string identity;
     std::int64_t catalog_revision;

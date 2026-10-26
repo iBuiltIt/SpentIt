@@ -13,6 +13,7 @@ struct Allocation {
     std::string identity={};
     std::optional<std::size_t> source_ordinal={};
     FieldOwnership category_owner=FieldOwnership::untracked,memo_owner=FieldOwnership::untracked;
+    std::optional<RuleMark> category_rule={}, memo_rule={};
 };
 
 // Validated in-memory value, not a persisted transaction or an import evidence record.

@@ -1,8 +1,8 @@
 namespace {
 bool same_draft(const imports::DraftRow& a,const imports::DraftRow& b) {
-    if(a.payee_owner!=b.payee_owner || a.memo_owner!=b.memo_owner || a.date!=b.date || a.payee!=b.payee || a.memo!=b.memo || a.transaction.effective_total()!=b.transaction.effective_total() || a.transaction.original_imported_amount()!=b.transaction.original_imported_amount())return false;
+    if(a.payee_owner!=b.payee_owner || a.memo_owner!=b.memo_owner || a.payee_rule!=b.payee_rule || a.memo_rule!=b.memo_rule || a.date!=b.date || a.payee!=b.payee || a.memo!=b.memo || a.transaction.effective_total()!=b.transaction.effective_total() || a.transaction.original_imported_amount()!=b.transaction.original_imported_amount())return false;
     const auto& aa=a.transaction.allocations();const auto& bb=b.transaction.allocations();if(aa.size()!=bb.size())return false;
-    for(std::size_t i=0;i<aa.size();++i)if(aa[i].category_binding!=bb[i].category_binding || aa[i].identity!=bb[i].identity || aa[i].source_ordinal!=bb[i].source_ordinal || aa[i].category_owner!=bb[i].category_owner || aa[i].memo_owner!=bb[i].memo_owner || aa[i].category!=bb[i].category || aa[i].memo!=bb[i].memo || aa[i].amount!=bb[i].amount)return false;
+    for(std::size_t i=0;i<aa.size();++i)if(aa[i].category_binding!=bb[i].category_binding || aa[i].identity!=bb[i].identity || aa[i].source_ordinal!=bb[i].source_ordinal || aa[i].category_owner!=bb[i].category_owner || aa[i].memo_owner!=bb[i].memo_owner || aa[i].category_rule!=bb[i].category_rule || aa[i].memo_rule!=bb[i].memo_rule || aa[i].category!=bb[i].category || aa[i].memo!=bb[i].memo || aa[i].amount!=bb[i].amount)return false;
     return true;
 }
 void store_entry(sqlite3* db,const imports::Occurrence& id,const app::EntrySnapshot& snapshot) {
