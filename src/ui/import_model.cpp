@@ -12,6 +12,8 @@
 #include <QUrl>
 #include <chrono>
 #include <thread>
+#include <map>
+#include <set>
 using namespace spentit;
 namespace {
 QString text(std::string_view s) { return QString::fromUtf8(s.data(),static_cast<qsizetype>(s.size())); }
@@ -188,6 +190,12 @@ struct ImportModel::Worker {
     QString path,filter;
     int sort=0; bool descending=false;
     QVariantMap selected,receipt,changePreview,changeReceipt;
+    QVariantMap bulkPreview,bulkReceipt;
+    std::optional<app::BulkPreview> preparedBulk;
+    std::string bulkOperation;
+    std::set<imports::Occurrence> selection;
+    std::optional<imports::Occurrence> selectionAnchor;
+    std::optional<imports::Occurrence> selectionFocus;
     QVariantList categories,categoryHistory;
     QVariantMap categoryById,categorySelected,categoryPreview,categoryReceipt;
     std::optional<app::CategoryPreview> preparedCategory;
@@ -231,7 +239,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         auto& repo=gateway->repository();
         const auto changes=repo.committed_changes(before,50);if(!append)history.clear();
@@ -250,14 +258,14 @@ struct ImportModel::Worker {
             QString details=item.before_entry?"Before\n"+snapshotDetails(*item.before_entry)+"\n":"";
             details+="After\n"+snapshotDetails(item.after_entry);
             entryHistory.push_back(QVariantMap{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"operation",text(item.operation)},{"summary",changeName(item.kind)+" · "+text(item.operation)+"\n"+balanceImpact(item.before,item.change,item.after)},
-                {"details",details},{"undoEligible",item.undo_eligible},{"undoReason",text(item.blocked_reason)}});
+                {"details",details},{"bulkGroup",text(repo.bulk_group(item.operation))},{"undoEligible",item.undo_eligible},{"undoReason",text(item.blocked_reason)}});
         }
     }
     // Session-local verified reads. Every mutation (including a failed command)
     // invalidates these before execution. The exclusive gateway owns all writes.
     QVariantMap metadata;
     std::optional<app::Account> cachedAccount;
-    std::optional<std::vector<app::LedgerRow>> cachedLedger;
+    std::shared_ptr<std::vector<app::LedgerRow>> cachedLedger;
     std::shared_ptr<const app::LedgerView> cachedView;
     void invalidate() {catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
@@ -375,9 +383,9 @@ struct ImportModel::Worker {
         }
         attachRules(repo,{batch,ordinal},context);
     }
-    std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot() {
+    std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot(app::OperationContext* context=nullptr) {
         QVariantMap state{{"active",active},{"path",path}};
-        if(!active) {state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
+        if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
         auto& repo=gateway->repository();catalog();
         if(metadata.isEmpty()) {
             cachedAccount=repo.account();const auto& acct=*cachedAccount;
@@ -420,6 +428,7 @@ struct ImportModel::Worker {
         state["rulesSupported"]=repo.rules_supported();state["rules"]=rules;state["ruleTombstones"]=ruleTombstones;state["ruleRevision"]=QString::number(ruleRevision);
         state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;state["ruleLimits"]=ruleLimitText();
         state["selected"]=selected;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
+        state["bulkSupported"]=repo.bulk_supported();state["bulkPreview"]=bulkPreview;state["bulkReceipt"]=bulkReceipt;
         state["history"]=history;state["entryHistory"]=entryHistory;state["historyTitle"]=historyTitle;state["historyMore"]=historyMore;state["historyCursor"]=historyCursor;
         state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
         state["selectedIndex"]=-1;
@@ -427,7 +436,7 @@ struct ImportModel::Worker {
         if(projected && !state.value("projectionAvailable").toBool()) return {state,{}};
         if(!cachedView) {
             if(!cachedLedger) {
-                cachedLedger=repo.ledger(projected);
+                cachedLedger=std::make_shared<std::vector<app::LedgerRow>>(repo.ledger(projected));
                 // A presentation-only copy resolves current names for both visible
                 // rows and literal filtering. Stored interpretations remain intact.
                 if(repo.categories_supported())for(auto& row:*cachedLedger) {
@@ -436,7 +445,28 @@ struct ImportModel::Worker {
                     row.draft.transaction=row.draft.transaction.corrected(row.draft.transaction.effective_total(),std::move(values));
                 }
             }
-            cachedView=std::make_shared<const app::LedgerView>(app::ledger_view(*cachedAccount,*cachedLedger,filter.toStdString(),sort,descending));
+            app::LedgerSearch query(filter.toStdString(),QDate::currentDate().year());
+            struct SourceFile {std::string bytes;std::vector<std::pair<std::size_t,std::size_t>> spans;};
+            std::map<std::string,SourceFile> sources;std::size_t sourceBytes=0;
+            const auto lookup=[&](const imports::Occurrence& id)->std::optional<std::string_view>{
+                auto found=sources.find(id.batch);
+                if(found==sources.end()){
+                    if(context)context->checkpoint("Searching original QIF evidence");
+                    SourceFile file;file.bytes=repo.evidence(id.batch);
+                    if(file.bytes.size()>256*1024*1024-sourceBytes)throw std::runtime_error("Search source budget exceeds 256 MiB");
+                    sourceBytes+=file.bytes.size();
+                    const auto batches=repo.batches();const auto batch=std::find_if(batches.begin(),batches.end(),[&](const auto& b){return b.id==id.batch;});
+                    if(batch==batches.end())throw std::runtime_error("Search source batch is unavailable");
+                    const auto parsed=qif::parse(file.bytes,batch->profile,cachedAccount->currency,[&]{if(context)context->checkpoint();});
+                    if(!parsed.admissible || parsed.records.size()!=batch->count)throw std::runtime_error("Search source evidence could not be read completely");
+                    for(const auto& record:parsed.records)file.spans.emplace_back(record.begin,record.end);
+                    found=sources.emplace(id.batch,std::move(file)).first;
+                }
+                if(id.ordinal>=found->second.spans.size())throw std::runtime_error("Search source occurrence is unavailable");
+                const auto [begin,end]=found->second.spans[id.ordinal];
+                return std::string_view(found->second.bytes).substr(begin,end-begin);
+            };
+            cachedView=std::make_shared<const app::LedgerView>(app::search_ledger(*cachedAccount,*cachedLedger,query,sort,descending,lookup,[&]{return context && context->state.load()==app::OperationContext::requested;}));
         }
         state["withdrawals"]=money(cachedView->withdrawals);state["deposits"]=money(cachedView->deposits);
         if(selected.contains("ordinal")) {
@@ -445,6 +475,15 @@ struct ImportModel::Worker {
                 if(id.batch==selectedBatch && id.ordinal==selectedOrdinal) {state["selectedIndex"]=static_cast<int>(position);break;}
             }
         }
+        std::set<imports::Occurrence> retained;
+        for(const auto& row:cachedView->rows)if(selection.contains(row.identity))retained.insert(row.identity);
+        selection=std::move(retained);
+        QVariantList selectedIds;QVariantMap selectedKeys;
+        for(const auto& id:selection){selectedIds.push_back(QVariantMap{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}});selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
+        state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
+        int focus=-1;
+        if(selectionFocus)for(std::size_t i=0;i<cachedView->order.size();++i)if(cachedView->rows[cachedView->order[i]].identity==*selectionFocus){focus=static_cast<int>(i);break;}
+        state["selectionIndex"]=focus;
         return {state,cachedView};
     }
     void publishPreview(const app::RulePreviewResult& result,const QVariantList& editor) {
@@ -484,7 +523,8 @@ struct ImportModel::Worker {
     }
     void execute(const QString& action,const QVariantMap& a, app::OperationContext& context) {
         context.checkpoint();
-        if(action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
+        if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -582,6 +622,32 @@ struct ImportModel::Worker {
                 const auto saved=changeReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();changeReceipt=saved;
                 throw std::runtime_error("Committed change "+result->operation+" was saved durably, but its refreshed view could not be loaded. Reopen this dataset and inspect committed history; do not apply the change again.");
             }
+        } else if(action=="cancel_bulk") {preparedBulk.reset();bulkOperation.clear();bulkPreview.clear();}
+        else if(action=="preview_bulk") {
+            preparedBulk.reset();bulkOperation.clear();bulkPreview.clear();
+            catalog();
+            const auto kind=a.value("kind").toString();
+            app::BulkRequest request{kind=="remove"?app::ChangeKind::remove:kind=="category"?app::ChangeKind::correct:app::ChangeKind::undo,{selection.begin(),selection.end()},str(a.value("category")),{}};
+            if(kind=="undo"){request.undo_of=str(a.value("operation"));const auto original=repo.bulk_outcome(request.undo_of);if(!original)throw std::invalid_argument("Bulk operation was not found");request.identities=original->request.identities;}
+            else if(kind!="remove" && kind!="category")throw std::invalid_argument("Unknown bulk action");
+            auto preview=repo.preview_bulk(request);QStringList lines;
+            for(const auto& entry:preview.entries){
+                lines<<text(entry.before_entry.draft.date)+" · "+text(entry.before_entry.draft.payee)+" · "+money(entry.before_entry.draft.transaction.effective_total());
+                lines<<(entry.before_entry.active?"Before: active":"Before: removed")<< (entry.after_entry.active?"After: active":"After: removed");
+                const auto& before=entry.before_entry.draft.transaction.allocations();const auto& after=entry.after_entry.draft.transaction.allocations();
+                for(std::size_t i=0;i<before.size();++i)lines<<"  "+money(before[i].amount)+" · "+allocationMap(before[i],categoryById).value("categoryDisplay").toString()+" → "+allocationMap(after[i],categoryById).value("categoryDisplay").toString()+" · "+text(before[i].memo);
+            }
+            bulkOperation=identity();preparedBulk=preview;
+            bulkPreview={{"id",text(bulkOperation)},{"title",(request.kind==app::ChangeKind::remove?QString("Delete "):request.kind==app::ChangeKind::correct?QString("Change category for "):QString("Undo changes to "))+QString::number(preview.entries.size())+" transactions"},{"impact",balanceImpact(preview.before,preview.change,preview.after)},{"lines",lines}};
+        } else if(action=="apply_bulk") {
+            bulkReceipt.clear();if(!preparedBulk || str(a.value("preview"))!=bulkOperation)throw std::logic_error("Review a fresh bulk preview first");
+            std::optional<app::BulkReceipt> result;
+            try{result=repo.apply_bulk(bulkOperation,*preparedBulk);}
+            catch(...){const auto failure=std::current_exception();try{result=repo.bulk_outcome(bulkOperation);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Bulk outcome is uncertain. Reopen and inspect committed history before retrying.");}if(!result)std::rethrow_exception(failure);}
+            bulkReceipt={{"operation",text(result->operation)},{"summary",changeName(result->request.kind)+" applied to "+QString::number(result->entries.size())+" transactions · "+balanceImpact(result->before,result->change,result->after)}};
+            preparedBulk.reset();bulkOperation.clear();bulkPreview.clear();
+            selected.clear();selectedBatch.clear();selectedCommittedToken.reset();
+            try{if(historyLoaded)listHistory();}catch(...){throw std::runtime_error("Bulk change was saved durably, but history could not be refreshed. Reopen and inspect committed history; do not apply it again.");}
         } else if(action=="import") {
             QFile file(a.value("path").toString()); const QFileInfo info(file);
             if(!info.isFile() || !file.open(QIODevice::ReadOnly)) throw std::runtime_error("Cannot read QIF file");
@@ -608,7 +674,26 @@ struct ImportModel::Worker {
             if(batch.count && !batch.processing_incomplete)inspect(batch.id,0,context);
         } else if(action=="evidence") {
             selectedBatch.clear();selected={{"batch",a.value("batch")},{"editable",false},{"source",evidencePreview(repo.evidence(str(a.value("batch"))))}};
-        } else if(action=="inspect") inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);
+        } else if(action=="select") {
+            if(!cachedView)throw std::invalid_argument("No ledger is available for selection");
+            const int index=a.value("row",-1).toInt();
+            if(index<0 || static_cast<std::size_t>(index)>=cachedView->order.size())throw std::invalid_argument("Selection row is unavailable");
+            const auto id=cachedView->rows[cachedView->order[static_cast<std::size_t>(index)]].identity;
+            auto next=a.value("firstSearchSelection").toBool()?std::set<imports::Occurrence>{}:selection;
+            if(a.value("range").toBool() && selectionAnchor){
+                std::size_t anchor=static_cast<std::size_t>(index);
+                for(std::size_t i=0;i<cachedView->order.size();++i)if(cachedView->rows[cachedView->order[i]].identity==*selectionAnchor){anchor=i;break;}
+                const auto first=std::min(anchor,static_cast<std::size_t>(index)),last=std::max(anchor,static_cast<std::size_t>(index));
+                if(last-first>=4096)throw std::invalid_argument("Select at most 4096 transactions per operation");
+                if(!a.value("toggle").toBool())next.clear();
+                for(auto i=first;i<=last;++i)next.insert(cachedView->rows[cachedView->order[i]].identity);
+            } else {
+                if(a.value("toggle").toBool()){if(!next.erase(id))next.insert(id);}
+                else {next.clear();next.insert(id);}
+            }
+            if(next.size()>4096)throw std::invalid_argument("Select at most 4096 transactions per operation");
+            selection=std::move(next);selectionFocus=id;if(!a.value("range").toBool())selectionAnchor=id;
+        } else if(action=="inspect") {inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);selection={{selectedBatch,selectedOrdinal}};selectionAnchor=imports::Occurrence{selectedBatch,selectedOrdinal};selectionFocus=selectionAnchor;}
         else if(action=="save") {
             if(selectedBatch.empty()) throw std::logic_error("Select a draft first");
             auto row=repo.row({selectedBatch,selectedOrdinal});
@@ -649,6 +734,21 @@ struct ImportModel::Worker {
             if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="backup") gateway->backup(str(a.value("path")));
         else if(action=="query") {
+            // Validate and evaluate before publishing the new query state. A bad
+            // query must not enter the generic document-refresh failure path.
+            app::LedgerSearch validate(str(a.value("filter")),QDate::currentDate().year());
+            const auto oldFilter=filter;const auto oldSort=sort;const auto oldDescending=descending,oldProjected=projected;
+            const auto oldView=cachedView;auto oldLedger=std::move(cachedLedger);
+            const auto oldSelected=selected;const auto oldBatch=selectedBatch;const auto oldOrdinal=selectedOrdinal;
+            const auto oldSelection=selection;const auto oldAnchor=selectionAnchor,oldFocus=selectionFocus;
+            try {
+            cachedLedger=oldLedger;
+            if(a.contains("restoreSelectionIds")){
+                const auto ids=a.value("restoreSelectionIds").toList();if(ids.size()>4096)throw std::invalid_argument("Selection limit exceeded");selection.clear();
+                for(const auto& value:ids){const auto id=value.toMap();selection.insert({str(id.value("batch")),id.value("ordinal").toUInt()});}
+                selectionAnchor=selection.empty()?std::optional<imports::Occurrence>{}:*selection.begin();
+                selectionFocus=selectionAnchor;
+            }
             if(a.contains("restoreSelection")) {
                 const auto restore=a.value("restoreSelection").toMap();
                 if(restore.contains("ordinal")) inspect(str(restore.value("batch")),restore.value("ordinal").toUInt(),context);
@@ -658,6 +758,13 @@ struct ImportModel::Worker {
             if(projected!=nextProjected) cachedLedger.reset();
             cachedView.reset();
             filter=a.value("filter").toString();sort=a.value("sort",0).toInt();descending=a.value("descending",false).toBool();projected=nextProjected;
+            (void)snapshot(&context);
+            } catch(...) {
+                filter=oldFilter;sort=oldSort;descending=oldDescending;projected=oldProjected;cachedView=oldView;cachedLedger=std::move(oldLedger);
+                selected=oldSelected;selectedBatch=oldBatch;selectedOrdinal=oldOrdinal;
+                selection=oldSelection;selectionAnchor=oldAnchor;selectionFocus=oldFocus;
+                throw;
+            }
         } else if(action=="rules_load" || action=="rules_discard" || action=="rules_save" || action=="rules_preview" || action=="rules_apply" || action=="rules_prefill") {
             if(!repo.rules_supported()) throw std::invalid_argument("Rules require a new experimental dataset");
             auto closeUnknown=[&](const char* message){gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error(message);};
@@ -800,10 +907,11 @@ void ImportModel::requestCancel() {
     if(busy_ && operation_ && operation_->request()) {phase_="Cancellation requested";emit changed();}
 }
 void ImportModel::command(const QString& action,const QVariantMap& args) {
-    if(busy_) return;
+    if(busy_) {if(action=="inspect" && activeAction_=="select")pendingInspection_=args;return;}
+    activeAction_=action;
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
-    if(action!="open" && action!="unlock" && action!="import" && action!="resume" && action!="rules_preview" && action!="rules_apply" && action!="rules_save") operation->seal();
+    if(action!="open" && action!="unlock" && action!="import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save") operation->seal();
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
         if(!operation) return;
@@ -824,13 +932,14 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             pool_.start([retired=std::move(retired)]{});
         }
         state_=std::move(result.state);error_=std::move(result.error);busy_=false;phase_.clear();operation_->progress={};operation_.reset();emit changed();emit completed(action,result.success);
+        if(pendingInspection_ && !busy_){auto args=std::move(*pendingInspection_);pendingInspection_.reset();if(state_.value("active").toBool())command("inspect",args);}
     });
     watcher->setFuture(QtConcurrent::run(&pool_,[worker=worker_,action,args,operation]{
         Result result; bool unlock=false;
         try {worker->execute(action,args,*operation);result.success=true;}
         catch(const app::OperationOutcomeUnknown& e){worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();worker->selectedBatch.clear();worker->invalidate();result.error=QString::fromUtf8(e.what());}
         catch(const app::UnlockRequired& e){worker->invalidate();result.error=QString::fromUtf8(e.what());unlock=true;}
-        catch(const std::exception& e){worker->invalidate();result.error=QString::fromUtf8(e.what());}
+        catch(const std::exception& e){if(action!="query")worker->invalidate();result.error=QString::fromUtf8(e.what());}
         operation->state.store(app::OperationContext::sealed);
         operation->checkpoint("Refreshing verified ledger");
         try {auto snapshot=worker->snapshot();result.state=std::move(snapshot.first);result.rows=std::move(snapshot.second);}
@@ -841,9 +950,10 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
                 :(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Committed change "+worker->changeReceipt.value("operation").toString()+" was saved durably, but the refreshed ledger could not be loaded. Reopen and inspect committed history; do not apply the change again."
                 :(action=="rules_apply" && !ruleOperation.isEmpty())?ruleApplyRefreshFailure(ruleOperation)
                 :(action=="rules_save" && !ruleOperation.isEmpty())?ruleSaveRefreshFailure(ruleOperation)
+                :(action=="apply_bulk" && !worker->bulkReceipt.isEmpty())?"Bulk change "+worker->bulkReceipt.value("operation").toString()+" was saved durably, but its refreshed view could not be loaded. Reopen and inspect committed history; do not apply it again."
                 :"Unable to refresh verified dataset state. Close and reopen before continuing.";
             worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();
-            result.state={{"active",false},{"path",worker->path},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt},{"ruleReceipt",worker->ruleReceipt}};
+            result.state={{"active",false},{"path",worker->path},{"bulkReceipt",worker->bulkReceipt},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt},{"ruleReceipt",worker->ruleReceipt}};
             result.success=false;
         }
         result.state["unlockRequired"]=unlock;return result;

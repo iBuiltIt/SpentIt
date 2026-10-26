@@ -71,6 +71,55 @@ class ImportUiTests : public QObject {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
     }
 private slots:
+    void bulkInteractions() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto path=dir.path()+"/doc";create(m,path);if(!m.state().value("bulkSupported").toBool())QSKIP("Bulk format is not enabled");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        const auto source=fixture(dir.path(),"D1/5/2026\nT-10.00\nPSplit\nSFood\nERefund\n$2.00\nSTravel\nEFare\n$-12.00\n^\nD2/5/2026\nT20.00\nPIncome\n^\n");
+        run(m,"import",{{"path",source},{"profile","DMY"}});const auto batch=selected(m).value("batch").toString();
+        run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});run(m,"preview_bulk",{{"kind","remove"}},false);QVERIFY(m.state().value("active").toBool());
+        run(m,"commit");run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});run(m,"select",{{"row",m.occurrenceIndex(batch,1)},{"range",true}});
+        QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        auto* search=root->findChild<QQuickItem*>("ledgerSearch");QVERIFY(search);
+        auto* applyFilter=root->findChild<QObject*>("applyFilter");auto* clearFilter=root->findChild<QObject*>("clearFilter");QVERIFY(applyFilter && clearFilter);
+        search->setProperty("text","Income");QVERIFY(QMetaObject::invokeMethod(applyFilter,"clicked"));QTRY_VERIFY(!m.busy());
+        QVERIFY(QMetaObject::invokeMethod(clearFilter,"clicked"));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        search->setProperty("text","Income");QVERIFY(QMetaObject::invokeMethod(applyFilter,"clicked"));QTRY_VERIFY(!m.busy());
+        QVERIFY(QMetaObject::invokeMethod(root,"selectLedgerRow",Q_ARG(QVariant,0),Q_ARG(QVariant,0)));QTRY_VERIFY(!m.busy());
+        QVERIFY(QMetaObject::invokeMethod(clearFilter,"clicked"));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),1);QCOMPARE(m.state().value("selection").toList()[0].toMap().value("ordinal").toInt(),1);
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);ledger->forceActiveFocus();QTest::keyClick(window,Qt::Key_End);QTRY_VERIFY(!m.busy());QTest::keyClick(window,Qt::Key_Up,Qt::ShiftModifier);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        run(m,"preview_bulk",{{"kind","category"},{"category",""}});QVERIFY(root->findChild<QObject*>("bulkDialog")->property("visible").toBool());
+        run(m,"cancel_bulk");QCOMPARE(m.state().value("committed").toString(),"10.00");
+        run(m,"preview_bulk",{{"kind","category"},{"category",""}});run(m,"apply_bulk",{{"preview",m.state().value("bulkPreview").toMap().value("id")}});QCOMPARE(m.state().value("committed").toString(),"10.00");
+        run(m,"preview_bulk",{{"kind","remove"}});QTest::qWait(100);
+        if(qEnvironmentVariableIsSet("SPENTIT_BULK_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_BULK_SCREENSHOT")));
+        run(m,"apply_bulk",{{"preview",m.state().value("bulkPreview").toMap().value("id")}});const auto operation=m.state().value("bulkReceipt").toMap().value("operation");
+        QCOMPARE(m.state().value("committed").toString(),"0.00");QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"entry_history",{{"batch",batch},{"ordinal",0}});
+        QCOMPARE(m.state().value("entryHistory").toList().front().toMap().value("bulkGroup"),operation);
+        run(m,"preview_bulk",{{"kind","undo"},{"operation",operation}});run(m,"apply_bulk",{{"preview",m.state().value("bulkPreview").toMap().value("id")}});
+        QCOMPARE(m.state().value("committed").toString(),"10.00");
+        run(m,"inspect",{{"batch",batch},{"ordinal",0}});auto allocations=selected(m).value("draft").toMap().value("splits").toList();QCOMPARE(allocations.size(),2);QCOMPARE(allocations[0].toMap().value("amount").toString(),"2.00");QCOMPARE(allocations[1].toMap().value("memo").toString(),"Fare");
+    }
+    void combinedSearchAndSelection() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/doc");
+        const auto source=fixture(dir.path(),"D1/5/2026\nT-1.00\nPCoffee Shop\nMOriginal memo\n^\nD2/6/2026\nT-2.00\nPCoffee Other\n^\nD1/7/2026\nT3.00\nPIncome\n^\n");
+        run(m,"import",{{"path",source},{"profile","DMY"}});
+        run(m,"query",{{"filter","period:2026-05-01..2026-06-30 coffee"},{"projected",true}});
+        QCOMPARE(m.rowCount(),2);QCOMPARE(m.state().value("withdrawals").toString(),"-3.00");
+        run(m,"select",{{"row",0}});run(m,"select",{{"row",1},{"range",true}});QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        run(m,"select",{{"row",0},{"toggle",true}});QCOMPARE(m.state().value("selectionCount").toInt(),1);
+        run(m,"query",{{"filter","regex:\"(\""},{"projected",true}},false);
+        QVERIFY(m.state().value("active").toBool());QCOMPARE(m.rowCount(),2);QCOMPARE(m.state().value("withdrawals").toString(),"-3.00");
+        run(m,"query",{{"filter","period:02/03/2026"},{"projected",true}},false);QVERIFY(m.state().value("active").toBool());QCOMPARE(m.rowCount(),2);
+        run(m,"query",{{"filter","QIF: \"Original memo\""},{"projected",true}});QCOMPARE(m.rowCount(),1);
+        run(m,"query",{{"filter","QIF:"},{"projected",true}});QCOMPARE(m.rowCount(),3);
+        bool requested=false;auto connection=connect(&m,&ImportModel::changed,&m,[&]{if(m.canCancel()&&!requested){requested=true;m.requestCancel();}});
+        run(m,"query",{{"filter","coffee"},{"projected",true}},false);disconnect(connection);QVERIFY(requested);QVERIFY(m.state().value("active").toBool());QCOMPARE(m.rowCount(),3);
+        run(m,"query",{{"projected",true}});QCOMPARE(m.rowCount(),4);
+        run(m,"close");create(m,dir.path()+"/second");QCOMPARE(m.state().value("selectionCount").toInt(),0);
+    }
     void initTestCase() {
         QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("ImportUi");
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
@@ -418,10 +467,10 @@ private slots:
         ledger->setProperty("contentY",2000);QTest::qWait(100);
         QTest::qWait(100);QVERIFY(QMetaObject::invokeMethod(ledger,"positionViewAtBeginning"));QTest::qWait(100);
         QTRY_VERIFY(item("splitPreview_0") && item("splitPreview_0")->height()>0);
-        run(m,"query",{{"projected",true},{"filter","Row 0"},{"sort",1},{"descending",true}});
+        run(m,"query",{{"projected",true},{"filter","\"Row 0\""},{"sort",1},{"descending",true}});
         QTRY_VERIFY(item("splitPreview_0") && item("splitPreview_0")->height()>0);
         QCOMPARE(payee->property("text").toString(),"Unsaved editor");
-        run(m,"query",{{"projected",true},{"filter","Row 1"}});
+        run(m,"query",{{"projected",true},{"filter","\"Row 1\""}});
         QTRY_VERIFY(item("splitPreview_1") && item("splitPreview_1")->height()>0);
         QVERIFY(QMetaObject::invokeMethod(item("splitToggle_1"),"clicked"));
         QTRY_COMPARE(item("splitPreview_1")->height(),0);

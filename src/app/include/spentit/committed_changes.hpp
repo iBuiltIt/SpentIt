@@ -71,4 +71,23 @@ struct CommittedChangeSummary {
     std::string date,payee;
     Money total;
 };
+struct BulkRequest {
+    ChangeKind kind;
+    std::vector<imports::Occurrence> identities;
+    std::string category,undo_of;
+    bool operator==(const BulkRequest&) const = default;
+};
+struct BulkPreview {
+    BulkRequest request;
+    std::vector<ChangePreview> entries;
+    Money before,change,after;
+    std::int64_t preview_sequence,catalog_revision;
+};
+struct BulkReceipt {
+    std::string operation;
+    BulkRequest request;
+    std::vector<ChangeReceipt> entries;
+    Money before,change,after;
+    std::int64_t preview_sequence,catalog_revision;
+};
 }

@@ -221,7 +221,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=6;
+PRAGMA user_version=7;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton=1),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -369,13 +369,19 @@ CREATE TRIGGER register_rule_save BEFORE INSERT ON rule_operations BEGIN INSERT 
 CREATE TRIGGER order_rule_save AFTER INSERT ON rule_operations BEGIN INSERT INTO history_order(rule_operation) VALUES(NEW.id); END;
 CREATE TRIGGER register_rule_apply BEFORE INSERT ON rule_applications BEGIN INSERT INTO operation_registry VALUES(NEW.id,3); END;
 CREATE TRIGGER order_rule_apply AFTER INSERT ON rule_applications BEGIN INSERT INTO history_order(rule_application) VALUES(NEW.id); END;
+CREATE TABLE bulk_operations(id TEXT PRIMARY KEY REFERENCES ledger_operations(id),kind INTEGER NOT NULL CHECK(kind IN(1,2,3)),category TEXT,undo_of TEXT REFERENCES bulk_operations(id),preview_sequence INTEGER NOT NULL CHECK(preview_sequence>=0),catalog_revision INTEGER NOT NULL CHECK(catalog_revision>=0),count INTEGER NOT NULL CHECK(count BETWEEN 1 AND 4096),CHECK((kind=1 AND category IS NOT NULL AND undo_of IS NULL) OR (kind=2 AND category IS NULL AND undo_of IS NULL) OR (kind=3 AND category IS NULL AND undo_of IS NOT NULL))) STRICT;
+CREATE TABLE bulk_members(operation TEXT NOT NULL REFERENCES bulk_operations(id),position INTEGER NOT NULL CHECK(position>=0),entry_operation TEXT NOT NULL UNIQUE REFERENCES ledger_operations(id),PRIMARY KEY(operation,position)) STRICT;
+CREATE TRIGGER bulk_operations_immutable BEFORE UPDATE ON bulk_operations BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER bulk_operations_keep BEFORE DELETE ON bulk_operations BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER bulk_members_immutable BEFORE UPDATE ON bulk_members BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER bulk_members_keep BEFORE DELETE ON bulk_members BEGIN SELECT RAISE(ABORT,'immutable'); END;
 )SQL";
 #endif
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
     return version=="3" || version=="4" || version=="5"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6"
+        || version=="6" || version=="7"
 #endif
         ;
 }
@@ -383,7 +389,7 @@ bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
     return version=="4" || version=="5"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6"
+        || version=="6" || version=="7"
 #endif
         ;
 }
@@ -436,12 +442,12 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
 bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="5"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6"
+    || version=="6" || version=="7"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    return scalar(db,"PRAGMA user_version")=="6";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="7";
 #else
     (void)db;return false;
 #endif
@@ -504,7 +510,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create && (scalar(db, "PRAGMA application_id") != "1397770577" || (scalar(db, "PRAGMA user_version") != "1" && scalar(db, "PRAGMA user_version") != "2" && scalar(db, "PRAGMA user_version") != "3" && scalar(db, "PRAGMA user_version") != "4" && scalar(db, "PRAGMA user_version") != "5"
 #ifdef SPENTIT_RULES_STORAGE
-        && scalar(db, "PRAGMA user_version") != "6"
+        && scalar(db, "PRAGMA user_version") != "6" && scalar(db, "PRAGMA user_version") != "7"
 #endif
         )))
         fail(SQLITE_SCHEMA, "Unsupported document schema; no migration was attempted");
@@ -515,20 +521,22 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
         const auto category_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('category_state','category_versions','category_heads','category_operations','operation_registry','draft_fields','entry_fields','draft_allocation_meta','entry_allocation_meta')");
         const auto rule_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('rule_state','rule_definitions','rule_heads','rule_operations','rule_operation_requests','rule_snapshots','rule_applications','draft_rule_fields','draft_rule_allocations','entry_rule_fields','entry_rule_allocations')");
         const auto rule_history=scalar(db,"SELECT count(*) FROM pragma_table_info('history_order') WHERE name IN('rule_operation','rule_application')");
+        const auto bulk_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('bulk_operations','bulk_members')");
+        if((format=="7" && bulk_tables!="2") || (format!="7" && bulk_tables!="0"))fail(SQLITE_SCHEMA,"Bulk structure does not match format version; no migration was attempted");
         if((format!="5"
 #ifdef SPENTIT_RULES_STORAGE
-            && format!="6"
+            && format!="6" && format!="7"
 #endif
             && category_tables!="0") || ((format=="5"
 #ifdef SPENTIT_RULES_STORAGE
-            || format=="6"
+            || format=="6" || format=="7"
 #endif
             ) && category_tables!="9"))fail(SQLITE_SCHEMA,"Category structure does not match format version");
         if(((format=="1" || format=="2") && (retained_column || committed_tables!="0" || rule_tables!="0" || rule_history!="0")) ||
            (format=="3" && (!retained_column || committed_tables!="0" || rule_tables!="0" || rule_history!="0")) ||
            ((format=="4" || format=="5") && (!retained_column || committed_tables!="7" || rule_tables!="0" || rule_history!="0"))
 #ifdef SPENTIT_RULES_STORAGE
-           || (format=="6" && (!retained_column || committed_tables!="7" || rule_tables!="11" || rule_history!="2"))
+           || ((format=="6" || format=="7") && (!retained_column || committed_tables!="7" || rule_tables!="11" || rule_history!="2"))
 #endif
            )
             fail(SQLITE_SCHEMA,"Document structure does not match its format version; no reinterpretation was attempted");
@@ -1012,7 +1020,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
     }
     if(categories_supported())verify_categories(context);
     if(rules_format(impl_->db))verify_rules(context);
-    if(committed_changes_supported()){verify_committed(context);return;}
+    if(committed_changes_supported()){verify_committed(context);if(bulk_supported())verify_bulk(context);return;}
     Money balance=acct.opening;
     Statement ops(impl_->db,"SELECT id FROM operations ORDER BY rowid");
     while(ops.row()) {
@@ -1054,5 +1062,6 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
 }
 #include "category_store.inc"
 #include "committed_store.inc"
+#include "bulk_store.inc"
 #include "rule_store.inc"
 } // namespace spentit::storage

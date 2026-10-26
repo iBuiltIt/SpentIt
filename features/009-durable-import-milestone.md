@@ -1,8 +1,10 @@
 # 009 — First durable import workflow
 
 Status: **active**  
-Last updated: 2026-10-25  
-Implementation: partial, headless foundation plus optional durable UI experiment. The owner accepted the five policy groups and explicitly authorized implementation on 2026-10-25. The bounded parser, encrypted draft/review/commit commands and ledger reconciliation now exist; a bounded [setup/review UI](../doc/import-ui.md) connects them and schemas 2 and 3 support date/split-total repair. The review UI now includes inline editing, parsed source-field copying, simultaneous read-only split previews and literal-filter return navigation; see the [bounded scope and verification](../doc/import-ui.md#inline-editing-and-source-copying). Remaining scope is incomplete. See [implementation and verification](../doc/durable-import.md).
+Last updated: 2026-10-26  
+Implementation: partial, headless foundation plus optional durable UI experiment. The owner accepted the five policy groups and explicitly authorized implementation on 2026-10-25. The bounded parser, encrypted draft/review/commit commands and ledger reconciliation now exist; a bounded [setup/review UI](../doc/import-ui.md) connects them and schemas 2 and 3 support date/split-total repair. The review UI now includes inline editing, parsed source-field copying, simultaneous read-only split previews and combined-search return navigation; see the [bounded scope and verification](../doc/import-ui.md#inline-editing-and-source-copying). Remaining scope is incomplete. See [implementation and verification](../doc/durable-import.md).
+
+Subsequent bounded extensions now include committed changes, categories/rules, combined search, multiselection and atomic committed bulk/group Undo. See [current status](../doc/status.md) and [search/ledger scope](../doc/search-ledger.md). Historical deferrals in the original milestone below describe its first slice, not current absence. Transfers, reports, wider import dialects and the full product remain incomplete. Experimental formats need no migration or upgrade work until the owner announces a release.
 
 ## Objective and existing evidence
 
@@ -158,4 +160,4 @@ The [coordinated roadmap](../doc/roadmap.md) authorizes continuing routine imple
 
 ## Subsequent bounded extensions — 2026-10-25
 
-The original milestone deferrals above describe its initial scope. Subsequent schema-4 ordinary committed correction/removal/Undo is recorded in [feature 011](011-committed-editing-and-reversal.md), and schema-5 category management/assignments in [feature 010](010-categories-and-selection.md). Rules-disabled new datasets use schema 5. Rules-enabled new datasets use schema 6 and keep that catalog. Schema-6 Save/Apply and the rules sheet are recorded in [feature 004](004-rules-and-explanations.md). Schemas 1–4 remain readable without migration. General search, transfers, reports and multi-account documents are still deferred.
+The original milestone deferrals above describe its initial scope. Subsequent schema-4 ordinary committed correction/removal/Undo is recorded in [feature 011](011-committed-editing-and-reversal.md), and schema-5 category management/assignments in [feature 010](010-categories-and-selection.md). Rules-disabled new datasets use schema 5. Rules-enabled new datasets use schema 7 and keep that catalog plus bulk group receipts. Schema-6 Save/Apply and the rules sheet are recorded in [feature 004](004-rules-and-explanations.md). Schemas 1–4 remain readable without migration. Combined search, multiselection and atomic committed bulk changes are implemented in the bounded follow-up. Transfers, reports and multi-account documents are still deferred.

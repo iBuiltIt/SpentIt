@@ -1,8 +1,10 @@
 # 001 — Documents, storage, and security
 
 Status: **active**  
-Last updated: 2026-10-25  
-Implementation: partial; optional SQLCipher synthetic-data storage/recovery prototype and [headless durable-import experiment](../doc/durable-import.md). Full application document lifecycle, undo, migrations and password changes remain unimplemented.
+Last updated: 2026-10-26  
+Implementation: partial; optional SQLCipher synthetic-data storage/recovery prototype and [headless durable-import experiment](../doc/durable-import.md). Bounded document switching, backup/restore, ordinary strict Undo and atomic group Undo are implemented; full application lifecycle and password changes remain incomplete.
+
+Accepted format policy, 2026-10-26: no datasets exist in the wild. Experimental formats need no migration, upgrade or backward-compatibility work until the owner explicitly announces a release. Migration requirements below apply only once that gate makes them relevant; encryption, current-format atomicity and recovery remain required. Current group-history behavior is described in [search and ledger](../doc/search-ledger.md).
 
 ## Accepted requirements
 

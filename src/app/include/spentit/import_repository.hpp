@@ -100,6 +100,11 @@ public:
     virtual ChangeReceipt apply_committed_change_with_catalog(std::string_view op,const ChangeRequest& request,const EntryToken& token,std::int64_t sequence,std::int64_t catalog_revision) { if(catalog_revision!=0)throw std::logic_error("Catalog-aware changes unavailable");return apply_committed_change(op,request,token,sequence); }
     virtual std::optional<ChangeReceipt> committed_change_outcome(std::string_view) const { throw std::logic_error("Committed changes require a new dataset"); }
     virtual Money committed_balance() const = 0;
+    virtual bool bulk_supported() const { return false; }
+    virtual std::string bulk_group(std::string_view) const { return {}; }
+    virtual BulkPreview preview_bulk(const BulkRequest&) const { throw std::logic_error("Bulk changes require a new schema-7 dataset"); }
+    virtual BulkReceipt apply_bulk(std::string_view,const BulkPreview&) { throw std::logic_error("Bulk changes require a new schema-7 dataset"); }
+    virtual std::optional<BulkReceipt> bulk_outcome(std::string_view) const { throw std::logic_error("Bulk changes require a new schema-7 dataset"); }
     // No authoritative projection exists while the pending batch is blocked/unresolved.
     virtual std::optional<Money> projected_balance() const = 0;
     virtual bool rules_supported() const { return false; }

@@ -62,6 +62,11 @@ public:
     app::ChangeReceipt apply_committed_change(std::string_view,const app::ChangeRequest&,const app::EntryToken&,std::int64_t) override;
     std::optional<app::ChangeReceipt> committed_change_outcome(std::string_view) const override;
     Money committed_balance() const override;
+    bool bulk_supported() const override;
+    std::string bulk_group(std::string_view) const override;
+    app::BulkPreview preview_bulk(const app::BulkRequest&) const override;
+    app::BulkReceipt apply_bulk(std::string_view,const app::BulkPreview&) override;
+    std::optional<app::BulkReceipt> bulk_outcome(std::string_view) const override;
     std::optional<Money> projected_balance() const override;
     bool rules_supported() const override;
     app::RuleImage rule_image() const override;
@@ -86,6 +91,7 @@ private:
     std::vector<app::DependencyStamp> dependencies(const imports::Occurrence&,std::int64_t history_before=0) const;
     void verify_committed(const app::OperationContext* = nullptr) const;
     void verify_rules(const app::OperationContext* = nullptr) const;
+    void verify_bulk(const app::OperationContext* = nullptr) const;
     void populate(std::string_view,std::string_view,const qif::Result&,std::int64_t,const app::OperationContext*);
     app::RowView load_row(const imports::Occurrence&, bool candidates) const;
     static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr);

@@ -21,6 +21,11 @@ ApplicationWindow {
     property var searchReturn: null
     property var pendingSearch: null
     property string appliedFilter: ""
+    Menu {
+        id:ledgerContext
+        MenuItem {text:"Delete selected…";enabled:!!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:guard(function(){workflow.command("preview_bulk",{kind:"remove"})})}
+        MenuItem {text:"Change category…";enabled:!!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:{bulkCategory.forceActiveFocus();bulkCategory.popup.open()}}
+    }
     function restoreViewport(saved) {
         let index=workflow.occurrenceIndex(saved.anchor.batch || "",saved.anchor.ordinal===undefined?-1:saved.anchor.ordinal)
         if(index>=0) {
@@ -268,6 +273,9 @@ ApplicationWindow {
     }
     function openRuleCategory() { pickerIndex=-2; categorySearch.clear(); categoryPicker.open() }
     function inspectRecord(batch, ordinal) { guard(function(){workflow.command("inspect",{batch:batch,ordinal:ordinal})}) }
+    function selectLedgerRow(row, modifiers) {
+        guard(function(){workflow.command("select",{row:row,range:!!(modifiers & Qt.ShiftModifier),toggle:!!(modifiers & (Qt.ControlModifier|Qt.MetaModifier)),firstSearchSelection:!!searchReturn && !searchReturn.chosen})})
+    }
     function copySource(field) {
         if (!editEnabled || workflow.busy) return
         if (field.split >= 0) {
@@ -304,11 +312,12 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onCompleted(action,success) {
             ledger.currentIndex=workflow.selectedRowIndex()
+            if(action==="select")ledger.currentIndex=s.selectionIndex===undefined?-1:s.selectionIndex
             if (action==="inspect" || action==="import")
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {changePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {bulkDialog.close();changePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -318,7 +327,7 @@ ApplicationWindow {
                         let saved=searchReturn;searchReturn=null
                         if(!saved.chosen) loadEditor()
                         Qt.callLater(function(){
-                            if(saved.chosen) {if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)}
+                            if(saved.chosen) {let focus=s.selectionIndex===undefined?ledger.currentIndex:s.selectionIndex;if(focus>=0) ledger.positionViewAtIndex(focus,ListView.Contain)}
                             else restoreViewport(saved)
                         })
                     }
@@ -326,10 +335,13 @@ ApplicationWindow {
             }
             if(success && action==="inspect" && searchReturn && workflow.selectedRowIndex()>=0)
                 searchReturn.chosen=true
+            if(success && action==="select" && searchReturn)searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
             }
             if(success) {
+                if(action==="preview_bulk")bulkDialog.open()
+                if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
                 projected.checked=s.mode!=="Committed"
                 if(action==="preview_category") categoryChangePreview.open()
                 if(action==="category_select" || action==="apply_category")loadCategoryForm()
@@ -406,6 +418,24 @@ ApplicationWindow {
             RowLayout {
                 Button {objectName:"applyCommittedChange";text:(s.changePreview||{}).applyLabel||"Apply";enabled:!workflow.busy && !!(s.changePreview||{}).id;onClicked:workflow.command("apply_change",{preview:s.changePreview.id})}
                 Button {objectName:"cancelCommittedChange";text:"Cancel";enabled:!workflow.busy;onClicked:{changePreview.close();pendingAction=null;workflow.command("cancel_change")}}
+            }
+        }
+    }
+    Dialog {
+        id:bulkDialog;objectName:"bulkDialog";title:(s.bulkPreview||{}).title||"Bulk preview";modal:true;anchors.centerIn:parent;width:Math.min(850,window.width-80);height:Math.min(600,window.height-80)
+        ColumnLayout {
+            anchors.fill:parent
+            Label {text:(s.bulkPreview||{}).impact||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:"All listed changes and their history are saved together. Original import evidence is retained.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ListView {
+                id:bulkLines;objectName:"bulkPreviewLines";model:(s.bulkPreview||{}).lines||[];clip:true;reuseItems:true;Layout.fillWidth:true;Layout.fillHeight:true
+                ScrollBar.vertical:ScrollBar {}
+                delegate:Label {required property string modelData;width:bulkLines.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
+            }
+            Label {text:workflow.error;textFormat:Text.PlainText;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Button {objectName:"applyBulk";text:"Apply all";enabled:!workflow.busy && !!(s.bulkPreview||{}).id;onClicked:workflow.command("apply_bulk",{preview:s.bulkPreview.id})}
+                Button {objectName:"cancelBulk";text:"Cancel";enabled:!workflow.busy;onClicked:{bulkDialog.close();workflow.command("cancel_bulk")}}
             }
         }
     }
@@ -738,6 +768,7 @@ ApplicationWindow {
                                     }
                                     Label {textFormat:Text.PlainText;text:modelData.undoReason;visible:!modelData.undoEligible;wrapMode:Text.Wrap;Layout.fillWidth:true}
                                     Button {objectName:"undo_"+modelData.operation;text:"Review Undo…";enabled:modelData.undoEligible;onClicked:workflow.command("preview_change",{kind:"undo",operation:modelData.operation,batch:modelData.batch,ordinal:modelData.ordinal})}
+                                    Button {text:"Review group Undo…";visible:!!modelData.bulkGroup;onClicked:workflow.command("preview_bulk",{kind:"undo",operation:modelData.bulkGroup})}
                                 }
                             }
                         }
@@ -764,7 +795,7 @@ ApplicationWindow {
                     contentWidth:Math.max(1080,availableWidth);contentHeight:availableHeight
                     ColumnLayout {
             id:ledgerPage;objectName:"ledgerPage"
-            width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight;enabled:!workflow.busy
+            width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight;enabled:!workflow.busy || workflow.selecting
             Label {textFormat:Text.PlainText;text:s.path || "";elide:Text.ElideMiddle;Layout.fillWidth:true}
             RowLayout {
                 Label {textFormat:Text.PlainText;text:"Committed: "+(s.committed||"")+"   Projected: "+(s.projected||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
@@ -800,10 +831,19 @@ ApplicationWindow {
             Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? "Committed "+s.receipt.operation+" · included "+s.receipt.included+", excluded "+s.receipt.excluded+" · "+s.receipt.before+" + ("+s.receipt.change+") = "+s.receipt.after:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 CheckBox {id:projected;checked:true;text:"Projected ledger";onClicked:guard(query)}
-                TextField {id:search;objectName:"ledgerSearch";placeholderText:"Literal whole-record filter";maximumLength:256;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger filter"}
+                TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply filter";onClicked:guard(query)}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
+                Label {text:(s.selectionCount||0)+" selected";textFormat:Text.PlainText}
                 Label {textFormat:Text.PlainText;text:"Mode: "+(s.mode||"");Layout.minimumWidth:0;elide:Text.ElideRight}
+            }
+            RowLayout {
+                Layout.fillWidth:true;visible:!!s.bulkSupported
+                Button {objectName:"bulkRemove";text:"Delete selected…";enabled:(s.selectionCount||0)>0;onClicked:guard(function(){workflow.command("preview_bulk",{kind:"remove"})})}
+                ComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).filter(function(c){return c.assignable}));textRole:"path";Layout.preferredWidth:220;Accessible.name:"Category for selected transactions"}
+                Button {objectName:"bulkCategorize";text:"Change category…";enabled:(s.selectionCount||0)>0 && bulkCategory.currentIndex>=0;onClicked:guard(function(){workflow.command("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})})}
+                Label {textFormat:Text.PlainText;text:(s.bulkReceipt||{}).summary||"Committed rows only · every allocation";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Button {objectName:"undoBulk";text:"Undo group…";visible:!!(s.bulkReceipt||{}).operation;onClicked:guard(function(){workflow.command("preview_bulk",{kind:"undo",operation:s.bulkReceipt.operation})})}
             }
             RowLayout {
                 Repeater {model:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
@@ -812,15 +852,35 @@ ApplicationWindow {
             }
             ListView {
                 id:ledger;objectName:"durableLedger";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:workflow;reuseItems:true;highlightFollowsCurrentItem:false
+                activeFocusOnTab:true
+                Keys.onPressed: function(event) {
+                    if(event.key===Qt.Key_Up || event.key===Qt.Key_Down || event.key===Qt.Key_Home || event.key===Qt.Key_End) {
+                        let current=s.selectionIndex===undefined?-1:s.selectionIndex
+                        let next=event.key===Qt.Key_Home?0:event.key===Qt.Key_End?count-1:Math.max(0,Math.min(count-1,current+(event.key===Qt.Key_Down?1:-1)))
+                        if(next>=0 && next<count){selectLedgerRow(next,event.modifiers);positionViewAtIndex(next,ListView.Contain)}
+                        event.accepted=true
+                    } else if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter) {
+                        let id=workflow.rowIdentity(s.selectionIndex===undefined?-1:s.selectionIndex)
+                        if(id.batch)inspectRecord(id.batch,id.ordinal)
+                        event.accepted=true
+                    } else if(event.key===Qt.Key_Delete && s.bulkSupported && (s.selectionCount||0)>0) {
+                        guard(function(){workflow.command("preview_bulk",{kind:"remove"})});event.accepted=true
+                    }
+                }
                 ScrollBar.vertical:ScrollBar {}
                 delegate:Rectangle {
                     required property var record
+                    required property int index
                     id: ledgerRow
                     property bool expanded: record.batch===selected.batch && record.ordinal===selected.ordinal
                     property bool viewingSplits: !!window.splitViews[window.splitKey(record)] && record.splits.length>1
                     property alias editorSlot: rowEditorSlot
-                    width:ledger.width;height:34+(expanded?editor.height:splitPreview.height);color:record.status==="Draft"?"#fff6de":"#f3f5f7"
-                    MouseArea {width:parent.width;height:34;onDoubleClicked:if(record.batch.length)inspectRecord(record.batch,record.ordinal)}
+                    width:ledger.width;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?"#c7e3fb":record.status==="Draft"?"#fff6de":"#f3f5f7"
+                    border.width:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?1:0;border.color:"#2870a8"
+                    MouseArea {width:parent.width;height:34;acceptedButtons:Qt.LeftButton|Qt.RightButton
+                        onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){if(!(s.selectionKeys||{})[record.batch+":"+record.ordinal])selectLedgerRow(ledgerRow.index,0);ledgerContext.popup()}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
+                        onDoubleClicked:function(mouse){if(mouse.button===Qt.LeftButton && record.batch.length)inspectRecord(record.batch,record.ordinal)}
+                    }
                     Row {
                         width:parent.width;height:34;spacing:4
                         Repeater {model:[record.date,record.payee+(record.status==="Draft"?" [Draft]":""),record.category,record.withdrawal,record.deposit,record.balance]
@@ -977,6 +1037,7 @@ ApplicationWindow {
             let index=ledger.indexAt(1,ledger.contentY+1)
             let item=ledger.itemAtIndex(index)
             change.start={selection:selected.batch && selected.ordinal!==undefined?{batch:selected.batch,ordinal:selected.ordinal}:{},
+                selectionIds:s.selection||[],
                 sort:s.sort||0,descending:s.descending||false,projected:s.mode!=="Committed",
                 anchor:workflow.rowIdentity(index),offset:item?ledger.contentY-item.y:0,chosen:false}
         } else if(searchReturn && search.text.length===0) {
@@ -984,6 +1045,7 @@ ApplicationWindow {
             if(!searchReturn.chosen) {
                 args.sort=searchReturn.sort;args.descending=searchReturn.descending;args.projected=searchReturn.projected
                 args.restoreSelection=searchReturn.selection
+                args.restoreSelectionIds=searchReturn.selectionIds
             }
         }
         pendingSearch=change

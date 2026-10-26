@@ -47,4 +47,28 @@ LedgerView ledger_view(const Account& account,std::vector<LedgerRow> rows,std::s
         return cmp==0?x.sequence<y.sequence:descending?cmp>0:cmp<0;
     });return out;
 }
+LedgerView search_ledger(const Account& account,std::vector<LedgerRow> rows,LedgerSearch& query,int column,bool descending,
+                         const SourceLookup& source,const std::function<bool()>& cancelled) {
+    const auto check_cancel=[&]{if(cancelled && cancelled())throw rules::RegexError(rules::RegexFailure::cancelled,"Search cancelled");};
+    check_cancel();
+    auto out=ledger_view(account,std::move(rows),"",column,descending);
+    check_cancel();if(query.empty())return out;
+    std::vector<std::size_t> order;std::vector<Money> withdrawals,deposits;
+    for(const auto index:out.order){
+        const auto& row=out.rows[index];
+        std::vector<std::string> amounts;amounts.reserve(row.draft.transaction.allocations().size()+2);
+        amounts.push_back(decimal(row.draft.transaction.effective_total()));amounts.push_back(decimal(out.balances[index]));
+        for(const auto& a:row.draft.transaction.allocations())amounts.push_back(decimal(a.amount));
+        std::vector<std::string_view> fields;std::optional<std::string_view> raw;
+        if(query.source_mode()) {if(source && !row.identity.batch.empty())raw=source(row.identity);if(raw)fields.push_back(*raw);}
+        else {
+            fields={row.draft.date,row.draft.payee,row.draft.memo,account.currency.code()};
+            for(const auto& amount:amounts)fields.push_back(amount);
+            for(const auto& a:row.draft.transaction.allocations()){fields.push_back(a.category);fields.push_back(a.memo);}
+        }
+        if(!query.matches(row.draft.date,fields,raw.has_value(),cancelled))continue;
+        order.push_back(index);const auto total=row.draft.transaction.effective_total();(total.units()<0?withdrawals:deposits).push_back(total);
+    }
+    out.order=std::move(order);out.withdrawals=imports::sum(account.currency,withdrawals);out.deposits=imports::sum(account.currency,deposits);return out;
+}
 } // namespace spentit::app

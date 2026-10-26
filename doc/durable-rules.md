@@ -4,11 +4,15 @@
 |---|---|
 | Author | SpentIt contributor (placeholder) |
 | Date | 2026-10-25 |
-| Status | Storage is `9b7cf40`. The sheet is `147a5be`, verified in Debug. |
+| Status | Schema-6/rules-sheet baseline verified in Release and ASan/UBSan on 2026-10-26; current schema 7 adds bulk receipts. |
 | Package | Roadmap package 5, rules half only |
-| Schema | New rules-enabled documents **6**. Schemas 1–5 stay readable and are not rewritten. |
+| Schema | Current rules-enabled documents **7**; the historical schema-6 design below is retained as implementation rationale. No pre-release migration obligation. |
 
-## Implementation status — 2026-10-25
+## Current follow-up — 2026-10-26
+
+The earlier verification gap is closed: the rules-enabled `3f94fe6` baseline passed all 72 tests in Release and ASan/UBSan. [Search/ledger work](search-ledger.md) now adds combined search, multiselection, and schema-7 bulk receipts. The owner clarified that pre-release formats need no migration or compatibility commitment until an announced release. The historical design and checkpoint below are retained; their Debug-only and search-not-done statements do not describe current status. See [project status](status.md) for evidence and limitations.
+
+## Historical implementation status — 2026-10-25
 
 Schema 6 Save, Preview, and Apply are in the rules-enabled import store (`9b7cf40`), with the `rulestore.*` Debug results recorded in [project status](status.md). The rules sheet is `147a5be`. Debug `import.rules_ui` passed, as recorded in project status. The design below remains the contract that implementation followed. Sentences that say the sheet or the store is missing describe the repository before that work. Release, ASan/UBSan, search, committed reapplication, other platforms, PCRE2 sanitizer coverage, and physical power loss are not done. The next package is search and ledger completion.
 

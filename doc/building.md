@@ -1,6 +1,6 @@
 # Building and verifying the engine
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
 ## Prerequisites
 
@@ -89,3 +89,20 @@ ctest --test-dir build/import-ui-rules-debug --output-on-failure -R '^(import.ru
 ```
 
 That rules-on Debug invocation passed `import.rules_ui`, `import.category_ui`, and `import.qml`. The rules-off Debug tree `build/import-ui-debug` then passed `import.ui`, `import.navigation`, `import.recovery_ui`, `import.committed_ui`, `import.category_ui`, and `import.qml`. Times are in [project status](status.md). Release and sanitizer runs of schema 6 and of the sheet are not recorded.
+
+## Search and bulk follow-up — 2026-10-26
+
+Import-workflow builds now require pinned PCRE2 10.49 for search, even when `SPENTIT_RULES=OFF`. Engine-only builds remain dependency-free. New rules-enabled documents use schema 7 for atomic bulk changes; this pre-release phase has no migration obligation.
+
+Use the import-UI configuration above with binary directories `build/search-debug`, `build/search-release`, and `build/search-sanitized`. Select `CMAKE_BUILD_TYPE=Debug`, `Release`, and `Debug` respectively; set `SPENTIT_SANITIZERS=ON` for the last. Keep all the same storage/import/UI/rules flags and dependency paths. `cmake --build <directory> -j 3` builds each tree. The new registered checks are `import.search`, `rulestore.bulk`, `rulestore.bulk_io`, and `rulestore.bulk_crashes`; import UI tests also cover selection, source search, bulk previews and recovery.
+
+The current-format verification ran 60 selected cases using:
+
+```sh
+ctest --test-dir build/search-release --output-on-failure -j 2 \
+  -E '^(storage[.]|import[.](io|crashes|backup_failures|backup_crashes)$|committed[.](io|crashes)$|category[.](io|crashes)$)'
+```
+
+The same selection was run in the sanitizer tree. The excluded older fault sweeps had already passed in the full 72-case schema-6 baseline; the new bulk and rules fault sweeps are included. Do not describe this as a full 76-case schema-7 suite. Final targeted rebuilds/reruns and the corrected sanitizer-test issue are recorded in [project status](status.md).
+
+`build/search-release/src/app/spentit_search_benchmark 100000` (or `200000`) checks and times synthetic in-memory application queries, including copy/sort/filter/totals. It excludes database/source-file I/O and Qt rendering. See [results and limits](status.md).

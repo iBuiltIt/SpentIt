@@ -1,8 +1,8 @@
 # Project status
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
-Coordinated follow-up work is authorized under the [implementation roadmap](roadmap.md). Unresolved financial/security semantics and unavailable platform verification remain concrete owner-input gates. The next package is search and ledger completion. The rules sheet is `147a5be`, verified in Debug. Release and ASan/UBSan coverage of schema 6 and of the sheet are not recorded.
+The schema-6/rules-sheet verification gap is closed: the `3f94fe6` baseline passed all 72 tests in Release and ASan/UBSan on macOS. Combined search, identity-based multiselection, and schema-7 atomic committed bulk category/removal/Undo are implemented in the bounded QIF experiment; their contract and limits are in [search and ledger](search-ledger.md). Detailed verification is recorded at the end of this file. The owner confirmed that experimental formats are disposable until an explicitly announced release; migrations, upgrades, and backward compatibility are not pre-release obligations. Transfers and reports remain unfinished.
 
 SpentIt has a buildable C++20 financial engine, an optional isolated encrypted-storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet prototype, and a partial durable QIF workflow with an optional setup/review UI. **There is no production financial-document application yet.**
 
@@ -173,6 +173,42 @@ The rules-enabled import UI has a sidebar rules page. It lists, reorders, enable
 
 Debug on macOS 27.0.1 arm64, Qt 6.12.0, offscreen. Directory `build/import-ui-rules-debug` (`SPENTIT_RULES=ON` with the import-UI flags) passed `import.category_ui` in 3.76 s, `import.rules_ui` in 4.66 s, and `import.qml` in 0.69 s. That invocation ran those three entries. It did not run the rest of the 72-test list. `import.rules_ui` passed seven slots: schema 6 shows the page and schema 5 hides it; Save, Discard, and Stay, including a dirty draft then dirty rules on close; unsaved reorder preview that does not write, then Apply after Save on a synthetic Wise-shaped pending draft, including a blank manual payee kept when replacement is off, a committed row that does not offer Apply, and create-from-source quoting; obsolete derived-payee removal; a busy worker ignoring a second command; cancel during preview; and a known-saved Apply whose refresh fails. The rules-off Debug directory `build/import-ui-debug` then passed `import.ui` in 15.52 s, `import.navigation` in 1.20 s, `import.recovery_ui` in 1.83 s, `import.committed_ui` in 5.04 s, `import.category_ui` in 3.60 s, and `import.qml` in 0.76 s. That invocation ran those six entries. Release and ASan/UBSan were not run for the sheet or for schema 6. Linux, Windows, physical power loss, committed reapplication, and PCRE2 under SpentIt's sanitizer flags remain unverified. No personal financial files were used.
 
-## Handoff — 2026-10-25
+## Handoff — 2026-10-26
 
-The rules sheet is `147a5be`. Schema 6 storage remains `9b7cf40`. The next package is search and ledger completion in [the roadmap](roadmap.md). Specify the remaining search grammar before implementing it. Do not start transfers or reports first. Do not describe Release or sanitizer coverage of schema 6 or of the sheet as done. No personal financial files were used.
+The verification gap and authorized bounded search/ledger package are complete. The [current handoff](roadmap.md#handoff--2026-10-26) records resumption steps, accepted decisions, remaining verification limits, and the transfer-policy gates for the next substantive package. Search is no longer pending, and schema-6 Release/sanitizer coverage is no longer missing. The detailed historical checkpoints above retain their original evidence; the results below supersede their then-current gaps. Experimental-format migration work is not required before an owner-announced release.
+
+## Schema-6 verification gap closed — 2026-10-26
+
+Before search implementation, clean rules-enabled Release and Debug+ASan/UBSan trees were configured and built from `3f94fe6f4e96d745533eb107786861fd93365b72`, with the same pinned dependencies and macOS arm64 toolchain. `ctest --test-dir build/import-ui-rules-release --output-on-failure -j 2` passed 72/72 in 1,127.92 seconds. The corresponding `build/import-ui-rules-sanitized` invocation passed 72/72 in 2,327.82 seconds. This includes schema-6 Save/Apply, corruption rejection, write/sync failures, process exits, backup restoration, and the rules-sheet UI. Baseline build/test logs contained no compiler, Qt, ASan, or UBSan diagnostics. The historical Debug-only statements above describe their original checkpoints and are superseded by this verification.
+
+## Search, selection, and atomic bulk ledger changes — 2026-10-26
+
+The owner accepted literal AND terms, quoted phrases, explicit regex, a query-wide original-QIF mode, inclusive year-first/named-month periods, stable multiselection and search-return behavior. The durable UI now implements those queries on its worker, keeps a previous valid view after failed/cancelled queries, preserves chronological balances, and calculates exact whole-transaction filtered totals. Pointer/keyboard selection, context actions, and guarded bulk previews are connected. New rules-enabled schema-7 documents retain atomic bulk category/removal receipts and group Undo; only committed rows are eligible, Opening Balance is excluded, and every allocation is shown in the preview. Original evidence, non-category fields, exact amounts, and retained history survive. See [implementation contract](search-ledger.md).
+
+The owner explicitly stated that no datasets exist in the wild and will announce the release that starts compatibility obligations. No migration/upgrade infrastructure was added. Existing experimental-format support was left where already present. This is still a one-account synthetic-data experiment, not a production application or full implementation of feature 005. Transfers, reports, general multi-account behavior, separate note fields, an ambiguous-date preference, native accessibility auditing, and other-platform validation remain open.
+
+Current-format verification on macOS 27.0.1 arm64 / AppleClang 21 / Qt 6.12.0:
+
+- Debug passed the 15 targeted application/storage/UI checks, both complete bulk fault sweeps, and the final four search/bulk/UI checks. The final eight affected UI/QML/benchmark-smoke checks passed 8/8 in 27.86 seconds.
+- Release passed all 60 selected cases in 294.56 seconds. This includes rules and bulk write/sync/crash sweeps. Final four targeted checks passed again; after restoring the original delegate-reset behavior, eight affected UI checks passed 8/8 in 24.60 seconds.
+- ASan/UBSan passed 59/60 in the initial selected run; the failing new bulk test iterated allocations from a temporary snapshot and triggered stack-use-after-scope in test code. The test was corrected to retain the snapshot. All four final targeted checks, including that case and provenance restoration, then passed in 45.72 seconds. Thus every selected case has a passing result, not a claim of a clean first run. The final eight affected UI checks passed 8/8 in 34.94 seconds. No ASan/UBSan diagnostics appeared in the corrected targeted runs.
+- Bulk fault sweeps covered every observed write/sync position for category changes, removal, and group Undo, plus exits immediately before/after durable commit. The I/O/crash entries passed in Debug (149.50/153.41 seconds), Release (145.21/148.49), and ASan/UBSan (302.95/317.52). Recovery checks assert all-or-none member revisions, complete receipts, retry identity, reopened verification, and synthetic-marker confidentiality.
+- The rules-off Debug build passed `import.search`, `import.schema_gate`, `import.ui`, and `import.qml`; bulk-specific UI tests deliberately skip in that configuration. Import search now requires the pinned PCRE2 adapter even without rule persistence.
+- The bulk preview was rendered and inspected. UI tests cover mixed-sign allocation preservation, explicit preview/cancel/apply, reopening and group history/Undo, search-error/cancellation preservation, multiselection restoration, keyboard ranges, lost acknowledgements, unknown outcomes, and post-save refresh failure. A temporary test-helper name collision was fixed before the final builds.
+
+The pre-existing Qt `DelegateModel::cancel: index out range` warning remains observable during some filter resets. Selection, viewport, inline-editor and split-view assertions pass. Disabling delegate reuse did not remove it; detaching the model removed the warning but broke viewport tests, so that workaround was reverted. This is a recorded Qt interaction limitation, not a clean-Qt-log claim. Final compiler logs were clean. The current-format run selected 60 of 76 registered cases; older storage/import/category/committed fault sweeps were not rerun for schema 7 after their baseline passes. See [exact build/test scope](building.md#search-and-bulk-follow-up--2026-10-26).
+
+Final Release offscreen rendering passed both `bulkInteractions` and `combinedSearchAndSelection`; the captured bulk preview was inspected with readable allocation categories, exact balance impact, and Apply/Cancel controls. A native-window attempt failed because this execution session reported “Cannot create window: no screens available,” so native interaction remains unverified. Documentation checks found no missing targets among 133 relative links, and `git diff --check` passed.
+
+Single-run Release in-memory application search measurements, after the long test sweeps completed:
+
+| Synthetic rows | Literal + May–June | Regex + May–June | QIF text + May–June | Exact matches |
+|---|---:|---:|---:|---:|
+| 100,000 | 179 ms | 103 ms | 75 ms | 1,666 |
+| 200,000 | 224 ms | 215 ms | 165 ms | 3,333 |
+
+Every query asserted exact counts, withdrawals/deposits and unfiltered ending balance. These include application copy/sort/filter/totals; the QIF benchmark uses synthetic in-memory source slices. They exclude database/source-file loading and Qt rendering, and do not establish native scrolling responsiveness. The existing small UI benchmark also passed in the final UI runs. No personal financial inputs were used. Other operating systems, full accessibility, physical power loss and sanitizer instrumentation inside the installed PCRE2 library remain unverified.
+
+## Documentation handoff refresh — 2026-10-26
+
+Reconciled the README, current handoff/roadmap, storage/UI/category guides, feature index and affected requirements with the completed search/bulk work and owner-announced release gate. Checked all 30 root/project/feature Markdown documents: 286 local links and heading anchors resolved. Historical measurements remain labeled by checkpoint. This final pass changed documentation only; runtime checks were not repeated. `git diff --check` passed before committing.

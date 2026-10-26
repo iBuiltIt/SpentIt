@@ -1,8 +1,8 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**  
-Last updated: 2026-10-25  
-Implementation: partial, synthetic sheet plus a separate bounded durable import review UI. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
+Last updated: 2026-10-26  
+Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and schema-7 atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Accepted requirements
 
@@ -68,6 +68,20 @@ Search filters the selected account's ledger across the whole editable/display r
 The owner wants a query language combining text with period filters. Illustrative intent: `period:may-june starbucks` finds Starbucks transactions during May and June of the current year. Desired date forms include `20261001`, `2026-10-01`, and `2026/10/01`. Settings will provide a date-format preference used by period parsing. These examples express requirements, not a finalized grammar: range delimiters, boundaries, quoting, precedence, and ambiguity handling must be designed together with the owner. Ambiguous dates must not be silently guessed.
 
 Regex capability is desired, with case-insensitive matching by default where appropriate. Whether ordinary text is literal or regex, how regex is requested, flag overrides, and interaction with query operators remain open. Invalid expressions and resource-limit failures must produce explicit errors rather than appear to be successful searches with no matches. Bound search work and keep it off the UI thread as appropriate.
+
+## Accepted search and selection policy — 2026-10-26
+
+The owner accepted the following policy for the next search/ledger package. These decisions supersede the corresponding open grammar and selection questions above; they are requirements, not implementation evidence.
+
+- Ordinary terms are case-insensitive literals joined with AND. Double quotes delimit a phrase. Regex is explicit: `regex:"pattern"`.
+- A query-wide `QIF:` prefix searches original record evidence instead of the editable interpretation. Records without QIF evidence do not match that mode. For example: `QIF: period:2026-05-01..2026-06-30 "coffee shop"`.
+- Date ranges use `..` and include both endpoints. Accepted full dates are `YYYYMMDD`, `YYYY-MM-DD`, and `YYYY/MM/DD`. `period:may-june` means May through June of the current year. Ambiguous numeric dates are rejected until a date-format preference has been explicitly chosen.
+- Shift selects a range; Cmd/Ctrl toggles individual rows. Selection follows stable identities. Clearing search restores the pre-search selection if no result was explicitly chosen; otherwise it retains only explicitly selected results. If all selected records were removed, selection is empty.
+- Bulk Delete and Change category require an exact preview and one atomic operation. A loop of separately committed single-record commands does not satisfy this requirement.
+- The first bulk implementation operates on committed rows only and excludes Opening Balance. Mixed draft/committed selections are rejected explicitly. Change category updates every allocation of each selected transaction, preserving amounts and memos; the preview lists every affected allocation. The owner accepted this bounded scope separately.
+- Schema 7 is approved for durable bulk receipts. The owner subsequently clarified that all formats are pre-release and disposable: migration, upgrades, and backward compatibility are unnecessary until the owner announces a release. Existing experimental-format support may remain, but it is not a completion obligation for this package.
+
+Invalid syntax, invalid patterns, cancellation, and exhausted resources must remain explicit outcomes. Chronological balances and exact whole-transaction filtered totals retain the accepted behavior above. Detailed engineering limits and escape syntax must be specified without silently changing financial interpretations.
 
 ## Proposed technology and behavior
 

@@ -95,6 +95,7 @@ app::ChangeReceipt ImportStore::apply_committed_change(std::string_view operatio
 }
 app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_view operation,const app::ChangeRequest& request,const app::EntryToken& expected,std::int64_t preview_sequence,std::int64_t catalog_revision) {
     identifier(operation);
+    if(bulk_supported()){Statement member(impl_->db,"SELECT 1 FROM bulk_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a bulk command");}
     if(const auto prior=committed_change_outcome(operation)){
         Statement stored(impl_->db,categories_supported()?"SELECT preview_sequence,catalog_revision FROM ledger_operations WHERE id=?":"SELECT preview_sequence,0 FROM ledger_operations WHERE id=?");stored.text(1,operation);if(!stored.row())fail(SQLITE_CORRUPT);
         auto prior_token=prior->result_token;prior_token.revision=prior->before_entry.revision;

@@ -1,14 +1,16 @@
 # Durable QIF workflow — headless implementation
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
 This is a partial implementation of [feature 009](../features/009-durable-import-milestone.md), authorized by the owner's Go. It is an optional synthetic-data experiment, not a production financial-document application. The existing sheet is still session-only. No private exports were opened or copied.
+
+Current extensions include [ordinary committed changes](committed-changes.md), [categories](categories.md), [durable rules](durable-rules.md), and [search/atomic bulk operations](search-ledger.md). The earlier milestone boundaries and dated results below are historical, not a statement that these extensions are absent. Experimental formats are disposable until an owner-announced release; no migration or upgrade infrastructure is required.
 
 ## Implemented boundaries
 
 The engine owns the [bounded banking QIF profile](../features/009-qif-profile.md), UTF-8/calendar/exact-money validation, record diagnostics, source identity comparisons, duplicate-decision validation, draft validation and exact aggregation. The application exposes synchronous commands through `ImportRepository` and provides ledger ordering/filtering/reconciliation independent of Qt. Storage implements those atomic commands with pinned SQLCipher. No UI target links this new store.
 
-The `SPENTIT_IMPORT_WORKFLOW` option adds `spentit_import_store`, `spentit_import_view` and tests; it requires `SPENTIT_STORAGE_PROTOTYPE` for the existing pinned SQLCipher build. Engine-only builds include the parser and its tests without Qt or SQLCipher. No new external dependency was selected.
+The `SPENTIT_IMPORT_WORKFLOW` option adds `spentit_import_store`, `spentit_import_view` and tests; it requires `SPENTIT_STORAGE_PROTOTYPE` for the existing pinned SQLCipher build. Engine-only builds include the parser and its tests without Qt or SQLCipher. The current search extension also requires the pinned PCRE2 adapter; the core engine remains dependency-free.
 
 Each document contains one account with a retained currency definition and an explicit Opening Balance. Setup starts with zero, using the date supplied by the application. Confirming even a zero opening balance is required before first commit. A subsequent opening-balance edit increments any pending batch's revision, so an older commit request cannot silently use a changed starting balance. The first commit freezes the opening balance.
 
@@ -22,7 +24,7 @@ The ledger query uses financial date followed by permanent sequence, placing the
 
 ## Storage and locking
 
-New documents have application ID 1397770577 and schema version 5 (schemas 1–4 remain readable without migration), distinct from the older storage prototype. There is no migration or reinterpretation of prototype documents. SQLCipher 4.19.0 settings, OpenSSL provider, DELETE journals, EXTRA synchronization, fullfsync, foreign keys, memory-only temporary storage and exclusive backup publication follow the [earlier storage experiment](storage-prototype.md). SQLite's value bound is increased to accommodate the accepted 64 MiB source cap; parser and draft limits still apply separately.
+New documents have application ID 1397770577 and schema version 7 with rules enabled, or 5 with rules disabled, distinct from the older storage prototype. There is no migration or reinterpretation of prototype documents. SQLCipher 4.19.0 settings, OpenSSL provider, DELETE journals, EXTRA synchronization, fullfsync, foreign keys, memory-only temporary storage and exclusive backup publication follow the [earlier storage experiment](storage-prototype.md). SQLite's value bound is increased to accommodate the accepted 64 MiB source cap; parser and draft limits still apply separately.
 
 A separate empty `.lock` file carries an exclusive kernel `flock` for the document session. It is not deleted or used as an age-based ownership claim: the kernel releases ownership after process exit. A live holder is never overridden. This is separate from SQLite's durability locks because the macOS filesystem may itself use flock for database locking. Symlink opens and multiply linked document/lock files are rejected. The empty lock file may remain after closing or a failed open; it contains no financial data.
 
@@ -135,4 +137,4 @@ Schema 4 extends this experiment with [current committed interpretations, remova
 
 ## Category catalog and allocation metadata — 2026-10-25
 
-Schema 5 adds the bounded [category catalog and assignment workflow](categories.md), with immutable definition history, current taxonomy resolution, explicit unmapped labels and stable source-allocation metadata. Schema 4 retains committed-change support; earlier formats retain their existing capabilities. No automatic migration occurs. The standalone [rules evaluator and preview adapter](rules-engine.md) do not yet persist rules or apply rule results to drafts.
+Schema 5 adds the bounded [category catalog and assignment workflow](categories.md), with immutable definition history, current taxonomy resolution, explicit unmapped labels and stable source-allocation metadata. Schema 4 retains committed-change support; earlier formats retain their existing capabilities. No automatic migration occurs. The subsequent [durable rules integration](durable-rules.md) persists rule definitions and explicitly applies results to pending drafts; current schema 7 also retains bulk receipts.

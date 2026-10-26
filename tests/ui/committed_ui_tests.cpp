@@ -37,10 +37,18 @@ public:
     app::Receipt commit(std::string_view b,std::int64_t r,std::string_view op) override {return repo().commit(b,r,op);}
     std::optional<app::Receipt> outcome(std::string_view op) const override {return repo().outcome(op);}
     std::optional<app::Receipt> durable_outcome(std::string_view op) const override {return repo().durable_outcome(op);}
-    std::vector<app::LedgerRow> ledger(bool p) const override {return repo().ledger(p);}
+    std::vector<app::LedgerRow> ledger(bool p) const override {if(refreshBroken)throw std::runtime_error("Injected ledger refresh failure");return repo().ledger(p);}
     Money committed_balance() const override {return repo().committed_balance();}
     std::optional<Money> projected_balance() const override {return repo().projected_balance();}
     bool committed_changes_supported() const override {return repo().committed_changes_supported();}
+    bool bulk_supported() const override {return repo().bulk_supported();}
+    std::string bulk_group(std::string_view op) const override {return repo().bulk_group(op);}
+    app::BulkPreview preview_bulk(const app::BulkRequest& request) const override {return repo().preview_bulk(request);}
+    app::BulkReceipt apply_bulk(std::string_view op,const app::BulkPreview& preview) override {
+        if(failBefore)throw std::runtime_error("Injected failure before bulk apply");
+        auto result=repo().apply_bulk(op,preview);refreshBroken=failRefresh;if(loseAcknowledgement)throw std::runtime_error("Injected lost bulk acknowledgement");return result;
+    }
+    std::optional<app::BulkReceipt> bulk_outcome(std::string_view op) const override {if(unknownOutcome)throw std::runtime_error("Injected unavailable bulk outcome");return repo().bulk_outcome(op);}
     app::CommittedEntry committed_entry(const imports::Occurrence& id) const override {if(refreshBroken)throw std::runtime_error("Injected post-save refresh failure");return repo().committed_entry(id);}
     std::vector<app::CommittedHistoryItem> committed_history(const imports::Occurrence& id) const override {return repo().committed_history(id);}
     std::vector<app::CommittedChangeSummary> committed_changes(std::int64_t before,std::size_t limit) const override {return repo().committed_changes(before,limit);}
@@ -96,6 +104,24 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
     void init(){QSettings().clear();}
+    void bulkRecoveryOutcomes() {
+        for(int mode=0;mode<4;++mode){
+            QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));prepare(model,dir.path());
+            if(!model.state().value("bulkSupported").toBool())QSKIP("Bulk format is not enabled");
+            const auto batch=selected(model).value("batch").toString();
+            run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});run(model,"select",{{"row",model.occurrenceIndex(batch,1)},{"range",true}});
+            run(model,"preview_bulk",{{"kind","remove"}});const auto id=model.state().value("bulkPreview").toMap().value("id");
+            fault->failBefore=mode==0;fault->loseAcknowledgement=mode==1||mode==2;fault->unknownOutcome=mode==2;fault->failRefresh=mode==3;
+            run(model,"apply_bulk",{{"preview",id}},mode==1);
+            if(mode==0){QVERIFY(model.state().value("active").toBool());QCOMPARE(model.state().value("committed").toString(),"80.69");}
+            if(mode==1){QVERIFY(model.state().value("active").toBool());QCOMPARE(model.state().value("committed").toString(),"100.00");}
+            if(mode==2){QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("uncertain"));}
+            if(mode==3){QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("saved durably"));}
+            fault->failBefore=false;fault->loseAcknowledgement=false;fault->unknownOutcome=false;fault->failRefresh=false;
+            if(model.state().value("active").toBool())run(model,"close");run(model,"open",{{"path",dir.path()+"/document"}});
+            QCOMPARE(model.state().value("committed").toString(),mode==0?"80.69":"100.00");
+        }
+    }
     void correctionGuardsRemovalAndUndo() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

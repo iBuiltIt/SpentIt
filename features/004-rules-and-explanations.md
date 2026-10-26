@@ -1,8 +1,8 @@
 # 004 — Rules and explanations
 
 Status: **active**  
-Last updated: 2026-10-25  
-Implementation: bounded evaluator and pure preview adapter verified. Schema 6 Save, Preview, and Apply are implemented in the rules-enabled import store and verified in Debug only. The rules sheet is `147a5be` and verified in Debug only (`import.rules_ui`). Release and ASan/UBSan are not recorded. See [engineering contract](../doc/rules-engine.md) and [durable rules](../doc/durable-rules.md).
+Last updated: 2026-10-26  
+Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply and rules sheet implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. New rules-enabled documents use schema 7 for bulk ledger receipts. See [status and verification](../doc/status.md), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Bulk committed rule reapplication remains deferred.
 
 ## Accepted requirements
 

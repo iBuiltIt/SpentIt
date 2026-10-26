@@ -1,8 +1,10 @@
 # Durable QIF UI experiment
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
 The optional `spentit_import_experiment` executable connects setup/unlocking and a writable Qt Quick review screen to the existing durable import commands. It is for synthetic inputs. Feature 009 remains **active**; this is not a production financial application or completion of the full sheet design.
+
+Current follow-up: [combined search, stable multiselection and atomic committed bulk actions](search-ledger.md) now run on the import worker, alongside categories and the rules sheet. Enable `SPENTIT_RULES=ON` for current schema-7 creation and bulk actions; [current build and verification instructions](building.md#search-and-bulk-follow-up--2026-10-26) include the pinned PCRE2 dependency, also required for rules-off search. No pre-release migration/upgrade work is required. Historical test counts and walkthroughs below describe earlier checkpoints; [status](status.md) records current verification and native-window limits.
 
 ## Build and run
 
@@ -33,7 +35,7 @@ The Qt/OpenSSL prefixes above are macOS Homebrew examples; use the installed dep
 7. Reimport the same file. Both occurrences are visibly excluded against their prior occurrences; committing this reviewed batch contributes zero. An explicit Include as new override is available. Other possible matches require a chosen prior occurrence or explicit inclusion.
 8. Save a backup to a new destination. To restore into a separate working document, open that backup, use **Backup / restore copy** to publish another new file, close it, then open the restored file. Backup preserves the current protection mode and does not replace destinations. Password-protected backups need their original password.
 
-The ledger supports explicit committed/projected modes, literal whole-record filtering, six-column sorting, and filtered signed-withdrawal/deposit totals. Chronological balances come from the application ledger calculation and stay attached to their rows. Drafts, duplicate dispositions and unavailable projections are labeled explicitly. Committed inspection is read-only until an explicit committed-edit action; see [committed changes](committed-changes.md). Double-click a contributing ledger row to expand its editor inline, or select an import/record number to inspect it; excluded occurrences remain reachable through the import selector.
+The ledger supports explicit committed/projected modes, combined literal/phrase/regex/date/original-QIF search, six-column sorting, and filtered signed-withdrawal/deposit totals. Chronological balances come from the application ledger calculation and stay attached to their rows. Drafts, duplicate dispositions and unavailable projections are labeled explicitly. Committed inspection is read-only until an explicit committed-edit action; see [committed changes](committed-changes.md). Double-click a contributing ledger row to expand its editor inline, or select an import/record number to inspect it; excluded occurrences remain reachable through the import selector.
 
 Blocked imports retain evidence and display diagnostics. Whole-file or record source previews are read-only, capped at 64 KiB with an explicit byte-count notice; non-UTF-8/NUL-containing previews use hex rather than replacement decoding. The complete bounded source remains in encrypted storage. New schema-2 datasets support explicit date and split-total repair as described below; other errors still require discard/reimport, and blocked batches cannot partially commit. Discarding a batch requires confirmation and retains its evidence/history.
 
@@ -49,7 +51,7 @@ Commit IDs are derived from batch identity and expected revision. Receipts are l
 
 ## Portable credential convention v1
 
-The UI uses the existing experimental application ID `1397770577`, schema version `5` for new datasets (`1`–`4` remain readable without migration), and SQLCipher 4 settings from [the headless report](durable-import.md). It adds a versioned credential convention, without rewriting existing documents:
+The UI uses the existing experimental application ID `1397770577`, schema version `7` for new rules-enabled datasets and `5` for rules-off datasets, and SQLCipher 4 settings from [the headless report](durable-import.md). It adds a versioned credential convention, without rewriting existing documents:
 
 - No-password mode supplies this exact ASCII raw-key specification to `sqlite3_key`:
 
@@ -75,7 +77,7 @@ PRAGMA integrity_check;
 PRAGMA foreign_key_check;
 ```
 
-Expect application ID `1397770577`, schema `1`, `2`, `3`, `4` or `5`, no cipher/foreign-key error rows, and `ok` from SQLite integrity checking. These SQL checks alone do not establish all financial invariants: use a compatible SpentIt build's full verification before editing, and retain the original backup. A protected document instead needs the password with the exact v1 prefix through the supported key API; do not put private passwords in shell history. This procedure cannot repair damaged/missing files or recover a forgotten password. Do not copy only the main file of a live database; use the application's validated backup operation.
+Expect application ID `1397770577`, schema `7` for a current rules-enabled dataset or `5` for a current rules-off dataset (earlier experimental schemas may still be recognized), no cipher/foreign-key error rows, and `ok` from SQLite integrity checking. These SQL checks alone do not establish all financial invariants: use a compatible SpentIt build's full verification before editing, and retain the original backup. A protected document instead needs the password with the exact v1 prefix through the supported key API; do not put private passwords in shell history. This procedure cannot repair damaged/missing files or recover a forgotten password. Do not copy only the main file of a live database; use the application's validated backup operation.
 
 ## Verification and remaining work
 
@@ -87,7 +89,7 @@ A restored no-password backup was opened through the SQLCipher C API using only 
 
 Tests and smoke launches use temporary synthetic files and isolated Settings; no private exports are accessed. Existing headless fault/crash/backup sweeps remain in the 33-entry suite. No new claim is made for physical power loss, all filesystems, or cancellation at every instruction boundary.
 
-Remaining scope includes repair beyond dates/split-total mismatches, the full multi-account/report navigation shell, multiselection and broader search behavior, accessibility review, cancellation of other long operations, packaging, and Linux/Windows validation. The bounded account/Settings shell and cooperative opening/import cancellation are described below. Source previews are bounded rather than a full-file editor. The UI now reuses verified ledger data for read-only queries and builds presentation maps for requested rows. Native 100,000/200,000-row measurements and remaining long operations are documented in the [performance report](import-ui-performance.md); these bounded measurements do not establish general responsiveness. Password changes, legacy credential conversion and migrations remain outside this implementation.
+Remaining scope includes repair beyond dates/split-total mismatches, the full multi-account/report navigation shell, broader sheet layout and accessibility review, cancellation of other long operations, packaging, and Linux/Windows validation. The bounded account/Settings shell and cooperative opening/import cancellation are described below. Source previews are bounded rather than a full-file editor. The UI now reuses verified ledger data for read-only queries and builds presentation maps for requested rows. Native 100,000/200,000-row measurements and remaining long operations are documented in the [performance report](import-ui-performance.md); these bounded measurements do not establish general responsiveness. Password changes, legacy credential conversion and migrations remain outside this implementation.
 
 ## Walkthrough regression follow-up — 2026-10-25
 
@@ -168,4 +170,4 @@ A rare Qt `DelegateModel::cancel: index out range` warning was observed during t
 
 ## Rules sheet — 2026-10-25
 
-When the import UI is built with `SPENTIT_RULES=ON`, a schema-6 document shows a sidebar rules page. The page lists, reorders, enables, and edits rules. Save and Discard cover the whole image. Preview is separate from Apply. A schema-5 document does not show the page. The rules-off import UI build still creates schema 5 and does not register `import.rules_ui`. The UI does not construct a ruleset or execute SQL. Debug evidence and the next-package handoff are in [project status](status.md). The contract is [durable rules](durable-rules.md). Release and sanitizer runs of the sheet are not recorded.
+When the import UI is built with `SPENTIT_RULES=ON`, a current schema-7 document (or retained schema-6 experiment) shows a sidebar rules page. The page lists, reorders, enables, and edits rules. Save and Discard cover the whole image. Preview is separate from Apply. A schema-5 document does not show the page. The rules-off import UI build still creates schema 5 and does not register `import.rules_ui`. The UI does not construct a ruleset or execute SQL. Verification and the current handoff are in [project status](status.md). The contract is [durable rules](durable-rules.md). The schema-6/rules-sheet baseline passed 72/72 in Release and ASan/UBSan; current schema-7 affected UI checks also passed in Debug, Release and ASan/UBSan within the recorded selected-suite scope.

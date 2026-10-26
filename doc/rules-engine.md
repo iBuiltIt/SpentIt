@@ -1,8 +1,8 @@
 # Bounded rules evaluation
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
-State: bounded standalone engine and pure application preview adapter implemented. Schema 6 Save, Preview, and Apply persistence is implemented in the rules-enabled import store and verified in Debug only, as recorded in [project status](status.md). The rules sheet is `147a5be`, verified in Debug only. Release and ASan/UBSan coverage of the sheet are not recorded. The owner accepted the [bounded rules policy](../features/004-rules-and-explanations.md). This document records the evaluator contracts. The storage and sheet contract is [durable rules](durable-rules.md).
+State: bounded evaluator, preview adapter, schema-6 Save/Apply, and rules sheet implemented. The rules-enabled `3f94fe6` baseline passed all 72 cases in Release and ASan/UBSan on 2026-10-26, closing the earlier Debug-only gap. New rules-enabled documents now use schema 7 for [bulk ledger receipts](search-ledger.md). See [project status](status.md) for current verification and remaining limitations. The accepted [rules policy](../features/004-rules-and-explanations.md) and [durable-rules contract](durable-rules.md) remain unchanged.
 
 ## Matching and derived fields
 
@@ -33,3 +33,5 @@ The rules page prints these published limits. Printing them is not a measurement
 ## Verification
 
 Standalone Debug, Release and ASan/UBSan each passed all 16 registered engine/parser/regex/evaluation/application-preview cases. Coverage includes exact financial preservation, aggregate-allocation bounds, validation cancellation, manual blanks, obsolete rule results, source-association reorder/forgery and explicit replacement. Final builds and sanitizer logs were clean. Schema 6 Save and Apply have a separate Debug `rulestore.*` run, recorded in [project status](status.md). The rules sheet has a separate Debug `import.rules_ui` run, also recorded there. Neither run is Release or sanitizer evidence.
+
+The historical Debug-only persistence/UI results above are superseded by the 2026-10-26 72/72 Release and ASan/UBSan baseline runs in [project status](status.md). The installed PCRE2 library itself remains uninstrumented.

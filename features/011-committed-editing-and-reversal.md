@@ -1,8 +1,10 @@
 # 011 — Committed editing, removal, and undo
 
 Status: **active**  
-Last updated: 2026-10-25  
+Last updated: 2026-10-26  
 Implementation: bounded one-account schema-4 storage and UI are implemented. **The owner accepted the ordinary correction/removal/strict-undo policy on 2026-10-25.** Bounded verification is recorded in the [implementation report](../doc/committed-changes.md) and [project status](../doc/status.md), including configuration-specific results and limits. Detailed transfer correction policies and broader product scope remain unresolved; this feature remains active.
+
+Accepted and implemented follow-up, 2026-10-26: committed-only bulk category/removal operations exclude Opening Balance and reject draft/mixed selections. Category changes affect every allocation while retaining amounts and memos. Exact previews, durable group receipts, atomic Apply and strict group Undo are documented in [search and ledger](../doc/search-ledger.md).
 
 ## Purpose and accepted constraints
 

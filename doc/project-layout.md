@@ -1,6 +1,6 @@
 # Project layout and dependency boundaries
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
 State: selected organizational direction; the standalone `spentit_engine` library, optional `spentit_storage_prototype`, optional synthetic app/UI libraries and sheet executable, the headless durable-import experiment, and their tests now exist. The user prefers `src/`. The structure below reserves responsibilities, not a requirement to create empty directories or speculative abstractions.
 
@@ -14,7 +14,7 @@ SpentIt/
 ├── src/
 │   ├── engine/             # Financial model and deterministic business logic
 │   ├── storage/            # SQLCipher persistence and storage recovery
-│   │   └── migrations/     # Versioned schema migrations, when introduced
+│   │   └── migrations/     # Only after the owner-announced release gate
 │   ├── app/                # Use cases, document lifecycle, executable wiring
 │   └── ui/                 # Qt adapters, models, QML, and presentation assets
 ├── tests/
@@ -106,3 +106,7 @@ With `SPENTIT_IMPORT_UI=ON`, `spentit_import_model` links the application ledger
 ## Bounded category and rules extensions
 
 The category types/name validation remain in the standard-C++ engine; SQLCipher catalog/history and assignment metadata remain behind the application repository interface, with Qt editor/picker code in the UI. Optional `SPENTIT_RULES` adds `SpentIt::rules`, privately linked to pinned-version PCRE2, while the core `SpentIt::engine` keeps no third-party software dependency. The plain `spentit_rule_preview` application target links that rules library and reconstructs financially unchanged proposals without SQL or Qt. When rules and the import workflow are both enabled, the import store privately links `SpentIt::rules` and `spentit_rule_preview` so it can run that same matcher inside Save and Apply. The UI still must not construct a ruleset or execute SQL. PCRE2 stays off `SpentIt::engine`. When `SPENTIT_IMPORT_UI` and `SPENTIT_RULES` are both on, the import UI includes the rules page, and that page calls worker commands. See [categories](categories.md), [rules engine](rules-engine.md), and [durable rules](durable-rules.md).
+
+## Search and bulk ledger boundary — 2026-10-26
+
+`spentit_regex` owns the reusable bounded PCRE2 adapter; both optional rules and the import workflow link it. `spentit_import_view` privately links that adapter for the independently testable query parser/evaluator, with no SQL or Qt dependency. `SpentIt::engine` keeps its dependency-free boundary. The import worker loads immutable QIF evidence through the repository and publishes completed query snapshots. Schema-7 group receipts and bulk writes stay behind complete `ImportRepository` commands; QML does not loop over single-record writes or calculate authoritative totals. See [search/ledger contracts](search-ledger.md).

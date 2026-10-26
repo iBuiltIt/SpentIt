@@ -1,8 +1,10 @@
 # 010 — Categories and selection
 
 Status: **active**  
-Last updated: 2026-10-25  
-Implementation: bounded catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Rules-disabled documents are schema 5. Rules-enabled documents are schema 6 and keep this catalog. Account transfer destinations and category reports remain unimplemented. See [implementation and recovery](../doc/categories.md).
+Last updated: 2026-10-26  
+Implementation: bounded catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Rules-disabled documents are schema 5. Rules-enabled documents are schema 7 and keep this catalog. Account transfer destinations and category reports remain unimplemented. See [implementation and recovery](../doc/categories.md).
+
+The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 
 ## Purpose and roadmap position
 
