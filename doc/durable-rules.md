@@ -4,13 +4,17 @@
 |---|---|
 | Author | SpentIt contributor (placeholder) |
 | Date | 2026-10-25 |
-| Status | Draft |
+| Status | Storage implemented in `9b7cf40`. Sheet not started. |
 | Package | Roadmap package 5, rules half only |
-| Schema | New documents **6**. Schemas 1–5 stay readable and are not rewritten. |
+| Schema | New rules-enabled documents **6**. Schemas 1–5 stay readable and are not rewritten. |
+
+## Implementation status — 2026-10-25
+
+Schema 6 Save, Preview, and Apply are in the rules-enabled import store, with the `rulestore.*` Debug results recorded in [project status](status.md). The design below remains the contract for the unfinished sheet. Do not read the design's earlier "what is missing" wording as a claim that the store is absent. Release, ASan/UBSan, and the UI are not done. The next session implements the sheet in this working session and does not spawn a fresh designer, reviewer, and implementer chain.
 
 ## Overview
 
-The bounded rules evaluator and the pure application preview adapter are already implemented and verified. What is missing is a document-scoped, versioned ruleset that survives import discard, a sheet editor with explicit Save and Discard, and separate Preview and Apply commands that write rule-owned draft fields atomically.
+The bounded rules evaluator and the pure application preview adapter are implemented and verified. Schema 6 adds the document-scoped ruleset, Save, and atomic pending Apply. Still missing is the sheet editor with explicit Save and Discard, and the UI that calls those store commands.
 
 This design adds that integration inside the existing one-account QIF experiment. New experimental documents use schema 6 and keep every schema-5 category and committed-change capability. Schemas 1–5 open unchanged and reject rule commands. Apply calls the existing `app::preview_rules` / `rules::RuleSet::evaluate` path. It does not introduce a second pattern language, and it does not modify committed rows, money, dates, split structure, or transfer relationships.
 
@@ -1086,7 +1090,7 @@ Already settled, and intentionally not asked again: category taxonomy and lifecy
 - `doc/project-layout.md` — engine, storage, application, and UI boundaries
 - `doc/categories.md` — schema 5, operation receipts, failure-test expectations
 - `doc/committed-changes.md` — history order, idempotent apply, interruption tests
-- `doc/status.md` — rules evaluator checkpoint; durable Apply not yet implemented
+- `doc/status.md` — schema 6 Save/Apply checkpoint and the current handoff
 - `src/engine/include/spentit/rules.hpp`, `src/engine/rules.cpp`, `src/engine/rule_regex.cpp`
 - `src/app/include/spentit/rule_preview.hpp`, `src/app/rule_preview.cpp`
 - `src/storage/import_store.cpp`, `src/storage/category_store.inc`, `src/storage/committed_store.inc`

@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-25
 
-State: bounded experimental schema-5 implementation verified on available macOS configurations. The owner accepted the [category lifecycle policy](../features/010-categories-and-selection.md). This implements a catalog, editor and allocation picker within the existing one-account QIF experiment. It does not implement category reports, account transfer destinations, automatic starter categories, a rules editor or migrations.
+State: bounded experimental category catalog verified on available macOS configurations. Rules-disabled import documents are schema 5. Rules-enabled import documents are schema 6 and keep this catalog. The owner accepted the [category lifecycle policy](../features/010-categories-and-selection.md). This implements a catalog, editor and allocation picker within the existing one-account QIF experiment. It does not implement category reports, account transfer destinations, automatic starter categories, a rules sheet, or migrations.
 
 ## Identity, organization and history
 
@@ -18,13 +18,13 @@ The picker distinguishes active catalog leaves, Uncategorized, and unmapped text
 
 An assignment records category identity, the catalog revision at assignment, and the label snapshot. New assignments check current catalog freshness and effective availability. Unchanged archived bindings survive unrelated edits and eligible Undo. Catalog renaming alone does not block financial Undo; committing a newly reviewed assignment still checks the current catalog revision.
 
-Schema 5 also retains stable allocation identities, explicit original source-allocation associations, and field ownership. Parser-created allocations receive source associations; new manual allocations do not. Reordering allocations never infers a new association from the display index. Explicit manual edits, including blanks, stay manual; a caller cannot erase that protection merely by relabeling ownership. Older metadata-free callers are conservatively treated as manual rather than receiving guessed source associations. Rule ownership remains rejected by this format until durable rule definitions/provenance are implemented.
+Schema 5 also retains stable allocation identities, explicit original source-allocation associations, and field ownership. Parser-created allocations receive source associations; new manual allocations do not. Reordering allocations never infers a new association from the display index. Explicit manual edits, including blanks, stay manual; a caller cannot erase that protection merely by relabeling ownership. Older metadata-free callers are conservatively treated as manual rather than receiving guessed source associations. Schema 5 rejects rule ownership. Schema 6 stores a rule mark beside a rule-owned field and rejects the owner without the mark. See [durable rules](durable-rules.md).
 
 ## Atomicity and compatibility
 
 Category preview is read-only. Apply writes its definition revision, head, catalog revision, operation receipt and shared history order atomically. A repeated operation identity with identical content returns its durable result; conflicting reuse fails. Failed or uncertain acknowledgements use the same durable outcome identity. The UI preserves failed form edits; an unreadable outcome requires explicit reopen rather than assuming success or rollback.
 
-New documents use schema 5. Schemas 1–4 remain readable with their earlier capabilities and do not expose catalog commands; there is no automatic migration. Authenticated version/shape mismatches are rejected. Backups retain the actual format and category/assignment history. Original import evidence and financial receipts remain immutable.
+Rules-disabled import builds create schema 5. Rules-enabled import builds create schema 6, which includes this catalog plus rule definitions. Schemas 1–4 remain readable with their earlier capabilities and do not expose catalog commands. Schema 5 remains readable and does not expose rule commands. There is no automatic migration. Authenticated version/shape mismatches are rejected. Backups retain the actual format and category/assignment history. Original import evidence and financial receipts remain immutable.
 
 ## UI and verification boundary
 

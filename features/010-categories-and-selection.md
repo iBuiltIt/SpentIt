@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: bounded schema-5 catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Account transfer destinations and category reports remain unimplemented. See [implementation and recovery](../doc/categories.md).
+Implementation: bounded catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Rules-disabled documents are schema 5. Rules-enabled documents are schema 6 and keep this catalog. Account transfer destinations and category reports remain unimplemented. See [implementation and recovery](../doc/categories.md).
 
 ## Purpose and roadmap position
 

@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-25
 
-State: bounded standalone engine and pure application preview adapter implemented; no durable rule editor or persisted application workflow is claimed yet. The owner accepted the [bounded rules policy](../features/004-rules-and-explanations.md). This document records concrete engineering contracts for integration.
+State: bounded standalone engine and pure application preview adapter implemented. Schema 6 Save, Preview, and Apply persistence is implemented in the rules-enabled import store and verified in Debug only, as recorded in [project status](status.md). The sheet editor is not implemented. The owner accepted the [bounded rules policy](../features/004-rules-and-explanations.md). This document records the evaluator contracts. The storage contract is [durable rules](durable-rules.md).
 
 ## Matching and derived fields
 
@@ -14,7 +14,7 @@ Ordered transaction rules run first, then source-split rules. First assignment t
 
 The engine receives explicit retained source associations. Reordering current splits does not change which source memo a rule sees. New manual splits have no source association and are excluded from source-split matching. The interface contains no monetary amounts or financial dates, so it cannot change money, dates or split structure.
 
-Reapplication recomputes source/rule-owned fields from original facts. Manually owned fields, including blanks, remain protected unless replacement was explicitly requested for the preview. Replacement only changes fields receiving a matching rule action; unmatched manual fields remain intact. Each applied field records rule identity/version. The pure application adapter reconstructs proposed DraftRows with exact amounts, dates, structure, allocation identities and binding snapshots preserved. It requires retained field provenance for existing rule-owned fields and emits new provenance alongside the proposal. Full persistence and historical replay of this provenance remain integration work.
+Reapplication recomputes source/rule-owned fields from original facts. Manually owned fields, including blanks, remain protected unless replacement was explicitly requested for the preview. Replacement only changes fields receiving a matching rule action; unmatched manual fields remain intact. Each applied field records rule identity/version. The pure application adapter reconstructs proposed DraftRows with exact amounts, dates, structure, allocation identities and binding snapshots preserved. It requires retained field provenance for existing rule-owned fields and emits new provenance alongside the proposal. Schema 6 stores those marks and replays saved rule versions during verify. The sheet does not display that history yet.
 
 ## Resource and error contract
 
@@ -32,4 +32,4 @@ Limits must be measured and surfaced by the eventual editor/application workflow
 
 ## Verification
 
-Standalone Debug, Release and ASan/UBSan each passed all 16 registered engine/parser/regex/evaluation/application-preview cases. Coverage includes exact financial preservation, aggregate-allocation bounds, validation cancellation, manual blanks, obsolete rule results, source-association reorder/forgery and explicit replacement. Final builds and sanitizer logs were clean. No durable financial application or UI rule behavior has been verified yet.
+Standalone Debug, Release and ASan/UBSan each passed all 16 registered engine/parser/regex/evaluation/application-preview cases. Coverage includes exact financial preservation, aggregate-allocation bounds, validation cancellation, manual blanks, obsolete rule results, source-association reorder/forgery and explicit replacement. Final builds and sanitizer logs were clean. Schema 6 Save and Apply have a separate Debug `rulestore.*` run, recorded in [project status](status.md). That run is not Release or sanitizer evidence, and no UI rule behavior has been verified.

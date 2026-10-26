@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-25  
-Implementation: bounded standalone evaluation engine under verification; durable rule definitions, preview/apply and editor are not yet implemented. See [engineering contract](../doc/rules-engine.md).
+Implementation: bounded evaluator and pure preview adapter verified. Schema 6 Save, Preview, and Apply are implemented in the rules-enabled import store and verified in Debug only. The sheet editor is not implemented. See [engineering contract](../doc/rules-engine.md) and [durable rules](../doc/durable-rules.md).
 
 ## Accepted requirements
 
