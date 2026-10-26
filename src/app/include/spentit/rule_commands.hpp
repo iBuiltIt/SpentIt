@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -99,4 +100,20 @@ struct RuleMatch {
     std::vector<std::string> winner_lines;
     std::string error;
 };
+// Quote a source field as one literal. A source that contains \E closes the
+// quote, emits \\E, and reopens it. Empty source is an empty whole field.
+inline std::string quoted_field_pattern(std::string_view text) {
+    std::string pattern="^(?:";
+    std::size_t index=0;
+    while(index<text.size()) {
+        pattern+="\\Q";
+        const auto end=text.find("\\E",index);
+        if(end==std::string_view::npos) {pattern.append(text.substr(index));pattern+="\\E";break;}
+        pattern.append(text.substr(index,end-index));
+        pattern+="\\E\\\\E";
+        index=end+2;
+    }
+    pattern+=")$";
+    return pattern;
+}
 }

@@ -10,6 +10,8 @@
 #include <QStandardPaths>
 #include <QUuid>
 #include <QUrl>
+#include <chrono>
+#include <thread>
 using namespace spentit;
 namespace {
 QString text(std::string_view s) { return QString::fromUtf8(s.data(),static_cast<qsizetype>(s.size())); }
@@ -24,20 +26,99 @@ QString evidencePreview(std::string_view bytes) {
     return prefix+text(part);
 }
 std::string identity() { return QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString(); }
+QString markText(const std::optional<RuleMark>& mark){return mark?text(mark->identity)+" v"+QString::number(mark->version):QString{};}
+QString ownerName(FieldOwnership owner){
+    switch(owner){case FieldOwnership::untracked:return "untracked";case FieldOwnership::source:return "source";case FieldOwnership::manual:return "manual";case FieldOwnership::rule:return "rule";}
+    return {};
+}
 QVariantMap allocationMap(const Allocation& a,const QVariantMap& labels={}) {
     const auto categoryId=a.category_binding?text(a.category_binding->identity):QString{};
     const auto display=labels.value(categoryId).toMap();
     const auto label=categoryId.isEmpty()?(a.category.empty()?QString("Uncategorized"):"Unmapped: "+text(a.category)):display.value("path",text(a.category)).toString()+(display.value("archived").toBool()?" [Archived]":"");
     return {{"category",text(a.category)},{"memo",text(a.memo)},{"amount",money(a.amount)},
         {"categoryId",categoryId},{"bindingRevision",a.category_binding?QString::number(a.category_binding->catalog_revision):QString{}},
-        {"allocationId",text(a.identity)},{"categoryDisplay",label},{"categoryTouched",false},{"memoTouched",false}};
+        {"allocationId",text(a.identity)},{"categoryDisplay",label},{"categoryTouched",false},{"memoTouched",false},
+        {"sourceOrdinal",a.source_ordinal?QVariant(static_cast<int>(*a.source_ordinal)):QVariant(-1)},
+        {"categoryOwner",ownerName(a.category_owner)},{"memoOwner",ownerName(a.memo_owner)},{"categoryRule",markText(a.category_rule)},{"memoRule",markText(a.memo_rule)}};
 }
 QVariantList allocations(const Transaction& t,const QVariantMap& labels={}) {
     QVariantList out;for(const auto& a:t.allocations())out.push_back(allocationMap(a,labels));return out;
 }
 QVariantMap draft(const imports::DraftRow& d,const QVariantMap& labels={}) {
     return {{"date",text(d.date)},{"payee",text(d.payee)},{"memo",text(d.memo)},
+        {"payeeOwner",ownerName(d.payee_owner)},{"memoOwner",ownerName(d.memo_owner)},{"payeeRule",markText(d.payee_rule)},{"memoRule",markText(d.memo_rule)},
         {"total",money(d.transaction.effective_total())},{"splits",allocations(d.transaction,labels)}};
+}
+QString scopeName(rules::Scope scope){return scope==rules::Scope::split?"split":"transaction";}
+QString inputName(rules::InputField input){return input==rules::InputField::memo?"memo":input==rules::InputField::category?"category":"payee";}
+QVariantMap ruleMap(const app::RuleDefinitionImage& rule){
+    return {{"id",text(rule.identity)},{"label",text(rule.label)},{"enabled",rule.enabled},{"scope",scopeName(rule.scope)},{"input",inputName(rule.input)},
+        {"expression",text(rule.expression)},{"payeeTemplate",rule.actions.payee_template?text(*rule.actions.payee_template):QString{}},
+        {"memoTemplate",rule.actions.memo_template?text(*rule.actions.memo_template):QString{}},{"categoryId",rule.actions.category?text(*rule.actions.category):QString{}},
+        {"inheritParent",rule.actions.inherit_parent}};
+}
+std::optional<std::string> actionText(const QVariant& value){const auto body=str(value);if(body.empty())return {};return body;}
+app::RuleDefinitionImage imageFrom(const QVariantMap& value){
+    app::RuleDefinitionImage rule;rule.identity=str(value.value("id"));rule.label=str(value.value("label"));rule.enabled=value.value("enabled").toBool();
+    const auto scope=value.value("scope").toString();const auto input=value.value("input").toString();
+    if(scope!="transaction" && scope!="split")throw std::invalid_argument("Unknown rule scope");
+    if(input!="payee" && input!="memo" && input!="category")throw std::invalid_argument("Unknown rule input");
+    rule.scope=scope=="split"?rules::Scope::split:rules::Scope::transaction;
+    rule.input=input=="memo"?rules::InputField::memo:input=="category"?rules::InputField::category:rules::InputField::payee;
+    rule.expression=str(value.value("expression"));
+    rule.actions.memo_template=actionText(value.value("memoTemplate"));
+    rule.actions.inherit_parent=rule.scope==rules::Scope::split && value.value("inheritParent").toBool();
+    if(rule.scope==rules::Scope::transaction)rule.actions.payee_template=actionText(value.value("payeeTemplate"));
+    if(!rule.actions.inherit_parent)rule.actions.category=actionText(value.value("categoryId"));
+    return rule;
+}
+QString effectName(rules::Effect effect){
+    switch(effect){case rules::Effect::applied:return "applied";case rules::Effect::compatible:return "compatible";case rules::Effect::competing:return "competing";
+        case rules::Effect::manual_protected:return "manual_protected";case rules::Effect::missing_parent:return "missing_parent";}
+    return {};
+}
+QString effectWording(rules::Effect effect){
+    switch(effect){case rules::Effect::applied:return "This rule will assign the field";
+        case rules::Effect::compatible:return "Also matches and agrees; shadowed by the earlier field winner";
+        case rules::Effect::competing:return "Also matches and disagrees; shadowed by the earlier field winner";
+        case rules::Effect::manual_protected:return "Matches; the manual value, including a blank, is kept";
+        case rules::Effect::missing_parent:return "Inheritance was not applied because parent classification is missing";}
+    return {};
+}
+QString diffWording(bool removed,bool assigned){
+    QStringList parts;
+    if(removed)parts<<"Derived value will be cleared and the source value restored, or the previous rule mark replaced";
+    if(assigned)parts<<"New rule assignment";
+    return parts.join(" ");
+}
+QString fieldName(app::RuleField field){
+    switch(field){case app::RuleField::payee:return "payee";case app::RuleField::memo:return "memo";
+        case app::RuleField::allocation_memo:return "allocation memo";case app::RuleField::allocation_category:return "allocation category";}
+    return {};
+}
+QString ruleLimitText(){
+    return QString("Rule limits: %1 rules, %2 byte pattern, %3 byte field, %4 byte template, %5 records, %6 allocations, %7 scope allocations, %8 byte input, %9 comparisons, %10 callouts, %11 explanations, %12 captures, %13 match steps.")
+        .arg(rules::EvaluationLimits::rules).arg(rules::RegexLimits::pattern_bytes).arg(rules::RegexLimits::subject_bytes).arg(rules::RegexLimits::output_bytes)
+        .arg(rules::EvaluationLimits::records).arg(rules::EvaluationLimits::allocations).arg(rules::EvaluationLimits::scope_allocations).arg(rules::EvaluationLimits::input_bytes)
+        .arg(rules::EvaluationLimits::comparisons).arg(rules::EvaluationLimits::callouts).arg(rules::EvaluationLimits::explanations).arg(rules::RegexLimits::captures).arg(rules::RegexLimits::match_steps);
+}
+QString ruleSaveRefreshFailure(const QString& operation){return "Rule save "+operation+" was saved durably, but the refreshed view could not be loaded. Reopen and inspect rule history; do not save it again.";}
+QString ruleApplyRefreshFailure(const QString& operation){return "Rule application "+operation+" was saved durably, but the refreshed view could not be loaded. Reopen and inspect the pending drafts; do not apply it again.";}
+QString phaseFor(const QString& action){
+    if(action=="open"||action=="unlock")return "Opening dataset";
+    if(action=="import")return "Reading QIF file";
+    if(action=="resume")return "Preparing draft interpretations";
+    if(action=="commit")return "Committing import";
+    if(action=="backup")return "Creating verified backup";
+    if(action=="create")return "Creating dataset";
+    if(action=="save")return "Saving draft";
+    if(action=="preview_change")return "Preparing committed-change preview";
+    if(action=="apply_change")return "Applying committed change";
+    if(action=="rules_load"||action=="rules_discard"||action=="rules_prefill")return "Loading rules";
+    if(action=="rules_preview")return "Evaluating rules";
+    if(action=="rules_save")return "Saving rules";
+    if(action=="rules_apply")return "Applying rules";
+    return "Updating view";
 }
 QString changeName(app::ChangeKind kind) {
     switch(kind) {case app::ChangeKind::publication:return "Original whole-batch publication";case app::ChangeKind::correct:return "Correction";
@@ -70,7 +151,8 @@ imports::DraftRow editedDraft(const QVariantMap& a,const Money& original,app::Im
         const auto v=value.toMap();const auto allocationId=str(v.value("allocationId"));const Allocation* old=nullptr;
         if(prior && !allocationId.empty())for(const auto& candidate:*prior)if(candidate.identity==allocationId){old=&candidate;break;}
         Allocation next{str(v.value("category")),str(v.value("memo")),Money::parse(str(v.value("amount")),original.currency())};
-        if(old) {next.identity=old->identity;next.source_ordinal=old->source_ordinal;next.category_binding=old->category_binding;next.category_owner=old->category_owner;next.memo_owner=old->memo_owner;}
+        // Marks come from the stored baseline. A touched field becomes manual and drops its mark.
+        if(old) {next.identity=old->identity;next.source_ordinal=old->source_ordinal;next.category_binding=old->category_binding;next.category_owner=old->category_owner;next.memo_owner=old->memo_owner;next.category_rule=old->category_rule;next.memo_rule=old->memo_rule;}
         else if(repo.categories_supported()){next.identity=allocationId.empty()?identity():allocationId;next.category_owner=FieldOwnership::manual;next.memo_owner=FieldOwnership::manual;}
         const auto chosen=str(v.value("categoryId"));const auto oldId=old && old->category_binding?old->category_binding->identity:std::string{};
         const bool categoryChanged=v.value("categoryTouched").toBool() || !old || chosen!=oldId || next.category!=old->category;
@@ -81,9 +163,9 @@ imports::DraftRow editedDraft(const QVariantMap& a,const Money& original,app::Im
                 if(v.value("bindingRevision").toString().toLongLong()!=catalog.revision)throw std::invalid_argument("Categories changed; choose the category again");
                 next.category_binding=CategoryBinding{chosen,catalog.revision};next.category=display.path;
             } else next.category_binding.reset();
-            next.category_owner=FieldOwnership::manual;
+            next.category_owner=FieldOwnership::manual;next.category_rule.reset();
         }
-        if(v.value("memoTouched").toBool() || (old && next.memo!=old->memo))next.memo_owner=FieldOwnership::manual;
+        if(v.value("memoTouched").toBool() || (old && next.memo!=old->memo)){next.memo_owner=FieldOwnership::manual;next.memo_rule.reset();}
         values.push_back(std::move(next));
     }
     imports::DraftRow result{str(a.value("date")),str(a.value("payee")),str(a.value("memo")),
@@ -92,8 +174,10 @@ imports::DraftRow editedDraft(const QVariantMap& a,const Money& original,app::Im
     const auto oldMemo=baseline?baseline->memo:source?source->memo:std::string{};
     result.payee_owner=baseline?baseline->payee_owner:source?FieldOwnership::source:FieldOwnership::manual;
     result.memo_owner=baseline?baseline->memo_owner:source?FieldOwnership::source:FieldOwnership::manual;
-    if(a.value("payeeTouched").toBool() || result.payee!=oldPayee)result.payee_owner=FieldOwnership::manual;
-    if(a.value("memoTouched").toBool() || result.memo!=oldMemo)result.memo_owner=FieldOwnership::manual;
+    result.payee_rule=baseline?baseline->payee_rule:std::nullopt;
+    result.memo_rule=baseline?baseline->memo_rule:std::nullopt;
+    if(a.value("payeeTouched").toBool() || result.payee!=oldPayee){result.payee_owner=FieldOwnership::manual;result.payee_rule.reset();}
+    if(a.value("memoTouched").toBool() || result.memo!=oldMemo){result.memo_owner=FieldOwnership::manual;result.memo_rule.reset();}
     return result;
 }
 
@@ -109,6 +193,11 @@ struct ImportModel::Worker {
     std::optional<app::CategoryPreview> preparedCategory;
     std::string categoryOperation;
     std::int64_t catalogRevision=0;bool catalogLoaded=false;
+    QVariantList rules,ruleTombstones;
+    QVariantMap rulePreview,ruleReceipt,rulePrefill;
+    std::optional<app::RuleApplyRequest> preparedApply;
+    std::string ruleApplyOperation;
+    std::int64_t ruleRevision=0;bool rulesLoaded=false;
     void catalog() {
         if(catalogLoaded)return;
         categories.clear();categoryById.clear();catalogRevision=0;
@@ -141,7 +230,8 @@ struct ImportModel::Worker {
     std::optional<app::EntryToken> selectedCommittedToken;
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
-    void clearChanges() {categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
+    void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();ruleRevision=0;rulesLoaded=false;}
+    void clearChanges() {categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         auto& repo=gateway->repository();
         const auto changes=repo.committed_changes(before,50);if(!append)history.clear();
@@ -169,14 +259,47 @@ struct ImportModel::Worker {
     std::optional<app::Account> cachedAccount;
     std::optional<std::vector<app::LedgerRow>> cachedLedger;
     std::shared_ptr<const app::LedgerView> cachedView;
-    void invalidate() {catalogLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
+    void invalidate() {catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
     std::size_t selectedOrdinal=0;
     std::int64_t selectedRevision=0;
     // Commit identity is deterministic for a batch revision, so restart retries
     // resolve the same durable operation without storing local financial metadata.
     explicit Worker(std::unique_ptr<app::DocumentGateway> g):gateway(std::move(g)){}
-    void inspect(std::string batch,std::size_t ordinal) {
+    void loadRules() {
+        rules.clear();ruleTombstones.clear();ruleRevision=0;rulePrefill.clear();
+        auto& repo=gateway->repository();
+        if(!repo.rules_supported()){rulesLoaded=true;return;}
+        const auto image=repo.rule_image();ruleRevision=image.revision;
+        for(const auto& rule:image.ordered)rules.push_back(ruleMap(rule));
+        for(const auto& tomb:repo.rule_tombstones()){auto map=ruleMap(app::RuleDefinitionImage{tomb.identity,tomb.label,false,tomb.scope,tomb.input,tomb.expression,tomb.actions});map["version"]=QString::number(tomb.version);ruleTombstones.push_back(map);}
+        rulesLoaded=true;
+    }
+    QString ruleLabel(const QString& id) const {
+        for(const auto& value:rules){const auto map=value.toMap();if(map.value("id").toString()==id){const auto label=map.value("label").toString();return label.isEmpty()?id:label;}}
+        for(const auto& value:ruleTombstones){const auto map=value.toMap();if(map.value("id").toString()==id){const auto label=map.value("label").toString();return label.isEmpty()?id:label;}}
+        return id;
+    }
+    void attachRules(app::ImportRepository& repo,const imports::Occurrence& id,app::OperationContext& context) {
+        selected["ruleMatchError"]=QString();selected["winnerLines"]=QVariantList{};selected["ruleExplanations"]=QVariantList{};
+        if(!repo.rules_supported())return;
+        try {
+            if(!rulesLoaded)loadRules();
+            const auto match=repo.match_saved_rules(id,context);
+            selected["ruleMatchError"]=text(match.error);
+            QVariantList winners;for(const auto& line:match.winner_lines)winners.push_back(text(line));selected["winnerLines"]=winners;
+            QVariantList explanations;
+            for(const auto& item:match.explanations){
+                const auto ruleId=text(item.contribution.rule);
+                explanations.push_back(QVariantMap{{"rule",ruleId},{"version",QString::number(item.contribution.version)},{"label",ruleLabel(ruleId)},{"field",text(item.field)},
+                    {"effect",effectName(item.effect)},{"wording",effectWording(item.effect)},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
+            }
+            selected["ruleExplanations"]=explanations;
+        } catch(const app::OperationCancelled&){throw;}
+        catch(const app::OperationOutcomeUnknown&){throw;}
+        catch(const std::exception& error){selected["ruleMatchError"]=text(error.what());}
+    }
+    void inspect(std::string batch,std::size_t ordinal,app::OperationContext& context) {
         auto& repo=gateway->repository(); const auto acct=repo.account();catalog();
         const auto all=repo.batches();
         const auto found=std::find_if(all.begin(),all.end(),[&](const auto& b){return b.id==batch;});
@@ -219,6 +342,7 @@ struct ImportModel::Worker {
                 selected["original"]=money(*source.original_amount);selected["editable"]=true;selected["repair"]=true;
                 selected["diagnostic"]=selected["diagnostic"].toString()+" — correct the date/splits and save the repair; original evidence is retained.";
             }
+            attachRules(repo,{batch,ordinal},context);
             return;
         }
         selected["draft"]=draft(*row.draft,categoryById);
@@ -249,10 +373,11 @@ struct ImportModel::Worker {
             selected["duplicate"]=text(row.decision.duplicate_of->batch)+" / "+QString::number(row.decision.duplicate_of->ordinal+1);
             selected["removedDuplicate"]=repo.committed_changes_supported() && !repo.committed_entry(*row.decision.duplicate_of).current.active;
         }
+        attachRules(repo,{batch,ordinal},context);
     }
     std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot() {
         QVariantMap state{{"active",active},{"path",path}};
-        if(!active) {state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;return {state,{}};}
+        if(!active) {state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
         auto& repo=gateway->repository();catalog();
         if(metadata.isEmpty()) {
             cachedAccount=repo.account();const auto& acct=*cachedAccount;
@@ -291,6 +416,9 @@ struct ImportModel::Worker {
         } else state=metadata;
         state["categories"]=categories;state["categoryById"]=categoryById;state["catalogRevision"]=QString::number(catalogRevision);
         state["categorySelected"]=categorySelected;state["categoryHistory"]=categoryHistory;state["categoryPreview"]=categoryPreview;state["categoryReceipt"]=categoryReceipt;
+        if(repo.rules_supported() && !rulesLoaded) loadRules();
+        state["rulesSupported"]=repo.rules_supported();state["rules"]=rules;state["ruleTombstones"]=ruleTombstones;state["ruleRevision"]=QString::number(ruleRevision);
+        state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;state["ruleLimits"]=ruleLimitText();
         state["selected"]=selected;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
         state["history"]=history;state["entryHistory"]=entryHistory;state["historyTitle"]=historyTitle;state["historyMore"]=historyMore;state["historyCursor"]=historyCursor;
         state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
@@ -319,9 +447,44 @@ struct ImportModel::Worker {
         }
         return {state,cachedView};
     }
+    void publishPreview(const app::RulePreviewResult& result,const QVariantList& editor) {
+        QStringList lines;
+        const auto label=result.unsaved_rules?QString("Unsaved rules"):QString("Saved ruleset revision %1").arg(result.ruleset_revision);
+        lines<<label<<"Overlap results are only for the records just evaluated.";
+        QVariantList records;
+        for(const auto& record:result.records) {
+            QVariantList explanations;
+            for(const auto& item:record.proposal.explanations) {
+                const auto id=text(item.contribution.rule);
+                QString shown;
+                for(const auto& value:editor) {
+                    const auto map=value.toMap();
+                    if(map.value("id").toString()==id) {shown=map.value("label").toString();break;}
+                }
+                if(shown.isEmpty()) shown=ruleLabel(id);
+                const auto effect=effectName(item.effect);
+                const auto wording=effectWording(item.effect);
+                explanations.push_back(QVariantMap{{"rule",id},{"version",QString::number(item.contribution.version)},{"label",shown},{"field",text(item.field)},
+                    {"effect",effect},{"wording",wording},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
+                lines<<effect+" · "+wording+" · "+shown+" · "+text(item.field);
+            }
+            QVariantList diffs;
+            for(const auto& diff:record.diffs) {
+                const auto wording=diffWording(diff.removed,diff.assigned);
+                const auto before=text(diff.before_text), after=text(diff.after_text);
+                diffs.push_back(QVariantMap{{"field",fieldName(diff.field)},{"allocation",text(diff.allocation)},{"before",before},{"after",after},{"removed",diff.removed},{"assigned",diff.assigned},{"wording",wording}});
+                lines<<fieldName(diff.field)+" · "+before+" -> "+after+" · "+wording;
+            }
+            records.push_back(QVariantMap{{"batch",text(record.identity.batch)},{"ordinal",static_cast<int>(record.identity.ordinal)},{"payee",text(record.proposal.after.payee)},{"explanations",explanations},{"diffs",diffs}});
+        }
+        rulePreview={{"label",label},{"unsaved",result.unsaved_rules},{"batch",text(result.batch)},{"batchRevision",QString::number(result.batch_revision)},
+            {"rulesetRevision",QString::number(result.ruleset_revision)},{"catalogRevision",QString::number(result.catalog_revision)},{"replaceManual",result.replace_manual},
+            {"operation",result.unsaved_rules?QString():text(ruleApplyOperation)},{"evaluated",static_cast<int>(result.evaluated)},{"changed",static_cast<int>(result.changed)},
+            {"overlap","Overlap results are only for the records just evaluated."},{"records",records},{"summaryText",lines.join('\n')}};
+    }
     void execute(const QString& action,const QVariantMap& a, app::OperationContext& context) {
         context.checkpoint();
-        if(action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview") invalidate();
+        if(action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -374,11 +537,11 @@ struct ImportModel::Worker {
             }
             categoryReceipt={{"operation",text(result->operation)},{"summary","Category change saved at catalog revision "+QString::number(result->catalog_after)}};
             preparedCategory.reset();categoryOperation.clear();categoryPreview.clear();
-            try {catalog();selectCategory(result->after.identity);if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal);}
+            try {catalog();selectCategory(result->after.identity);if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);}
             catch(...) {const auto saved=categoryReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();categoryReceipt=saved;throw std::runtime_error("Category change was saved durably, but its refreshed view could not be loaded. Reopen and inspect category history; do not apply it again.");}
         } else if(action=="history") {listHistory(a.value("before").toString().toLongLong(),a.value("append").toBool());}
         else if(action=="entry_history") {
-            const imports::Occurrence id{str(a.value("batch")),a.value("ordinal").toUInt()};inspect(id.batch,id.ordinal);entryDetails(id);
+            const imports::Occurrence id{str(a.value("batch")),a.value("ordinal").toUInt()};inspect(id.batch,id.ordinal,context);entryDetails(id);
             if(!historyLoaded)listHistory();
         } else if(action=="cancel_change") {preparedChange.reset();preparedOperation.clear();changePreview.clear();}
         else if(action=="preview_change") {
@@ -414,7 +577,7 @@ struct ImportModel::Worker {
             }
             changeReceipt={{"operation",text(result->operation)},{"summary",changeName(result->kind)+" applied · "+balanceImpact(result->before,result->change,result->after)}};
             preparedChange.reset();preparedOperation.clear();changePreview.clear();
-            try {inspect(result->identity.batch,result->identity.ordinal);entryDetails(result->identity);if(historyLoaded)listHistory();}
+            try {inspect(result->identity.batch,result->identity.ordinal,context);entryDetails(result->identity);if(historyLoaded)listHistory();}
             catch(...) {
                 const auto saved=changeReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();changeReceipt=saved;
                 throw std::runtime_error("Committed change "+result->operation+" was saved durably, but its refreshed view could not be loaded. Reopen this dataset and inspect committed history; do not apply the change again.");
@@ -437,28 +600,28 @@ struct ImportModel::Worker {
             if(profile!="DMY" && profile!="MDY") throw std::invalid_argument("Select DMY or MDY before importing");
             const auto batch=repo.ingest_controlled(identity(),bytes.toStdString(),profile=="DMY"?qif::DateOrder::dmy:qif::DateOrder::mdy,context);
             projected=true; selected.clear();selectedBatch.clear();
-            if(batch.count && !batch.processing_incomplete) inspect(batch.id,0);
+            if(batch.count && !batch.processing_incomplete) inspect(batch.id,0,context);
             else selected={{"batch",text(batch.id)},{"editable",false},{"source",evidencePreview(bytes.toStdString())}};
         } else if(action=="resume") {
             const auto batch=repo.resume(str(a.value("batch")),a.value("revision").toLongLong(),context);
             projected=true;selected.clear();selectedBatch.clear();
-            if(batch.count && !batch.processing_incomplete)inspect(batch.id,0);
+            if(batch.count && !batch.processing_incomplete)inspect(batch.id,0,context);
         } else if(action=="evidence") {
             selectedBatch.clear();selected={{"batch",a.value("batch")},{"editable",false},{"source",evidencePreview(repo.evidence(str(a.value("batch"))))}};
-        } else if(action=="inspect") inspect(str(a.value("batch")),a.value("ordinal").toUInt());
+        } else if(action=="inspect") inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);
         else if(action=="save") {
             if(selectedBatch.empty()) throw std::logic_error("Select a draft first");
             auto row=repo.row({selectedBatch,selectedOrdinal});
             if(!row.source.original_amount || (!row.draft && !row.source.repairable)) throw std::invalid_argument("This record cannot be repaired");
             const auto edit=editedDraft(a,*row.source.original_amount,repo,row.draft?&*row.draft:nullptr,&row.source);
-            repo.save({selectedBatch,selectedOrdinal},selectedRevision,edit); inspect(selectedBatch,selectedOrdinal);
+            repo.save({selectedBatch,selectedOrdinal},selectedRevision,edit); inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="decide") {
             imports::Decision decision{imports::Disposition::include,{}};
             if(a.value("duplicate").toBool()) decision={imports::Disposition::duplicate,imports::Occurrence{str(a.value("batch")),a.value("ordinal").toUInt()}};
-            repo.decide({selectedBatch,selectedOrdinal},selectedRevision,decision);inspect(selectedBatch,selectedOrdinal);
+            repo.decide({selectedBatch,selectedOrdinal},selectedRevision,decision);inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="opening") {
             const auto acct=repo.account();repo.opening(acct.revision,str(a.value("date")),Money::parse(str(a.value("amount")),acct.currency));
-            if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal);
+            if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="commit" || action=="discard") {
             const auto batches=repo.batches(); const auto b=std::find_if(batches.begin(),batches.end(),[](const auto& item){return item.state==app::BatchState::pending || item.state==app::BatchState::captured;});
             if(b==batches.end()) throw std::logic_error("No pending import");
@@ -483,18 +646,107 @@ struct ImportModel::Worker {
                 receipt={{"operation",text(result->operation)},{"included",static_cast<int>(result->included)},{"excluded",static_cast<int>(result->excluded)},
                     {"before",money(result->before)},{"change",money(result->change)},{"after",money(result->after)}};
             }
-            if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal);
+            if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="backup") gateway->backup(str(a.value("path")));
         else if(action=="query") {
             if(a.contains("restoreSelection")) {
                 const auto restore=a.value("restoreSelection").toMap();
-                if(restore.contains("ordinal")) inspect(str(restore.value("batch")),restore.value("ordinal").toUInt());
+                if(restore.contains("ordinal")) inspect(str(restore.value("batch")),restore.value("ordinal").toUInt(),context);
                 else {selected.clear();selectedBatch.clear();selectedOrdinal=0;}
             }
             const auto nextProjected=a.value("projected",true).toBool();
             if(projected!=nextProjected) cachedLedger.reset();
             cachedView.reset();
             filter=a.value("filter").toString();sort=a.value("sort",0).toInt();descending=a.value("descending",false).toBool();projected=nextProjected;
+        } else if(action=="rules_load" || action=="rules_discard" || action=="rules_save" || action=="rules_preview" || action=="rules_apply" || action=="rules_prefill") {
+            if(!repo.rules_supported()) throw std::invalid_argument("Rules require a new experimental dataset");
+            auto closeUnknown=[&](const char* message){gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error(message);};
+            auto refreshFailed=[&](const QString& sentence){const auto saved=ruleReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();ruleReceipt=saved;throw std::runtime_error(sentence.toStdString());};
+            const auto images=[&]{
+                const auto rows=a.value("rules").toList();
+                if(rows.size()>static_cast<qsizetype>(rules::EvaluationLimits::rules)) throw std::invalid_argument("Too many rules");
+                std::vector<app::RuleDefinitionImage> ordered;for(const auto& value:rows) ordered.push_back(imageFrom(value.toMap()));return ordered;
+            };
+            if(action=="rules_load" || action=="rules_discard") {loadRules();if(action=="rules_discard"){rulePreview.clear();preparedApply.reset();}}
+            else if(action=="rules_prefill") {
+                if(selectedBatch.empty()) throw std::logic_error("Select a record first");
+                auto row=repo.row({selectedBatch,selectedOrdinal});
+                const auto kind=a.value("kind").toString();
+                std::string source;auto scope=rules::Scope::transaction;auto input=rules::InputField::payee;
+                if(kind=="payee") source=row.source.payee;
+                else if(kind=="memo") {
+                    const auto index=a.value("allocation").toInt();
+                    std::optional<imports::DraftRow> committedDraft;
+                    const imports::DraftRow* current=row.draft?&*row.draft:nullptr;
+                    if(selected.value("committed").toBool()){committedDraft=repo.committed_entry({selectedBatch,selectedOrdinal}).current.draft;current=&*committedDraft;}
+                    if(!current || index<0 || static_cast<std::size_t>(index)>=current->transaction.allocations().size() || !current->transaction.allocations()[static_cast<std::size_t>(index)].source_ordinal)
+                        throw std::invalid_argument("Manual splits are not rule sources");
+                    const auto ordinal=*current->transaction.allocations()[static_cast<std::size_t>(index)].source_ordinal;
+                    if(ordinal>=row.source.source_allocations.size()) throw std::invalid_argument("Manual splits are not rule sources");
+                    source=row.source.source_allocations[ordinal].memo;scope=rules::Scope::split;input=rules::InputField::memo;
+                } else throw std::invalid_argument("Unknown rule source");
+                app::RuleDefinitionImage rule;rule.identity=identity();rule.enabled=true;rule.scope=scope;rule.input=input;rule.expression=app::quoted_field_pattern(source);
+                rulePrefill=ruleMap(rule);
+            } else if(action=="rules_preview") {
+                if(qEnvironmentVariableIsSet("SPENTIT_RULE_CANCEL_WINDOW"))
+                    for(int i=0;i<200 && context.state.load()==app::OperationContext::available;++i) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                app::RulePreviewRequest request;
+                request.batch=str(a.value("batch"));
+                request.batch_revision=a.value("batchRevision").toString().isEmpty()?-1:a.value("batchRevision").toString().toLongLong();
+                request.replace_manual=a.value("replaceManual").toBool();
+                std::optional<std::vector<app::RuleDefinitionImage>> editor;
+                if(a.value("unsaved").toBool()) editor=images();
+                request.editor=editor;
+                const auto result=repo.preview_pending_rules(request,context);
+                if(result.unsaved_rules) preparedApply.reset();
+                else {
+                    if(ruleApplyOperation.empty()) ruleApplyOperation=identity();
+                    preparedApply=app::RuleApplyRequest{result.batch,result.batch_revision,result.ruleset_revision,result.catalog_revision,result.replace_manual};
+                }
+                publishPreview(result,editor?a.value("rules").toList():QVariantList{});
+            } else if(action=="rules_save") {
+                ruleReceipt.clear();
+                if(!rulesLoaded) loadRules();
+                const auto expected=ruleRevision;
+                const auto operation=identity();
+                std::optional<app::RuleSaveReceipt> result;
+                try {result=repo.save_rules(operation,{images()},expected,context);}
+                catch(...) {
+                    const auto failure=std::current_exception();
+                    try {result=repo.rule_save_outcome(operation);}
+                    catch(...) {closeUnknown("Rule save outcome is uncertain. Reopen the dataset and inspect rule history before retrying.");}
+                    if(!result) std::rethrow_exception(failure);
+                }
+                ruleReceipt=result->unchanged?QVariantMap{{"operation",QString()},{"unchanged",true},{"summary","Rules unchanged"}}
+                    :QVariantMap{{"operation",text(result->operation)},{"unchanged",false},{"summary","Rules saved at revision "+QString::number(result->ruleset_after)}};
+                rulePreview.clear();preparedApply.reset();ruleApplyOperation.clear();
+                try {
+                    if(qEnvironmentVariableIsSet("SPENTIT_RULE_REFRESH_FAIL")) throw std::runtime_error("refresh");
+                    loadRules();if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
+                } catch(...) {const auto saved=ruleReceipt.value("operation").toString();refreshFailed(saved.isEmpty()?QString("Unable to refresh verified dataset state. Close and reopen before continuing."):ruleSaveRefreshFailure(saved));}
+            } else if(action=="rules_apply") {
+                ruleReceipt.clear();
+                if(!preparedApply || ruleApplyOperation.empty()) throw std::logic_error("Review a saved rules preview first");
+                const auto request=*preparedApply;
+                if(str(a.value("batch"))!=request.batch || a.value("batchRevision").toString()!=QString::number(request.batch_revision) || a.value("rulesetRevision").toString()!=QString::number(request.ruleset_revision) || a.value("catalogRevision").toString()!=QString::number(request.catalog_revision) || a.value("replaceManual").toBool()!=request.replace_manual)
+                    throw std::invalid_argument("Rules, categories, or the import changed; refresh before applying");
+                const auto operation=ruleApplyOperation;
+                std::optional<app::RuleApplyReceipt> result;
+                try {result=repo.apply_pending_rules(operation,request,context);}
+                catch(...) {
+                    const auto failure=std::current_exception();
+                    try {result=repo.rule_apply_outcome(operation);}
+                    catch(...) {closeUnknown("Rule application outcome is uncertain. Reopen the dataset and inspect the pending drafts before retrying.");}
+                    if(!result) {ruleApplyOperation.clear();preparedApply.reset();rulePreview.clear();std::rethrow_exception(failure);}
+                }
+                ruleReceipt=result->operation.empty()?QVariantMap{{"operation",QString()},{"summary","No pending drafts were changed"}}
+                    :QVariantMap{{"operation",text(result->operation)},{"summary","Rule application "+text(result->operation)+" changed "+QString::number(result->changed)+" draft(s)"}};
+                rulePreview.clear();preparedApply.reset();ruleApplyOperation.clear();
+                try {
+                    if(qEnvironmentVariableIsSet("SPENTIT_RULE_REFRESH_FAIL")) throw std::runtime_error("refresh");
+                    if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
+                } catch(...) {const auto saved=ruleReceipt.value("operation").toString();refreshFailed(saved.isEmpty()?QString("Unable to refresh verified dataset state. Close and reopen before continuing."):ruleApplyRefreshFailure(saved));}
+            }
         }
         else throw std::invalid_argument("Unknown application command");
     }
@@ -506,6 +758,7 @@ ImportModel::~ImportModel() {pool_.waitForDone();worker_->gateway->close();}
 QStringList ImportModel::currencies() const {QStringList out;for(const auto& c:supported_currencies())out<<text(c.code);return out;}
 QString ImportModel::suggestedPath() const {return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/SpentIt/Experimental.spentit";}
 QString ImportModel::localPath(const QUrl& url) const {return url.toLocalFile();}
+QString ImportModel::newIdentity() const {return QUuid::createUuid().toString(QUuid::WithoutBraces);}
 int ImportModel::selectedRowIndex() const {return state_.value("selectedIndex",-1).toInt();}
 QVariantMap ImportModel::rowIdentity(int row) const {
     if(row<0 || row>=rowCount()) return {};
@@ -550,7 +803,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     if(busy_) return;
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
-    if(action!="open" && action!="unlock" && action!="import" && action!="resume") operation->seal();
+    if(action!="open" && action!="unlock" && action!="import" && action!="resume" && action!="rules_preview" && action!="rules_apply" && action!="rules_save") operation->seal();
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
         if(!operation) return;
@@ -559,7 +812,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             if(busy_ && operation_==operation) {if(!cancellationRequested())phase_=label;emit changed();}
         },Qt::QueuedConnection);
     };
-    phase_=(action=="open" || action=="unlock")?"Opening dataset":action=="import"?"Reading QIF file":action=="resume"?"Preparing draft interpretations":action=="commit"?"Committing import":action=="backup"?"Creating verified backup":action=="create"?"Creating dataset":action=="save"?"Saving draft":action=="preview_change"?"Preparing committed-change preview":action=="apply_change"?"Applying committed change":"Updating view";
+    phase_=phaseFor(action);
     busy_=true;error_.clear();emit changed();
     struct Result {QVariantMap state;std::shared_ptr<const app::LedgerView> rows;QString error;bool success=false;};
     auto* watcher=new QFutureWatcher<Result>(this);
@@ -581,7 +834,18 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         operation->state.store(app::OperationContext::sealed);
         operation->checkpoint("Refreshing verified ledger");
         try {auto snapshot=worker->snapshot();result.state=std::move(snapshot.first);result.rows=std::move(snapshot.second);}
-        catch(const std::exception&){worker->invalidate();result.error=(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved durably, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again.":(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Committed change "+worker->changeReceipt.value("operation").toString()+" was saved durably, but the refreshed ledger could not be loaded. Reopen and inspect committed history; do not apply the change again.":"Unable to refresh verified dataset state. Close and reopen before continuing.";worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();result.state={{"active",false},{"path",worker->path},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt}};result.success=false;}
+        catch(const std::exception&){
+            worker->invalidate();
+            const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
+            result.error=(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved durably, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."
+                :(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Committed change "+worker->changeReceipt.value("operation").toString()+" was saved durably, but the refreshed ledger could not be loaded. Reopen and inspect committed history; do not apply the change again."
+                :(action=="rules_apply" && !ruleOperation.isEmpty())?ruleApplyRefreshFailure(ruleOperation)
+                :(action=="rules_save" && !ruleOperation.isEmpty())?ruleSaveRefreshFailure(ruleOperation)
+                :"Unable to refresh verified dataset state. Close and reopen before continuing.";
+            worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();
+            result.state={{"active",false},{"path",worker->path},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt},{"ruleReceipt",worker->ruleReceipt}};
+            result.success=false;
+        }
         result.state["unlockRequired"]=unlock;return result;
     }));
 }

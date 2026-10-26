@@ -4,6 +4,10 @@
 using namespace spentit;
 void require(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
 int main(){try{
+    require(app::quoted_field_pattern("")=="^(?:)$","empty source is an empty whole field");
+    require(app::quoted_field_pattern("Tfl Travel UK")=="^(?:\\QTfl Travel UK\\E)$","quoted source payee");
+    require(app::quoted_field_pattern("a\\Eb")=="^(?:\\Qa\\E\\\\E\\Qb\\E)$","quote closes around \\E");
+    require(app::quoted_field_pattern("a\\E")=="^(?:\\Qa\\E\\\\E)$","quote ends on \\E");
     const Currency cad("CAD");
     auto parsed=qif::parse("!Type:Bank\nD01/01/2026\nT-29.31\nPTfl Travel UK\nSUnmapped Fee\nEWise Charges for: card\n$-0.14\nSUnmapped Travel\nECARD-123\n$-29.17\n^\n",qif::DateOrder::dmy,cad);
     require(parsed.valid(),"synthetic fixture");auto source=parsed.records.front();

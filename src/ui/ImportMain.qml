@@ -60,6 +60,11 @@ ApplicationWindow {
     property bool payeeTouched: false
     property bool memoTouched: false
     property bool categoryDirty: false
+    property bool rulesDirty: false
+    property int ruleIndex: -1
+    property string ruleCategoryId: ""
+    property bool guardHandoff: false
+    property bool ruleSync: false
     property string categoryAction: ""
     property string categoryFormId: ""
     property string categoryFormRevision: ""
@@ -85,6 +90,7 @@ ApplicationWindow {
         pickerIndex=index;let row=splitModel.get(index);unmappedCategory.text=row.category;categorySearch.clear();categoryPicker.open()
     }
     function chooseCategory(id,path) {
+        if(pickerIndex===-2) { ruleCategoryId=id||""; writeRule(); categoryPicker.close(); return }
         if(pickerIndex<0 || pickerIndex>=splitModel.count)return
         splitModel.setProperty(pickerIndex,"category",path)
         splitModel.setProperty(pickerIndex,"categoryId",id)
@@ -99,7 +105,8 @@ ApplicationWindow {
     property bool allowClose: false
     property bool closingRequested: false
     property bool settingUp: false
-    function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else if(categoryDirty) {pendingAction=action;categoryUnsaved.open()} else action() }
+    function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else if(categoryDirty) {pendingAction=action;categoryUnsaved.open()} else if(rulesDirty) {pendingAction=action;rulesUnsaved.open()} else action() }
+    function dismiss(dialog) { guardHandoff=true; dialog.close(); Qt.callLater(function(){guardHandoff=false}) }
     function loadEditor() {
         let d=selected.draft
         splitModel.clear()
@@ -109,6 +116,157 @@ ApplicationWindow {
         }
         dirty=false;committedEditing=false;payeeTouched=false;memoTouched=false
     }
+    function wholeRecognized(expr) { let body=expr.startsWith("(?-i)")?expr.slice(5):expr; return body.startsWith("^(?:") && body.endsWith(")$") && body.length>=6 }
+    function ruleRow(rule) {
+        let copy=Object.assign({payeeTemplate:"",memoTemplate:"",categoryId:"",inheritParent:false,label:"",expression:"",scope:"transaction",input:"payee"}, rule||{})
+        copy.ruleOn=!!rule.enabled
+        delete copy.enabled
+        return copy
+    }
+    function loadRulesForm() {
+        ruleSync=true; ruleModel.clear()
+        for(let rule of (s.rules||[])) ruleModel.append(ruleRow(rule))
+        ruleIndex=-1; ruleCategoryId=""; rulesDirty=false; ruleSync=false
+    }
+    function showRulesPage() {
+        if(currentPage==="rules") return
+        let entries=navigation.slice(0,navigationIndex+1); entries.push("rules"); navigation=entries; navigationIndex=entries.length-1; currentPage="rules"
+    }
+    function rulesImage() {
+        let rows=[]
+        for(let i=0;i<ruleModel.count;i++) { let r=ruleModel.get(i); rows.push({id:r.id,label:r.label||"",enabled:!!r.ruleOn,scope:r.scope||"transaction",input:r.input||"payee",expression:r.expression||"",payeeTemplate:r.payeeTemplate||"",memoTemplate:r.memoTemplate||"",categoryId:r.categoryId||"",inheritParent:!!r.inheritParent}) }
+        return rows
+    }
+    function writeRule() {
+        if(ruleSync || ruleIndex<0 || ruleIndex>=ruleModel.count) return
+        let inherit=ruleScope.currentIndex===1 && ruleInherit.checked
+        ruleModel.setProperty(ruleIndex,"label",ruleLabel.text)
+        ruleModel.setProperty(ruleIndex,"expression",ruleExpression.text)
+        ruleModel.setProperty(ruleIndex,"scope",ruleScope.currentIndex===1?"split":"transaction")
+        ruleModel.setProperty(ruleIndex,"input",ruleInput.currentIndex===1?"memo":ruleInput.currentIndex===2?"category":"payee")
+        ruleModel.setProperty(ruleIndex,"payeeTemplate",ruleScope.currentIndex===1?"":rulePayeeTemplate.text)
+        ruleModel.setProperty(ruleIndex,"memoTemplate",ruleMemoTemplate.text)
+        ruleModel.setProperty(ruleIndex,"inheritParent",inherit)
+        ruleModel.setProperty(ruleIndex,"categoryId",inherit?"":ruleCategoryId)
+        rulesDirty=true
+    }
+    function openRule(index) {
+        if(index<0 || index>=ruleModel.count) {ruleIndex=-1; return}
+        ruleIndex=index; let r=ruleModel.get(index); ruleSync=true
+        ruleLabel.text=r.label||""; ruleExpression.text=r.expression||""
+        ruleScope.currentIndex=r.scope==="split"?1:0
+        ruleInput.currentIndex=r.input==="memo"?1:r.input==="category"?2:0
+        rulePayeeTemplate.text=r.payeeTemplate||""; ruleMemoTemplate.text=r.memoTemplate||""
+        ruleCategoryId=r.categoryId||""; ruleInherit.checked=!!r.inheritParent
+        ruleCaseSensitive.checked=(r.expression||"").startsWith("(?-i)")
+        ruleWholeField.checked=wholeRecognized(r.expression||"")
+        ruleAssistNote.text=""; ruleSync=false
+    }
+    function setCase(on) {
+        let expr=ruleExpression.text
+        if(on) { if(!expr.startsWith("(?-i)")) expr="(?-i)"+expr }
+        else if(expr.startsWith("(?-i)")) {
+            let rest=expr.slice(5)
+            if(rest.indexOf("(?i)")>=0 || rest.indexOf("(?-i)")>=0) { ruleAssistNote.text="Another case flag remains. Edit the expression."; ruleSync=true; ruleCaseSensitive.checked=true; ruleSync=false; return }
+            expr=rest; ruleAssistNote.text=""
+        }
+        if(expr!==ruleExpression.text) ruleExpression.text=expr
+        writeRule()
+    }
+    function setWhole(on) {
+        let expr=ruleExpression.text
+        let prefix=expr.startsWith("(?-i)")?"(?-i)":""
+        let body=prefix?expr.slice(5):expr
+        let wrapped=body.startsWith("^(?:") && body.endsWith(")$") && body.length>=6
+        if(on && !wrapped) expr=prefix+"^(?:"+body+")$"
+        else if(!on && wrapped) expr=prefix+body.slice(4,body.length-2)
+        if(expr!==ruleExpression.text) ruleExpression.text=expr
+        writeRule()
+    }
+    function syncAssist() { ruleSync=true; ruleCaseSensitive.checked=ruleExpression.text.startsWith("(?-i)"); ruleWholeField.checked=wholeRecognized(ruleExpression.text); ruleSync=false }
+    function newRule() {
+        if(ruleModel.count>=128) return
+        ruleModel.append(ruleRow({id:workflow.newIdentity(),enabled:true}))
+        rulesDirty=true; openRule(ruleModel.count-1)
+    }
+    function moveRule(index, delta) {
+        let next=index+delta
+        if(next<0 || next>=ruleModel.count) return
+        ruleModel.move(index,next,1)
+        if(ruleIndex===index) ruleIndex=next; else if(ruleIndex===next) ruleIndex=index
+        rulesDirty=true
+    }
+    function toggleRule(index) { let row=ruleModel.get(index); if(!row) return; ruleModel.setProperty(index,"ruleOn",!row.ruleOn); rulesDirty=true }
+    function deleteRule(index) {
+        ruleModel.remove(index)
+        if(ruleIndex===index) ruleIndex=-1; else if(ruleIndex>index) ruleIndex-=1
+        rulesDirty=true
+    }
+    function copyRemoved(id) {
+        if(ruleModel.count>=128) return
+        let tomb=null
+        for(let item of (s.ruleTombstones||[])) if(item.id===id) tomb=item
+        if(!tomb) return
+        ruleModel.append(ruleRow({id:workflow.newIdentity(),label:tomb.label||"",enabled:true,scope:tomb.scope,input:tomb.input,expression:tomb.expression||"",payeeTemplate:tomb.payeeTemplate||"",memoTemplate:tomb.memoTemplate||"",categoryId:tomb.categoryId||"",inheritParent:!!tomb.inheritParent}))
+        rulesDirty=true; openRule(ruleModel.count-1)
+    }
+    function actionSummary(rule) {
+        if(!rule) return "No action yet"
+        let parts=[]
+        if(rule.payeeTemplate) parts.push("payee "+rule.payeeTemplate)
+        if(rule.memoTemplate) parts.push("memo "+rule.memoTemplate)
+        if(rule.inheritParent) parts.push("inherit parent")
+        else if(rule.categoryId) { let cat=(s.categoryById||{})[rule.categoryId]||{}; parts.push(cat.path||rule.categoryId) }
+        return parts.length?parts.join("; "):"No action yet"
+    }
+    function saveRules() { workflow.command("rules_save",{rules:rulesImage()}) }
+    function previewRules() {
+        let pending=s.pending||{}
+        let args={replaceManual:replaceManualFields.checked,unsaved:rulesDirty,batch:pending.id||"",batchRevision:String(pending.revision===undefined?"":pending.revision)}
+        if(rulesDirty) args.rules=rulesImage()
+        workflow.command("rules_preview",args)
+    }
+    function applyReady() {
+        if(workflow.busy || rulesDirty) return false
+        let p=s.rulePreview||{}; let pending=s.pending||{}
+        if(!p.operation || p.unsaved) return false
+        if(String(p.batchRevision)!==String(pending.revision)) return false
+        if(String(p.rulesetRevision)!==String(s.ruleRevision||"")) return false
+        if(String(p.catalogRevision)!==String(s.catalogRevision||"")) return false
+        if(!!p.replaceManual!==replaceManualFields.checked) return false
+        return true
+    }
+    function applyRules() {
+        let p=s.rulePreview||{}
+        workflow.command("rules_apply",{batch:p.batch,batchRevision:String(p.batchRevision),rulesetRevision:String(p.rulesetRevision),catalogRevision:String(p.catalogRevision),replaceManual:!!p.replaceManual})
+    }
+    function createFromSource(kind, allocation) {
+        if(workflow.busy || !s.rulesSupported) return
+        if(dirty) { pendingAction=function(){createFromSource(kind,allocation)}; unsaved.open(); return }
+        if(categoryDirty) { pendingAction=function(){createFromSource(kind,allocation)}; categoryUnsaved.open(); return }
+        let args={kind:kind}; if(allocation!==undefined) args.allocation=allocation
+        workflow.command("rules_prefill",args)
+    }
+    function editMatched(id) {
+        if(workflow.busy) return
+        if(dirty) { pendingAction=function(){editMatched(id)}; unsaved.open(); return }
+        if(categoryDirty) { pendingAction=function(){editMatched(id)}; categoryUnsaved.open(); return }
+        if(!rulesDirty) loadRulesForm()
+        for(let i=0;i<ruleModel.count;i++) if(ruleModel.get(i).id===id) { openRule(i); showRulesPage(); matchedRuleDialog.close(); return }
+    }
+    function openMatched() {
+        let ids=[]
+        for(let item of (selected.ruleExplanations||[])) if(ids.indexOf(item.rule)<0) ids.push(item.rule)
+        if(ids.length===1) editMatched(ids[0]); else matchedRuleDialog.open()
+    }
+    function acceptPrefill() {
+        if(!rulesDirty) loadRulesForm()
+        if(ruleModel.count>=128) return
+        let row=s.rulePrefill||{}; if(!row.id) return
+        ruleModel.append(ruleRow(row))
+        rulesDirty=true; openRule(ruleModel.count-1); showRulesPage()
+    }
+    function openRuleCategory() { pickerIndex=-2; categorySearch.clear(); categoryPicker.open() }
     function inspectRecord(batch, ordinal) { guard(function(){workflow.command("inspect",{batch:batch,ordinal:ordinal})}) }
     function copySource(field) {
         if (!editEnabled || workflow.busy) return
@@ -148,9 +306,9 @@ ApplicationWindow {
             ledger.currentIndex=workflow.selectedRowIndex()
             if (action==="inspect" || action==="import")
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
-            if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
+            if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {changePreview.close();categoryChangePreview.close();categoryPicker.close();pendingAction=null;dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {changePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -175,14 +333,19 @@ ApplicationWindow {
                 projected.checked=s.mode!=="Committed"
                 if(action==="preview_category") categoryChangePreview.open()
                 if(action==="category_select" || action==="apply_category")loadCategoryForm()
-                if(action==="apply_category") {categoryChangePreview.close();categoryDirty=false;if(!dirty)loadEditor();if(pendingAction){let next=pendingAction;pendingAction=null;next()}}
+                if(action==="apply_category") {let next=pendingAction;pendingAction=null;dismiss(categoryChangePreview);categoryDirty=false;if(!dirty)loadEditor();if(next)guard(next)}
                 if(action==="preview_change") changePreview.open()
-                if(action==="apply_change") changePreview.close()
+                if(action==="apply_change") dismiss(changePreview)
                 if(["inspect","entry_history","import","resume","save","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change"].indexOf(action)>=0) loadEditor()
                 if(action==="save" || action==="apply_change") {
                     dirty=false
-                    if(pendingAction) {let next=pendingAction;pendingAction=null;next()}
+                    if(pendingAction) {let next=pendingAction;pendingAction=null;guard(next)}
                 }
+                if(action==="rules_load" && !rulesDirty) loadRulesForm()
+                if(action==="rules_save" || action==="rules_discard") {loadRulesForm();if(pendingAction){let next=pendingAction;pendingAction=null;guard(next)}}
+                if(action==="rules_apply" && !dirty) loadEditor()
+                if(action==="rules_prefill") acceptPrefill()
+                if((action==="create" || action==="open" || action==="unlock") && !rulesDirty) loadRulesForm()
                 if(action==="create" || action==="unlock") {password.text="";confirmation.text="";unlockPassword.text=""}
                 if(action==="close") {if(closingRequested){allowClose=true;Qt.callLater(function(){window.close()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
@@ -192,6 +355,7 @@ ApplicationWindow {
         if(s.startup) workflow.command("open",{path:s.path})
     }
     ListModel {id:splitModel}
+    ListModel {id:ruleModel}
     FileDialog { id:openDialog; title:"Choose an experimental dataset"; onAccepted:{location.text=workflow.localPath(selectedFile);workflow.command("open",{path:location.text})} }
     FileDialog { id:createDialog; fileMode:FileDialog.SaveFile; title:"Choose a NEW dataset file"; onAccepted:location.text=workflow.localPath(selectedFile) }
     FileDialog { id:importDialog; title:"Import synthetic QIF"; nameFilters:["QIF files (*.qif)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),profile:profile.currentText}) }
@@ -201,18 +365,18 @@ ApplicationWindow {
         ColumnLayout {
             Label {textFormat:Text.PlainText;text:"Save the edit, discard its changes, or stay here?"}
             RowLayout {
-                Button {objectName:"guardSave";text:committedEditing?"Review correction":"Save";onClicked:{unsaved.close();saveEditor()}}
-                Button {objectName:"guardDiscard";text:"Discard";onClicked:{unsaved.close();loadEditor();let next=pendingAction;pendingAction=null;if(next)next()}}
+                Button {objectName:"guardSave";text:committedEditing?"Review correction":"Save";onClicked:{let next=pendingAction;dismiss(unsaved);pendingAction=next;saveEditor()}}
+                Button {objectName:"guardDiscard";text:"Discard";onClicked:{let next=pendingAction;pendingAction=null;dismiss(unsaved);loadEditor();if(next)guard(next)}}
                 Button {objectName:"guardStay";text:"Stay";onClicked:{unsaved.close();pendingAction=null;projected.checked=s.mode!=="Committed"}}
             }
         }
-        onRejected:{pendingAction=null;projected.checked=s.mode!=="Committed"}
+        onRejected:if(!guardHandoff){pendingAction=null;projected.checked=s.mode!=="Committed"}
     }
     Dialog {
         id:changePreview;objectName:"committedChangePreview";modal:true;anchors.centerIn:parent
         width:Math.min(window.width-48,820);height:Math.min(window.height-80,650)
         title:(s.changePreview||{}).title||"Review committed change"
-        onRejected:{pendingAction=null;workflow.command("cancel_change")}
+        onRejected:if(!guardHandoff){pendingAction=null;workflow.command("cancel_change")}
         ColumnLayout {
             anchors.fill:parent
             Label {textFormat:Text.PlainText;text:"This changes the current ledger interpretation. Original evidence and earlier history are retained; no new bank payment is created.";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -249,15 +413,35 @@ ApplicationWindow {
         id:categoryUnsaved;objectName:"categoryUnsavedDialog";title:"Unsaved category edit";modal:true;anchors.centerIn:parent
         standardButtons:Dialog.NoButton
         RowLayout {
-            Button {objectName:"categoryGuardSave";text:"Review save";onClicked:{categoryUnsaved.close();saveCategoryForm()}}
-            Button {objectName:"categoryGuardDiscard";text:"Discard";onClicked:{categoryUnsaved.close();loadCategoryForm();let next=pendingAction;pendingAction=null;if(next)next()}}
+            Button {objectName:"categoryGuardSave";text:"Review save";onClicked:{let next=pendingAction;dismiss(categoryUnsaved);pendingAction=next;saveCategoryForm()}}
+            Button {objectName:"categoryGuardDiscard";text:"Discard";onClicked:{let next=pendingAction;pendingAction=null;dismiss(categoryUnsaved);loadCategoryForm();if(next)guard(next)}}
             Button {objectName:"categoryGuardStay";text:"Stay";onClicked:{categoryUnsaved.close();pendingAction=null}}
         }
-        onRejected:pendingAction=null
+        onRejected:if(!guardHandoff)pendingAction=null
+    }
+    Dialog {
+        id:rulesUnsaved;objectName:"rulesUnsavedDialog";title:"Unsaved rules";modal:true;anchors.centerIn:parent;standardButtons:Dialog.NoButton
+        RowLayout {
+            Button {objectName:"rulesGuardSave";text:"Save";onClicked:{let next=pendingAction;dismiss(rulesUnsaved);pendingAction=next;saveRules()}}
+            Button {objectName:"rulesGuardDiscard";text:"Discard";onClicked:{let next=pendingAction;pendingAction=null;dismiss(rulesUnsaved);workflow.command("rules_discard");pendingAction=next}}
+            Button {objectName:"rulesGuardStay";text:"Stay";onClicked:{rulesUnsaved.close();pendingAction=null}}
+        }
+        onRejected:if(!guardHandoff)pendingAction=null
+    }
+    Dialog {
+        id:matchedRuleDialog;objectName:"matchedRuleDialog";title:"Rules that match this record";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640)
+        ColumnLayout {
+            width:matchedRuleDialog.availableWidth
+            Label {text:"These are this record's own explanations.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Repeater {
+                model:selected.ruleExplanations||[]
+                Button {required property var modelData;objectName:"matchedRule_"+modelData.rule;text:modelData.label+" · "+modelData.field+" · "+modelData.effect;onClicked:editMatched(modelData.rule)}
+            }
+        }
     }
     Dialog {
         id:categoryChangePreview;objectName:"categoryChangePreview";title:"Review category change";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,680)
-        onRejected:{pendingAction=null;workflow.command("cancel_category_preview")}
+        onRejected:if(!guardHandoff){pendingAction=null;workflow.command("cancel_category_preview")}
         ColumnLayout {
             width:categoryChangePreview.availableWidth
             Label {textFormat:Text.PlainText;text:(s.categoryPreview||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -374,6 +558,7 @@ ApplicationWindow {
                     Label {textFormat:Text.PlainText;text:(s.mode==="Projected"?"Projected":"Committed")+" balance";Layout.fillWidth:true;wrapMode:Text.Wrap}
                     Label {textFormat:Text.PlainText;text:(s.currency||"")+" "+(s.mode==="Projected"?(s.projected||"Unavailable"):(s.committed||""));Layout.fillWidth:true;wrapMode:Text.Wrap;font.bold:true}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
+                    Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.rulesSupported;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(!rulesDirty)workflow.command("rules_load")})}
                     Button {objectName:"historyNavigation";text:"Committed changes";Layout.fillWidth:true;visible:!!s.committedChangesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("history");workflow.command("history")})}
                     Item {Layout.fillHeight:true}
                     Button {objectName:"sidebarSettings";text:"Settings";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="settings";onClicked:navigate("settings")}
@@ -420,6 +605,100 @@ ApplicationWindow {
                             id:categoryAudit;model:s.categoryHistory||[];Layout.fillWidth:true;Layout.preferredHeight:Math.min(180,contentHeight);clip:true;reuseItems:true;ScrollBar.vertical:ScrollBar {}
                             delegate:Label {required property string modelData;width:categoryAudit.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
                         }
+                    }
+                }
+                ScrollView {
+                    id:rulesPage;objectName:"rulesPage";anchors.fill:parent;visible:currentPage==="rules";contentWidth:availableWidth;enabled:!workflow.busy
+                    ColumnLayout {
+                        width:rulesPage.availableWidth;spacing:8
+                        Label {text:"Rules";font.pixelSize:20}
+                        Label {text:"Edit the whole list, then Save or Discard. Preview can use unsaved rules. Apply uses only the saved ruleset.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        RowLayout {
+                            Button {objectName:"newRule";text:"New rule";onClicked:newRule()}
+                            Button {objectName:"saveRules";text:"Save";enabled:rulesDirty;onClicked:saveRules()}
+                            Button {objectName:"discardRules";text:"Discard";enabled:rulesDirty;onClicked:workflow.command("rules_discard")}
+                            CheckBox {id:showRemovedRules;objectName:"showRemovedRules";text:"Show removed"}
+                        }
+                        Column {
+                            Layout.fillWidth:true
+                            Repeater {
+                                model:ruleModel
+                                RowLayout {
+                                    id:ruleEntry
+                                    required property int index
+                                    required property string label
+                                    required property string scope
+                                    required property string input
+                                    required property string expression
+                                    required property string payeeTemplate
+                                    required property string memoTemplate
+                                    required property string categoryId
+                                    required property bool inheritParent
+                                    required property bool ruleOn
+                                    width:rulesPage.availableWidth
+                                    // The rule's own flag must not disable the row. Re-enable after the role is applied.
+                                    enabled:true
+                                    Label {text:String(index+1);Layout.preferredWidth:28}
+                                    CheckBox {objectName:"ruleEnabled_"+index;checked:ruleEntry.ruleOn;onClicked:toggleRule(index)}
+                                    Button {objectName:"openRule_"+index;text:label||("Rule "+(index+1));onClicked:openRule(index);Layout.fillWidth:true}
+                                    Label {text:(scope==="split"?"Split":"Transaction")+" · "+(scope==="split" && input==="payee"?"Parent payee":input);Layout.preferredWidth:170}
+                                    Label {text:expression;elide:Text.ElideRight;Layout.preferredWidth:180;textFormat:Text.PlainText}
+                                    Label {text:actionSummary(ruleEntry);elide:Text.ElideRight;Layout.preferredWidth:180;textFormat:Text.PlainText}
+                                    Button {objectName:"moveRuleUp_"+index;text:"Up";enabled:index>0;onClicked:moveRule(index,-1)}
+                                    Button {objectName:"moveRuleDown_"+index;text:"Down";enabled:index<ruleModel.count-1;onClicked:moveRule(index,1)}
+                                    Button {objectName:"deleteRule_"+index;text:"Delete";onClicked:deleteRule(index)}
+                                }
+                            }
+                        }
+                        Column {
+                            visible:showRemovedRules.checked
+                            Layout.fillWidth:true
+                            Label {text:"Removed rules";font.bold:true}
+                            Repeater {
+                                model:s.ruleTombstones||[]
+                                RowLayout {
+                                    required property var modelData
+                                    width:rulesPage.availableWidth
+                                    Label {text:(modelData.label||modelData.id)+" · v"+modelData.version+" · "+modelData.expression;Layout.fillWidth:true;elide:Text.ElideRight;textFormat:Text.PlainText}
+                                    Button {objectName:"copyRemoved_"+modelData.id;text:"Copy into new rule";onClicked:copyRemoved(modelData.id)}
+                                }
+                            }
+                        }
+                        ColumnLayout {
+                            visible:ruleIndex>=0
+                            Layout.fillWidth:true
+                            Label {text:"Expression text is what Save compiles. Checkboxes only recognize the forms they write.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                            TextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Label";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
+                            RowLayout {
+                                ComboBox {id:ruleScope;objectName:"ruleScope";model:["Transaction","Split"];onActivated:if(!ruleSync){if(currentIndex===0){ruleSync=true;ruleInherit.checked=false;ruleSync=false} writeRule()}}
+                                ComboBox {id:ruleInput;objectName:"ruleInput";model:ruleScope.currentIndex===1?["Parent payee","Memo","Category"]:["Payee","Memo","Category"];onActivated:if(!ruleSync)writeRule()}
+                            }
+                            TextField {id:ruleExpression;objectName:"ruleExpression";placeholderText:"Expression";Layout.fillWidth:true;onTextEdited:{syncAssist();writeRule()} Accessible.name:"Rule expression"}
+                            RowLayout {
+                                CheckBox {id:ruleCaseSensitive;objectName:"ruleCaseSensitive";text:"Case sensitive";onClicked:if(!ruleSync)setCase(checked)}
+                                CheckBox {id:ruleWholeField;objectName:"ruleWholeField";text:"Whole field";onClicked:if(!ruleSync)setWhole(checked)}
+                            }
+                            Label {id:ruleAssistNote;objectName:"ruleAssistNote";text:"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                            TextField {id:rulePayeeTemplate;objectName:"rulePayeeTemplate";visible:ruleScope.currentIndex===0;placeholderText:"Payee template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Payee template"}
+                            TextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
+                            RowLayout {
+                                Button {objectName:"ruleCategory";text:ruleCategoryId?(((s.categoryById||{})[ruleCategoryId]||{}).path||ruleCategoryId):"No category";enabled:!ruleInherit.checked;onClicked:openRuleCategory()}
+                                Button {objectName:"clearRuleCategory";text:"Clear category";onClicked:{ruleCategoryId="";writeRule()}}
+                                CheckBox {id:ruleInherit;objectName:"ruleInherit";visible:ruleScope.currentIndex===1;text:"Inherit parent category";onClicked:if(!ruleSync){if(checked)ruleCategoryId="";writeRule()}}
+                            }
+                            Label {text:"A split rule cannot set the transaction payee. Inherit parent clears the category action. Save is refused until the rule has an action.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        }
+                        RowLayout {
+                            Button {objectName:"previewRules";text:"Preview";onClicked:previewRules()}
+                            CheckBox {id:replaceManualFields;objectName:"replaceManualFields";text:"Replace manual fields, including blanks"}
+                            Button {objectName:"applyRules";text:"Apply";visible:currentPage==="rules" && !!s.pending && !s.pending.processingIncomplete && !selected.committed;enabled:!rulesDirty && replaceManualFields.checked===!!((s.rulePreview||{}).replaceManual) && applyReady();onClicked:applyRules()}
+                        }
+                        Label {objectName:"rulesCommittedNotice";visible:currentPage==="rules" && (!!selected.committed || !s.pending);text:"Committed records are not changed by Apply.";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                        Label {objectName:"rulePreviewStatus";text:(s.rulePreview||{}).label||"";font.bold:true;textFormat:Text.PlainText}
+                        Label {objectName:"rulePreviewBody";text:(s.rulePreview||{}).summaryText||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                        Label {text:(s.rulePreview||{}).overlap||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                        Label {textFormat:Text.PlainText;text:(s.ruleReceipt||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {objectName:"ruleLimits";text:s.ruleLimits||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                     }
                 }
                 ScrollView {
@@ -632,6 +911,7 @@ ApplicationWindow {
                         Button {objectName:"splitCategory_"+index;visible:!!s.categoriesSupported;text:(index>=0 && index<splitModel.count ? splitModel.get(index).categoryDisplay : "")||"Uncategorized";enabled:editEnabled;onClicked:openCategoryPicker(index)}
                         TextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
                         TextField {text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
+                        Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from this split memo":"Manual splits are not rule sources";onClicked:createFromSource("memo",index)}
                         TextField {objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Exact split amount";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
                         Button {text:"Remove";visible:editEnabled;onClicked:{splitModel.remove(index);dirty=true}}
                     }
@@ -651,6 +931,14 @@ ApplicationWindow {
                     Button {objectName:"inspectRemovalHistory";text:"Inspect removal history";visible:candidate.currentIndex>=0 && !!candidate.model[candidate.currentIndex].removed;onClicked:guard(function(){let c=candidate.model[candidate.currentIndex];navigate("history");workflow.command("entry_history",{batch:c.batch,ordinal:c.ordinal})})}
                     Button {objectName:"excludeDuplicate";text:candidate.currentIndex>=0 && candidate.model[candidate.currentIndex].removed?"Keep removed":"Exclude against selected occurrence";enabled:candidate.currentIndex>=0;onClicked:guard(function(){let c=candidate.model[candidate.currentIndex];workflow.command("decide",{duplicate:true,batch:c.batch,ordinal:c.ordinal})})}
                 }
+                RowLayout {
+                    visible:!!s.rulesSupported && !!selected.batch
+                    Label {objectName:"ruleWinners";text:(selected.winnerLines||[]).join("\n");visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                    Button {objectName:"editMatchedRule";text:"Edit rule…";visible:(selected.ruleExplanations||[]).length>0;onClicked:openMatched()}
+                    Button {objectName:"createRuleFromPayee";text:"Create rule from source payee";onClicked:createFromSource("payee")}
+                    Button {objectName:"createRuleWhenNone";text:"Create rule…";visible:(selected.ruleExplanations||[]).length===0;onClicked:createFromSource("payee")}
+                }
+                Label {visible:!!s.rulesSupported && !!selected.ruleMatchError;textFormat:Text.PlainText;text:selected.ruleMatchError||"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 CheckBox {id:sourceToggle;objectName:"sourceToggle";text:"Show immutable QIF source"}
                 Label {
                     visible:sourceToggle.checked && (selected.sourceFields||[]).length>0;Layout.fillWidth:true;wrapMode:Text.Wrap
