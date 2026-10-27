@@ -14,8 +14,9 @@ std::string folded(std::string text) {
     for(char& c:text) if(c>='A' && c<='Z') c=static_cast<char>(c+('a'-'A'));
     return text;
 }
-std::string category(const LedgerRow& r) {
-    return r.draft.transaction.allocations().size()==1 ? r.draft.transaction.allocations()[0].category : "Split";
+std::string_view category(const LedgerRow& r) {
+    if(r.draft.transaction.allocations().size()==1)return r.draft.transaction.allocations()[0].category;
+    return "Split";
 }
 }
 LedgerView ledger_view(const Account& account,std::vector<LedgerRow> rows,std::string_view literal,int column,bool descending) {
@@ -26,11 +27,13 @@ LedgerView ledger_view(const Account& account,std::vector<LedgerRow> rows,std::s
     LedgerView out{std::move(rows),{},{},zero,zero,zero}; std::vector<Money> withdrawals,deposits;
     const auto needle=folded(std::string(literal));
     for(std::size_t i=0;i<out.rows.size();++i) {
-        const auto& r=out.rows[i]; const auto amount=r.draft.transaction.effective_total();
+        const auto& r=out.rows[i]; const auto& amount=r.draft.transaction.effective_total();
         out.ending=out.ending+amount; out.balances.push_back(out.ending);
         bool match=needle.empty();
-        for(const auto* text:{&r.draft.date,&r.draft.payee,&r.draft.memo}) match|=folded(*text).find(needle)!=std::string::npos;
-        for(const auto& allocation:r.draft.transaction.allocations()) match|=folded(allocation.category).find(needle)!=std::string::npos || folded(allocation.memo).find(needle)!=std::string::npos;
+        if(!match) {
+            for(const auto* text:{&r.draft.date,&r.draft.payee,&r.draft.memo}) match|=folded(*text).find(needle)!=std::string::npos;
+            for(const auto& allocation:r.draft.transaction.allocations()) match|=folded(allocation.category).find(needle)!=std::string::npos || folded(allocation.memo).find(needle)!=std::string::npos;
+        }
         if(!match) continue;
         out.order.push_back(i); (amount.units()<0?withdrawals:deposits).push_back(amount);
     }
@@ -38,8 +41,8 @@ LedgerView ledger_view(const Account& account,std::vector<LedgerRow> rows,std::s
     std::sort(out.order.begin(),out.order.end(),[&](std::size_t a,std::size_t b){
         const auto& x=out.rows[a]; const auto& y=out.rows[b]; int cmp=0;
         if(column<3) {
-            const auto l=column==0?x.draft.date:column==1?x.draft.payee:category(x);
-            const auto r=column==0?y.draft.date:column==1?y.draft.payee:category(y); cmp=l.compare(r);
+            const std::string_view l=column==0?std::string_view(x.draft.date):column==1?std::string_view(x.draft.payee):category(x);
+            const std::string_view r=column==0?std::string_view(y.draft.date):column==1?std::string_view(y.draft.payee):category(y); cmp=l.compare(r);
         } else {
             auto value=[&](std::size_t i){const auto units=out.rows[i].draft.transaction.effective_total().units();return column==3?std::min<std::int64_t>(0,units):column==4?std::max<std::int64_t>(0,units):out.balances[i].units();};
             const auto l=value(a),r=value(b);cmp=l<r?-1:l>r?1:0;if(column==3)cmp=-cmp;

@@ -132,6 +132,13 @@ public:
         for(const auto& b:all)if(b.id==id)return qif::parse(evidence(id),b.profile,account().currency,checkpoint);
         throw std::logic_error("Import does not exist");
     }
+    // Exact immutable bytes for one occurrence, not a regenerated QIF record.
+    virtual std::string record_evidence(const imports::Occurrence& id) const {
+        const auto parsed=parsed_source(id.batch);
+        if(id.ordinal>=parsed.records.size())throw std::out_of_range("Source occurrence is unavailable");
+        const auto& record=parsed.records[id.ordinal];const auto bytes=evidence(id.batch);
+        return bytes.substr(record.begin,record.end-record.begin);
+    }
     virtual RowView row(const imports::Occurrence&) const = 0;
     virtual ImportRepairProgress repair_progress(std::string_view id) const {
         ImportRepairProgress result;const auto source=parsed_source(id);if(source.diagnostic)++result.blocked;

@@ -148,3 +148,10 @@ The durable UI now implements the accepted search-return behavior for its existi
 ## Account navigation follow-up — 2026-10-26
 
 The durable UI now includes a scrolling account list, inline name entry using the setup currency, independent durable account workspaces and guarded switching/Back/Forward. The [account contract](../doc/accounts.md) records verification and limits. Account switches currently reset selection/search/viewport; counterpart navigation, account lifecycle actions, report panes and the full sidebar balance layout remain unfinished.
+
+
+## Durable ledger hardening — 2026-10-26
+
+The current durable ledger now exposes named list/row accessibility semantics with selection, currency and transaction status, and announces operation/error text. Keyboard/focus regressions cover navigation, editor traversal, modal cancellation, saving and search return. Closed guard controls are marked invisible through Qt accessibility; the final focused Cocoa test passed. A native accessibility-tree inspection observed the named rows and fields, but actual spoken VoiceOver output remains unverified. See [hardening evidence and limitations](../doc/hardening.md).
+
+Disabling asynchronous offscreen delegate caching addresses the reproduced Qt reset warning while retaining visible virtualization, reuse and existing viewport/unsaved-edit behavior. Warning-fatal repeated reset regressions and large-workload scrolling measurements are recorded with their exact scope. This does not complete the broader layout, shortcuts, narrow-window, multiline or bulk interaction requirements reserved for roadmap point 8.

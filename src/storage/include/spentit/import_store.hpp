@@ -57,6 +57,7 @@ public:
     std::string evidence(std::string_view) const override;
     qif::Result parsed_source(std::string_view,const std::function<void()>& = {}) const override;
     app::ImportRepairProgress repair_progress(std::string_view) const override;
+    std::string record_evidence(const imports::Occurrence&) const override;
     app::RowView row(const imports::Occurrence&) const override;
     void save(const imports::Occurrence&,std::int64_t,const imports::DraftRow&) override;
     void decide(const imports::Occurrence&,std::int64_t,const imports::Decision&) override;

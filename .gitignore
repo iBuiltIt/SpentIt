@@ -79,3 +79,11 @@ Desktop.ini
 # Authored synthetic owner-review fixtures; no private bank data.
 !/tests/fixtures/qif/durable-review-synthetic.qif
 !/tests/fixtures/qif/durable-repair-synthetic.qif
+
+# Reviewed authored synthetic parser-fuzz seeds.
+!/tests/fixtures/qif/fuzz/ordinary.qif
+!/tests/fixtures/qif/fuzz/split.qif
+!/tests/fixtures/qif/fuzz/repair.qif
+!/tests/fixtures/qif/fuzz/accounts.qif
+!/tests/fixtures/qif/fuzz/malformed.qif
+!/tests/fixtures/qif/fuzz/overflow.qif

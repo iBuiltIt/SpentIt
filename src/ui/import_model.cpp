@@ -344,12 +344,13 @@ struct ImportModel::Worker {
         const auto all=repo.batches();
         const auto found=std::find_if(all.begin(),all.end(),[&](const auto& b){return b.id==batch;});
         if(found==all.end() || ordinal>=found->count) throw std::invalid_argument("Choose a record in this import");
-        auto bytes=repo.evidence(batch); const auto parsed=repo.parsed_source(batch);
-        const auto& source=parsed.records.at(ordinal);
+        auto row=repo.row({batch,ordinal});
+        const auto& source=row.source;
+        const auto raw=repo.record_evidence({batch,ordinal});
         selectedCommittedToken.reset();
         selectedBatch=batch; selectedOrdinal=ordinal; selectedRevision=found->revision;
         selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},
-            {"source",evidencePreview(std::string_view(bytes).substr(source.begin,source.end-source.begin))}};
+            {"source",evidencePreview(raw)}};
         if(source.diagnostic) selected["diagnostic"]=text(qif::message(source.diagnostic->issue));
         QStringList classes;
         if(!source.source_class.empty())classes<<"Record class: "+text(source.source_class);
@@ -375,7 +376,6 @@ struct ImportModel::Worker {
             }
         }
         selected["sourceFields"]=fields;
-        auto row=repo.row({batch,ordinal});
         if(!row.draft) {
             if(source.repairable && !row.source.repairable) selected["diagnostic"]=selected["diagnostic"].toString()+" — repair requires a new experimental dataset; this older dataset was not migrated.";
             if(row.source.repairable && found->state==app::BatchState::pending) {

@@ -181,3 +181,8 @@ Source account definitions should offer explicit account creation with preserved
 ## Whole-source account review implementation — 2026-10-26
 
 The accepted group policy is implemented and verified in the bounded scope: [account-section contract, explicit mapping, repair progress, staged reported-balance choices, whole-import Abort and recovery](../doc/qif-account-imports.md). Experimental schemas 16/17 retain one unchanged complete source and stable per-account associations. Existing account openings stay unchanged; new-account opening proposals publish only with the first account commit. Class and unavailable-money evidence remain separate from interpretations. Unsupported structural sections fail visibly before capture; accepted structures retain transaction blockers for review. Point 1 is complete within this accepted envelope; selected current-format verification and limitations are recorded in [status](../doc/status.md#whole-source-qif-account-review--2026-10-26).
+
+
+## Current-format hardening follow-up — 2026-10-26
+
+Point 2 verification is recorded in the [hardening guide](../doc/hardening.md): actual coverage-guided parser campaigns, combined current-format crash/I/O/retry/restore workflows, accessible ledger semantics and keyboard/focus regressions, and representative native workload measurements. This keeps financial behavior, bank-v3 acceptance and experimental schemas 16/17 unchanged. Linux/Windows verification was explicitly excluded from this checkpoint. Feature lifecycle remains active because later format/transfer/product requirements still lie outside this QIF scope.

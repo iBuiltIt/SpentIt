@@ -23,10 +23,46 @@ namespace {
 }
 void ok(int rc) { if (rc != SQLITE_OK) fail(rc); }
 void exec(sqlite3* db, const char* sql) { ok(sqlite3_exec(db, sql, nullptr, nullptr, nullptr)); }
+// Reuse prepared read plans only within one bounded read operation. Results are
+// never cached: each use binds afresh and steps the database again. Finalizing
+// the scope releases every plan before a document can close or a command return.
+class ReadStatements {
+public:
+    struct Slot { sqlite3_stmt* statement=nullptr; std::size_t bytes=0; };
+    explicit ReadStatements(sqlite3* db):db_(db),previous_(active_) {
+        active_=previous_ && previous_->db_==db ? previous_ : this;
+    }
+    ~ReadStatements(){active_=previous_;for(auto& [sql,slot]:plans_)sqlite3_finalize(slot.statement);}
+    ReadStatements(const ReadStatements&)=delete;
+    ReadStatements& operator=(const ReadStatements&)=delete;
+    static ReadStatements* current(sqlite3* db){return active_ && active_->db_==db?active_:nullptr;}
+    Slot* slot(const char* sql){
+        const auto found=plans_.find(sql);if(found!=plans_.end())return &found->second;
+        if(plans_.size()>=64 || std::string_view(sql).size()>4096)return nullptr;
+        return &plans_.try_emplace(sql).first->second;
+    }
+    sqlite3_stmt* take(Slot* slot){if(!slot)return nullptr;auto* result=slot->statement;cached_bytes_-=slot->bytes;slot->statement=nullptr;slot->bytes=0;return result;}
+    bool put(Slot* slot,sqlite3_stmt* statement){
+        if(!slot || slot->statement || !sqlite3_stmt_readonly(statement))return false;
+        if(sqlite3_reset(statement)!=SQLITE_OK || sqlite3_clear_bindings(statement)!=SQLITE_OK)return false;
+        const auto size=sqlite3_stmt_status(statement,SQLITE_STMTSTATUS_MEMUSED,0);
+        if(size<0 || static_cast<std::size_t>(size)>4*1024*1024-cached_bytes_)return false;
+        slot->statement=statement;slot->bytes=static_cast<std::size_t>(size);cached_bytes_+=slot->bytes;return true;
+    }
+private:
+    sqlite3* db_;
+    ReadStatements* previous_;
+    std::map<std::string,Slot,std::less<>> plans_;
+    std::size_t cached_bytes_=0;
+    inline static thread_local ReadStatements* active_=nullptr;
+};
 class Statement {
 public:
-    Statement(sqlite3* db, const char* sql) { ok(sqlite3_prepare_v2(db, sql, -1, &stmt_, nullptr)); }
-    ~Statement() { sqlite3_finalize(stmt_); }
+    Statement(sqlite3* db, const char* sql) {
+        cache_=ReadStatements::current(db);if(cache_){slot_=cache_->slot(sql);stmt_=cache_->take(slot_);}
+        if(!stmt_){const auto rc=sqlite3_prepare_v2(db,sql,-1,&stmt_,nullptr);if(rc!=SQLITE_OK){sqlite3_finalize(stmt_);fail(rc);}}
+    }
+    ~Statement() { if(!cache_ || !cache_->put(slot_,stmt_))sqlite3_finalize(stmt_); }
     Statement(const Statement&) = delete;
     Statement& operator=(const Statement&) = delete;
     void text(int i, std::string_view value) {
@@ -58,6 +94,8 @@ public:
         return {ptr, static_cast<std::size_t>(size)};
     }
 private:
+    ReadStatements* cache_=nullptr;
+    ReadStatements::Slot* slot_=nullptr;
     sqlite3_stmt* stmt_ = nullptr;
 };
 std::string scalar(sqlite3* db, const char* sql) {
@@ -717,6 +755,14 @@ app::ImportRepairProgress ImportStore::repair_progress(std::string_view id) cons
     for(std::size_t i=0;i<parsed.records.size();++i){const auto& r=parsed.records[i];if(r.repairable){++result.total;if(r.amount_repair)++result.amounts;Statement saved(impl_->db,"SELECT 1 FROM records WHERE batch=? AND ordinal=?");saved.text(1,id);saved.integer(2,integer(i));if(saved.row())++result.done;}else if(r.diagnostic)++result.blocked;}
     return result;
 }
+std::string ImportStore::record_evidence(const imports::Occurrence& id) const {
+    require_account(id.batch);
+    Statement raw(impl_->db,"SELECT raw FROM records WHERE batch=? AND ordinal=?");
+    raw.text(1,id.batch);raw.integer(2,integer(id.ordinal));if(raw.row())return raw.bytes(0);
+    // Unsupported or not-yet-repaired records have no materialized row. Keep the
+    // whole-file indexing fallback for those retained source occurrences.
+    return app::ImportRepository::record_evidence(id);
+}
 app::RowView ImportStore::row(const imports::Occurrence& id) const { return load_row(id,true); }
 app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates) const {
     require_account(id.batch);const auto b=batch(impl_->db,id.batch); const auto acct=account_for_batch(id.batch);
@@ -1032,6 +1078,7 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
     impl_->finish(a); return {std::string(operation),std::string(id),expected,included,excluded,before,change,after};
 }
 std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const {
+    ReadStatements read_plans(impl_->db);
     if(committed_changes_supported()) {
         if(projected && !projected_balance())fail(SQLITE_CONSTRAINT,"Projection is incomplete; review the pending import");
         std::vector<app::LedgerRow> result;
@@ -1074,6 +1121,7 @@ std::optional<Money> ImportStore::projected_balance() const {
     while(s.row()) amounts.emplace_back(s.integer(0),a.currency); return imports::sum(a.currency,amounts);
 }
 void ImportStore::verify(const app::OperationContext* context) const {
+    ReadStatements read_plans(impl_->db);
     struct VerificationGuard { bool& value; bool prior; ~VerificationGuard(){value=prior;} } guard{impl_->verifying,impl_->verifying};
     impl_->verifying=true;
     if(context) context->checkpoint("Verifying dataset integrity");

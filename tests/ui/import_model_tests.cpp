@@ -11,6 +11,8 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QFont>
+#include <QRegularExpression>
+#include <QAccessible>
 #include <sqlite3.h>
 using namespace spentit;
 // Delegates every real storage operation; only caller acknowledgement and
@@ -277,7 +279,7 @@ private slots:
         QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("ImportUi");
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
-    void init() {QSettings().clear();}
+    void init() {QSettings().clear();QTest::failOnWarning(QRegularExpression(".*DelegateModel::cancel.*"));}
     void cancellationBoundaries() {
         QTemporaryDir dir; const auto path=dir.path()+"/doc";
         ImportModel m(storage::document_gateway());create(m,path);run(m,"close");
@@ -607,6 +609,51 @@ private slots:
         const auto point=ledger->mapToScene(QPointF(100,17)).toPoint();
         QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,point);
         QTRY_VERIFY(!m.busy());QCOMPARE(selected(m).value("ordinal").toInt(),0);
+    }
+    void accessibilityAndKeyboard() {
+        QAccessible::setActive(true);
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2025-12-31"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT-10\nPAccessible first\nSFood\n$-12\nSRefund\n$2\n^\nD2/1/2026\nT20\nPAccessible second\n^\n")},{"profile","DMY"}});
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        auto* search=root->findChild<QQuickItem*>("ledgerSearch");QVERIFY(search);
+        auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
+        auto* list=QAccessible::queryAccessibleInterface(ledger);QVERIFY(list);
+        QCOMPARE(list->role(),QAccessible::List);QVERIFY(list->text(QAccessible::Name).startsWith("Transactions in"));
+        auto* field=QAccessible::queryAccessibleInterface(payee);QVERIFY(field);
+        QCOMPARE(field->role(),QAccessible::EditableText);QCOMPARE(field->text(QAccessible::Name),QString("Payee"));
+        ledger->forceActiveFocus();QTRY_VERIFY(ledger->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_End);QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.state().value("selectionIndex").toInt(),m.rowCount()-1);
+        QTest::keyClick(window,Qt::Key_Home);QTRY_VERIFY(!m.busy());
+        QTest::keyClick(window,Qt::Key_Down);QTRY_VERIFY(!m.busy());
+        QTest::keyClick(window,Qt::Key_Down);QTRY_VERIFY(!m.busy());
+        QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());
+        QCOMPARE(selected(m).value("ordinal").toInt(),1);
+        QTRY_VERIFY(visualItem(window->contentItem(),"ledgerRow_2"));
+        auto* row=QAccessible::queryAccessibleInterface(visualItem(window->contentItem(),"ledgerRow_2"));QVERIFY(row);
+        QCOMPARE(row->role(),QAccessible::ListItem);QVERIFY(row->text(QAccessible::Name).contains("Accessible second"));QVERIFY(row->text(QAccessible::Name).contains("CAD"));QVERIFY(row->state().selected);
+        payee->forceActiveFocus();QTest::keyClick(window,Qt::Key_Tab);
+        auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);QTRY_VERIFY(total->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_Backtab);QTRY_VERIFY(payee->hasActiveFocus());
+        for(char c:QByteArray(" changed"))QTest::keyClick(window,c);QVERIFY(root->property("dirty").toBool());
+        // Escape from a modal guard must retain the edit and return focus.
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("settingsNavigation"),"clicked"));
+        auto* dialog=root->findChild<QObject*>("unsavedDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
+        auto* guardSave=root->findChild<QQuickItem*>("guardSave");QVERIFY(guardSave);
+        auto* guardAccessible=QAccessible::queryAccessibleInterface(guardSave);QVERIFY(guardAccessible);
+        QTRY_VERIFY(!guardAccessible->state().invisible);
+        QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!dialog->property("visible").toBool());QVERIFY(root->property("dirty").toBool());
+        QTRY_VERIFY(payee->hasActiveFocus());
+        QTRY_VERIFY(guardAccessible->state().invisible);
+        QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QVERIFY(!root->property("dirty").toBool());
+        search->forceActiveFocus();for(char c:QByteArray("no-result"))QTest::keyClick(window,c);QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QCOMPARE(m.rowCount(),0);
+        QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!m.busy());QCOMPARE(m.rowCount(),3);QVERIFY(search->hasActiveFocus());
+        if(qEnvironmentVariableIsSet("SPENTIT_ACCESSIBILITY_HOLD"))QTest::qWait(240000);
     }
     void searchReturnNavigation() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());

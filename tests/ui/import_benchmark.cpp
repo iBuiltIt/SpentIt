@@ -3,6 +3,7 @@
 #include <spentit/import_view.hpp>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
@@ -26,43 +27,8 @@ using namespace spentit;
 using Clock=std::chrono::steady_clock;
 static double elapsed(Clock::time_point t) {return std::chrono::duration<double,std::milli>(Clock::now()-t).count();}
 static void require(bool ok,const char* message) {if(!ok) throw std::runtime_error(message);}
-struct Metrics {
-    std::map<std::string,double> calls;
-    template<class F> auto time(const char* name,F action) {
-        const auto start=Clock::now();
-        try {auto result=action();calls[name]+=elapsed(start);return result;}
-        catch(...) {calls[name]+=elapsed(start);throw;}
-    }
-};
-// Instrument the public boundary, never SQL or durability settings.
-struct ProfileRepository final:app::ImportRepository {
-    app::ImportRepository& r;Metrics& m;
-    ProfileRepository(app::ImportRepository& repo,Metrics& metrics):r(repo),m(metrics){}
-    app::Account account() const override{return r.account();}
-    void opening(std::int64_t e,std::string_view d,const Money& v) override{r.opening(e,d,v);}
-    std::vector<app::BatchInfo> batches() const override{return r.batches();}
-    app::BatchInfo ingest(std::string_view id,std::string_view b,qif::DateOrder p) override{return m.time("ingest",[&]{return r.ingest(id,b,p);});}
-    std::string evidence(std::string_view b) const override{return m.time("evidence",[&]{return r.evidence(b);});}
-    app::RowView row(const imports::Occurrence& i) const override{return m.time("row",[&]{return r.row(i);});}
-    void save(const imports::Occurrence& i,std::int64_t e,const imports::DraftRow& d) override{m.time("save",[&]{r.save(i,e,d);return 0;});}
-    void decide(const imports::Occurrence& i,std::int64_t e,const imports::Decision& d) override{r.decide(i,e,d);}
-    void discard(std::string_view b,std::int64_t e) override{r.discard(b,e);}
-    app::Receipt commit(std::string_view b,std::int64_t e,std::string_view op) override{return m.time("commit",[&]{return r.commit(b,e,op);});}
-    std::optional<app::Receipt> outcome(std::string_view op) const override{return r.outcome(op);}
-    std::vector<app::LedgerRow> ledger(bool p) const override{return m.time("ledger",[&]{return r.ledger(p);});}
-    Money committed_balance() const override{return m.time("committed_balance",[&]{return r.committed_balance();});}
-    std::optional<Money> projected_balance() const override{return m.time("projected_balance",[&]{return r.projected_balance();});}
-};
-struct ProfileGateway final:app::DocumentGateway {
-    std::unique_ptr<app::DocumentGateway> g=storage::document_gateway();
-    std::unique_ptr<ProfileRepository> repo;Metrics& m;
-    explicit ProfileGateway(Metrics& metrics):m(metrics){}
-    void create(const std::filesystem::path& p,bool mode,std::string_view pw,std::string_view n,const Currency& c,std::string_view d) override{g->create(p,mode,pw,n,c,d);repo=std::make_unique<ProfileRepository>(g->repository(),m);}
-    void open(const std::filesystem::path& p,std::optional<std::string> pw) override{m.time("verified_open",[&]{g->open(p,pw);return 0;});repo=std::make_unique<ProfileRepository>(g->repository(),m);}
-    void close() override{repo.reset();g->close();}
-    app::ImportRepository& repository() override{return *repo;}
-    void backup(const std::filesystem::path& p) override{g->backup(p);}
-};
+// Exercise the production gateway directly: a partial decorator can silently
+// fall back to obsolete default repository capabilities.
 static double peakMiB() {
     rusage u{};require(getrusage(RUSAGE_SELF,&u)==0,"getrusage failed");
 #ifdef __APPLE__
@@ -84,30 +50,31 @@ int main(int argc,char** argv) {
     QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");
     try {
         const int count=argc>1?std::stoi(argv[1]):100000;
+        const bool interactionsOnly=argc==3 && std::string_view(argv[2])=="--interactions";
+        require(argc<=3 && (argc<3 || interactionsOnly),"Optional mode is --interactions");
         require(count>0 && count<=200000 && count%10==0,"Use a multiple of 10 up to 200000");
         QTemporaryDir dir;require(dir.isValid(),"Temporary directory failed");
         QCoreApplication::setOrganizationName("SpentItBenchmark");QCoreApplication::setApplicationName("DurableUi");
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,dir.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,dir.path());
-        Metrics metrics;ImportModel model(std::make_unique<ProfileGateway>(metrics));
+        ImportModel model(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         require(!engine.rootObjects().isEmpty(),"QML load failed");
         auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());require(window,"No window");
         auto* ledger=window->findChild<QQuickItem*>("durableLedger");require(ledger,"No ledger");
-        std::cout<<"rows="<<count<<" platform="<<QGuiApplication::platformName().toStdString()<<" qt="<<qVersion()<<std::endl;
+        std::cout<<"rows="<<count<<" mode="<<(interactionsOnly?"interactions":"full")<<" platform="<<QGuiApplication::platformName().toStdString()<<" qt="<<qVersion()<<std::endl;
         // Timer gaps measure UI-thread scheduling, not display frame latency.
         QElapsedTimer clock;clock.start();qint64 previous=clock.nsecsElapsed();double maxGap=0;std::size_t ticks=0;
         QTimer heartbeat;heartbeat.setTimerType(Qt::PreciseTimer);heartbeat.setInterval(5);
         QObject::connect(&heartbeat,&QTimer::timeout,[&]{const auto now=clock.nsecsElapsed();maxGap=std::max(maxGap,static_cast<double>(now-previous)/1e6);previous=now;++ticks;});heartbeat.start();
         auto settle=[&](int ms){QEventLoop loop;QTimer::singleShot(ms,&loop,&QEventLoop::quit);loop.exec();};
         auto command=[&](const char* phase,const QString& action,const QVariantMap& args=QVariantMap{}) {
-            metrics.calls.clear();maxGap=0;ticks=0;previous=clock.nsecsElapsed();const auto start=Clock::now();
+            maxGap=0;ticks=0;previous=clock.nsecsElapsed();const auto start=Clock::now();
             QEventLoop loop;bool success=false;bool finished=false;
             auto connection=QObject::connect(&model,&ImportModel::completed,&loop,[&](const QString&,bool ok){success=ok;finished=true;loop.quit();});
             model.command(action,args);if(!finished)loop.exec();QObject::disconnect(connection);
-            const auto duration=elapsed(start);require(success && model.error().isEmpty(),"Benchmark command failed");
+            const auto duration=elapsed(start);if(!success || !model.error().isEmpty()) throw std::runtime_error("Benchmark command failed: "+action.toStdString()+": "+model.error().toStdString());
             settle(30); // Include delivery/reset work in event-loop-gap sampling.
             std::cout<<"phase="<<phase<<" ms="<<duration<<" ui_gap_ms="<<maxGap<<" ticks="<<ticks<<" rss_mib="<<residentMiB()<<" peak_mib="<<peakMiB();
-            for(const auto& [name,time]:metrics.calls)std::cout<<" "<<name<<"_ms="<<time;
             std::cout<<std::endl;
         };
         const auto path=dir.path()+"/synthetic.spentit";
@@ -138,16 +105,27 @@ int main(int argc,char** argv) {
         command("inspect_first","inspect",{{"batch",batch},{"ordinal",0}});
         const auto original=model.state().value("selected").toMap().value("source");
         auto* payee=window->findChild<QQuickItem*>("durablePayee");require(payee,"No editor");payee->setProperty("text","Unsaved benchmark edit");require(QMetaObject::invokeMethod(payee,"textEdited"),"Edit signal failed");
-        // Traverse a fixed distance at a fixed cadence. Frame samples are queued
-        // to the UI thread, so this is a presentation proxy, not GPU timing.
-        maxGap=0;previous=clock.nsecsElapsed();std::vector<double> frames;auto last=Clock::now();
-        auto frameConnection=QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{frames.push_back(elapsed(last));last=Clock::now();},Qt::QueuedConnection);
-        QTimer scroll;scroll.setInterval(16);scroll.setTimerType(Qt::PreciseTimer);int steps=0;QEventLoop scrolling;
-        ledger->setProperty("contentY",0);settle(100);frames.clear();last=Clock::now();
-        QObject::connect(&scroll,&QTimer::timeout,[&]{ledger->setProperty("contentY",steps*120);window->update();if(++steps==240)scrolling.quit();});scroll.start();scrolling.exec();scroll.stop();QObject::disconnect(frameConnection);
-        require(payee->property("text").toString()=="Unsaved benchmark edit" && window->property("dirty").toBool(),"Recycled edit lost");
-        std::sort(frames.begin(),frames.end());
-        std::cout<<"phase=scroll steps="<<steps<<" frames="<<frames.size()<<" frame_p95_ms="<<(frames.empty()?0:frames[frames.size()*95/100])<<" frame_max_ms="<<(frames.empty()?0:frames.back())<<" ui_gap_ms="<<maxGap<<" rss_mib="<<residentMiB()<<" peak_mib="<<peakMiB()<<std::endl;
+        if(QGuiApplication::platformName()!="offscreen"){window->raise();window->requestActivate();}
+        settle(250);
+        require(window->isExposed(),"Native window is not exposed; scrolling cannot be measured");
+        // Compare the visible-only cache against this Qt build's actual default
+        // on the same loaded dataset. No reset occurs during either traversal.
+        QQmlComponent defaults(&engine);defaults.setData("import QtQuick\nListView {}",QUrl());
+        std::unique_ptr<QObject> defaultList(defaults.create());require(defaultList!=nullptr,"Default ListView creation failed");
+        const auto defaultCache=defaultList->property("cacheBuffer");
+        for(bool cached:{false,true}) {
+            ledger->setProperty("cacheBuffer",cached?defaultCache:QVariant(0));
+            maxGap=0;previous=clock.nsecsElapsed();std::vector<double> frames;auto last=Clock::now();
+            auto frameConnection=QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{frames.push_back(elapsed(last));last=Clock::now();},Qt::QueuedConnection);
+            QTimer scroll;scroll.setInterval(16);scroll.setTimerType(Qt::PreciseTimer);int steps=0;QEventLoop scrolling;
+            ledger->setProperty("contentY",0);settle(100);frames.clear();last=Clock::now();
+            QObject::connect(&scroll,&QTimer::timeout,[&]{ledger->setProperty("contentY",steps*120);window->update();if(++steps==240)scrolling.quit();});scroll.start();scrolling.exec();scroll.stop();QObject::disconnect(frameConnection);
+            require(payee->property("text").toString()=="Unsaved benchmark edit" && window->property("dirty").toBool(),"Recycled edit lost");
+            require(!frames.empty() || QGuiApplication::platformName()=="offscreen", "No native frames observed; scrolling measurement unavailable");
+            std::sort(frames.begin(),frames.end());
+            std::cout<<"phase="<<(cached?"scroll_default_cache":"scroll")<<" cache_buffer="<<ledger->property("cacheBuffer").toInt()<<" steps="<<steps<<" frames="<<frames.size()<<" frame_p95_ms="<<(frames.empty()?0:frames[frames.size()*95/100])<<" frame_max_ms="<<(frames.empty()?0:frames.back())<<" ui_gap_ms="<<maxGap<<" rss_mib="<<residentMiB()<<" peak_mib="<<peakMiB()<<std::endl;
+        }
+        ledger->setProperty("cacheBuffer",0);
         require(QMetaObject::invokeMethod(window,"loadEditor"),"Discard editor failed");
         auto edit=model.state().value("selected").toMap().value("draft").toMap();edit["total"]="-11.00";edit["payee"]="Edited target";
         auto splits=edit.value("splits").toList();auto first=splits[0].toMap();first["amount"]="-13.00";splits[0]=first;edit["splits"]=splits;
@@ -155,6 +133,7 @@ int main(int argc,char** argv) {
         require(model.state().value("selected").toMap().value("source")==original,"Original source changed");
         const auto corrected=app::decimal(Money(9900+static_cast<std::int64_t>(count/2)*1000,cad));
         require(model.state().value("projected").toString().toStdString()==corrected,"Save reconciliation failed");
+        if(interactionsOnly){command("final_close","close");std::cout<<"correctness=passed scope=import-verified-reopen-edit-search-scroll"<<std::endl;return 0;}
         command("close_saved","close");command("reopen_saved","unlock",{{"path",path},{"password","synthetic-benchmark-password"}});
         command("inspect_saved","inspect",{{"batch",batch},{"ordinal",0}});
         require(model.state().value("selected").toMap().value("draft").toMap().value("payee").toString()=="Edited target","Saved edit lost");

@@ -699,12 +699,12 @@ ApplicationWindow {
         }
         RowLayout {
             visible:workflow.busy;Layout.fillWidth:true
-            Label {objectName:"operationPhase";textFormat:Text.PlainText;text:workflow.phase;Layout.fillWidth:true;wrapMode:Text.Wrap;Accessible.name:text}
+            Label {objectName:"operationPhase";textFormat:Text.PlainText;text:workflow.phase;Layout.fillWidth:true;wrapMode:Text.Wrap;Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}}
             Label {text:"Cancellation requested…";visible:workflow.cancellationRequested}
             Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
         }
         Label {textFormat:Text.PlainText;text:"Experimental · synthetic inputs only · no password reset";color:"#855100"}
-        Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
+        Label {objectName:"workflowError";textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}}
         ScrollView {
             visible:!s.active;Layout.fillWidth:true;Layout.fillHeight:true;enabled:!workflow.busy
             ColumnLayout {
@@ -813,8 +813,8 @@ ApplicationWindow {
                             Button {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryDirty;onClicked:saveCategoryForm("delete")}
                         }
                         TextField {id:categoryName;objectName:"categoryName";visible:categoryAction==="create" || categoryAction==="rename";placeholderText:"Category name";Layout.fillWidth:true;onTextEdited:categoryDirty=true;Accessible.name:"Category name"}
-                        ComboBox {id:categoryKind;objectName:"categoryKind";visible:categoryAction==="create";model:["Assignable leaf","Non-assignable group"];onActivated:categoryDirty=true}
-                        ComboBox {id:categoryParent;objectName:"categoryParent";visible:categoryAction==="move" || (categoryAction==="create" && categoryKind.currentIndex===0);model:categoryParents();textRole:"path";Layout.fillWidth:true;onActivated:categoryDirty=true}
+                        ComboBox {id:categoryKind;objectName:"categoryKind";Accessible.name:"Category kind";visible:categoryAction==="create";model:["Assignable leaf","Non-assignable group"];onActivated:categoryDirty=true}
+                        ComboBox {id:categoryParent;objectName:"categoryParent";Accessible.name:"Parent category";visible:categoryAction==="move" || (categoryAction==="create" && categoryKind.currentIndex===0);model:categoryParents();textRole:"path";Layout.fillWidth:true;onActivated:categoryDirty=true}
                         RowLayout {
                             visible:categoryAction.length>0
                             Button {objectName:"saveCategory";text:"Review category save";enabled:categoryDirty;onClicked:saveCategoryForm()}
@@ -891,8 +891,8 @@ ApplicationWindow {
                             Label {text:"Expression text is what Save compiles. Checkboxes only recognize the forms they write.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                             TextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Label";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
                             RowLayout {
-                                ComboBox {id:ruleScope;objectName:"ruleScope";model:["Transaction","Split"];onActivated:if(!ruleSync){if(currentIndex===0){ruleSync=true;ruleInherit.checked=false;ruleSync=false} writeRule()}}
-                                ComboBox {id:ruleInput;objectName:"ruleInput";model:ruleScope.currentIndex===1?["Parent payee","Memo","Category"]:["Payee","Memo","Category"];onActivated:if(!ruleSync)writeRule()}
+                                ComboBox {id:ruleScope;objectName:"ruleScope";Accessible.name:"Rule scope";model:["Transaction","Split"];onActivated:if(!ruleSync){if(currentIndex===0){ruleSync=true;ruleInherit.checked=false;ruleSync=false} writeRule()}}
+                                ComboBox {id:ruleInput;objectName:"ruleInput";Accessible.name:"Rule source field";model:ruleScope.currentIndex===1?["Parent payee","Memo","Category"]:["Payee","Memo","Category"];onActivated:if(!ruleSync)writeRule()}
                             }
                             TextField {id:ruleExpression;objectName:"ruleExpression";placeholderText:"Expression";Layout.fillWidth:true;onTextEdited:{syncAssist();writeRule()} Accessible.name:"Rule expression"}
                             RowLayout {
@@ -1059,6 +1059,12 @@ ApplicationWindow {
             }
             ListView {
                 id:ledger;objectName:"durableLedger";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:workflow;reuseItems:true;highlightFollowsCurrentItem:false
+                // Cached offscreen delegates incubate asynchronously across model resets.
+                // Visible delegates remain virtualized and reusable without that queue.
+                cacheBuffer:0
+                Accessible.role:Accessible.List
+                Accessible.name:"Transactions in "+(s.name||"account")
+                Accessible.description:"Use Up and Down to select, Shift to extend selection, and Enter to review a transaction."
                 activeFocusOnTab:true
                 Keys.onPressed: function(event) {
                     if(event.key===Qt.Key_Up || event.key===Qt.Key_Down || event.key===Qt.Key_Home || event.key===Qt.Key_End) {
@@ -1079,6 +1085,14 @@ ApplicationWindow {
                     required property var record
                     required property int index
                     id: ledgerRow
+                    objectName:"ledgerRow_"+index
+                    Accessible.role:Accessible.ListItem
+                    Accessible.name:record.date+", "+record.payee+", "+record.category+", withdrawal "+record.withdrawal+", deposit "+record.deposit+", balance "+record.balance+" "+(s.currency||"")+", "+record.status
+                    Accessible.selectable:true
+                    Accessible.selected:!!(s.selectionKeys||{})[record.batch+":"+record.ordinal]
+                    Accessible.focusable:true
+                    Accessible.focused:ledger.activeFocus && index===s.selectionIndex
+                    Accessible.onPressAction:{ledger.forceActiveFocus();selectLedgerRow(index,0)}
                     property bool expanded: record.batch===selected.batch && record.ordinal===selected.ordinal
                     property bool viewingSplits: !!window.splitViews[window.splitKey(record)] && record.splits.length>1
                     property alias editorSlot: rowEditorSlot

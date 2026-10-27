@@ -165,8 +165,11 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
         Statement rows(impl_->db,entry?"SELECT batch,ordinal,revision FROM entry_revisions ORDER BY batch,ordinal,revision":"SELECT batch,ordinal,revision FROM versions ORDER BY batch,ordinal,revision");
         while(rows.row()){
             if(context)context->checkpoint();
-            const imports::Occurrence id{rows.bytes(0),static_cast<std::size_t>(rows.integer(1))};const auto revision=rows.integer(2);const auto source=load_row(id,false).source;
-            imports::DraftRow draft=entry?entry_snapshot(id,revision).draft:*load_row(id,false).draft;
+            const imports::Occurrence id{rows.bytes(0),static_cast<std::size_t>(rows.integer(1))};const auto revision=rows.integer(2);
+            const auto head=load_row(id,false);const auto& source=head.source;
+            // Reuse the validated head; the historical version below still gets
+            // its own fields, allocations, ownership and provenance checks.
+            imports::DraftRow draft=entry?entry_snapshot(id,revision).draft:*head.draft;
             if(!entry){ // Load an arbitrary historical draft revision, not only its head.
                 Statement fields(impl_->db,"SELECT date,payee,memo,total FROM versions WHERE batch=? AND ordinal=? AND revision=?");fields.text(1,id.batch);fields.integer(2,integer(id.ordinal));fields.integer(3,revision);if(!fields.row())fail(SQLITE_CORRUPT);
                 std::vector<Allocation> aa;Statement values(impl_->db,"SELECT category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");values.text(1,id.batch);values.integer(2,integer(id.ordinal));values.integer(3,revision);while(values.row())aa.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),account_for_batch(id.batch).currency)});

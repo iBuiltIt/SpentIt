@@ -21,7 +21,27 @@ The owner selected the following eight-point sequence and gave **Go for point 1*
 
 After **each point**, update relevant feature documents and project status, write a durable handoff with completed work, actual verification, limitations, unresolved decisions and downstream dependencies, and commit all task changes while preserving unrelated work. Then ask whether to proceed to the next point or stop, and wait. A material financial/security ambiguity is an earlier decision gate; Go does not settle it. Dependencies on later points must be recorded explicitly rather than silently reducing completion scope. Hardening continues in later points as their behavior changes; point 2 is not a final verification claim for future code. Reports and licensing/distribution are outside this eight-point authorization.
 
-Point 1 implementation, selected current-format verification and documentation are complete within the owner-approved ordinary-money QIF envelope. The coordinator must commit the reviewed changes and ask whether to proceed to point 2 or stop. Do not start point 2 without that explicit answer.
+Point 1 is complete and committed as `933ede1` and `f77b4ac`. The owner subsequently authorized point 2, excluding Linux/Windows builds and native interactions from this checkpoint. The point-2 implementation and available verification are delivered with the explicit limitations below. The coordinator must complete review/link checks and commit, then ask whether to proceed to point 3 or stop. The excluded platforms remain unverified, not implicitly supported.
+
+## Point 2 completion handoff — 2026-10-26
+
+Read [hardening evidence](hardening.md), [current workload observations](import-ui-performance.md#current-format-point-2-observations--2026-10-26) and [status](status.md#point-2-current-format-hardening--2026-10-26). One agent implemented this checkpoint; no point-3 work started. No financial policy, import acceptance, schema, migration, license or publication decision changed.
+
+Delivered changes:
+
+- Optional pinned libFuzzer runtime construction, synthetic seeds/dictionary/boundary generator and expanded parser invariants; two actual coverage-guided sanitizer campaigns completed 750,204 executions without a parser crash.
+- Combined repair/category/rule/balance/commit/correction/Undo/overlap/restore workflows with before/after durable-boundary exits, disk-full/I/O injection, reopening, exact history/evidence checks and retries. Rules-disabled behavior is covered separately.
+- Accessible ledger semantics/names/selection and progress/error announcements; scripted keyboard/focus, native Cocoa and hidden-modal-state checks. The observed native AX tree is documented separately from unverified spoken output.
+- A bounded Qt delegate-reset fix using cacheBuffer zero, preserving model attachment, reuse, viewport and unsaved editors. Twenty warning-fatal repeat pairs and broad UI checks passed.
+- Scoped prepared read-plan reuse, direct exact occurrence-evidence retrieval, reduced search copies and duplicate category-head read removal. No validation, encryption or durability mechanism was disabled.
+
+The latest broad Release/sanitizer functional selections passed 75/75; final focused Debug/Release/sanitizer checks passed 6/6 and rules-off 5/5. Earlier Debug broad 75/75, final combined-I/O sanitizer cases, native Cocoa 3/3 and the exact commands are recorded in the guide. Do not turn these selections into a full 103-case-suite claim. Final benchmark-only frame validation passed a small native paired-cache smoke.
+
+A full 100k diagnostic completed all correctness assertions; its timing was sampled/overlapped and is not a controlled baseline. The final 200k interaction run completed correctness but had no native frame samples. The final 100k attempt produced valid cache-zero scrolling and retained the edit, then failed when default-cache frames were unavailable; it did not reach save/final completion. No extra large rerun is required for this checkpoint. Timings are non-monotonic single-run observations with no established cause or scalability claim.
+
+Remaining verification limits are explicit: actual VoiceOver speech and complete manual assistive traversal, a paired large native cache comparison, 200k native rendering, and the owner-excluded Linux/Windows builds/interactions are unverified. Imports/verified opening remain long operations. Physical power-loss behavior and broader future product workflows are not claimed by these process/I/O tests. Later points must retain and expand these checks as their behavior changes; other import formats will need exact evidence access adapted to their shared source representation.
+
+Implementation edits have stopped after this handoff. The coordinator should inspect the final diff, verify documentation links, commit all checkpoint files (including six explicitly excepted synthetic fuzz seeds), and ask **proceed to point 3 or stop**. Do not start the next point until the owner answers.
 
 ## Point 1 completion handoff — 2026-10-26
 

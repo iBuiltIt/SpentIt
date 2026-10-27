@@ -6,6 +6,30 @@ This is a bounded synthetic benchmark of the experimental durable UI, not a prod
 
 These native durable-UI measurements predate both the schema-7 search checkpoint and the current account-scoped formats. Separate 2026-10-26 Release application-search measurements covered 100,000/200,000 synthetic rows and are recorded in [status](status.md#search-selection-and-atomic-bulk-ledger-changes--2026-10-26). Those measurements exclude database/source-file loading and Qt rendering; do not substitute them for current native UI or replay-performance evidence.
 
+Current-format point-2 evidence and updated measurement boundaries are recorded in [hardening](hardening.md). The implementation and component-timing descriptions below describe the historical checkpoint; current benchmarks use the complete production gateway without the obsolete timing decorator.
+
+## Current-format point-2 observations — 2026-10-26
+
+The current production-gateway benchmark uses bank-v3/schema 16 with rules. Run `build/import-ui-rules-release/src/ui/spentit_import_benchmark 100000 --interactions` (or 200000) serially from a desktop session. This mode covers import, verified pending reopen, queries, inspection, unsaved scrolling and save/source/exact-balance assertions; default mode additionally covers saved/committed reopening and commit. See [full evidence, diagnostics and limitations](hardening.md).
+
+Final individual native Release command times in milliseconds:
+
+| Operation |100k final attempt |200k interaction run |
+|---|---:|---:|
+| Import |195517 |140846 |
+| Verified pending reopen |151032 |85432.2 |
+| Six sorts |222.61–364.17 |98.21–131.05 |
+| Match/empty/clear filters |220.75–919.84 |79.62–358.65 |
+| First/last inspection |228.97–233.48 |94.16–96.05 |
+| Save and refresh |Not reached |12427.2 |
+| Peak RSS observed (MiB) |569.48 before failure |1014.44 |
+
+The 200k interaction run completed all exact correctness assertions, but produced no frame samples; its rendering measurements are unavailable. The 100k final attempt produced 220 cache-zero frames (p95 20.43 ms, maximum 33.09 ms), preserving the unsaved edit, then failed because the default-cache pass produced no frames. It did not reach save or final correctness completion. A separate 100-row native smoke produced 228 frames in each cache mode, validating the paired harness on a small dataset. The benchmark now checks exposure and refuses to report empty native frame sets as zero latency.
+
+An earlier full 100k diagnostic completed all source, balance, save/reopen, commit/receipt and committed-reopen assertions, but was sampled and partially overlapped a delayed native accessibility wrapper. No build/test/profiler/native fixture overlapped the final pair. Their non-monotonic timings and differing callback cadence have no established cause; they are not a scaling or causal speedup claim. Large paired-cache rendering and 200k rendering remain unverified. Long imports/verified opening and occasional event-loop gaps remain performance limitations.
+
+Read improvements remove repeated SQL preparation within bounded read operations, avoid whole-file reparse during selected-record inspection, avoid empty-filter/string-sort copies, and reuse the already validated head in category-history verification. Exact row/history checks, encryption, journaling and durable writes remain intact. The historical implementation descriptions below predate those changes.
+
 ## Reproduction and measurement boundary
 
 Build the Release configuration described in [the durable UI guide](import-ui.md), then run from a desktop session:

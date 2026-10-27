@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <source_location>
+#include <cerrno>
 #include <sys/wait.h>
 using namespace spentit;
 using namespace spentit::storage;
@@ -22,6 +23,11 @@ template<class F> void rejected(F f){bool failed=false;try{f();}catch(const Impo
 ImportStore create(const fs::path& path){return ImportStore::create(path,password,"Checking",cad,"2026-01-01");}
 void setup(const fs::path& path){auto s=create(path);s.opening(0,"2026-01-01",Money(10000,cad));s.ingest("checking",input,qif::DateOrder::dmy);s.commit("checking",0,"checking-commit");s.create_account(2,"Japan",jpy,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(500,jpy));s.ingest("japan",input,qif::DateOrder::dmy);}
 void no_leaks(const fs::path& dir){for(const auto& entry:fs::directory_iterator(dir))if(entry.is_regular_file()){std::ifstream f(entry.path(),std::ios::binary);std::string bytes{std::istreambuf_iterator<char>(f),{}};check(bytes.find(password)==bytes.npos && bytes.find("PRIVATE-SYNTHETIC-ACCOUNTS")==bytes.npos && bytes.find("GROUP-FAULT-MARKER")==bytes.npos && !bytes.starts_with("SQLite format 3"));}}
+void exact_record_evidence(ImportStore& store,std::string_view batch){
+    const auto parsed=store.parsed_source(batch);const auto bytes=store.evidence(batch);
+    for(std::size_t i=0;i<parsed.records.size();++i){const auto& r=parsed.records[i];check(store.record_evidence({std::string(batch),i})==bytes.substr(r.begin,r.end-r.begin));}
+    bool missing=false;try{store.record_evidence({std::string(batch),parsed.records.size()});}catch(const std::exception&){missing=true;}check(missing);
+}
 void groups(){
     Directory d;const auto path=d.path/"group";
     const std::string bytes="!Option:AutoSwitch\n!Account\nNFirst synthetic\nTBank\nB25\n^\n!Type:Bank\nD1/1/2026\nTbad\nLFood/Class\n^\n!Account\nNSecond synthetic\nTCCard\nB-10\n^\n!Type:CCard\nD2/1/2026\nT-10\n^\n";
@@ -37,17 +43,18 @@ void groups(){
         s.select_account(3);s.review_import_balance("group",1,1,app::ReportedBalanceChoice::zero,"2026-01-01");
         rejected([&]{s.commit("group-account-1",1,"too-soon");});check(s.committed_balance()==Money(0,cad));
         s.select_account(2);check(s.evidence("group-account-0")==bytes);rejected([&]{s.opening(0,"2026-01-01",Money(25,cad));});
+        exact_record_evidence(s,"group-account-0");rejected([&]{s.record_evidence({"group-account-1",0});});
         app::RowView row=s.row({"group-account-0",0});check(row.source.repairable && !row.source.original_amount);
         imports::DraftRow repair{"2026-01-01","","",Transaction::repaired_import({},Money(2500,cad),{{"Food","",Money(2500,cad)}})};
-        s.save(row.identity,1,repair);s.decide(row.identity,2,{imports::Disposition::include,{}});
+        s.save(row.identity,1,repair);exact_record_evidence(s,"group-account-0");s.decide(row.identity,2,{imports::Disposition::include,{}});
         group=s.import_groups()[0];check(group.repairs_done==1 && group.repairs_total==1);
         s.review_import_balance("group",0,3,app::ReportedBalanceChoice::zero,"2026-01-01");check(s.account().opening.units()==0 && !s.account().opening_confirmed);
         check(s.import_groups()[0].unresolved==0);check(s.commit("group-account-0",3,"first-commit").after==Money(2500,cad));
         rejected([&]{s.abort_import_group("group");});s.select_account(3);
         s.review_import_balance("group",1,1,app::ReportedBalanceChoice::closing,"2026-01-01");check(s.import_groups()[0].unresolved==0);check(s.commit("group-account-1",1,"second-commit").after==Money(-1000,cad));s.verify();
-        s.backup_to(d.path/"backup",password);
+        exact_record_evidence(s,"group-account-1");s.backup_to(d.path/"backup",password);
     }
-    {auto restored=ImportStore::open(d.path/"backup",password);check(restored.import_groups()[0].state==app::GroupState::started);restored.verify();}
+    {auto restored=ImportStore::open(d.path/"backup",password);check(restored.import_groups()[0].state==app::GroupState::started);restored.select_account(2);exact_record_evidence(restored,"group-account-0");restored.select_account(3);exact_record_evidence(restored,"group-account-1");restored.verify();}
     {
         auto s=ImportStore::open(path,password);auto aborted=mapping;aborted[0].account=4;aborted[0].creation->identity=4;aborted[1].account=5;aborted[1].creation->identity=5;
         app::OperationContext capture;s.prepare_import_group("abort",bytes,qif::DateOrder::dmy,aborted,capture);app::OperationContext resume;s.resume_import_group("abort",resume);
@@ -269,6 +276,102 @@ void group_faults(bool crash){
         std::cout<<"Group operation "<<kind<<": "<<count<<" write/sync positions"<<std::endl;
     }
 }
+// Run the same history across rule-enabled and rule-disabled current formats.
+// Every crash case resumes the entire workflow, not only the interrupted command.
+constexpr int combined_steps=15;
+const std::string combined_source="!Account\nNCombined synthetic\nTBank\nB100\n^\n!Type:Bank\nD1/1/2026\nTinvalid\nPGROUP-FAULT-MARKER\nLFood\n^\n";
+const imports::Occurrence combined_id{"combined-account-0",0};
+std::int64_t revision(ImportStore& s,std::string_view id){for(const auto& b:s.batches())if(b.id==id)return b.revision;throw std::runtime_error("Missing combined batch");}
+bool combined_done(ImportStore& s,int step){
+    s.select_account(step==0?1:2);
+    const auto group=s.import_group_outcome("combined");
+    switch(step){
+    case 0:return group.has_value();
+    case 1:return group->state!=app::GroupState::captured;
+    case 2:return s.row(combined_id).draft.has_value();
+    case 3:return s.row(combined_id).decision.disposition==imports::Disposition::include;
+    case 4:return s.category_change_outcome("combined-category").has_value();
+    case 5:return !s.rules_supported() || s.rule_save_outcome("combined-rules").has_value();
+    case 6:return !s.rules_supported() || s.rule_apply_outcome("combined-apply").has_value();
+    case 7:return group->accounts[0].balance_choice!=app::ReportedBalanceChoice::unreviewed;
+    case 8:return s.outcome("combined-commit").has_value();
+    case 9:return s.committed_change_outcome("combined-correct").has_value();
+    case 10:return s.committed_change_outcome("combined-undo").has_value();
+    case 11:for(const auto& b:s.batches())if(b.id=="overlap")return true;return false;
+    case 12:return s.row({"overlap",0}).decision.disposition==imports::Disposition::duplicate;
+    case 13:return s.outcome("combined-overlap").has_value();
+    case 14:return s.category_change_outcome("combined-rename").has_value();
+    }return false;
+}
+void combined_step(ImportStore& s,int step){
+    s.select_account(step==0?1:2);app::OperationContext context;
+    switch(step){
+    case 0:s.prepare_import_group("combined",combined_source,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Combined synthetic",cad,"2026-01-01"}}},context);break;
+    case 1:s.resume_import_group("combined",context);break;
+    case 2:s.save(combined_id,revision(s,combined_id.batch),{"2026-01-01","GROUP-FAULT-MARKER","",Transaction::repaired_import({},Money(1000,cad),{{"Food","",Money(1000,cad),{},"source-0",0}})});break;
+    case 3:s.decide(combined_id,revision(s,combined_id.batch),{imports::Disposition::include,{}});break;
+    case 4:{app::CategoryRequest request{app::CategoryAction::create,"combined-food","Food",{},CategoryKind::leaf};const auto p=s.preview_category_change(request);s.apply_category_change("combined-category",p.request,p.catalog_revision);break;}
+    case 5:if(s.rules_supported()){app::RuleDefinitionImage rule;rule.identity="combined-rule";rule.label="Synthetic classification";rule.enabled=true;rule.scope=rules::Scope::transaction;rule.input=rules::InputField::payee;rule.expression="GROUP-FAULT-MARKER";rule.actions.category="combined-food";s.save_rules("combined-rules",{{rule}},s.rule_image().revision,context);}break;
+    case 6:if(s.rules_supported()){check(s.preview_pending_rules({combined_id.batch,revision(s,combined_id.batch),std::nullopt,false},context).changed==0);auto p=s.preview_pending_rules({combined_id.batch,revision(s,combined_id.batch),std::nullopt,true},context);check(p.changed==1);s.apply_pending_rules("combined-apply",{p.batch,p.batch_revision,p.ruleset_revision,p.catalog_revision,p.replace_manual},context);}break;
+    case 7:s.review_import_balance("combined",0,revision(s,combined_id.batch),app::ReportedBalanceChoice::closing,"2026-01-01");break;
+    case 8:s.commit(combined_id.batch,revision(s,combined_id.batch),"combined-commit");break;
+    case 9:case 10:{app::ChangeRequest request{step==9?app::ChangeKind::correct:app::ChangeKind::undo,combined_id,{},step==10?"combined-correct":""};if(step==9){auto draft=s.committed_entry(combined_id).current.draft;auto a=draft.transaction.allocations();a[0].amount=Money(1200,cad);draft.transaction=draft.transaction.corrected(Money(1200,cad),a);request.correction=draft;}const auto p=s.preview_committed_change(request);s.apply_committed_change_with_catalog(step==9?"combined-correct":"combined-undo",p.request,p.expected,p.preview_sequence,p.catalog_revision);break;}
+    case 11:s.ingest("overlap","D1/1/2026\nT10\nPGROUP-FAULT-MARKER\nLFood\n^\n",qif::DateOrder::dmy);break;
+    case 12:s.decide({"overlap",0},revision(s,"overlap"),{imports::Disposition::duplicate,combined_id});break;
+    case 13:s.commit("overlap",revision(s,"overlap"),"combined-overlap");break;
+    case 14:{app::CategoryRequest request{app::CategoryAction::rename,"combined-food","Meals",{}};const auto p=s.preview_category_change(request);s.apply_category_change("combined-rename",p.request,p.catalog_revision);break;}
+    }
+}
+void combined_verify(ImportStore& s){
+    s.select_account(2);s.verify();exact_record_evidence(s,combined_id.batch);check(s.committed_balance()==Money(10000,cad));check(s.evidence(combined_id.batch)==combined_source);check(!s.committed_entry(combined_id).current.draft.transaction.original_imported_amount());check(s.committed_entry(combined_id).current.draft.transaction.effective_total()==Money(1000,cad));check(s.outcome("combined-overlap")->included==0 && s.outcome("combined-overlap")->excluded==1);check(s.ledger(false).size()==1);check(s.committed_changes().size()==2);
+    if(s.rules_supported()){const auto binding=s.committed_entry(combined_id).current.draft.transaction.allocations()[0].category_binding;check(binding && binding->identity=="combined-food");}
+}
+template<class F>void isolated_combined(F work){
+    // The coordinator never opens SQLCipher. Each scenario starts without the
+    // previous scenario's ASan allocator/quarantine state before it forks a
+    // deliberate crash child. No sanitizer checks or durability are disabled.
+    const auto child=fork();check(child>=0);
+    if(child==0){try{work();_exit(0);}catch(const std::exception& e){std::cerr<<e.what()<<std::endl;_exit(1);}}
+    int status=0;pid_t waited;do{waited=waitpid(child,&status,0);}while(waited<0 && errno==EINTR);
+    if(waited!=child || !WIFEXITED(status) || WEXITSTATUS(status)!=0)throw std::runtime_error("Isolated combined scenario failed, status "+std::to_string(status));
+}
+void combined_case(int interrupted,ImportPhase phase){
+        Directory d;const auto path=d.path/"combined";bool supported=false;
+        {auto s=create(path);supported=s.rules_supported();s.opening(0,"2026-01-01",Money(0,cad));for(int step=0;step<interrupted;++step)combined_step(s,step);}
+        if(interrupted>=0 && (!supported && (interrupted==5 || interrupted==6)))return;
+        if(interrupted>=0){
+            const auto child=fork();check(child>=0);
+            if(child==0){auto s=ImportStore::open(path,password);s.observer([&](ImportPhase at){if(at==phase)_exit(72);});combined_step(s,interrupted);_exit(0);}
+            int status=0;pid_t waited;do{waited=waitpid(child,&status,0);}while(waited<0 && errno==EINTR);
+            if(waited!=child || !WIFEXITED(status) || WEXITSTATUS(status)!=72)throw std::runtime_error("Combined child exit mismatch at step "+std::to_string(interrupted)+", phase "+std::to_string(static_cast<int>(phase))+", status "+std::to_string(status));
+            auto s=ImportStore::open(path,password);
+            if(combined_done(s,interrupted)!=(phase==ImportPhase::after_commit))throw std::runtime_error("Combined durable boundary mismatch at step "+std::to_string(interrupted)+", phase "+std::to_string(static_cast<int>(phase)));
+        }
+        {auto s=ImportStore::open(path,password);for(int step=std::max(0,interrupted);step<combined_steps;++step)if(!combined_done(s,step))combined_step(s,step);combined_verify(s);s.backup_to(d.path/"restored",password);}
+        {auto restored=ImportStore::open(d.path/"restored",password);combined_verify(restored);}
+        no_leaks(d.path);
+}
+void combined_recovery(){
+    for(int interrupted=-1;interrupted<combined_steps;++interrupted)
+        for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit})
+            isolated_combined([&]{combined_case(interrupted,phase);});
+}
+void combined_io(){
+    fault_vfs::install();int cases=0;
+    for(int interrupted=0;interrupted<combined_steps;++interrupted)isolated_combined([&]{
+        int writes=0;bool supported=false;
+        {Directory d;auto s=create(d.path/"count");supported=s.rules_supported();s.opening(0,"2026-01-01",Money(0,cad));for(int step=0;step<interrupted;++step)combined_step(s,step);if(!supported && (interrupted==5 || interrupted==6))return;fault_vfs::arm(-1);combined_step(s,interrupted);writes=fault_vfs::seen;fault_vfs::disarm();}check(writes>0);
+        // Representative first/middle/last write failures complement full
+        // per-command sweeps; every case finishes and restores the full history.
+        for(const int position:{1,(writes+1)/2,writes}){
+            Directory d;const auto path=d.path/"combined";
+            {auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));for(int step=0;step<interrupted;++step)combined_step(s,step);fault_vfs::arm(position,cases%2==0?SQLITE_FULL:SQLITE_IOERR_WRITE);try{combined_step(s,interrupted);}catch(const ImportError&){}fault_vfs::disarm();}
+            {auto s=ImportStore::open(path,password);s.verify();(void)combined_done(s,interrupted);for(int step=interrupted;step<combined_steps;++step)if(!combined_done(s,step))combined_step(s,step);combined_verify(s);s.backup_to(d.path/"restore",password);}
+            {auto s=ImportStore::open(d.path/"restore",password);combined_verify(s);}no_leaks(d.path);++cases;
+        }
+        std::cout<<"Combined workflow I/O step "<<interrupted<<": "<<cases<<" cases"<<std::endl;
+    });
+}
 void execute(ImportStore& s,bool creation){if(creation)s.create_account(3,"Savings",cad,"2026-01-01");else{s.select_account(2);s.commit("japan",0,"japan-commit");}}
 void recovered(const fs::path& path,bool creation){auto s=ImportStore::open(path,password);check(s.committed_balance()==Money(9000,cad));s.select_account(2);const auto result=s.outcome("japan-commit");check(s.committed_balance()==Money(result?490:500,jpy));if(creation){check(!result);check(s.accounts().size()==2 || s.accounts().size()==3);}execute(s,creation);s.verify();}
 void faults(bool crash){
@@ -287,4 +390,4 @@ void faults(bool crash){
     }
 }
 }
-int main(int argc,char** argv){try{std::string mode=argc>1?argv[1]:"basics";if(mode=="basics")basics();else if(mode=="groups"){groups();group_transfers();group_balances();group_duplicates_and_protection();}else if(mode=="group_io")group_faults(false);else if(mode=="group_crashes")group_faults(true);else if(mode=="validation"){validation();group_validation();}else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;std::cout<<"Accounts "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{std::string mode=argc>1?argv[1]:"basics";if(mode=="basics")basics();else if(mode=="combined")combined_recovery();else if(mode=="combined_io")combined_io();else if(mode=="groups"){groups();group_transfers();group_balances();group_duplicates_and_protection();}else if(mode=="group_io")group_faults(false);else if(mode=="group_crashes")group_faults(true);else if(mode=="validation"){validation();group_validation();}else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;std::cout<<"Accounts "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
