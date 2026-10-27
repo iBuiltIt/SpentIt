@@ -4,7 +4,7 @@ Last updated: 2026-10-26
 
 This is a partial implementation of [feature 009](../features/009-durable-import-milestone.md), authorized by the owner's Go. It is an optional synthetic-data experiment, not a production financial-document application. The existing sheet is still session-only. No private exports were opened or copied.
 
-Current extensions include [multiple account workspaces](accounts.md), [ordinary committed changes](committed-changes.md), [categories](categories.md), [durable rules](durable-rules.md), and [search/atomic bulk operations](search-ledger.md). The earlier milestone boundaries and dated results below are historical, not a statement that these extensions are absent. Experimental formats are disposable until an owner-announced release; no migration or upgrade infrastructure is required.
+Current extensions include [QIF transfer destination resolution](qif-transfers.md), [multiple account workspaces](accounts.md), [ordinary committed changes](committed-changes.md), [categories](categories.md), [durable rules](durable-rules.md), and [search/atomic bulk operations](search-ledger.md). The earlier milestone boundaries and dated results below are historical, not a statement that these extensions are absent. Experimental formats are disposable until an owner-announced release; no migration or upgrade infrastructure is required.
 
 ## Implemented boundaries
 
@@ -137,4 +137,4 @@ Schema 4 extends this experiment with [current committed interpretations, remova
 
 ## Category catalog and allocation metadata — 2026-10-25
 
-Schema 5 adds the bounded [category catalog and assignment workflow](categories.md), with immutable definition history, current taxonomy resolution, explicit unmapped labels and stable source-allocation metadata. Those earlier-format capability statements describe the historical checkpoint; current account-scoped builds reject earlier layouts without migration. The subsequent [durable rules integration](durable-rules.md) persists rule definitions and explicitly applies results to pending drafts; current schema 10 retains bulk receipts and account-scoped operations.
+Schema 5 adds the bounded [category catalog and assignment workflow](categories.md), with immutable definition history, current taxonomy resolution, explicit unmapped labels and stable source-allocation metadata. Those earlier-format capability statements describe the historical checkpoint; current account-scoped builds reject earlier layouts without migration. The subsequent [durable rules integration](durable-rules.md) persists rule definitions and explicitly applies results to pending drafts; current schema 12 retains bulk receipts and account-scoped operations.

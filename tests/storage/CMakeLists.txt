@@ -12,7 +12,7 @@ target_link_libraries(spentit_transfer_store_tests PRIVATE spentit_import_store 
 spentit_compiler_options(spentit_transfer_store_tests)
 add_test(NAME transferstore.basics COMMAND spentit_transfer_store_tests basics)
 add_test(NAME transferstore.imports COMMAND spentit_transfer_store_tests imports)
-foreach(case IN ITEMS splits manual_evidence validation io crashes)
+foreach(case IN ITEMS splits manual_evidence qif validation io crashes)
   add_test(NAME transferstore.${case} COMMAND spentit_transfer_store_tests ${case})
   set_tests_properties(transferstore.${case} PROPERTIES TIMEOUT 1200)
 endforeach()

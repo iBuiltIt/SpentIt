@@ -83,7 +83,7 @@ void review(){
 }
 void errors(){
     Directory d;auto s=create(d.path/"doc");
-    const auto b=s.ingest("bad","!Type:Bank\nD1/1/2026\nT1\nL[Other]\n^\n",qif::DateOrder::dmy);
+    const auto b=s.ingest("bad","!Type:Bank\nD1/1/2026\nT1\nL[Other\n^\n",qif::DateOrder::dmy);
     check(b.blocked && !s.projected_balance());fails([&]{s.ledger(true);});fails([&]{s.commit("bad",0,"bad-op");});
     check(s.committed_balance().units()==0);s.discard("bad",0);s.discard("bad",0);check(!s.evidence("bad").empty());
     s.ingest("good",source,qif::DateOrder::dmy);auto edit=*s.row({"good",0}).draft;edit.date="2026-02-30";
@@ -143,7 +143,7 @@ void repairs(){
         check(s.batches().back().blocked); // no auto-repair or silent exclusion
         s.discard("again",0);s.verify();}
     // A repairable first diagnostic must not hide later unsupported content.
-    {auto s=create(d.path/"unsafe");s.ingest("bad","D31/02/2026\nT-10\nL[Other]\n^\n",qif::DateOrder::dmy);
+    {auto s=create(d.path/"unsafe");s.ingest("bad","D31/02/2026\nT-10\nL[Other\n^\n",qif::DateOrder::dmy);
         check(!s.row({"bad",0}).source.repairable);
         auto edit=repaired_row(s.row({"bad",0}).source,"2026-02-28",-1000);
         fails([&]{s.save({"bad",0},0,edit);});check(s.batches()[0].blocked);s.verify();}

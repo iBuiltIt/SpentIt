@@ -31,10 +31,21 @@ void validate_draft(const qif::Record& source,const DraftRow& edit) {
     if (qif::date(edit.date.substr(8,2)+"/"+edit.date.substr(5,2)+"/"+edit.date.substr(0,4),qif::DateOrder::dmy)!=edit.date) invalid();
     text(edit.payee); text(edit.memo);
     if (edit.transaction.allocations().size()>qif::max_allocations) invalid();
+    // Source transfer intent cannot disappear through an ordinary category/split edit.
+    for(const auto& original:source.source_allocations)if(qif::transfer_destination(original.category)) {
+        const auto& allocations=edit.transaction.allocations();
+        const auto found=std::find_if(allocations.begin(),allocations.end(),[&](const auto& a){return a.identity==original.identity;});
+        if(found==allocations.end() || found->source_ordinal!=original.source_ordinal || found->category!=original.category)throw std::invalid_argument("Preserve imported transfer allocations; resolve their destinations in Transfers");
+    }
     std::size_t size=edit.payee.size()+edit.memo.size();
     for (const auto& allocation:edit.transaction.allocations()) {
         text(allocation.category); text(allocation.memo);
-        if (!qif::supported_category(allocation.category)) invalid();
+        if (!qif::supported_category(allocation.category) && !qif::transfer_destination(allocation.category)) invalid();
+        if(qif::transfer_destination(allocation.category)) {
+            if(allocation.category_binding || allocation.category_rule)invalid();
+            const auto found=std::find_if(source.source_allocations.begin(),source.source_allocations.end(),[&](const auto& a){return a.identity==allocation.identity && a.category==allocation.category;});
+            if(found==source.source_allocations.end())invalid();
+        }
         size+=allocation.category.size()+allocation.memo.size();
         if (size>qif::max_record) invalid();
     }

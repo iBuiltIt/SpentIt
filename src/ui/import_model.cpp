@@ -36,9 +36,9 @@ QString ownerName(FieldOwnership owner){
 QVariantMap allocationMap(const Allocation& a,const QVariantMap& labels={}) {
     const auto categoryId=a.category_binding?text(a.category_binding->identity):QString{};
     const auto display=labels.value(categoryId).toMap();
-    const auto label=categoryId.isEmpty()?(a.category.empty()?QString("Uncategorized"):"Unmapped: "+text(a.category)):display.value("path",text(a.category)).toString()+(display.value("archived").toBool()?" [Archived]":"");
+    const auto label=qif::transfer_destination(a.category)?"Transfer destination: "+text(a.category):categoryId.isEmpty()?(a.category.empty()?QString("Uncategorized"):"Unmapped: "+text(a.category)):display.value("path",text(a.category)).toString()+(display.value("archived").toBool()?" [Archived]":"");
     return {{"category",text(a.category)},{"memo",text(a.memo)},{"amount",money(a.amount)},
-        {"categoryId",categoryId},{"bindingRevision",a.category_binding?QString::number(a.category_binding->catalog_revision):QString{}},
+        {"transferDestination",qif::transfer_destination(a.category)?text(std::string(*qif::transfer_destination(a.category))):QString{}},{"transferLabel",money(a.amount)+" · "+text(a.category)+" · "+text(a.identity)},{"categoryId",categoryId},{"bindingRevision",a.category_binding?QString::number(a.category_binding->catalog_revision):QString{}},
         {"allocationId",text(a.identity)},{"categoryDisplay",label},{"categoryTouched",false},{"memoTouched",false},
         {"sourceOrdinal",a.source_ordinal?QVariant(static_cast<int>(*a.source_ordinal)):QVariant(-1)},
         {"categoryOwner",ownerName(a.category_owner)},{"memoOwner",ownerName(a.memo_owner)},{"categoryRule",markText(a.category_rule)},{"memoRule",markText(a.memo_rule)}};
@@ -76,13 +76,14 @@ app::RuleDefinitionImage imageFrom(const QVariantMap& value){
 }
 QString effectName(rules::Effect effect){
     switch(effect){case rules::Effect::applied:return "applied";case rules::Effect::compatible:return "compatible";case rules::Effect::competing:return "competing";
-        case rules::Effect::manual_protected:return "manual_protected";case rules::Effect::missing_parent:return "missing_parent";}
+        case rules::Effect::transfer_protected:return "transfer_protected";case rules::Effect::manual_protected:return "manual_protected";case rules::Effect::missing_parent:return "missing_parent";}
     return {};
 }
 QString effectWording(rules::Effect effect){
     switch(effect){case rules::Effect::applied:return "This rule will assign the field";
         case rules::Effect::compatible:return "Also matches and agrees; shadowed by the earlier field winner";
         case rules::Effect::competing:return "Also matches and disagrees; shadowed by the earlier field winner";
+        case rules::Effect::transfer_protected:return "Transfer destination is preserved; resolve it in Transfers";
         case rules::Effect::manual_protected:return "Matches; the manual value, including a blank, is kept";
         case rules::Effect::missing_parent:return "Inheritance was not applied because parent classification is missing";}
     return {};
@@ -371,6 +372,13 @@ struct ImportModel::Worker {
         selected["decision"]=static_cast<int>(row.decision.disposition);
         selected["reviewStale"]=row.review_stale;
         if(row.review_stale) selected["diagnostic"]=selected.value("diagnostic").toString()+" The matched committed record changed after this review. Reconfirm Include as separate transaction or the selected duplicate decision before committing this import.";
+        const auto transferLinks=repo.transfers();
+        for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category)) {
+            const transfers::Endpoint endpoint{acct.identity,{batch,ordinal},allocation.identity};bool resolved=false;
+            for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed)
+                resolved|=side->endpoint==endpoint || (side->attached_evidence && side->attached_evidence->endpoint==endpoint) || (side->proposed_evidence && side->proposed_evidence->endpoint==endpoint);
+            if(!resolved)selected["diagnostic"]=selected.value("diagnostic").toString()+" Unresolved QIF transfer destination: "+text(allocation.category)+". Review this allocation in Transfers; choose its destination or match an existing transfer before committing.";
+        }
         selected["transferEligible"]=found->state==app::BatchState::pending && row.decision.disposition==imports::Disposition::include;
         const bool committed=found->state==app::BatchState::committed && row.decision.disposition==imports::Disposition::include && !row.excluded_by_clear;
         selected["committed"]=committed;
@@ -393,7 +401,7 @@ struct ImportModel::Worker {
             selected["duplicate"]=text(row.decision.duplicate_of->batch)+" / "+QString::number(row.decision.duplicate_of->ordinal+1);
             selected["removedDuplicate"]=repo.committed_changes_supported() && !repo.committed_entry(*row.decision.duplicate_of).current.active;
         }
-        for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed && (side->endpoint.entry==imports::Occurrence{batch,ordinal} || (side->attached_evidence && side->attached_evidence->endpoint.entry==imports::Occurrence{batch,ordinal}) || (side->proposed_evidence && side->proposed_evidence->endpoint.entry==imports::Occurrence{batch,ordinal}))){selected["editable"]=false;selected["canCorrect"]=false;selected["transferId"]=text(value.link.identity);}
+        for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed && (side->endpoint.entry==imports::Occurrence{batch,ordinal} || (side->attached_evidence && side->attached_evidence->endpoint.entry==imports::Occurrence{batch,ordinal}) || (side->proposed_evidence && side->proposed_evidence->endpoint.entry==imports::Occurrence{batch,ordinal}))){selected["editable"]=false;selected["canCorrect"]=false;selected["transferId"]=text(value.link.identity);}
         if(row.excluded_by_clear)selected["diagnostic"]="Cleared from this workspace; immutable source evidence retained.";
         attachRules(repo,{batch,ordinal},context);
     }

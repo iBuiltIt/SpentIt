@@ -106,3 +106,7 @@ The owner selected date and split-total repair first. New experimental schema-2 
 ## Account-scoped follow-up — 2026-10-26
 
 The [multi-account prerequisite](../doc/accounts.md) gives each account an independent pending import, duplicate review and ordinary history. Identical source bytes in another account are not automatically excluded. This does not implement transfer evidence attachment or multi-account QIF files. Earlier experimental formats are now rejected without migration; the earlier dated schema-compatibility notes are historical.
+
+## QIF transfer destinations — 2026-10-26
+
+The [bounded destination extension](../doc/qif-transfers.md) admits whole-record and split `[Account]` notation, requires explicit account/link resolution, and guards commit and rule application against losing transfer intent. See that contract and its verification link; multi-account QIF files and the wider transfer repair/reversal scope remain deferred.

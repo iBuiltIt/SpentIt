@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-26
 
-This implements the multi-account prerequisite for [transfer lifecycle work](../features/008-transfer-matching-and-lifecycle.md). Accounts can be created and selected in the durable UI, with independent ordinary QIF imports, opening balances, drafts, committed balances, corrections and history. The subsequent [bounded transfer integration](transfer-engine.md) adds links, generated counterparts, protected drafts and provisional evidence matching. QIF transfer destinations remain explicitly unsupported. This remains a synthetic-data experiment.
+This implements the multi-account prerequisite for [transfer lifecycle work](../features/008-transfer-matching-and-lifecycle.md). Accounts can be created and selected in the durable UI, with independent ordinary QIF imports, opening balances, drafts, committed balances, corrections and history. The subsequent [bounded transfer integration](transfer-engine.md) adds links, generated counterparts, protected drafts and provisional evidence matching. [QIF transfer destinations](qif-transfers.md) now require explicit resolution through those commands. This remains a synthetic-data experiment.
 
 ## Persistence and command boundary
 
@@ -24,7 +24,7 @@ Switching clears previews, receipts and history from the previous account and lo
 
 ## Experimental formats
 
-Rules-enabled builds create and open schema **10**; rules-off builds create and open schema **11**. These are distinct experimental layouts, not an upgrade sequence between builds. Both include account ownership and creation receipts; only schema 10 contains rule persistence and bulk receipts. Older experimental formats and the other build's layout are rejected before storage-setting changes, without migration or modification of their contents. This follows the owner's pre-release format policy; existing compatibility fixtures now test rejection rather than continued operation.
+Rules-enabled builds create and open schema **12**; rules-off builds create and open schema **13**. These are distinct experimental layouts, not an upgrade sequence between builds. Both include account ownership and creation receipts; only schema 12 contains rule persistence and bulk receipts. Older experimental formats and the other build's layout are rejected before storage-setting changes, without migration or modification of their contents. This follows the owner's pre-release format policy; existing compatibility fixtures now test rejection rather than continued operation.
 
 ## Verification
 

@@ -100,6 +100,29 @@ private slots:
             seam->fault=OutcomeGateway::none;seam->attempted=false;run(m,"open",{{"path",path}});QCOMPARE(m.state().value("transfers").toList().size(),fault==OutcomeGateway::before?0:1);
         }
     }
+    void qifTransferResolution() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        const auto path=dir.path()+"/doc";create(m,path);run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2/1/2026\nT-101\nSFee\n$-1\nS[Visa]\n$-100\n^\n")},{"profile","DMY"}});
+        QVERIFY(selected(m).value("diagnostic").toString().contains("QIF transfer destination"));
+        QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().last().toMap().value("transferDestination").toString(),QString("Visa"));
+        run(m,"commit",{},false);QVERIFY(m.error().contains("Resolve every QIF"));
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto visual=[](auto&& self,QQuickItem* item)->QQuickItem*{if(item->objectName()=="splitCategory_1")return item;for(auto* child:item->childItems())if(auto* found=self(self,child))return found;return nullptr;};
+        QTRY_VERIFY(visual(visual,window->contentItem()));
+        QVERIFY(QMetaObject::invokeMethod(visual(visual,window->contentItem()),"clicked"));
+        QCOMPARE(root->findChild<QObject*>("transferAllocation")->property("currentIndex").toInt(),1);
+        QCOMPARE(root->findChild<QObject*>("transferDestination")->property("currentIndex").toInt(),0);
+        QVERIFY(!root->findChild<QObject*>("assignTransfer")->property("enabled").toBool());
+        run(m,"transfer_from_draft",{{"operation","resolve-qif"},{"sequence",m.state().value("transferSequence")},{"link","qif-link"},{"destination","2"},{"allocation","source-1"}});
+        run(m,"commit");QCOMPARE(m.state().value("committed").toString(),QString("-101.00"));
+        run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("transfers").toList().size(),1);
+        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("projected").toString(),QString("100.00"));QCOMPARE(m.state().value("committed").toString(),QString("0.00"));
+    }
     void transferWorkflow() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
@@ -118,7 +141,7 @@ private slots:
         QCOMPARE(m.state().value("accountId").toString(),QString("2"));QVERIFY(selected(m).value("localTransfer").toBool());
         QCOMPARE(m.state().value("committed").toString(),QString("0.00"));QVERIFY(m.state().value("transfers").toList().first().toMap().value("protected").toBool());
         transfer("transfer_accept");transfer("transfer_commit");
-        const auto source=fixture(dir.path(),"D3/1/2026\nT100\nPBank payment\n^\n");
+        const auto source=fixture(dir.path(),"D3/1/2026\nT100\nPBank payment\nL[Checking]\n^\n");
         run(m,"import",{{"path",source},{"profile","DMY"}});const auto batch=selected(m).value("batch");
         run(m,"transfer_candidates",{{"link","test-link"}});QCOMPARE(m.state().value("transferCandidates").toList().size(),1);
         transfer("transfer_match",{{"batch",batch},{"ordinal",0},{"allocation","source-0"}});
@@ -395,7 +418,7 @@ private slots:
         ImportModel other(storage::document_gateway());run(other,"open",{{"path",path}},false);QVERIFY(!other.state().value("unlockRequired").toBool());
         run(m,"close");run(m,"open",{{"path",dir.path()+"/missing"}},false);QVERIFY(!m.state().value("unlockRequired").toBool());QVERIFY(!QFile::exists(dir.path()+"/missing"));
         create(m,dir.path()+"/new");QCOMPARE(m.state().value("committed").toString(),"0.00");QVERIFY(selected(m).isEmpty());
-        const auto invalid=fixture(dir.path(),"D1/1/2026\nT1\nL[Other]\n^\n");run(m,"import",{{"path",invalid},{"profile","DMY"}});
+        const auto invalid=fixture(dir.path(),"D1/1/2026\nT1\nL[Other\n^\n");run(m,"import",{{"path",invalid},{"profile","DMY"}});
         QVERIFY(!m.state().value("projectionAvailable").toBool());QCOMPARE(m.rowCount(),0);run(m,"commit",{},false);
         QVERIFY(!selected(m).value("diagnostic").toString().isEmpty());run(m,"discard");QCOMPARE(m.state().value("committed").toString(),"0.00");
         run(m,"import",{{"path",fixture(dir.path(),QByteArray(1,static_cast<char>(0xff)))},{"profile","DMY"}});

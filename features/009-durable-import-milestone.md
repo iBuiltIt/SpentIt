@@ -69,7 +69,7 @@ After an uncertain commit outcome, reopen/query the durable operation identity b
 
 ### Transfer boundary
 
-Account-reference categories and other supported-profile transfer indications block the whole batch with an explicit unsupported-transfer diagnostic. Transfer selectors are unavailable. Do not strip brackets, convert these to category text, fabricate counterparts, or drop their amounts to make commit succeed. Unknown financial fields also block rather than bypass this boundary. Unmarked bank movements cannot be reliably identified from payee/amount alone; this experiment therefore makes no claim of transfer recognition or spending-report correctness. Supporting transfers later requires feature 008's protected-draft lifecycle and unresolved policies to be designed first.
+Historical first-slice boundary (superseded for bracketed destinations by [explicit QIF transfer resolution](../doc/qif-transfers.md)): account-reference categories and other supported-profile transfer indications block the whole batch with an explicit unsupported-transfer diagnostic. Transfer selectors are unavailable. Do not strip brackets, convert these to category text, fabricate counterparts, or drop their amounts to make commit succeed. Unknown financial fields also block rather than bypass this boundary. Unmarked bank movements cannot be reliably identified from payee/amount alone; this experiment therefore makes no claim of transfer recognition or spending-report correctness. Supporting transfers later requires feature 008's protected-draft lifecycle and unresolved policies to be designed first.
 
 ### Balances and reconciliation
 

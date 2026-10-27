@@ -2,6 +2,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <set>
+#include <tuple>
 #include <map>
 #include <sqlite3.h>
 #include <algorithm>
@@ -107,12 +108,29 @@ std::int64_t integer(std::size_t v) {
     if (v>static_cast<std::size_t>(INT64_MAX)) fail(SQLITE_TOOBIG);
     return static_cast<std::int64_t>(v);
 }
+using ResolvedTransfers=std::set<std::tuple<std::string,std::size_t,std::string>>;
+ResolvedTransfers resolved_transfers(const std::vector<app::TransferView>& values) {
+    ResolvedTransfers result;
+    auto add=[&](const transfers::Endpoint& e){result.emplace(e.entry.batch,e.entry.ordinal,e.allocation);};
+    for(const auto& v:values)for(const auto* side:{&v.link.origin,&v.link.destination}) {
+        if(side->state==transfers::State::removed)continue;
+        add(side->endpoint);
+        if(side->proposed_evidence)add(side->proposed_evidence->endpoint);
+        if(side->attached_evidence)add(side->attached_evidence->endpoint);
+    }
+    return result;
+}
+void require_qif_transfers(const imports::Occurrence& id,const imports::DraftRow& draft,const ResolvedTransfers& resolved) {
+    for(const auto& a:draft.transaction.allocations())if(qif::transfer_destination(a.category) && !resolved.contains({id.batch,id.ordinal,a.identity}))
+        fail(SQLITE_CONSTRAINT,"Resolve every QIF transfer destination in Transfers before committing: choose an account or explicitly match an existing transfer");
+}
+
 #include "transfer_schema.inc"
 #include "transfer_codec.inc"
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=11;
+PRAGMA user_version=13;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -228,7 +246,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=10;
+PRAGMA user_version=12;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -390,17 +408,17 @@ CREATE TRIGGER bulk_members_keep BEFORE DELETE ON bulk_members BEGIN SELECT RAIS
 #endif
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="11"
+    return version=="3" || version=="4" || version=="13"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="10"
+        || version=="6" || version=="12"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="11"
+    return version=="4" || version=="13"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="10"
+        || version=="6" || version=="12"
 #endif
         ;
 }
@@ -453,14 +471,14 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="11"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="13"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="10"
+    || version=="6" || version=="12"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="10";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="12";
 #else
     (void)db;return false;
 #endif
@@ -529,9 +547,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="10";
+        constexpr const char* expected_format="12";
 #else
-        constexpr const char* expected_format="11";
+        constexpr const char* expected_format="13";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"Unsupported experimental format; no migration was attempted");
@@ -924,12 +942,13 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
     const auto acct=account();
     if(!acct.opening_confirmed) fail(SQLITE_CONSTRAINT,"Confirm the opening balance before the first commit");
     const auto before=committed_balance();
+    const auto resolved=resolved_transfers(all_transfers());
     std::size_t included=0,excluded=0; std::vector<Money> amounts; std::set<imports::Occurrence> matched;
     for(std::size_t i=0;i<b.count;++i) {
         if(!retained_member(impl_->db,id,i)){++excluded;continue;}
         auto r=load_row({std::string(id),i},false);
         if(r.decision.disposition==imports::Disposition::unresolved) fail(SQLITE_CONSTRAINT,"Review possible duplicates before committing");
-        if(r.decision.disposition==imports::Disposition::include) { ++included; amounts.push_back(r.draft->transaction.effective_total()); }
+        if(r.decision.disposition==imports::Disposition::include) { require_qif_transfers({std::string(id),i},*r.draft,resolved); ++included; amounts.push_back(r.draft->transaction.effective_total()); }
         else if(r.decision.disposition==imports::Disposition::duplicate && r.decision.duplicate_of) {
             const auto& target=*r.decision.duplicate_of;
             const auto other=load_row(target,false);
@@ -1012,7 +1031,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
     }
     const auto acct=account();
     Statement invalid(impl_->db,
-        "SELECT 1 FROM batches b WHERE parser!='bank-v1' OR (state=1)!=(EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
+        "SELECT 1 FROM batches b WHERE parser!='bank-v2' OR (state=1)!=(EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
         "OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR revision+1!=(SELECT count(*) FROM events WHERE batch=b.id) "
         "UNION ALL SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch WHERE v.revision>b.revision "
         "UNION ALL SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM batches b WHERE b.id=s.id) "
@@ -1083,7 +1102,9 @@ void ImportStore::verify(const app::OperationContext* context) const {
                     if(aa.integer(0)!=integer(allocations.size()) || allocations.size()>=qif::max_allocations) fail(SQLITE_CORRUPT);
                     allocations.push_back({aa.bytes(1),aa.bytes(2),Money(aa.integer(3),acct.currency)});
                 }
-                imports::validate_draft(source,{vv.bytes(1),vv.bytes(2),vv.bytes(3),Transaction::corrected_import(*source.original_amount,Money(vv.integer(4),acct.currency),std::move(allocations))});
+                imports::DraftRow historical{vv.bytes(1),vv.bytes(2),vv.bytes(3),Transaction::corrected_import(*source.original_amount,Money(vv.integer(4),acct.currency),std::move(allocations))};
+                load_metadata(impl_->db,{b.id,i},vv.integer(0),historical,false);
+                imports::validate_draft(source,historical);
                 if(vv.integer(5)==2) {
                     imports::Occurrence target{vv.bytes(6),static_cast<std::size_t>(vv.integer(7))};
                     if(account_for_batch(target.batch).identity!=acct.identity || target.batch==b.id || batch(impl_->db,target.batch).state!=app::BatchState::committed) fail(SQLITE_CORRUPT);

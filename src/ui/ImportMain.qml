@@ -27,7 +27,7 @@ ApplicationWindow {
         request.operation=workflow.newIdentity()
         guard(function(){workflow.command(action,request)})
     }
-    function transferDestinations() {return (s.accounts||[]).filter(function(a){return a.id!==s.accountId})}
+    function transferDestinations() {return [{id:"",name:"Choose destination explicitly"}].concat((s.accounts||[]).filter(function(a){return a.id!==s.accountId}).map(function(a){return {id:a.id,name:a.name+" · "+a.currency+" · account "+a.id}}))}
     property var pendingCounterpart: null
     property var accountViewports: ({})
     function rememberAccountViewport() {
@@ -56,24 +56,25 @@ ApplicationWindow {
                 width:transferDialog.availableWidth;spacing:12;enabled:!workflow.busy
                 Label {text:"Each account commits separately. Acceptance without a bank match preserves provenance and permits a later match.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 GroupBox {
-                    title:"Create a transfer";Layout.fillWidth:true
+                    title:"Resolve an imported destination or create a transfer";Layout.fillWidth:true
                     ColumnLayout {
                         anchors.fill:parent
                         RowLayout {
                             Label {text:"Destination"}
-                            ComboBox {id:transferDestination;objectName:"transferDestination";model:transferDestinations();textRole:"name";Layout.fillWidth:true;Accessible.name:"Transfer destination account"}
+                            ComboBox {id:transferDestination;objectName:"transferDestination";model:transferDestinations();textRole:"name";currentIndex:0;onModelChanged:currentIndex=0;Layout.fillWidth:true;Accessible.name:"Transfer destination account"}
                         }
                         RowLayout {
                             TextField {id:transferDate;objectName:"transferDate";text:Qt.formatDate(new Date(),"yyyy-MM-dd");placeholderText:"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
                             TextField {id:transferAmount;objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
                             TextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
-                            Button {objectName:"createManualTransfer";text:"Create manual draft";enabled:transferDestination.currentIndex>=0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
+                            Button {objectName:"createManualTransfer";text:"Create manual draft";enabled:transferDestination.currentIndex>0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
                         }
+                        Label {text:"QIF [Account] names are source evidence. Choose the actual destination explicitly, even when names match. If a transfer already exists below, match its bank allocation instead of creating another movement. Create missing accounts from Accounts first.";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
                         TextField {id:transferMemo;placeholderText:"Memo (optional)";Layout.fillWidth:true;Accessible.name:"Manual transfer memo"}
                         RowLayout {
                             Label {text:"Selected record allocation"}
-                            ComboBox {id:transferAllocation;objectName:"transferAllocation";model:(selected.draft||{}).splits||[];textRole:"amount";Layout.fillWidth:true;Accessible.name:"Selected transfer allocation"}
-                            Button {objectName:"assignTransfer";text:"Use as transfer";enabled:!!selected.transferEligible && transferAllocation.currentIndex>=0 && transferDestination.currentIndex>=0;onClicked:transferCommand("transfer_from_draft",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
+                            ComboBox {id:transferAllocation;objectName:"transferAllocation";model:(selected.draft||{}).splits||[];textRole:"transferLabel";Layout.fillWidth:true;Accessible.name:"Selected transfer allocation"}
+                            Button {objectName:"assignTransfer";text:"Use as transfer";enabled:!!selected.transferEligible && transferAllocation.currentIndex>=0 && transferDestination.currentIndex>0;onClicked:transferCommand("transfer_from_draft",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
                         }
                     }
                 }
@@ -1120,12 +1121,12 @@ ApplicationWindow {
                         required property string category
                         required property string memo
                         required property string amount
-                        Button {objectName:"splitCategory_"+index;visible:!!s.categoriesSupported;text:(index>=0 && index<splitModel.count ? splitModel.get(index).categoryDisplay : "")||"Uncategorized";enabled:editEnabled;onClicked:openCategoryPicker(index)}
+                        Button {objectName:"splitCategory_"+index;visible:!!s.categoriesSupported;text:(index>=0 && index<splitModel.count ? splitModel.get(index).categoryDisplay : "")||"Uncategorized";enabled:editEnabled;onClicked:{if(category.startsWith("[")){let id=splitModel.get(index).allocationId;guard(function(){let choices=(selected.draft||{}).splits||[];transferAllocation.currentIndex=choices.findIndex(function(a){return a.allocationId===id});transferDialog.open()})}else openCategoryPicker(index)}}
                         TextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
                         TextField {text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
                         Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from this split memo":"Manual splits are not rule sources";onClicked:createFromSource("memo",index)}
                         TextField {objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Exact split amount";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
-                        Button {text:"Remove";visible:editEnabled;onClicked:{splitModel.remove(index);dirty=true}}
+                        Button {text:"Remove";visible:editEnabled;enabled:!category.startsWith("[");onClicked:{splitModel.remove(index);dirty=true}}
                     }
                 }
                 RowLayout {

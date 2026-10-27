@@ -20,7 +20,7 @@ std::string_view message(Issue issue) noexcept {
     case Issue::amount: return "Invalid exact amount or precision";
     case Issue::split_structure: return "Ambiguous or incomplete split structure";
     case Issue::split_total: return "Splits do not equal the exact total";
-    case Issue::transfer: return "Transfers are unsupported in this experiment";
+    case Issue::transfer: return "Invalid or unsupported transfer destination syntax";
     case Issue::category_class: return "Category class notation is unsupported";
     case Issue::cleared_status: return "Unsupported cleared or budget status";
     }
@@ -48,6 +48,12 @@ static bool checked_utf8(std::string_view s,const std::function<void()>& checkpo
     return true;
 }
 bool valid_utf8(std::string_view s) noexcept { return checked_utf8(s,{}); }
+std::optional<std::string_view> transfer_destination(std::string_view text) noexcept {
+    if(text.size()<3 || text.front()!='[' || text.back()!=']')return {};
+    const auto name=text.substr(1,text.size()-2);
+    if(name.find_first_of("[]/|\t\r\n")!=name.npos || name.find_first_not_of(' ')==name.npos)return {};
+    return name;
+}
 bool supported_category(std::string_view text) noexcept { return text.find_first_of("[]/|") == text.npos; }
 std::string date(std::string_view s, DateOrder order) {
     auto fail = []() -> void { throw std::invalid_argument("Invalid QIF date/profile"); };
@@ -93,6 +99,7 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
     bool repair_allowed=true;
     auto error = [&](Issue issue,std::size_t at) { if(issue!=Issue::date && issue!=Issue::split_total) repair_allowed=false; if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at}; };
     auto category_check = [&](std::string_view value,std::size_t at) {
+        if (transfer_destination(value)) return;
         if (value.find_first_of("[]") != value.npos) error(Issue::transfer,at);
         else if (!supported_category(value)) error(Issue::category_class,at);
     };

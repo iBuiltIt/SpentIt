@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-26  
-Implementation: the [multi-account workflow](../doc/accounts.md) and [bounded durable transfer integration](../doc/transfer-engine.md) implement manual/imported-allocation creation, generated counterparts, acceptance, provisional bank matching, per-account commit, draft protection and counterpart navigation. Full QIF transfer admission, account-picker integration and repair/reversal remain unfinished. Verified scope and remaining decisions are distinguished below.
+Implementation: the [multi-account workflow](../doc/accounts.md) and [bounded durable transfer integration](../doc/transfer-engine.md) implement manual/imported-allocation creation, generated counterparts, acceptance, provisional bank matching, per-account commit, draft protection and counterpart navigation. [Bounded QIF transfer admission and explicit resolution](../doc/qif-transfers.md) are implemented; unified account-picker integration and repair/reversal remain unfinished. Verified scope and remaining decisions are distinguished below.
 
 ## Accepted requirements
 
@@ -76,7 +76,7 @@ These decisions settle provisional matching/discard and unmatched-entry acceptan
 
 ### Historical implementation starting point
 
-Inspection on 2026-10-26 found a singleton account table in `src/storage/import_store.cpp`, an account-less command boundary in `src/app/include/spentit/import_repository.hpp`, and QIF tests that explicitly reject transfer destinations in `tests/engine/qif_tests.cpp`. Existing allocation metadata already carries stable identities. The subsequent [account-scoped implementation](../doc/accounts.md) replaces the singleton restriction and adds account ownership to batches. Transfer destinations are still rejected; this prerequisite does not implement transfers.
+Inspection on 2026-10-26 found a singleton account table in `src/storage/import_store.cpp`, an account-less command boundary in `src/app/include/spentit/import_repository.hpp`, and QIF tests that explicitly reject transfer destinations in `tests/engine/qif_tests.cpp`. Existing allocation metadata already carries stable identities. The subsequent [account-scoped implementation](../doc/accounts.md) replaces the singleton restriction and adds account ownership to batches. At that prerequisite checkpoint transfer destinations were still rejected; the subsequent [QIF package](../doc/qif-transfers.md) admits them with explicit resolution.
 
 Proposed sequence: introduce account identities and account-scoped import/ledger operations in a new experimental format; then allocation-linked same-currency transfers, symmetric draft protection, and explicit evidence matching. Integrate each complete operation with history, retry identities, backup restoration and interruption tests before exposing it in the durable UI. No migration or backward-compatibility work is required before the owner-announced release gate.
 
@@ -109,7 +109,7 @@ Keep transfer recognition distinct from ordinary duplicate suppression: a matchi
 - Cancelling only the destination side while both are ordinary drafts; multi-batch selection and ordering. Destination-first commit with protection of the origin draft is accepted.
 - Detailed edit/unlink/reversal rules once both accounts are committed, once independent evidence has arrived, or after later edits; preview and conflict handling must preserve independently supported records.
 - How repair proposals interact with discarding an import. Ordinary pending evidence matches remain provisional until the importing account commits; discard drops those proposals while retaining source evidence and the existing transfer state, as accepted above.
-- QIF transfer-destination admission/account-name resolution, unified picker integration, and a browsable transfer history. Current acceptance/protection state is durable; the dialog and counterpart reveal are implemented.
+- Unified picker integration and a browsable transfer history. Current acceptance/protection state is durable; the dialog and counterpart reveal are implemented.
 
 ## Related requirements
 

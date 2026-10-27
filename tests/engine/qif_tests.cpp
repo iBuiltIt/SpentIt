@@ -17,9 +17,10 @@ const std::string wise="D10/08/2026\nNCARD-SYNTHETIC-001\nT-29.31\nPSynthetic Tr
 void basics() {
     auto badDate=parse_dmy("D31/02/2026\nT-10\n^\n");
     check(badDate.records[0].repairable && !badDate.records[0].transaction && badDate.records[0].original_amount->units()==-1000);
+    check(parse_dmy("D31/02/2026\nT-10\nL[Visa]\n^\n").records[0].repairable);
     auto badSplit=parse_dmy("D1/1/2026\nT-10\nSFood\n$-9\n^\n");
     check(badSplit.records[0].repairable && badSplit.records[0].source_allocations[0].amount.units()==-900);
-    for(const auto& raw:{"D31/02/2026\nT-10\nL[Other]\n^\n", "D31/02/2026\nTbad\n^\n", "D31/02/2026\nT-10\nU-10\n^\n", "T-10\n^\n", "D31/02/2026\nT-10\nSFood\n^\n"})
+    for(const auto& raw:{"D31/02/2026\nTbad\n^\n", "D31/02/2026\nT-10\nU-10\n^\n", "T-10\n^\n", "D31/02/2026\nT-10\nSFood\n^\n"})
         check(!parse_dmy(raw).records[0].repairable);
 
     auto r=parse_dmy(wise); check(r.valid() && r.records.size()==1);
@@ -52,7 +53,10 @@ void malformed() {
     invalid("D1/1/2026\nT1\n$2\n^",Issue::split_total);
     invalid("D1/1/2026\nT1\nEone\nEtwo\n$1\n^",Issue::split_structure);
     invalid("D1/1/2026\nT1\nSone\n^",Issue::split_structure);
-    invalid("D1/1/2026\nT1\nL[Visa]\n^",Issue::transfer);
+    check(parse_dmy("D1/1/2026\nT1\nL[Visa]\n^").valid());
+    check(parse_dmy("D1/1/2026\nT-9\nS[Visa]\n$-10\nSRefund\n$1\n^").valid());
+    for(const auto name:{"[]","[ ]","[Visa","Visa]","[[Visa]]","[Visa]|Class"})
+        invalid(std::string("D1/1/2026\nT1\nL")+name+"\n^",Issue::transfer);
     invalid("D1/1/2026\nT1\nS[Visa]/Class\n$1\n^",Issue::transfer);
     invalid("D1/1/2026\nT1\nLFood/Class\n^",Issue::category_class);
     invalid("D1/1/2026\nT1\nC?\n^",Issue::cleared_status);

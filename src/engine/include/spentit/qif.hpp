@@ -11,7 +11,7 @@ inline constexpr std::size_t max_records = 200000;
 inline constexpr std::size_t max_record = 1024 * 1024;
 inline constexpr std::size_t max_field = 64 * 1024;
 inline constexpr std::size_t max_allocations = 1000;
-inline constexpr std::string_view parser_version = "bank-v1";
+inline constexpr std::string_view parser_version = "bank-v2";
 enum class DateOrder { dmy, mdy };
 enum class Issue { encoding, resource_limit, empty_file, header, empty_record,
     unterminated, unknown_field, repeated_field, missing_field, date, amount,
@@ -25,6 +25,7 @@ std::string_view message(Issue issue) noexcept;
 // Throws invalid_argument without input values for an invalid date or profile.
 std::string date(std::string_view text, DateOrder order);
 bool valid_utf8(std::string_view text) noexcept;
+std::optional<std::string_view> transfer_destination(std::string_view text) noexcept;
 bool supported_category(std::string_view text) noexcept;
 struct Record {
     std::size_t begin = 0, end = 0;

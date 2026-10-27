@@ -231,5 +231,11 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
             if(side->proposed_evidence && batch(impl_->db,side->proposed_evidence->endpoint.entry.batch).state!=app::BatchState::pending)fail(SQLITE_CORRUPT);
         }
     }
+    const auto resolved=resolved_transfers(current);
+    Statement committed(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.state=1 AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
+    while(committed.row()) {
+        const imports::Occurrence id{committed.bytes(0),static_cast<std::size_t>(committed.integer(1))};
+        if(retained_member(impl_->db,id.batch,id.ordinal))require_qif_transfers(id,*load_row(id,false).draft,resolved);
+    }
     Statement extra(impl_->db,"SELECT 1 FROM ledger_operations o WHERE kind=4 AND NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=o.id)");if(extra.row())fail(SQLITE_CORRUPT);
 }

@@ -50,7 +50,7 @@ struct Record {
     Field<std::string> payee,memo;
     std::vector<AllocationFields> allocations;
 };
-enum class Effect { applied, compatible, competing, manual_protected, missing_parent };
+enum class Effect { applied, compatible, competing, manual_protected, missing_parent, transfer_protected };
 struct Explanation {
     Contribution contribution;
     std::optional<std::size_t> allocation; // Current result position, display only.

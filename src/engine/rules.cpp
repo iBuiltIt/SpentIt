@@ -1,3 +1,4 @@
+#include <spentit/qif.hpp>
 #include <spentit/rules.hpp>
 #include <algorithm>
 
@@ -89,6 +90,10 @@ std::vector<Result> RuleSet::evaluate(const std::vector<Record>& records,const s
             out.explanations.push_back({{r.identity,r.version},allocation,std::move(field),effect});
         };
         auto assign=[&]<class T>(Field<T>& field,T value,const Rule& r,std::optional<std::size_t> index,const char* name) {
+            if(index && std::string_view(name)=="category" && row.allocations[*index].source_ordinal &&
+               qif::transfer_destination(row.source.allocations[*row.allocations[*index].source_ordinal].category)) {
+                explain(r,index,name,Effect::transfer_protected);return;
+            }
             if(field.ownership==Ownership::manual&&!replace){explain(r,index,name,Effect::manual_protected);return;}
             if(field.ownership==Ownership::rule){explain(r,index,name,field.value==value?Effect::compatible:Effect::competing);return;}
             if(size(value)>EvaluationLimits::input_bytes-generated_bytes)throw RegexError(RegexFailure::resource_limit,"Rule result scope exceeds memory limit");
