@@ -1,5 +1,6 @@
 #include "import_model.hpp"
 #include <spentit/import_view.hpp>
+#include <spentit/statements.hpp>
 #include <QtConcurrent>
 #include <QFutureWatcher>
 #include <QDate>
@@ -109,7 +110,7 @@ QString ruleSaveRefreshFailure(const QString& operation){return "Rule save "+ope
 QString ruleApplyRefreshFailure(const QString& operation){return "Rule application "+operation+" was saved durably, but the refreshed view could not be loaded. Reopen and inspect the pending drafts; do not apply it again.";}
 QString phaseFor(const QString& action){
     if(action=="open"||action=="unlock")return "Opening dataset";
-    if(action=="import")return "Reading QIF file";
+    if(action=="import")return "Reading statement file";
     if(action=="resume")return "Preparing draft interpretations";
     if(action=="commit")return "Committing import";
     if(action=="backup")return "Creating verified backup";
@@ -202,7 +203,7 @@ struct ImportModel::Worker {
     QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt;
     QVariantList transferCandidates;QString candidateLink;
     QVariantMap bulkPreview,bulkReceipt;
-    struct PreparedImport {std::string id,bytes;qif::Document document;qif::DateOrder profile;};
+    struct PreparedImport {std::string id,bytes,label;statements::Index document;qif::DateOrder profile;};
     std::optional<PreparedImport> preparedImport;
     QVariantList importPlan,importMappingArgs;
     std::optional<std::vector<app::ImportAccountMapping>> preparedMappings;
@@ -359,11 +360,18 @@ struct ImportModel::Worker {
         // Copy only parsed, supported evidence. Raw bytes remain separately visible;
         // an unavailable source date must never be replaced by a guessed value.
         QVariantList fields;
+        const auto add=[&](QString label,QString field,QString value,int split=-1) {
+            fields.push_back(QVariantMap{{"label",label},{"field",field},{"value",value},{"split",split}});
+        };
+        const auto format=source.format.empty()?"qif":source.format;
+        add("Format","format",text(format));
+        add("Grammar","grammar",text(source.grammar.empty()?"qif":source.grammar));
+        if(!source.fitid.empty()) add("FITID","fitid",text(source.fitid));
+        if(!source.time_evidence.empty()) add("Time evidence","time",text(source.time_evidence));
+        if(!source.trntype.empty()) add("Transaction type","trntype",text(source.trntype));
+        if(!source.uninterpreted.empty()) add("Uninterpreted evidence","uninterpreted",text(source.uninterpreted));
         if(source.transaction || source.repairable) {
-            const auto add=[&](QString label,QString field,QString value,int split=-1) {
-                fields.push_back(QVariantMap{{"label",label},{"field",field},{"value",value},{"split",split}});
-            };
-            if(!source.date.empty()) add("Date (ISO, using import date order)","date",text(source.date));
+            if(!source.date.empty()) add(format=="qif"?"Date (ISO, using import date order)":"Date (calendar date in the file)","date",text(source.date));
             add("Payee","payee",text(source.payee));
             add("Memo","memo",text(source.memo));
             if(source.original_amount) add("Original total","total",money(*source.original_amount));
@@ -420,8 +428,9 @@ struct ImportModel::Worker {
             auto prior=repo.row(id);
             const auto basis=imports::candidate_basis(row.source,prior.source);
             const bool removed=repo.committed_changes_supported() && !repo.committed_entry(id).current.active;
+            const auto basisText=basis?text(imports::basis_label(*basis)):QString("review source evidence");
             candidates.push_back(QVariantMap{{"removed",removed},{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},
-                {"label",text(id.batch)+" / "+QString::number(id.ordinal+1)+" · "+text(prior.source.date)+" · "+text(prior.source.payee)+" · "+(prior.source.original_amount?money(*prior.source.original_amount):QString("Unavailable"))+" · "+(basis==imports::MatchBasis::unknown_original_amount?"original amount unavailable; review source evidence":basis==imports::MatchBasis::same_source_fields?"same source fields":basis==imports::MatchBasis::same_amount_unknown_date?"same original amount; source date unavailable":"same date and amount")}});
+                {"label",text(id.batch)+" / "+QString::number(id.ordinal+1)+" · "+text(prior.source.format.empty()?"qif":prior.source.format)+" · "+text(prior.source.date)+" · "+text(prior.source.payee)+" · "+(prior.source.original_amount?money(*prior.source.original_amount):QString("Unavailable"))+" · "+basisText}});
         }
         for(auto& value:candidates) {auto candidate=value.toMap();if(candidate.value("removed").toBool())candidate["label"]=candidate.value("label").toString()+" · PREVIOUSLY REMOVED — explicit review required";value=candidate;}
         selected["candidates"]=candidates;
@@ -822,31 +831,38 @@ struct ImportModel::Worker {
             try{if(historyLoaded)listHistory();}catch(...){throw std::runtime_error("Bulk change was saved durably, but history could not be refreshed. Reopen and inspect committed history; do not apply it again.");}
         } else if(action=="import") {
             QFile file(a.value("path").toString()); const QFileInfo info(file);
-            if(!info.isFile() || !file.open(QIODevice::ReadOnly)) throw std::runtime_error("Cannot read QIF file");
-            if(file.size()>static_cast<qint64>(qif::max_file)) throw std::invalid_argument("QIF exceeds 64 MiB limit");
+            if(!info.isFile() || !file.open(QIODevice::ReadOnly)) throw std::runtime_error("Cannot read statement file");
+            if(file.size()>static_cast<qint64>(qif::max_file)) throw std::invalid_argument("Statement exceeds 64 MiB limit");
             QByteArray bytes;
             while(!file.atEnd()) {
-                context.checkpoint("Reading QIF file");
+                context.checkpoint("Reading statement file");
                 auto chunk=file.read(64*1024);
-                if(chunk.isEmpty() && !file.atEnd()) throw std::runtime_error("QIF read failed");
+                if(chunk.isEmpty() && !file.atEnd()) throw std::runtime_error("Statement read failed");
                 bytes.append(chunk);
-                if(bytes.size()>static_cast<qsizetype>(qif::max_file)) throw std::invalid_argument("QIF exceeds 64 MiB limit");
+                if(bytes.size()>static_cast<qsizetype>(qif::max_file)) throw std::invalid_argument("Statement exceeds 64 MiB limit");
             }
-            if(file.error()!=QFileDevice::NoError || !file.atEnd()) throw std::runtime_error("QIF read failed or exceeded limit");
-            if(bytes.size()>static_cast<qsizetype>(qif::max_file)) throw std::invalid_argument("QIF exceeds 64 MiB limit");
+            if(file.error()!=QFileDevice::NoError || !file.atEnd()) throw std::runtime_error("Statement read failed or exceeded limit");
+            if(bytes.size()>static_cast<qsizetype>(qif::max_file)) throw std::invalid_argument("Statement exceeds 64 MiB limit");
             const auto profile=a.value("profile").toString();
             if(profile!="DMY" && profile!="MDY") throw std::invalid_argument("Select DMY or MDY before importing");
-            const auto document=qif::index_document(bytes.toStdString(),[&]{context.checkpoint();});
-            if(document.explicit_accounts) {
-                if(document.diagnostic || !document.admissible)throw std::invalid_argument("Unsupported account section structure; no import was saved. The original file is unchanged.");
-                preparedImport=PreparedImport{identity(),bytes.toStdString(),document,profile=="DMY"?qif::DateOrder::dmy:qif::DateOrder::mdy};preparedMappings.reset();importMappingArgs.clear();importPlan.clear();
-                for(std::size_t i=0;i<document.accounts.size();++i){const auto& source=document.accounts[i];importPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",source.reported_balance?text(*source.reported_balance):QString("Not supplied")},{"currency",text(repo.accounts().front().currency.code())}});}
+            const auto suffix=info.suffix().toLower().toStdString();
+            const std::string requested=suffix=="qif"||suffix=="ofx"||suffix=="qfx"||suffix=="qbo"||suffix=="aso"?suffix:"";
+            const auto owned=bytes.toStdString();
+            const auto document=statements::inspect(owned,requested,[&]{context.checkpoint();});
+            if(document.format=="qif" && document.explicit_accounts && (document.diagnostic || !document.admissible)) throw std::invalid_argument("Unsupported account section structure; no import was saved. The original file is unchanged.");
+            if(!document.admissible) throw std::invalid_argument(document.refusal.empty()?"Statement exceeds a resource limit. The original file is unchanged.":document.refusal);
+            if(!document.refusal.empty() || (document.format!="qif" && document.diagnostic)) throw std::invalid_argument(document.refusal.empty()?"Unsupported account section structure; no import was saved. The original file is unchanged.":document.refusal);
+            const auto order=document.format=="qif"?(profile=="DMY"?qif::DateOrder::dmy:qif::DateOrder::mdy):qif::DateOrder::dmy;
+            if(document.format!="qif" || document.explicit_accounts) {
+                preparedImport=PreparedImport{identity(),owned,document.format,document,order};preparedMappings.reset();importMappingArgs.clear();importPlan.clear();
+                const auto home=repo.accounts().empty()?std::string{}:repo.accounts().front().currency.code();
+                for(std::size_t i=0;i<document.accounts.size();++i){const auto& source=document.accounts[i];importPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",source.reported_balance?text(*source.reported_balance):QString("Not supplied")},{"currency",text(document.format=="qif"?home:source.currency_code)}});}
                 return;
             }
-            const auto batch=repo.ingest_controlled(identity(),bytes.toStdString(),profile=="DMY"?qif::DateOrder::dmy:qif::DateOrder::mdy,context);
+            const auto batch=repo.ingest_controlled(identity(),owned,order,context);
             projected=true; selected.clear();selectedBatch.clear();
             if(batch.count && !batch.processing_incomplete) inspect(batch.id,0,context);
-            else selected={{"batch",text(batch.id)},{"editable",false},{"source",evidencePreview(bytes.toStdString())}};
+            else selected={{"batch",text(batch.id)},{"editable",false},{"source",evidencePreview(owned)}};
         } else if(action=="cancel_import_mapping") {preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();
         } else if(action=="map_import") {
             if(!preparedImport)throw std::logic_error("Choose a source file first");
@@ -862,7 +878,7 @@ struct ImportModel::Worker {
             }
             if(!preparedMappings){preparedMappings=mappings;importMappingArgs=a.value("mappings").toList();}
             std::optional<app::ImportGroup> saved;
-            try{saved=repo.prepare_import_group(preparedImport->id,preparedImport->bytes,preparedImport->profile,*preparedMappings,context);}
+            try{saved=repo.prepare_import_group(preparedImport->id,preparedImport->bytes,preparedImport->profile,*preparedMappings,context,preparedImport->label);}
             catch(...){const auto failure=std::current_exception();try{saved=repo.import_group_outcome(preparedImport->id);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();preparedImport.reset();preparedMappings.reset();importPlan.clear();throw std::runtime_error("Import capture outcome is uncertain. Reopen and inspect the account imports before retrying.");}if(!saved){preparedMappings.reset();std::rethrow_exception(failure);}}
             auto group=*saved;
             preparedImport.reset();importPlan.clear();

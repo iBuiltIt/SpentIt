@@ -1,6 +1,6 @@
 # Coordinated implementation roadmap
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
 The owner authorized coordinated implementation with delegated agents, continuing through routine implementation and verification without asking for approval at every step. Ask for concrete missing information or material financial/security decisions when dependent work reaches them. Routine editor layout choices can be implemented and revised after owner review. This authorization does not select a license, authorize publication, or settle unresolved financial semantics.
 
@@ -21,7 +21,25 @@ The owner selected the following eight-point sequence and gave **Go for point 1*
 
 After **each point**, update relevant feature documents and project status, write a durable handoff with completed work, actual verification, limitations, unresolved decisions and downstream dependencies, and commit all task changes while preserving unrelated work. Then ask whether to proceed to the next point or stop, and wait. A material financial/security ambiguity is an earlier decision gate; Go does not settle it. Dependencies on later points must be recorded explicitly rather than silently reducing completion scope. Hardening continues in later points as their behavior changes; point 2 is not a final verification claim for future code. Reports and licensing/distribution are outside this eight-point authorization.
 
-Point 1 is complete and committed as `933ede1` and `f77b4ac`. The owner subsequently authorized point 2, excluding Linux/Windows builds and native interactions from this checkpoint. The point-2 implementation and available verification are delivered with the explicit limitations below. The coordinator must complete review/link checks and commit, then ask whether to proceed to point 3 or stop. The excluded platforms remain unverified, not implicitly supported.
+Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Points 4–8 have not been started. The owner is asked whether to proceed to point 4 or stop.
+
+## Point 3 completion handoff — 2026-10-27
+
+Read the [statement profile](../features/003-ofx-profile.md) and [point-3 evidence](status.md#point-3-statement-imports--2026-10-27). One agent implemented this checkpoint. Points 4–8 were not started. No license or publication decision was made. Coordinator review on 2026-10-27 accepted the diff with the limits below.
+
+Specified from OFX Banking Specification Version 2.3 (October 2020), statement sections 11.4.2–11.4.4, with the header and common-data-type bodies unread and labeled as implementation choices:
+
+- OFX is the statement grammar. QFX, QBO, and ASO are file labels of that grammar, stored separately from `ofx-sgml` and `ofx-xml`.
+- Admitted messages are signon plus bank and credit-card statement transaction lists (`STMTTRN`, and `CCSTMTTRN` when a file uses that tag). Investment, securities, bill pay, profile, and pending `STMTTRNP` lists refuse the file before capture.
+- Original bytes stay unchanged on disk and in encrypted storage. QIF imports in schema 18/19 use the same occurrence and association tables.
+- Duplicate recognition is reviewable. Same `FITID`, currency, and original amount is a disposition-gated candidate. Different `FITID`s on the same day stay distinct. Differing dates across OFX-family evidence, including `aso`, stay uncertain. QIF-to-QIF different dates stay non-candidates.
+- ASO was identified by in-place structural inspection of the owner's private export. That export is OFX 1.0.2 SGML credit-card statement syntax. No path, filename, or contents were recorded. Format `aso` uses `ofx-sgml-1` for this shape and `ofx-xml-2` when the body is XML. `SECURITY:TYPE1` is accepted on a readable body. `USERKEY` stays only in the original bytes. A body that is not OFX SGML or OFX XML is still refused, with the original file unchanged and no partial import saved.
+
+Implemented: engine SGML and XML parsers, schema 18/19 evidence tables with `aso` legal in the format checks, group prepare/mapping/commit associations, review UI file choice including `*.aso`, match-basis labels, synthetic tests, one clean sanitizer fuzz campaign of 197,324 executions from before this ASO admission, and a short replay of the synthetic ASO fixture on the rebuilt fuzzer. Currency mismatch refuses without conversion. Statement transfers and several uninterpreted financial aggregates stay visible blockers. Account lifecycle remains point 4. Feature 003 stays active.
+
+Exact commands, pass counts, the two earlier fuzz crashes that were fixed, the ASO replay, and the sweeps that were not rerun are in status. Linux and Windows are unverified. The short ASO fixture replay exited 0. A new multi-hour fuzz campaign was not started.
+
+The owner is asked: **proceed to point 4 or stop**.
 
 ## Point 2 completion handoff — 2026-10-26
 
@@ -43,9 +61,11 @@ Remaining verification limits are explicit: actual VoiceOver speech and complete
 
 Implementation edits have stopped after this handoff. The coordinator should inspect the final diff, verify documentation links, commit all checkpoint files (including six explicitly excepted synthetic fuzz seeds), and ask **proceed to point 3 or stop**. Do not start the next point until the owner answers.
 
+Update 2026-10-27: this checkpoint was committed as `ec17bb2`. The owner authorized point 3. The wait instruction above is the historical stop at point-2 delivery. The current authorization is the point-3 handoff.
+
 ## Point 1 completion handoff — 2026-10-26
 
-Read the [whole-source QIF contract](qif-account-imports.md), [profile](../features/009-qif-profile.md) and [current verification](status.md#whole-source-qif-account-review--2026-10-26). The intermediate backup/parser/nullable-repair checkpoint was committed as `933ede1`; its earlier schema-12 and schema-14/15 evidence is recorded separately in status. Current grouped imports use parser bank-v3 and experimental schemas 16/17. New-format datasets are required; no migration or compatibility work was added.
+Read the [whole-source QIF contract](qif-account-imports.md), [profile](../features/009-qif-profile.md) and [current verification](status.md#whole-source-qif-account-review--2026-10-26). The intermediate backup/parser/nullable-repair checkpoint was committed as `933ede1`; its earlier schema-12 and schema-14/15 evidence is recorded separately in status. At this handoff, grouped imports used parser bank-v3 and experimental schemas 16/17. New-format datasets were required; no migration or compatibility work was added. Update 2026-10-27: new documents use schemas 18/19 and reject 16/17. See the [point-3 handoff](#point-3-completion-handoff--2026-10-27).
 
 The five point-1 requirements are implemented:
 

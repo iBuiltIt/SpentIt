@@ -15,7 +15,8 @@ inline constexpr std::string_view parser_version = "bank-v3";
 enum class DateOrder { dmy, mdy };
 enum class Issue { encoding, resource_limit, empty_file, header, empty_record,
     unterminated, unknown_field, repeated_field, missing_field, date, amount,
-    split_structure, split_total, transfer, category_class, cleared_status };
+    split_structure, split_total, transfer, category_class, cleared_status,
+    currency_mismatch, financial_blocker };
 struct Diagnostic {
     Issue issue;
     std::size_t offset;
@@ -47,6 +48,14 @@ struct Record {
     bool amount_repair = false;
     bool has_source_splits = false;
     std::optional<Diagnostic> diagnostic;
+    // Source facts. QIF stays qif/qif with an empty FITID. OFX-family imports
+    // fill these from the statement; they are not edited ledger fields.
+    std::string format = "qif";
+    std::string grammar = "qif";
+    std::string fitid, source_account_key, time_evidence, trntype, uninterpreted;
+    // Not a parsed file field. A confirmed association may carry a FITID that this
+    // occurrence's own file did not. Match classification reads it; storage does not write it.
+    std::string associated_fitid;
 };
 struct Result {
     std::vector<Record> records;

@@ -73,7 +73,7 @@ void definitions(){
     const auto kept=s.rule_image();s.ingest("temporary",plain_source,qif::DateOrder::dmy);s.discard("temporary",0);check(s.rule_image().revision==kept.revision&&s.rule_image().ordered.size()==kept.ordered.size()&&s.rule_image().ordered[0].label==kept.ordered[0].label);
     rejects_text([&]{apply_category(s,"erase-fees",change(app::CategoryAction::erase,"fees"));},"Category has retained assignments; archive it instead");apply_category(s,"archive-fees",change(app::CategoryAction::archive,"fees"));check(s.resolve_category("fees").archived);
     const imports::Occurrence row{"assigned",0};s.ingest(row.batch,split_source,qif::DateOrder::dmy);auto draft=*s.row(row).draft;bind(s,draft,1,"parking");s.save(row,0,draft);s.commit(row.batch,1,"publish-assigned");check(s.committed_balance().units()==-2931&&s.committed_entry(row).current.draft.transaction.allocations()[1].category_binding->identity=="parking");s.verify();}
-    check(query(path,"PRAGMA user_version")=="16");no_leaks(dir.path);
+    check(query(path,"PRAGMA user_version")=="18");no_leaks(dir.path);
 }
 
 void application(){
@@ -130,8 +130,10 @@ void schema(){
     Directory mismatch("spentit-rulestore-shape-XXXXXX");const auto path=mismatch.path/"doc";open_legacy(path,5);
     auto alter=[&](const char* sql){sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);};
     alter("PRAGMA user_version=99");const auto unknown=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Unsupported experimental format; no migration was attempted");check(bytes(path)==unknown&&!fs::exists(fs::path(path.string()+"-journal")));
-    alter("PRAGMA user_version=16");const auto bumped=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==bumped);
-    alter("PRAGMA user_version=16");alter("CREATE TABLE rule_state(singleton INTEGER PRIMARY KEY)");const auto extra=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==extra);
+    alter("PRAGMA user_version=16");const auto rejected16=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Unsupported experimental format; no migration was attempted");check(bytes(path)==rejected16);
+    alter("PRAGMA user_version=17");const auto rejected17=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Unsupported experimental format; no migration was attempted");check(bytes(path)==rejected17);
+    alter("PRAGMA user_version=18");const auto bumped=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==bumped);
+    alter("PRAGMA user_version=18");alter("CREATE TABLE rule_state(singleton INTEGER PRIMARY KEY)");const auto extra=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==extra);
     const auto sibling=bytes(path);fault_vfs::arm(1,SQLITE_FULL);rejects_text([&]{ImportStore::create(mismatch.path/"other",password,"Synthetic account",cad,"2026-08-01");},"");fault_vfs::disarm();check(bytes(path)==sibling);
 }
 

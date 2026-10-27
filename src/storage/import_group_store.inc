@@ -13,15 +13,14 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
     Statement group(impl_->db,"SELECT profile,state FROM import_groups WHERE id=?");group.text(1,id);if(!group.row())fail(SQLITE_NOTFOUND,"Import group does not exist");
     app::ImportGroup result{std::string(id),static_cast<app::GroupState>(group.integer(1)),static_cast<qif::DateOrder>(group.integer(0)),{}};
     Statement source(impl_->db,"SELECT bytes FROM sources WHERE id=?");source.text(1,id);if(!source.row())fail(SQLITE_CORRUPT);
-    const auto bytes=source.bytes(0);const auto document=qif::index_document(bytes);
-    if(document.diagnostic || !document.admissible)fail(SQLITE_CORRUPT,"Invalid grouped source structure");
+    const auto bytes=source.bytes(0);const auto document=indexed_source(impl_->db,id,bytes);
     GroupSelection selection(impl_->selected_account);
     Statement members(impl_->db,"SELECT source_account,account_id,batch,created,balance_choice,balance_revision,opening,opening_date,balance_sequence,reviewed_change FROM import_group_accounts WHERE group_id=? ORDER BY source_account");members.text(1,id);
     while(members.row()) {
         const auto source_account=static_cast<std::size_t>(members.integer(0));const auto account=account_by_id(members.integer(1));impl_->selected_account=account.identity;
         const auto batch_id=members.bytes(2);const auto b=batch(impl_->db,batch_id);
         app::ImportGroupAccount member{source_account,account.identity,batch_id,members.integer(3)!=0,static_cast<app::ReportedBalanceChoice>(members.integer(4)),{},{},members.null(7)?account.opening_date:members.bytes(7)};
-        const auto parsed=qif::parse_account(bytes,document,source_account,result.profile,account.currency);
+        const auto parsed=statements::parse_mapped(bytes,document,source_account,result.profile,account.currency);
         bool ready=!parsed.diagnostic && b.state!=app::BatchState::captured && b.state!=app::BatchState::discarded;
         const bool active_review=b.state!=app::BatchState::discarded;
         std::vector<Money> amounts;
@@ -61,11 +60,12 @@ std::vector<app::ImportGroup> ImportStore::import_groups() const {
     while(ids.row())result.push_back(import_group(ids.bytes(0)));return result;
 }
 app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::string_view bytes,qif::DateOrder profile,
-    const std::vector<app::ImportAccountMapping>& mappings,app::OperationContext& context) {
+    const std::vector<app::ImportAccountMapping>& mappings,app::OperationContext& context,std::string_view label) {
     identifier(id);if(id.size()>108)fail(SQLITE_MISUSE,"Import group identity is too long");context.checkpoint("Indexing source account sections");
-    const auto document=qif::index_document(bytes,[&]{context.checkpoint();});
+    const auto document=statements::inspect(bytes,label,[&]{context.checkpoint();});
     if(!document.admissible)fail(SQLITE_TOOBIG,"Import exceeds resource limits");
-    if(document.diagnostic)fail(SQLITE_CONSTRAINT,"Unsupported account section structure; source file remains unchanged");
+    if(!document.refusal.empty() || document.diagnostic)fail(SQLITE_CONSTRAINT,document.refusal.empty()?"Unsupported account section structure; source file remains unchanged":document.refusal.c_str());
+    if(document.format=="ofx" || document.format=="qfx" || document.format=="qbo" || document.format=="aso")profile=qif::DateOrder::dmy;
     if(mappings.size()!=document.accounts.size() || mappings.empty())fail(SQLITE_CONSTRAINT,"Every source account requires an explicit mapping");
     std::set<std::size_t> source_ids;std::set<std::int64_t> target_ids;
     for(const auto& mapping:mappings) {
@@ -78,9 +78,9 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         }
     }
     Atomic transaction(impl_->db);
-    Statement prior(impl_->db,"SELECT g.profile,s.bytes FROM import_groups g JOIN sources s ON s.id=g.id WHERE g.id=?");prior.text(1,id);
+    Statement prior(impl_->db,"SELECT g.profile,s.bytes,h.format FROM import_groups g JOIN sources s ON s.id=g.id JOIN source_headers h ON h.source_id=g.id WHERE g.id=?");prior.text(1,id);
     if(prior.row()) {
-        if(prior.integer(0)!=static_cast<int>(profile) || prior.bytes(1)!=bytes)fail(SQLITE_CONSTRAINT,"Import identity was reused with different content");
+        if(prior.integer(0)!=static_cast<int>(profile) || prior.bytes(1)!=bytes || prior.bytes(2)!=document.format)fail(SQLITE_CONSTRAINT,"Import identity was reused with different content");
         const auto saved=import_group(id);
         for(const auto& mapping:mappings) {
             const auto found=std::find_if(saved.accounts.begin(),saved.accounts.end(),[&](const auto& a){return a.source_account==mapping.source_account;});
@@ -90,14 +90,20 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         context.seal();transaction.commit();return saved;
     }
     if(std::none_of(mappings.begin(),mappings.end(),[](const auto& m){return m.creation.has_value();})) {
-        Statement pending(impl_->db,"SELECT g.id FROM import_groups g JOIN sources s ON s.id=g.id WHERE g.profile=? AND s.bytes=? AND g.state!=3 AND EXISTS(SELECT 1 FROM import_group_accounts m JOIN batches b ON b.id=m.batch WHERE m.group_id=g.id AND b.state IN(0,3)) ORDER BY g.rowid");pending.integer(1,static_cast<int>(profile));pending.blob(2,bytes);
+        Statement pending(impl_->db,"SELECT g.id FROM import_groups g JOIN sources s ON s.id=g.id JOIN source_headers h ON h.source_id=g.id WHERE g.profile=? AND s.bytes=? AND h.format=? AND g.state!=3 AND EXISTS(SELECT 1 FROM import_group_accounts m JOIN batches b ON b.id=m.batch WHERE m.group_id=g.id AND b.state IN(0,3)) ORDER BY g.rowid");pending.integer(1,static_cast<int>(profile));pending.blob(2,bytes);pending.text(3,document.format);
         while(pending.row()) {
             const auto existing=import_group(pending.bytes(0));if(existing.accounts.size()!=mappings.size())continue;
             bool matches=true;for(const auto& mapping:mappings)if(std::none_of(existing.accounts.begin(),existing.accounts.end(),[&](const auto& m){return m.source_account==mapping.source_account && m.account==mapping.account;})){matches=false;break;}
             if(matches){context.seal();transaction.commit();return existing;}
         }
     }
+    if(document.format!="qif")for(const auto& mapping:mappings) {
+        const auto& code=document.accounts[mapping.source_account].currency_code;
+        const auto& target=mapping.creation?mapping.creation->currency:account_by_id(mapping.account).currency;
+        if(code!=target.code()) {const auto message="Statement currency "+code+" does not match the target account; no conversion was applied";fail(SQLITE_CONSTRAINT,message.c_str());}
+    }
     Statement source(impl_->db,"INSERT INTO sources VALUES(?,?)");source.text(1,id);source.blob(2,bytes);source.done();
+    retain_source_header(impl_->db,id,document.format,document.grammar,source_header_text(document));
     Statement group(impl_->db,"INSERT INTO import_groups(id,profile,state) VALUES(?,?,0)");group.text(1,id);group.integer(2,static_cast<int>(profile));group.done();
     GroupSelection selection(impl_->selected_account);
     for(const auto& mapping:mappings) {
@@ -109,10 +115,11 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         }
         const auto account=account_by_id(mapping.account);impl_->selected_account=account.identity;
         Statement retired(impl_->db,"SELECT 1 FROM retired_import_accounts WHERE account_id=?");retired.integer(1,account.identity);if(retired.row())fail(SQLITE_CONSTRAINT,"Removed account cannot receive imports");
-        const auto parsed=qif::parse_account(bytes,document,mapping.source_account,profile,account.currency,[&]{context.checkpoint();});
+        const auto parsed=statements::parse_mapped(bytes,document,mapping.source_account,profile,account.currency,[&]{context.checkpoint();});
         if(!parsed.admissible)fail(SQLITE_TOOBIG,"Import exceeds resource limits");
+        if(parsed.diagnostic && parsed.diagnostic->issue==qif::Issue::currency_mismatch && parsed.records.empty()) {const auto message="Statement currency "+document.accounts[mapping.source_account].currency_code+" does not match the target account; no conversion was applied";fail(SQLITE_CONSTRAINT,message.c_str());}
         const auto batch_id=std::string(id)+"-account-"+std::to_string(mapping.source_account);identifier(batch_id);
-        Statement b(impl_->db,"INSERT INTO batches VALUES(?,?,?,3,0,?,1,NULL,?,?,?)");b.text(1,batch_id);b.integer(2,static_cast<int>(profile));b.text(3,qif::parser_version);b.integer(4,integer(parsed.records.size()));b.integer(5,account.identity);b.text(6,id);b.integer(7,integer(mapping.source_account));b.done();
+        Statement b(impl_->db,"INSERT INTO batches VALUES(?,?,?,3,0,?,1,NULL,?,?,?)");b.text(1,batch_id);b.integer(2,static_cast<int>(profile));b.text(3,document.parser);b.integer(4,integer(parsed.records.size()));b.integer(5,account.identity);b.text(6,id);b.integer(7,integer(mapping.source_account));b.done();
         Statement member(impl_->db,"INSERT INTO import_group_accounts(group_id,source_account,account_id,batch,created) VALUES(?,?,?,?,?)");member.text(1,id);member.integer(2,integer(mapping.source_account));member.integer(3,account.identity);member.text(4,batch_id);member.integer(5,mapping.creation?1:0);member.done();
         Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'capture')");event.text(1,batch_id);event.done();
     }
@@ -141,7 +148,7 @@ void ImportStore::review_import_balance(std::string_view id,std::size_t source_a
     if(found==group.accounts.end() || !found->created || !found->reviewed_change)fail(SQLITE_CONSTRAINT,"Finish this new account's repairs and duplicate review first");
     GroupSelection selection(impl_->selected_account);impl_->selected_account=found->account;
     const auto a=account();const auto b=batch(impl_->db,found->batch);if(b.revision!=expected || a.frozen)fail(SQLITE_CONSTRAINT,"Balance preview changed");
-    const auto doc=qif::index_document(evidence(found->batch));const auto& reported=doc.accounts[source_account].reported_balance;
+    const auto doc=indexed_source(impl_->db,id,evidence(found->batch));if(source_account>=doc.accounts.size())fail(SQLITE_CORRUPT,"Incomplete source account mapping");const auto& reported=doc.accounts[source_account].reported_balance;
     Money opening(0,a.currency);
     if(choice==app::ReportedBalanceChoice::opening || choice==app::ReportedBalanceChoice::closing) {
         if(!reported)fail(SQLITE_CONSTRAINT,"No reported balance is present");
@@ -211,7 +218,7 @@ void ImportStore::verify_import_groups(const app::OperationContext* context) con
             const auto b=batch(impl_->db,member.batch);
             const auto account=account_by_id(member.account);
             Statement source(impl_->db,"SELECT bytes FROM sources WHERE id=?");source.text(1,group.id);if(!source.row())fail(SQLITE_CORRUPT);
-            const auto doc=qif::index_document(source.bytes(0));const auto& reported=doc.accounts[member.source_account].reported_balance;
+            const auto doc=indexed_source(impl_->db,group.id,source.bytes(0));if(member.source_account>=doc.accounts.size())fail(SQLITE_CORRUPT,"Incomplete source account mapping");const auto& reported=doc.accounts[member.source_account].reported_balance;
             Statement decisions(impl_->db,"SELECT balance_choice,balance_revision,opening,opening_date,balance_sequence,reviewed_change FROM import_balance_events WHERE group_id=? AND source_account=? ORDER BY sequence");decisions.text(1,group.id);decisions.integer(2,integer(member.source_account));
             std::int64_t last_revision=-1,last_choice=0,last_opening=0,last_sequence=-1,last_change=0;std::string last_date;
             while(decisions.row()) {

@@ -1,6 +1,6 @@
 # Building and verifying the engine
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
 ## Prerequisites
 
@@ -141,10 +141,14 @@ Rebuild the existing import UI trees for parser `bank-v2` and schemas 12/13. `tr
 
 ## Whole-source QIF follow-up — 2026-10-26
 
-Current rules-enabled import builds use experimental schema 16; rules-off builds use 17. Earlier formats are rejected without migration. The existing `build/import-ui-rules-debug`, `build/import-ui-rules-release`, `build/import-ui-rules-sanitized` and `build/import-ui-debug` configurations remain usable after rebuilding. These paths name local generated build trees, not committed artifacts.
+Point 1 rules-enabled import builds used experimental schema 16; rules-off builds used 17. Those formats are now rejected without migration. The statement-import section below is the current writer. The existing `build/import-ui-rules-debug`, `build/import-ui-rules-release`, `build/import-ui-rules-sanitized` and `build/import-ui-debug` configurations remain usable after rebuilding. These paths name local generated build trees, not committed artifacts.
 
 `accounts.groups` covers the grouped-source workflow. `accounts.group_io` and `accounts.group_crashes` sweep seven operations, including staged-opening publication through both account and transfer commits; their 1800-second test budget retains all measured positions. `import.ui` includes the mapping/review/Abort flow, cancellation, acknowledgement recovery, setup-currency defaults and mapping-delegate recreation. Environment variables `SPENTIT_GROUP_MAPPING_SCREENSHOT` and `SPENTIT_GROUP_REVIEW_SCREENSHOT` optionally save synthetic offscreen renders during its `multiAccountImport` slot. See [current verification](status.md#whole-source-qif-account-review--2026-10-26) for actual results rather than assuming a configured build passed.
 
 ## Current-format hardening — 2026-10-26
 
 The [hardening guide](hardening.md) documents the coverage-guided QIF target, pinned optional libFuzzer runtime and synthetic boundary-corpus generator. It also distinguishes current combined-recovery, accessibility and native workload checks from earlier prototype results. Point 2 excludes Linux/Windows validation at the owner’s request.
+
+## Statement imports — 2026-10-27
+
+Current rules-enabled import builds use experimental schema 18; rules-off builds use 19. Schemas 16 and 17, and every other unexpected `user_version`, are rejected with `Unsupported experimental format; no migration was attempted`. Rebuild the existing `build/import-ui-rules-debug`, `build/import-ui-rules-release`, `build/import-ui-rules-sanitized`, and rules-off `build/import-ui-debug` trees after this checkpoint. `statement.parser` covers the engine grammar, including the synthetic ASO credit-card fixture. `statement.review` and `statement.faults` cover associations, refusal, backup restore, and the new commit write path. `statement.review` includes the `aso` label, shared source tables, and a second import of the same FITID. The optional `spentit_statement_fuzzer` target follows the existing libFuzzer option and is not part of the default import-ui caches. See [verification](status.md#point-3-statement-imports--2026-10-27).

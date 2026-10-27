@@ -47,7 +47,7 @@ public:
     std::vector<app::BatchInfo> batches() const override;
     std::vector<app::ImportGroup> import_groups() const override;
     std::optional<app::ImportGroup> import_group_outcome(std::string_view) const override;
-    app::ImportGroup prepare_import_group(std::string_view,std::string_view,qif::DateOrder,const std::vector<app::ImportAccountMapping>&,app::OperationContext&) override;
+    app::ImportGroup prepare_import_group(std::string_view,std::string_view,qif::DateOrder,const std::vector<app::ImportAccountMapping>&,app::OperationContext&,std::string_view ="qif") override;
     app::ImportGroup resume_import_group(std::string_view,app::OperationContext&) override;
     void abort_import_group(std::string_view) override;
     void review_import_balance(std::string_view,std::size_t,std::int64_t,app::ReportedBalanceChoice,std::string_view) override;

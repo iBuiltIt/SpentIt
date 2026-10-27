@@ -1,6 +1,6 @@
 # Experimental QIF profile v3
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
 Implementation contract for the accepted [durable import milestone](009-durable-import-milestone.md). This deliberately bounded profile is not general QIF compatibility. The field identifiers and transfer notation were checked against [GnuCash's QIF notes](https://raw.githubusercontent.com/Gnucash/gnucash/stable/gnucash/import-export/qif-imp/file-format.txt); restrictions below are SpentIt choices. No private exports were inspected.
 
@@ -22,4 +22,4 @@ Repairability requires intact record/split structure and only date, missing requ
 
 ## Account-section extension — 2026-10-26
 
-The [whole-source account contract](../doc/qif-account-imports.md#accepted-source-envelope) specifies supported `!Account` lists, repeated ordinary sections, metadata fields, limits and refusal behavior. Each account's records reuse this ordinary grammar with explicit currency and date order. This does not admit investment or catalog sections, infer self-account opening records, or alter category/class and unknown-original repair invariants. Schemas 16/17 retain the source once and associate account drafts with stable source-account indices; final verification is recorded separately from earlier parser checkpoints.
+The [whole-source account contract](../doc/qif-account-imports.md#accepted-source-envelope) specifies supported `!Account` lists, repeated ordinary sections, metadata fields, limits and refusal behavior. Each account's records reuse this ordinary grammar with explicit currency and date order. This does not admit investment or catalog sections, infer self-account opening records, or alter category/class and unknown-original repair invariants. Point 1 schemas 16/17 retained the source once and associated account drafts with stable source-account indices. New documents from the 2026-10-27 statement checkpoint use schemas 18/19, keep this QIF grammar, and add shared source-occurrence facts. Schemas 16 and 17 are rejected without migration. See the [statement profile](003-ofx-profile.md).

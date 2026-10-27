@@ -1,8 +1,10 @@
 # Project status
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
-Current work is point 2 of the [sequential roadmap](roadmap.md#current-authorization-and-delivery-checkpoints--2026-10-26), authorized after point 1 commits `933ede1` and `f77b4ac`. The owner excluded Linux/Windows build and native-interaction checks from this checkpoint. Current formats remain bank-v3/schema 16 with rules and 17 without. The point-2 checkpoint is delivered with selected verification and explicit limits; coordinator review/commit and the continue-or-stop gate remain. Actual spoken screen-reader output, paired large native cache comparison and 200k rendering remain unverified. See [current evidence](hardening.md) and [handoff](roadmap.md#point-2-completion-handoff--2026-10-26).
+Current work is point 3 of the [sequential roadmap](roadmap.md#current-authorization-and-delivery-checkpoints--2026-10-26). Point 1 is committed as `933ede1` and `f77b4ac`. Point 2 is committed as `ec17bb2`. New documents use bank-v3 together with OFX SGML parser `ofx-sgml-1` or OFX XML parser `ofx-xml-2`, experimental schema 18 with rules and 19 without. Schemas 16 and 17 are rejected without migration. OFX, QFX, QBO, and ASO bank and credit-card statement lists are implemented. ASO was identified by in-place structural inspection as OFX 1.0.2 SGML credit-card statement syntax; no contents or paths were recorded. Coordinator review on 2026-10-27 accepted this checkpoint with the recorded limits. The owner is asked whether to proceed to point 4 or stop. Linux and Windows remain unverified. See the [statement profile](../features/003-ofx-profile.md) and [handoff](roadmap.md#point-3-completion-handoff--2026-10-27).
+
+Point 2 evidence remains in [hardening](hardening.md). Spoken screen-reader output, a paired large native cache comparison, and 200k native rendering stay unverified from that checkpoint.
 
 The schema-6/rules-sheet verification gap is closed: the `3f94fe6` baseline passed all 72 tests in Release and ASan/UBSan on macOS. Combined search, identity-based multiselection, and schema-7 atomic committed bulk category/removal/Undo are implemented in the bounded QIF experiment; their contract and limits are in [search and ledger](search-ledger.md). Detailed verification is recorded at the end of this file. The owner confirmed that experimental formats are disposable until an explicitly announced release; migrations, upgrades, and backward compatibility are not pre-release obligations. The [account-scoped workflow](accounts.md) now provides multiple durable workspaces, and the [bounded transfer integration](transfer-engine.md) adds per-account commits, protected drafts and provisional evidence matching. [QIF transfer admission and explicit resolution](qif-transfers.md) are now implemented. Full transfer repair/reversal and reports remain unfinished.
 
@@ -372,3 +374,62 @@ Scoped read-plan reuse clears bindings/results on every use, remains bounded, fi
 The final 200k native interaction benchmark completed exact correctness assertions but had no frame samples. The final 100k attempt produced valid cache-zero frames, then failed on unavailable default-cache frames before save/final completion. A prior full 100k diagnostic did complete all correctness checks. Non-monotonic timings are individual observations, not scalability or causal speedup claims; see the workload report. The coordinator must commit the checkpoint and ask whether to proceed to point 3 or stop.
 
 Final coordinator check: all 404 local links and heading anchors across 40 repository documents resolved; `git diff --check` passed.
+
+## Point-3 statement imports — 2026-10-27
+
+OFX 1.x SGML and OFX 2.x XML bank and credit-card statement lists are implemented. QFX, QBO, and ASO are labels of that grammar. ASO was identified by in-place structural inspection of the owner's private export: the export is OFX 1.0.2 SGML credit-card statement syntax. No path, filename, account identifier, amount, name, FITID, or other content was recorded. Format `aso` is legal in `source_headers` and `source_occurrences` while grammar stays `ofx-sgml` or `ofx-xml`. Schema versions stay 18 with rules and 19 without. The contract is [features/003-ofx-profile.md](../features/003-ofx-profile.md). Opening a schema 16 or 17 document fails with `Unsupported experimental format; no migration was attempted` before journal-mode or shape checks. Application id remains 1397770577. QIF bank-v3 behavior for new documents uses the same `source_headers`, `source_occurrences`, and `source_associations` tables, so a later OFX-family confirmation can attach to a QIF-originated ledger row without posting the money again.
+
+Original files are left unchanged. Encrypted `sources.bytes` retain those bytes. Occurrence slices stay original bytes. Rules and manual edits do not alter source facts. A currency that does not match the target account refuses the prepare and saves nothing. There is no conversion. Investment and other unsupported message sets, malformed structure, non-UTF-8 bodies, and pending transaction lists refuse before capture. Statement transfers, corrections, foreign `ORIGCURRENCY`, and unknown financial children block the affected record and keep the evidence. No destination account is created by name. Account rename, archive, deletion, post-commit opening correction, and currency reassignment were not implemented.
+
+Synthetic fixtures only: `tests/fixtures/statements/bank-sgml.ofx`, `bank-xml.ofx`, `empty-and-refused.ofx`, and `card-sgml.aso`. The empty fixture is a successful empty statement list. The ASO fixture is a synthetic credit-card SGML file with `SECURITY:TYPE1`, charset 1252, no `USERKEY`, one debit, one credit, timezone-bracket dates, opaque FITIDs, and ledger and available balances. Private export paths and contents were not recorded.
+
+Verification is selected macOS coverage on Apple clang, arm64. It is not a full-suite claim and not a Linux or Windows claim.
+
+After the conflicting-`CURDEF` fix, `ctest --test-dir <tree> --output-on-failure -R '^statement\.parser$'` passed 1/1 in each of:
+
+- `build/import-ui-rules-sanitized` (0.02 seconds)
+- `build/import-ui-rules-debug` (0.00 seconds)
+- `build/import-ui-rules-release` (0.00 seconds)
+- rules-off `build/import-ui-debug` (0.00 seconds)
+
+The previous crash input was replayed with `./build/qif-fuzz/tests/engine/spentit_statement_fuzzer <artifact> -runs=0` and exited 0. That replay is not a campaign.
+
+The clean campaign, after both parser fixes, was:
+
+`./build/qif-fuzz/tests/engine/spentit_statement_fuzzer build/qif-fuzz/statement-corpus -seed=20261027 -max_total_time=180 -max_len=65536 -len_control=0 -timeout=10 -rss_limit_mb=2048 -artifact_prefix=build/qif-fuzz/statement-artifacts/ -print_final_stats=1`
+
+Exit 0. `Done 197324 runs in 181 second(s)`. `number_of_executed_units` 197324, average 1090 executions/second, 1628 new units, peak RSS 602 MiB, slowest unit 0 seconds. The artifact directory was empty. The corpus directory already held inputs from the aborted campaign below plus the three synthetic fixtures (592 files at start). Two earlier campaigns are failures, not successes: the first exited 134 after 2 executions on an ASan stack-use-after-scope in the account-label temporary; the second exited 134 after 80816 executions on a null `CURDEF` assignment. Both were fixed before the clean run. The point-2 QIF campaigns (750,204 executions) are unchanged historical evidence and are not this parser.
+
+These selections passed after the account-label and QIF-encoding UI fixes and before the one-line `CURDEF` return. They do not include that return. `statement.parser` above is the post-fix parser proof. Storage and UI binaries were not rebuilt again for that parser-only line.
+
+- Rules-on Release, `ctest --test-dir build/import-ui-rules-release --output-on-failure -j 2 -R '^(statement\.(parser|review|faults)|import\.(ui|basics|review|repairs|errors|validation)|qif\.(basics|malformed|limits|mutations)|rulestore\.schema|accounts\.groups)$'`: 15/15 in 63.93 seconds.
+- Rules-on ASan/UBSan, the same regex in `build/import-ui-rules-sanitized`: 15/15 in 142.44 seconds. `statement.review` in that run covers the owned account label under ASan.
+- Rules-off Debug, `ctest --test-dir build/import-ui-debug --output-on-failure -j 2 -R '^(statement\.(parser|review|faults)|import\.(schema_gate|basics|review)|qif\.(basics|malformed)|accounts\.groups)$'`: 9/9 in 56.37 seconds. `import.schema_gate` rejects versions 6, 16, 17, and 18 when the binary expects 19.
+- Rules-on Debug after the UI refusal narrowing: `statement.parser`, `statement.review`, and `import.ui` passed 3/3 in 39.88 seconds.
+
+The `statement.review` test source covers a QIF include, an overlapping OFX SGML duplicate association with the balance unchanged, an idempotent commit retry, exact evidence after backup restore, an uncertain `FITID` that posts only when explicitly included, a different `FITID` kept as a distinct posting, an uncertain cross-format date excluded only by explicit disposition, legitimate same-day repeats, a repeated in-file `FITID` that must be included because it cannot target its uncommitted sibling, missing-amount repair, multi-account map and create, an `aso` credit-card import that posts once and associates a later same-FITID import without a second posting, and visible refusal of malformed, investment, currency-mismatch, non-OFX `aso`, and mislabeled input with the external file unchanged. `statement.faults` sweeps the new include commit's observed write positions, one abrupt VFS exit, observer exits on both sides of the SQLite commit, and cancellation during group prepare with a later successful retry. An earlier rules-on Debug faults run, before the account-label fix, printed `statement commit fault positions: 141` and passed. The later Release (51.29 seconds), ASan/UBSan (101.41 seconds), and rules-off Debug (51.86 seconds) faults runs passed inside the selections above. Their printed position counts were not copied here and are not restated as 141.
+
+An earlier rules-on Debug selection of 75 tests excluding `io`, `crashes`, `backup`, and `benchmark` finished 74 passed and `import.ui` failed, in 142.24 seconds. The failure was a QIF encoding diagnostic thrown before capture. That throw was narrowed so plain QIF evidence is ingested again while OFX file-level refusals still throw. The other 72 passing tests from that selection were not rerun after the UI, account-label, or `CURDEF` fixes.
+
+The selections above predate ASO admission. They do not contain the `aso` format check. The 197,324-execution campaign also predates it. No new multi-hour campaign was started.
+
+ASO admission was identified by in-place structural inspection: the owner's private export is OFX 1.0.2 SGML credit-card statement syntax. No path, filename, or contents were recorded. The agent did not open or search for that file. After the parser, format-check, and synthetic-fixture edits, each tree was rebuilt for `spentit_statement_tests` and `spentit_statement_store_tests`, then:
+
+`ctest --test-dir <tree> --output-on-failure -R '^statement\.(parser|review)$'`
+
+- Rules-on Debug `build/import-ui-rules-debug`: 2/2 in 2.91 seconds (`statement.parser` 0.01, `statement.review` 2.90).
+- Rules-on Release `build/import-ui-rules-release`: 2/2 in 2.35 seconds (`statement.parser` 0.00, `statement.review` 2.34).
+- Rules-on ASan/UBSan `build/import-ui-rules-sanitized`: 2/2 in 4.64 seconds (`statement.parser` 0.02, `statement.review` 4.61).
+- Rules-off Debug `build/import-ui-debug`: 2/2 in 2.73 seconds (`statement.parser` 0.01, `statement.review` 2.71).
+
+The post-ASO `statement.review` is the run that covers the credit-card `aso` import, shared source tables, and the second same-FITID import. `import.ui` was not rerun: the only UI edit is the QML name filter, and no UI test asserts that filter. `import_model.cpp` was not changed. `statement.faults`, the full `import.io`, `import.crashes`, and backup failure/crash sweeps were not rerun for this admission. Linux and Windows remain unverified. The pre-ASO 15/15 binaries do not contain this change.
+
+The rebuilt fuzzer replayed the synthetic fixture once:
+
+`./build/qif-fuzz/tests/engine/spentit_statement_fuzzer tests/fixtures/statements/card-sgml.aso -runs=0`
+
+Exit 0. LibFuzzer reported one input executed in 6 ms and noted that fuzzing was not performed. That replay is not a campaign.
+
+Cases still refused: a body labeled `aso` that is neither OFX SGML nor OFX XML; `SECURITY` other than empty, `NONE`, or `TYPE1`; `COMPRESSION` other than empty or `NONE`; a body that is not valid UTF-8; unsupported message sets; a currency that does not match the target account; and malformed input before capture. A repeated `FITID` that exists only inside the current uncommitted batch still has no duplicate target.
+
+Coordinator review on 2026-10-27 accepted this checkpoint with the recorded limits. A fresh rules-on Debug `ctest --test-dir build/import-ui-rules-debug --output-on-failure -R '^statement\.(parser|review)$'` passed 2/2 in 2.55 seconds. `git diff --check` passed. Feature 003 stays active. The owner is asked whether to proceed to point 4 or stop.

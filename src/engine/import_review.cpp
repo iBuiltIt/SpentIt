@@ -15,8 +15,35 @@ EvidenceKey evidence_key(const qif::Record& source) {
     if ((!source.transaction && !source.repairable) || !source.source_currency) invalid();
     return {source.date,source.source_currency->definition_id(),source.original_amount?std::optional(source.original_amount->units()):std::nullopt,source.payee,source.reference};
 }
+namespace {
+bool ofx_family(const qif::Record& record) {
+    return record.format=="ofx" || record.format=="qfx" || record.format=="qbo" || record.format=="aso";
+}
+}
+std::string basis_label(MatchBasis basis) {
+    switch(basis) {
+    case MatchBasis::same_source_fields: return "same source fields";
+    case MatchBasis::same_date_amount: return "same date and amount";
+    case MatchBasis::same_amount_unknown_date: return "same original amount; source date unavailable";
+    case MatchBasis::unknown_original_amount: return "original amount unavailable; review source evidence";
+    case MatchBasis::same_fitid: return "same FITID, currency and original amount";
+    case MatchBasis::uncertain_fitid: return "same FITID with uncertain amount or currency";
+    case MatchBasis::uncertain_date: return "same original amount; dates differ across exports";
+    }
+    return "review source evidence";
+}
 std::optional<MatchBasis> candidate_basis(const qif::Record& a,const qif::Record& b) {
     const auto x=evidence_key(a),y=evidence_key(b);
+    const auto fit_of=[](const qif::Record& record){return record.fitid.empty()?record.associated_fitid:record.fitid;};
+    const auto fit_a_id=fit_of(a), fit_b_id=fit_of(b);
+    const bool fit_a=!fit_a_id.empty(), fit_b=!fit_b_id.empty();
+    // Different bank ids are legitimate repeats, even on the same day and amount.
+    if(fit_a && fit_b && fit_a_id!=fit_b_id) return {};
+    if(fit_a && fit_b) {
+        if(x.definition!=y.definition || !x.original_units || !y.original_units || x.original_units!=y.original_units)
+            return MatchBasis::uncertain_fitid;
+        return MatchBasis::same_fitid;
+    }
     if(x.definition!=y.definition) return {};
     if(!x.original_units || !y.original_units) {
         if(!x.date.empty() && !y.date.empty() && x.date!=y.date)return {};
@@ -24,7 +51,7 @@ std::optional<MatchBasis> candidate_basis(const qif::Record& a,const qif::Record
     }
     if(x.original_units!=y.original_units)return {};
     if(x.date.empty() || y.date.empty()) return MatchBasis::same_amount_unknown_date;
-    if(x.date!=y.date) return {};
+    if(x.date!=y.date) return (ofx_family(a) || ofx_family(b)) ? std::optional(MatchBasis::uncertain_date) : std::nullopt;
     return x==y ? MatchBasis::same_source_fields : MatchBasis::same_date_amount;
 }
 void validate_draft(const qif::Record& source,const DraftRow& edit) {

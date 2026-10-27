@@ -1,8 +1,8 @@
 # 003 — QIF import and review
 
 Status: **active**  
-Last updated: 2026-10-26  
-Implementation: partial; bounded QIF parser and optional headless encrypted import/review/commit experiment. A bounded [writable import UI](../doc/import-ui.md) now connects review/edit/commit; general format compatibility remains incomplete. See [implemented scope and verification](../doc/durable-import.md).
+Last updated: 2026-10-27  
+Implementation: partial. Bank-v3 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share schema-18/19 source facts and reviewable associations. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27).
 
 ## Accepted requirements
 
@@ -26,7 +26,7 @@ The owner has the same real-world account activity exported separately in all fo
 
 Ask the owner for access when needed. Keep private exports out of the repository and routine automated tests; never record their filenames, paths or contents or move/modify the originals. Prefer synthetic equivalents for repeatable cross-format regression tests. Follow the [private-sample handling contract](009-durable-import-milestone.md#private-sample-availability). No samples were opened for this documentation update.
 
-Future design must specify each supported dialect, preserve source evidence, normalize into the exact-money model, and define occurrence-aware duplicate review across formats so importing another export of the same activity cannot silently double-count or discard legitimate repeats. Matching counts or totals alone do not prove record identity. Parser mappings, resource limits and verification cases remain to be designed before those implementations.
+The 2026-10-27 checkpoint specifies and implements OFX, QFX, QBO, and ASO bank and credit-card statement lists in the [statement profile](003-ofx-profile.md). ASO was identified by in-place structural inspection as OFX 1.0.2 SGML credit-card statement syntax. No path or contents were recorded. The paragraphs above record the 2026-10-25 requirement; they are not a claim that the rest of feature 003 is finished.
 
 ## Accepted source-evidence direction — 2026-10-25
 
@@ -37,6 +37,8 @@ Separate original evidence, parsed source facts and editable ledger interpretati
 One transaction can be associated with multiple source occurrences from different imports. Renaming an imported payee changes the editable interpretation without altering either the original facts or the associations. Confirming a later export as evidence of the same transaction adds an association, not another monetary posting. Preserve the match basis and user decision so an incorrect association can be explained and corrected.
 
 Proposed relational realization: an import stores its original bytes; source-occurrence rows identify locations within it and parsed facts; a transaction has a stable identity; an association table links that identity to its source occurrences. These are conceptual responsibilities, not adopted table names or a migration plan. The current QIF experiment preserves bytes and revisions but does not implement the future multi-format association model.
+
+Correction 2026-10-27: schemas 18 and 19 store immutable original bytes, `source_occurrences`, and `source_associations`. QIF and OFX-family imports both use that representation. Schemas 16 and 17 are rejected rather than migrated. The paragraph above describes the experiment before that checkpoint. See the [statement profile](003-ofx-profile.md).
 
 Removing a transaction from the ledger retains imported evidence and persistent history. The owner subsequently accepted ordinary correction/removal/strict Undo and explicit removed-record reimport review in [feature 011](011-committed-editing-and-reversal.md), now implemented per account in the bounded QIF workflow. A removed match is neither automatically restored nor silently suppressed. Cross-format association correction, transfer changes and broader evidence reconciliation remain unresolved.
 
@@ -85,7 +87,7 @@ $-29.17
 
 ## Open questions
 
-- Supported QIF dialects, date/encoding profiles, file-size limits, and partial-parse handling.
+- Supported QIF dialects, date/encoding profiles, file-size limits, and partial-parse handling. The OFX-family bank and credit-card slice, including the inspected ASO label, is specified separately. See [003-ofx-profile.md](003-ofx-profile.md).
 - Exact recognition confidence rules and review UI; handling uncertain candidates must be settled before implementing automatic exclusion.
 - One workspace versus multiple batches per account, commit selection granularity, and multi-account file review.
 - Exact transfer matching heuristics and unresolved correction/commit-order cases are tracked in [feature 008](008-transfer-matching-and-lifecycle.md); per-account commits and protected drafts are accepted.

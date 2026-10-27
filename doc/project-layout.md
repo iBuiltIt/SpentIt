@@ -1,6 +1,6 @@
 # Project layout and dependency boundaries
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
 State: selected organizational direction; the standalone `spentit_engine` library, optional `spentit_storage_prototype`, optional synthetic app/UI libraries and sheet executable, the headless durable-import experiment, and their tests now exist. The user prefers `src/`. The structure below reserves responsibilities, not a requirement to create empty directories or speculative abstractions.
 
@@ -40,7 +40,7 @@ The optional `src/storage/` and `tests/storage/` now contain the isolated SQLCip
 
 ### Engine
 
-Own money/currency types, accounts, transactions, allocations, financial validation, QIF parsing, duplicate-matching logic, rule evaluation, and reporting semantics. It must be testable without opening a window or a real database.
+Own money/currency types, accounts, transactions, allocations, financial validation, QIF parsing, OFX-family statement parsing, duplicate-matching logic, rule evaluation, and reporting semantics. It must be testable without opening a window or a real database.
 
 The engine may use appropriate non-UI libraries such as PCRE2. It must not depend on QML, Qt GUI/Widgets/Quick, concrete SQLCipher code, or application startup. Prefer standard C++ for core domain types; any Qt Core dependency needs a concrete justification rather than entering accidentally through UI types.
 
@@ -109,7 +109,7 @@ The category types/name validation remain in the standard-C++ engine; SQLCipher 
 
 ## Search and bulk ledger boundary — 2026-10-26
 
-`spentit_regex` owns the reusable bounded PCRE2 adapter; both optional rules and the import workflow link it. `spentit_import_view` privately links that adapter for the independently testable query parser/evaluator, with no SQL or Qt dependency. `SpentIt::engine` keeps its dependency-free boundary. The import worker loads immutable QIF evidence through the repository and publishes completed query snapshots. Schema-7 group receipts and bulk writes stay behind complete `ImportRepository` commands; QML does not loop over single-record writes or calculate authoritative totals. See [search/ledger contracts](search-ledger.md).
+`spentit_regex` owns the reusable bounded PCRE2 adapter; both optional rules and the import workflow link it. `spentit_import_view` privately links that adapter for the independently testable query parser/evaluator, with no SQL or Qt dependency. `SpentIt::engine` keeps its dependency-free boundary. The import worker loads immutable import evidence through the repository and publishes completed query snapshots. QIF and OFX-family occurrence bytes both remain available to that read path. Schema-7 group receipts and bulk writes stay behind complete `ImportRepository` commands; QML does not loop over single-record writes or calculate authoritative totals. See [search/ledger contracts](search-ledger.md).
 
 ## Account-scoped commands — 2026-10-26
 

@@ -1,9 +1,11 @@
 #include <spentit/import_store.hpp>
+#include <spentit/statements.hpp>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <set>
 #include <tuple>
 #include <map>
+#include <unordered_set>
 #include <sqlite3.h>
 #include <algorithm>
 #include <climits>
@@ -168,7 +170,7 @@ void require_qif_transfers(const imports::Occurrence& id,const imports::DraftRow
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=17;
+PRAGMA user_version=19;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -302,7 +304,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=16;
+PRAGMA user_version=18;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -480,19 +482,30 @@ CREATE TRIGGER bulk_members_immutable BEFORE UPDATE ON bulk_members BEGIN SELECT
 CREATE TRIGGER bulk_members_keep BEFORE DELETE ON bulk_members BEGIN SELECT RAISE(ABORT,'immutable'); END;
 )SQL";
 #endif
+constexpr const char* source_fact_schema = R"SQL(
+CREATE TABLE source_headers(source_id TEXT PRIMARY KEY REFERENCES sources(id),format TEXT NOT NULL CHECK(format IN('qif','ofx','qfx','qbo','aso')),grammar TEXT NOT NULL CHECK(grammar IN('qif','ofx-sgml','ofx-xml')),header TEXT NOT NULL) STRICT;
+CREATE TABLE source_occurrences(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,format TEXT NOT NULL CHECK(format IN('qif','ofx','qfx','qbo','aso')),grammar TEXT NOT NULL CHECK(grammar IN('qif','ofx-sgml','ofx-xml')),begin_offset INTEGER NOT NULL,end_offset INTEGER NOT NULL,fitid TEXT NOT NULL,source_account_key TEXT NOT NULL,time_evidence TEXT NOT NULL,trntype TEXT NOT NULL,currency TEXT NOT NULL,original_units INTEGER,original_date TEXT NOT NULL,payee TEXT NOT NULL,memo TEXT NOT NULL,reference TEXT NOT NULL,uninterpreted TEXT NOT NULL,diagnostic INTEGER,blocked INTEGER NOT NULL CHECK(blocked IN(0,1)),PRIMARY KEY(batch,ordinal),FOREIGN KEY(batch) REFERENCES batches(id)) STRICT;
+CREATE TABLE source_associations(ledger_batch TEXT NOT NULL,ledger_ordinal INTEGER NOT NULL,source_batch TEXT NOT NULL,source_ordinal INTEGER NOT NULL,PRIMARY KEY(ledger_batch,ledger_ordinal,source_batch,source_ordinal),FOREIGN KEY(ledger_batch,ledger_ordinal) REFERENCES records(batch,ordinal),FOREIGN KEY(source_batch,source_ordinal) REFERENCES source_occurrences(batch,ordinal)) STRICT;
+CREATE TRIGGER source_headers_immutable BEFORE UPDATE ON source_headers BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER source_headers_keep BEFORE DELETE ON source_headers BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER source_occurrences_immutable BEFORE UPDATE ON source_occurrences BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER source_occurrences_keep BEFORE DELETE ON source_occurrences BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER source_associations_immutable BEFORE UPDATE ON source_associations BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER source_associations_keep BEFORE DELETE ON source_associations BEGIN SELECT RAISE(ABORT,'immutable'); END;
+)SQL";
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="17"
+    return version=="3" || version=="4" || version=="17" || version=="19"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16"
+        || version=="6" || version=="16" || version=="18"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="17"
+    return version=="4" || version=="17" || version=="19"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16"
+        || version=="6" || version=="16" || version=="18"
 #endif
         ;
 }
@@ -545,17 +558,95 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16"
+    || version=="6" || version=="16" || version=="18"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18";
 #else
     (void)db;return false;
 #endif
+}
+void retain_source_header(sqlite3* db,std::string_view id,std::string_view format,std::string_view grammar,std::string_view header) {
+    Statement row(db,"INSERT INTO source_headers VALUES(?,?,?,?)");row.text(1,id);row.text(2,format);row.text(3,grammar);row.text(4,header);row.done();
+}
+void bind_candidate(Statement& statement,const qif::Record& record) {
+    statement.text(1,record.date);
+    if(record.original_amount) statement.integer(3,record.original_amount->units());
+    statement.text(4,record.fitid);
+    statement.text(5,record.format.empty()?"qif":record.format);
+}
+constexpr const char* candidate_where =
+    "b.account_id=spentit_account() AND b.state=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1 "
+    "AND ((?4<>'' AND EXISTS(SELECT 1 FROM source_associations fa JOIN source_occurrences fo ON fo.batch=fa.source_batch AND fo.ordinal=fa.source_ordinal WHERE fa.ledger_batch=r.batch AND fa.ledger_ordinal=r.ordinal AND ifnull(fo.fitid,'')=?4)) "
+    "OR (NOT (?4<>'' AND EXISTS(SELECT 1 FROM source_associations fa JOIN source_occurrences fo ON fo.batch=fa.source_batch AND fo.ordinal=fa.source_ordinal WHERE fa.ledger_batch=r.batch AND fa.ledger_ordinal=r.ordinal AND ifnull(fo.fitid,'')<>'' AND ifnull(fo.fitid,'')<>?4)) "
+    "AND (r.original=?3 OR r.original IS NULL OR ?3 IS NULL) AND ((r.source_date=?1 OR r.source_date='' OR ?1='') "
+    "OR (?3 IS NOT NULL AND r.original=?3 AND r.source_date<>'' AND ?1<>'' AND r.source_date<>?1 AND (?5<>'qif' OR ifnull(o.format,'qif')<>'qif')))))";
+void write_occurrence(sqlite3* db,std::string_view batch,std::size_t ordinal,const qif::Record& record) {
+    if(!record.source_currency) fail(SQLITE_CORRUPT,"Source currency is missing");
+    Statement row(db,"INSERT INTO source_occurrences VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    row.text(1,batch);row.integer(2,integer(ordinal));row.text(3,record.format.empty()?"qif":record.format);row.text(4,record.grammar.empty()?"qif":record.grammar);
+    row.integer(5,integer(record.begin));row.integer(6,integer(record.end));row.text(7,record.fitid);row.text(8,record.source_account_key);
+    row.text(9,record.time_evidence);row.text(10,record.trntype);row.text(11,record.source_currency->definition_id());
+    if(record.original_amount) row.integer(12,record.original_amount->units());
+    row.text(13,record.date);row.text(14,record.payee);row.text(15,record.memo);row.text(16,record.reference);row.text(17,record.uninterpreted);
+    if(record.diagnostic) row.integer(18,static_cast<int>(record.diagnostic->issue));
+    row.integer(19,record.diagnostic && !record.repairable?1:0);row.done();
+}
+void overlay_occurrence(sqlite3* db,const imports::Occurrence& id,qif::Record& source) {
+    Statement row(db,"SELECT format,grammar,fitid,source_account_key,time_evidence,trntype,uninterpreted FROM source_occurrences WHERE batch=? AND ordinal=?");
+    row.text(1,id.batch);row.integer(2,integer(id.ordinal));
+    if(!row.row() || row.bytes(2)!=source.fitid) fail(SQLITE_CORRUPT,"Source occurrence does not match its record");
+    source.format=row.bytes(0);source.grammar=row.bytes(1);source.fitid=row.bytes(2);source.source_account_key=row.bytes(3);
+    source.time_evidence=row.bytes(4);source.trntype=row.bytes(5);source.uninterpreted=row.bytes(6);
+}
+statements::Index indexed_source(sqlite3* db,std::string_view source_id,std::string_view bytes,const std::function<void()>& checkpoint={}) {
+    Statement header(db,"SELECT format FROM source_headers WHERE source_id=?");header.text(1,source_id);
+    if(!header.row()) fail(SQLITE_CORRUPT,"Source header is missing");
+    auto index=statements::inspect(bytes,header.bytes(0),checkpoint);
+    if(!index.admissible || !index.refusal.empty() || index.diagnostic) fail(SQLITE_CORRUPT,"Invalid grouped source structure");
+    return index;
+}
+std::string source_header_text(const statements::Index& index) {
+    std::string header=index.header;
+    if(!index.notes.empty()) {
+        if(!header.empty() && header.back()!='\n') header.push_back('\n');
+        header+=index.notes;
+    }
+    return header;
+}
+void verify_source_facts(sqlite3* db,const app::BatchInfo& b,const qif::Result& parsed,bool materialized) {
+    Statement occurrences(db,"SELECT count(*) FROM source_occurrences WHERE batch=?");occurrences.text(1,b.id);if(!occurrences.row()) fail(SQLITE_CORRUPT);
+    Statement associations(db,"SELECT count(*) FROM source_associations WHERE source_batch=?");associations.text(1,b.id);if(!associations.row()) fail(SQLITE_CORRUPT);
+    if(!materialized) {
+        if(occurrences.integer(0)!=0 || associations.integer(0)!=0) fail(SQLITE_CORRUPT,"Source facts exist before interpretation");
+        return;
+    }
+    if(occurrences.integer(0)!=integer(parsed.records.size())) fail(SQLITE_CORRUPT,"Source occurrence does not match its record");
+    if(b.state!=app::BatchState::committed && associations.integer(0)!=0) fail(SQLITE_CORRUPT,"Source association exists before commit");
+    for(std::size_t i=0;i<parsed.records.size();++i) {
+        const auto& source=parsed.records[i];
+        Statement row(db,"SELECT format,grammar,begin_offset,end_offset,fitid,source_account_key,time_evidence,trntype,currency,original_units,original_date,payee,memo,reference,uninterpreted,diagnostic,blocked FROM source_occurrences WHERE batch=? AND ordinal=?");
+        row.text(1,b.id);row.integer(2,integer(i));if(!row.row() || !source.source_currency) fail(SQLITE_CORRUPT,"Source occurrence is missing");
+        const auto format=source.format.empty()?"qif":source.format;const auto grammar=source.grammar.empty()?"qif":source.grammar;
+        const bool same=row.bytes(0)==format && row.bytes(1)==grammar && row.integer(2)==integer(source.begin) && row.integer(3)==integer(source.end) && row.bytes(4)==source.fitid && row.bytes(5)==source.source_account_key && row.bytes(6)==source.time_evidence && row.bytes(7)==source.trntype && row.bytes(8)==source.source_currency->definition_id() && row.null(9)==!source.original_amount && (!source.original_amount || row.integer(9)==source.original_amount->units()) && row.bytes(10)==source.date && row.bytes(11)==source.payee && row.bytes(12)==source.memo && row.bytes(13)==source.reference && row.bytes(14)==source.uninterpreted && row.null(15)==!source.diagnostic && (!source.diagnostic || row.integer(15)==static_cast<int>(source.diagnostic->issue)) && row.integer(16)==(source.diagnostic && !source.repairable?1:0);
+        if(!same) fail(SQLITE_CORRUPT,"Source occurrence does not match its record");
+        if(b.state!=app::BatchState::committed) continue;
+        Statement links(db,"SELECT ledger_batch,ledger_ordinal FROM source_associations WHERE source_batch=? AND source_ordinal=?");links.text(1,b.id);links.integer(2,integer(i));
+        const bool kept=retained_member(db,b.id,i);
+        Statement decision(db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=?1 AND ordinal=?2 AND revision=(SELECT max(revision) FROM versions WHERE batch=?1 AND ordinal=?2)");
+        decision.text(1,b.id);decision.integer(2,integer(i));if(!decision.row() || decision.integer(0)==0) fail(SQLITE_CORRUPT,"Committed source has no review decision");
+        if(!kept) {if(links.row()) fail(SQLITE_CORRUPT,"Cleared source is associated with a ledger transaction");continue;}
+        if(!links.row()) fail(SQLITE_CORRUPT,"Committed source has no evidence association");
+        const auto ledger_batch=links.bytes(0);const auto ledger_ordinal=links.integer(1);
+        if(links.row()) fail(SQLITE_CORRUPT,"Committed source has more than one evidence association");
+        if(decision.integer(0)==1) {if(ledger_batch!=b.id || ledger_ordinal!=integer(i)) fail(SQLITE_CORRUPT,"Included source is not associated with its ledger transaction");}
+        else if(decision.integer(0)==2) {if(ledger_batch!=decision.bytes(1) || ledger_ordinal!=decision.integer(2)) fail(SQLITE_CORRUPT,"Duplicate source is not associated with its ledger transaction");}
+        else fail(SQLITE_CORRUPT,"Committed source has no evidence association");
+    }
 }
 
 void store_entry(sqlite3*,const imports::Occurrence&,const app::EntrySnapshot&,std::optional<std::int64_t> = {});
@@ -621,9 +712,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="16";
+        constexpr const char* expected_format="18";
 #else
-        constexpr const char* expected_format="17";
+        constexpr const char* expected_format="19";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"Unsupported experimental format; no migration was attempted");
@@ -631,6 +722,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
            scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='account_creations'")!="1")
             fail(SQLITE_SCHEMA,"Account structure does not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('transfer_events','transfer_versions','transfer_heads','retained_transfer_rows')")!="4")fail(SQLITE_SCHEMA,"Transfer structure does not match format version");
+        if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('source_headers','source_occurrences','source_associations')")!="3")fail(SQLITE_SCHEMA,"Document structure does not match format version");
         const auto common=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('account','account_creations','sources','batches','records','versions','allocations','operations','events','entry_revisions','entry_allocations','entry_heads','ledger_operations','change_dependencies','history_order','review_stamps','category_state','category_versions','category_heads','category_operations','operation_registry','draft_fields','entry_fields','draft_allocation_meta','entry_allocation_meta')");
         const auto rule_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('rule_state','rule_definitions','rule_heads','rule_operations','rule_operation_requests','rule_snapshots','rule_applications','draft_rule_fields','draft_rule_allocations','entry_rule_fields','entry_rule_allocations')");
         const auto bulk_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('bulk_operations','bulk_members')");
@@ -658,6 +750,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
         Atomic transaction(db);
         exec(db, schema);
         exec(db, transfer_schema);
+        exec(db, source_fact_schema);
         transaction.commit();
         sync_directory(path);
     }
@@ -745,10 +838,15 @@ std::string ImportStore::evidence(std::string_view id) const {
 qif::Result ImportStore::parsed_source(std::string_view id,const std::function<void()>& checkpoint) const {
     require_account(id);const auto b=batch(impl_->db,id);const auto acct=account_for_batch(id);
     const auto bytes=evidence(id);
-    Statement association(impl_->db,"SELECT source_account FROM batches WHERE id=?");association.text(1,id);if(!association.row())fail(SQLITE_NOTFOUND);
-    if(association.null(0))return qif::parse(bytes,b.profile,acct.currency,checkpoint);
-    const auto document=qif::index_document(bytes,checkpoint);
-    return qif::parse_account(bytes,document,static_cast<std::size_t>(association.integer(0)),b.profile,acct.currency,checkpoint);
+    Statement association(impl_->db,"SELECT b.source_account,b.parser,h.format,h.grammar FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE b.id=?");association.text(1,id);if(!association.row())fail(SQLITE_CORRUPT,"Source header is missing");
+    if(association.bytes(1)==qif::parser_version || association.bytes(2)=="qif") {
+        if(association.null(0))return qif::parse(bytes,b.profile,acct.currency,checkpoint);
+        const auto document=qif::index_document(bytes,checkpoint);
+        return qif::parse_account(bytes,document,static_cast<std::size_t>(association.integer(0)),b.profile,acct.currency,checkpoint);
+    }
+    if(association.null(0))fail(SQLITE_CORRUPT,"Statement import is missing its account mapping");
+    statements::Index index;index.parser=association.bytes(1);index.format=association.bytes(2);index.grammar=association.bytes(3);index.explicit_accounts=true;
+    return statements::parse_mapped(bytes,index,static_cast<std::size_t>(association.integer(0)),b.profile,acct.currency,checkpoint);
 }
 app::ImportRepairProgress ImportStore::repair_progress(std::string_view id) const {
     const auto parsed=parsed_source(id);app::ImportRepairProgress result;if(parsed.diagnostic)++result.blocked;
@@ -774,9 +872,16 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         if(scalar(impl_->db,"PRAGMA user_version")=="1") source.repairable=false;
         return {id,std::move(source),{}, {imports::Disposition::unresolved,{}},{}};
     }
-    auto parsed=qif::parse(src.bytes(0),b.profile,acct.currency);
+    Statement parser(impl_->db,"SELECT parser FROM batches WHERE id=?");parser.text(1,id.batch);if(!parser.row())fail(SQLITE_CORRUPT);
+    const auto parsed=parser.bytes(0)==qif::parser_version ? qif::parse(src.bytes(0),b.profile,acct.currency) : statements::parse_occurrence(src.bytes(0),parser.bytes(0),acct.currency,b.profile);
     if(parsed.diagnostic || parsed.records.size()!=1 || (!parsed.records[0].transaction && !parsed.records[0].repairable)) fail(SQLITE_CORRUPT);
-    app::RowView out{id,std::move(parsed.records[0]),{}, {},{}};
+    auto source=parsed.records[0]; overlay_occurrence(impl_->db,id,source);
+    if(source.fitid.empty()) {
+        Statement fits(impl_->db,"SELECT DISTINCT fitid FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=? AND a.ledger_ordinal=? AND ifnull(fitid,'')<>''");
+        fits.text(1,id.batch);fits.integer(2,integer(id.ordinal));
+        if(fits.row()) { source.associated_fitid=fits.bytes(0); if(fits.row()) source.associated_fitid.clear(); }
+    }
+    app::RowView out{id,std::move(source),{}, {},{}};
     out.excluded_by_clear=!retained_member(impl_->db,id.batch,id.ordinal);
     Statement v(impl_->db,"SELECT revision,date,payee,memo,total,decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? ORDER BY revision DESC LIMIT 1");
     v.text(1,id.batch); v.integer(2,integer(id.ordinal)); if(!v.row()) fail(SQLITE_CORRUPT);
@@ -798,10 +903,9 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         if(!target.row())fail(SQLITE_CORRUPT);out.review_stale=target.integer(0)!=target.integer(2) || target.integer(1)!=target.integer(3);
     }
     if (!candidates) return out;
-    Statement c(impl_->db,"SELECT r.batch,r.ordinal FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal "
-        "WHERE b.account_id=spentit_account() AND b.state=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1 "
-        "AND (r.source_date=? OR r.source_date='' OR ?='') AND (r.original=?3 OR r.original IS NULL OR ?3 IS NULL) ORDER BY r.batch,r.ordinal LIMIT 4097");
-    c.text(1,out.source.date); c.text(2,out.source.date); if(out.source.original_amount)c.integer(3,out.source.original_amount->units());
+    const auto candidate_sql=std::string("SELECT r.batch,r.ordinal FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" ORDER BY r.batch,r.ordinal LIMIT 4097";
+    Statement c(impl_->db,candidate_sql.c_str());
+    bind_candidate(c,out.source);
     while(c.row()) {if(out.candidates.size()==4096)fail(SQLITE_TOOBIG,"More than 4096 possible duplicate occurrences; review requires a narrower source import");out.candidates.push_back({c.bytes(0),static_cast<std::size_t>(c.integer(1))});}
     return out;
 }
@@ -823,6 +927,7 @@ app::BatchInfo ImportStore::ingest(std::string_view id,std::string_view bytes,qi
         fail(SQLITE_CONSTRAINT,"Finish or discard the pending import first");
     }
     Statement evidence(impl_->db,"INSERT INTO sources VALUES(?,?)"); evidence.text(1,id); evidence.blob(2,bytes); evidence.done();
+    retain_source_header(impl_->db,id,"qif","qif","");
     Statement insert(impl_->db,schema3_batch(impl_->db)?"INSERT INTO batches VALUES(?,?,?,0,0,?,?,0,spentit_account(),?1,NULL)":"INSERT INTO batches VALUES(?,?,?,0,0,?,?)");
     insert.text(1,id); insert.integer(2,static_cast<int>(profile)); insert.text(3,qif::parser_version);
     insert.integer(4,integer(parsed.records.size())); insert.integer(5,parsed.valid()?0:1); insert.done();
@@ -850,6 +955,7 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
     try {
         Atomic transaction(impl_->db);
         Statement evidence(impl_->db,"INSERT INTO sources VALUES(?,?)");evidence.text(1,id);evidence.blob(2,bytes);evidence.done();
+        retain_source_header(impl_->db,id,"qif","qif","");
         Statement insert(impl_->db,"INSERT INTO batches VALUES(?,?,?,3,0,?,1,NULL,spentit_account(),?1,NULL)");
         insert.text(1,id);insert.integer(2,static_cast<int>(profile));insert.text(3,qif::parser_version);insert.integer(4,integer(parsed.records.size()));insert.done();
         Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'capture')");event.text(1,id);event.done();
@@ -920,9 +1026,13 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
     Statement sequence(impl_->db,"SELECT coalesce(max(sequence),0) FROM records"); if(!sequence.row()) fail(SQLITE_CORRUPT);
     auto seq=sequence.integer(0);
     std::map<std::pair<std::string,std::int64_t>,bool> candidate_groups;
+    std::unordered_set<std::string> seen_fitids;
+    const auto probe_sql=std::string("SELECT 1 FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" LIMIT 1";
     for(std::size_t i=0;i<parsed.records.size();++i) {
         if(context) context->checkpoint();
-        const auto& r=parsed.records[i]; if(r.diagnostic || !r.transaction) continue;
+        const auto& r=parsed.records[i];
+        write_occurrence(impl_->db,id,i,r);
+        if(r.diagnostic || !r.transaction) continue;
         if(seq==INT64_MAX) fail(SQLITE_FULL,"Entry identity capacity exhausted");
         Statement record(impl_->db,"INSERT INTO records VALUES(?,?,?,?,?,?,?,?)");
         record.text(1,id); record.integer(2,integer(i)); record.integer(3,++seq); record.blob(4,bytes.substr(r.begin,r.end-r.begin));
@@ -932,16 +1042,16 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
             const auto original=load_row({identical,i},false);
             decision.disposition=imports::Disposition::duplicate;
             decision.duplicate_of=original.decision.duplicate_of ? original.decision.duplicate_of : std::optional(imports::Occurrence{identical,i});
+        } else if(!r.fitid.empty()) {
+            if(!seen_fitids.insert(r.fitid).second) decision.disposition=imports::Disposition::unresolved;
+            else { Statement candidate(impl_->db,probe_sql.c_str()); bind_candidate(candidate,r); if(candidate.row()) decision.disposition=imports::Disposition::unresolved; }
         } else {
             const auto key=std::pair{r.date,r.transaction->original_imported_amount()->units()};
             const auto found=candidate_groups.find(key);
             if(found!=candidate_groups.end()) {
                 if(found->second) decision.disposition=imports::Disposition::unresolved;
             } else {
-            Statement candidate(impl_->db,"SELECT 1 FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal "
-                "WHERE b.account_id=spentit_account() AND b.state=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1 "
-                "AND (r.source_date=? OR r.source_date='') AND (r.original=? OR r.original IS NULL) LIMIT 1");
-            candidate.text(1,r.date); candidate.integer(2,r.transaction->original_imported_amount()->units());
+            Statement candidate(impl_->db,probe_sql.c_str()); bind_candidate(candidate,r);
             const bool has_candidate=candidate.row();
             candidate_groups.emplace(key,has_candidate);
             if(has_candidate) decision.disposition=imports::Disposition::unresolved;
@@ -1051,7 +1161,10 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
         if(!retained_member(impl_->db,id,i)){++excluded;continue;}
         auto r=load_row({std::string(id),i},false);
         if(r.decision.disposition==imports::Disposition::unresolved) fail(SQLITE_CONSTRAINT,"Review possible duplicates before committing");
-        if(r.decision.disposition==imports::Disposition::include) { require_qif_transfers({std::string(id),i},*r.draft,resolved); ++included; amounts.push_back(r.draft->transaction.effective_total()); }
+        if(r.decision.disposition==imports::Disposition::include) {
+            require_qif_transfers({std::string(id),i},*r.draft,resolved); ++included; amounts.push_back(r.draft->transaction.effective_total());
+            Statement link(impl_->db,"INSERT INTO source_associations VALUES(?,?,?,?)");link.text(1,id);link.integer(2,integer(i));link.text(3,id);link.integer(4,integer(i));link.done();
+        }
         else if(r.decision.disposition==imports::Disposition::duplicate && r.decision.duplicate_of) {
             const auto& target=*r.decision.duplicate_of;
             const auto other=load_row(target,false);
@@ -1063,6 +1176,7 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
             if(batch(impl_->db,target.batch).state!=app::BatchState::committed || other.decision.disposition!=imports::Disposition::include ||
                 !imports::candidate_basis(r.source,other.source) || !matched.insert(target).second) fail(SQLITE_CONSTRAINT,"Invalid duplicate relationship");
             ++excluded;
+            Statement link(impl_->db,"INSERT INTO source_associations VALUES(?,?,?,?)");link.text(1,target.batch);link.integer(2,integer(target.ordinal));link.text(3,id);link.integer(4,integer(i));link.done();
         } else fail(SQLITE_CORRUPT);
     }
     const auto adjustment=transfer_import_transition(id,operation,true);
@@ -1137,12 +1251,14 @@ void ImportStore::verify(const app::OperationContext* context) const {
     verify_import_groups(context);
     const auto acct=account();
     Statement invalid(impl_->db,
-        "SELECT 1 FROM batches b WHERE parser!='bank-v3' OR (state=1)!=(EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
+        "SELECT 1 FROM batches b WHERE parser NOT IN('bank-v3','ofx-sgml-1','ofx-xml-2') OR (state=1)!=(EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
         "OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR revision+1!=(SELECT count(*) FROM events WHERE batch=b.id) "
         "UNION ALL SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch WHERE v.revision>b.revision "
         "UNION ALL SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id) "
         "UNION ALL SELECT 1 FROM account a WHERE frozen!=(EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id=a.singleton) OR EXISTS(SELECT 1 FROM transfer_events t WHERE t.account=a.singleton AND t.did_commit=1))");
     if(invalid.row()) fail(SQLITE_CORRUPT,"Invalid import history relationships");
+    Statement headers(impl_->db,"SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM source_headers h WHERE h.source_id=s.id) UNION ALL SELECT 1 FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE NOT ((b.parser='bank-v3' AND h.format='qif' AND h.grammar='qif') OR (b.parser='ofx-sgml-1' AND h.grammar='ofx-sgml' AND h.format IN('ofx','qfx','qbo','aso')) OR (b.parser='ofx-xml-2' AND h.grammar='ofx-xml' AND h.format IN('ofx','qfx','qbo','aso'))) UNION ALL SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.source_batch WHERE b.state!=1 UNION ALL SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.ledger_batch WHERE b.state!=1");
+    if(headers.row()) fail(SQLITE_CORRUPT,"Source evidence does not match its import");
     Statement all_batches(impl_->db,"SELECT id FROM batches ORDER BY rowid");
     while(all_batches.row()) {
         const auto b=batch(impl_->db,all_batches.bytes(0));const auto acct=account_for_batch(b.id);
@@ -1159,7 +1275,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
                 Statement bad(impl_->db,"SELECT 1 FROM events WHERE batch=? AND ((revision=0 AND kind!='capture') OR (revision>0 AND kind NOT IN('opening','discard')) OR (kind='discard' AND (revision!=? OR ?!=2)))");
                 bad.text(1,b.id);bad.integer(2,b.revision);bad.integer(3,static_cast<int>(b.state));if(bad.row())fail(SQLITE_CORRUPT);
                 Statement last(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");last.text(1,b.id);last.integer(2,b.revision);if(!last.row() || (b.state==app::BatchState::discarded)!=(last.bytes(0)=="discard"))fail(SQLITE_CORRUPT);
-                continue;
+                verify_source_facts(impl_->db,b,parsed,false);continue;
             }
             initial_revision=materialized.integer(0);
             if(initial_revision<0 || initial_revision>b.revision || b.state==app::BatchState::captured || first.bytes(0)!=(initial_revision==0?"ingest":"capture"))fail(SQLITE_CORRUPT);
@@ -1219,6 +1335,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
                 }
             }
         }
+        verify_source_facts(impl_->db,b,parsed,true);
         if(count.integer(0)!=integer(valid_count) || (retained_batch(impl_->db,b.id)?b.blocked:blocked!=b.blocked)) fail(SQLITE_CORRUPT);
         Statement duplicates(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=2 AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) "
             "GROUP BY duplicate_batch,duplicate_ordinal HAVING count(*)>1"); duplicates.text(1,b.id); if(duplicates.row()) fail(SQLITE_CORRUPT);

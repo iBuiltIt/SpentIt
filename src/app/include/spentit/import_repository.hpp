@@ -107,7 +107,7 @@ public:
     virtual std::vector<ImportGroup> import_groups() const { return {}; }
     virtual std::optional<ImportGroup> import_group_outcome(std::string_view id) const {for(const auto& g:import_groups())if(g.id==id)return g;return {};}
     virtual ImportGroup prepare_import_group(std::string_view,std::string_view,qif::DateOrder,
-                                             const std::vector<ImportAccountMapping>&,OperationContext&) {
+                                             const std::vector<ImportAccountMapping>&,OperationContext&,std::string_view ="qif") {
         throw std::logic_error("Grouped imports unavailable");
     }
     virtual ImportGroup resume_import_group(std::string_view,OperationContext&) { throw std::logic_error("Grouped imports unavailable"); }

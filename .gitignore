@@ -72,6 +72,7 @@ Desktop.ini
 *.ofx
 *.qfx
 *.qbo
+*.aso
 *.bak
 *.backup
 *.log
@@ -87,3 +88,7 @@ Desktop.ini
 !/tests/fixtures/qif/fuzz/accounts.qif
 !/tests/fixtures/qif/fuzz/malformed.qif
 !/tests/fixtures/qif/fuzz/overflow.qif
+!/tests/fixtures/statements/bank-sgml.ofx
+!/tests/fixtures/statements/bank-xml.ofx
+!/tests/fixtures/statements/empty-and-refused.ofx
+!/tests/fixtures/statements/card-sgml.aso

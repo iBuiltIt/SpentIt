@@ -24,6 +24,8 @@ std::string_view message(Issue issue) noexcept {
     case Issue::transfer: return "Invalid or unsupported transfer destination syntax";
     case Issue::category_class: return "Invalid or unsupported category/class notation";
     case Issue::cleared_status: return "Unsupported cleared or budget status";
+    case Issue::currency_mismatch: return "Currency does not match the target account; no conversion was applied";
+    case Issue::financial_blocker: return "This statement field could change financial meaning and is not interpreted";
     }
     return "Invalid QIF input";
 }

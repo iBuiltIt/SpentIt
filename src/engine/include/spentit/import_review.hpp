@@ -17,9 +17,11 @@ struct EvidenceKey {
     auto operator<=>(const EvidenceKey&) const = default;
 };
 EvidenceKey evidence_key(const qif::Record&);
-enum class MatchBasis { same_source_fields, same_date_amount, same_amount_unknown_date, unknown_original_amount };
+enum class MatchBasis { same_source_fields, same_date_amount, same_amount_unknown_date, unknown_original_amount,
+    same_fitid, uncertain_fitid, uncertain_date };
 // A candidate is evidence for review, never permission for automatic exclusion.
 std::optional<MatchBasis> candidate_basis(const qif::Record&,const qif::Record&);
+std::string basis_label(MatchBasis basis);
 enum class Disposition { unresolved, include, duplicate };
 struct Decision {
     Disposition disposition = Disposition::include;

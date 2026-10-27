@@ -1,8 +1,10 @@
 # Durable QIF workflow — headless implementation
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
 This is a partial implementation of [feature 009](../features/009-durable-import-milestone.md), authorized by the owner's Go. It is an optional synthetic-data experiment, not a production financial-document application. The existing sheet is still session-only. No private exports were opened or copied.
+
+Correction 2026-10-27: new import documents use schema 18 with rules or schema 19 without rules. The schema sentences below that name versions 5, 7, 16, or 17 describe the document at those earlier checkpoints. Current writers reject schemas 16 and 17 without migration. OFX, QFX, QBO, and ASO bank and credit-card statements use the same command and evidence path as QIF; the dialect is [003-ofx-profile.md](../features/003-ofx-profile.md). ASO is OFX 1.0.2 SGML credit-card statement syntax identified by in-place structural inspection, with no path or contents recorded.
 
 Current extensions include [QIF transfer destination resolution](qif-transfers.md), [multiple account workspaces](accounts.md), [ordinary committed changes](committed-changes.md), [categories](categories.md), [durable rules](durable-rules.md), and [search/atomic bulk operations](search-ledger.md). The earlier milestone boundaries and dated results below are historical, not a statement that these extensions are absent. Experimental formats are disposable until an owner-announced release; no migration or upgrade infrastructure is required.
 
@@ -84,7 +86,7 @@ The existing storage-independent sheet Debug build also passed 17/17 entries aft
 - Settings stores the selected dataset path. All operations use one worker and switching is disabled while busy. Cooperative opening/import cancellation and retained-evidence recovery are described below; broader lifecycle recovery UX remains incomplete.
 - Bounded date and split-total repair is implemented in schemas 2–5, as described below. Other malformed records remain blocked for discard/reimport. There is no partial commit or migration of older datasets.
 - Bounded UI/restart/backup tests now exist; accessibility and supported-platform validation remain incomplete. Large-workload measurements in this document cover only headless commands; the [durable UI report](import-ui-performance.md) records separate native measurements.
-- Broader QIF dialects, QFX/ASO/QBO/OFX, rules, transfers, category reports, committed editing/reversal, password changes, migrations and final architecture/license decisions remain outside this milestone.
+- Broader QIF dialects, QFX/ASO/QBO/OFX, rules, transfers, category reports, committed editing/reversal, password changes, migrations and final architecture/license decisions remain outside this milestone. Correction 2026-10-27: OFX, QFX, QBO, and ASO bank and credit-card statements are implemented in schema 18/19. Later sections record rules, transfers, and committed editing that this early list still names.
 
 Fault injection covers the enumerated synthetic paths, not physical power removal, every filesystem, all error combinations, or a universal absence of leaks. The import wrapper now has its own backup crash and publication-boundary tests; see below. The older prototype's backup tests remain separate.
 

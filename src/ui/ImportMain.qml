@@ -543,7 +543,7 @@ ApplicationWindow {
             Label {text:workflow.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
         }
     }
-    FileDialog { id:importDialog; title:"Import synthetic QIF"; nameFilters:["QIF files (*.qif)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),profile:profile.currentText}) }
+    FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),profile:profile.currentText}) }
     FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save backup / restored copy to a NEW file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
     Dialog {
         id:unsaved;objectName:"unsavedDialog"; title:committedEditing?"Unsaved committed correction":"Unsaved draft edit"; modal:true; anchors.centerIn:parent
@@ -991,7 +991,8 @@ ApplicationWindow {
             RowLayout {
                 Label {textFormat:Text.PlainText;text:"Committed: "+(s.committed||"")+"   Projected: "+(s.projected||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
                 ComboBox {id:profile;Layout.preferredWidth:200;model:["Choose date order","DMY","MDY"];Accessible.name:"QIF date order"}
-                Button {text:"Import QIF…";enabled:profile.currentIndex>0 && !s.pending;onClicked:guard(function(){importDialog.open()})}
+                Label {text:"Date order applies to QIF only";Layout.maximumWidth:160;wrapMode:Text.Wrap}
+                Button {text:"Import statement…";enabled:profile.currentIndex>0 && !s.pending;onClicked:guard(function(){importDialog.open()})}
                 Button {objectName:"openTransfers";text:"Transfers…";visible:!!s.transfersSupported;onClicked:guard(function(){transferDialog.open()})}
                 Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
             }

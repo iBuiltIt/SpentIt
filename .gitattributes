@@ -38,3 +38,6 @@ CMakeLists.txt text
 
 # Preserve byte-exact upstream evidence used by provenance/hash checks.
 third_party/iso4217/*.xml -text -eol -whitespace
+
+# The synthetic ASO fixture is a CRLF statement. Keep those bytes exact.
+tests/fixtures/statements/card-sgml.aso -text -eol -whitespace

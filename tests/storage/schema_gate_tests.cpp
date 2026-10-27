@@ -1,5 +1,6 @@
 #include <spentit/import_store.hpp>
 #include <filesystem>
+#include <string>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -23,9 +24,11 @@ std::string query(const fs::path& p,const char* sql){sqlite3* db=nullptr;check(s
 void gate(){
     Directory dir;const auto path=dir.path/"doc";
     {auto s=ImportStore::create(path,password,"Synthetic account",Currency("CAD"),"2026-08-01");check(!s.rules_supported());app::OperationContext context;rejects_text([&]{s.save_rules("rules",{},0,context);},"Rules require a new experimental dataset");}
-    check(query(path,"PRAGMA user_version")=="17");
-    sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,"PRAGMA user_version=6",nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
-    const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Unsupported experimental format; no migration was attempted");check(bytes(path)==before);check(query(path,"PRAGMA user_version")=="6");
+    check(query(path,"PRAGMA user_version")=="19");
+    for(const char* version:{"6","16","17","18"}) {
+        sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,(std::string("PRAGMA user_version=")+version).c_str(),nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
+        const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Unsupported experimental format; no migration was attempted");check(bytes(path)==before);check(query(path,"PRAGMA user_version")==version);
+    }
 }
 }
 int main(){try{gate();std::cout<<"Schema gate passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
