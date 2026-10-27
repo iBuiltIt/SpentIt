@@ -89,6 +89,8 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     if(const auto prior=transfer_outcome(operation)){Statement saved(impl_->db,"SELECT request FROM transfer_events WHERE operation=?");saved.text(1,operation);if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");return *prior;}
     Statement collision(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");collision.text(1,operation);if(collision.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
     if(request.expected_sequence!=transfer_sequence() || request.expected_sequence==INT64_MAX)fail(SQLITE_CONSTRAINT,"Transfer preview changed; refresh before applying");
+    Atomic transaction(impl_->db);
+    if(request.action==app::TransferAction::commit_local){start_import_groups(financial_group_batches(impl_->selected_account),operation);publish_group_opening(impl_->selected_account);}
     const auto account=this->account();auto values=all_transfers();auto found=std::find_if(values.begin(),values.end(),[&](const auto& v){return v.link.identity==request.link;});
     const bool create=request.action==app::TransferAction::manual || request.action==app::TransferAction::from_draft;
     const auto before=committed_balance();const auto local_before=local_total(values,account.identity,account.currency,false);const auto sequence=request.expected_sequence+1;
@@ -124,7 +126,6 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     const bool did_commit=request.action==app::TransferAction::commit_local;
     if(did_commit && !account.opening_confirmed)fail(SQLITE_CONSTRAINT,"Confirm the opening balance before committing");
     const auto change=local_total(values,account.identity,account.currency,false)-local_before;const auto after=before+change;
-    Atomic transaction(impl_->db);
     Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,operation);event.integer(2,account.identity);event.blob(3,encoded);event.integer(4,did_commit?1:0);event.integer(5,change.units());event.done();
     store_transfer(impl_->db,*found,sequence,create);
     append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,after,"",request.expected_sequence,catalog_sequence(impl_->db));

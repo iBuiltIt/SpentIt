@@ -120,7 +120,7 @@ ApplicationWindow {
     Dialog {
         id:transferCommit;width:520;property var item:({});title:"Commit transfer in this account?";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
         onAccepted:transferCommand("transfer_commit",{link:item.id})
-        Label {text:(transferCommit.item.label||"")+"\nOnly "+(s.name||"")+" commits. The opposite draft stays uncommitted and protected.";wrapMode:Text.Wrap;width:480}
+        Label {text:(transferCommit.item.label||"")+"\nOnly "+(s.name||"")+" commits. The opposite draft stays uncommitted and protected."+(s.importGroup && !s.importGroup.started?"\nThis ends whole-import Abort.":"");wrapMode:Text.Wrap;width:480}
     }
     Dialog {
         id:protectedCommit;width:520;property var item:({});title:"Commit protected drafts?";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
@@ -435,7 +435,7 @@ ApplicationWindow {
         function onCompleted(action,success) {
             ledger.currentIndex=workflow.selectedRowIndex()
             if(action==="select")ledger.currentIndex=s.selectionIndex===undefined?-1:s.selectionIndex
-            if (action==="inspect" || action==="import")
+            if (action==="inspect" || action==="import" || action==="map_import")
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
@@ -463,7 +463,7 @@ ApplicationWindow {
             }
             if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null}
             if(success) {
-                if(action==="select_account" || action==="create_account") {
+                if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort") {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
                     if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0)ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain)})}
                     else if(accountViewports[s.accountId])Qt.callLater(function(){restoreViewport(accountViewports[s.accountId])})
@@ -481,7 +481,7 @@ ApplicationWindow {
                 if(action==="apply_category") {let next=pendingAction;pendingAction=null;dismiss(categoryChangePreview);categoryDirty=false;if(!dirty)loadEditor();if(next)guard(next)}
                 if(action==="preview_change") changePreview.open()
                 if(action==="apply_change") dismiss(changePreview)
-                if(["inspect","entry_history","import","resume","save","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change"].indexOf(action)>=0) loadEditor()
+                if(["inspect","entry_history","import","map_import","group_abort","resume","save","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change"].indexOf(action)>=0) loadEditor()
                 if(action==="save" || action==="apply_change") {
                     dirty=false
                     if(pendingAction) {let next=pendingAction;pendingAction=null;guard(next)}
@@ -503,6 +503,46 @@ ApplicationWindow {
     ListModel {id:ruleModel}
     FileDialog { id:openDialog; title:"Choose an experimental dataset"; onAccepted:{location.text=workflow.localPath(selectedFile);workflow.command("open",{path:location.text})} }
     FileDialog { id:createDialog; fileMode:FileDialog.SaveFile; title:"Choose a NEW dataset file"; onAccepted:location.text=workflow.localPath(selectedFile) }
+    Dialog {
+        id:importMapping;objectName:"importAccountMapping";title:"Map every source account";modal:true;closePolicy:Popup.NoAutoClose
+        anchors.centerIn:parent;width:Math.min(window.width-40,800);height:Math.min(window.height-40,620)
+        visible:(s.importPlan||[]).length>0
+        property var mappings:[]
+        property var choices:[]
+        onOpened:{
+            let options=[{id:"",label:"Choose an account"},{id:"new",label:"Create a new account"}]
+            for(let a of (s.accounts||[])) options.push({id:a.id,label:a.name+" · "+a.currency+" · #"+a.id})
+            choices=options
+            mappings=(s.importPlan||[]).map(function(a){return {source:a.source,account:"",create:false,currency:a.currency,date:Qt.formatDate(new Date(),"yyyy-MM-dd")}})
+        }
+        function update(index,key,value){let rows=mappings.slice();let row=Object.assign({},rows[index]);row[key]=value;rows[index]=row;mappings=rows}
+        contentItem:ColumnLayout {
+            Label {text:"Choose an existing account or explicitly create one for every source account. Original names and reported balances are retained. New openings are reviewed after repairs; drafts do not change committed balances.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ListView {
+                id:mappingList;objectName:"sourceAccountMappingList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:12;model:s.importPlan||[]
+                delegate:ColumnLayout {
+                    required property var modelData;required property int index
+                    id:mappingDelegate; width:mappingList.width
+                    Label {text:modelData.name+" · "+modelData.type+" · reported balance: "+modelData.reported;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                    ComboBox {objectName:"sourceAccountChoice_"+index;model:importMapping.choices;textRole:"label";currentIndex:importMapping.choices.findIndex(function(c){return c.id===(importMapping.mappings[mappingDelegate.index]||{}).account});Layout.fillWidth:true;Accessible.name:"Destination for "+modelData.name
+                        onActivated:function(choiceIndex){let item=importMapping.choices[choiceIndex];importMapping.update(mappingDelegate.index,"account",item.id);importMapping.update(mappingDelegate.index,"create",item.id==="new")}}
+                    RowLayout {
+                        visible:!!importMapping.mappings[index] && importMapping.mappings[index].create
+                        Label {text:"Currency"}
+                        ComboBox {objectName:"sourceCurrency_"+index;model:workflow.currencies;currentIndex:workflow.currencies.indexOf((importMapping.mappings[mappingDelegate.index]||{}).currency);Accessible.name:"Currency for "+modelData.name;onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"currency",currentText)}}
+                        Label {text:"Opening date"}
+                        TextField {text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
+                    }
+                }
+            }
+            RowLayout {
+                Button {objectName:"confirmImportMappings";text:"Prepare all accounts";enabled:!workflow.busy && importMapping.mappings.length>0 && importMapping.mappings.every(function(a){return a.account!==""});onClicked:workflow.command("map_import",{mappings:importMapping.mappings})}
+                Button {text:"Cancel";enabled:!workflow.busy;onClicked:workflow.command("cancel_import_mapping")}
+                Button {text:"Cancel processing";visible:workflow.busy;enabled:workflow.canCancel;onClicked:workflow.requestCancel()}
+            }
+            Label {text:workflow.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+        }
+    }
     FileDialog { id:importDialog; title:"Import synthetic QIF"; nameFilters:["QIF files (*.qif)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),profile:profile.currentText}) }
     FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save backup / restored copy to a NEW file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
     Dialog {
@@ -636,15 +676,15 @@ ApplicationWindow {
         }
     }
     Dialog {
-        id:discardDialog;objectName:"discardImportDialog";width:Math.min(window.width-48,640);title:"Discard pending import?";modal:true;anchors.centerIn:parent
+        id:discardDialog;objectName:"discardImportDialog";width:Math.min(window.width-48,640);title:s.importGroup && !s.importGroup.started?"Abort the entire import?":"Discard pending import?";modal:true;anchors.centerIn:parent
         standardButtons:Dialog.Ok|Dialog.Cancel
-        Label {width:discardDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:processingIncomplete?"Discard this incomplete import. Encrypted source evidence and history are retained.":"Remove the draft projection. Encrypted source evidence and history are retained."}
-        onAccepted:workflow.command("discard")
+        Label {width:discardDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.importGroup && !s.importGroup.started?"Discard every account draft and all earlier saved repairs from this source. Unused accounts created by this import are removed from the account list. Encrypted source evidence and history are retained.":processingIncomplete?"Discard this incomplete import. Encrypted source evidence and history are retained.":"Remove the draft projection. Encrypted source evidence and history are retained."}
+        onAccepted:s.importGroup && !s.importGroup.started?workflow.command("group_abort",{group:s.importGroup.id}):workflow.command("discard")
     }
     Dialog {
-        id:commitDialog;title:"Commit the whole reviewed import?";modal:true;anchors.centerIn:parent
+        id:commitDialog;width:Math.min(window.width-48,640);title:"Commit the whole reviewed import?";modal:true;anchors.centerIn:parent
         standardButtons:Dialog.Ok|Dialog.Cancel
-        Label {textFormat:Text.PlainText;text:"Publish all included records atomically and freeze the opening balance.\nExcluded duplicate occurrences remain in history."}
+        Label {width:commitDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Publish all included records atomically and freeze the opening balance.\nExcluded duplicate occurrences remain in history."+(s.importGroup && !s.importGroup.started?"\nThis first commit ends whole-import Abort. Other accounts remain drafts and must be committed separately.":"")}
         onAccepted:workflow.command("commit")
     }
     ColumnLayout {
@@ -956,11 +996,25 @@ ApplicationWindow {
                 Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
             }
             RowLayout {
-                visible:!s.frozen
+                visible:!s.frozen && !s.groupCreated
                 Label {textFormat:Text.PlainText;text:"Opening balance (confirm before commit)"}
                 TextField {id:openingDate;text:s.openingDate||"";placeholderText:"YYYY-MM-DD";Accessible.name:"Opening date"}
                 TextField {id:openingAmount;text:s.opening||"";placeholderText:"Exact amount";Accessible.name:"Opening amount"}
                 Button {text:s.confirmed?"Update opening":"Confirm opening";onClicked:guard(function(){workflow.command("opening",{date:openingDate.text,amount:openingAmount.text})})}
+            }
+            Label {objectName:"singleRepairProgress";visible:!!s.pending && !s.importGroup;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                text:s.pending?"Repairs: "+s.pending.repairsDone+" / "+s.pending.repairs+" records ("+s.pending.amountRepairs+" need amount repair). Unsupported records/sections: "+s.pending.unsupported+". "+(s.pendingProtected?"Protected transfer drafts survive discard; whole-import Abort is no longer available.":"Abort discards this entire import, including earlier saved repairs."):""}
+            Label {objectName:"groupRepairProgress";visible:!!s.importGroup;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                text:s.importGroup?"Whole import repairs: "+s.importGroup.done+" / "+s.importGroup.repairs+" records ("+s.importGroup.amountRepairs+" need amount repair). Unsupported records/sections: "+s.importGroup.blocked+". Outstanding review items: "+s.importGroup.unresolved+". Review each mapped account before committing.":""}
+            ColumnLayout {
+                visible:!!s.groupCreated;Layout.fillWidth:true
+                Label {text:"Reported balance: "+(s.groupReportedBalance||"")+" · Reviewed change: "+(s.groupReviewedChange||"")+" "+(s.currency||"")+" · Proposed opening: "+(s.groupProposedOpening||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                RowLayout {
+                    ComboBox {id:balanceMeaning;objectName:"groupBalanceMeaning";Layout.preferredWidth:330;model:["Choose balance meaning","Zero opening (balance agrees)","Treat as opening balance","Treat as closing balance","Ignore reported balance"] ;Accessible.name:"Reported balance meaning"}
+                    TextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
+                    Button {objectName:"confirmGroupOpening";text:"Calculate and stage opening";enabled:!!s.groupCanReviewBalance && balanceMeaning.currentIndex>0;onClicked:guard(function(){workflow.command("group_balance",{group:s.importGroup.id,source:s.importGroup.sourceAccount,revision:s.pending.revision,choice:balanceMeaning.currentIndex,date:groupOpeningDate.text})})}
+                }
+                Label {text:"The opening stays staged until this account first commits. Existing mapped account openings are never replaced.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             }
             RowLayout {
                 ComboBox {id:batchPicker;model:s.batches||[];textRole:"id";Layout.preferredWidth:240;Accessible.name:"Import batch"}
@@ -970,8 +1024,8 @@ ApplicationWindow {
                 Label {visible:!processingIncomplete;textFormat:Text.PlainText;text:batchPicker.currentIndex>=0?batchPicker.model[batchPicker.currentIndex].status:"No imports";Layout.minimumWidth:0;elide:Text.ElideRight}
                 Item {Layout.fillWidth:true}
                 Button {objectName:"resumeImport";text:"Resume import";visible:processingIncomplete;onClicked:guard(function(){workflow.command("resume",{batch:s.pending.id,revision:s.pending.revision})})}
-                Button {objectName:"discardImport";text:"Discard batch…";enabled:!!s.pending;onClicked:guard(function(){discardDialog.open()})}
-                Button {objectName:"commitImport";text:"Commit batch…";enabled:!!s.pending && !processingIncomplete && !!s.projectionAvailable && !!s.confirmed;onClicked:guard(function(){commitDialog.open()})}
+                Button {objectName:"discardImport";text:(s.importGroup && !s.importGroup.started) || (!s.importGroup && !s.pendingProtected)?"Abort entire import…":"Discard batch…";enabled:!!s.pending;onClicked:guard(function(){discardDialog.open()})}
+                Button {objectName:"commitImport";text:"Commit batch…";enabled:!!s.pending && !processingIncomplete && !!s.projectionAvailable && (!!s.confirmed || !!s.groupOpeningReady) && (!s.importGroup || s.importGroup.ready);onClicked:guard(function(){commitDialog.open()})}
             }
             Repeater {model:s.protectedImports||[];delegate:RowLayout {required property var modelData;Layout.fillWidth:true;Label {text:"Protected drafts · "+modelData.id+" · "+modelData.change;Layout.fillWidth:true;textFormat:Text.PlainText} Button {text:"Commit protected drafts…";enabled:!!s.confirmed;onClicked:{protectedCommit.item=modelData;protectedCommit.open()}}}}
             Label {

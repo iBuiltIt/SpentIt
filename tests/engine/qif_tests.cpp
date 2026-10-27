@@ -46,6 +46,32 @@ void basics() {
     check(parse("D1/1/2026\nT1\n^",DateOrder::dmy,Currency::from_definition("six-amendment-174:HRK")).valid());
     check(date("1/1/0001",DateOrder::dmy)=="0001-01-01");
 }
+void account_sections() {
+    const std::string raw="!Option:AutoSwitch\n!Account\nNDay account\nTBank\nB25.00\n^\nNCard account\nTCCard\nB-10.00\n^\n!Type:CCard\nD1/1/2026\nT-10\n^\n!Account\nNDay account\n^\n!Type:Bank\nD2/1/2026\nTbad\nLFood/Class\n^\n!Account\nNDay account\nTBank\n^\n!Type:Bank\nD3/1/2026\nT5\n^\n!Clear:AutoSwitch\n";
+    const auto document=index_document(raw);
+    check(!document.diagnostic && document.explicit_accounts && document.accounts.size()==2 && document.sections.size()==3);
+    check(document.accounts[0].reported_balance=="25.00" && document.sections[0].account==1);
+    const auto bank=parse_account(raw,document,0,DateOrder::dmy,cad);
+    check(bank.records.size()==2 && bank.records[0].repairable && bank.records[0].source_class=="Class");
+    check(raw.substr(bank.records[1].begin,bank.records[1].end-bank.records[1].begin)=="D3/1/2026\nT5\n^\n");
+    check(bank.records[0].diagnostic->offset==raw.find("Tbad"));
+    check(parse_account(raw,document,1,DateOrder::dmy,cad).valid());
+    const auto list=index_document("!Account\nNEmpty account\nTCash\n^\n");
+    check(!list.diagnostic && list.sections.empty() && list.accounts.size()==1);
+    check(parse_account("!Account\nNEmpty account\nTCash\n^\n",list,0,DateOrder::dmy,cad).records.empty());
+    for(const auto bad:{"!Account\nNMissing type\n^\n", "!Account\nNBank\nTBank\n^\n!Type:Bank\nT1\n!Account\n", "!Account\nNBank\nTBank\nU2\n^\n", "!Option:Unknown\n"})check(index_document(bad).diagnostic.has_value());
+    const std::string empty="!Account\nNEmpty\nTBank\nDDescription\nL500\n/1/1/2026\n$20\n^\n!Type:Bank\n!Account\nNEmpty\n^\n!Type:Cash\n";
+    const auto empty_index=index_document(empty);
+    check(!empty_index.diagnostic && empty_index.sections.size()==2 && empty_index.accounts[0].statement_balance=="20");
+    check(!parse_account(empty,empty_index,0,DateOrder::dmy,cad).diagnostic);
+    std::string sections="!Account\nNEmpty\nTBank\n^\n";
+    for(unsigned i=0;i<10001;++i)sections+="!Type:Bank\n";
+    check(!index_document(sections).admissible);
+    const auto plain=index_document("D1/1/2026\nT1\nP!Account\n^\n");
+    check(!plain.explicit_accounts && !plain.diagnostic);
+    unsigned checkpoints=0;
+    try {index_document(raw,[&]{if(++checkpoints==3)throw std::runtime_error("cancel");});check(false);}catch(const std::runtime_error&) {check(checkpoints==3);}
+}
 void malformed() {
     invalid("",Issue::empty_file); invalid("!Type:Bank\n",Issue::empty_file);
     invalid("!Type:Invst\n"+wise,Issue::header); invalid(wise+"!Type:Bank\n",Issue::header);
@@ -101,7 +127,7 @@ void mutations() {
 int main(int argc,char** argv) {
     try {
         const std::string name=argc>1 ? argv[1] : "";
-        if (name=="basics") basics(); else if (name=="malformed") malformed();
+        if (name=="basics") {basics();account_sections();} else if (name=="malformed") malformed();
         else if (name=="limits") limits(); else if (name=="mutations") mutations(); else return 2;
         std::cout<<"QIF "<<name<<" passed\n";
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }

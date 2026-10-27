@@ -138,3 +138,9 @@ Actual configuration results and limitations are recorded in [project status](st
 ## QIF destination follow-up — 2026-10-26
 
 Rebuild the existing import UI trees for parser `bank-v2` and schemas 12/13. `transferstore.qif` adds destination-resolution checks; existing transfer fault sweeps use bracketed evidence. The parser, rules preview, import errors/repair and UI suites also cover the extension. See [scope](qif-transfers.md) and [actual results](status.md#qif-transfer-destinations--2026-10-26).
+
+## Whole-source QIF follow-up — 2026-10-26
+
+Current rules-enabled import builds use experimental schema 16; rules-off builds use 17. Earlier formats are rejected without migration. The existing `build/import-ui-rules-debug`, `build/import-ui-rules-release`, `build/import-ui-rules-sanitized` and `build/import-ui-debug` configurations remain usable after rebuilding. These paths name local generated build trees, not committed artifacts.
+
+`accounts.groups` covers the grouped-source workflow. `accounts.group_io` and `accounts.group_crashes` sweep seven operations, including staged-opening publication through both account and transfer commits; their 1800-second test budget retains all measured positions. `import.ui` includes the mapping/review/Abort flow, cancellation, acknowledgement recovery, setup-currency defaults and mapping-delegate recreation. Environment variables `SPENTIT_GROUP_MAPPING_SCREENSHOT` and `SPENTIT_GROUP_REVIEW_SCREENSHOT` optionally save synthetic offscreen renders during its `multiAccountImport` slot. See [current verification](status.md#whole-source-qif-account-review--2026-10-26) for actual results rather than assuming a configured build passed.

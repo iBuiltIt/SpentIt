@@ -2,6 +2,7 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <map>
 #include <stdexcept>
 
 namespace spentit::qif {
@@ -141,9 +142,10 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
             r.source_allocation_classes=allocation_classes; r.source_allocation_fields=source_fields;
             for(std::size_t index=0;index<allocations.size();++index){auto& allocation=allocations[index];allocation.identity="source-"+std::to_string(*allocation.source_ordinal);allocation.category_owner=FieldOwnership::source;allocation.memo_owner=FieldOwnership::source;}
             r.source_allocations=allocations;
+            r.amount_repair=!total;for(const auto& field:source_fields)if(!field.amount)r.amount_repair=true;
             if (repair_allowed && total) {
                 try { r.transaction=Transaction::imported(*total,std::move(allocations)); }
-                catch (const FinancialError&) { error(Issue::split_total,start); }
+                catch (const FinancialError&) { r.amount_repair=true;error(Issue::split_total,start); }
             }
             r.repairable=r.diagnostic.has_value() && repair_allowed;
             if(r.diagnostic) r.transaction.reset();
@@ -187,5 +189,121 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
     if (any) { error(Issue::unterminated,bytes.size()); r.end=bytes.size(); out.records.push_back(std::move(r)); }
     if (out.records.empty()) file_error(Issue::empty_file,bytes.size());
     return out;
+}
+Document index_document(std::string_view bytes,const std::function<void()>& checkpoint) {
+    Document out;
+    auto fail=[&](Issue issue,std::size_t at) {out.diagnostic=Diagnostic{issue,at};if(issue==Issue::resource_limit)out.admissible=false;};
+    if(bytes.size()>max_file){fail(Issue::resource_limit,0);return out;}
+    if(!checked_utf8(bytes,checkpoint)){fail(Issue::encoding,0);return out;}
+    for(std::size_t i=0;i<bytes.size();++i) {
+        if(checkpoint && i%4096==0)checkpoint();
+        const auto c=static_cast<unsigned char>(bytes[i]);
+        if((c<32 && c!='\n' && c!='\t' && c!='\r') || c==127 || (c=='\r' && (i+1==bytes.size() || bytes[i+1]!='\n'))) {
+            fail(Issue::encoding,i);return out;
+        }
+    }
+    // A plain single-account source retains the existing parser's diagnostics.
+    const auto content=bytes.starts_with("\xef\xbb\xbf")?bytes.substr(3):bytes;
+    auto header_present=[&](std::string_view h){return content.starts_with(h) || content.find(std::string("\n")+std::string(h))!=content.npos;};
+    if(!header_present("!Account") && !header_present("!Option:") && !header_present("!Clear:")) {
+        out.accounts.push_back({});out.sections.push_back({0,0,bytes.size()});return out;
+    }
+    out.explicit_accounts=true;
+    std::map<std::string,std::size_t> names;
+    std::optional<std::size_t> selected;
+    bool definitions=false, record_open=false;
+    AccountDefinition definition;
+    std::array<bool,256> seen{};
+    std::size_t records=0;
+    auto ordinary=[](std::string_view type){return type=="Bank" || type=="Cash" || type=="CCard";};
+    auto close_section=[&](std::size_t at){if(!out.sections.empty() && out.sections.back().end==0)out.sections.back().end=at;};
+    std::size_t pos=bytes.starts_with("\xef\xbb\xbf")?3:0;
+    while(pos<bytes.size()) {
+        if(checkpoint)checkpoint();
+        const auto start=pos, newline=bytes.find('\n',pos);
+        pos=newline==bytes.npos?bytes.size():newline+1;
+        auto line=bytes.substr(start,(newline==bytes.npos?bytes.size():newline)-start);
+        if(line.ends_with('\r'))line.remove_suffix(1);
+        if(line.size()>max_field+1){fail(Issue::resource_limit,start);return out;}
+        if(line.starts_with('!')) {
+            if(record_open){fail(Issue::unterminated,start);return out;}
+            close_section(start);
+            if(line=="!Option:AutoSwitch" || line=="!Clear:AutoSwitch") {definitions=false;continue;}
+            if(line=="!Account") {definitions=true;continue;}
+            if(line.starts_with("!Type:") && ordinary(line.substr(6)) && selected) {
+                if(out.sections.size()==10000){fail(Issue::resource_limit,start);return out;}
+                definitions=false;out.sections.push_back({*selected,start,0});continue;
+            }
+            fail(Issue::header,start);return out;
+        }
+        if(definitions) {
+            if(!record_open){definition=AccountDefinition{};definition.begin=start;seen.fill(false);}
+            if(line=="^") {
+                if(!seen['N'] || definition.name.empty() || definition.name.find_first_not_of(' ')==std::string::npos || (seen['T'] && !ordinary(definition.type))) {
+                    fail(Issue::header,start);return out;
+                }
+                definition.end=pos;
+                const auto prior=names.find(definition.name);
+                if(prior==names.end()) {
+                    if(!seen['T']){fail(Issue::header,start);return out;}
+                    if(out.accounts.size()==1000){fail(Issue::resource_limit,start);return out;}
+                    selected=out.accounts.size();names.emplace(definition.name,*selected);out.accounts.push_back(definition);
+                } else {
+                    selected=prior->second;const auto& old=out.accounts[*selected];
+                    if((seen['T'] && old.type!=definition.type) || (definition.reported_balance && old.reported_balance!=definition.reported_balance)) {
+                        fail(Issue::repeated_field,start);return out;
+                    }
+                }
+                record_open=false;continue;
+            }
+            if(line.empty()){fail(Issue::empty_record,start);return out;}
+            record_open=true;
+            if(pos-definition.begin>max_record){fail(Issue::resource_limit,start);return out;}
+            const auto key=static_cast<unsigned char>(line.front());
+            if(seen[key]){fail(Issue::repeated_field,start);return out;}seen[key]=true;
+            switch(key) {
+            case 'N':definition.name=line.substr(1);break;
+            case 'T':definition.type=line.substr(1);break;
+            case 'B':definition.reported_balance=line.substr(1);break;
+            case 'D':definition.description=line.substr(1);break;
+            case 'L':definition.credit_limit=line.substr(1);break;
+            case '/':definition.statement_date=line.substr(1);break;
+            case '$':definition.statement_balance=line.substr(1);break;
+            default:fail(Issue::unknown_field,start);return out;
+            }
+        } else {
+            if(out.sections.empty() || out.sections.back().end!=0){fail(Issue::header,start);return out;}
+            record_open=line!="^";
+            if(!record_open && ++records>max_records){fail(Issue::resource_limit,start);return out;}
+        }
+    }
+    close_section(bytes.size());
+    if(record_open)fail(Issue::unterminated,bytes.size());
+    if(out.accounts.empty() && !out.diagnostic)fail(Issue::empty_file,bytes.size());
+    return out;
+}
+Result parse_account(std::string_view bytes,const Document& document,std::size_t account,
+                     DateOrder order,const Currency& currency,const std::function<void()>& checkpoint) {
+    Result result;
+    if(document.diagnostic){result.diagnostic=document.diagnostic;result.admissible=document.admissible;return result;}
+    if(account>=document.accounts.size())throw std::invalid_argument("Invalid QIF account index");
+    for(const auto& section:document.sections) {
+        if(section.account!=account)continue;
+        if(section.begin>section.end || section.end>bytes.size())throw std::invalid_argument("Invalid QIF source range");
+        auto parsed=parse(bytes.substr(section.begin,section.end-section.begin),order,currency,checkpoint);
+        if(!parsed.admissible)result.admissible=false;
+        if(parsed.diagnostic && parsed.diagnostic->issue==Issue::empty_file && parsed.records.empty() && document.explicit_accounts)continue;
+        if(parsed.diagnostic) {
+            parsed.diagnostic->offset+=section.begin;
+            if(!result.diagnostic)result.diagnostic=parsed.diagnostic;
+        }
+        for(auto& record:parsed.records) {
+            record.begin+=section.begin;record.end+=section.begin;
+            if(record.diagnostic)record.diagnostic->offset+=section.begin;
+            result.records.push_back(std::move(record));
+        }
+    }
+    if(result.records.size()>max_records){result.admissible=false;result.diagnostic=Diagnostic{Issue::resource_limit,bytes.size()};}
+    return result;
 }
 } // namespace spentit::qif

@@ -44,6 +44,7 @@ struct Record {
     std::vector<Allocation> source_allocations;
     // True only for explicitly repairable date/amount errors with intact structure.
     bool repairable = false;
+    bool amount_repair = false;
     bool has_source_splits = false;
     std::optional<Diagnostic> diagnostic;
 };
@@ -54,4 +55,22 @@ struct Result {
     bool valid() const noexcept;
 };
 Result parse(std::string_view bytes, DateOrder order, const Currency& currency, const std::function<void()>& checkpoint = {});
+// Offsets always address the unchanged complete source, including account lists.
+struct AccountDefinition {
+    std::string name, type;
+    std::optional<std::string> reported_balance;
+    std::string description, credit_limit, statement_date, statement_balance;
+    std::size_t begin=0, end=0;
+};
+struct Section { std::size_t account=0, begin=0, end=0; };
+struct Document {
+    std::vector<AccountDefinition> accounts;
+    std::vector<Section> sections;
+    std::optional<Diagnostic> diagnostic;
+    bool admissible=true;
+    bool explicit_accounts=false;
+};
+Document index_document(std::string_view bytes,const std::function<void()>& checkpoint = {});
+Result parse_account(std::string_view bytes,const Document&,std::size_t account,
+                     DateOrder,const Currency&,const std::function<void()>& checkpoint = {});
 } // namespace spentit::qif

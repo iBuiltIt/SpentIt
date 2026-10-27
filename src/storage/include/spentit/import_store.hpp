@@ -39,15 +39,24 @@ public:
     app::TransferReceipt apply_transfer(std::string_view,const app::TransferRequest&) override;
     std::optional<app::TransferReceipt> transfer_outcome(std::string_view) const override;
     std::vector<app::Account> accounts() const override;
+    std::int64_t next_account_identity() const override;
     void select_account(std::int64_t) override;
     std::optional<app::AccountCreation> account_creation_outcome(std::int64_t) const override;
     app::Account create_account(std::int64_t,std::string_view,const Currency&,std::string_view) override;
     void opening(std::int64_t,std::string_view,const Money&) override;
     std::vector<app::BatchInfo> batches() const override;
+    std::vector<app::ImportGroup> import_groups() const override;
+    std::optional<app::ImportGroup> import_group_outcome(std::string_view) const override;
+    app::ImportGroup prepare_import_group(std::string_view,std::string_view,qif::DateOrder,const std::vector<app::ImportAccountMapping>&,app::OperationContext&) override;
+    app::ImportGroup resume_import_group(std::string_view,app::OperationContext&) override;
+    void abort_import_group(std::string_view) override;
+    void review_import_balance(std::string_view,std::size_t,std::int64_t,app::ReportedBalanceChoice,std::string_view) override;
     app::BatchInfo ingest(std::string_view,std::string_view,qif::DateOrder) override;
     app::BatchInfo ingest_controlled(std::string_view,std::string_view,qif::DateOrder,app::OperationContext&) override;
     app::BatchInfo resume(std::string_view,std::int64_t,app::OperationContext&) override;
     std::string evidence(std::string_view) const override;
+    qif::Result parsed_source(std::string_view,const std::function<void()>& = {}) const override;
+    app::ImportRepairProgress repair_progress(std::string_view) const override;
     app::RowView row(const imports::Occurrence&) const override;
     void save(const imports::Occurrence&,std::int64_t,const imports::DraftRow&) override;
     void decide(const imports::Occurrence&,std::int64_t,const imports::Decision&) override;
@@ -92,6 +101,12 @@ public:
                    const BackupObserver& observer = {}, const app::OperationContext* context = nullptr) const;
     void observer(ImportObserver);
 private:
+    app::ImportGroup import_group(std::string_view) const;
+    void require_group_ready(std::string_view) const;
+    std::set<std::string> financial_group_batches(std::int64_t) const;
+    void publish_group_opening(std::int64_t);
+    void start_import_groups(const std::set<std::string>&,std::string_view);
+    void verify_import_groups(const app::OperationContext*) const;
     std::vector<app::TransferView> all_transfers() const;
     Money local_transfer_total(std::int64_t,bool projected) const;
     std::vector<app::LedgerRow> local_transfer_ledger(bool) const;

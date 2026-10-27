@@ -37,6 +37,30 @@ struct BatchInfo {
     bool blocked;
     bool processing_incomplete=false;
 };
+struct ImportAccountMapping {
+    std::size_t source_account;
+    std::int64_t account;
+    std::optional<AccountCreation> creation;
+};
+enum class GroupState { captured, reviewing, started, aborted };
+enum class ReportedBalanceChoice { unreviewed, zero, opening, closing, ignore };
+struct ImportGroupAccount {
+    std::size_t source_account;
+    std::int64_t account;
+    std::string batch;
+    bool created;
+    ReportedBalanceChoice balance_choice;
+    std::optional<Money> reviewed_change, proposed_opening;
+    std::string opening_date;
+};
+struct ImportGroup {
+    std::string id;
+    GroupState state;
+    qif::DateOrder profile;
+    std::vector<ImportGroupAccount> accounts;
+    std::size_t repairs_total=0, repairs_done=0, unresolved=0, blocked_records=0, amount_repairs=0;
+};
+struct ImportRepairProgress {std::size_t total=0,done=0,amounts=0,blocked=0;};
 struct RowView {
     imports::Occurrence identity;
     qif::Record source;
@@ -69,6 +93,7 @@ public:
     virtual Account account() const = 0;
     // Serial-worker session selection; commands never span accounts implicitly.
     virtual std::vector<Account> accounts() const { return {account()}; }
+    virtual std::int64_t next_account_identity() const { std::int64_t last=0;for(const auto& a:accounts())if(a.identity>last)last=a.identity;if(last==INT64_MAX)throw std::overflow_error("Account identities exhausted");return last+1; }
     virtual void select_account(std::int64_t id) { if(id!=account().identity) throw std::logic_error("Unknown account"); }
     virtual Account create_account(std::int64_t, std::string_view, const Currency&, std::string_view) {
         throw std::logic_error("Multiple accounts require a new dataset");
@@ -79,6 +104,17 @@ public:
     // expected revision prevents stale opening-balance edits; frozen after commit.
     virtual void opening(std::int64_t expected, std::string_view date, const Money&) = 0;
     virtual std::vector<BatchInfo> batches() const = 0;
+    virtual std::vector<ImportGroup> import_groups() const { return {}; }
+    virtual std::optional<ImportGroup> import_group_outcome(std::string_view id) const {for(const auto& g:import_groups())if(g.id==id)return g;return {};}
+    virtual ImportGroup prepare_import_group(std::string_view,std::string_view,qif::DateOrder,
+                                             const std::vector<ImportAccountMapping>&,OperationContext&) {
+        throw std::logic_error("Grouped imports unavailable");
+    }
+    virtual ImportGroup resume_import_group(std::string_view,OperationContext&) { throw std::logic_error("Grouped imports unavailable"); }
+    virtual void abort_import_group(std::string_view) { throw std::logic_error("Grouped imports unavailable"); }
+    virtual void review_import_balance(std::string_view,std::size_t,std::int64_t,ReportedBalanceChoice,std::string_view) {
+        throw std::logic_error("Grouped imports unavailable");
+    }
     // Same identity+bytes+profile is retry; different content is a conflict.
     // Identical pending bytes/profile returns the existing pending batch.
     virtual BatchInfo ingest(std::string_view id, std::string_view bytes, qif::DateOrder) = 0;
@@ -91,7 +127,17 @@ public:
         throw std::logic_error("This document does not support resuming retained evidence");
     }
     virtual std::string evidence(std::string_view batch) const = 0;
+    virtual qif::Result parsed_source(std::string_view id,const std::function<void()>& checkpoint = {}) const {
+        const auto all=batches();
+        for(const auto& b:all)if(b.id==id)return qif::parse(evidence(id),b.profile,account().currency,checkpoint);
+        throw std::logic_error("Import does not exist");
+    }
     virtual RowView row(const imports::Occurrence&) const = 0;
+    virtual ImportRepairProgress repair_progress(std::string_view id) const {
+        ImportRepairProgress result;const auto source=parsed_source(id);if(source.diagnostic)++result.blocked;
+        for(std::size_t i=0;i<source.records.size();++i){const auto& r=source.records[i];if(r.repairable){++result.total;if(r.amount_repair)++result.amounts;if(row({std::string(id),i}).draft)++result.done;}else if(r.diagnostic)++result.blocked;}
+        return result;
+    }
     // A repairable source may initially have no draft. Its first validated save
     // preserves original evidence and creates an unresolved duplicate decision.
     // Unsupported diagnostics and legacy schemas must reject such a save.
