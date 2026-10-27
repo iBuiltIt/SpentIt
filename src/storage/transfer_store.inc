@@ -81,13 +81,16 @@ std::optional<app::TransferReceipt> ImportStore::transfer_outcome(std::string_vi
     Statement row(impl_->db,"SELECT t.account,o.sequence,o.before,o.change,o.after FROM transfer_events t JOIN ledger_operations o ON o.id=t.operation WHERE t.operation=?");row.text(1,operation);
     if(!row.row())return {};
     if(!impl_->verifying && row.integer(0)!=impl_->selected_account)fail(SQLITE_CONSTRAINT,"Transfer operation belongs to another account");
-    const auto currency=account_by_id(row.integer(0)).currency;
+    Statement order(impl_->db,"SELECT sequence FROM history_order WHERE operation=?");order.text(1,operation);if(!order.row())fail(SQLITE_CORRUPT);
+    const auto currency=currency_as_of(impl_->db,row.integer(0),order.integer(0));
     return app::TransferReceipt{std::string(operation),row.integer(0),row.integer(1),Money(row.integer(2),currency),Money(row.integer(3),currency),Money(row.integer(4),currency)};
 }
 app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,const app::TransferRequest& request){
     identifier(operation);identifier(request.link);const auto encoded=transfer_codec::encode(request);
     if(const auto prior=transfer_outcome(operation)){Statement saved(impl_->db,"SELECT request FROM transfer_events WHERE operation=?");saved.text(1,operation);if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");return *prior;}
     Statement collision(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");collision.text(1,operation);if(collision.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
+    require_writable_account(impl_->db,impl_->selected_account);
+    if(request.action==app::TransferAction::manual || request.action==app::TransferAction::from_draft)require_writable_account(impl_->db,request.destination);
     if(request.expected_sequence!=transfer_sequence() || request.expected_sequence==INT64_MAX)fail(SQLITE_CONSTRAINT,"Transfer preview changed; refresh before applying");
     Atomic transaction(impl_->db);
     if(request.action==app::TransferAction::commit_local){start_import_groups(financial_group_batches(impl_->selected_account),operation);publish_group_opening(impl_->selected_account);}
@@ -138,8 +141,10 @@ std::set<std::size_t> ImportStore::protected_import_rows(std::string_view batch)
     return result;
 }
 Money ImportStore::transfer_import_adjustment(std::string_view operation) const {
-    Statement event(impl_->db,"SELECT account,local_change FROM transfer_events WHERE operation=?");event.text(1,operation);if(!event.row()){Statement op(impl_->db,"SELECT batch FROM operations WHERE id=?");op.text(1,operation);if(!op.row())fail(SQLITE_CORRUPT);return Money(0,account_for_batch(op.bytes(0)).currency);}
-    return Money(event.integer(1),account_by_id(event.integer(0)).currency);
+    Statement event(impl_->db,"SELECT account,local_change FROM transfer_events WHERE operation=?");event.text(1,operation);
+    Statement order(impl_->db,"SELECT sequence FROM history_order WHERE operation=?");order.text(1,operation);
+    if(!event.row()){Statement op(impl_->db,"SELECT batch FROM operations WHERE id=?");op.text(1,operation);if(!op.row())fail(SQLITE_CORRUPT);const auto owner=account_for_batch(op.bytes(0));return Money(0,order.row()?currency_as_of(impl_->db,owner.identity,order.integer(0)):owner.currency);}
+    if(!order.row())fail(SQLITE_CORRUPT);return Money(event.integer(1),currency_as_of(impl_->db,event.integer(0),order.integer(0)));
 }
 Money ImportStore::transfer_import_transition(std::string_view batch_id,std::string_view operation,bool publish){
     const auto account=this->account();const auto before=all_transfers();const auto after=import_transition(before,account.identity,batch_id,publish);validate_transfer_set(after);
@@ -156,9 +161,26 @@ Money ImportStore::transfer_import_transition(std::string_view batch_id,std::str
 }
 void ImportStore::verify_transfers(const app::OperationContext* context) const {
     std::map<std::string,app::TransferView> previous;std::size_t count=0;std::set<std::string> verified_retained;
-    Statement events(impl_->db,"SELECT e.operation,e.account,e.request,e.did_commit,o.sequence,o.kind,e.local_change,o.preview_sequence,o.change FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation ORDER BY o.sequence");
+    struct Scale {std::int64_t sequence; std::int64_t account; std::string operation;};
+    std::vector<Scale> scales;Statement scale_rows(impl_->db,"SELECT sequence,ordinal,undo_of FROM ledger_operations WHERE kind=5 ORDER BY sequence");
+    while(scale_rows.row())scales.push_back({scale_rows.integer(0),scale_rows.integer(1),scale_rows.bytes(2)});
+    std::size_t scale_index=0;
+    auto apply_scales=[&](std::int64_t before){
+        while(scale_index<scales.size() && scales[scale_index].sequence<before){
+            const auto& scale=scales[scale_index++];
+            Statement command(impl_->db,"SELECT definition FROM account_operations WHERE id=?");command.text(1,scale.operation);if(!command.row())fail(SQLITE_CORRUPT);
+            const auto target=Currency::from_definition(command.bytes(0));
+            Statement stored(impl_->db,"SELECT identity,payload FROM transfer_versions WHERE sequence=?");stored.integer(1,scale.sequence);
+            while(stored.row()){
+                auto saved=transfer_codec::view(stored.bytes(1));auto found=previous.find(saved.link.identity);if(found==previous.end())fail(SQLITE_CORRUPT);
+                auto expected=found->second;try{rescale_link_account(expected.link,scale.account,target);}catch(const FinancialError&){fail(SQLITE_CORRUPT);}catch(const transfers::TransferError&){fail(SQLITE_CORRUPT);}
+                if(transfer_codec::encode(expected)!=stored.bytes(1))fail(SQLITE_CORRUPT,"Transfer history does not replay");found->second=std::move(expected);++count;
+            }
+        }
+    };
+    Statement events(impl_->db,"SELECT e.operation,e.account,e.request,e.did_commit,o.sequence,o.kind,e.local_change,o.preview_sequence,o.change,h.sequence FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN history_order h ON h.operation=o.id ORDER BY o.sequence");
     while(events.row()){
-        if(context)context->checkpoint();const auto request=transfer_codec::request(events.bytes(2));const auto account=account_by_id(events.integer(1));const auto sequence=events.integer(4);
+        if(context)context->checkpoint();const auto request=transfer_codec::request(events.bytes(2));const auto account=account_by_id(events.integer(1));const auto sequence=events.integer(4);apply_scales(sequence);const auto currency=currency_as_of(impl_->db,account.identity,events.integer(9));
         if(events.integer(5)==4 && events.integer(6)!=events.integer(8))fail(SQLITE_CORRUPT,"Transfer receipt differs from its financial effect");
         const bool imported=request.action==app::TransferAction::import_commit || request.action==app::TransferAction::import_discard;
         if(events.integer(5)!=(request.action==app::TransferAction::import_commit?0:4) || request.expected_sequence!=sequence-1 || (request.action!=app::TransferAction::import_commit && events.integer(7)!=sequence-1) || (events.integer(3)!=0)!=(request.action==app::TransferAction::commit_local || request.action==app::TransferAction::import_commit))fail(SQLITE_CORRUPT);
@@ -177,16 +199,16 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
                 std::set<std::size_t> saved_rows;Statement kept(impl_->db,"SELECT ordinal FROM retained_transfer_rows WHERE batch=?");kept.text(1,request.origin->batch);while(kept.row())saved_rows.insert(static_cast<std::size_t>(kept.integer(0)));
                 if(saved_rows!=protected_rows)fail(SQLITE_CORRUPT,"Protected import membership does not replay");if(!protected_rows.empty())verified_retained.insert(request.origin->batch);
             }
-            if((changed==0 && protected_rows.empty()) || (local_total(after,account.identity,account.currency,false)-local_total(before,account.identity,account.currency,false)).units()!=events.integer(6))fail(SQLITE_CORRUPT);
+            if((changed==0 && protected_rows.empty()) || (local_total(after,account.identity,currency,false)-local_total(before,account.identity,currency,false)).units()!=events.integer(6))fail(SQLITE_CORRUPT);
             count+=changed;continue;
         }
         Statement row(impl_->db,"SELECT payload FROM transfer_versions WHERE identity=? AND sequence=?");row.text(1,request.link);row.integer(2,sequence);if(!row.row())fail(SQLITE_CORRUPT);
         const auto saved=transfer_codec::view(row.bytes(0));if(saved.link.identity!=request.link)fail(SQLITE_CORRUPT);
-        std::vector<app::TransferView> before;for(const auto& [id,value]:previous){(void)id;before.push_back(value);}const auto balance_before=local_total(before,account.identity,account.currency,false);
+        std::vector<app::TransferView> before;for(const auto& [id,value]:previous){(void)id;before.push_back(value);}const auto balance_before=local_total(before,account.identity,currency,false);
         auto found=previous.find(request.link);
         if(request.action==app::TransferAction::manual || request.action==app::TransferAction::from_draft){
             if(saved.link.destination.endpoint.entry!=imports::Occurrence{"~transfer-"+request.link+"-destination",0} || saved.link.destination.endpoint.allocation!="generated" || found!=previous.end() || saved.created_sequence!=sequence || saved.link.origin.endpoint.account!=account.identity || saved.link.destination.endpoint.account!=request.destination || saved.link.origin.state!=transfers::State::draft || saved.link.destination.state!=transfers::State::draft || saved.link.origin.accepted_unmatched || saved.link.destination.accepted_unmatched || saved.link.origin.proposed_evidence || saved.link.destination.proposed_evidence || saved.link.origin.attached_evidence || saved.link.destination.attached_evidence)fail(SQLITE_CORRUPT);
-            if(saved.link.destination.amount.currency()!=account_by_id(request.destination).currency)fail(SQLITE_CORRUPT);
+            if(saved.link.destination.amount.currency()!=currency_as_of(impl_->db,request.destination,events.integer(9)))fail(SQLITE_CORRUPT);
             if(request.action==app::TransferAction::manual){if(saved.link.origin.endpoint.entry!=imports::Occurrence{"~transfer-"+request.link+"-origin",0} || saved.link.origin.endpoint.allocation!="manual" || !request.amount || request.origin || saved.link.origin.amount!=*request.amount || !saved.link.origin.manually_entered || saved.link.generated_date!=request.date || saved.payee!=request.payee || saved.memo!=request.memo)fail(SQLITE_CORRUPT);}
             else {
                 if(!request.origin || saved.link.origin.endpoint.entry!=*request.origin || saved.link.origin.endpoint.allocation!=request.allocation || saved.link.origin.manually_entered || account_for_batch(request.origin->batch).identity!=account.identity)fail(SQLITE_CORRUPT);
@@ -205,8 +227,9 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
             if(transfer_codec::encode(expected)!=transfer_codec::encode(saved))fail(SQLITE_CORRUPT,"Transfer history does not replay");found->second=saved;
         }
         std::vector<app::TransferView> after;for(const auto& [id,value]:previous){(void)id;after.push_back(value);}validate_transfer_set(after);
-        if((local_total(after,account.identity,account.currency,false)-balance_before).units()!=events.integer(6))fail(SQLITE_CORRUPT,"Transfer amount does not reconcile");++count;
+        if((local_total(after,account.identity,currency,false)-balance_before).units()!=events.integer(6))fail(SQLITE_CORRUPT,"Transfer amount does not reconcile");++count;
     }
+    apply_scales(INT64_MAX);
     Statement retained(impl_->db,"SELECT DISTINCT batch FROM retained_transfer_rows");while(retained.row())if(!verified_retained.contains(retained.bytes(0)))fail(SQLITE_CORRUPT);
     Statement rows(impl_->db,"SELECT count(*) FROM transfer_versions");if(!rows.row() || rows.integer(0)!=integer(count))fail(SQLITE_CORRUPT);
     auto current=all_transfers();if(current.size()!=previous.size())fail(SQLITE_CORRUPT);

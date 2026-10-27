@@ -389,9 +389,10 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
             if(context) context->checkpoint();
             const auto revision_at=versions.integer(0);
             const auto source=load_row(id,false).source;
+            const auto currency=version_currency(impl_->db,id.batch,integer(id.ordinal),revision_at);const bool reassigned=source.source_currency && *source.source_currency!=currency;
             std::vector<Allocation> allocations;Statement values(impl_->db,"SELECT category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");values.text(1,id.batch);values.integer(2,integer(id.ordinal));values.integer(3,revision_at);
-            while(values.row()) allocations.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),account_for_batch(id.batch).currency)});
-            imports::DraftRow draft{versions.bytes(1),versions.bytes(2),versions.bytes(3),Transaction::repaired_import(source.original_amount,Money(versions.integer(4),account_for_batch(id.batch).currency),std::move(allocations))};
+            while(values.row()) allocations.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),currency)});
+            imports::DraftRow draft{versions.bytes(1),versions.bytes(2),versions.bytes(3),Transaction::repaired_import(source.original_amount,Money(versions.integer(4),currency),std::move(allocations),reassigned)};
             load_metadata(impl_->db,id,revision_at,draft,false);
             const bool marked=any_mark(draft);
             Statement provenance(impl_->db,"SELECT 1 FROM draft_rule_fields WHERE batch=? AND ordinal=? AND revision=?");provenance.text(1,id.batch);provenance.integer(2,integer(id.ordinal));provenance.integer(3,revision_at);
@@ -413,6 +414,11 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
                 Statement applied(impl_->db,"SELECT replace_manual FROM rule_applications WHERE batch=? AND batch_after=?");applied.text(1,id.batch);applied.integer(2,revision_at);if(!applied.row())fail(SQLITE_CORRUPT);
                 check_rule_transition(*previous,draft,true,applied.integer(0)!=0);
             } else if(kind=="decide") { if(!same_draft(*previous,draft)) fail(SQLITE_CORRUPT); }
+            else if(kind=="currency") {
+                if(versions.integer(5)!=previous_decision || versions.bytes(6)!=previous_duplicate || versions.integer(7)!=previous_ordinal || draft.date!=previous->date || draft.payee!=previous->payee || draft.memo!=previous->memo || draft.transaction.original_imported_amount()!=previous->transaction.original_imported_amount() || !previous->transaction.effective_total().same_decimal(draft.transaction.effective_total())) fail(SQLITE_CORRUPT);
+                const auto& left=previous->transaction.allocations();const auto& right=draft.transaction.allocations();if(left.size()!=right.size())fail(SQLITE_CORRUPT);
+                for(std::size_t index=0;index<left.size();++index)if(left[index].identity!=right[index].identity || left[index].category!=right[index].category || left[index].memo!=right[index].memo || !left[index].amount.same_decimal(right[index].amount))fail(SQLITE_CORRUPT);
+            }
             else fail(SQLITE_CORRUPT);
             previous_decision=versions.integer(5);previous_duplicate=versions.bytes(6);previous_ordinal=versions.integer(7);previous=std::move(draft);
         }

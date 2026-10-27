@@ -122,6 +122,13 @@ QString phaseFor(const QString& action){
     if(action=="rules_preview")return "Evaluating rules";
     if(action=="rules_save")return "Saving rules";
     if(action=="rules_apply")return "Applying rules";
+    if(action=="rename_account")return "Renaming account";
+    if(action=="archive_account")return "Archiving account";
+    if(action=="reactivate_account")return "Reactivating account";
+    if(action=="delete_account")return "Deleting empty account";
+    if(action=="correct_opening")return "Correcting opening balance";
+    if(action=="reassign_currency")return "Reassigning account currency";
+    if(action=="undo_account")return "Undoing account command";
     return "Updating view";
 }
 QString changeName(app::ChangeKind kind) {
@@ -181,8 +188,10 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
         if(v.value("memoTouched").toBool() || (old && next.memo!=old->memo)){next.memo_owner=FieldOwnership::manual;next.memo_rule.reset();}
         values.push_back(std::move(next));
     }
+    const auto total=Money::parse(str(a.value("total")),repo.account().currency);
+    const bool reassigned=(original && original->currency()!=total.currency()) || (source && source->source_currency && *source->source_currency!=total.currency());
     imports::DraftRow result{str(a.value("date")),str(a.value("payee")),str(a.value("memo")),
-        Transaction::repaired_import(original,Money::parse(str(a.value("total")),repo.account().currency),std::move(values))};
+        Transaction::repaired_import(original,total,std::move(values),reassigned)};
     const auto oldPayee=baseline?baseline->payee:source?source->payee:std::string{};
     const auto oldMemo=baseline?baseline->memo:source?source->memo:std::string{};
     result.payee_owner=baseline?baseline->payee_owner:source?FieldOwnership::source:FieldOwnership::manual;
@@ -447,12 +456,30 @@ struct ImportModel::Worker {
         if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
         auto& repo=gateway->repository();catalog();
         if(metadata.isEmpty()) {
-            cachedAccount=repo.account();const auto& acct=*cachedAccount;
+            auto packAccount=[&](const app::Account& item){return QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())},{"archived",item.archived}};};
+            QVariantList archivedList;for(const auto& item:repo.archived_accounts()) archivedList.push_back(packAccount(item));
+            state["archivedAccounts"]=archivedList;
             state["committedChangesSupported"]=repo.committed_changes_supported();state["categoriesSupported"]=repo.categories_supported();
+            if(!repo.account_selected()) {
+                cachedAccount.reset();
+                const auto home=archivedList.isEmpty()?QString():archivedList.front().toMap().value("currency").toString();
+                state["accounts"]=QVariantList{};state["accountSelected"]=false;state["readOnly"]=true;state["archived"]=false;
+                state["emptyActive"]="No active account is selected. Archived accounts remain available.";
+                state["homeCurrency"]=home;state["accountId"]="";state["name"]="";state["currency"]=home;
+                state["openingDate"]="";state["opening"]="";state["frozen"]=false;state["confirmed"]=false;
+                state["committed"]="";state["projectionAvailable"]=false;state["projected"]="Incomplete — review import";
+                state["batches"]=QVariantList{};state["undoableAccountOperation"]="";state["currencyWarning"]=false;
+                state["transfersSupported"]=repo.transfers_supported();state["nextAccountId"]=QString::number(repo.next_account_identity());
+                metadata=state;
+            } else {
+            cachedAccount=repo.account();const auto& acct=*cachedAccount;
+            state["accountSelected"]=true;state["archived"]=acct.archived;state["readOnly"]=acct.archived;state["emptyActive"]="";
+            state["currencyWarning"]=repo.account_currency_warning();
+            const auto undoable=repo.undoable_account_operation();state["undoableAccountOperation"]=undoable?text(*undoable):QString();
             state["accountId"]=QString::number(acct.identity);
-            QVariantList accountList;std::int64_t last=0;
-            for(const auto& item:repo.accounts()){accountList.push_back(QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())}});last=std::max(last,item.identity);}
-            state["accounts"]=accountList;state["homeCurrency"]=accountList.isEmpty()?QString():accountList.front().toMap().value("currency");
+            QVariantList accountList;
+            for(const auto& item:repo.accounts()) accountList.push_back(packAccount(item));
+            state["accounts"]=accountList;state["homeCurrency"]=accountList.isEmpty()?text(acct.currency.code()):accountList.front().toMap().value("currency");
             state["transfersSupported"]=repo.transfers_supported();
             if(repo.transfers_supported()){
                 state["transferSequence"]=QString::number(repo.transfer_sequence());QVariantList items;
@@ -462,7 +489,9 @@ struct ImportModel::Worker {
                     if(side.state==transfers::State::removed)continue;
                     if(transfers::protected_draft(value.link,acct.identity))state["pendingProtected"]=true;
                     const auto target=other.attached_evidence?other.attached_evidence->endpoint:other.endpoint;
-                    QString otherName;for(const auto& item:accountList)if(item.toMap().value("id").toString()==QString::number(other.endpoint.account))otherName=item.toMap().value("name").toString();
+                    QString otherName;const auto otherId=QString::number(other.endpoint.account);
+                    for(const auto& item:accountList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
+                    if(otherName.isEmpty())for(const auto& item:archivedList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
                     items.push_back(QVariantMap{{"id",text(value.link.identity)},{"label",otherName+" · "+money(side.amount)+" · "+text(side.date)},{"amount",money(side.amount)},{"date",text(side.date)},{"committed",side.state==transfers::State::committed},{"accepted",side.accepted_unmatched},{"evidenced",side.independent_evidence},{"proposed",side.proposed_evidence.has_value()},{"provisional",side.provisional_date},{"protected",transfers::protected_draft(value.link,acct.identity)},{"local",!side.attached_evidence && (side.manually_entered || !side.independent_evidence)},{"isOrigin",value.link.origin.endpoint.account==acct.identity},{"counterpartAccount",QString::number(target.account)},{"counterpartBatch",text(target.entry.batch)},{"counterpartOrdinal",static_cast<int>(target.entry.ordinal)}});
                 }state["transfers"]=items;
             }
@@ -515,6 +544,7 @@ struct ImportModel::Worker {
             }
             state["receipt"]=receipt;
             metadata=state;
+            }
         } else state=metadata;
         state["importPlan"]=importPlan;
         state["categories"]=categories;state["categoryById"]=categoryById;state["catalogRevision"]=QString::number(catalogRevision);
@@ -528,7 +558,7 @@ struct ImportModel::Worker {
         state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
         state["selectedIndex"]=-1;
         // Never substitute a partial projected ledger for an authoritative one.
-        if(projected && !state.value("projectionAvailable").toBool()) return {state,{}};
+        if(!repo.account_selected() || (projected && !state.value("projectionAvailable").toBool())) return {state,{}};
         if(!cachedView) {
             if(!cachedLedger) {
                 cachedLedger=std::make_shared<std::vector<app::LedgerRow>>(repo.ledger(projected));
@@ -691,6 +721,48 @@ struct ImportModel::Worker {
             try {if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);} catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Transfer operation was saved durably, but its selection could not be refreshed. Reopen and inspect transfers before retrying.");}
             return;
         }
+        if(action=="rename_account" || action=="archive_account" || action=="reactivate_account" || action=="delete_account" || action=="correct_opening" || action=="reassign_currency" || action=="undo_account") {
+            auto operation=str(a.value("operation"));if(operation.empty()) operation=identity();
+            const bool move=action=="archive_account" || action=="delete_account";
+            auto matches=[&](const app::AccountCommandReceipt& saved){
+                if(action=="rename_account") return saved.name==str(a.value("name"));
+                if(action=="archive_account") return saved.kind==1;
+                if(action=="reactivate_account") return saved.kind==2;
+                if(action=="delete_account") return saved.kind==3 && saved.retired;
+                if(action=="correct_opening") return saved.kind==4 && saved.opening_date==str(a.value("date")) && saved.opening==Money::parse(str(a.value("amount")),saved.currency);
+                if(action=="reassign_currency") return saved.kind==5 && saved.currency==Currency(str(a.value("currency")));
+                return saved.kind==6;
+            };
+            auto settle=[&]{
+                if(move){
+                    selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();receipt.clear();
+                    if(!repo.account_selected() || repo.account().archived){
+                        const auto live=repo.accounts();
+                        if(!live.empty()) repo.select_account(live.front().identity);
+                        else repo.release_account_selection();
+                    }
+                    return;
+                }
+                if(repo.account_selected() && !selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
+            };
+            try {
+                if(action=="rename_account") repo.rename_account(operation,str(a.value("name")));
+                else if(action=="archive_account") repo.archive_account(operation);
+                else if(action=="reactivate_account") repo.reactivate_account(operation);
+                else if(action=="delete_account") repo.delete_account(operation);
+                else if(action=="correct_opening") {const auto acct=repo.account();repo.correct_opening(operation,str(a.value("date")),Money::parse(str(a.value("amount")),acct.currency));}
+                else if(action=="reassign_currency") repo.reassign_currency(operation,Currency(str(a.value("currency"))));
+                else repo.undo_account_operation(operation,str(a.value("undoOf")));
+            } catch(...) {
+                const auto failure=std::current_exception();
+                std::optional<app::AccountCommandReceipt> saved;
+                try {saved=repo.account_command_outcome(operation);}
+                catch(...) {gateway->close();active=false;selected.clear();receipt.clear();selectedBatch.clear();throw std::runtime_error("Account command outcome is uncertain. Reopen and inspect the account before retrying.");}
+                if(!saved || !matches(*saved)) std::rethrow_exception(failure);
+            }
+            settle();
+            return;
+        }
         if(action=="select_account" || action=="create_account") {
             bool valid=false;const auto id=a.value("id").toString().toLongLong(&valid);
             if(!valid || id<=0)throw std::invalid_argument("Choose a valid account");
@@ -709,8 +781,8 @@ struct ImportModel::Worker {
                     if(!saved || saved->name!=name || saved->currency!=currency || saved->date!=date)std::rethrow_exception(failure);
                 }
             }
-            const auto priorAccount=repo.account().identity;
-            AccountView priorView{filter,projected,sort,descending,selectedBatch,selectedOrdinal,selection,selectionAnchor,selectionFocus};
+            std::optional<std::int64_t> priorAccount;std::optional<AccountView> priorView;
+            if(repo.account_selected()){priorAccount=repo.account().identity;priorView=AccountView{filter,projected,sort,descending,selectedBatch,selectedOrdinal,selection,selectionAnchor,selectionFocus};}
             try {repo.select_account(id);}
             catch(...) {
                 if(action!="create_account")throw;
@@ -719,7 +791,7 @@ struct ImportModel::Worker {
             }
             selected.clear();selectedBatch.clear();receipt.clear();clearChanges();
             selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;sort=0;descending=false;
-            accountViews.insert_or_assign(priorAccount,std::move(priorView));
+            if(priorAccount) accountViews.insert_or_assign(*priorAccount,std::move(*priorView));
             if(const auto saved=accountViews.find(id);saved!=accountViews.end()){
                 const auto& view=saved->second;filter=view.filter;projected=view.projected;sort=view.sort;descending=view.descending;selection=view.selection;selectionAnchor=view.anchor;selectionFocus=view.focus;
                 if(!view.batch.empty())inspect(view.batch,view.ordinal,context);
@@ -1183,6 +1255,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
                 :(action=="rules_apply" && !ruleOperation.isEmpty())?ruleApplyRefreshFailure(ruleOperation)
                 :(action=="rules_save" && !ruleOperation.isEmpty())?ruleSaveRefreshFailure(ruleOperation)
                 :(action=="apply_bulk" && !worker->bulkReceipt.isEmpty())?"Bulk change "+worker->bulkReceipt.value("operation").toString()+" was saved durably, but its refreshed view could not be loaded. Reopen and inspect committed history; do not apply it again."
+                :((action=="rename_account" || action=="archive_account" || action=="reactivate_account" || action=="delete_account" || action=="correct_opening" || action=="reassign_currency" || action=="undo_account") && result.success)?"Account command was saved durably, but its view could not be refreshed. Reopen and inspect the account before retrying."
                 :"Unable to refresh verified dataset state. Close and reopen before continuing.";
             worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();
             result.state={{"active",false},{"path",worker->path},{"bulkReceipt",worker->bulkReceipt},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt},{"ruleReceipt",worker->ruleReceipt}};

@@ -58,6 +58,10 @@ public:
     std::int64_t units() const noexcept { return units_; }
     const Currency& currency() const noexcept { return currency_; }
     void require_compatible(const Money& other) const;
+    // Exact decimal rescale. Extra fractional digits are kept only when they are zero.
+    Money rescale(const Currency& target) const;
+    // True when both amounts are the same decimal number, ignoring currency identity.
+    bool same_decimal(const Money& other) const;
     Money operator+(const Money& other) const;
     Money operator-(const Money& other) const;
     Money operator-() const;

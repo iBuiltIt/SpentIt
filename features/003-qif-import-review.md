@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-27  
-Implementation: partial. Bank-v3 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share schema-18/19 source facts and reviewable associations. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27).
+Implementation: partial. Bank-v3 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 20 with rules and schema 21 without rules. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
 
 ## Accepted requirements
 
@@ -38,7 +38,7 @@ One transaction can be associated with multiple source occurrences from differen
 
 Proposed relational realization: an import stores its original bytes; source-occurrence rows identify locations within it and parsed facts; a transaction has a stable identity; an association table links that identity to its source occurrences. These are conceptual responsibilities, not adopted table names or a migration plan. The current QIF experiment preserves bytes and revisions but does not implement the future multi-format association model.
 
-Correction 2026-10-27: schemas 18 and 19 store immutable original bytes, `source_occurrences`, and `source_associations`. QIF and OFX-family imports both use that representation. Schemas 16 and 17 are rejected rather than migrated. The paragraph above describes the experiment before that checkpoint. See the [statement profile](003-ofx-profile.md).
+Correction 2026-10-27: the statement checkpoint stored immutable original bytes, `source_occurrences`, and `source_associations` in schemas 18 and 19. QIF and OFX-family imports both use that representation. Point 4 keeps the tables and moves new documents to schemas 20 and 21. Schemas 16, 17, 18, and 19 are rejected rather than migrated. The paragraph above describes the experiment before the statement checkpoint. See the [statement profile](003-ofx-profile.md).
 
 Removing a transaction from the ledger retains imported evidence and persistent history. The owner subsequently accepted ordinary correction/removal/strict Undo and explicit removed-record reimport review in [feature 011](011-committed-editing-and-reversal.md), now implemented per account in the bounded QIF workflow. A removed match is neither automatically restored nor silently suppressed. Cross-format association correction, transfer changes and broader evidence reconciliation remain unresolved.
 

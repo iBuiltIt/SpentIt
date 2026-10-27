@@ -19,8 +19,8 @@ Acceptance criteria are verification obligations, not by themselves reports of p
 | Document | Status | Scope |
 |----------|--------|-------|
 | [001 — Documents, storage, and security](001-documents-storage-security.md) | active | Local documents, encryption, persistence, backup, recovery, history |
-| [002 — Accounts, money, and splits](002-accounts-money-splits.md) | active | Account-scoped durable workspaces, currency setup, exact money, balances, transfers, allocation invariants |
-| [003 — QIF import and review](003-qif-import-review.md) | active | Immutable source, duplicate recognition, durable drafts, atomic commit; OFX/QFX/QBO/ASO bank and credit-card statements in schema 18/19; remaining QIF product scope stays open |
+| [002 — Accounts, money, and splits](002-accounts-money-splits.md) | active | Account-scoped workspaces, rename/archive/delete, opening correction, currency reassignment, exact money and allocation invariants |
+| [003 — QIF import and review](003-qif-import-review.md) | active | Immutable source, duplicate recognition, durable drafts, atomic commit; OFX/QFX/QBO/ASO bank and credit-card statements in schema 20/21; remaining QIF product scope stays open |
 | [004 — Rules and explanations](004-rules-and-explanations.md) | active | Accepted rule policy, evaluator, preview adapter, Save/Apply and rules sheet; baseline verified in Release and ASan/UBSan; committed rule reapplication remains deferred |
 | [005 — Transaction sheet and navigation](005-transaction-sheet-navigation.md) | active | Bounded combined search, multiselection and atomic committed bulk changes; broader layout/navigation requirements remain active |
 | [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Period comparisons, category totals, reproducible filters |

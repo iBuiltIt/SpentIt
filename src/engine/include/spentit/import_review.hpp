@@ -34,7 +34,10 @@ struct DraftRow {
     FieldOwnership payee_owner=FieldOwnership::untracked,memo_owner=FieldOwnership::untracked;
     std::optional<RuleMark> payee_rule={}, memo_rule={};
 };
-void validate_draft(const qif::Record& source, const DraftRow& edited);
+// reassigned is true when a recorded currency reassignment authorizes a
+// different effective currency. The effective decimal need not equal the
+// source decimal if that total was corrected before reassignment.
+void validate_draft(const qif::Record& source, const DraftRow& edited, bool reassigned=false);
 // Explicitly selecting Include is always allowed. Duplicate choices must refer to
 // a supplied candidate, with no reuse of the same occurrence within this batch.
 void validate_decisions(const std::vector<std::vector<Occurrence>>& candidates,

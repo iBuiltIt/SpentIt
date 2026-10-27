@@ -48,10 +48,11 @@ void validate(const Link& link) {
     identity(link.identity);date(link.generated_date);side(link.origin);side(link.destination);
     if(link.origin.endpoint.account==link.destination.endpoint.account ||
        link.origin.endpoint.entry==link.destination.endpoint.entry) invalid();
-    if(link.origin.amount.currency()!=link.destination.amount.currency())
+    const bool same_currency=link.origin.amount.currency()==link.destination.amount.currency();
+    const bool opposite=same_currency?-link.origin.amount==link.destination.amount:(-link.origin.amount).same_decimal(link.destination.amount);
+    if(!opposite) throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required");
+    if(!same_currency && !link.preserved_amounts)
         throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
-    if(-link.origin.amount!=link.destination.amount)
-        throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required");
     if((!link.origin.independent_evidence && !link.origin.manually_entered) || link.origin.provisional_date) invalid();
     if(!link.origin.manually_entered && (link.origin.attached_evidence || link.origin.proposed_evidence))invalid();
     if(!link.origin.attached_evidence && link.origin.date!=link.generated_date)invalid();

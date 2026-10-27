@@ -54,10 +54,11 @@ std::optional<MatchBasis> candidate_basis(const qif::Record& a,const qif::Record
     if(x.date!=y.date) return (ofx_family(a) || ofx_family(b)) ? std::optional(MatchBasis::uncertain_date) : std::nullopt;
     return x==y ? MatchBasis::same_source_fields : MatchBasis::same_date_amount;
 }
-void validate_draft(const qif::Record& source,const DraftRow& edit) {
+void validate_draft(const qif::Record& source,const DraftRow& edit,bool reassigned) {
     if ((!source.transaction && !source.repairable) || !source.source_currency) invalid();
     if (edit.transaction.original_imported_amount()!=source.original_amount) invalid();
-    if(edit.transaction.effective_total().currency()!=*source.source_currency)invalid();
+    if(!reassigned && edit.transaction.effective_total().currency()!=*source.source_currency)invalid();
+    if(reassigned && edit.transaction.reassigned_currency()==false && edit.transaction.effective_total().currency()!=*source.source_currency)invalid();
     if (edit.date.size()!=10 || edit.date[4]!='-' || edit.date[7]!='-') invalid();
     if (qif::date(edit.date.substr(8,2)+"/"+edit.date.substr(5,2)+"/"+edit.date.substr(0,4),qif::DateOrder::dmy)!=edit.date) invalid();
     text(edit.payee); text(edit.memo);

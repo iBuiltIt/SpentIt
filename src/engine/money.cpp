@@ -83,6 +83,27 @@ Money Money::parse(std::string_view text, Currency currency) {
     return Money(value, std::move(currency));
 }
 
+Money Money::rescale(const Currency& target) const {
+    if(currency_==target) return *this;
+    if(currency_.scale()==target.scale()) return Money(units_, target);
+    const auto grow=target.scale()>currency_.scale();
+    const unsigned diff=grow?target.scale()-currency_.scale():currency_.scale()-target.scale();
+    std::int64_t factor=1;
+    for(unsigned i=0;i<diff;++i){if(factor>high/10) overflow(); factor*=10;}
+    if(grow){
+        if((units_>0 && units_>high/factor) || (units_<0 && units_<low/factor)) overflow();
+        return Money(units_*factor, target);
+    }
+    if(units_%factor!=0) throw FinancialError(ErrorCode::precision, "Rescale would drop a non-zero fractional digit");
+    return Money(units_/factor, target);
+}
+bool Money::same_decimal(const Money& other) const {
+    try {
+        if(currency_.scale()==other.currency_.scale()) return units_==other.units_;
+        if(currency_.scale()>other.currency_.scale()) return rescale(other.currency_).units()==other.units_;
+        return other.rescale(currency_).units()==units_;
+    } catch(const FinancialError&) { return false; }
+}
 void Money::require_compatible(const Money& other) const {
     if (currency_.code() != other.currency_.code())
         throw FinancialError(ErrorCode::currency_mismatch, "Currency mismatch");

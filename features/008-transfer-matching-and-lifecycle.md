@@ -1,7 +1,7 @@
 # 008 — Transfer matching and lifecycle
 
 Status: **active**  
-Last updated: 2026-10-26  
+Last updated: 2026-10-27  
 Implementation: the [multi-account workflow](../doc/accounts.md) and [bounded durable transfer integration](../doc/transfer-engine.md) implement manual/imported-allocation creation, generated counterparts, acceptance, provisional bank matching, per-account commit, draft protection and counterpart navigation. [Bounded QIF transfer admission and explicit resolution](../doc/qif-transfers.md) are implemented; unified account-picker integration and repair/reversal remain unfinished. Verified scope and remaining decisions are distinguished below.
 
 ## Accepted requirements
@@ -61,7 +61,7 @@ The owner accepted these five decisions for the first transfer package:
 2. **Matching initially requires explicit confirmation.** Suggest candidates for review rather than automatically linking them. Preserve both bank records and their own posting dates. Differing amounts require review; confirmation must not silently correct either amount. Automatic matching confidence and mismatch-resolution commands remain later design work.
 3. **Generated dates are provisional.** Initially copy the origin date and visibly identify it as provisional. Review the destination bank posting date when independent evidence arrives, preserving the original evidence and prior interpretation.
 4. **Transfers belong to allocations.** Support a destination account per allocation, with each counterpart linked to its originating allocation. A split transaction can therefore contain ordinary categories and transfers to multiple destinations. Do not infer identity from allocation position or combine repeated equal allocations.
-5. **Cross-currency transfers are deferred.** The first package must reject them with an explicit unsupported-operation error. Do not infer exchange rates or reinterpret amounts. This bounds implementation; it does not remove the broader product requirement.
+5. **Cross-currency transfers are deferred.** The first package must reject them with an explicit unsupported-operation error. Do not infer exchange rates or reinterpret amounts. This bounds implementation; it does not remove the broader product requirement. Point 4 currency reassignment, recorded in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27), may leave an already linked same-currency pair as two preserved opposite decimals in different currencies. That preservation does not create a match, a rate, a fee, or equality, and new transfer generation, proposal, and commit still reject a cross-currency match. It is not transfer repair or committed transfer reversal.
 
 These decisions settle the corresponding first-scope questions below. They do not authorize automatic matching, silent mismatch repair, or cascade removal of committed or independently supported entries. Detailed correction, unlink, Fix match and reversal behavior involving committed entries or later edits remains a separate decision gate.
 

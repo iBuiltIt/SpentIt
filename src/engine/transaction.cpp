@@ -3,9 +3,9 @@
 #include "exact_sum.hpp"
 
 namespace spentit {
-Transaction::Transaction(Money total, std::optional<Money> original, std::vector<Allocation> allocations)
-    : total_(std::move(total)), original_(std::move(original)), allocations_(std::move(allocations)) {
-    if (original_) total_.require_compatible(*original_);
+Transaction::Transaction(Money total, std::optional<Money> original, std::vector<Allocation> allocations, bool reassigned)
+    : total_(std::move(total)), original_(std::move(original)), allocations_(std::move(allocations)), reassigned_(reassigned) {
+    if (original_ && (!reassigned_ || original_->currency()==total_.currency())) total_.require_compatible(*original_);
     if (allocations_.empty())
         throw FinancialError(ErrorCode::empty_allocations, "At least one allocation is required");
     for (const auto& allocation : allocations_) total_.require_compatible(allocation.amount);
@@ -17,19 +17,19 @@ Transaction::Transaction(Money total, std::optional<Money> original, std::vector
     if (sum != total_) throw FinancialError(ErrorCode::split_mismatch, "Allocations do not equal effective total");
 }
 Transaction Transaction::imported(Money original, std::vector<Allocation> allocations) {
-    return Transaction(original, original, std::move(allocations));
+    return Transaction(original, original, std::move(allocations), false);
 }
 Transaction Transaction::corrected_import(Money original, Money total, std::vector<Allocation> allocations) {
-    return Transaction(std::move(total),std::move(original),std::move(allocations));
+    return Transaction(std::move(total),std::move(original),std::move(allocations), false);
 }
-Transaction Transaction::repaired_import(std::optional<Money> original, Money total, std::vector<Allocation> allocations) {
-    return Transaction(std::move(total),std::move(original),std::move(allocations));
+Transaction Transaction::repaired_import(std::optional<Money> original, Money total, std::vector<Allocation> allocations, bool reassigned) {
+    return Transaction(std::move(total),std::move(original),std::move(allocations),reassigned);
 }
 Transaction Transaction::manual(Money total, std::vector<Allocation> allocations) {
-    return Transaction(std::move(total), std::nullopt, std::move(allocations));
+    return Transaction(std::move(total), std::nullopt, std::move(allocations), false);
 }
 Transaction Transaction::corrected(Money total, std::vector<Allocation> allocations) const {
     total_.require_compatible(total);
-    return Transaction(std::move(total), original_, std::move(allocations));
+    return Transaction(std::move(total), original_, std::move(allocations), reassigned_);
 }
 } // namespace spentit

@@ -21,7 +21,23 @@ The owner selected the following eight-point sequence and gave **Go for point 1*
 
 After **each point**, update relevant feature documents and project status, write a durable handoff with completed work, actual verification, limitations, unresolved decisions and downstream dependencies, and commit all task changes while preserving unrelated work. Then ask whether to proceed to the next point or stop, and wait. A material financial/security ambiguity is an earlier decision gate; Go does not settle it. Dependencies on later points must be recorded explicitly rather than silently reducing completion scope. Hardening continues in later points as their behavior changes; point 2 is not a final verification claim for future code. Reports and licensing/distribution are outside this eight-point authorization.
 
-Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Points 4–8 have not been started. The owner is asked whether to proceed to point 4 or stop.
+Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Coordinator review on 2026-10-27 accepted the point-4 implementation at schemas 20 and 21, with the limits recorded below. Points 5–8 have not been started. The owner is asked whether to proceed to point 5 or stop.
+
+## Point 4 completion handoff — 2026-10-27
+
+Read [feature 002](../features/002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27), [accounts](accounts.md#account-commands--2026-10-27), and [point-4 evidence](status.md#point-4-account-management--2026-10-27). One agent implemented this checkpoint from HEAD `f1004ea`. Points 5–8 were not started. No license, publication, conversion, exchange rate, report, or transfer-repair decision was made.
+
+Policies applied:
+
+- New documents use schema 20 with rules and schema 21 without rules. Schemas 18 and 19 are rejected with `Unsupported experimental format; no migration was attempted`. Application id `1397770577` is unchanged. There is one schema shape and no migration.
+- Rename, archive, reactivation, empty-account deletion, opening-balance correction, and currency reassignment are explicit historied commands on the existing serial worker. Identical retries return the stored receipt. Conflicting operation-id reuse is rejected. Durable completion precedes a success report.
+- Rename keeps the creation name. Archive refuses a pending import and leaves it in place. Deletion retires an untouched zero account that is not the last account and does not reuse the identity. Opening correction replays the prior opening and refuses a date after a committed transaction on that account. Currency reassignment preserves exact decimals, refuses a dropped non-zero fraction or overflow, and leaves source bytes and source-occurrence currency facts on the old currency.
+- An already linked transfer may become two preserved opposite decimals in different currencies through `preserved_amounts`. The other side stays. New matches remain same-currency. This recording did not require a new transfer policy, so that case was implemented and no decision gate was left open. Fix match, unlink, transfer repair, and committed transfer reversal were not implemented.
+- The currency dialog warns before OK with `This reassigns the account currency without conversion. Numeric amounts stay the same decimal. It does not apply an exchange rate.` Cancel changes nothing. Sidebar rename, archive, archived section, reactivate, and delete are present. No `import.ui` runtime test was run.
+
+Exact commands, the validation failure that was fixed, and the passing counts are in status. The passing selected runs are rules-on Debug 18/18 in 45.14 seconds, rules-on Release 18/18 in 42.92 seconds, rules-on ASan/UBSan 18/18 in 84.47 seconds, and rules-off Debug 13/13 in 38.58 seconds. Representative interruption positions for each new command passed inside `accounts.lifecycle_boundaries`. Linux and Windows are unverified. These selections are not a full suite.
+
+Coordinator review on 2026-10-27 accepted this diff with the limits below. The owner is asked: **proceed to point 5 or stop**.
 
 ## Point 3 completion handoff — 2026-10-27
 
@@ -39,7 +55,7 @@ Implemented: engine SGML and XML parsers, schema 18/19 evidence tables with `aso
 
 Exact commands, pass counts, the two earlier fuzz crashes that were fixed, the ASO replay, and the sweeps that were not rerun are in status. Linux and Windows are unverified. The short ASO fixture replay exited 0. A new multi-hour fuzz campaign was not started.
 
-The owner is asked: **proceed to point 4 or stop**.
+The owner was asked at this delivery: **proceed to point 4 or stop**. Point 4 is now the [next handoff](#point-4-completion-handoff--2026-10-27). The wait instruction above is the historical stop at point-3 delivery.
 
 ## Point 2 completion handoff — 2026-10-26
 
@@ -65,7 +81,7 @@ Update 2026-10-27: this checkpoint was committed as `ec17bb2`. The owner authori
 
 ## Point 1 completion handoff — 2026-10-26
 
-Read the [whole-source QIF contract](qif-account-imports.md), [profile](../features/009-qif-profile.md) and [current verification](status.md#whole-source-qif-account-review--2026-10-26). The intermediate backup/parser/nullable-repair checkpoint was committed as `933ede1`; its earlier schema-12 and schema-14/15 evidence is recorded separately in status. At this handoff, grouped imports used parser bank-v3 and experimental schemas 16/17. New-format datasets were required; no migration or compatibility work was added. Update 2026-10-27: new documents use schemas 18/19 and reject 16/17. See the [point-3 handoff](#point-3-completion-handoff--2026-10-27).
+Read the [whole-source QIF contract](qif-account-imports.md), [profile](../features/009-qif-profile.md) and [current verification](status.md#whole-source-qif-account-review--2026-10-26). The intermediate backup/parser/nullable-repair checkpoint was committed as `933ede1`; its earlier schema-12 and schema-14/15 evidence is recorded separately in status. At this handoff, grouped imports used parser bank-v3 and experimental schemas 16/17. New-format datasets were required; no migration or compatibility work was added. Update 2026-10-27: the statement checkpoint used schemas 18/19 and rejected 16/17. Point 4 new documents use schemas 20/21 and reject 18/19. See the [point-3 handoff](#point-3-completion-handoff--2026-10-27) and the [point-4 handoff](#point-4-completion-handoff--2026-10-27).
 
 The five point-1 requirements are implemented:
 

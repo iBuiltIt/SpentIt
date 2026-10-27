@@ -34,6 +34,9 @@ struct Link {
     Side origin;
     Side destination;
     std::string generated_date;
+    // Set only when a currency reassignment preserved each side's decimal amount.
+    // New matches stay false and still reject a cross-currency link.
+    bool preserved_amounts=false;
 };
 enum class Error { invalid_relationship, cross_currency, amount_mismatch,
                    unresolved_policy, acceptance_required };

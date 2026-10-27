@@ -20,6 +20,22 @@ struct Account {
     std::int64_t revision;
     bool opening_confirmed;
     std::int64_t identity=1;
+    bool archived=false;
+};
+// Explicit account command receipt. Retry returns this stored after-image.
+struct AccountCommandReceipt {
+    std::string operation;
+    int kind=0;
+    std::int64_t identity=0;
+    std::string name;
+    Currency currency;
+    std::string opening_date;
+    Money opening;
+    bool archived=false;
+    bool retired=false;
+    std::int64_t revision=0;
+    bool frozen=false;
+    bool opening_confirmed=false;
 };
 struct AccountCreation {
     std::int64_t identity;
@@ -103,6 +119,19 @@ public:
     }
     // expected revision prevents stale opening-balance edits; frozen after commit.
     virtual void opening(std::int64_t expected, std::string_view date, const Money&) = 0;
+    virtual bool account_selected() const { return true; }
+    virtual void release_account_selection() { throw std::logic_error("Account selection is unavailable"); }
+    virtual std::vector<Account> archived_accounts() const { return {}; }
+    virtual AccountCommandReceipt rename_account(std::string_view,std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
+    virtual AccountCommandReceipt archive_account(std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
+    virtual AccountCommandReceipt reactivate_account(std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
+    virtual AccountCommandReceipt delete_account(std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
+    virtual AccountCommandReceipt correct_opening(std::string_view,std::string_view,const Money&) { throw std::logic_error("Account commands require a new dataset"); }
+    virtual AccountCommandReceipt reassign_currency(std::string_view,const Currency&) { throw std::logic_error("Account commands require a new dataset"); }
+    virtual AccountCommandReceipt undo_account_operation(std::string_view,std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
+    virtual std::optional<AccountCommandReceipt> account_command_outcome(std::string_view) const { throw std::logic_error("Account commands require a new dataset"); }
+    virtual std::optional<std::string> undoable_account_operation() const { return {}; }
+    virtual bool account_currency_warning() const { return false; }
     virtual std::vector<BatchInfo> batches() const = 0;
     virtual std::vector<ImportGroup> import_groups() const { return {}; }
     virtual std::optional<ImportGroup> import_group_outcome(std::string_view id) const {for(const auto& g:import_groups())if(g.id==id)return g;return {};}

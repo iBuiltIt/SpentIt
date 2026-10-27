@@ -194,7 +194,8 @@ void validation(){
         "DELETE FROM account WHERE singleton=1"}){
         Directory d;const auto path=d.path/"doc";setup(path);
         sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
-        check(sqlite3_exec(db,"DROP TRIGGER account_creation_retained;DROP TRIGGER account_creation_immutable;DROP TRIGGER batch_account_immutable;DROP TRIGGER source_immutable",nullptr,nullptr,nullptr)==SQLITE_OK);
+        // The raw connection does not register spentit_account_command(). Drop the triggers that call it so this corruption can be planted. open() must still reject the document.
+        check(sqlite3_exec(db,"DROP TRIGGER account_creation_retained;DROP TRIGGER account_creation_immutable;DROP TRIGGER batch_account_immutable;DROP TRIGGER source_immutable;DROP TRIGGER account_name_command;DROP TRIGGER frozen_opening;DROP TRIGGER account_definition_command",nullptr,nullptr,nullptr)==SQLITE_OK);
         check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
         rejected([&]{ImportStore::open(path,password);});no_leaks(d.path);
     }
@@ -233,7 +234,7 @@ void group_validation(){
         {4,true,"DROP TRIGGER group_events_keep;DELETE FROM import_group_events WHERE state=1"},
         {4,true,"DROP TRIGGER group_transition;DROP TRIGGER group_transition_history;UPDATE import_groups SET publication='missing-receipt'"},
         {4,false,"INSERT INTO retired_import_accounts(account_id,group_id) VALUES(2,'fault')"},
-        {3,true,"UPDATE account SET name='' WHERE singleton=2"}}){
+        {3,true,"DROP TRIGGER account_name_command;DROP TRIGGER frozen_opening;DROP TRIGGER account_definition_command;UPDATE account SET name='' WHERE singleton=2"}}){
         Directory d;const auto path=d.path/"tampered-group";group_fault_setup(path,item.setup_kind);
         {auto s=ImportStore::open(path,password);if(item.execute)group_fault_execute(s,item.setup_kind);s.verify();if(!restored_checked)s.backup_to(d.path/"restore",password);}
         if(!restored_checked){auto restored=ImportStore::open(d.path/"restore",password);restored.verify();restored.select_account(2);check(restored.evidence("fault-account-0").find("GROUP-FAULT-MARKER")!=std::string::npos);restored_checked=true;}

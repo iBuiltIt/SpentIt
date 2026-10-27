@@ -44,6 +44,19 @@ public:
     std::optional<app::AccountCreation> account_creation_outcome(std::int64_t) const override;
     app::Account create_account(std::int64_t,std::string_view,const Currency&,std::string_view) override;
     void opening(std::int64_t,std::string_view,const Money&) override;
+    bool account_selected() const override;
+    void release_account_selection() override;
+    std::vector<app::Account> archived_accounts() const override;
+    app::AccountCommandReceipt rename_account(std::string_view,std::string_view) override;
+    app::AccountCommandReceipt archive_account(std::string_view) override;
+    app::AccountCommandReceipt reactivate_account(std::string_view) override;
+    app::AccountCommandReceipt delete_account(std::string_view) override;
+    app::AccountCommandReceipt correct_opening(std::string_view,std::string_view,const Money&) override;
+    app::AccountCommandReceipt reassign_currency(std::string_view,const Currency&) override;
+    app::AccountCommandReceipt undo_account_operation(std::string_view,std::string_view) override;
+    std::optional<app::AccountCommandReceipt> account_command_outcome(std::string_view) const override;
+    std::optional<std::string> undoable_account_operation() const override;
+    bool account_currency_warning() const override;
     std::vector<app::BatchInfo> batches() const override;
     std::vector<app::ImportGroup> import_groups() const override;
     std::optional<app::ImportGroup> import_group_outcome(std::string_view) const override;
@@ -129,6 +142,8 @@ private:
     void verify_committed(const app::OperationContext* = nullptr) const;
     void verify_rules(const app::OperationContext* = nullptr) const;
     void verify_bulk(const app::OperationContext* = nullptr) const;
+    void verify_account_commands(const app::OperationContext* = nullptr) const;
+    app::Account command_account(bool money_edit) const;
     void populate(std::string_view,std::string_view,const qif::Result&,std::int64_t,const app::OperationContext*);
     app::RowView load_row(const imports::Occurrence&, bool candidates) const;
     static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr);
