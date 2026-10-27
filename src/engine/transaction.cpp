@@ -22,6 +22,9 @@ Transaction Transaction::imported(Money original, std::vector<Allocation> alloca
 Transaction Transaction::corrected_import(Money original, Money total, std::vector<Allocation> allocations) {
     return Transaction(std::move(total),std::move(original),std::move(allocations));
 }
+Transaction Transaction::repaired_import(std::optional<Money> original, Money total, std::vector<Allocation> allocations) {
+    return Transaction(std::move(total),std::move(original),std::move(allocations));
+}
 Transaction Transaction::manual(Money total, std::vector<Allocation> allocations) {
     return Transaction(std::move(total), std::nullopt, std::move(allocations));
 }

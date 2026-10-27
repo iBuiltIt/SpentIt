@@ -110,3 +110,10 @@ The [multi-account prerequisite](../doc/accounts.md) gives each account an indep
 ## QIF transfer destinations — 2026-10-26
 
 The [bounded destination extension](../doc/qif-transfers.md) admits whole-record and split `[Account]` notation, requires explicit account/link resolution, and guards commit and rule application against losing transfer intent. See that contract and its verification link; multi-account QIF files and the wider transfer repair/reversal scope remain deferred.
+
+
+## Ordinary profile and unavailable original amounts — 2026-10-26
+
+The [v3 profile](009-qif-profile.md) now admits ordinary Bank/Cash/CCard records and separate class metadata. Structurally intact date/amount repairs preserve unknown original money as unavailable and keep every original split position and transfer destination. Explicit repaired interpretations and duplicate decisions remain separate; no guessed original, zero substitution or automatic repaired-record exclusion is permitted. The [current checkpoint](../doc/status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26) records verification and format scope.
+
+Multi-account source sections and the owner's upfront repair-count/progress/full-import Abort requirements remain unfinished. Account definitions will require explicit mapping or prompted creation; opening-balance meaning and cleanup of newly created accounts on Abort remain decisions in [the handoff](../doc/roadmap.md#point-1-in-progress-handoff--2026-10-26). This feature remains active and partially implemented.

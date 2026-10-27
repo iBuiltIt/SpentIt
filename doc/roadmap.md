@@ -6,13 +6,43 @@ The owner authorized coordinated implementation with delegated agents, continuin
 
 This is sequencing guidance, not a claim that the listed work exists. [Project status](status.md) records implementation evidence; [feature documents](../features/README.md) own requirements and unresolved decisions.
 
-## Current checkpoint — 2026-10-26
+## Current authorization and delivery checkpoints — 2026-10-26
+
+The owner selected the following eight-point sequence and gave **Go for point 1**. Use one implementation agent per numbered point, in succession; each agent owns discovery, implementation, verification and documentation for its area. This supersedes the earlier permission for concurrent independent packages and the historical sequence below. The coordinator reviews the result and handles the handoff and commit. Do not start the next point without the owner's answer at its checkpoint.
+
+1. **Finish the durable QIF workflow:** specify supported dialects beyond the banking profile; address multi-account sections, category/class notation and required export variations; extend review/repair; complete remaining long-operation cancellation, progress, retry and recovery UX; verify import → review → correction → commit → reopen.
+2. **Harden the implementation:** coverage-guided parser fuzzing, combined-workflow/current-format failure and recovery coverage, keyboard/focus/accessibility checks, representative performance, Linux/Windows validation, and the intermittent Qt delegate-reset warning.
+3. **Add QFX, QBO, OFX and ASO imports:** establish dialects and ASO contents, preserve native source bytes, implement shared source facts and evidence associations, and reviewable occurrence-aware cross-format duplicates with overlap/failure tests.
+4. **Complete account management:** renaming, archiving/reactivation, safe empty-account deletion, committed opening-balance correction, and explicit currency reassignment with exact precision, history, draft and transfer consequences.
+5. **Complete transfer management:** Fix match, unlink/replacement, independently imported and committed counterparts, grouped/unequal allocation resolution, cancellation/removal provenance, a transfer journal and unified destination selection, preserving evidence and later changes.
+6. **Complete committed editing and reversal:** linked transfers, settled account/source-association corrections, previews/conflicts, atomic retries, history replay and evidence preservation.
+7. **Finish categories and rules:** settle committed-record reapplication with preview/manual protection/history, remaining picker/editor and explanation UX, and classification across new formats without changing evidence or money.
+8. **Finish search and ledger interactions:** remaining sheet/sidebar layout, keyboard/multiline/narrow-window/layout preferences, remaining bulk behavior, and selection/viewport/unsaved-edit verification across new operations.
+
+After **each point**, update relevant feature documents and project status, write a durable handoff with completed work, actual verification, limitations, unresolved decisions and downstream dependencies, and commit all task changes while preserving unrelated work. Then ask whether to proceed to the next point or stop, and wait. A material financial/security ambiguity is an earlier decision gate; Go does not settle it. Dependencies on later points must be recorded explicitly rather than silently reducing completion scope. Hardening continues in later points as their behavior changes; point 2 is not a final verification claim for future code. Reports and licensing/distribution are outside this eight-point authorization.
+
+Point 1 is in progress. Independent backup cancellation/progress and initial ordinary-QIF/nullable-amount work are recorded in [project status](status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26). No completed-point checkpoint or permission to start point 2 is implied.
+
+## Point 1 in-progress handoff — 2026-10-26
+
+Controlled-backup cancellation/progress is implemented and verified on the earlier bank-v2/schema-12 baseline; read [behavior](durable-import.md#backup-cancellation-and-publication--2026-10-26) and [actual verification](status.md#qif-point-1-independent-backup-progress--2026-10-26). Subsequent accepted parser/repair work uses bank-v3 and experimental schemas 14/15; its verification is recorded separately in [current status](status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26). These stages must not share an undifferentiated verification claim.
+
+The owner accepted UTF-8 Bank/Cash/CCard with explicit DMY/MDY/four-digit years, separate source-class metadata, and explicit unknown-original amount repairs without guessed originals or automatic duplicate exclusion. The parser and single-account repair implementation now preserve source currency, nullable money, split positions and transfer intent. Structural/encoding/unknown-field errors remain blocked. The owner also requires upfront whole-import repair counts, progress and Abort of all earlier saved repairs; that workflow is unfinished.
+
+The owner settled the account/group policies; dependent implementation is authorized:
+
+- Source account definitions prompt explicit creation with preserved names, visible setup currency and informational type. Retain `B` as reported balance evidence. For newly created accounts only, compare the exact reviewed included change from zero after repairs and duplicate decisions with `B`. Equality leaves opening zero. On mismatch ask whether `B` is opening or closing; opening uses `B`, closing derives opening as `B` minus reviewed change with checked exact arithmetic. Preserve the evidence and decision and explicitly confirm the opening date. Never overwrite an existing mapped account's opening.
+- All source-account repairs must finish before any account commit/protection. Abort discards all group drafts and saved repairs and removes unused accounts created for the import, retaining encrypted evidence/history and unrelated work. No transactional section may be silently omitted.
+
+Continue with the same point-1 agent; do not start point 2. The intermediate backup/parser/nullable-repair checkpoint is verified as recorded in status, but does not complete point 1. Build the full-file account/section representation, explicit mapping/creation and atomic group preparation/abort with durable recovery; integrate repair totals/progress and prevent early account commits/protection. Then reconcile scope against the original five point-1 bullets, run current-format workflow/failure checks, update docs and handoff, and commit before asking whether to proceed. The current single-account changes do not complete multi-account imports or the requested full-import repair UX. Private account names/suffixes/balances from discussion must never enter repository fixtures or documentation.
+
+## Previous checkpoint — 2026-10-26
 
 The schema-6 verification gap is closed in Release and ASan/UBSan. The bounded search/ledger package now implements the owner-approved grammar, multiselection, and schema-7 atomic committed category/removal/group Undo; see [contract](search-ledger.md) and [verification](status.md). The bounded durable transfer package is now implemented; [QIF transfer-destination admission and explicit account resolution](qif-transfers.md) are now implemented. The owner authorized finishing that package and explicitly excluded proceeding to reports. The owner requested proceeding and accepted its first five scope decisions on 2026-10-26; see [feature 008](../features/008-transfer-matching-and-lifecycle.md#accepted-first-implementation-scope--2026-10-26). The [multi-account prerequisite](accounts.md) is implemented; the bounded transfer links, generated/protected drafts and provisional matching are now implemented. Remaining committed repair/reversal policies still require decisions.
 
 Experimental formats are disposable until the owner explicitly announces a release. Migration, upgrade and backward-compatibility work are not pre-release obligations. Historical roadmap entries below retain the sequence and original checkpoints, not a requirement to build upgrade infrastructure now.
 
-## Roadmap sequence and completion boundaries
+## Earlier roadmap sequence and completion boundaries (historical)
 
 1. Complete the bounded durable QIF workflow: operation phases, cancellable opening/file reading, commit-outcome recovery, then durable retained-evidence cancellation. Preserve existing documents; new persistent states require an explicitly versioned format and recovery tests.
 2. Bring the accepted navigation shell into the durable UI: resize/hide sidebar, persistent toolbar, guarded Back/Forward and Settings navigation. Extend keyboard/accessibility coverage and keep unavailable financial actions unavailable.
@@ -24,7 +54,7 @@ Experimental formats are disposable until the owner explicitly announces a relea
 8. Add exact allocation-based reports and further import formats. QIF remains first; precise future dialects and reporting policies must be specified.
 9. Prepare distribution: reproducible dependencies, notices, packaging and recovery documentation, followed by owner-assisted platform testing and explicit licensing/publication decisions.
 
-Independent packages may run concurrently with clear file ownership. Integrate and review changes before treating a package as verified. Prefer finishing an existing vertical slice to creating unconnected scaffolding for later features.
+The earlier authorization allowed independent packages to run concurrently with clear file ownership. It is superseded by the sequential one-agent-per-point authorization above. Integrate and review changes before treating a package as verified. Prefer finishing an existing vertical slice to creating unconnected scaffolding for later features.
 
 ## Concrete input gates
 
@@ -47,6 +77,8 @@ The owner then accepted the ordinary committed-change policy in feature 011. The
 
 
 ## Handoff — 2026-10-26
+
+This is the previous completed QIF destination-package handoff. The current eight-point authorization and point-1 discovery checkpoint above supersede its stop/start instructions.
 
 The owner gave Go for the QIF destination package and explicitly said not to move on to reports. That bounded implementation now admits whole-record and split `[Account]` destinations, requires explicit account/link resolution, preserves transfer intent through rules and ordinary editing, and reuses the existing durable transfer commands. Read [the QIF contract](qif-transfers.md), [transfer contracts](transfer-engine.md), [accepted transfer requirements](../features/008-transfer-matching-and-lifecycle.md), and [current verification](status.md#qif-transfer-destinations--2026-10-26).
 

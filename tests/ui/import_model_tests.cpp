@@ -26,6 +26,7 @@ public:
     void open_controlled(const std::filesystem::path& p,std::optional<std::string> pw,const app::OperationContext& c) override {inner->open_controlled(p,std::move(pw),c);if(cancelAfterOpen)c.request();}
     void close() override {inner->close();}
     void backup(const std::filesystem::path& p) override {inner->backup(p);}
+    void backup_controlled(const std::filesystem::path& p,const app::OperationContext& context) override {inner->backup_controlled(p,context);}
     app::ImportRepository& repository() override {return *this;}
     app::Account account() const override {return repo().account();}
     std::vector<app::Account> accounts() const override {if(attempted && failAccountRefresh)throw std::runtime_error("Injected account refresh failure");return repo().accounts();}
@@ -294,6 +295,18 @@ private slots:
         auto late=connect(&m,&ImportModel::changed,&m,[&]{if(m.busy()){sealed=true;QVERIFY(!m.canCancel());m.requestCancel();QVERIFY(!m.cancellationRequested());}});
         run(m,"commit");disconnect(late);QVERIFY(sealed);QCOMPARE(m.state().value("committed").toString(),"2.00");
     }
+    void backupCancellation() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/one");
+        run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
+        bool requested=false;
+        const auto cancel=connect(&m,&ImportModel::changed,&m,[&]{if(m.canCancel() && !requested){requested=true;m.requestCancel();}});
+        run(m,"backup",{{"path",dir.path()+"/cancelled"}},false);disconnect(cancel);
+        QVERIFY(requested);QVERIFY(m.error().contains("cancelled before publication"));QVERIFY(m.error().contains(".partial"));
+        QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("committed").toString(),"100.00");
+        QVERIFY(!QFileInfo::exists(dir.path()+"/cancelled"));
+        run(m,"backup",{{"path",dir.path()+"/retry"}});run(m,"close");run(m,"open",{{"path",dir.path()+"/retry"}});
+        QCOMPARE(m.state().value("committed").toString(),"100.00");
+    }
     void cancelledOpenActivation() {
         QTemporaryDir dir;const auto path=dir.path()+"/doc";
         auto gateway=std::make_unique<OutcomeGateway>();auto* injected=gateway.get();
@@ -338,6 +351,20 @@ private slots:
             QCOMPARE(m.state().value("committed").toString(),"1.00");QCOMPARE(m.rowCount(),2);
             QCOMPARE(m.state().value("receipt").toMap().value("included").toInt(),1);
         }
+    }
+    void unknownAmountRepair() {
+        QTemporaryDir dir;const auto path=dir.path()+"/document";ImportModel m(storage::document_gateway());create(m,path);
+        run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
+        const auto file=fixture(dir.path(),"!Type:Cash\nD1/1/2026\nTbad\nLFood/Family\n^\n");
+        run(m,"import",{{"path",file},{"profile","DMY"}});
+        QVERIFY(selected(m).value("repair").toBool());QCOMPARE(selected(m).value("original").toString(),"Unavailable");
+        QVERIFY(selected(m).value("sourceClasses").toString().contains("Family"));
+        auto edit=selected(m).value("draft").toMap();QVERIFY(edit.value("total").toString().isEmpty());edit["total"]="-10.00";
+        auto splits=edit.value("splits").toList();QCOMPARE(splits.size(),1);auto allocation=splits[0].toMap();QVERIFY(allocation.value("amount").toString().isEmpty());allocation["amount"]="-10.00";splits[0]=allocation;edit["splits"]=splits;
+        run(m,"save",edit);
+        QCOMPARE(selected(m).value("draft").toMap().value("splits").toList()[0].toMap().value("categoryOwner").toString(),QString("source"));
+        run(m,"commit",{},false);run(m,"decide");run(m,"commit");
+        QCOMPARE(m.state().value("committed").toString(),"90.00");run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("committed").toString(),"90.00");
     }
     void durableWorkflow() {
         QTemporaryDir dir;const auto path=dir.path()+"/document";

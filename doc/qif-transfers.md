@@ -2,6 +2,8 @@
 
 Last updated: 2026-10-26
 
+Subsequent [ordinary-QIF/nullable-amount work](status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26) uses bank-v3 and schemas 14/15. The schema-12/13 verification below remains evidence for this earlier destination package. Class suffixes now remain separate source metadata; malformed amounts cannot erase a retained transfer destination.
+
 The bounded banking parser now admits `L[Account]` and `S[Account]` destinations and connects their allocations to the [durable transfer workflow](transfer-engine.md). Reports are outside this package. The parser contract is `bank-v2`; current experimental schemas are 12 with rules and 13 without rules. Older layouts are rejected without migration because their pinned interpretation contract differs.
 
 ## Review and resolution

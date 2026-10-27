@@ -21,7 +21,7 @@ std::string_view message(Issue issue) noexcept {
     case Issue::split_structure: return "Ambiguous or incomplete split structure";
     case Issue::split_total: return "Splits do not equal the exact total";
     case Issue::transfer: return "Invalid or unsupported transfer destination syntax";
-    case Issue::category_class: return "Category class notation is unsupported";
+    case Issue::category_class: return "Invalid or unsupported category/class notation";
     case Issue::cleared_status: return "Unsupported cleared or budget status";
     }
     return "Invalid QIF input";
@@ -88,20 +88,31 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         if ((c < 32 && c != '\n' && c != '\t' && c != '\r') || c == 127 ||
             (c == '\r' && (i+1 == bytes.size() || bytes[i+1] != '\n'))) { file_error(Issue::encoding,i); return out; }
     }
-    Record r;
+    Record r; r.source_currency=currency;
     std::array<bool,256> seen{};
     std::optional<Money> total;
     std::vector<Allocation> allocations;
-    std::string category, split_category, split_memo;
+    std::string category, split_category, split_memo, source_class, split_class;
+    std::vector<std::string> allocation_classes;
+    std::vector<SourceAllocation> source_fields;
     bool split_started=false, has_s=false, has_e=false, any=false;
     unsigned addresses=0;
     std::size_t split_count=0;
     bool repair_allowed=true;
-    auto error = [&](Issue issue,std::size_t at) { if(issue!=Issue::date && issue!=Issue::split_total) repair_allowed=false; if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at}; };
-    auto category_check = [&](std::string_view value,std::size_t at) {
-        if (transfer_destination(value)) return;
-        if (value.find_first_of("[]") != value.npos) error(Issue::transfer,at);
-        else if (!supported_category(value)) error(Issue::category_class,at);
+    auto error = [&](Issue issue,std::size_t at) { if(issue!=Issue::date && issue!=Issue::split_total && issue!=Issue::amount && issue!=Issue::missing_field) repair_allowed=false; if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at}; };
+    auto category_parts = [&](std::string_view value,std::size_t at,std::string& target,std::string& class_label) {
+        const auto slash=value.find('/');
+        const auto base=value.substr(0,slash);
+        target=base; class_label.clear();
+        if(slash!=value.npos) {
+            const auto label=value.substr(slash+1);
+            if(label.empty() || label.find_first_of("/|[]\t")!=label.npos || label.find_first_not_of(' ')==label.npos)
+                error(Issue::category_class,at);
+            else class_label=label;
+        }
+        if (transfer_destination(base)) return;
+        if (base.find_first_of("[]") != base.npos) error(Issue::transfer,at);
+        else if (!supported_category(base)) error(Issue::category_class,at);
     };
     std::size_t pos = bytes.starts_with("\xef\xbb\xbf") ? 3 : 0;
     r.begin=pos;
@@ -112,28 +123,32 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         auto line=bytes.substr(start,(newline == bytes.npos ? bytes.size() : newline)-start);
         if (line.ends_with('\r')) line.remove_suffix(1);
         if (line.size() > max_field+1 || pos-r.begin > max_record) { file_error(Issue::resource_limit,start); return out; }
-        if (!any && out.records.empty() && start == (bytes.starts_with("\xef\xbb\xbf") ? 3u : 0u) && line == "!Type:Bank") { r.begin=pos; continue; }
+        if (!any && out.records.empty() && start == (bytes.starts_with("\xef\xbb\xbf") ? 3u : 0u) && (line == "!Type:Bank" || line == "!Type:Cash" || line == "!Type:CCard")) { r.begin=pos; continue; }
         if (line.starts_with('!')) { file_error(Issue::header,start); return out; }
         if (line == "^") {
             if (out.records.size() == max_records) { file_error(Issue::resource_limit,start); return out; }
             if (!any) error(Issue::empty_record,start);
             if (!seen['D'] || !seen['T']) error(Issue::missing_field,start);
-            if (has_s || has_e || (split_started && allocations.empty())) error(Issue::split_structure,start);
-            if (!allocations.empty() && !category.empty() && category != "--Split--") error(Issue::split_structure,start);
+            if (has_s || has_e || (split_started && source_fields.empty())) error(Issue::split_structure,start);
+            if (!source_fields.empty() && !category.empty() && category != "--Split--") error(Issue::split_structure,start);
             r.original_amount=total;
-            if (total && allocations.empty() && !split_started) allocations.push_back({category,r.memo,*total});
+            if (!split_started) {
+                source_fields.push_back({category,r.memo,source_class,total}); allocation_classes.push_back(source_class);
+                if(total) {Allocation allocation{category,r.memo,*total};allocation.source_ordinal=0;allocations.push_back(std::move(allocation));}
+            }
             r.has_source_splits=split_started;
-            r.source_category=category;
-            for(std::size_t index=0;index<allocations.size();++index){auto& allocation=allocations[index];allocation.identity="source-"+std::to_string(index);allocation.source_ordinal=index;allocation.category_owner=FieldOwnership::source;allocation.memo_owner=FieldOwnership::source;}
+            r.source_category=category; r.source_class=source_class;
+            r.source_allocation_classes=allocation_classes; r.source_allocation_fields=source_fields;
+            for(std::size_t index=0;index<allocations.size();++index){auto& allocation=allocations[index];allocation.identity="source-"+std::to_string(*allocation.source_ordinal);allocation.category_owner=FieldOwnership::source;allocation.memo_owner=FieldOwnership::source;}
             r.source_allocations=allocations;
             if (repair_allowed && total) {
                 try { r.transaction=Transaction::imported(*total,std::move(allocations)); }
                 catch (const FinancialError&) { error(Issue::split_total,start); }
             }
-            r.repairable=r.diagnostic.has_value() && repair_allowed && total.has_value();
+            r.repairable=r.diagnostic.has_value() && repair_allowed;
             if(r.diagnostic) r.transaction.reset();
-            r.end=pos; out.records.push_back(std::move(r)); r=Record{}; r.begin=pos;
-            seen.fill(false); total.reset(); allocations.clear(); category.clear(); split_category.clear(); split_memo.clear();
+            r.end=pos; out.records.push_back(std::move(r)); r=Record{}; r.source_currency=currency; r.begin=pos;
+            seen.fill(false); total.reset(); allocations.clear(); category.clear(); split_category.clear(); split_memo.clear(); source_class.clear(); split_class.clear(); allocation_classes.clear(); source_fields.clear();
             split_started=has_s=has_e=any=false; repair_allowed=true; addresses=0; split_count=0; continue;
         }
         any=true;
@@ -141,13 +156,15 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         const auto key=static_cast<unsigned char>(line.front()); const auto value=line.substr(1);
         if (key=='S' || key=='E' || key=='$') {
             split_started=true;
-            if (key=='S') { if (has_s || has_e) error(Issue::split_structure,start); has_s=true; category_check(value,start); split_category=value; }
+            if (key=='S') { if (has_s || has_e) error(Issue::split_structure,start); has_s=true; category_parts(value,start,split_category,split_class); }
             if (key=='E') { if (has_e) error(Issue::split_structure,start); has_e=true; split_memo=value; }
             if (key=='$') {
                 if (++split_count > max_allocations) { file_error(Issue::resource_limit,start); return out; }
-                try { allocations.push_back({split_category,split_memo,Money::parse(value,currency)}); }
+                std::optional<Money> split_amount;
+                try { split_amount=Money::parse(value,currency); Allocation allocation{split_category,split_memo,*split_amount};allocation.source_ordinal=split_count-1;allocations.push_back(std::move(allocation)); }
                 catch (const FinancialError&) { error(Issue::amount,start); }
-                split_category.clear(); split_memo.clear(); has_s=has_e=false;
+                source_fields.push_back({split_category,split_memo,split_class,split_amount});allocation_classes.push_back(split_class);
+                split_category.clear(); split_memo.clear(); split_class.clear(); has_s=has_e=false;
             }
             continue;
         }
@@ -161,7 +178,7 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         case 'P': r.payee=value; break;
         case 'M': r.memo=value; break;
         case 'N': r.reference=value; break;
-        case 'L': category_check(value,start); category=value; break;
+        case 'L': category_parts(value,start,category,source_class); break;
         case 'C': r.cleared=value; if (value!="" && value!="*" && value!="c" && value!="X" && value!="R") error(Issue::cleared_status,start); break;
         default: error(Issue::unknown_field,start); break;
         }

@@ -48,6 +48,13 @@ public:
     app::ImportRepository& repository() override {
         if(!store_) throw std::logic_error("No dataset is open"); return *store_;
     }
+    void backup_controlled(const std::filesystem::path& p,const app::OperationContext& context) override {
+        if(!store_) throw std::logic_error("No dataset is open");
+        try { store_->backup_to(document_path(p),key_,{},&context); }
+        catch(const app::OperationCancelled&) {
+            throw app::OperationCancelled("Backup cancelled before publication. The source dataset is unchanged. An encrypted .partial candidate may remain; retry to a new destination.");
+        }
+    }
     void backup(const std::filesystem::path& p) override {
         if(!store_) throw std::logic_error("No dataset is open"); store_->backup_to(document_path(p),key_);
     }

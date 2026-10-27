@@ -12,12 +12,12 @@ struct Occurrence {
 };
 struct EvidenceKey {
     std::string date, definition;
-    std::int64_t original_units;
+    std::optional<std::int64_t> original_units;
     std::string payee, reference;
     auto operator<=>(const EvidenceKey&) const = default;
 };
 EvidenceKey evidence_key(const qif::Record&);
-enum class MatchBasis { same_source_fields, same_date_amount, same_amount_unknown_date };
+enum class MatchBasis { same_source_fields, same_date_amount, same_amount_unknown_date, unknown_original_amount };
 // A candidate is evidence for review, never permission for automatic exclusion.
 std::optional<MatchBasis> candidate_basis(const qif::Record&,const qif::Record&);
 enum class Disposition { unresolved, include, duplicate };

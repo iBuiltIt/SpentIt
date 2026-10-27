@@ -138,3 +138,19 @@ Schema 4 extends this experiment with [current committed interpretations, remova
 ## Category catalog and allocation metadata — 2026-10-25
 
 Schema 5 adds the bounded [category catalog and assignment workflow](categories.md), with immutable definition history, current taxonomy resolution, explicit unmapped labels and stable source-allocation metadata. Those earlier-format capability statements describe the historical checkpoint; current account-scoped builds reject earlier layouts without migration. The subsequent [durable rules integration](durable-rules.md) persists rule definitions and explicitly applies results to pending drafts; current schema 12 retains bulk receipts and account-scoped operations.
+
+
+## Backup cancellation and publication — 2026-10-26
+
+The controlled backup command preserves the existing encrypted candidate, independent reopen/verification, exclusive hard-link publication and directory-sync sequence. It copies at most 128 pages per SQLite backup step and checks cancellation between steps. Exceptions, including cancellation, finish the SQLite backup handle before releasing the target connection. Verification and independent reopening use the existing cooperative verification checkpoints. Source financial state and existing backup files are unchanged.
+
+The cancellation gate seals before publication. Cancellation accepted before sealing prevents publication; requests after sealing are rejected while publication and cleanup resolve. A retained `.partial` may be incomplete or verified depending on the interruption point: never infer validity from its name. Follow the existing recovery guidance and retry to a different destination; do not overwrite the last known-good backup or remove an unrelated candidate. The UI reports cancellation explicitly and retains the healthy source session. This is not resumable page-copy state or proof against physical power loss.
+
+The narrow application gateway adds controlled backup without moving SQL or publication logic into UI code. Direct headless backups retain the same API behavior with optional operation context. Synthetic cancellation/restore checks and existing fault sweeps are recorded in [project status](status.md#qif-point-1-independent-backup-progress--2026-10-26).
+
+
+## Nullable original amounts — 2026-10-26
+
+Experimental schemas 14/15 permit a NULL original amount in immutable source records only when reparsing the retained evidence confirms that it was unavailable. The parser separately retains source currency and complete allocation fields with optional amounts; a broken amount cannot erase a transfer destination or shift later split positions. A repaired interpretation supplies exact effective money and allocations through `Transaction::repaired_import`; storage validates its currency against source currency, keeps the original optional value unchanged, and records the first repair and unresolved duplicate disposition atomically.
+
+Draft, committed, category and rule-history verification reconstruct the same nullable original rather than dereferencing or fabricating it. Candidates involving unknown originals remain uncertain and require explicit review; matching is account/currency scoped and capped at 4096 returned candidates with a visible overflow error. Whole-source multi-account preparation, repair counts/progress and Abort remain unfinished. See [current results and limitations](status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26).

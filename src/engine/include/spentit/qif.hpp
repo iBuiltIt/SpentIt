@@ -11,7 +11,7 @@ inline constexpr std::size_t max_records = 200000;
 inline constexpr std::size_t max_record = 1024 * 1024;
 inline constexpr std::size_t max_field = 64 * 1024;
 inline constexpr std::size_t max_allocations = 1000;
-inline constexpr std::string_view parser_version = "bank-v2";
+inline constexpr std::string_view parser_version = "bank-v3";
 enum class DateOrder { dmy, mdy };
 enum class Issue { encoding, resource_limit, empty_file, header, empty_record,
     unterminated, unknown_field, repeated_field, missing_field, date, amount,
@@ -27,14 +27,22 @@ std::string date(std::string_view text, DateOrder order);
 bool valid_utf8(std::string_view text) noexcept;
 std::optional<std::string_view> transfer_destination(std::string_view text) noexcept;
 bool supported_category(std::string_view text) noexcept;
+struct SourceAllocation {
+    std::string category, memo, class_label;
+    std::optional<Money> amount;
+};
 struct Record {
     std::size_t begin = 0, end = 0;
-    std::string date, payee, memo, reference, cleared, source_category;
+    std::string date, payee, memo, reference, cleared, source_category, source_class;
+    // Class labels are source metadata, never category names or postings.
+    std::vector<std::string> source_allocation_classes;
+    std::vector<SourceAllocation> source_allocation_fields;
+    std::optional<Currency> source_currency;
     std::optional<Transaction> transaction;
     // Parsed evidence only: allocations may not balance and are never postings.
     std::optional<Money> original_amount;
     std::vector<Allocation> source_allocations;
-    // True only if every record error is a date or split-total error.
+    // True only for explicitly repairable date/amount errors with intact structure.
     bool repairable = false;
     bool has_source_splits = false;
     std::optional<Diagnostic> diagnostic;

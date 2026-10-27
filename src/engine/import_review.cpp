@@ -12,30 +12,34 @@ void text(std::string_view value) {
 }
 }
 EvidenceKey evidence_key(const qif::Record& source) {
-    if ((!source.transaction && !source.repairable) || !source.original_amount) invalid();
-    const auto& amount=*source.original_amount;
-    return {source.date,amount.currency().definition_id(),amount.units(),source.payee,source.reference};
+    if ((!source.transaction && !source.repairable) || !source.source_currency) invalid();
+    return {source.date,source.source_currency->definition_id(),source.original_amount?std::optional(source.original_amount->units()):std::nullopt,source.payee,source.reference};
 }
 std::optional<MatchBasis> candidate_basis(const qif::Record& a,const qif::Record& b) {
     const auto x=evidence_key(a),y=evidence_key(b);
-    if(x.definition!=y.definition || x.original_units!=y.original_units) return {};
+    if(x.definition!=y.definition) return {};
+    if(!x.original_units || !y.original_units) {
+        if(!x.date.empty() && !y.date.empty() && x.date!=y.date)return {};
+        return MatchBasis::unknown_original_amount;
+    }
+    if(x.original_units!=y.original_units)return {};
     if(x.date.empty() || y.date.empty()) return MatchBasis::same_amount_unknown_date;
     if(x.date!=y.date) return {};
     return x==y ? MatchBasis::same_source_fields : MatchBasis::same_date_amount;
 }
 void validate_draft(const qif::Record& source,const DraftRow& edit) {
-    if ((!source.transaction && !source.repairable) || !source.original_amount) invalid();
+    if ((!source.transaction && !source.repairable) || !source.source_currency) invalid();
     if (edit.transaction.original_imported_amount()!=source.original_amount) invalid();
-    source.original_amount->require_compatible(edit.transaction.effective_total());
+    if(edit.transaction.effective_total().currency()!=*source.source_currency)invalid();
     if (edit.date.size()!=10 || edit.date[4]!='-' || edit.date[7]!='-') invalid();
     if (qif::date(edit.date.substr(8,2)+"/"+edit.date.substr(5,2)+"/"+edit.date.substr(0,4),qif::DateOrder::dmy)!=edit.date) invalid();
     text(edit.payee); text(edit.memo);
     if (edit.transaction.allocations().size()>qif::max_allocations) invalid();
     // Source transfer intent cannot disappear through an ordinary category/split edit.
-    for(const auto& original:source.source_allocations)if(qif::transfer_destination(original.category)) {
+    for(std::size_t ordinal=0;ordinal<source.source_allocation_fields.size();++ordinal){const auto& original=source.source_allocation_fields[ordinal];if(!qif::transfer_destination(original.category))continue;
         const auto& allocations=edit.transaction.allocations();
-        const auto found=std::find_if(allocations.begin(),allocations.end(),[&](const auto& a){return a.identity==original.identity;});
-        if(found==allocations.end() || found->source_ordinal!=original.source_ordinal || found->category!=original.category)throw std::invalid_argument("Preserve imported transfer allocations; resolve their destinations in Transfers");
+        const auto found=std::find_if(allocations.begin(),allocations.end(),[&](const auto& a){return a.identity=="source-"+std::to_string(ordinal);});
+        if(found==allocations.end() || found->source_ordinal!=ordinal || found->category!=original.category)throw std::invalid_argument("Preserve imported transfer allocations; resolve their destinations in Transfers");
     }
     std::size_t size=edit.payee.size()+edit.memo.size();
     for (const auto& allocation:edit.transaction.allocations()) {
@@ -43,8 +47,8 @@ void validate_draft(const qif::Record& source,const DraftRow& edit) {
         if (!qif::supported_category(allocation.category) && !qif::transfer_destination(allocation.category)) invalid();
         if(qif::transfer_destination(allocation.category)) {
             if(allocation.category_binding || allocation.category_rule)invalid();
-            const auto found=std::find_if(source.source_allocations.begin(),source.source_allocations.end(),[&](const auto& a){return a.identity==allocation.identity && a.category==allocation.category;});
-            if(found==source.source_allocations.end())invalid();
+            const auto found=std::find_if(source.source_allocation_fields.begin(),source.source_allocation_fields.end(),[&](const auto& a){return a.category==allocation.category;});
+            if(found==source.source_allocation_fields.end() || !allocation.source_ordinal || *allocation.source_ordinal>=source.source_allocation_fields.size() || allocation.identity!="source-"+std::to_string(*allocation.source_ordinal) || source.source_allocation_fields[*allocation.source_ordinal].category!=allocation.category)invalid();
         }
         size+=allocation.category.size()+allocation.memo.size();
         if (size>qif::max_record) invalid();

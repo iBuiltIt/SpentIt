@@ -41,7 +41,7 @@ Blocked imports retain evidence and display diagnostics. Whole-file or record so
 
 ## Execution and failure boundaries
 
-`DocumentGateway` is a plain application boundary. Executable wiring supplies the concrete SQLCipher adapter. The Qt model submits complete repository operations; QML performs neither SQL nor authoritative money calculations. A private worker pool with one thread owns the active gateway. Only one command can be in flight; controls disable switching, closing and additional submissions while it runs. Results are delivered before another command can start, so a late completion cannot populate another dataset. There is no mid-operation cancellation UI. Closing waits for work rather than implying rollback.
+`DocumentGateway` is a plain application boundary. Executable wiring supplies the concrete SQLCipher adapter. The Qt model submits complete repository operations; QML performs neither SQL nor authoritative money calculations. A private worker pool with one thread owns the active gateway. Only one command can be in flight; controls disable switching, closing and additional submissions while it runs. Results are delivered before another command can start, so a late completion cannot populate another dataset. Cooperative cancellation for opening, imports, queries, rules and backups is described in the follow-up sections below. Durable mutations remain non-cancellable after their operation gate closes. Closing waits for work rather than implying rollback.
 
 A successful open is fully validated before the dataset becomes active and its path is saved using QSettings. Settings contains only the dataset path, never the password/key. Failed settings persistence is reported separately from the already-open dataset. Closing clears the model, selected source, receipt and editor fields, and releases the document lock. Parent-directory aliases such as macOS `/var` are resolved; final-file symlinks and multiple hard links remain rejected by storage.
 
@@ -171,3 +171,17 @@ A rare Qt `DelegateModel::cancel: index out range` warning was observed during t
 ## Rules sheet — 2026-10-25
 
 When built with `SPENTIT_RULES=ON`, current schema-12 documents show the rules page. The page lists, reorders, enables and edits rules; Save/Discard cover the whole image and Preview is separate from Apply. Saved rules are document-wide, while Apply targets only the selected account's pending batch. Rules-off builds use schema 13 and do not register `import.rules_ui`. Earlier experimental layouts are rejected without migration. The UI does not construct a ruleset or execute SQL. See [current verification](status.md#account-scoped-durable-workflow--2026-10-26) and the [rules contract](durable-rules.md). The schema-6 baseline and schema-7 search checkpoint remain historical verification evidence.
+
+
+## Backup cancellation and progress — 2026-10-26
+
+Backup now shows copying, verification, reopening and publication phases on the existing serial worker. Cancel is available during preparation, between bounded page-copy steps and at verification checkpoints. A cancelled backup leaves the source dataset open and unchanged; the message explains that an encrypted `.partial` candidate may remain and directs retry to a new destination. Such a candidate is not an acknowledged valid backup. Existing candidates and backups are never overwritten or silently deleted.
+
+Cancellation is sealed immediately before exclusive publication. A request accepted before that gate prevents publication; a request after it cannot promise rollback. Success follows directory synchronization and candidate cleanup. Individual SQLite calls and filesystem synchronization remain non-interruptible. No percentage or bounded cancellation-latency guarantee is claimed. See [backup recovery](durable-import.md#backup-cancellation-and-publication--2026-10-26) and [verification](status.md#qif-point-1-independent-backup-progress--2026-10-26).
+
+
+## Ordinary QIF and unavailable amount review — 2026-10-26
+
+Current schema-14/15 review accepts the [v3 ordinary-money profile](../features/009-qif-profile.md). Source classes are displayed read-only and remain separate from categories. For structurally intact records with missing/invalid total or split amounts, the editor starts unknown amount fields blank and labels the original total Unavailable; it never inserts zero. Enter exact effective amounts and balanced allocations, Save repair, then explicitly review Include or a duplicate candidate. Original unavailable amounts stay unavailable through commit and reopening. Invalid transfer split amounts retain their destination and source position, requiring the existing explicit transfer resolution.
+
+Whole-source repair totals/progress and multi-account Abort are not implemented at this checkpoint. The accepted owner requirement and remaining implementation is in [feature 009](../features/009-durable-import-milestone.md#accepted-ordinary-qif-and-amount-repair-follow-up--2026-10-26); do not describe the partial editor extension as complete QIF workflow delivery. [Project status](status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26) records actual verification.

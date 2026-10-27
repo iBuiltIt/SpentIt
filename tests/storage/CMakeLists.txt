@@ -26,7 +26,7 @@ endforeach()
 add_executable(spentit_import_tests import_tests.cpp)
 target_link_libraries(spentit_import_tests PRIVATE spentit_import_store spentit_sqlcipher)
 spentit_compiler_options(spentit_import_tests)
-foreach(case IN ITEMS basics review repairs errors backup io crashes backup_failures backup_crashes backup_publication validation opening cancellation)
+foreach(case IN ITEMS basics review repairs amount_repairs amount_candidate_limit errors backup io crashes backup_failures backup_crashes backup_publication backup_cancellation validation opening cancellation)
   add_test(NAME import.${case} COMMAND spentit_import_tests ${case})
   set_tests_properties(import.${case} PROPERTIES TIMEOUT 600)
 endforeach()
@@ -35,6 +35,9 @@ endforeach()
 # Current-format backup sweeps reopen and validate every fault position.
 # Instrumented builds need additional time for the larger encrypted schema.
 set_tests_properties(import.backup_failures import.backup_crashes PROPERTIES TIMEOUT 2400)
+# Nullable-original repair adds full save/commit fault sweeps and boundary exits.
+# Keep every position under sanitizers, including concurrent verification runs.
+set_tests_properties(import.io import.crashes PROPERTIES TIMEOUT 1200)
 add_executable(spentit_committed_tests committed_tests.cpp)
 target_link_libraries(spentit_committed_tests PRIVATE spentit_import_store spentit_sqlcipher)
 spentit_compiler_options(spentit_committed_tests)

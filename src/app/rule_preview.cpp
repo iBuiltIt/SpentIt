@@ -24,11 +24,11 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
     // Bound before constructing engine copies, including empty-string allocations.
     for(const auto& input:inputs) {
         checkpoint();const auto& allocations=input.draft.transaction.allocations();
-        if(allocations.size()>rules::EvaluationLimits::scope_allocations-allocation_count||input.source.source_allocations.size()>rules::EvaluationLimits::scope_allocations-source_count)throw rules::RegexError(rules::RegexFailure::resource_limit,"Rule preview allocation count exceeds limit");
-        allocation_count+=allocations.size();source_count+=input.source.source_allocations.size();
+        if(allocations.size()>rules::EvaluationLimits::scope_allocations-allocation_count||input.source.source_allocation_fields.size()>rules::EvaluationLimits::scope_allocations-source_count)throw rules::RegexError(rules::RegexFailure::resource_limit,"Rule preview allocation count exceeds limit");
+        allocation_count+=allocations.size();source_count+=input.source.source_allocation_fields.size();
         if(input.provenance.size()>2+2*allocations.size())invalid("Too much rule field provenance");
         count(input.source.payee);count(input.source.memo);count(input.source.source_category);count(input.draft.payee);count(input.draft.memo);
-        for(const auto& a:input.source.source_allocations){checkpoint();count(a.category);count(a.memo);}
+        for(const auto& a:input.source.source_allocation_fields){checkpoint();count(a.category);count(a.memo);}
         for(const auto& a:allocations){checkpoint();count(a.identity);count(a.category);count(a.memo);if(a.category_binding)count(a.category_binding->identity);}
         for(const auto& p:input.provenance){count(p.allocation);count(p.contribution.rule);}
     }
@@ -60,7 +60,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
         };
         rules::Record record;
         record.source={input.source.payee,input.source.memo,input.source.source_category,input.source.has_source_splits,{}};
-        for(const auto& a:input.source.source_allocations)record.source.allocations.push_back({a.memo,a.category});
+        for(const auto& a:input.source.source_allocation_fields)record.source.allocations.push_back({a.memo,a.category});
         record.payee={input.draft.payee,owner(input.draft.payee_owner),contribution(RuleField::payee,"",input.draft.payee_owner)};
         record.memo={input.draft.memo,owner(input.draft.memo_owner),contribution(RuleField::memo,"",input.draft.memo_owner)};
         std::set<std::string> allocation_ids;

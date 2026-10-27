@@ -979,7 +979,7 @@ ApplicationWindow {
                 textFormat:Text.PlainText;color:"#855100"
                 text:processingIncomplete?"Import processing is incomplete. Original source evidence is saved ("+s.pending.count+" parsed records). No draft amounts have been added and the projected balance is unavailable. Resume to prepare the draft for review, inspect the source file, or discard this import while retaining its evidence.":""
             }
-            Label {textFormat:Text.PlainText;visible:!!s.pending && !!s.pending.blocked && !processingIncomplete;text:s.pending && s.pending.blocked ? "BLOCKED — no partial commit. Inspect each record. Date and split-total repairs are available in new datasets; other errors require discard/reimport.\n"+(s.pending.diagnostics||""):"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;maximumLineCount:5;elide:Text.ElideRight}
+            Label {textFormat:Text.PlainText;visible:!!s.pending && !!s.pending.blocked && !processingIncomplete;text:s.pending && s.pending.blocked ? "BLOCKED — no partial commit. Inspect each record. Date and exact-amount repairs are available when record structure is intact; unsupported structures require discard/reimport.\n"+(s.pending.diagnostics||""):"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;maximumLineCount:5;elide:Text.ElideRight}
             Label {objectName:"committedChangeReceipt";textFormat:Text.PlainText;text:(s.changeReceipt||{}).summary||"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? "Committed "+s.receipt.operation+" · included "+s.receipt.included+", excluded "+s.receipt.excluded+" · "+s.receipt.before+" + ("+s.receipt.change+") = "+s.receipt.after:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
@@ -1100,6 +1100,7 @@ ApplicationWindow {
                 width:editor.availableWidth
                 Label {textFormat:Text.PlainText;text:(selected.ordinal===undefined?"Source file":"Record "+(selected.ordinal+1))+" · "+(selected.batch||"")+" · "+(committedEditing?"Committed correction":selected.removed?"Removed record":selected.editable?"Durable draft editor":"Read only")+" · original "+(selected.original||"");wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.diagnostic||"";color:"#a02020";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {textFormat:Text.PlainText;text:selected.sourceClasses ? "Source metadata — "+selected.sourceClasses : "";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.committed && !s.committedChangesSupported?"Committed changes require a new schema-4 experimental dataset. This dataset has not been migrated.":"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 RowLayout {
                     visible:!!selected.committed && !committedEditing

@@ -20,9 +20,14 @@ void basics() {
     check(parse_dmy("D31/02/2026\nT-10\nL[Visa]\n^\n").records[0].repairable);
     auto badSplit=parse_dmy("D1/1/2026\nT-10\nSFood\n$-9\n^\n");
     check(badSplit.records[0].repairable && badSplit.records[0].source_allocations[0].amount.units()==-900);
-    for(const auto& raw:{"D31/02/2026\nTbad\n^\n", "D31/02/2026\nT-10\nU-10\n^\n", "T-10\n^\n", "D31/02/2026\nT-10\nSFood\n^\n"})
+    for(const auto& raw:{"D31/02/2026\nT-10\nU-10\n^\n", "D31/02/2026\nT-10\nSFood\n^\n"})
         check(!parse_dmy(raw).records[0].repairable);
 
+    for(const auto raw:{"D31/02/2026\nTbad\n^\n","T-10\n^\n","D1/1/2026\nL[Visa]\n^\n"})check(parse_dmy(raw).records[0].repairable);
+    check(!parse_dmy("D1/1/2026\nTbad\nLFood\nS[Visa]\n$bad\n^\n").records[0].repairable);
+    const auto missing=parse_dmy("D1/1/2026\nS[Visa]/Family\n$bad\nSFood\n$2\n^\n");
+    check(missing.records[0].repairable && !missing.records[0].original_amount && missing.records[0].source_allocation_fields.size()==2);
+    check(!missing.records[0].source_allocation_fields[0].amount && missing.records[0].source_allocation_fields[0].category=="[Visa]" && missing.records[0].source_allocations[0].source_ordinal==1);
     auto r=parse_dmy(wise); check(r.valid() && r.records.size()==1);
     const auto& rec=r.records[0]; check(rec.date=="2026-08-10" && rec.begin==0 && rec.end==wise.size());
     check(rec.transaction->original_imported_amount()->units()==-2931);
@@ -32,6 +37,7 @@ void basics() {
     std::string crlf="\xef\xbb\xbf!Type:Bank\r\n";
     for (char c:wise) { if (c=='\n') crlf+='\r'; crlf+=c; }
     check(parse_dmy(crlf).valid());
+    for(const auto type:{"Bank","Cash","CCard"})check(parse_dmy(std::string("!Type:")+type+"\n"+wise).valid());
     check(parse_dmy(wise.substr(0,wise.size()-1)).valid());
     check(parse_dmy(wise+wise).records.size()==2);
     check(parse_dmy("D29/2/2024\nT2200\nSSalary\n$3000\nSTax\n$-700\nSDeductions\n$-100\n^\n").valid());
@@ -57,8 +63,10 @@ void malformed() {
     check(parse_dmy("D1/1/2026\nT-9\nS[Visa]\n$-10\nSRefund\n$1\n^").valid());
     for(const auto name:{"[]","[ ]","[Visa","Visa]","[[Visa]]","[Visa]|Class"})
         invalid(std::string("D1/1/2026\nT1\nL")+name+"\n^",Issue::transfer);
-    invalid("D1/1/2026\nT1\nS[Visa]/Class\n$1\n^",Issue::transfer);
-    invalid("D1/1/2026\nT1\nLFood/Class\n^",Issue::category_class);
+    auto classified=parse_dmy("D1/1/2026\nT1\nS[Visa]/Class\n$1\n^");
+    check(classified.valid() && classified.records[0].source_allocations[0].category=="[Visa]" && classified.records[0].source_allocation_classes[0]=="Class");
+    auto food=parse_dmy("D1/1/2026\nT1\nLFood/Class\n^");check(food.valid() && food.records[0].source_category=="Food" && food.records[0].source_class=="Class");
+    for(const auto value:{"Food/", "Food/A/B", "Food/|Class", "[Visa]/[Class]"}) invalid(std::string("D1/1/2026\nT1\nL")+value+"\n^",Issue::category_class);
     invalid("D1/1/2026\nT1\nC?\n^",Issue::cleared_status);
     invalid(std::string("D1/1/2026\nT1\nP")+char(0xff)+"\n^",Issue::encoding);
     invalid(std::string("D1/1/2026\nT1\nP")+char(0)+"\n^",Issue::encoding);

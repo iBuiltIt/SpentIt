@@ -52,8 +52,8 @@ app::EntrySnapshot ImportStore::entry_snapshot(const imports::Occurrence& id,std
     Statement row(impl_->db,"SELECT active,date,payee,memo,total FROM entry_revisions WHERE batch=? AND ordinal=? AND revision=?");row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,revision);if(!row.row())fail(SQLITE_NOTFOUND,"Committed revision does not exist");
     const auto original=load_row(id,false).source;std::vector<Allocation> allocations;
     Statement aa(impl_->db,"SELECT position,category,memo,units FROM entry_allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");aa.text(1,id.batch);aa.integer(2,integer(id.ordinal));aa.integer(3,revision);
-    while(aa.row()){if(aa.integer(0)!=integer(allocations.size()) || allocations.size()>=qif::max_allocations)fail(SQLITE_CORRUPT);allocations.push_back({aa.bytes(1),aa.bytes(2),Money(aa.integer(3),original.original_amount->currency())});}
-    imports::DraftRow draft{row.bytes(1),row.bytes(2),row.bytes(3),Transaction::corrected_import(*original.original_amount,Money(row.integer(4),original.original_amount->currency()),std::move(allocations))};load_metadata(impl_->db,id,revision,draft,true);imports::validate_draft(original,draft);
+    while(aa.row()){if(aa.integer(0)!=integer(allocations.size()) || allocations.size()>=qif::max_allocations)fail(SQLITE_CORRUPT);allocations.push_back({aa.bytes(1),aa.bytes(2),Money(aa.integer(3),*original.source_currency)});}
+    imports::DraftRow draft{row.bytes(1),row.bytes(2),row.bytes(3),Transaction::repaired_import(original.original_amount,Money(row.integer(4),*original.source_currency),std::move(allocations))};load_metadata(impl_->db,id,revision,draft,true);imports::validate_draft(original,draft);
     return {revision,row.integer(0)!=0,std::move(draft)};
 }
 std::vector<app::DependencyStamp> ImportStore::dependencies(const imports::Occurrence& id,std::int64_t before) const {

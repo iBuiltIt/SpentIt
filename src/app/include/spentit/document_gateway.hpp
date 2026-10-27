@@ -24,5 +24,10 @@ public:
     virtual ImportRepository& repository() = 0;
     // Backup/restore publishes a new document with the current protection mode.
     virtual void backup(const std::filesystem::path&) = 0;
+    virtual void backup_controlled(const std::filesystem::path& path, const OperationContext& context) {
+        context.checkpoint("Preparing backup");
+        context.seal();
+        backup(path);
+    }
 };
 }

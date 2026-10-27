@@ -391,7 +391,7 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
             const auto source=load_row(id,false).source;
             std::vector<Allocation> allocations;Statement values(impl_->db,"SELECT category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");values.text(1,id.batch);values.integer(2,integer(id.ordinal));values.integer(3,revision_at);
             while(values.row()) allocations.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),account_for_batch(id.batch).currency)});
-            imports::DraftRow draft{versions.bytes(1),versions.bytes(2),versions.bytes(3),Transaction::corrected_import(*source.original_amount,Money(versions.integer(4),account_for_batch(id.batch).currency),std::move(allocations))};
+            imports::DraftRow draft{versions.bytes(1),versions.bytes(2),versions.bytes(3),Transaction::repaired_import(source.original_amount,Money(versions.integer(4),account_for_batch(id.batch).currency),std::move(allocations))};
             load_metadata(impl_->db,id,revision_at,draft,false);
             const bool marked=any_mark(draft);
             Statement provenance(impl_->db,"SELECT 1 FROM draft_rule_fields WHERE batch=? AND ordinal=? AND revision=?");provenance.text(1,id.batch);provenance.integer(2,integer(id.ordinal));provenance.integer(3,revision_at);

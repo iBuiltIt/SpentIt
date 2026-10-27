@@ -132,7 +132,7 @@ QString snapshotText(const app::EntrySnapshot& entry) {
     const auto& d=entry.draft;
     return QString("Revision %1 · %2\n%3 · %4\nMemo: %5\nEffective total: %6 %7 · original imported: %8")
         .arg(entry.revision).arg(entry.active?"Active":"Removed",text(d.date),text(d.payee),text(d.memo),
-        text(d.transaction.effective_total().currency().code()),money(d.transaction.effective_total()),money(*d.transaction.original_imported_amount()));
+        text(d.transaction.effective_total().currency().code()),money(d.transaction.effective_total()),d.transaction.original_imported_amount()?money(*d.transaction.original_imported_amount()):QString("Unavailable"));
 }
 QVariantMap snapshotMap(const app::EntrySnapshot& entry,const QString& label) {
     return {{"label",label},{"summary",snapshotText(entry)},{"splits",allocations(entry.draft.transaction)}};
@@ -145,7 +145,7 @@ QString snapshotDetails(const app::EntrySnapshot& entry) {
 QString balanceImpact(const Money& before,const Money& change,const Money& after) {
     return text(before.currency().code())+" account balance: "+money(before)+" · change "+money(change)+" · resulting balance "+money(after);
 }
-imports::DraftRow editedDraft(const QVariantMap& a,const Money& original,app::ImportRepository& repo,
+imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& original,app::ImportRepository& repo,
                              const imports::DraftRow* baseline,const qif::Record* source) {
     std::vector<Allocation> values;const auto splits=a.value("splits").toList();
     if(splits.size()>static_cast<qsizetype>(qif::max_allocations)) throw std::invalid_argument("Too many allocations");
@@ -153,12 +153,21 @@ imports::DraftRow editedDraft(const QVariantMap& a,const Money& original,app::Im
     for(const auto& value:splits) {
         const auto v=value.toMap();const auto allocationId=str(v.value("allocationId"));const Allocation* old=nullptr;
         if(prior && !allocationId.empty())for(const auto& candidate:*prior)if(candidate.identity==allocationId){old=&candidate;break;}
-        Allocation next{str(v.value("category")),str(v.value("memo")),Money::parse(str(v.value("amount")),original.currency())};
+        Allocation next{str(v.value("category")),str(v.value("memo")),Money::parse(str(v.value("amount")),repo.account().currency)};
         // Marks come from the stored baseline. A touched field becomes manual and drops its mark.
         if(old) {next.identity=old->identity;next.source_ordinal=old->source_ordinal;next.category_binding=old->category_binding;next.category_owner=old->category_owner;next.memo_owner=old->memo_owner;next.category_rule=old->category_rule;next.memo_rule=old->memo_rule;}
-        else if(repo.categories_supported()){next.identity=allocationId.empty()?identity():allocationId;next.category_owner=FieldOwnership::manual;next.memo_owner=FieldOwnership::manual;}
+        else if(repo.categories_supported()){
+            next.identity=allocationId.empty()?identity():allocationId;next.category_owner=FieldOwnership::manual;next.memo_owner=FieldOwnership::manual;
+            if(!baseline && source)for(std::size_t i=0;i<source->source_allocation_fields.size();++i)if(allocationId=="source-"+std::to_string(i)){
+                next.source_ordinal=i;
+                if(next.category==source->source_allocation_fields[i].category)next.category_owner=FieldOwnership::source;
+                if(next.memo==source->source_allocation_fields[i].memo)next.memo_owner=FieldOwnership::source;
+            }
+        }
         const auto chosen=str(v.value("categoryId"));const auto oldId=old && old->category_binding?old->category_binding->identity:std::string{};
-        const bool categoryChanged=v.value("categoryTouched").toBool() || !old || chosen!=oldId || next.category!=old->category;
+        const bool retainedSourceCategory=!old && source && next.source_ordinal && *next.source_ordinal<source->source_allocation_fields.size()
+            && chosen.empty() && next.category==source->source_allocation_fields[*next.source_ordinal].category;
+        const bool categoryChanged=v.value("categoryTouched").toBool() || (!old && !retainedSourceCategory) || chosen!=oldId || (old && next.category!=old->category);
         if(repo.categories_supported() && categoryChanged) {
             if(!chosen.empty()) {
                 const auto display=repo.resolve_category(chosen);if(!display.assignable)throw std::invalid_argument("Choose an active leaf category");
@@ -172,7 +181,7 @@ imports::DraftRow editedDraft(const QVariantMap& a,const Money& original,app::Im
         values.push_back(std::move(next));
     }
     imports::DraftRow result{str(a.value("date")),str(a.value("payee")),str(a.value("memo")),
-        Transaction::corrected_import(original,Money::parse(str(a.value("total")),original.currency()),std::move(values))};
+        Transaction::repaired_import(original,Money::parse(str(a.value("total")),repo.account().currency),std::move(values))};
     const auto oldPayee=baseline?baseline->payee:source?source->payee:std::string{};
     const auto oldMemo=baseline?baseline->memo:source?source->memo:std::string{};
     result.payee_owner=baseline?baseline->payee_owner:source?FieldOwnership::source:FieldOwnership::manual;
@@ -331,6 +340,10 @@ struct ImportModel::Worker {
         selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},
             {"source",evidencePreview(std::string_view(bytes).substr(source.begin,source.end-source.begin))}};
         if(source.diagnostic) selected["diagnostic"]=text(qif::message(source.diagnostic->issue));
+        QStringList classes;
+        if(!source.source_class.empty())classes<<"Record class: "+text(source.source_class);
+        if(source.has_source_splits)for(std::size_t i=0;i<source.source_allocation_fields.size();++i)if(!source.source_allocation_fields[i].class_label.empty())classes<<QString("Split %1 class: ").arg(i+1)+text(source.source_allocation_fields[i].class_label);
+        selected["sourceClasses"]=classes.join(" · ");
         // Copy only parsed, supported evidence. Raw bytes remain separately visible;
         // an unavailable source date must never be replaced by a guessed value.
         QVariantList fields;
@@ -342,12 +355,12 @@ struct ImportModel::Worker {
             add("Payee","payee",text(source.payee));
             add("Memo","memo",text(source.memo));
             if(source.original_amount) add("Original total","total",money(*source.original_amount));
-            for(std::size_t i=0;i<source.source_allocations.size();++i) {
-                const auto& a=source.source_allocations[i];
+            for(std::size_t i=0;i<source.source_allocation_fields.size();++i) {
+                const auto& a=source.source_allocation_fields[i];
                 const auto prefix=QString("Source split %1 → editor split %1: ").arg(i+1);
                 add(prefix+"category","category",text(a.category),static_cast<int>(i));
                 add(prefix+"memo","memo",text(a.memo),static_cast<int>(i));
-                add(prefix+"amount","amount",money(a.amount),static_cast<int>(i));
+                if(a.amount)add(prefix+"amount","amount",money(*a.amount),static_cast<int>(i));
             }
         }
         selected["sourceFields"]=fields;
@@ -356,18 +369,20 @@ struct ImportModel::Worker {
             if(source.repairable && !row.source.repairable) selected["diagnostic"]=selected["diagnostic"].toString()+" — repair requires a new experimental dataset; this older dataset was not migrated.";
             if(row.source.repairable && found->state==app::BatchState::pending) {
                 QVariantList splits;
-                for(const auto& a:source.source_allocations) splits.push_back(allocationMap(a,categoryById));
+                for(std::size_t i=0;i<source.source_allocation_fields.size();++i){const auto& a=source.source_allocation_fields[i];
+                    splits.push_back(QVariantMap{{"category",text(a.category)},{"memo",text(a.memo)},{"amount",a.amount?money(*a.amount):QString{}},{"allocationId",QString("source-%1").arg(i)},{"categoryId",QString{}}});
+                }
                 selected["draft"]=QVariantMap{{"date",text(source.date)},{"payee",text(source.payee)},{"memo",text(source.memo)},
-                    {"total",money(*source.original_amount)},{"splits",splits}};
-                selected["original"]=money(*source.original_amount);selected["editable"]=true;selected["repair"]=true;
-                selected["diagnostic"]=selected["diagnostic"].toString()+" — correct the date/splits and save the repair; original evidence is retained.";
+                    {"total",source.original_amount?money(*source.original_amount):QString{}},{"splits",splits}};
+                selected["original"]=source.original_amount?money(*source.original_amount):QString("Unavailable");selected["editable"]=true;selected["repair"]=true;
+                selected["diagnostic"]=selected["diagnostic"].toString()+" — supply valid date, total and splits and save the repair; original evidence is retained.";
             }
             attachRules(repo,{batch,ordinal},context);
             return;
         }
         selected["draft"]=draft(*row.draft,categoryById);
         if(source.diagnostic) selected["diagnostic"]=selected["diagnostic"].toString()+" — saved interpretation repair; original diagnostic retained.";
-        selected["original"]=money(*row.draft->transaction.original_imported_amount());
+        selected["original"]=row.draft->transaction.original_imported_amount()?money(*row.draft->transaction.original_imported_amount()):QString("Unavailable");
         selected["editable"]=found->state==app::BatchState::pending;
         selected["decision"]=static_cast<int>(row.decision.disposition);
         selected["reviewStale"]=row.review_stale;
@@ -393,7 +408,7 @@ struct ImportModel::Worker {
             const auto basis=imports::candidate_basis(row.source,prior.source);
             const bool removed=repo.committed_changes_supported() && !repo.committed_entry(id).current.active;
             candidates.push_back(QVariantMap{{"removed",removed},{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},
-                {"label",text(id.batch)+" / "+QString::number(id.ordinal+1)+" · "+text(prior.source.date)+" · "+text(prior.source.payee)+" · "+money(*prior.source.original_amount)+" · "+(basis==imports::MatchBasis::same_source_fields?"same source fields":basis==imports::MatchBasis::same_amount_unknown_date?"same original amount; source date unavailable":"same date and amount")}});
+                {"label",text(id.batch)+" / "+QString::number(id.ordinal+1)+" · "+text(prior.source.date)+" · "+text(prior.source.payee)+" · "+(prior.source.original_amount?money(*prior.source.original_amount):QString("Unavailable"))+" · "+(basis==imports::MatchBasis::unknown_original_amount?"original amount unavailable; review source evidence":basis==imports::MatchBasis::same_source_fields?"same source fields":basis==imports::MatchBasis::same_amount_unknown_date?"same original amount; source date unavailable":"same date and amount")}});
         }
         for(auto& value:candidates) {auto candidate=value.toMap();if(candidate.value("removed").toBool())candidate["label"]=candidate.value("label").toString()+" · PREVIOUSLY REMOVED — explicit review required";value=candidate;}
         selected["candidates"]=candidates;
@@ -719,7 +734,7 @@ struct ImportModel::Worker {
             const auto entry=repo.committed_entry(id);
             if(kind!="undo" && (!selectedCommittedToken || entry.token!=*selectedCommittedToken))throw std::logic_error("The committed record changed. Refresh and review before correcting it.");
             app::ChangeRequest request{app::ChangeKind::remove,id,std::nullopt,{}};
-            if(kind=="correct") {request.kind=app::ChangeKind::correct;request.correction=editedDraft(a,*entry.current.draft.transaction.original_imported_amount(),repo,&entry.current.draft,&entry.source);}
+            if(kind=="correct") {request.kind=app::ChangeKind::correct;request.correction=editedDraft(a,entry.current.draft.transaction.original_imported_amount(),repo,&entry.current.draft,&entry.source);}
             else if(kind=="undo") {request.kind=app::ChangeKind::undo;request.undo_of=str(a.value("operation"));}
             else if(kind!="remove")throw std::invalid_argument("Unknown committed change");
             auto preview=repo.preview_committed_change(request);
@@ -823,8 +838,8 @@ struct ImportModel::Worker {
         else if(action=="save") {
             if(selectedBatch.empty()) throw std::logic_error("Select a draft first");
             auto row=repo.row({selectedBatch,selectedOrdinal});
-            if(!row.source.original_amount || (!row.draft && !row.source.repairable)) throw std::invalid_argument("This record cannot be repaired");
-            const auto edit=editedDraft(a,*row.source.original_amount,repo,row.draft?&*row.draft:nullptr,&row.source);
+            if(!row.draft && !row.source.repairable) throw std::invalid_argument("This record cannot be repaired");
+            const auto edit=editedDraft(a,row.source.original_amount,repo,row.draft?&*row.draft:nullptr,&row.source);
             repo.save({selectedBatch,selectedOrdinal},selectedRevision,edit); inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="decide") {
             imports::Decision decision{imports::Disposition::include,{}};
@@ -858,7 +873,7 @@ struct ImportModel::Worker {
                     {"before",money(result->before)},{"change",money(result->change)},{"after",money(result->after)}};
             }
             if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
-        } else if(action=="backup") gateway->backup(str(a.value("path")));
+        } else if(action=="backup") gateway->backup_controlled(str(a.value("path")),context);
         else if(action=="query") {
             // Validate and evaluate before publishing the new query state. A bad
             // query must not enter the generic document-refresh failure path.
@@ -915,8 +930,8 @@ struct ImportModel::Worker {
                     if(!current || index<0 || static_cast<std::size_t>(index)>=current->transaction.allocations().size() || !current->transaction.allocations()[static_cast<std::size_t>(index)].source_ordinal)
                         throw std::invalid_argument("Manual splits are not rule sources");
                     const auto ordinal=*current->transaction.allocations()[static_cast<std::size_t>(index)].source_ordinal;
-                    if(ordinal>=row.source.source_allocations.size()) throw std::invalid_argument("Manual splits are not rule sources");
-                    source=row.source.source_allocations[ordinal].memo;scope=rules::Scope::split;input=rules::InputField::memo;
+                    if(ordinal>=row.source.source_allocation_fields.size()) throw std::invalid_argument("Manual splits are not rule sources");
+                    source=row.source.source_allocation_fields[ordinal].memo;scope=rules::Scope::split;input=rules::InputField::memo;
                 } else throw std::invalid_argument("Unknown rule source");
                 app::RuleDefinitionImage rule;rule.identity=identity();rule.enabled=true;rule.scope=scope;rule.input=input;rule.expression=app::quoted_field_pattern(source);
                 rulePrefill=ruleMap(rule);
@@ -1037,7 +1052,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     activeAction_=action;
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
-    if(action!="open" && action!="unlock" && action!="import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="transfer_candidates") operation->seal();
+    if(action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="transfer_candidates") operation->seal();
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
         if(!operation) return;
@@ -1064,6 +1079,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         Result result; bool unlock=false;
         try {worker->execute(action,args,*operation);result.success=true;}
         catch(const app::OperationOutcomeUnknown& e){worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();worker->selectedBatch.clear();worker->invalidate();result.error=QString::fromUtf8(e.what());}
+        catch(const app::OperationCancelled& e){if(action!="query")worker->invalidate();result.error=action=="backup"?"Backup cancelled before publication. The source dataset is unchanged. An encrypted .partial candidate may remain; retry to a new destination.":QString::fromUtf8(e.what());}
         catch(const app::UnlockRequired& e){worker->invalidate();result.error=QString::fromUtf8(e.what());unlock=true;}
         catch(const std::exception& e){if(action!="query")worker->invalidate();result.error=QString::fromUtf8(e.what());}
         operation->state.store(app::OperationContext::sealed);

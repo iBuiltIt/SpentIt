@@ -89,7 +89,7 @@ public:
     app::RuleMatch match_saved_rules(const imports::Occurrence&,const app::OperationContext&) const override;
     void verify(const app::OperationContext* = nullptr) const;
     void backup_to(const std::filesystem::path&,std::string_view password,
-                   const BackupObserver& observer = {}) const;
+                   const BackupObserver& observer = {}, const app::OperationContext* context = nullptr) const;
     void observer(ImportObserver);
 private:
     std::vector<app::TransferView> all_transfers() const;
