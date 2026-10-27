@@ -4,6 +4,7 @@
 #include <spentit/committed_changes.hpp>
 #include <spentit/category_catalog.hpp>
 #include <spentit/rule_commands.hpp>
+#include <spentit/transfer_commands.hpp>
 #include <functional>
 #include <optional>
 
@@ -26,7 +27,7 @@ struct AccountCreation {
     Currency currency;
     std::string date;
 };
-enum class BatchState { pending, committed, discarded, captured };
+enum class BatchState { pending, committed, discarded, captured, protected_drafts };
 struct BatchInfo {
     std::string id;
     qif::DateOrder profile;
@@ -43,6 +44,7 @@ struct RowView {
     imports::Decision decision;
     std::vector<imports::Occurrence> candidates;
     bool review_stale=false;
+    bool excluded_by_clear=false;
 };
 struct Receipt {
     std::string operation, batch;
@@ -59,6 +61,11 @@ struct LedgerRow {
 class ImportRepository {
 public:
     virtual ~ImportRepository() = default;
+    virtual bool transfers_supported() const { return false; }
+    virtual std::int64_t transfer_sequence() const { throw std::logic_error("Transfers unavailable"); }
+    virtual std::vector<TransferView> transfers() const { return {}; }
+    virtual TransferReceipt apply_transfer(std::string_view,const TransferRequest&) { throw std::logic_error("Transfers unavailable"); }
+    virtual std::optional<TransferReceipt> transfer_outcome(std::string_view) const { throw std::logic_error("Transfers unavailable"); }
     virtual Account account() const = 0;
     // Serial-worker session selection; commands never span accounts implicitly.
     virtual std::vector<Account> accounts() const { return {account()}; }

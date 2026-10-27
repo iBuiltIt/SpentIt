@@ -2,11 +2,11 @@
 
 Status: **active**  
 Last updated: 2026-10-26  
-Implementation: the [multi-account prerequisite](../doc/accounts.md) is implemented in the durable QIF experiment. Transfer relationships, matching, generated counterparts and protected drafts remain unimplemented; accepted product behavior and unresolved design details follow.
+Implementation: the [multi-account workflow](../doc/accounts.md) and [bounded durable transfer integration](../doc/transfer-engine.md) implement manual/imported-allocation creation, generated counterparts, acceptance, provisional bank matching, per-account commit, draft protection and counterpart navigation. Full QIF transfer admission, account-picker integration and repair/reversal remain unfinished. Verified scope and remaining decisions are distinguished below.
 
 ## Accepted requirements
 
-Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). The bounded category catalog is implemented; the unified account/category selector remains a follow-up to the current Transfers dialog.
 
 ### Transfer entry and provenance
 
@@ -65,19 +65,28 @@ The owner accepted these five decisions for the first transfer package:
 
 These decisions settle the corresponding first-scope questions below. They do not authorize automatic matching, silent mismatch repair, or cascade removal of committed or independently supported entries. Detailed correction, unlink, Fix match and reversal behavior involving committed entries or later edits remains a separate decision gate.
 
-### Implementation starting point
+### Accepted matching and unmatched-commit decisions — 2026-10-26
+
+- A confirmed match from a pending import remains a draft proposal until that importing account explicitly commits. Discarding the import drops the proposal, retains the immutable source evidence, and leaves the existing transfer's financial state and protection unchanged. Confirmation alone must not change committed interpretations or relationships.
+- An entry does not need a bank match to be valid or committable. Provide an explicit **Accept as valid without a bank match** action for manual/unmatched entries, including generated counterparts that may never appear in an import. Acceptance records the user's review; it does not fabricate imported evidence, automatically commit the entry, or prevent later matching. The account's explicit commit remains separate.
+- Acceptance resolves the lack of a bank match, not inconsistent money. For example, a Checking entry of −100 and a Visa entry of +95 may each be accepted and explicitly committed as valid unmatched entries. They remain unmatched; linking requires the difference to be explicitly accounted for. Do not silently change either amount, assume a fee, or invent a balancing allocation.
+- Cross-currency links remain unsupported in the first slice. Acceptance does not bypass exact-money validation, protection, independent-evidence preservation, or unresolved committed repair/unlink/reversal policies. An unresolved link or repair must not trap otherwise valid manual/unmatched entries in an uncommittable state.
+
+These decisions settle provisional matching/discard and unmatched-entry acceptance. They do not specify mismatch-resolution commands, destination-only cancellation or committed repair/reversal. The bounded durable implementation now exists; see [workflow and verification limits](../doc/transfer-engine.md).
+
+### Historical implementation starting point
 
 Inspection on 2026-10-26 found a singleton account table in `src/storage/import_store.cpp`, an account-less command boundary in `src/app/include/spentit/import_repository.hpp`, and QIF tests that explicitly reject transfer destinations in `tests/engine/qif_tests.cpp`. Existing allocation metadata already carries stable identities. The subsequent [account-scoped implementation](../doc/accounts.md) replaces the singleton restriction and adds account ownership to batches. Transfer destinations are still rejected; this prerequisite does not implement transfers.
 
 Proposed sequence: introduce account identities and account-scoped import/ledger operations in a new experimental format; then allocation-linked same-currency transfers, symmetric draft protection, and explicit evidence matching. Integrate each complete operation with history, retry identities, backup restoration and interruption tests before exposing it in the durable UI. No migration or backward-compatibility work is required before the owner-announced release gate.
 
-## Proposed implementation direction
+## Adopted bounded implementation and remaining design
 
-Represent source provenance, transfer relationships, and each account entry's commit state separately. A single committed flag for an entire transfer cannot express the accepted lifecycle. Protection needs a durable relationship to the committed origin; merely disabling a UI delete button is insufficient. Exact schema, identifiers, command APIs, and match algorithm are not selected by these requirements.
+Represent source provenance, transfer relationships, and each account entry's commit state separately. A single committed flag for an entire transfer cannot express the accepted lifecycle. Protection needs a durable relationship to the committed origin; merely disabling a UI delete button is insufficient. The bounded storage schema and command contracts are now documented in [the durable transfer guide](../doc/transfer-engine.md); ranking and repair remain unresolved.
 
 Keep transfer recognition distinct from ordinary duplicate suppression: a matching bank record can provide new evidence for an existing counterpart and must not be silently discarded as an irrelevant duplicate. Reuse [import retry and atomicity requirements](003-qif-import-review.md), preserving history and evidence throughout repair.
 
-## Acceptance criteria — not yet implemented or tested
+## Full-feature acceptance criteria — partially implemented
 
 - Synthetic checking-first and Visa-first imports each retain one movement per account, including matching against ordinary drafts, protected drafts, and committed counterparts.
 - Different posting dates and legitimate repeated equal payments produce explainable outcomes without silent double counting or dropped evidence.
@@ -92,15 +101,15 @@ Keep transfer recognition distinct from ordinary duplicate suppression: a matchi
 - Match navigation works both ways and with Back, including bringing the selected row on-screen and honoring unsaved edits.
 - Injected failures, interruption on both sides of durable commit, retry, and backup/restore preserve per-account states, protection, relationships, evidence, and history without duplicate application.
 
-## Open questions
+## Remaining work and open questions
 
 - Candidate ranking, date windows, references/normalization, duplicate multiplicity and ambiguous candidates. Initial links require explicit confirmation; automatic matching and cross-currency/fee matching remain deferred.
 - Detailed matching when independently imported evidence groups multiple transfer allocations differently. Per-allocation destinations and counterpart links are accepted.
 - Generated counterpart field defaults other than the accepted provisional origin date, and explicit reconciliation of differing amounts/memos without losing either source.
 - Cancelling only the destination side while both are ordinary drafts; multi-batch selection and ordering. Destination-first commit with protection of the origin draft is accepted.
 - Detailed edit/unlink/reversal rules once both accounts are committed, once independent evidence has arrived, or after later edits; preview and conflict handling must preserve independently supported records.
-- How pending evidence attachments and repair proposals interact with discarding an import; draft review must not silently alter committed interpretations or links.
-- Exact attention/protection labels, acceptance-state persistence, and navigation when an existing filter hides the counterpart.
+- How repair proposals interact with discarding an import. Ordinary pending evidence matches remain provisional until the importing account commits; discard drops those proposals while retaining source evidence and the existing transfer state, as accepted above.
+- QIF transfer-destination admission/account-name resolution, unified picker integration, and a browsable transfer history. Current acceptance/protection state is durable; the dialog and counterpart reveal are implemented.
 
 ## Related requirements
 

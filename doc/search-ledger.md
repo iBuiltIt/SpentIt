@@ -26,7 +26,7 @@ Delete and Change category are available from ledger controls and the context me
 
 ## Atomic bulk operations
 
-Schema 7 introduced immutable `bulk_operations` and `bulk_members`; current schema 8 retains them with account-scoped behavior. The group receipt references the existing financial operation history; member revisions, financial history, dependency stamps, and group membership are written inside one SQLCipher transaction. A group is never implemented by invoking separately committing single-row commands.
+Schema 7 introduced immutable `bulk_operations` and `bulk_members`; current schema 10 retains them with account-scoped behavior. The group receipt references the existing financial operation history; member revisions, financial history, dependency stamps, and group membership are written inside one SQLCipher transaction. A group is never implemented by invoking separately committing single-row commands.
 
 A category command explicitly assigns the chosen category, including Uncategorized, to every allocation in every selected committed row. Amounts, split structure, memos, dates, payees, source associations, and original evidence remain unchanged. Category ownership becomes manual and its previous rule mark is cleared. Other field marks remain intact. Removal changes active balance effects while preserving evidence and history. The preview lists every affected allocation and exact before/change/after account totals. Previews are bounded at 4,096 rows, 16,384 allocations, and 16 MiB of text.
 

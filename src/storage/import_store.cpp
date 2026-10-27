@@ -6,6 +6,7 @@
 #include <sqlite3.h>
 #include <algorithm>
 #include <climits>
+#include <charconv>
 #include <fcntl.h>
 #include <limits>
 #include <optional>
@@ -106,19 +107,21 @@ std::int64_t integer(std::size_t v) {
     if (v>static_cast<std::size_t>(INT64_MAX)) fail(SQLITE_TOOBIG);
     return static_cast<std::int64_t>(v);
 }
+#include "transfer_schema.inc"
+#include "transfer_codec.inc"
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=9;
+PRAGMA user_version=11;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
 CREATE TABLE account_creations(identity INTEGER PRIMARY KEY REFERENCES account(singleton),name TEXT NOT NULL,definition TEXT NOT NULL,opening_date TEXT NOT NULL) STRICT;
 CREATE TABLE batches(id TEXT PRIMARY KEY REFERENCES sources(id),profile INTEGER NOT NULL CHECK(profile IN(0,1)),parser TEXT NOT NULL,
- state INTEGER NOT NULL CHECK(state IN(0,1,2,3)),revision INTEGER NOT NULL CHECK(revision>=0),
+ state INTEGER NOT NULL CHECK(state IN(0,1,2,3,4)),revision INTEGER NOT NULL CHECK(revision>=0),
  count INTEGER NOT NULL CHECK(count BETWEEN 0 AND 200000),blocked INTEGER NOT NULL CHECK(blocked IN(0,1)),materialized_revision INTEGER,account_id INTEGER NOT NULL REFERENCES account(singleton),
  CHECK((materialized_revision IS NULL AND state IN(2,3) AND blocked=1) OR
- (materialized_revision IS NOT NULL AND materialized_revision BETWEEN 0 AND revision AND state IN(0,1,2)))) STRICT;
+ (materialized_revision IS NOT NULL AND materialized_revision BETWEEN 0 AND revision AND state IN(0,1,2,4)))) STRICT;
 CREATE TRIGGER batch_account_immutable BEFORE UPDATE OF account_id ON batches WHEN OLD.account_id!=NEW.account_id BEGIN SELECT RAISE(ABORT,'Account ownership is immutable'); END;
 CREATE TRIGGER account_creation_immutable BEFORE UPDATE ON account_creations BEGIN SELECT RAISE(ABORT,'Account creation is immutable'); END;
 CREATE TRIGGER account_creation_retained BEFORE DELETE ON account_creations BEGIN SELECT RAISE(ABORT,'Account creation is retained'); END;
@@ -138,9 +141,9 @@ CREATE TABLE allocations(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision I
 CREATE TABLE operations(id TEXT PRIMARY KEY,batch TEXT NOT NULL UNIQUE REFERENCES batches(id),revision INTEGER NOT NULL,
  included INTEGER NOT NULL,excluded INTEGER NOT NULL,before INTEGER NOT NULL,change INTEGER NOT NULL,after INTEGER NOT NULL) STRICT;
 CREATE TABLE events(sequence INTEGER PRIMARY KEY,batch TEXT NOT NULL REFERENCES batches(id),revision INTEGER NOT NULL,
- kind TEXT NOT NULL CHECK(kind IN('capture','materialize','ingest','save','decide','discard','commit','opening')),UNIQUE(batch,revision)) STRICT;
+ kind TEXT NOT NULL CHECK(kind IN('capture','materialize','ingest','save','decide','discard','retain','commit','opening')),UNIQUE(batch,revision)) STRICT;
 CREATE TRIGGER source_immutable BEFORE UPDATE ON batches WHEN NEW.id!=OLD.id OR NEW.profile!=OLD.profile OR NEW.parser!=OLD.parser OR
- NEW.count!=OLD.count OR OLD.state NOT IN(0,3) OR NEW.revision!=OLD.revision+1 OR
+ NEW.count!=OLD.count OR OLD.state NOT IN(0,3,4) OR NEW.revision!=OLD.revision+1 OR
  (NEW.materialized_revision IS NOT OLD.materialized_revision AND NOT
  (OLD.state=3 AND NEW.state=0 AND OLD.materialized_revision IS NULL AND NEW.materialized_revision=NEW.revision))
  BEGIN SELECT RAISE(ABORT,'invalid batch transition'); END;
@@ -169,7 +172,7 @@ CREATE TRIGGER allocation_pending BEFORE INSERT ON allocations WHEN (SELECT stat
 CREATE TABLE entry_revisions(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL CHECK(revision>=0),active INTEGER NOT NULL CHECK(active IN(0,1)),date TEXT NOT NULL,payee TEXT NOT NULL,memo TEXT NOT NULL,total INTEGER NOT NULL,PRIMARY KEY(batch,ordinal,revision),FOREIGN KEY(batch,ordinal) REFERENCES records(batch,ordinal)) STRICT;
 CREATE TABLE entry_allocations(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,position INTEGER NOT NULL,category TEXT NOT NULL,memo TEXT NOT NULL,units INTEGER NOT NULL,PRIMARY KEY(batch,ordinal,revision,position),FOREIGN KEY(batch,ordinal,revision) REFERENCES entry_revisions(batch,ordinal,revision)) STRICT;
 CREATE TABLE entry_heads(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(batch,ordinal),FOREIGN KEY(batch,ordinal,revision) REFERENCES entry_revisions(batch,ordinal,revision)) STRICT;
-CREATE TABLE ledger_operations(sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 3),batch TEXT NOT NULL,ordinal INTEGER NOT NULL,prior_revision INTEGER NOT NULL,result_revision INTEGER NOT NULL,before INTEGER NOT NULL,change INTEGER NOT NULL,after INTEGER NOT NULL,undo_of TEXT NOT NULL,preview_sequence INTEGER NOT NULL,catalog_revision INTEGER NOT NULL DEFAULT 0) STRICT;
+CREATE TABLE ledger_operations(sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 4),batch TEXT NOT NULL,ordinal INTEGER NOT NULL,prior_revision INTEGER NOT NULL,result_revision INTEGER NOT NULL,before INTEGER NOT NULL,change INTEGER NOT NULL,after INTEGER NOT NULL,undo_of TEXT NOT NULL,preview_sequence INTEGER NOT NULL,catalog_revision INTEGER NOT NULL DEFAULT 0) STRICT;
 CREATE TABLE change_dependencies(operation TEXT NOT NULL REFERENCES ledger_operations(id),batch TEXT NOT NULL REFERENCES batches(id),revision INTEGER NOT NULL,state INTEGER NOT NULL,PRIMARY KEY(operation,batch)) STRICT;
 CREATE TABLE history_order(sequence INTEGER PRIMARY KEY,batch TEXT,event_revision INTEGER,operation TEXT,category_operation TEXT,UNIQUE(batch,event_revision),UNIQUE(operation),UNIQUE(category_operation),FOREIGN KEY(batch,event_revision) REFERENCES events(batch,revision),FOREIGN KEY(operation) REFERENCES ledger_operations(id),FOREIGN KEY(category_operation) REFERENCES category_operations(id),CHECK((batch IS NOT NULL AND event_revision IS NOT NULL AND operation IS NULL AND category_operation IS NULL) OR (batch IS NULL AND event_revision IS NULL AND operation IS NOT NULL AND category_operation IS NULL) OR (batch IS NULL AND event_revision IS NULL AND operation IS NULL AND category_operation IS NOT NULL))) STRICT;
 CREATE TABLE review_stamps(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,target_revision INTEGER NOT NULL,target_active INTEGER NOT NULL CHECK(target_active IN(0,1)),review_revision INTEGER NOT NULL,PRIMARY KEY(batch,ordinal,revision),FOREIGN KEY(batch,ordinal,revision) REFERENCES versions(batch,ordinal,revision),FOREIGN KEY(batch,review_revision) REFERENCES events(batch,revision) DEFERRABLE INITIALLY DEFERRED) STRICT;
@@ -225,16 +228,16 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=8;
+PRAGMA user_version=10;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
 CREATE TABLE account_creations(identity INTEGER PRIMARY KEY REFERENCES account(singleton),name TEXT NOT NULL,definition TEXT NOT NULL,opening_date TEXT NOT NULL) STRICT;
 CREATE TABLE batches(id TEXT PRIMARY KEY REFERENCES sources(id),profile INTEGER NOT NULL CHECK(profile IN(0,1)),parser TEXT NOT NULL,
- state INTEGER NOT NULL CHECK(state IN(0,1,2,3)),revision INTEGER NOT NULL CHECK(revision>=0),
+ state INTEGER NOT NULL CHECK(state IN(0,1,2,3,4)),revision INTEGER NOT NULL CHECK(revision>=0),
  count INTEGER NOT NULL CHECK(count BETWEEN 0 AND 200000),blocked INTEGER NOT NULL CHECK(blocked IN(0,1)),materialized_revision INTEGER,account_id INTEGER NOT NULL REFERENCES account(singleton),
  CHECK((materialized_revision IS NULL AND state IN(2,3) AND blocked=1) OR
- (materialized_revision IS NOT NULL AND materialized_revision BETWEEN 0 AND revision AND state IN(0,1,2)))) STRICT;
+ (materialized_revision IS NOT NULL AND materialized_revision BETWEEN 0 AND revision AND state IN(0,1,2,4)))) STRICT;
 CREATE TRIGGER batch_account_immutable BEFORE UPDATE OF account_id ON batches WHEN OLD.account_id!=NEW.account_id BEGIN SELECT RAISE(ABORT,'Account ownership is immutable'); END;
 CREATE TRIGGER account_creation_immutable BEFORE UPDATE ON account_creations BEGIN SELECT RAISE(ABORT,'Account creation is immutable'); END;
 CREATE TRIGGER account_creation_retained BEFORE DELETE ON account_creations BEGIN SELECT RAISE(ABORT,'Account creation is retained'); END;
@@ -254,9 +257,9 @@ CREATE TABLE allocations(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision I
 CREATE TABLE operations(id TEXT PRIMARY KEY,batch TEXT NOT NULL UNIQUE REFERENCES batches(id),revision INTEGER NOT NULL,
  included INTEGER NOT NULL,excluded INTEGER NOT NULL,before INTEGER NOT NULL,change INTEGER NOT NULL,after INTEGER NOT NULL) STRICT;
 CREATE TABLE events(sequence INTEGER PRIMARY KEY,batch TEXT NOT NULL REFERENCES batches(id),revision INTEGER NOT NULL,
- kind TEXT NOT NULL CHECK(kind IN('capture','materialize','ingest','save','decide','discard','commit','opening','apply_rules')),UNIQUE(batch,revision)) STRICT;
+ kind TEXT NOT NULL CHECK(kind IN('capture','materialize','ingest','save','decide','discard','retain','commit','opening','apply_rules')),UNIQUE(batch,revision)) STRICT;
 CREATE TRIGGER source_immutable BEFORE UPDATE ON batches WHEN NEW.id!=OLD.id OR NEW.profile!=OLD.profile OR NEW.parser!=OLD.parser OR
- NEW.count!=OLD.count OR OLD.state NOT IN(0,3) OR NEW.revision!=OLD.revision+1 OR
+ NEW.count!=OLD.count OR OLD.state NOT IN(0,3,4) OR NEW.revision!=OLD.revision+1 OR
  (NEW.materialized_revision IS NOT OLD.materialized_revision AND NOT
  (OLD.state=3 AND NEW.state=0 AND OLD.materialized_revision IS NULL AND NEW.materialized_revision=NEW.revision))
  BEGIN SELECT RAISE(ABORT,'invalid batch transition'); END;
@@ -285,7 +288,7 @@ CREATE TRIGGER allocation_pending BEFORE INSERT ON allocations WHEN (SELECT stat
 CREATE TABLE entry_revisions(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL CHECK(revision>=0),active INTEGER NOT NULL CHECK(active IN(0,1)),date TEXT NOT NULL,payee TEXT NOT NULL,memo TEXT NOT NULL,total INTEGER NOT NULL,PRIMARY KEY(batch,ordinal,revision),FOREIGN KEY(batch,ordinal) REFERENCES records(batch,ordinal)) STRICT;
 CREATE TABLE entry_allocations(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,position INTEGER NOT NULL,category TEXT NOT NULL,memo TEXT NOT NULL,units INTEGER NOT NULL,PRIMARY KEY(batch,ordinal,revision,position),FOREIGN KEY(batch,ordinal,revision) REFERENCES entry_revisions(batch,ordinal,revision)) STRICT;
 CREATE TABLE entry_heads(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(batch,ordinal),FOREIGN KEY(batch,ordinal,revision) REFERENCES entry_revisions(batch,ordinal,revision)) STRICT;
-CREATE TABLE ledger_operations(sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 3),batch TEXT NOT NULL,ordinal INTEGER NOT NULL,prior_revision INTEGER NOT NULL,result_revision INTEGER NOT NULL,before INTEGER NOT NULL,change INTEGER NOT NULL,after INTEGER NOT NULL,undo_of TEXT NOT NULL,preview_sequence INTEGER NOT NULL,catalog_revision INTEGER NOT NULL DEFAULT 0) STRICT;
+CREATE TABLE ledger_operations(sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 4),batch TEXT NOT NULL,ordinal INTEGER NOT NULL,prior_revision INTEGER NOT NULL,result_revision INTEGER NOT NULL,before INTEGER NOT NULL,change INTEGER NOT NULL,after INTEGER NOT NULL,undo_of TEXT NOT NULL,preview_sequence INTEGER NOT NULL,catalog_revision INTEGER NOT NULL DEFAULT 0) STRICT;
 CREATE TABLE change_dependencies(operation TEXT NOT NULL REFERENCES ledger_operations(id),batch TEXT NOT NULL REFERENCES batches(id),revision INTEGER NOT NULL,state INTEGER NOT NULL,PRIMARY KEY(operation,batch)) STRICT;
 CREATE TABLE rule_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL CHECK(revision>=0)) STRICT;
 INSERT INTO rule_state VALUES(1,0);
@@ -387,17 +390,17 @@ CREATE TRIGGER bulk_members_keep BEFORE DELETE ON bulk_members BEGIN SELECT RAIS
 #endif
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="9"
+    return version=="3" || version=="4" || version=="11"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="8"
+        || version=="6" || version=="10"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="9"
+    return version=="4" || version=="11"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="8"
+        || version=="6" || version=="10"
 #endif
         ;
 }
@@ -407,13 +410,15 @@ app::BatchInfo batch(sqlite3* db,std::string_view id) {
     return {s.bytes(0),static_cast<qif::DateOrder>(s.integer(1)),static_cast<app::BatchState>(s.integer(2)),s.integer(3),
         static_cast<std::size_t>(s.integer(4)),s.integer(5)!=0,s.integer(6)!=0};
 }
+bool retained_batch(sqlite3* db,std::string_view id){Statement q(db,"SELECT 1 FROM retained_transfer_rows WHERE batch=? LIMIT 1");q.text(1,id);return q.row();}
+bool retained_member(sqlite3* db,std::string_view id,std::size_t ordinal){if(!retained_batch(db,id))return true;Statement q(db,"SELECT 1 FROM retained_transfer_rows WHERE batch=? AND ordinal=?");q.text(1,id);q.integer(2,integer(ordinal));return q.row();}
 void expect(sqlite3* db,std::string_view id,std::int64_t revision) {
     const auto b=batch(db,id);
-    if (b.state!=app::BatchState::pending || b.revision!=revision) fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
+    if ((b.state!=app::BatchState::pending && b.state!=app::BatchState::protected_drafts) || b.revision!=revision) fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
 }
 void advance(sqlite3* db,std::string_view id,std::int64_t revision,const char* kind,int state=0,int blocked=-1) {
     const auto current=batch(db,id);
-    if(current.revision!=revision || (current.state!=app::BatchState::pending &&
+    if(current.revision!=revision || (current.state!=app::BatchState::pending && current.state!=app::BatchState::protected_drafts &&
        !(current.state==app::BatchState::captured && (std::string_view(kind)=="opening" || std::string_view(kind)=="discard"))))
         fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
     if (revision==INT64_MAX) fail(SQLITE_FULL,"Revision capacity exhausted");
@@ -448,14 +453,14 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="9"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="11"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="8"
+    || version=="6" || version=="10"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="8";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="10";
 #else
     (void)db;return false;
 #endif
@@ -524,15 +529,16 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="8";
+        constexpr const char* expected_format="10";
 #else
-        constexpr const char* expected_format="9";
+        constexpr const char* expected_format="11";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"Unsupported experimental format; no migration was attempted");
         if(scalar(db,"SELECT count(*) FROM pragma_table_info('batches') WHERE name='account_id'")!="1" ||
            scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='account_creations'")!="1")
             fail(SQLITE_SCHEMA,"Account structure does not match format version");
+        if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('transfer_events','transfer_versions','transfer_heads','retained_transfer_rows')")!="4")fail(SQLITE_SCHEMA,"Transfer structure does not match format version");
         const auto common=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('account','account_creations','sources','batches','records','versions','allocations','operations','events','entry_revisions','entry_allocations','entry_heads','ledger_operations','change_dependencies','history_order','review_stamps','category_state','category_versions','category_heads','category_operations','operation_registry','draft_fields','entry_fields','draft_allocation_meta','entry_allocation_meta')");
         const auto rule_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('rule_state','rule_definitions','rule_heads','rule_operations','rule_operation_requests','rule_snapshots','rule_applications','draft_rule_fields','draft_rule_allocations','entry_rule_fields','entry_rule_allocations')");
         const auto bulk_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('bulk_operations','bulk_members')");
@@ -559,6 +565,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     if (create) {
         Atomic transaction(db);
         exec(db, schema);
+        exec(db, transfer_schema);
         transaction.commit();
         sync_directory(path);
     }
@@ -626,7 +633,7 @@ void ImportStore::opening(std::int64_t expected,std::string_view date,const Mone
     if(acct.frozen || acct.revision!=expected || expected==INT64_MAX) fail(SQLITE_CONSTRAINT,"Opening balance is frozen or changed");
     Statement s(impl_->db,"UPDATE account SET opening_date=?,opening=?,revision=revision+1,confirmed=1 WHERE singleton=spentit_account()");
     s.text(1,date); s.integer(2,amount.units()); s.done();
-    for(const auto& b:batches()) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured) advance(impl_->db,b.id,b.revision,"opening",static_cast<int>(b.state));
+    for(const auto& b:batches()) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts) advance(impl_->db,b.id,b.revision,"opening",static_cast<int>(b.state));
     impl_->finish(a);
 }
 std::vector<app::BatchInfo> ImportStore::batches() const {
@@ -651,6 +658,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
     auto parsed=qif::parse(src.bytes(0),b.profile,acct.currency);
     if(parsed.diagnostic || parsed.records.size()!=1 || (!parsed.records[0].transaction && !parsed.records[0].repairable)) fail(SQLITE_CORRUPT);
     app::RowView out{id,std::move(parsed.records[0]),{}, {},{}};
+    out.excluded_by_clear=!retained_member(impl_->db,id.batch,id.ordinal);
     Statement v(impl_->db,"SELECT revision,date,payee,memo,total,decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? ORDER BY revision DESC LIMIT 1");
     v.text(1,id.batch); v.integer(2,integer(id.ordinal)); if(!v.row()) fail(SQLITE_CORRUPT);
     Statement allocations(impl_->db,"SELECT position,category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");
@@ -825,6 +833,7 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
     }
 }
 void ImportStore::save(const imports::Occurrence& id,std::int64_t expected,const imports::DraftRow& edit) {
+    require_unlinked(id);
     Atomic a(impl_->db); expect(impl_->db,id.batch,expected); const auto old=load_row(id,false);
     const auto canonical=canonical_draft(id,edit,old.draft,expected+1,false);
     imports::validate_draft(old.source,canonical);
@@ -853,6 +862,7 @@ void ImportStore::save(const imports::Occurrence& id,std::int64_t expected,const
     impl_->finish(a);
 }
 void ImportStore::decide(const imports::Occurrence& id,std::int64_t expected,const imports::Decision& decision) {
+    require_unlinked(id);
     Atomic a(impl_->db); expect(impl_->db,id.batch,expected); const auto old=row(id);
     if(!old.draft) fail(SQLITE_CONSTRAINT,"Save the record repair before duplicate review");
     imports::validate_decisions({old.candidates},std::span(&decision,1),false);
@@ -868,8 +878,16 @@ void ImportStore::decide(const imports::Occurrence& id,std::int64_t expected,con
 void ImportStore::discard(std::string_view id,std::int64_t expected) {
     require_account(id);
     Atomic a(impl_->db); const auto b=batch(impl_->db,id);
-    if(b.state==app::BatchState::discarded && expected<INT64_MAX && b.revision==expected+1) { a.commit(); return; }
-    advance(impl_->db,id,expected,"discard",2); impl_->finish(a);
+    if((b.state==app::BatchState::discarded || b.state==app::BatchState::protected_drafts) && expected<INT64_MAX && b.revision==expected+1) { a.commit(); return; }
+    const auto protected_rows=protected_import_rows(id);
+    const auto operation="transfer-discard-"+std::string(id)+"-"+std::to_string(expected);
+    (void)transfer_import_transition(id,operation,false);
+    if(protected_rows.empty())advance(impl_->db,id,expected,"discard",2);
+    else {
+        for(const auto ordinal:protected_rows){Statement keep(impl_->db,"INSERT OR IGNORE INTO retained_transfer_rows VALUES(?,?)");keep.text(1,id);keep.integer(2,integer(ordinal));keep.done();}
+        advance(impl_->db,id,expected,"retain",4,0);
+    }
+    impl_->finish(a);
 }
 std::optional<app::Receipt> ImportStore::durable_outcome(std::string_view operation) const {
     if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
@@ -908,6 +926,7 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
     const auto before=committed_balance();
     std::size_t included=0,excluded=0; std::vector<Money> amounts; std::set<imports::Occurrence> matched;
     for(std::size_t i=0;i<b.count;++i) {
+        if(!retained_member(impl_->db,id,i)){++excluded;continue;}
         auto r=load_row({std::string(id),i},false);
         if(r.decision.disposition==imports::Disposition::unresolved) fail(SQLITE_CONSTRAINT,"Review possible duplicates before committing");
         if(r.decision.disposition==imports::Disposition::include) { ++included; amounts.push_back(r.draft->transaction.effective_total()); }
@@ -924,13 +943,14 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
             ++excluded;
         } else fail(SQLITE_CORRUPT);
     }
-    const auto change=imports::sum(acct.currency,amounts); const auto after=before+change;
+    const auto adjustment=transfer_import_transition(id,operation,true);
+    const auto change=imports::sum(acct.currency,amounts)+adjustment; const auto after=before+change;
     Statement op(impl_->db,"INSERT INTO operations VALUES(?,?,?,?,?,?,?,?)"); op.text(1,operation); op.text(2,id); op.integer(3,expected);
     op.integer(4,integer(included)); op.integer(5,integer(excluded)); op.integer(6,before.units()); op.integer(7,change.units()); op.integer(8,after.units()); op.done();
     advance(impl_->db,id,expected,"commit",1);
     exec(impl_->db,"UPDATE account SET frozen=1 WHERE singleton=spentit_account()");
     if(committed_changes_supported()) {
-        for(std::size_t ordinal=0;ordinal<b.count;++ordinal){const auto row=load_row({std::string(id),ordinal},false);if(row.decision.disposition==imports::Disposition::include)store_entry(impl_->db,{std::string(id),ordinal},{0,true,*row.draft});}
+        for(std::size_t ordinal=0;ordinal<b.count;++ordinal){if(!retained_member(impl_->db,id,ordinal))continue;const auto row=load_row({std::string(id),ordinal},false);if(row.decision.disposition==imports::Disposition::include)store_entry(impl_->db,{std::string(id),ordinal},{0,true,*row.draft});}
         append_financial(impl_->db,operation,app::ChangeKind::publication,{std::string(id),0},-1,0,before,change,after,"",0);
     }
     impl_->finish(a); return {std::string(operation),std::string(id),expected,included,excluded,before,change,after};
@@ -941,7 +961,8 @@ std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const {
         std::vector<app::LedgerRow> result;
         Statement entries(impl_->db,"SELECT h.batch,h.ordinal,h.revision,r.sequence FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1 ORDER BY e.date,r.sequence");
         while(entries.row()){imports::Occurrence identity{entries.bytes(0),static_cast<std::size_t>(entries.integer(1))};result.push_back({identity,entries.integer(3),entry_snapshot(identity,entries.integer(2)).draft,true});}
-        if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND b.state=0 AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
+        if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
+        const auto local=local_transfer_ledger(projected);result.insert(result.end(),local.begin(),local.end());
         std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return std::tie(a.draft.date,a.sequence)<std::tie(b.draft.date,b.sequence);});return result;
     }
     if(projected && !projected_balance()) fail(SQLITE_CONSTRAINT,"Projection is incomplete; resolve the pending import first");
@@ -956,23 +977,23 @@ std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const {
     return result;
 }
 Money ImportStore::committed_balance() const {
-    if(committed_changes_supported()) {const auto currency=account().currency;std::vector<Money> values{account().opening};Statement rows(impl_->db,"SELECT e.total FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1");while(rows.row())values.emplace_back(rows.integer(0),currency);return imports::sum(currency,values);}
+    if(committed_changes_supported()) {const auto currency=account().currency;std::vector<Money> values{account().opening,local_transfer_total(impl_->selected_account,false)};Statement rows(impl_->db,"SELECT e.total FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1");while(rows.row())values.emplace_back(rows.integer(0),currency);return imports::sum(currency,values);}
     const auto a=account(); std::vector<Money> amounts{a.opening};
     Statement s(impl_->db,"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.state=1 AND v.decision=1 "
         "AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     while(s.row()) amounts.emplace_back(s.integer(0),a.currency); return imports::sum(a.currency,amounts);
 }
 std::optional<Money> ImportStore::projected_balance() const {
-    for(const auto& b:batches()) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured) {
+    for(const auto& b:batches()) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts) {
         if(b.blocked) return {};
-        Statement s(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=0 AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) LIMIT 1");
+        Statement s(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=0 AND (NOT EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch) OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) LIMIT 1");
         s.text(1,b.id); if(s.row()) return {};
     }
     if(committed_changes_supported()) {
         Statement stale(impl_->db,"SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch JOIN review_stamps s USING(batch,ordinal,revision) JOIN entry_heads h ON h.batch=v.duplicate_batch AND h.ordinal=v.duplicate_ordinal JOIN entry_revisions e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision WHERE b.account_id=spentit_account() AND b.state=0 AND v.decision=2 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) AND (s.target_revision!=h.revision OR s.target_active!=e.active) LIMIT 1");if(stale.row())return {};
     }
-    const auto a=account(); std::vector<Money> amounts{committed_changes_supported()?committed_balance():a.opening};
-    Statement s(impl_->db,committed_changes_supported()?"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state=0 AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)":"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,1) AND v.decision=1 "
+    const auto a=account(); std::vector<Money> amounts{committed_changes_supported()?committed_balance():a.opening,local_transfer_total(a.identity,true)-local_transfer_total(a.identity,false)};
+    Statement s(impl_->db,committed_changes_supported()?"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)":"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,1) AND v.decision=1 "
         "AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     while(s.row()) amounts.emplace_back(s.integer(0),a.currency); return imports::sum(a.currency,amounts);
 }
@@ -995,7 +1016,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
         "OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR revision+1!=(SELECT count(*) FROM events WHERE batch=b.id) "
         "UNION ALL SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch WHERE v.revision>b.revision "
         "UNION ALL SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM batches b WHERE b.id=s.id) "
-        "UNION ALL SELECT 1 FROM account a WHERE frozen!=(EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id=a.singleton))");
+        "UNION ALL SELECT 1 FROM account a WHERE frozen!=(EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id=a.singleton) OR EXISTS(SELECT 1 FROM transfer_events t WHERE t.account=a.singleton AND t.did_commit=1))");
     if(invalid.row()) fail(SQLITE_CORRUPT,"Invalid import history relationships");
     Statement all_batches(impl_->db,"SELECT id FROM batches ORDER BY rowid");
     while(all_batches.row()) {
@@ -1071,13 +1092,13 @@ void ImportStore::verify(const app::OperationContext* context) const {
                 }
             }
         }
-        if(count.integer(0)!=integer(valid_count) || blocked!=b.blocked) fail(SQLITE_CORRUPT);
+        if(count.integer(0)!=integer(valid_count) || (retained_batch(impl_->db,b.id)?b.blocked:blocked!=b.blocked)) fail(SQLITE_CORRUPT);
         Statement duplicates(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=2 AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) "
             "GROUP BY duplicate_batch,duplicate_ordinal HAVING count(*)>1"); duplicates.text(1,b.id); if(duplicates.row()) fail(SQLITE_CORRUPT);
     }
     if(categories_supported())verify_categories(context);
     if(rules_format(impl_->db))verify_rules(context);
-    if(committed_changes_supported()){verify_committed(context);if(bulk_supported())verify_bulk(context);return;}
+    if(committed_changes_supported()){verify_transfers(context);verify_committed(context);if(bulk_supported())verify_bulk(context);return;}
     Money balance=acct.opening;
     Statement ops(impl_->db,"SELECT id FROM operations ORDER BY rowid");
     while(ops.row()) {
@@ -1121,4 +1142,5 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
 #include "committed_store.inc"
 #include "bulk_store.inc"
 #include "rule_store.inc"
+#include "transfer_store.inc"
 } // namespace spentit::storage

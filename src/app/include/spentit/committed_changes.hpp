@@ -3,7 +3,7 @@
 #include <optional>
 namespace spentit::app {
 enum class BatchState;
-enum class ChangeKind { publication, correct, remove, undo };
+enum class ChangeKind { publication, correct, remove, undo, transfer };
 struct DependencyStamp {
     std::string batch;
     std::int64_t revision;

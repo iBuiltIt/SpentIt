@@ -4,7 +4,7 @@
 |---|---|
 | Author | SpentIt contributor (placeholder) |
 | Date | 2026-10-25 |
-| Status | Schema-6/rules-sheet baseline verified in Release and ASan/UBSan on 2026-10-26; current schema 8 retains bulk receipts and scopes Apply to an account. |
+| Status | Schema-6/rules-sheet baseline verified in Release and ASan/UBSan on 2026-10-26; current schema 10 retains bulk receipts and scopes Apply to an account. |
 | Package | Roadmap package 5, rules half only |
 | Schema | Current rules-enabled documents **8**; the historical schema-6 design below is retained as implementation rationale. No pre-release migration obligation. |
 

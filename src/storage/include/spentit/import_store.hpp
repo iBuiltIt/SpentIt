@@ -3,6 +3,7 @@
 #include <spentit/operation_context.hpp>
 #include <filesystem>
 #include <memory>
+#include <set>
 
 namespace spentit::storage {
 class ImportError : public std::runtime_error {
@@ -32,6 +33,11 @@ public:
     ImportStore(ImportStore&&) noexcept;
     ImportStore& operator=(ImportStore&&) noexcept;
     app::Account account() const override;
+    bool transfers_supported() const override { return true; }
+    std::int64_t transfer_sequence() const override;
+    std::vector<app::TransferView> transfers() const override;
+    app::TransferReceipt apply_transfer(std::string_view,const app::TransferRequest&) override;
+    std::optional<app::TransferReceipt> transfer_outcome(std::string_view) const override;
     std::vector<app::Account> accounts() const override;
     void select_account(std::int64_t) override;
     std::optional<app::AccountCreation> account_creation_outcome(std::int64_t) const override;
@@ -86,6 +92,14 @@ public:
                    const BackupObserver& observer = {}) const;
     void observer(ImportObserver);
 private:
+    std::vector<app::TransferView> all_transfers() const;
+    Money local_transfer_total(std::int64_t,bool projected) const;
+    std::vector<app::LedgerRow> local_transfer_ledger(bool) const;
+    void verify_transfers(const app::OperationContext*) const;
+    void require_unlinked(const imports::Occurrence&) const;
+    Money transfer_import_transition(std::string_view,std::string_view,bool);
+    Money transfer_import_adjustment(std::string_view) const;
+    std::set<std::size_t> protected_import_rows(std::string_view) const;
     app::Account account_by_id(std::int64_t) const;
     app::Account account_for_batch(std::string_view) const;
     void require_account(std::string_view) const;

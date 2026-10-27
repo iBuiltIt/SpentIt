@@ -21,6 +21,111 @@ ApplicationWindow {
     property var searchReturn: null
     property var pendingSearch: null
     property string appliedFilter: ""
+    function transferCommand(action, args) {
+        let request=Object.assign({},args)
+        request.sequence=s.transferSequence
+        request.operation=workflow.newIdentity()
+        guard(function(){workflow.command(action,request)})
+    }
+    function transferDestinations() {return (s.accounts||[]).filter(function(a){return a.id!==s.accountId})}
+    property var pendingCounterpart: null
+    property var accountViewports: ({})
+    function rememberAccountViewport() {
+        if(!s.accountId || ledger.count===0)return
+        let first=ledger.indexAt(1,ledger.contentY+1)
+        if(first<0)first=0
+        let item=ledger.itemAtIndex(first)
+        let views=Object.assign({},accountViewports)
+        views[s.accountId]={anchor:workflow.rowIdentity(first),offset:item?ledger.contentY-item.y:0}
+        accountViewports=views
+    }
+    function showCounterpart(item) {
+        transferDialog.close()
+        guard(function(){
+            rememberAccountViewport()
+            pendingCounterpart={batch:item.counterpartBatch,ordinal:item.counterpartOrdinal}
+            workflow.command("select_account",{id:item.counterpartAccount,reveal:true,batch:item.counterpartBatch,ordinal:item.counterpartOrdinal})
+        })
+    }
+    Dialog {
+        id:transferDialog;objectName:"transferDialog";title:"Transfers · "+(s.name||"")
+        anchors.centerIn:parent;width:Math.min(window.width-60,1000);height:Math.min(window.height-60,680);modal:true;standardButtons:Dialog.Close
+        contentItem:ScrollView {
+            clip:true
+            ColumnLayout {
+                width:transferDialog.availableWidth;spacing:12;enabled:!workflow.busy
+                Label {text:"Each account commits separately. Acceptance without a bank match preserves provenance and permits a later match.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                GroupBox {
+                    title:"Create a transfer";Layout.fillWidth:true
+                    ColumnLayout {
+                        anchors.fill:parent
+                        RowLayout {
+                            Label {text:"Destination"}
+                            ComboBox {id:transferDestination;objectName:"transferDestination";model:transferDestinations();textRole:"name";Layout.fillWidth:true;Accessible.name:"Transfer destination account"}
+                        }
+                        RowLayout {
+                            TextField {id:transferDate;objectName:"transferDate";text:Qt.formatDate(new Date(),"yyyy-MM-dd");placeholderText:"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
+                            TextField {id:transferAmount;objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
+                            TextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
+                            Button {objectName:"createManualTransfer";text:"Create manual draft";enabled:transferDestination.currentIndex>=0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
+                        }
+                        TextField {id:transferMemo;placeholderText:"Memo (optional)";Layout.fillWidth:true;Accessible.name:"Manual transfer memo"}
+                        RowLayout {
+                            Label {text:"Selected record allocation"}
+                            ComboBox {id:transferAllocation;objectName:"transferAllocation";model:(selected.draft||{}).splits||[];textRole:"amount";Layout.fillWidth:true;Accessible.name:"Selected transfer allocation"}
+                            Button {objectName:"assignTransfer";text:"Use as transfer";enabled:!!selected.transferEligible && transferAllocation.currentIndex>=0 && transferDestination.currentIndex>=0;onClicked:transferCommand("transfer_from_draft",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
+                        }
+                    }
+                }
+                Label {text:(s.transferReceipt||{}).summary||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Repeater {
+                    model:s.transfers||[]
+                    delegate:GroupBox {
+                        required property var modelData
+                        Layout.fillWidth:true;title:modelData.label
+                        ColumnLayout {
+                            anchors.fill:parent
+                            Label {text:(modelData.committed?"Committed":"Draft")+(modelData.protected?" · Protected by the other account":"")+(modelData.provisional?" · Provisional date":"")+(modelData.evidenced?" · Bank evidence retained":modelData.accepted?" · Accepted without bank match":" · Needs review")+(modelData.proposed?" · Match proposed; commit its import to attach":"");wrapMode:Text.Wrap;Layout.fillWidth:true}
+                            RowLayout {
+                                Button {text:"Accept without bank match";visible:!modelData.evidenced && !modelData.accepted;enabled:!modelData.proposed;onClicked:transferCommand("transfer_accept",{link:modelData.id})}
+                                Button {text:"Commit this account";visible:modelData.local && !modelData.committed;enabled:modelData.accepted && !modelData.proposed && !!s.confirmed;onClicked:{transferCommit.item=modelData;transferCommit.open()} }
+                                Button {text:"Discard manual origin";visible:modelData.isOrigin && modelData.local && !modelData.committed && !modelData.protected;onClicked:transferCommand("transfer_clear",{link:modelData.id})}
+                                Button {text:"Show counterpart ↗";onClicked:showCounterpart(modelData)}
+                            }
+                            RowLayout {
+                                Button {text:"Find bank candidates";visible:!modelData.evidenced && !modelData.proposed;onClicked:workflow.command("transfer_candidates",{link:modelData.id})}
+                                Button {text:"Match selected allocation";visible:!modelData.evidenced && !modelData.proposed;enabled:!!selected.transferEligible && transferAllocation.currentIndex>=0;onClicked:transferCommand("transfer_match",{link:modelData.id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
+                                Button {text:"Drop match proposal";visible:modelData.proposed;onClicked:transferCommand("transfer_unmatch",{link:modelData.id})}
+                            }
+                            ColumnLayout {
+                                visible:s.candidateLink===modelData.id
+                                Layout.fillWidth:true
+                                Repeater {
+                                    model:s.candidateLink===modelData.id?(s.transferCandidates||[]):[]
+                                    delegate:RowLayout {
+                                        required property var modelData
+                                        Layout.fillWidth:true
+                                        Label {text:modelData.label;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                                        Button {text:"Confirm match proposal";onClicked:transferCommand("transfer_match",{link:s.candidateLink,batch:modelData.batch,ordinal:modelData.ordinal,allocation:modelData.allocation})}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Dialog {
+        id:transferCommit;width:520;property var item:({});title:"Commit transfer in this account?";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
+        onAccepted:transferCommand("transfer_commit",{link:item.id})
+        Label {text:(transferCommit.item.label||"")+"\nOnly "+(s.name||"")+" commits. The opposite draft stays uncommitted and protected.";wrapMode:Text.Wrap;width:480}
+    }
+    Dialog {
+        id:protectedCommit;width:520;property var item:({});title:"Commit protected drafts?";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
+        onAccepted:guard(function(){workflow.command("commit",{batch:protectedCommit.item.id})})
+        Label {text:"Commit retained drafts from "+(protectedCommit.item.id||"")+" in "+(s.name||"")+"?\nChange: "+(protectedCommit.item.change||"")+" · resulting balance: "+(protectedCommit.item.after||"")+"\nOther accounts and other pending imports remain uncommitted.";wrapMode:Text.Wrap;width:480}
+    }
     Menu {
         id:ledgerContext
         MenuItem {text:"Delete selected…";enabled:!!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:guard(function(){workflow.command("preview_bulk",{kind:"remove"})})}
@@ -44,7 +149,7 @@ ApplicationWindow {
     property string accountCreationDate: ""
     property bool sidebarVisible: true
     function resetNavigation() {
-        currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
+        accountViewports={};pendingCounterpart=null;currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
     }
     function navigate(page) {
         if(workflow.busy || !s.active || page===currentPage) return
@@ -56,7 +161,7 @@ ApplicationWindow {
     function chooseAccount(id) {
         if(workflow.busy) return
         if(id===s.accountId) {navigate("ledger");return}
-        guard(function(){workflow.command("select_account",{id:id})})
+        guard(function(){rememberAccountViewport();workflow.command("select_account",{id:id})})
     }
     function revealHistoryOperation(operation) {
         let entries=s.entryHistory||[]
@@ -69,6 +174,7 @@ ApplicationWindow {
         if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
         guard(function(){
             if(navigationAccounts[destination]!==s.accountId) {
+                rememberAccountViewport()
                 pendingAccountNavigation={index:destination,page:navigation[destination]}
                 workflow.command("select_account",{id:navigationAccounts[destination]})
             } else {navigationIndex=destination;currentPage=navigation[destination]}
@@ -354,15 +460,18 @@ ApplicationWindow {
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
             }
-            if(!success && action==="select_account")pendingAccountNavigation=null
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null}
             if(success) {
                 if(action==="select_account" || action==="create_account") {
-                    addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter="";search.clear()
+                    addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
+                    if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0)ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain)})}
+                    else if(accountViewports[s.accountId])Qt.callLater(function(){restoreViewport(accountViewports[s.accountId])})
                     if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
                     loadEditor();loadRulesForm();loadCategoryForm()
                     if(currentPage==="history")Qt.callLater(function(){workflow.command("history")})
                 }
+                if(action.indexOf("transfer_")===0)loadEditor()
                 if(action==="preview_bulk")bulkDialog.open()
                 if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
                 projected.checked=s.mode!=="Committed"
@@ -521,7 +630,7 @@ ApplicationWindow {
             Button {objectName:"chooseUncategorized";text:"Uncategorized";onClicked:chooseCategory("","")}
             TextField {id:unmappedCategory;objectName:"unmappedCategoryText";placeholderText:"Explicit unmapped classification text";Layout.fillWidth:true;Accessible.name:"Unmapped category text"}
             Button {objectName:"chooseUnmapped";text:"Keep as unmapped text";enabled:unmappedCategory.text.length>0;onClicked:chooseCategory("",unmappedCategory.text)}
-            Label {text:"Groups cannot receive allocations. Account transfer destinations are unavailable in this milestone.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:"Groups cannot receive allocations. Use Transfers to assign an allocation to another account.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Button {text:"Cancel";onClicked:categoryPicker.close()}
         }
     }
@@ -842,6 +951,7 @@ ApplicationWindow {
                 Label {textFormat:Text.PlainText;text:"Committed: "+(s.committed||"")+"   Projected: "+(s.projected||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
                 ComboBox {id:profile;Layout.preferredWidth:200;model:["Choose date order","DMY","MDY"];Accessible.name:"QIF date order"}
                 Button {text:"Import QIF…";enabled:profile.currentIndex>0 && !s.pending;onClicked:guard(function(){importDialog.open()})}
+                Button {objectName:"openTransfers";text:"Transfers…";visible:!!s.transfersSupported;onClicked:guard(function(){transferDialog.open()})}
                 Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
             }
             RowLayout {
@@ -862,6 +972,7 @@ ApplicationWindow {
                 Button {objectName:"discardImport";text:"Discard batch…";enabled:!!s.pending;onClicked:guard(function(){discardDialog.open()})}
                 Button {objectName:"commitImport";text:"Commit batch…";enabled:!!s.pending && !processingIncomplete && !!s.projectionAvailable && !!s.confirmed;onClicked:guard(function(){commitDialog.open()})}
             }
+            Repeater {model:s.protectedImports||[];delegate:RowLayout {required property var modelData;Layout.fillWidth:true;Label {text:"Protected drafts · "+modelData.id+" · "+modelData.change;Layout.fillWidth:true;textFormat:Text.PlainText} Button {text:"Commit protected drafts…";enabled:!!s.confirmed;onClicked:{protectedCommit.item=modelData;protectedCommit.open()}}}}
             Label {
                 objectName:"incompleteImportNotice";visible:processingIncomplete;Layout.fillWidth:true;wrapMode:Text.Wrap
                 textFormat:Text.PlainText;color:"#855100"

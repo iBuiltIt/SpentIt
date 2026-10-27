@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-26
 
-This implements the multi-account prerequisite for [transfer lifecycle work](../features/008-transfer-matching-and-lifecycle.md). Accounts can be created and selected in the durable UI, with independent ordinary QIF imports, opening balances, drafts, committed balances, corrections and history. Transfer links, generated counterparts, protected drafts and transfer matching are **not implemented**. QIF transfer destinations remain explicitly unsupported. This remains a synthetic-data experiment.
+This implements the multi-account prerequisite for [transfer lifecycle work](../features/008-transfer-matching-and-lifecycle.md). Accounts can be created and selected in the durable UI, with independent ordinary QIF imports, opening balances, drafts, committed balances, corrections and history. The subsequent [bounded transfer integration](transfer-engine.md) adds links, generated counterparts, protected drafts and provisional evidence matching. QIF transfer destinations remain explicitly unsupported. This remains a synthetic-data experiment.
 
 ## Persistence and command boundary
 
@@ -20,11 +20,11 @@ The document-wide financial sequence still orders operations and invalidates sta
 
 The sidebar has a scrolling account list and **+ New account**, which opens an inline name field; Enter creates the account. New accounts start with zero on today's date, defaulting to the initial setup currency. Opening balance must still be explicitly confirmed before the first import commit; that account's first commit freezes it. Switching accounts uses the existing Save / Discard / Stay guards for unsaved transaction, category and rule edits.
 
-Switching clears transaction selection, search, previews, receipts and history from the previous account and loads a fresh view on the worker. Back/Forward traverses visited account screens and honors unsaved-edit guards. Per-account viewport/search restoration and selecting a linked counterpart remain unfinished. Account rename/archive/delete and currency reassignment are not added here. There is no consolidated cross-currency balance.
+Switching clears previews, receipts and history from the previous account and loads the selected account on the worker. The transfer integration now restores each account’s transaction selection, search, sort and viewport within the session. Back/Forward traverses visited account screens and honors unsaved-edit guards. Counterpart navigation reveals its row and honors the same guard. Account rename/archive/delete and currency reassignment are not added here. There is no consolidated cross-currency balance.
 
 ## Experimental formats
 
-Rules-enabled builds create and open schema **8**; rules-off builds create and open schema **9**. These are distinct experimental layouts, not an upgrade sequence between builds. Both include account ownership and creation receipts; only schema 8 contains rule persistence and bulk receipts. Older experimental formats and the other build's layout are rejected before storage-setting changes, without migration or modification of their contents. This follows the owner's pre-release format policy; existing compatibility fixtures now test rejection rather than continued operation.
+Rules-enabled builds create and open schema **10**; rules-off builds create and open schema **11**. These are distinct experimental layouts, not an upgrade sequence between builds. Both include account ownership and creation receipts; only schema 10 contains rule persistence and bulk receipts. Older experimental formats and the other build's layout are rejected before storage-setting changes, without migration or modification of their contents. This follows the owner's pre-release format policy; existing compatibility fixtures now test rejection rather than continued operation.
 
 ## Verification
 

@@ -126,3 +126,11 @@ ctest --test-dir build/import-ui-rules-release \
   -R '^(accounts\.|import.(ui|navigation|recovery_ui|committed_ui|category_ui|rules_ui|qml|benchmark_smoke)$)' \
   --output-on-failure -j 3
 ```
+
+## Durable transfer follow-up — 2026-10-26
+
+Current import formats are schema 10 with `SPENTIT_RULES=ON`, and schema 11 without rules. Existing configured import/UI build directories remain usable; rebuilding reconfigures the new engine and storage test groups. No migration is supplied for earlier experimental datasets.
+
+The transfer storage executable registers `transferstore.basics`, `transferstore.imports`, `transferstore.splits`, `transferstore.manual_evidence`, `transferstore.validation`, `transferstore.io` and `transferstore.crashes`. Run these alongside the existing account/import, committed-change, category/rules, UI and navigation checks after changing storage. The I/O and crash groups sweep ten complete operations, rather than individual SQL statements. `import.ui` includes transfer lifecycle, unknown-outcome and counterpart-navigation cases. Use `SPENTIT_TRANSFERS_SCREENSHOT=/absolute/output.png` with its `transferWorkflow` QtTest function for a synthetic offscreen rendering check.
+
+Actual configuration results and limitations are recorded in [project status](status.md#durable-transfer-integration--2026-10-26). Test registration and example commands are not evidence of a passing run.

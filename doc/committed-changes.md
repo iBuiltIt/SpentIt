@@ -8,7 +8,7 @@ The current follow-up supports committed bulk category changes/removal and stric
 
 ## Current interpretation and retained history
 
-Schema 4 introduced this workflow. Current [account-scoped formats](accounts.md) retain it in schema 8 with rules/bulk receipts and schema 9 without rules. Earlier experimental layouts are rejected without migration. Version/shape checks run before storage-setting changes. Historical compatibility fixtures now verify rejection and preservation of their contents.
+Schema 4 introduced this workflow. Current [account-scoped formats](accounts.md) retain it in schema 10 with rules/bulk receipts and schema 11 without rules. Earlier experimental layouts are rejected without migration. Version/shape checks run before storage-setting changes. Historical compatibility fixtures now verify rejection and preservation of their contents.
 
 Original source evidence, original import versions and import receipts remain immutable. Schema 4 stores complete committed entry revisions and a current head for each included occurrence. Revision zero is its original included publication. A correction appends a current interpretation; removal appends an inactive interpretation; eligible Undo appends the earlier state as a new revision. Removed entries remain available through history and source inspection. Actual bank refunds remain separate imported transactions.
 

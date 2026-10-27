@@ -38,6 +38,16 @@ public:
     std::optional<app::AccountCreation> account_creation_outcome(std::int64_t id) const override {
         if(attempted && fault==unknown)throw std::runtime_error("Injected account outcome failure");return repo().account_creation_outcome(id);
     }
+    bool transfers_supported() const override {return true;}
+    std::int64_t transfer_sequence() const override {return repo().transfer_sequence();}
+    std::vector<app::TransferView> transfers() const override {return repo().transfers();}
+    app::TransferReceipt apply_transfer(std::string_view operation,const app::TransferRequest& request) override {
+        attempted=true;if(fault==before)throw std::runtime_error("Injected failure before transfer");
+        const bool already=repo().transfer_outcome(operation).has_value();auto result=repo().apply_transfer(operation,request);if(!already && (fault==after || fault==unknown))throw std::runtime_error("Injected lost transfer acknowledgement");return result;
+    }
+    std::optional<app::TransferReceipt> transfer_outcome(std::string_view operation) const override {
+        if(attempted && fault==unknown)throw std::runtime_error("Injected transfer outcome failure");return repo().transfer_outcome(operation);
+    }
     void opening(std::int64_t r,std::string_view d,const Money& m) override {repo().opening(r,d,m);}
     std::vector<app::BatchInfo> batches() const override {return repo().batches();}
     app::BatchInfo ingest(std::string_view id,std::string_view b,qif::DateOrder p) override {return repo().ingest(id,b,p);}
@@ -81,6 +91,52 @@ class ImportUiTests : public QObject {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
     }
 private slots:
+    void transferOutcomeRecovery() {
+        for(const auto fault:{OutcomeGateway::before,OutcomeGateway::after,OutcomeGateway::unknown}) {
+            QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));
+            const auto path=dir.path()+"/doc";create(m,path);run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"select_account",{{"id","1"}});seam->fault=fault;
+            run(m,"transfer_manual",{{"link","lost-ack"},{"sequence",m.state().value("transferSequence")},{"operation","create-transfer"},{"destination","2"},{"date","2026-01-02"},{"amount","-100.00"}},fault==OutcomeGateway::after);
+            if(fault==OutcomeGateway::unknown){QVERIFY(!m.state().value("active").toBool());QVERIFY(m.error().contains("could not be confirmed"));}else run(m,"close");
+            seam->fault=OutcomeGateway::none;seam->attempted=false;run(m,"open",{{"path",path}});QCOMPARE(m.state().value("transfers").toList().size(),fault==OutcomeGateway::before?0:1);
+        }
+    }
+    void transferWorkflow() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        const auto path=dir.path()+"/doc";create(m,path);
+        run(m,"opening",{{"date","2026-01-01"},{"amount","200.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});
+        const auto transfer=[&](QString action,QVariantMap args={},bool success=true){args["link"]="test-link";args["sequence"]=m.state().value("transferSequence");args["operation"]=m.newIdentity();run(m,action,args,success);};
+        transfer("transfer_manual",{{"destination","2"},{"date","2026-01-02"},{"amount","-100.00"},{"payee","Payment"}});
+        QCOMPARE(m.state().value("committed").toString(),QString("200.00"));QCOMPARE(m.state().value("projected").toString(),QString("100.00"));
+        transfer("transfer_commit",{},false);transfer("transfer_accept");transfer("transfer_commit");
+        run(m,"query",{{"filter","Payment"},{"projected",true}});
+        const auto link=m.state().value("transfers").toList().first().toMap();
+        QVERIFY(QMetaObject::invokeMethod(root,"showCounterpart",Q_ARG(QVariant,link)));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("accountId").toString(),QString("2"));QVERIFY(selected(m).value("localTransfer").toBool());
+        QCOMPARE(m.state().value("committed").toString(),QString("0.00"));QVERIFY(m.state().value("transfers").toList().first().toMap().value("protected").toBool());
+        transfer("transfer_accept");transfer("transfer_commit");
+        const auto source=fixture(dir.path(),"D3/1/2026\nT100\nPBank payment\n^\n");
+        run(m,"import",{{"path",source},{"profile","DMY"}});const auto batch=selected(m).value("batch");
+        run(m,"transfer_candidates",{{"link","test-link"}});QCOMPARE(m.state().value("transferCandidates").toList().size(),1);
+        transfer("transfer_match",{{"batch",batch},{"ordinal",0},{"allocation","source-0"}});
+        QCOMPARE(m.state().value("projected").toString(),QString("100.00"));
+        run(m,"discard");QVERIFY(!m.state().value("transfers").toList().first().toMap().value("proposed").toBool());
+        run(m,"import",{{"path",source},{"profile","DMY"}});
+        transfer("transfer_match",{{"allocation","source-0"}});run(m,"commit");
+        QCOMPARE(m.state().value("committed").toString(),QString("100.00"));QCOMPARE(m.state().value("receipt").toMap().value("change").toString(),QString("0.00"));
+        run(m,"select_account",{{"id","1"}});QCOMPARE(m.state().value("filter").toString(),QString("Payment"));
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("openTransfers"),"clicked"));QTest::qWait(100);
+        QVERIFY(root->findChild<QObject*>("transferDialog")->property("visible").toBool());
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);if(qEnvironmentVariableIsSet("SPENTIT_TRANSFERS_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_TRANSFERS_SCREENSHOT")));
+        run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("committed").toString(),QString("100.00"));
+        run(m,"transfer_manual",{{"link","clear-link"},{"operation","create-clear"},{"sequence",m.state().value("transferSequence")},{"destination","2"},{"date","2026-01-04"},{"amount","-1.00"}});
+        run(m,"inspect",{{"batch","~transfer-clear-link-origin"},{"ordinal",0}});
+        run(m,"transfer_clear",{{"link","clear-link"},{"operation","clear"},{"sequence",m.state().value("transferSequence")}});
+        QVERIFY(m.state().value("active").toBool());QVERIFY(selected(m).isEmpty());QCOMPARE(m.state().value("projected").toString(),QString("100.00"));
+    }
     void accountOutcomeRecovery() {
         for(const auto fault:{OutcomeGateway::before,OutcomeGateway::after,OutcomeGateway::unknown}) {
             QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));
@@ -121,7 +177,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(root,"chooseAccount",Q_ARG(QVariant,QString("1"))));
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardDiscard"),"clicked"));QTRY_VERIFY(!m.busy());
         QCOMPARE(m.state().value("accountId").toString(),QString("1"));QCOMPARE(m.state().value("projected").toString(),QString("90.00"));
-        QCOMPARE(m.state().value("pending").toMap().value("id").toString(),original);QVERIFY(selected(m).isEmpty());
+        QCOMPARE(m.state().value("pending").toMap().value("id").toString(),original);QCOMPARE(selected(m).value("batch").toString(),original);
         QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,-1)));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("accountId").toString(),QString("2"));
         QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,1)));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("accountId").toString(),QString("1"));
         run(m,"commit");run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),QString("500"));run(m,"commit");

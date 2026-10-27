@@ -7,6 +7,15 @@ foreach(case IN ITEMS basics io crashes backup backup_failures validation backup
   set_tests_properties(storage.${case} PROPERTIES TIMEOUT 600)
 endforeach()
 if(SPENTIT_IMPORT_WORKFLOW)
+add_executable(spentit_transfer_store_tests transfer_store_tests.cpp)
+target_link_libraries(spentit_transfer_store_tests PRIVATE spentit_import_store spentit_sqlcipher)
+spentit_compiler_options(spentit_transfer_store_tests)
+add_test(NAME transferstore.basics COMMAND spentit_transfer_store_tests basics)
+add_test(NAME transferstore.imports COMMAND spentit_transfer_store_tests imports)
+foreach(case IN ITEMS splits manual_evidence validation io crashes)
+  add_test(NAME transferstore.${case} COMMAND spentit_transfer_store_tests ${case})
+  set_tests_properties(transferstore.${case} PROPERTIES TIMEOUT 1200)
+endforeach()
 add_executable(spentit_account_tests account_tests.cpp)
 target_link_libraries(spentit_account_tests PRIVATE spentit_import_store spentit_sqlcipher)
 spentit_compiler_options(spentit_account_tests)
@@ -23,7 +32,9 @@ foreach(case IN ITEMS basics review repairs errors backup io crashes backup_fail
 endforeach()
 # Schema-5 metadata increases encrypted backup pages and fault positions. Keep
 # every injected position; allow instrumented/concurrent runs sufficient time.
-set_tests_properties(import.backup_failures import.backup_crashes PROPERTIES TIMEOUT 1200)
+# Current-format backup sweeps reopen and validate every fault position.
+# Instrumented builds need additional time for the larger encrypted schema.
+set_tests_properties(import.backup_failures import.backup_crashes PROPERTIES TIMEOUT 2400)
 add_executable(spentit_committed_tests committed_tests.cpp)
 target_link_libraries(spentit_committed_tests PRIVATE spentit_import_store spentit_sqlcipher)
 spentit_compiler_options(spentit_committed_tests)
