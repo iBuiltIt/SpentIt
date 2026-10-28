@@ -37,9 +37,26 @@ struct Link {
     // Set only when a currency reassignment preserved each side's decimal amount.
     // New matches stay false and still reject a cross-currency link.
     bool preserved_amounts=false;
+    // The origin no longer participates. A kept counterpart stays, with its amount.
+    bool unresolved=false;
+};
+// One named allocation. Identity is the endpoint, never its position in a row.
+struct AllocationFact {
+    Endpoint endpoint;
+    Money amount;
+    std::string date;
+    State state=State::draft;
+    bool imported=false;
+    bool generated=false;
+    bool manually_entered=false;
+};
+struct LinkEdit {
+    Link link;
+    std::optional<Link> kept;
 };
 enum class Error { invalid_relationship, cross_currency, amount_mismatch,
-                   unresolved_policy, acceptance_required };
+                   unresolved_policy, acceptance_required, origin_controls_draft,
+                   committed_reversal, ambiguous_endpoint };
 class TransferError final : public std::runtime_error {
 public:
     TransferError(Error code,const char* message):std::runtime_error(message),code_(code){}
@@ -61,10 +78,17 @@ Link accept_unmatched(const Link&,std::int64_t account);
 Link propose_match(const Link&,std::int64_t account,const BankEvidence&);
 Link discard_import_match(const Link&,std::int64_t account,std::string_view batch);
 Link commit_import_match(const Link&,std::int64_t account,const BankEvidence& expected);
-// Origin discard removes a purely generated pair only while both are drafts.
-// Protected drafts survive workspace clearing. Destination-only cancellation
-// and independently evidenced removal await an explicit product policy.
+// Origin discard removes a purely generated uncommitted pair. A protected draft
+// is left in place. Deleting only the generated destination is refused.
+// An independently evidenced draft counterpart is unlinked and left unchanged.
 Link clear_workspace(const Link&,std::int64_t account);
+// Explicit Merge of two named allocations. A new link uses identity. An update
+// keeps the existing link identity and may return a kept unresolved counterpart.
+LinkEdit merge(std::span<const Link>,const AllocationFact&,const AllocationFact&,std::string identity,std::string kept_identity);
+// Category release passes no generated endpoint. An account choice passes a new
+// synthetic endpoint and that account's currency. This does not search for an
+// existing independent row and does not auto-link one.
+LinkEdit retarget(std::span<const Link>,const AllocationFact& origin,std::string identity,std::string kept_identity,std::optional<Endpoint> generated,std::optional<Currency> generated_currency);
 // Pass the complete relationship set for the operation. A protected allocation
 // preserves its entire source transaction, including sibling transfer links.
 // Duplicate endpoints and inconsistent states of a shared entry are rejected.

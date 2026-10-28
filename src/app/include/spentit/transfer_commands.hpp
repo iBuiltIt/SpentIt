@@ -2,7 +2,7 @@
 #include <spentit/transfer.hpp>
 
 namespace spentit::app {
-enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard };
+enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard, merge, retarget };
 struct TransferRequest {
     TransferAction action;
     std::string link;
@@ -14,6 +14,21 @@ struct TransferRequest {
     std::optional<Money> amount;
     std::string date,payee,memo;
     std::optional<transfers::BankEvidence> evidence;
+    // Encoded only for merge and retarget. mode 0 releases to a category; mode 1
+    // generates or replaces a destination. Facts are the caller's complete request.
+    std::string kept;
+    int mode=0;
+    std::string category_id,category_path,generated_currency;
+    std::optional<transfers::Endpoint> generated;
+    std::optional<transfers::AllocationFact> left,right;
+    std::int64_t right_revision=0;
+};
+struct TransferJournalEntry {
+    std::string operation,action,link;
+    std::int64_t sequence=0,origin_account=0,destination_account=0;
+    Money origin_amount,destination_amount;
+    std::string origin_date,destination_date;
+    bool unresolved=false;
 };
 struct TransferView {
     transfers::Link link;

@@ -38,6 +38,7 @@ public:
     std::vector<app::TransferView> transfers() const override;
     app::TransferReceipt apply_transfer(std::string_view,const app::TransferRequest&) override;
     std::optional<app::TransferReceipt> transfer_outcome(std::string_view) const override;
+    std::vector<app::TransferJournalEntry> transfer_journal() const override;
     std::vector<app::Account> accounts() const override;
     std::int64_t next_account_identity() const override;
     void select_account(std::int64_t) override;

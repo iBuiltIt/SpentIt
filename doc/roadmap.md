@@ -21,7 +21,23 @@ The owner selected the following eight-point sequence and gave **Go for point 1*
 
 After **each point**, update relevant feature documents and project status, write a durable handoff with completed work, actual verification, limitations, unresolved decisions and downstream dependencies, and commit all task changes while preserving unrelated work. Then ask whether to proceed to the next point or stop, and wait. A material financial/security ambiguity is an earlier decision gate; Go does not settle it. Dependencies on later points must be recorded explicitly rather than silently reducing completion scope. Hardening continues in later points as their behavior changes; point 2 is not a final verification claim for future code. Reports and licensing/distribution are outside this eight-point authorization.
 
-Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Coordinator review on 2026-10-27 accepted the point-4 implementation at schemas 20 and 21, with the limits recorded below. Points 5–8 have not been started. The owner is asked whether to proceed to point 5 or stop.
+Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Coordinator review on 2026-10-27 accepted the point-4 implementation at schemas 20 and 21, with the limits recorded below. The owner then said Go for point 5 and locked the allocation-level Merge, unlink, and committed-link decisions. Coordinator review on 2026-10-27 accepted the point-5 implementation with the limits recorded below. Points 6–8 have not been started. The owner is asked whether to proceed to point 6 or stop.
+
+## Point 5 completion handoff — 2026-10-27
+
+Read [feature 008](../features/008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27), [transfer workflow](transfer-engine.md), and [point-5 evidence](status.md#point-5-transfer-management--2026-10-27). One agent implemented this checkpoint from HEAD `47010b5`. Points 6–8 were not started. No license, publication, exchange rate, report, or committed-reversal decision was made.
+
+Policies applied:
+
+- A link joins two allocations. A checking total of −100 can be a −5 fee category plus a −95 transfer allocation, and only the −95 allocation links to a Visa allocation of +95. An unsplit 100 does not link to 95. Repeated equal allocations stay distinct. No fee, rate, or unequal link is invented.
+- Merge is one command, from the ledger context menu or Ctrl+M (Command+M on macOS). A purely generated uncommitted duplicate leaves the active ledger and the independent row is linked. Two independent opposite allocations, including two that are already committed, are linked and both stay. Amounts and the surviving posting dates stay. A committed generated duplicate is refused. Committed reversal remains point 6.
+- Deleting only a generated destination draft is refused. Discarding an uncommitted origin removes that origin and its purely generated uncommitted counterpart. Changing the origin allocation removes a purely generated uncommitted counterpart and applies the new category or destination in the same operation. An independently imported or committed counterpart is unlinked and left unchanged.
+- Choosing an account in the category selector stores that account identity and creates or replaces a generated destination. It does not auto-link an existing independent row. A same-named category stays a category.
+- The Transfers dialog has a read-only journal of persisted transfer operations. New documents stay schema 20 with rules and 21 without. Merge and retarget use the existing transfer event and version blobs.
+
+Exact commands and passing counts are in status. The passing selected runs include rules-on Release 24/24 in 84.63 seconds, rules-on ASan/UBSan 24/24 in 146.56 seconds, and rules-off Debug 23/23 in 76.60 seconds. The final rules-on ASan/UBSan `transferstore.io` sweep passed in 644.55 seconds, and `transferstore.crashes` passed in 638.92 seconds with `ASAN_OPTIONS=quarantine_size_mb=8:malloc_context_size=0`. Linux and Windows are unverified. These selections are not a full suite.
+
+Coordinator review on 2026-10-27 accepted this diff with the limits below. The owner is asked: **proceed to point 6 or stop**.
 
 ## Point 4 completion handoff — 2026-10-27
 
@@ -37,7 +53,7 @@ Policies applied:
 
 Exact commands, the validation failure that was fixed, and the passing counts are in status. The passing selected runs are rules-on Debug 18/18 in 45.14 seconds, rules-on Release 18/18 in 42.92 seconds, rules-on ASan/UBSan 18/18 in 84.47 seconds, and rules-off Debug 13/13 in 38.58 seconds. Representative interruption positions for each new command passed inside `accounts.lifecycle_boundaries`. Linux and Windows are unverified. These selections are not a full suite.
 
-Coordinator review on 2026-10-27 accepted this diff with the limits below. The owner is asked: **proceed to point 5 or stop**.
+Coordinator review on 2026-10-27 accepted this diff with the limits below. The owner was asked at this delivery: **proceed to point 5 or stop**. Point 5 is now the [next handoff](#point-5-completion-handoff--2026-10-27). The wait instruction above is the historical stop at point-4 delivery.
 
 ## Point 3 completion handoff — 2026-10-27
 

@@ -62,6 +62,7 @@ public:
     std::optional<app::TransferReceipt> transfer_outcome(std::string_view operation) const override {
         if(attempted && fault==unknown)throw std::runtime_error("Injected transfer outcome failure");return repo().transfer_outcome(operation);
     }
+    std::vector<app::TransferJournalEntry> transfer_journal() const override {return repo().transfer_journal();}
     void opening(std::int64_t r,std::string_view d,const Money& m) override {repo().opening(r,d,m);}
     std::vector<app::BatchInfo> batches() const override {return repo().batches();}
     app::BatchInfo ingest(std::string_view id,std::string_view b,qif::DateOrder p) override {return repo().ingest(id,b,p);}
@@ -169,10 +170,77 @@ private slots:
         QVERIFY(root->findChild<QObject*>("transferDialog")->property("visible").toBool());
         auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);if(qEnvironmentVariableIsSet("SPENTIT_TRANSFERS_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_TRANSFERS_SCREENSHOT")));
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("committed").toString(),QString("100.00"));
+        QVERIFY(QMetaObject::invokeMethod(root,"mergeSelected"));
+        QCOMPARE(root->property("mergeHint").toString(),QString("Select one or two allocations, then Merge"));
         run(m,"transfer_manual",{{"link","clear-link"},{"operation","create-clear"},{"sequence",m.state().value("transferSequence")},{"destination","2"},{"date","2026-01-04"},{"amount","-1.00"}});
         run(m,"inspect",{{"batch","~transfer-clear-link-origin"},{"ordinal",0}});
         run(m,"transfer_clear",{{"link","clear-link"},{"operation","clear"},{"sequence",m.state().value("transferSequence")}});
         QVERIFY(m.state().value("active").toBool());QVERIFY(selected(m).isEmpty());QCOMPARE(m.state().value("projected").toString(),QString("100.00"));
+    }
+    void transferManagementUi() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* shortcut=root->findChild<QObject*>("mergeShortcut");QVERIFY(shortcut);
+        QCOMPARE(shortcut->property("sequence").toString(),QString("Ctrl+M"));
+        QVERIFY(root->findChild<QObject*>("mergeSelection"));
+        const auto path=dir.path()+"/doc";create(m,path);
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2/2/2026\nT-100\nPChecking pay\n^\n")},{"profile","DMY"}});
+        const auto chooseImported=[&]{
+            run(m,"select",{{"row",m.occurrenceIndex(selected(m).value("batch").toString(),selected(m).value("ordinal").toInt())}});
+        };
+        chooseImported();
+        QCOMPARE(m.state().value("selectionCount").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(root,"mergeSelected"));
+        QCOMPARE(root->property("mergeHint").toString(),QString("Choose the other allocation and invoke Merge again"));
+        run(m,"select_account",{{"id","2"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D3/2/2026\nT100\nPVisa pay\n^\n")},{"profile","DMY"}});
+        chooseImported();
+        QVERIFY(QMetaObject::invokeMethod(root,"mergeSelected"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("transfers").toList().size(),1);
+        bool merged=false;for(const auto& item:m.state().value("transferJournal").toList())if(item.toMap().value("action").toString()=="Merge")merged=true;
+        QVERIFY(merged);
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("openTransfers"),"clicked"));
+        auto* dialog=root->findChild<QObject*>("transferDialog");QVERIFY(dialog);QVERIFY(dialog->property("visible").toBool());
+        const auto repeaterItem=[&](const char* name,int index)->QQuickItem*{
+            auto* repeater=root->findChild<QObject*>(name);if(!repeater)return nullptr;QQuickItem* item=nullptr;
+            QMetaObject::invokeMethod(repeater,"itemAt",Q_RETURN_ARG(QQuickItem*,item),Q_ARG(int,index));return item;
+        };
+        QTRY_VERIFY(repeaterItem("transferJournalRepeater",0));
+        QVERIFY(repeaterItem("transferJournalRepeater",0)->property("text").toString().contains("Merge"));
+        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QTRY_VERIFY(!dialog->property("visible").toBool());
+        run(m,"select_account",{{"id","1"}});run(m,"commit");
+        run(m,"import",{{"path",fixture(dir.path(),"D5/2/2026\nT-7\nPUnlinked\n^\n")},{"profile","DMY"}});
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto visual=[](auto&& self,QQuickItem* item,const QString& name)->QQuickItem*{if(item->objectName()==name)return item;for(auto* child:item->childItems())if(auto* found=self(self,child,name))return found;return nullptr;};
+        QTRY_VERIFY(visual(visual,window->contentItem(),"splitCategory_0"));
+        QVERIFY(QMetaObject::invokeMethod(visual(visual,window->contentItem(),"splitCategory_0"),"clicked"));
+        QTRY_VERIFY(root->findChild<QObject*>("categoryPicker")->property("visible").toBool());
+        QTRY_VERIFY(repeaterItem("accountDestinationRepeater",0));
+        QObject* account=nullptr;const auto accountRepeater=root->findChild<QObject*>("accountDestinationRepeater");QVERIFY(accountRepeater);
+        for(int i=0;i<accountRepeater->property("count").toInt();++i){auto* item=repeaterItem("accountDestinationRepeater",i);if(item && item->objectName()=="pickAccount_2")account=item;}
+        QVERIFY(account);
+        QVERIFY(account->property("text").toString().contains("Visa"));
+        QVERIFY(account->property("text").toString().contains("account 2"));
+        QVERIFY(QMetaObject::invokeMethod(account,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        int generated=0,named=0;
+        for(const auto& item:m.state().value("transfers").toList()){
+            const auto batch=item.toMap().value("counterpartBatch").toString();
+            if(batch.startsWith("~transfer-"))++generated;else ++named;
+        }
+        QCOMPARE(generated,1);QCOMPARE(named,1);
+        bool retargeted=false;for(const auto& item:m.state().value("transferJournal").toList())if(item.toMap().value("action").toString()=="Change destination")retargeted=true;
+        QVERIFY(retargeted);
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("openTransfers"),"clicked"));
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        bool listed=false;const auto journal=root->findChild<QObject*>("transferJournalRepeater");QVERIFY(journal);
+        for(int i=0;i<journal->property("count").toInt();++i)if(auto* item=repeaterItem("transferJournalRepeater",i))listed=listed||item->property("text").toString().contains("Change destination");
+        QVERIFY(listed);
     }
     void accountOutcomeRecovery() {
         for(const auto fault:{OutcomeGateway::before,OutcomeGateway::after,OutcomeGateway::unknown}) {

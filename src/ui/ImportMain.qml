@@ -79,6 +79,21 @@ ApplicationWindow {
                     }
                 }
                 Label {text:(s.transferReceipt||{}).summary||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {text:"Transfer journal";font.bold:true}
+                Label {text:"Read only. Each line is a saved transfer operation: link, accounts, amounts, dates, action, and sequence.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Repeater {
+                    objectName:"transferJournalRepeater"
+                    model:s.transferJournal||[]
+                    delegate:Label {
+                        required property var modelData
+                        required property int index
+                        objectName:"transferJournal_"+index
+                        text:modelData.text
+                        textFormat:Text.PlainText
+                        wrapMode:Text.Wrap
+                        Layout.fillWidth:true
+                    }
+                }
                 Repeater {
                     model:s.transfers||[]
                     delegate:GroupBox {
@@ -129,7 +144,8 @@ ApplicationWindow {
     }
     Menu {
         id:ledgerContext
-        MenuItem {text:"Delete selected…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:guard(function(){workflow.command("preview_bulk",{kind:"remove"})})}
+        MenuItem {objectName:"mergeSelection";text:"Merge";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
+        MenuItem {text:"Delete selected…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
         MenuItem {text:"Change category…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:{bulkCategory.forceActiveFocus();bulkCategory.popup.open()}}
     }
     function restoreViewport(saved) {
@@ -150,7 +166,7 @@ ApplicationWindow {
     property string accountCreationDate: ""
     property bool sidebarVisible: true
     function resetNavigation() {
-        accountViewports={};pendingCounterpart=null;currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
+        accountViewports={};pendingCounterpart=null;pendingMerge=null;mergeHint="";currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
     }
     function navigate(page) {
         if(workflow.busy || !s.active || page===currentPage) return
@@ -182,6 +198,7 @@ ApplicationWindow {
         })
     }
     Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
+    Shortcut {objectName:"mergeShortcut";sequence:"Ctrl+M";enabled:!!s.active && !workflow.busy && !s.readOnly && !!s.transfersSupported;onActivated:mergeSelected()}
     Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
     Shortcut {sequences:[StandardKey.Forward];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(1)}
     property bool payeeTouched: false
@@ -216,14 +233,75 @@ ApplicationWindow {
     function openCategoryPicker(index) {
         pickerIndex=index;let row=splitModel.get(index);unmappedCategory.text=row.category;categorySearch.clear();categoryPicker.open()
     }
+    property var pendingMerge: null
+    property string mergeHint: ""
+    function originLink(allocationId) {
+        let origins=selected.transferOrigins||[]
+        for(let i=0;i<origins.length;i++) if(origins[i].allocation===allocationId) return origins[i].link||""
+        return ""
+    }
+    function allocationChoice(batch, ordinal) {
+        let allocation=""
+        if(selected.batch===batch && selected.ordinal===ordinal && transferAllocation.currentIndex>=0) {
+            let row=transferAllocation.model[transferAllocation.currentIndex]
+            if(row && row.allocationId) allocation=row.allocationId
+        }
+        return {account:s.accountId,batch:batch,ordinal:ordinal,allocation:allocation}
+    }
+    function mergeFields(choice, other) {
+        return {leftAccount:choice.account,leftBatch:choice.batch,leftOrdinal:choice.ordinal,leftAllocation:choice.allocation||"",
+            rightAccount:other.account,rightBatch:other.batch,rightOrdinal:other.ordinal,rightAllocation:other.allocation||""}
+    }
+    function mergeSelected() {
+        if(workflow.busy || !s.active || s.readOnly || !s.transfersSupported) return
+        let rows=s.selection||[]
+        if(rows.length===2) {
+            pendingMerge=null;mergeHint=""
+            transferCommand("transfer_merge",mergeFields(allocationChoice(rows[0].batch,rows[0].ordinal),allocationChoice(rows[1].batch,rows[1].ordinal)))
+            return
+        }
+        if(rows.length===1 && pendingMerge) {
+            let saved=pendingMerge
+            pendingMerge=null;mergeHint=""
+            transferCommand("transfer_merge",mergeFields(saved,allocationChoice(rows[0].batch,rows[0].ordinal)))
+            return
+        }
+        if(rows.length===1) {
+            pendingMerge=allocationChoice(rows[0].batch,rows[0].ordinal)
+            mergeHint="Choose the other allocation and invoke Merge again"
+            return
+        }
+        mergeHint="Select one or two allocations, then Merge"
+    }
+    function removeSelected() {
+        let rows=s.selection||[]
+        if(rows.length===1 && rows[0].batch && rows[0].batch.indexOf("~transfer-")===0)
+            transferCommand("transfer_clear_row",{batch:rows[0].batch,ordinal:rows[0].ordinal})
+        else guard(function(){workflow.command("preview_bulk",{kind:"remove"})})
+    }
     function chooseCategory(id,path) {
         if(pickerIndex===-2) { ruleCategoryId=id||""; writeRule(); categoryPicker.close(); return }
         if(pickerIndex<0 || pickerIndex>=splitModel.count)return
+        let split=splitModel.get(pickerIndex)
+        let link=originLink(split.allocationId)
+        if(link) {
+            categoryPicker.close()
+            transferCommand("transfer_retarget",{link:link,batch:selected.batch,ordinal:selected.ordinal,allocation:split.allocationId,mode:0,categoryId:id||"",categoryPath:path||""})
+            return
+        }
         splitModel.setProperty(pickerIndex,"category",path)
         splitModel.setProperty(pickerIndex,"categoryId",id)
         splitModel.setProperty(pickerIndex,"bindingRevision",id?(s.catalogRevision||""):"")
         splitModel.setProperty(pickerIndex,"categoryDisplay",id?path:path?"Unmapped: "+path:"Uncategorized")
         splitModel.setProperty(pickerIndex,"categoryTouched",true);dirty=true;categoryPicker.close()
+    }
+    function chooseAccountDestination(accountId) {
+        if(pickerIndex<0 || pickerIndex>=splitModel.count) return
+        let split=splitModel.get(pickerIndex)
+        let link=originLink(split.allocationId)
+        let stamp=workflow.newIdentity()
+        categoryPicker.close()
+        transferCommand("transfer_retarget",{link:link||stamp,batch:selected.batch,ordinal:selected.ordinal,allocation:split.allocationId,mode:1,destination:accountId,generatedBatch:"~transfer-"+stamp+"-destination"})
     }
     property bool committedEditing: false
     property bool editEnabled: (!!selected.editable || (committedEditing && !!selected.canCorrect)) && !s.readOnly
@@ -439,7 +517,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {addingAccount=false;bulkDialog.close();changePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {addingAccount=false;bulkDialog.close();changePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -671,7 +749,23 @@ ApplicationWindow {
             Button {objectName:"chooseUncategorized";text:"Uncategorized";onClicked:chooseCategory("","")}
             TextField {id:unmappedCategory;objectName:"unmappedCategoryText";placeholderText:"Explicit unmapped classification text";Layout.fillWidth:true;Accessible.name:"Unmapped category text"}
             Button {objectName:"chooseUnmapped";text:"Keep as unmapped text";enabled:unmappedCategory.text.length>0;onClicked:chooseCategory("",unmappedCategory.text)}
-            Label {text:"Groups cannot receive allocations. Use Transfers to assign an allocation to another account.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ColumnLayout {
+                visible:pickerIndex!==-2
+                Layout.fillWidth:true
+                Label {text:"Accounts are transfer destinations. Choosing one stores that account. A category with the same name does not create a transfer.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Repeater {
+                    objectName:"accountDestinationRepeater"
+                    model:pickerIndex===-2?[]:(s.accounts||[]).filter(function(a){return a.id!==s.accountId})
+                    delegate:Button {
+                        required property var modelData
+                        objectName:"pickAccount_"+modelData.id
+                        text:modelData.name+" · "+modelData.currency+" · account "+modelData.id
+                        Layout.fillWidth:true
+                        onClicked:chooseAccountDestination(modelData.id)
+                    }
+                }
+            }
+            Label {text:"Groups cannot receive allocations.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Button {text:"Cancel";onClicked:categoryPicker.close()}
         }
     }
@@ -1058,8 +1152,10 @@ ApplicationWindow {
                 Label {text:"Date order applies to QIF only";Layout.maximumWidth:160;wrapMode:Text.Wrap}
                 Button {text:"Import statement…";enabled:!s.readOnly && profile.currentIndex>0 && !s.pending;onClicked:guard(function(){importDialog.open()})}
                 Button {objectName:"openTransfers";text:"Transfers…";visible:!!s.transfersSupported;onClicked:guard(function(){transferDialog.open()})}
+                Label {objectName:"mergeShortcutHint";visible:!!s.transfersSupported;text:"Merge: Ctrl+M (Command+M on macOS)";Layout.maximumWidth:220;wrapMode:Text.Wrap}
                 Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
             }
+            Label {objectName:"mergeHint";visible:mergeHint.length>0;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:mergeHint}
             Label {objectName:"emptyActiveAccount";visible:!!s.emptyActive;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.emptyActive||""}
             Label {objectName:"archivedAccountNotice";visible:!!s.archived;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"This archived account is read only. Its history, evidence, balances, and transfer links remain available."}
             RowLayout {
@@ -1144,7 +1240,7 @@ ApplicationWindow {
                         if(id.batch)inspectRecord(id.batch,id.ordinal)
                         event.accepted=true
                     } else if(event.key===Qt.Key_Delete && s.bulkSupported && (s.selectionCount||0)>0) {
-                        guard(function(){workflow.command("preview_bulk",{kind:"remove"})});event.accepted=true
+                        removeSelected();event.accepted=true
                     }
                 }
                 ScrollBar.vertical:ScrollBar {}
@@ -1257,7 +1353,7 @@ ApplicationWindow {
                         required property string category
                         required property string memo
                         required property string amount
-                        Button {objectName:"splitCategory_"+index;visible:!!s.categoriesSupported;text:(index>=0 && index<splitModel.count ? splitModel.get(index).categoryDisplay : "")||"Uncategorized";enabled:editEnabled;onClicked:{if(category.startsWith("[")){let id=splitModel.get(index).allocationId;guard(function(){let choices=(selected.draft||{}).splits||[];transferAllocation.currentIndex=choices.findIndex(function(a){return a.allocationId===id});transferDialog.open()})}else openCategoryPicker(index)}}
+                        Button {objectName:"splitCategory_"+index;visible:!!s.categoriesSupported;text:(index>=0 && index<splitModel.count ? splitModel.get(index).categoryDisplay : "")||"Uncategorized";enabled:editEnabled || originLink(index>=0 && index<splitModel.count ? splitModel.get(index).allocationId : "").length>0;onClicked:{let id=splitModel.get(index).allocationId;if(originLink(id).length>0)openCategoryPicker(index);else if(category.startsWith("[")){guard(function(){let choices=(selected.draft||{}).splits||[];transferAllocation.currentIndex=choices.findIndex(function(a){return a.allocationId===id});transferDialog.open()})}else openCategoryPicker(index)}}
                         TextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
                         TextField {text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
                         Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from this split memo":"Manual splits are not rule sources";onClicked:createFromSource("memo",index)}

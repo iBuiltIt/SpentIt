@@ -106,6 +106,7 @@ public:
     virtual std::vector<TransferView> transfers() const { return {}; }
     virtual TransferReceipt apply_transfer(std::string_view,const TransferRequest&) { throw std::logic_error("Transfers unavailable"); }
     virtual std::optional<TransferReceipt> transfer_outcome(std::string_view) const { throw std::logic_error("Transfers unavailable"); }
+    virtual std::vector<TransferJournalEntry> transfer_journal() const { return {}; }
     virtual Account account() const = 0;
     // Serial-worker session selection; commands never span accounts implicitly.
     virtual std::vector<Account> accounts() const { return {account()}; }

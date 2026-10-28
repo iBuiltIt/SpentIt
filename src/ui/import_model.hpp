@@ -38,6 +38,7 @@ public:
     Q_INVOKABLE int selectedRowIndex() const;
     Q_INVOKABLE QVariantMap rowIdentity(int row) const;
     Q_INVOKABLE int occurrenceIndex(const QString& batch, int ordinal) const;
+    Q_INVOKABLE QVariantMap rowRecord(int row) const;
 signals: void changed(); void completed(QString action,bool success);
 private:
     struct Worker;

@@ -40,7 +40,7 @@ void lifecycle() {
     const auto removed=clear_workspace(draft,1);
     check(removed.origin.state==State::removed && removed.destination.state==State::removed);
     rejected(Error::invalid_relationship,[&]{commit(removed,2);});
-    rejected(Error::unresolved_policy,[&]{clear_workspace(draft,2);});
+    rejected(Error::origin_controls_draft,[&]{clear_workspace(draft,2);});
     rejected(Error::invalid_relationship,[&]{commit(draft,3);});
     const auto other=generate("link-b",{1,{"checking",0},"payment-b"},source(),{3,{"generated-b",0},"counterpart"},cad);
     check(other.origin.amount==draft.origin.amount && other.origin.endpoint!=draft.origin.endpoint);
@@ -65,7 +65,11 @@ void matching() {
     rejected(Error::unresolved_policy,[&]{validate_match(attached,candidate,Money(600,cad),"2026-10-28");});
     check(clear_workspace(attached,1).origin.state==State::draft);
     auto evidenced_draft=attached;evidenced_draft.destination.state=State::draft;
-    rejected(Error::unresolved_policy,[&]{clear_workspace(evidenced_draft,1);});
+    const auto unlinked=clear_workspace(evidenced_draft,1);
+    check(unlinked.unresolved && unlinked.origin.state==State::removed);
+    check(unlinked.destination.amount==evidenced_draft.destination.amount && unlinked.destination.date==evidenced_draft.destination.date);
+    check(unlinked.destination.state==State::draft && unlinked.destination.endpoint==evidenced_draft.destination.endpoint);
+    check(unlinked.destination.attached_evidence==evidenced_draft.destination.attached_evidence);
 }
 void boundaries() {
     const auto original=generated();
@@ -113,7 +117,7 @@ void groups() {
     auto same_endpoint=second;same_endpoint.origin.endpoint=first.origin.endpoint;
     rejected(Error::invalid_relationship,[&]{validate_set(std::vector<Link>{first,same_endpoint});});
     rejected(Error::invalid_relationship,[&]{validate_set(std::vector<Link>{commit(first,1),second});});
-    rejected(Error::unresolved_policy,[&]{clear_account(links,2);});
+    rejected(Error::origin_controls_draft,[&]{clear_account(links,2);});
     check(links[0].origin.state==State::draft && links[1].destination.state==State::draft);
 }
 void acceptance() {
@@ -205,11 +209,80 @@ void manual() {
     check(commit_account(accepted_entry,1)[1].origin.state==State::committed);
     rejected(Error::invalid_relationship,[&]{accept_entry(std::vector<Link>{link,other},1,{"missing",0});});
 }
+AllocationFact fact(Endpoint endpoint,Money amount,std::string date,State state,bool imported,bool generated=false,bool manual=false) {
+    return {std::move(endpoint),amount,std::move(date),state,imported,generated,manual};
+}
+void management() {
+    const Currency usd("USD");
+    const AllocationFact visa=fact({2,{"visa",0},"source-0"},Money(9500,cad),"2026-10-28",State::committed,true);
+    const AllocationFact whole=fact({1,{"checking",0},"whole"},Money(-10000,cad),"2026-10-26",State::committed,true);
+    const AllocationFact fee=fact({1,{"checking",0},"fee"},Money(-500,cad),"2026-10-26",State::draft,true);
+    const AllocationFact part=fact({1,{"checking",0},"transfer"},Money(-9500,cad),"2026-10-26",State::draft,true);
+    rejected(Error::amount_mismatch,[&]{merge({},whole,visa,"new","kept");});
+    rejected(Error::amount_mismatch,[&]{merge({},fee,visa,"new","kept");});
+    const auto linked=merge({},part,visa,"pay-95","kept");
+    check(!linked.kept && linked.link.origin.endpoint.allocation=="transfer" && linked.link.destination.endpoint==visa.endpoint);
+    check(linked.link.origin.amount==Money(-9500,cad) && linked.link.destination.amount==Money(9500,cad));
+    const auto repeated=merge({},fact({1,{"checking",1},"transfer"},Money(-9500,cad),"2026-10-26",State::draft,true),fact({2,{"visa",1},"source-0"},Money(9500,cad),"2026-10-28",State::draft,true),"pay-95-b","kept");
+    check(repeated.link.origin.endpoint!=linked.link.origin.endpoint && repeated.link.destination.endpoint!=linked.link.destination.endpoint);
+    validate_set(std::vector<Link>{linked.link,repeated.link});
+    const auto draft=generated();
+    const auto generated_fact=fact(draft.destination.endpoint,draft.destination.amount,draft.destination.date,State::draft,false,true);
+    const auto independent=fact({2,{"visa-bank",0},"source-0"},Money(600,cad),"2026-10-28",State::draft,true);
+    const std::vector<Link> one{draft};
+    const auto merged=merge(one,generated_fact,independent,draft.identity,"kept");
+    check(!merged.kept && merged.link.destination.endpoint==independent.endpoint && merged.link.destination.amount==draft.destination.amount);
+    check(merged.link.origin.endpoint==draft.origin.endpoint && merged.link.origin.amount==draft.origin.amount && merged.link.origin.date==draft.origin.date);
+    check(merged.link.destination.date=="2026-10-28" && merged.link.generated_date==draft.generated_date);
+    const auto protected_link=commit(draft,1);
+    const auto protected_merge=merge(std::vector<Link>{protected_link},generated_fact,independent,protected_link.identity,"kept");
+    check(protected_merge.link.origin.state==State::committed && protected_merge.link.destination.endpoint==independent.endpoint);
+    check(clear_workspace(protected_link,2).destination.endpoint==protected_link.destination.endpoint && clear_workspace(protected_link,2).destination.state==State::draft);
+    const auto committed_dest=commit(accept_unmatched(draft,2),2);
+    const auto committed_generated=fact(committed_dest.destination.endpoint,committed_dest.destination.amount,committed_dest.destination.date,State::committed,false,true);
+    rejected(Error::committed_reversal,[&]{merge(std::vector<Link>{committed_dest},committed_generated,independent,committed_dest.identity,"kept");});
+    const auto origin=fact({1,{"checking",0},"source-0"},Money(-600,cad),"2026-10-26",State::committed,true);
+    const auto other=fact({2,{"visa",0},"source-0"},Money(600,cad),"2026-10-27",State::committed,true);
+    const auto both=merge({},origin,other,"both","kept");
+    check(!both.kept && both.link.origin.state==State::committed && both.link.destination.state==State::committed);
+    check(both.link.origin.amount==origin.amount && both.link.destination.amount==other.amount && both.link.origin.date==origin.date && both.link.destination.date==other.date);
+    rejected(Error::amount_mismatch,[&]{merge({},origin,fact({2,{"visa",0},"source-1"},Money(599,cad),"2026-10-27",State::committed,true),"bad","kept");});
+    rejected(Error::cross_currency,[&]{merge({},origin,fact({2,{"visa",0},"source-2"},Money(600,usd),"2026-10-27",State::committed,true),"fx","kept");});
+    auto nameless=origin;nameless.endpoint.allocation.clear();
+    rejected(Error::ambiguous_endpoint,[&]{merge({},nameless,other,"x","kept");});
+    rejected(Error::origin_controls_draft,[&]{clear_workspace(draft,2);});
+    const auto removed=clear_workspace(draft,1);
+    check(removed.origin.state==State::removed && removed.destination.state==State::removed && !removed.unresolved);
+    const auto origin_fact=fact(draft.origin.endpoint,draft.origin.amount,draft.origin.date,State::draft,true);
+    const auto released=retarget(one,origin_fact,draft.identity,"kept",{},{});
+    check(!released.kept && released.link.origin.state==State::removed && released.link.destination.state==State::removed);
+    auto draft_link=both.link;draft_link.origin.state=State::draft;
+    const auto unlinked=retarget(std::vector<Link>{draft_link},fact(draft_link.origin.endpoint,draft_link.origin.amount,draft_link.origin.date,State::draft,true),draft_link.identity,"kept",{},{});
+    check(unlinked.link.unresolved && unlinked.link.origin.state==State::removed && unlinked.link.destination.state==State::committed);
+    check(unlinked.link.destination.amount==draft_link.destination.amount && unlinked.link.destination.date==draft_link.destination.date && unlinked.link.destination.endpoint==draft_link.destination.endpoint);
+    rejected(Error::committed_reversal,[&]{retarget(std::vector<Link>{both.link},origin,both.link.identity,"kept",{},{});});
+    const Endpoint created{3,{"~transfer-moved-destination",0},"generated"};
+    const auto moved=retarget(one,origin_fact,draft.identity,"kept",created,cad);
+    check(!moved.kept && moved.link.destination.endpoint==created && moved.link.destination.amount==draft.destination.amount && moved.link.origin.amount==draft.origin.amount);
+    const auto moved_committed=retarget(std::vector<Link>{committed_dest},origin_fact,committed_dest.identity,"kept-row",created,cad);
+    check(moved_committed.kept && moved_committed.kept->unresolved && moved_committed.kept->destination.state==State::committed);
+    check(moved_committed.kept->destination.amount==committed_dest.destination.amount && moved_committed.link.destination.endpoint==created);
+    auto pending=committed_dest;
+    pending.destination.proposed_evidence=BankEvidence{{2,{"bank-proposal",0},"source-0"},pending.destination.amount,"2026-10-28"};
+    validate(pending);
+    rejected(Error::unresolved_policy,[&]{retarget(std::vector<Link>{pending},origin_fact,pending.identity,"kept-proposal",{},{});});
+    rejected(Error::unresolved_policy,[&]{retarget(std::vector<Link>{pending},origin_fact,pending.identity,"kept-proposal",created,cad);});
+    auto preserved=draft;preserved.destination.amount=Money(600,usd);preserved.preserved_amounts=true;validate(preserved);
+    rejected(Error::invalid_relationship,[&]{retarget(std::vector<Link>{preserved},origin_fact,preserved.identity,"kept",{},{});});
+    const auto pair=merge({},fact({1,{"c",0},"source-0"},Money(-600,cad),"2026-10-26",State::draft,true),fact({2,{"v",0},"source-0"},Money(600,cad),"2026-10-28",State::draft,true),"pair","kept");
+    const auto cleared=clear_workspace(pair.link,1);
+    check(cleared.unresolved && cleared.origin.state==State::removed && cleared.destination.amount==Money(600,cad) && cleared.destination.date=="2026-10-28" && cleared.destination.state==State::draft);
+}
 }
 int main(int argc,char** argv) {
     try {
         const std::string name=argc>1?argv[1]:"";
-        if(name=="lifecycle")lifecycle();else if(name=="matching")matching();else if(name=="boundaries")boundaries();else if(name=="groups")groups();else if(name=="acceptance")acceptance();else if(name=="proposals")proposals();else if(name=="manual")manual();else return 2;
+        if(name=="lifecycle")lifecycle();else if(name=="matching")matching();else if(name=="boundaries")boundaries();else if(name=="groups")groups();else if(name=="acceptance")acceptance();else if(name=="proposals")proposals();else if(name=="manual")manual();else if(name=="management")management();else return 2;
         std::cout<<"Transfer "<<name<<" passed\n";
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}
 }

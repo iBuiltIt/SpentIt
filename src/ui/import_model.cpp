@@ -20,6 +20,88 @@ namespace {
 QString text(std::string_view s) { return QString::fromUtf8(s.data(),static_cast<qsizetype>(s.size())); }
 std::string str(const QVariant& v) { return v.toString().toUtf8().toStdString(); }
 QString money(const Money& m) { return text(app::decimal(m)); }
+// Restores the worker's selected account after a cross-account fact read.
+struct AccountRestore {
+    app::ImportRepository& repo;
+    std::int64_t home;
+    bool moved=false;
+    explicit AccountRestore(app::ImportRepository& repository):repo(repository),home(repository.account().identity){}
+    void select(std::int64_t id){if(id!=repo.account().identity){repo.select_account(id);moved=true;}}
+    void restore(){if(!moved)return;repo.select_account(home);moved=false;}
+    ~AccountRestore(){if(!moved)return;try{repo.select_account(home);}catch(...){}}
+};
+struct TransferChoice {
+    transfers::AllocationFact fact;
+    std::int64_t revision=0;
+    std::string payee,memo,link;
+    bool linked=false;
+};
+TransferChoice read_transfer_choice(app::ImportRepository& repo,const QVariantMap& endpoint){
+    const auto account=endpoint.value("account").toString().toLongLong();
+    const auto batch=str(endpoint.value("batch"));
+    const auto ordinal=static_cast<std::size_t>(endpoint.value("ordinal").toUInt());
+    auto allocation=str(endpoint.value("allocation"));
+    if(account<=0 || batch.empty()) throw std::invalid_argument("Choose a transaction");
+    AccountRestore guard(repo);
+    guard.select(account);
+    const auto links=repo.transfers();
+    const imports::Occurrence id{batch,ordinal};
+    const auto batches=repo.batches();
+    const auto info=std::find_if(batches.begin(),batches.end(),[&](const auto& item){return item.id==batch;});
+    std::optional<imports::DraftRow> row;
+    std::int64_t revision=0;
+    bool committed=false;
+    if(info!=batches.end()){
+        revision=info->revision;
+        committed=info->state==app::BatchState::committed;
+        const bool editable=info->state==app::BatchState::pending || info->state==app::BatchState::protected_drafts;
+        if(!committed && !editable) throw std::invalid_argument("Resolve the draft before assigning a transfer");
+        if(committed){
+            const auto entry=repo.committed_entry(id);
+            if(!entry.current.active) throw std::invalid_argument("Transfer allocation changed; refresh before applying");
+            row=entry.current.draft;
+        }else{
+            const auto loaded=repo.row(id);
+            if(loaded.excluded_by_clear || !loaded.draft || loaded.decision.disposition!=imports::Disposition::include)
+                throw std::invalid_argument("Resolve the draft before assigning a transfer");
+            row=*loaded.draft;
+        }
+        if(allocation.empty()){
+            if(row->transaction.allocations().size()!=1)
+                throw std::invalid_argument("Choose the allocation explicitly. This transaction has more than one possible transfer endpoint.");
+            allocation=row->transaction.allocations().front().identity;
+        }
+    }
+    const transfers::Side* matched=nullptr;
+    const app::TransferView* host=nullptr;
+    for(const auto& value:links)for(const auto* side:{&value.link.origin,&value.link.destination}){
+        if(side->state==transfers::State::removed || side->endpoint.account!=account || side->endpoint.entry!=id) continue;
+        if(!allocation.empty() && side->endpoint.allocation!=allocation) continue;
+        if(matched) throw std::invalid_argument("Choose the allocation explicitly. This transaction has more than one possible transfer endpoint.");
+        matched=side;host=&value;
+    }
+    if(!row && !matched) throw std::invalid_argument("Transfer entry is unavailable");
+    if(row){
+        const auto& allocations=row->transaction.allocations();
+        const auto found=std::find_if(allocations.begin(),allocations.end(),[&](const auto& value){return value.identity==allocation;});
+        if(found==allocations.end()) throw std::invalid_argument("Choose a transfer allocation");
+        if(matched && (matched->amount!=found->amount || matched->date!=row->date))
+            throw std::invalid_argument("Transfer allocation changed; refresh before applying");
+    }
+    const bool linked=host && !host->link.unresolved;
+    TransferChoice choice{transfers::AllocationFact{{account,id,allocation},Money(0,repo.account().currency),"",transfers::State::draft,false,false,false},0,{},{},{},false};
+    if(matched){
+        const bool generated=!matched->independent_evidence && !matched->manually_entered && !matched->attached_evidence;
+        choice={transfers::AllocationFact{matched->endpoint,matched->amount,matched->date,matched->state,matched->independent_evidence,generated,matched->manually_entered},matched->independent_evidence?revision:0,host->payee,host->memo,linked?host->link.identity:std::string{},linked};
+    }else{
+        const auto& allocations=row->transaction.allocations();
+        const auto found=std::find_if(allocations.begin(),allocations.end(),[&](const auto& value){return value.identity==allocation;});
+        const bool imported=row->transaction.original_imported_amount().has_value();
+        choice={transfers::AllocationFact{{account,id,found->identity},found->amount,row->date,committed?transfers::State::committed:transfers::State::draft,imported,false,!imported},revision,row->payee,row->memo,{},false};
+    }
+    guard.restore();
+    return choice;
+}
 QString evidencePreview(std::string_view bytes) {
     constexpr std::size_t limit=64*1024;
     const auto part=bytes.substr(0,limit);
@@ -347,7 +429,10 @@ struct ImportModel::Worker {
             for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.account==acct.identity && side->endpoint.entry==imports::Occurrence{batch,ordinal}){
                 selectedBatch=batch;selectedOrdinal=ordinal;selectedCommittedToken.reset();
                 Allocation allocation{"Transfer",value.memo,side->amount,{},side->endpoint.allocation};
-                selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById)}};return;
+                selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById)}};
+                QVariantList origins;
+                if(!value.link.unresolved && side==&value.link.origin)origins.push_back(QVariantMap{{"allocation",text(side->endpoint.allocation)},{"link",text(value.link.identity)}});
+                selected["transferOrigins"]=origins;return;
             }
             throw std::invalid_argument("Transfer entry is unavailable");
         }
@@ -448,6 +533,9 @@ struct ImportModel::Worker {
             selected["removedDuplicate"]=repo.committed_changes_supported() && !repo.committed_entry(*row.decision.duplicate_of).current.active;
         }
         for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed && (side->endpoint.entry==imports::Occurrence{batch,ordinal} || (side->attached_evidence && side->attached_evidence->endpoint.entry==imports::Occurrence{batch,ordinal}) || (side->proposed_evidence && side->proposed_evidence->endpoint.entry==imports::Occurrence{batch,ordinal}))){selected["editable"]=false;selected["canCorrect"]=false;selected["transferId"]=text(value.link.identity);}
+        QVariantList origins;
+        for(const auto& value:transferLinks)if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed && value.link.origin.endpoint.account==acct.identity && value.link.origin.endpoint.entry==imports::Occurrence{batch,ordinal})origins.push_back(QVariantMap{{"allocation",text(value.link.origin.endpoint.allocation)},{"link",text(value.link.identity)}});
+        selected["transferOrigins"]=origins;
         if(row.excluded_by_clear)selected["diagnostic"]="Cleared from this workspace; immutable source evidence retained.";
         attachRules(repo,{batch,ordinal},context);
     }
@@ -494,6 +582,12 @@ struct ImportModel::Worker {
                     if(otherName.isEmpty())for(const auto& item:archivedList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
                     items.push_back(QVariantMap{{"id",text(value.link.identity)},{"label",otherName+" · "+money(side.amount)+" · "+text(side.date)},{"amount",money(side.amount)},{"date",text(side.date)},{"committed",side.state==transfers::State::committed},{"accepted",side.accepted_unmatched},{"evidenced",side.independent_evidence},{"proposed",side.proposed_evidence.has_value()},{"provisional",side.provisional_date},{"protected",transfers::protected_draft(value.link,acct.identity)},{"local",!side.attached_evidence && (side.manually_entered || !side.independent_evidence)},{"isOrigin",value.link.origin.endpoint.account==acct.identity},{"counterpartAccount",QString::number(target.account)},{"counterpartBatch",text(target.entry.batch)},{"counterpartOrdinal",static_cast<int>(target.entry.ordinal)}});
                 }state["transfers"]=items;
+                QVariantList journal;
+                for(const auto& entry:repo.transfer_journal()){
+                    const auto line=text(entry.action)+" · "+text(entry.link)+" · account "+QString::number(entry.origin_account)+" "+money(entry.origin_amount)+" "+text(entry.origin_date)+" → account "+QString::number(entry.destination_account)+" "+money(entry.destination_amount)+" "+text(entry.destination_date)+" · sequence "+QString::number(entry.sequence)+(entry.unresolved?" · unresolved":"");
+                    journal.push_back(QVariantMap{{"operation",text(entry.operation)},{"action",text(entry.action)},{"link",text(entry.link)},{"sequence",QString::number(entry.sequence)},{"originAccount",QString::number(entry.origin_account)},{"destinationAccount",QString::number(entry.destination_account)},{"originAmount",money(entry.origin_amount)},{"destinationAmount",money(entry.destination_amount)},{"originDate",text(entry.origin_date)},{"destinationDate",text(entry.destination_date)},{"unresolved",entry.unresolved},{"text",line}});
+                }
+                state["transferJournal"]=journal;
             }
             state["nextAccountId"]=QString::number(repo.next_account_identity());
             state["name"]=text(acct.name); state["currency"]=text(acct.currency.code());
@@ -694,6 +788,7 @@ struct ImportModel::Worker {
             return;
         }
         if(action.startsWith("transfer_")){
+            const auto operation=str(a.value("operation"));
             app::TransferRequest request{};request.link=str(a.value("link"));request.expected_sequence=a.value("sequence").toString().toLongLong();
             if(action=="transfer_manual"){
                 request.action=app::TransferAction::manual;request.destination=a.value("destination").toString().toLongLong();request.amount=Money::parse(str(a.value("amount")),repo.account().currency);request.date=str(a.value("date"));request.payee=str(a.value("payee"));request.memo=str(a.value("memo"));
@@ -702,7 +797,17 @@ struct ImportModel::Worker {
             }else if(action=="transfer_accept")request.action=app::TransferAction::accept;
             else if(action=="transfer_commit")request.action=app::TransferAction::commit_local;
             else if(action=="transfer_clear")request.action=app::TransferAction::clear_local;
-            else if(action=="transfer_match"){
+            else if(action=="transfer_clear_row"){
+                const imports::Occurrence id{str(a.value("batch")),static_cast<std::size_t>(a.value("ordinal").toUInt())};
+                const auto account=repo.account().identity;const transfers::Link* found=nullptr;
+                for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
+                    if(side->state==transfers::State::removed || side->endpoint.account!=account || side->endpoint.entry!=id)continue;
+                    if(found)throw std::invalid_argument("Choose the allocation explicitly. This transaction has more than one possible transfer endpoint.");
+                    found=&value.link;
+                }
+                if(!found)throw std::invalid_argument("Transfer entry is unavailable");
+                request.action=app::TransferAction::clear_local;request.link=found->identity;
+            }else if(action=="transfer_match"){
                 request.action=app::TransferAction::propose_match;const imports::Occurrence id{a.contains("batch")?str(a.value("batch")):selectedBatch,a.contains("ordinal")?a.value("ordinal").toUInt():selectedOrdinal};
                 const auto row=repo.row(id);if(!row.draft)throw std::invalid_argument("Choose a valid bank entry");
                 const auto& allocations=row.draft->transaction.allocations();const auto allocation=std::find_if(allocations.begin(),allocations.end(),[&](const auto& value){return value.identity==str(a.value("allocation"));});if(allocation==allocations.end())throw std::invalid_argument("Choose a bank allocation");
@@ -710,13 +815,48 @@ struct ImportModel::Worker {
                 request.evidence=transfers::BankEvidence{{repo.account().identity,id,allocation->identity},allocation->amount,row.draft->date};
             }else if(action=="transfer_unmatch"){
                 request.action=app::TransferAction::discard_match;for(const auto& value:repo.transfers())if(value.link.identity==request.link){const auto& side=value.link.origin.endpoint.account==repo.account().identity?value.link.origin:value.link.destination;request.evidence=side.proposed_evidence;}
+            }else if(action=="transfer_merge"){
+                const auto endpoint_of=[&](const char* prefix){const auto name=QString::fromLatin1(prefix);return QVariantMap{{"account",a.value(name+"Account")},{"batch",a.value(name+"Batch")},{"ordinal",a.value(name+"Ordinal")},{"allocation",a.value(name+"Allocation")}};};
+                const auto left=read_transfer_choice(repo,endpoint_of("left"));
+                const auto right=read_transfer_choice(repo,endpoint_of("right"));
+                if(left.fact.endpoint==right.fact.endpoint)throw std::invalid_argument("Choose two allocations");
+                if(left.linked && right.linked && left.link!=right.link)throw std::invalid_argument("Choose one transfer relationship. These allocations belong to different links.");
+                if(left.linked && right.linked)throw std::invalid_argument("Invalid transfer relationship");
+                const bool leftOrigin=left.fact.manually_entered || (!right.fact.manually_entered && left.fact.endpoint.account<=right.fact.endpoint.account);
+                const auto& origin=leftOrigin?left:right;
+                request.action=app::TransferAction::merge;request.mode=0;request.kept=operation+"-kept";
+                request.link=left.linked?left.link:right.linked?right.link:request.link.empty()?operation:request.link;
+                request.left=left.fact;request.right=right.fact;request.batch_revision=left.revision;request.right_revision=right.revision;
+                request.payee=origin.payee;request.memo=origin.memo;
+            }else if(action=="transfer_retarget"){
+                const auto choice=read_transfer_choice(repo,QVariantMap{{"account",QString::number(repo.account().identity)},{"batch",a.value("batch")},{"ordinal",a.value("ordinal")},{"allocation",a.value("allocation")}});
+                request.action=app::TransferAction::retarget;request.kept=operation+"-kept";request.left=choice.fact;request.batch_revision=choice.revision;
+                request.payee=choice.payee;request.memo=choice.memo;request.link=choice.linked?choice.link:request.link;
+                request.mode=a.value("mode").toInt();
+                if(request.mode==1){
+                    const auto destinationId=a.value("destination").toString().toLongLong();
+                    const auto accounts=repo.accounts();
+                    const auto destination=std::find_if(accounts.begin(),accounts.end(),[&](const auto& item){return item.identity==destinationId;});
+                    if(destination==accounts.end())throw std::invalid_argument("Choose a destination account");
+                    const auto generatedBatch=str(a.value("generatedBatch"));
+                    if(generatedBatch.empty())throw std::invalid_argument("Choose a destination account");
+                    request.generated=transfers::Endpoint{destination->identity,{generatedBatch,0},"generated"};
+                    request.generated_currency=destination->currency.definition_id();
+                    request.category_id.clear();request.category_path.clear();
+                }else if(request.mode==0){
+                    request.category_id=str(a.value("categoryId"));request.category_path=str(a.value("categoryPath"));
+                    request.generated.reset();request.generated_currency.clear();
+                }else throw std::invalid_argument("Unknown transfer command");
             }else throw std::invalid_argument("Unknown transfer command");
-            const auto operation=str(a.value("operation"));std::optional<app::TransferReceipt> result;
+            std::optional<app::TransferReceipt> result;
             try{result=repo.apply_transfer(operation,request);}catch(...){const auto failure=std::current_exception();try{result=repo.transfer_outcome(operation);if(result)result=repo.apply_transfer(operation,request);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Transfer outcome could not be confirmed. Reopen and inspect transfers before retrying.");}if(!result)std::rethrow_exception(failure);}
             transferReceipt={{"operation",text(operation)},{"summary","Transfer operation saved · "+balanceImpact(result->before,result->change,result->after)}};
             transferCandidates.clear();candidateLink.clear();
-            if(request.action==app::TransferAction::clear_local && selectedBatch.starts_with("~transfer-")){
-                for(const auto& value:repo.transfers())if(value.link.identity==request.link && value.link.origin.state==transfers::State::removed){selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+            if(selectedBatch.starts_with("~transfer-")){
+                bool present=false;const auto account=repo.account().identity;
+                for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})
+                    present=present || (side->state!=transfers::State::removed && side->endpoint.account==account && side->endpoint.entry==imports::Occurrence{selectedBatch,selectedOrdinal});
+                if(!present){selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
             }
             try {if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);} catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Transfer operation was saved durably, but its selection could not be refreshed. Reopen and inspect transfers before retrying.");}
             return;
@@ -1172,6 +1312,7 @@ QVariantMap ImportModel::rowIdentity(int row) const {
     const auto& id=rows_->rows[rows_->order[static_cast<std::size_t>(row)]].identity;
     return {{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};
 }
+QVariantMap ImportModel::rowRecord(int row) const {return data(index(row),Qt::UserRole).toMap();}
 int ImportModel::occurrenceIndex(const QString& batch,int ordinal) const {
     if(!rows_ || ordinal<0) return -1;
     const auto id=batch.toStdString();

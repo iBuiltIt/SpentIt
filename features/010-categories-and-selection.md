@@ -1,8 +1,8 @@
 # 010 — Categories and selection
 
 Status: **active**  
-Last updated: 2026-10-26  
-Implementation: bounded catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Rules-disabled documents are schema 5. Rules-enabled documents are schema 7 and keep this catalog. Account transfer destinations and category reports remain unimplemented. See [implementation and recovery](../doc/categories.md).
+Last updated: 2026-10-27  
+Implementation: bounded catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Current documents use experimental schema 20 with rules and 21 without; both include this catalog. The durable category selector lists real accounts as transfer destinations and stores the account identity. Category reports remain unimplemented. See [implementation and recovery](../doc/categories.md) and [transfer management](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27).
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 
@@ -41,7 +41,9 @@ Accounts appear as distinguishable transfer destinations in the same selector. F
 
 For example, choosing the actual CIBC: Visa account on a Savings payment initiates a transfer. Its account identity survives renaming; a same-named ordinary category does not trigger a transfer. The colon in the account's name does not by itself establish a category hierarchy.
 
-Use the accepted [transfer lifecycle](008-transfer-matching-and-lifecycle.md): link an identifiable existing counterpart or create a destination draft, preserve evidence, avoid counting payment principal as spending again, and require explicit commit per account. Committing Savings protects a generated Visa draft but does not commit Visa. Matching confidence, ambiguous candidates, cross-currency behavior, and transfers within splits remain subject to that feature's unresolved design.
+The durable selector lists each other account with its name, currency, and identity. Choosing it on an unlinked allocation creates a generated destination draft. Choosing it on an existing transfer origin replaces the destination under the [2026-10-27 replacement policy](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27). It does not auto-link an existing independent row. Candidates remain an explicit confirmation step. A category whose name matches an account stays an ordinary category assignment.
+
+Use the accepted [transfer lifecycle](008-transfer-matching-and-lifecycle.md): preserve evidence, avoid counting payment principal as spending again, and require explicit commit per account. Committing Savings protects a generated Visa draft but does not commit Visa. Automatic matching confidence and cross-currency links remain deferred there. Allocation-level links, including a fee split beside a transfer allocation, are accepted.
 
 ### QIF-compatible category names
 
@@ -96,7 +98,7 @@ The owner's later clarification prefers names such as Utilities: Phones and Util
 
 ## Verification and implementation limits
 
-The original discussion was documentation-only. The later schema-5 subset is described in the implementation report above; configuration-specific verification is recorded in [project status](../doc/status.md). Category-report reconciliation and account-destination behavior remain future acceptance obligations.
+The original discussion was documentation-only. Configuration-specific verification is recorded in [project status](../doc/status.md). The durable selector's account entries are part of the point-5 transfer commands. Category-report reconciliation remains a future acceptance obligation.
 
 Documentation validation: all 93 relative link file targets across the eight changed documents resolved, and `git diff --check` passed. Runtime tests were not run because this change only records requirements and discussion.
 
