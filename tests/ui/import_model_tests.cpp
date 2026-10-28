@@ -402,6 +402,47 @@ private slots:
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
     void init() {QSettings().clear();QSettings().setValue("datasetPath",settings.path()+"/missing.spentit");QTest::failOnWarning(QRegularExpression(".*DelegateModel::cancel.*"));}
+    void startupDataset_data() {
+        QTest::addColumn<QString>("kind");
+        for(const auto* kind:{"public","protected","missing","invalid","locked"})QTest::newRow(kind)<<QString(kind);
+    }
+    void startupDataset() {
+        QFETCH(QString,kind);
+        QTemporaryDir dir;const auto path=dir.path()+"/startup.spentit";
+        ImportModel owner(storage::document_gateway());
+        if(kind=="public" || kind=="protected" || kind=="locked") {
+            run(owner,"create",{{"path",path},{"name","Startup test"},{"currency","CAD"},{"protected",kind=="protected"},{"password","synthetic"},{"confirmation","synthetic"}});
+            if(kind!="locked")run(owner,"close");
+        } else if(kind=="invalid") {
+            QFile file(path);QVERIFY(file.open(QIODevice::WriteOnly));file.write("not a dataset");file.close();
+        }
+        QSettings().setValue("datasetPath",path);
+        ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* close=root->findChild<QObject*>("fileCloseDataset");QVERIFY(close);
+        QTRY_VERIFY(!root->property("startupPending").toBool());QTRY_VERIFY(!m.busy());
+        if(kind!="public") {
+            QVERIFY(!m.state().value("active").toBool());QVERIFY(!close->property("enabled").toBool());
+            QVERIFY(root->findChild<QObject*>("welcomeScreen")->property("visible").toBool());
+            if(kind=="protected") {QVERIFY(m.state().value("unlockRequired").toBool());QVERIFY(m.error().isEmpty());}
+            else QVERIFY(!m.error().isEmpty() || m.state().value("unlockRequired").toBool());
+            return;
+        }
+        QVERIFY2(m.state().value("active").toBool(),qPrintable(m.error()));
+        QVERIFY(!root->findChild<QObject*>("welcomeScreen")->property("visible").toBool());
+        root->setProperty("dirty",true);QVERIFY(QMetaObject::invokeMethod(close,"triggered"));
+        QTRY_VERIFY(root->findChild<QObject*>("unsavedDialog")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardStay"),"clicked"));QVERIFY(m.state().value("active").toBool());
+        QVERIFY(QMetaObject::invokeMethod(close,"triggered"));
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardDiscard"),"clicked"));
+        QTRY_VERIFY(!m.state().value("active").toBool());QTRY_VERIFY(m.state().value("canOpen").toBool());
+        QTest::qWait(500);QVERIFY(!m.state().value("active").toBool());
+        QVERIFY(root->findChild<QObject*>("welcomeScreen")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("openPublicDataset"),"clicked"));
+        QTRY_VERIFY(m.state().value("active").toBool());
+    }
+
     void welcomeFlow() {
         QTemporaryDir dir;const auto missing=dir.path()+"/missing.spentit";
         QSettings().setValue("datasetPath",missing);

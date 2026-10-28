@@ -2,6 +2,12 @@
 
 Last updated: 2026-10-28
 
+## Startup opening and Close Dataset — 2026-10-28
+
+The last-used dataset now opens automatically at startup if the no-password probe verifies it. The welcome screen is skipped during that attempt; existing worker progress/cancellation remains available. Protected, missing, invalid or locked datasets stay on the welcome screen with the applicable password controls/errors. File → Close Dataset uses the existing unsaved-edit guard and returns to the welcome screen without reopening automatically. Browsing/opening another dataset remains explicit. This supersedes the explicit-startup-Open behavior recorded below; storage validation and locking are unchanged.
+
+Verification on macOS: rebuilt the rules-enabled Release application and UI/navigation/recovery targets. `ctest --test-dir build/import-ui-rules-release -R '^import.(ui|qml|navigation|recovery_ui)$' --output-on-failure -j 2` passed **4/4** (51.07 s). New startup cases exercise public-key opening, password-protected, missing, invalid and locked files, Close Dataset with unsaved-edit Stay/Discard, remaining closed after probing, and explicit reopening. `git diff --check` passed. Tests used temporary synthetic datasets; native menu interaction, other platforms and sanitizers were not checked for this change.
+
 ## Account sidebar usability — 2026-10-28
 
 Account actions now use a right-click menu on the account name, with guarded selection of the clicked account before actions become available. **+ New Account** sits beside the Accounts heading. Setup clearly labels the initial account name; creation and minimum-one-account deletion rules are unchanged. See [account behavior](accounts.md).

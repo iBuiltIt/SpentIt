@@ -34,6 +34,18 @@ ApplicationWindow {
     width: 1440; height: 850; minimumWidth:720; minimumHeight:560; visible: true
     title: "SpentIt"
     property var s: workflow.state
+    property bool startupPending: false
+    property string startupPath: ""
+    menuBar: MenuBar {
+        Menu {
+            title: "File"
+            MenuItem {
+                objectName: "fileCloseDataset";text: "Close Dataset"
+                enabled: !!s.active && !workflow.busy
+                onTriggered: guard(function(){workflow.command("close")})
+            }
+        }
+    }
     property var selected: s.selected || ({})
     property bool processingIncomplete: !!s.pending && !!s.pending.processingIncomplete
     // View state belongs to occurrence identities, never recycled delegates.
@@ -626,6 +638,16 @@ ApplicationWindow {
         // The occurrence selection remains in the workflow and is restored below.
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onCompleted(action,success) {
+            if(action==="probe" && startupPending) {
+                if(success && s.canOpen && !s.unlockRequired && s.path===startupPath && location.text===startupPath) {
+                    Qt.callLater(function(){
+                        if(startupPending && !workflow.busy && !s.active && location.text===startupPath)
+                            workflow.command("open",{path:startupPath})
+                        else startupPending=false
+                    })
+                } else startupPending=false
+            }
+            if(["open","unlock","create","close","prepare_create"].indexOf(action)>=0) startupPending=false
             if(action==="select_account" && pendingAccountMenu) {
                 const request=pendingAccountMenu;pendingAccountMenu=null
                 if(success && s.accountId===request.id) accountContext.popup(request.x,request.y)
@@ -701,7 +723,11 @@ ApplicationWindow {
             settleLedgerView(action,success)
         }
     }
-    Component.onCompleted: probeTimer.start()
+    Component.onCompleted: {
+        startupPending=!!s.startup
+        startupPath=location.text
+        probeTimer.start()
+    }
     Timer {
         id:probeTimer;interval:350
         onTriggered: {
@@ -1029,14 +1055,14 @@ ApplicationWindow {
             Button {objectName:"settingsNavigation";text:"Settings";visible:!!s.active;enabled:!workflow.busy;onClicked:navigate("settings")}
         }
         RowLayout {
-            visible:workflow.busy && !!s.active;Layout.fillWidth:true
+            visible:workflow.busy && (!!s.active || startupPending);Layout.fillWidth:true
             Label {objectName:"operationPhase";textFormat:Text.PlainText;text:workflow.phase;Layout.fillWidth:true;wrapMode:Text.Wrap;Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}}
             Label {text:"Cancellation requested…";visible:workflow.cancellationRequested}
             Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
         }
         Label {objectName:"workflowError";textFormat:Text.PlainText;text:workflow.error;visible:!!s.active && text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}}
         UsableScrollView {
-            id:welcomeScroll;objectName:"welcomeScreen";visible:!s.active;Layout.fillWidth:true;Layout.fillHeight:true;clip:true
+            id:welcomeScroll;objectName:"welcomeScreen";visible:!s.active && !startupPending;Layout.fillWidth:true;Layout.fillHeight:true;clip:true
             contentWidth:availableWidth
             ColumnLayout {
                 width:Math.min(welcomeScroll.availableWidth-48,660);x:(welcomeScroll.availableWidth-width)/2
