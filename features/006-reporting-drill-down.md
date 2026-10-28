@@ -1,12 +1,12 @@
 # 006 — Reporting and drill-down
 
 Status: **active**  
-Last updated: 2026-10-25  
+Last updated: 2026-10-27  
 Implementation: none; requirements and proposed design only.
 
 ## Accepted requirements
 
-Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). The bounded catalog and account transfer destinations are implemented. Category reports remain unimplemented.
 
 - Report spending by time period, including last year, this year, and comparisons between them.
 - Show categories ordered from most costly to least costly.

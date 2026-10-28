@@ -1,12 +1,12 @@
 # 004 — Rules and explanations
 
 Status: **active**  
-Last updated: 2026-10-26  
-Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply and rules sheet implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use schema 8 for account-scoped imports, rules and bulk receipts. See [status and verification](../doc/status.md), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Bulk committed rule reapplication remains deferred.
+Last updated: 2026-10-27  
+Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply and rules sheet implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 20; rules-off documents use schema 21. Schema 8 was an earlier account-scoped checkpoint and is rejected without migration. See [status and verification](../doc/status.md), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Bulk committed rule reapplication remains deferred.
 
 ## Accepted requirements
 
-Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). The bounded catalog and account transfer destinations are implemented. Category reports remain unimplemented.
 
 - Regex matching is a core requirement.
 - Rules are displayed and edited in a sheet-style interface.

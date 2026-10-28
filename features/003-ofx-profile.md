@@ -75,13 +75,13 @@ These stay in evidence and block the record, so the account cannot be committed 
 
 `NAME` wins over `PAYEE` when only one is used. `CHECKNUM` wins over `REFNUM` when only one is used. `SIC`, `PAYEEID`, `SRVRTID`, `DTUSER`, `DTAVAIL`, and `EXTDNAME` are uninterpreted and do not block. A missing `FITID` records `FITID absent` and does not by itself block a structurally intact transaction. Version 2.3 says each posted `STMTTRN` contains a `FITID`; this checkpoint still accepts a missing `FITID` as reviewable evidence.
 
-Statement transfers cannot use the QIF bracket-destination workflow. They remain visible transfer blockers with the original bytes retained. No destination account is created or resolved by name. Fix match, unlink, repair, and committed reversal stay on roadmap points 5 and 6.
+Statement transfers cannot use the QIF bracket-destination workflow. They remain visible transfer blockers with the original bytes retained. No destination account is created or resolved by name. Allocation-level Merge, unlink, and replacement are implemented for the transfer workflow in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27). Committed reversal remains point 6.
 
 Reported balance is `LEDGERBAL`/`BALAMT` only, and only when that text parses exactly for the statement currency. `DTASOF` is not an opening date. Extra balance aggregates suppress the staged reported balance. Opening publication stays on the existing created-account review.
 
 ## Accounts in one file
 
-Every statement account is mapped explicitly through the existing whole-source account workflow. An OFX-family file opens that mapping even when it contains one account. The evidence label is the institution id, a space, and the account number, or the account number alone when the institution id is empty. A created account name is that label. Currency comes from `CURDEF` and must match the target. The account number is required; a missing `ACCTID` refuses the file. No section is omitted. Account identity and currency are not inferred from a name. Account rename, archive, deletion, opening-balance correction after commit, and currency reassignment stay on roadmap point 4.
+Every statement account is mapped explicitly through the existing whole-source account workflow. An OFX-family file opens that mapping even when it contains one account. The evidence label is the institution id, a space, and the account number, or the account number alone when the institution id is empty. A created account name is that label. Currency comes from `CURDEF` and must match the target. The account number is required; a missing `ACCTID` refuses the file. No section is omitted. Account identity and currency are not inferred from a name. Account rename, archive, deletion, opening-balance correction after commit, and currency reassignment are the implemented point-4 commands in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).
 
 ## Duplicate recognition
 

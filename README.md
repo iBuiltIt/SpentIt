@@ -2,7 +2,7 @@
 
 A local, single-user desktop application in development for understanding spending through reliable imports, reviewable categorization, and explainable reports.
 
-Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCipher storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet prototype, and a partial durable QIF workflow with setup/review UI, multiple account workspaces, explicit QIF transfer-destination resolution, categories, rules, combined search, multiselection, and atomic committed bulk changes with group Undo. **There is no production financial-document application yet.** Experiments use synthetic inputs. The standalone sheet is session-only; the durable import UI persists drafts, committed changes, and history. Experimental formats need no migration or compatibility support until the owner explicitly announces a release.
+Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCipher storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet prototype, and a partial durable import workflow with setup/review UI, multiple account workspaces, QIF and OFX-family bank and credit-card statements, explicit transfer-destination resolution, allocation-level Merge and unlink, categories, rules, combined search, multiselection, atomic committed bulk changes with group Undo, and historied account commands. **There is no production financial-document application yet.** Experiments use synthetic inputs. The standalone sheet is session-only; the durable import UI persists drafts, committed changes, and history. Experimental formats need no migration or compatibility support until the owner explicitly announces a release.
 
 ## Start here
 
@@ -14,7 +14,7 @@ Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCip
 - [Account-scoped workflow and current experimental formats](doc/accounts.md)
 - [QIF transfer destinations and explicit resolution](doc/qif-transfers.md)
 - [Search and bulk ledger contract](doc/search-ledger.md)
-- [Current handoff and next-work gates](doc/roadmap.md#handoff--2026-10-26)
+- [Current handoff and next-work gates](doc/roadmap.md#point-5-completion-handoff--2026-10-27)
 - [Feature requirements and open decisions](features/README.md)
 - [Contributor instructions](AGENTS.md) and [dependency boundaries](doc/project-layout.md)
 

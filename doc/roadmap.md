@@ -25,7 +25,7 @@ Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complet
 
 ## Point 5 completion handoff — 2026-10-27
 
-Read [feature 008](../features/008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27), [transfer workflow](transfer-engine.md), and [point-5 evidence](status.md#point-5-transfer-management--2026-10-27). One agent implemented this checkpoint from HEAD `47010b5`. Points 6–8 were not started. No license, publication, exchange rate, report, or committed-reversal decision was made.
+Read [feature 008](../features/008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27), [transfer workflow](transfer-engine.md), and [point-5 evidence](status.md#point-5-transfer-management--2026-10-27). One agent implemented this checkpoint from HEAD `47010b5`. It is committed as `786bc96`. Points 6–8 were not started. No license, publication, exchange rate, report, or committed-reversal decision was made.
 
 Policies applied:
 
@@ -175,7 +175,7 @@ Use the existing build trees in [building](building.md#qif-destination-follow-up
 
 ### Remaining work, not authorization to start
 
-A unified category/account picker and browsable transfer journal remain follow-ups. Committed repair/unlink/reversal, destination-only draft cancellation, independently committed-entry linking, differently grouped evidence and amount-mismatch resolution retain their financial decision gates. Automatic matching and currency conversion remain deferred. Reports are outside the completed authorization; stop after this package.
+At this destination-package checkpoint, a unified category/account picker and browsable transfer journal were follow-ups. Committed repair, unlink, reversal, destination-only draft cancellation, independently committed-entry linking, differently grouped evidence, and amount-mismatch resolution retained their financial decision gates. Point 5 later implemented allocation-level Merge, unlink, replacement, account choices in the category selector, and the read-only transfer journal. Committed reversal remains point 6. Automatic matching and currency conversion remain deferred. Reports stay outside this authorization.
 
 Do not re-ask accepted choices: either account may commit first and protect the other draft; matches require explicit confirmation; generated dates are provisional origin dates; destinations and links belong to allocations; pending bank matches stay provisional until their import commits; discard retains evidence and drops the proposal; manual/unmatched entries may be accepted and committed independently. Acceptance never authorizes unequal-amount linking. The pre-release format policy remains in effect.
 

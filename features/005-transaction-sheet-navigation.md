@@ -1,12 +1,12 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**  
-Last updated: 2026-10-26  
+Last updated: 2026-10-27  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Accepted requirements
 
-Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). The bounded catalog and account transfer destinations are implemented. Category reports remain unimplemented.
 
 - Portable, responsive desktop UI with a consistent appearance on macOS, Linux, and Windows.
 - Sidebar exposes accounts and setup areas such as accounts and rules.
@@ -147,7 +147,7 @@ The durable UI now implements the accepted search-return behavior for its existi
 
 ## Account navigation follow-up — 2026-10-26
 
-The durable UI now includes a scrolling account list, inline name entry using the setup currency, independent durable account workspaces and guarded switching/Back/Forward. The [account contract](../doc/accounts.md) records verification and limits. Account switches currently reset selection/search/viewport; counterpart navigation, account lifecycle actions, report panes and the full sidebar balance layout remain unfinished.
+The durable UI now includes a scrolling account list, inline name entry using the setup currency, independent durable account workspaces and guarded switching/Back/Forward. The [account contract](../doc/accounts.md) records verification and limits. At this 2026-10-26 checkpoint, account switches reset selection, search, and viewport, and counterpart navigation, account lifecycle actions, report panes, and the full sidebar balance layout were unfinished. Counterpart navigation and the point-4 account commands later landed. Report panes and the full sidebar balance layout remain unfinished.
 
 
 ## Durable ledger hardening — 2026-10-26

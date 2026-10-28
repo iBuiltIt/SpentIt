@@ -4,11 +4,11 @@ Status: **active**
 Last updated: 2026-10-27  
 Implementation: partial; exact in-memory money, validated allocations, and original/effective totals are implemented. The pinned ISO currency catalog and engine remainder editing are also implemented. Production accounts, transfers and UI remain unimplemented; a separate [synthetic sheet experiment](../doc/sheet-prototype.md) exercises the engine. The optional storage prototype now round-trips the engine subset; production account/document persistence remains unimplemented.
 
-The [account-scoped durable workflow](../doc/accounts.md) adds account creation/selection, independent drafts, ordinary financial histories, and the point-4 account commands below. Reports, exchange rates, transfer repair, and committed transfer reversal remain unfinished. Feature 002 stays **active**.
+The [account-scoped durable workflow](../doc/accounts.md) adds account creation/selection, independent drafts, ordinary financial histories, and the point-4 account commands below. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md). Reports, exchange rates, and committed transfer reversal remain unfinished. Feature 002 stays **active**.
 
 ## Accepted requirements
 
-Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). These are future requirements, not implemented category behavior.
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). The bounded catalog and account transfer destinations are implemented. Category reports remain unimplemented.
 
 - New accounts inherit the document's base/home currency. Creating an account by entering its name in the sidebar adds a special Opening Balance entry dated today with amount zero; the user can edit its date and amount. Opening balances are excluded from income/spending reports.
 - Accounts containing transactions can be closed/archived while retaining history and linked transfers. Deletion is reserved for empty accounts. The applied empty-account rule, including an untouched zero opening, is recorded in the 2026-10-27 checkpoint below.
@@ -96,7 +96,7 @@ Each command is atomic and historied. An identical operation-id retry returns th
 - Before OK, the currency dialog warns when the account has an opening, a draft, or a transaction: `This reassigns the account currency without conversion. Numeric amounts stay the same decimal. It does not apply an exchange rate.` The selector lists current-catalog codes and accepts search or incremental code typing. Cancel changes nothing.
 - Undo of a reassignment restores the prior definition and the prior minor units when no later financial operation on this account or a linked transfer has happened since. Ordinary committed Undo continues to exclude transfer reversal. After a currency reassignment, that ordinary Undo stays unavailable for the rescaled rows because their entry heads advanced with the account command.
 
-The cross-currency preservation case did not need a separate financial policy. The existing link records the preserved opposite decimals, and new matches stay same-currency. Points 5–8 were not started.
+The cross-currency preservation case did not need a separate financial policy. The existing link records the preserved opposite decimals, and new matches stay same-currency. This account-command checkpoint did not start points 5–8. Point 5 transfer management is recorded in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27).
 
 ## Reference
 
