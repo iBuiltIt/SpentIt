@@ -97,6 +97,7 @@ public:
     app::ChangeReceipt apply_committed_change(std::string_view,const app::ChangeRequest&,const app::EntryToken&,std::int64_t) override;
     std::optional<app::ChangeReceipt> committed_change_outcome(std::string_view) const override;
     Money committed_balance() const override;
+    std::vector<app::AccountBalance> account_balances() const override;
     bool bulk_supported() const override;
     std::string bulk_group(std::string_view) const override;
     app::BulkPreview preview_bulk(const app::BulkRequest&) const override;
@@ -147,6 +148,9 @@ private:
     Money transfer_import_adjustment(std::string_view) const;
     std::set<std::size_t> protected_import_rows(std::string_view) const;
     app::Account account_by_id(std::int64_t) const;
+    std::vector<app::BatchInfo> batches_for(std::int64_t) const;
+    Money committed_for(std::int64_t) const;
+    std::optional<Money> projected_for(std::int64_t) const;
     app::Account account_for_batch(std::string_view) const;
     void require_account(std::string_view) const;
     struct Impl;

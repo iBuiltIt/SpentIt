@@ -86,6 +86,7 @@ public:
     std::vector<app::LedgerRow> ledger(bool p) const override {return repo().ledger(p);}
     Money committed_balance() const override {return repo().committed_balance();}
     std::optional<Money> projected_balance() const override {return repo().projected_balance();}
+    std::vector<app::AccountBalance> account_balances() const override {return repo().account_balances();}
 };
 class ImportUiTests : public QObject {
     Q_OBJECT
@@ -985,6 +986,133 @@ private slots:
         run(m,"open",{{"path",dir.path()+"/doc"}});
         const auto batch=m.state().value("pending").toMap().value("id");run(m,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Edited through QML");
+    }
+    void ledgerInteractions() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto path=dir.path()+"/doc";create(m,path);
+        run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
+        const auto source=fixture(dir.path(),"D1/5/2026\nT-10.00\nPSynthetic\n^\n");
+        run(m,"import",{{"path",source},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch").toString();
+        QCOMPARE(m.state().value("committed").toString(),QString("100.00"));
+        QCOMPARE(m.state().value("projected").toString(),QString("90.00"));
+        QVariantMap checking;
+        for(const auto& value:m.state().value("accounts").toList()) if(value.toMap().value("id").toString()=="1") checking=value.toMap();
+        QVERIFY(!checking.isEmpty());
+        QCOMPARE(checking.value("committedBalance").toString(),QString("100.00"));
+        QCOMPARE(checking.value("projectedBalance").toString(),QString("90.00"));
+        QVERIFY(checking.value("projectionAvailable").toBool());
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto shown=[&](const char* name){return visualItem(window->contentItem(),QString::fromLatin1(name));};
+        QQuickItem* balance=nullptr;
+        QTRY_VERIFY(balance=shown("accountBalance_1"));
+        QTRY_COMPARE(balance->property("text").toString(),QString("Projected CAD 90.00"));
+        auto* projected=root->findChild<QQuickItem*>("projectedLedger");QVERIFY(projected);
+        projected->setProperty("checked",false);QVERIFY(QMetaObject::invokeMethod(projected,"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(m.error().isEmpty());
+        QCOMPARE(m.state().value("mode").toString(),QString("Committed"));
+        QCOMPARE(projected->property("checked").toBool(),false);
+        QTRY_COMPARE(balance->property("text").toString(),QString("Projected CAD 90.00"));
+        QVERIFY(QMetaObject::invokeMethod(balance,"clicked"));
+        QTRY_COMPARE(balance->property("text").toString(),QString("Committed CAD 100.00"));
+        QCOMPARE(projected->property("checked").toBool(),false);
+        QCOMPARE(m.state().value("mode").toString(),QString("Committed"));
+        QCOMPARE(m.state().value("projected").toString(),QString("90.00"));
+        run(m,"create_account",{{"id","2"},{"name","Japan"},{"currency","JPY"},{"date","2026-01-01"}});
+        QCOMPARE(m.state().value("accountId").toString(),QString("2"));
+        QCOMPARE(m.state().value("mode").toString(),QString("Projected"));
+        checking=QVariantMap{};
+        for(const auto& value:m.state().value("accounts").toList()) if(value.toMap().value("id").toString()=="1") checking=value.toMap();
+        QCOMPARE(checking.value("committedBalance").toString(),QString("100.00"));
+        QCOMPARE(checking.value("projectedBalance").toString(),QString("90.00"));
+        QVERIFY(checking.value("projectionAvailable").toBool());
+        QTRY_VERIFY(balance=shown("accountBalance_1"));
+        QTRY_COMPARE(balance->property("text").toString(),QString("Committed CAD 100.00"));
+        run(m,"select_account",{{"id","1"}});
+        QTRY_VERIFY(balance=shown("accountBalance_1"));
+        QTRY_COMPARE(balance->property("text").toString(),QString("Committed CAD 100.00"));
+        projected->setProperty("checked",true);QVERIFY(QMetaObject::invokeMethod(projected,"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("mode").toString(),QString("Projected"));
+        QTRY_VERIFY(balance=shown("accountBalance_1"));
+        QTRY_COMPARE(balance->property("text").toString(),QString("Committed CAD 100.00"));
+        const int draftRow=m.occurrenceIndex(batch,0);QVERIFY(draftRow>=0);
+        run(m,"select",{{"row",draftRow}});
+        auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
+        payee->setProperty("text","Unsaved bulk");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
+        QVERIFY(root->property("dirty").toBool());
+        auto* bulkDialog=root->findChild<QObject*>("bulkDialog");auto* reapplyDialog=root->findChild<QObject*>("reapplyDialog");
+        QVERIFY(bulkDialog && reapplyDialog);
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("bulkRemove"),"clicked"));
+        auto* unsaved=root->findChild<QObject*>("unsavedDialog");QVERIFY(unsaved);QTRY_VERIFY(unsaved->property("visible").toBool());
+        QVERIFY(!bulkDialog->property("visible").toBool());QVERIFY(!reapplyDialog->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardStay"),"clicked"));
+        QTRY_VERIFY(!unsaved->property("visible").toBool());
+        QCOMPARE(root->property("currentPage").toString(),QString("ledger"));QVERIFY(root->property("dirty").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("rulesNavigation"),"clicked"));
+        QTRY_VERIFY(unsaved->property("visible").toBool());
+        QVERIFY(!bulkDialog->property("visible").toBool());QVERIFY(!reapplyDialog->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardStay"),"clicked"));
+        QTRY_VERIFY(!unsaved->property("visible").toBool());
+        QCOMPARE(root->property("currentPage").toString(),QString("ledger"));
+        QVERIFY(QMetaObject::invokeMethod(root,"loadEditor"));QVERIFY(!root->property("dirty").toBool());
+        auto* dateCol=shown("ledgerColumn_0");
+        auto* payeeCol=shown("ledgerColumn_1");
+        auto* categoryCol=shown("ledgerColumn_2");
+        auto* withdrawalCol=shown("ledgerColumn_3");
+        auto* depositCol=shown("ledgerColumn_4");
+        auto* balanceCol=shown("ledgerColumn_5");
+        QVERIFY(dateCol && payeeCol && categoryCol && withdrawalCol && depositCol && balanceCol);
+        QTRY_VERIFY(payeeCol->width()>dateCol->width());
+        QTRY_VERIFY(payeeCol->width()>categoryCol->width());
+        QTRY_VERIFY(payeeCol->width()>withdrawalCol->width());
+        QTRY_VERIFY(payeeCol->width()>depositCol->width());
+        QTRY_VERIFY(payeeCol->width()>balanceCol->width());
+        auto* reports=root->findChild<QQuickItem*>("reportsOutside");QVERIFY(reports);QTRY_VERIFY(reports->isVisible());
+        auto* reportsNote=root->findChild<QQuickItem*>("reportsOutsideNote");QVERIFY(reportsNote);
+        QCOMPARE(reportsNote->property("text").toString(),QString("Reports stay outside this work. Nothing is created here."));
+        for(auto* child:reports->findChildren<QObject*>()) QVERIFY(!QString::fromLatin1(child->metaObject()->className()).contains("Button"));
+        run(m,"commit");
+        QByteArray rows;
+        for(int i=0;i<40;++i) rows+="D2/1/2026\nT-1.00\nPRow "+QByteArray::number(i)+"\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),rows)},{"profile","DMY"}});run(m,"commit");
+        const int last=m.rowCount()-1;QVERIFY(last>40);
+        run(m,"select",{{"row",last}});run(m,"select",{{"row",last-1},{"range",true}});
+        QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        auto visibleRow=[&]{
+            int index=-1;const double y=ledger->property("contentY").toDouble();
+            if(!QMetaObject::invokeMethod(ledger,"indexAt",Q_RETURN_ARG(int,index),Q_ARG(double,1.0),Q_ARG(double,y+1))) return -1;
+            return index;
+        };
+        QTest::qWait(100);ledger->setProperty("contentY",450);QTest::qWait(50);
+        QVERIFY(ledger->property("contentY").toDouble()>300);
+        const int anchorRow=visibleRow();QVERIFY(anchorRow>2);
+        const auto anchorId=m.rowIdentity(anchorRow);QVERIFY(!anchorId.isEmpty());
+        const auto sameAnchor=[&]{return visibleRow()==m.occurrenceIndex(anchorId.value("batch").toString(),anchorId.value("ordinal").toInt());};
+        auto* bulkCategory=root->findChild<QObject*>("bulkCategory");QVERIFY(bulkCategory);
+        bulkCategory->setProperty("currentIndex",0);
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("bulkCategorize"),"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QTRY_VERIFY(bulkDialog->property("visible").toBool());
+        QTRY_VERIFY2(sameAnchor(),qPrintable(QString("preview row %1 y %2").arg(visibleRow()).arg(ledger->property("contentY").toDouble())));
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("applyBulk"),"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QTRY_VERIFY(!bulkDialog->property("visible").toBool());
+        QTRY_VERIFY2(sameAnchor(),qPrintable(QString("apply row %1 y %2").arg(visibleRow()).arg(ledger->property("contentY").toDouble())));
+        QVERIFY(ledger->property("contentY").toDouble()>0);
+        window->resize(720,560);QTest::qWait(100);
+        QCOMPARE(window->width(),720);QCOMPARE(window->height(),560);
+        for(const char* name:{"sidebarToggle","navigationBack","navigationForward"}) {
+            auto* item=root->findChild<QQuickItem*>(name);QVERIFY(item);QVERIFY(item->isVisible());
+            const auto point=item->mapToScene(QPointF(item->width()/2,item->height()/2));
+            QVERIFY2(point.x()>=0 && point.x()<window->width() && point.y()>=0 && point.y()<window->height(),name);
+        }
+        auto* scroll=root->findChild<QQuickItem*>("ledgerScroll");QVERIFY(scroll);
+        QTRY_VERIFY(scroll->property("contentWidth").toDouble()>=1080);
     }
 };
 int main(int argc,char** argv) {

@@ -22,6 +22,13 @@ struct Account {
     std::int64_t identity=1;
     bool archived=false;
 };
+// Read-only copy of one account's committed and projected totals. Money has no
+// default value, so construct this only with all three fields.
+struct AccountBalance {
+    std::int64_t identity=0;
+    Money committed;
+    std::optional<Money> projected;
+};
 // Explicit account command receipt. Retry returns this stored after-image.
 struct AccountCommandReceipt {
     std::string operation;
@@ -214,6 +221,9 @@ public:
     virtual std::optional<BulkReceipt> bulk_outcome(std::string_view) const { throw std::logic_error("Bulk changes require a new schema-7 dataset"); }
     // No authoritative projection exists while the pending batch is blocked/unresolved.
     virtual std::optional<Money> projected_balance() const = 0;
+    // Same formulas as the selected-account methods, for every live account.
+    // Empty when a test double has not forwarded the read.
+    virtual std::vector<AccountBalance> account_balances() const { return {}; }
     virtual bool rules_supported() const { return false; }
     virtual RuleImage rule_image() const { throw std::logic_error("Rules require a new experimental dataset"); }
     virtual std::vector<RuleTombstone> rule_tombstones() const { throw std::logic_error("Rules require a new experimental dataset"); }

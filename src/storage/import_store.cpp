@@ -871,10 +871,11 @@ void ImportStore::opening(std::int64_t expected,std::string_view date,const Mone
     for(const auto& b:batches()) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts) advance(impl_->db,b.id,b.revision,"opening",static_cast<int>(b.state));
     impl_->finish(a);
 }
-std::vector<app::BatchInfo> ImportStore::batches() const {
-    Statement s(impl_->db,"SELECT id FROM batches WHERE account_id=spentit_account() ORDER BY rowid"); std::vector<app::BatchInfo> result;
-    while(s.row()) result.push_back(batch(impl_->db,s.bytes(0))); return result;
+std::vector<app::BatchInfo> ImportStore::batches_for(std::int64_t id) const {
+    Statement s(impl_->db,"SELECT id FROM batches WHERE account_id=? ORDER BY rowid");s.integer(1,id);std::vector<app::BatchInfo> result;
+    while(s.row()) result.push_back(batch(impl_->db,s.bytes(0)));return result;
 }
+std::vector<app::BatchInfo> ImportStore::batches() const {return batches_for(impl_->selected_account);}
 std::string ImportStore::evidence(std::string_view id) const {
     require_account(id);
     Statement s(impl_->db,"SELECT bytes FROM sources JOIN batches ON sources.id=batches.source_id WHERE batches.id=?"); s.text(1,id); if(!s.row()) fail(SQLITE_NOTFOUND); return s.bytes(0);
@@ -1268,26 +1269,43 @@ std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const {
     }
     return result;
 }
+Money ImportStore::committed_for(std::int64_t id) const {
+    const auto acct=account_by_id(id);std::vector<Money> values{acct.opening,local_transfer_total(id,false)};
+    Statement rows(impl_->db,"SELECT e.total FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) WHERE h.batch IN(SELECT id FROM batches WHERE account_id=?) AND e.active=1");
+    rows.integer(1,id);while(rows.row())values.emplace_back(rows.integer(0),acct.currency);return imports::sum(acct.currency,values);
+}
 Money ImportStore::committed_balance() const {
-    if(committed_changes_supported()) {const auto currency=account().currency;std::vector<Money> values{account().opening,local_transfer_total(impl_->selected_account,false)};Statement rows(impl_->db,"SELECT e.total FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1");while(rows.row())values.emplace_back(rows.integer(0),currency);return imports::sum(currency,values);}
+    if(committed_changes_supported()) return committed_for(impl_->selected_account);
     const auto a=account(); std::vector<Money> amounts{a.opening};
     Statement s(impl_->db,"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.state=1 AND v.decision=1 "
         "AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     while(s.row()) amounts.emplace_back(s.integer(0),a.currency); return imports::sum(a.currency,amounts);
 }
-std::optional<Money> ImportStore::projected_balance() const {
-    for(const auto& b:batches()) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts) {
+std::optional<Money> ImportStore::projected_for(std::int64_t id) const {
+    for(const auto& b:batches_for(id)) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts) {
         if(b.blocked) return {};
         Statement s(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=0 AND (NOT EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch) OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) LIMIT 1");
         s.text(1,b.id); if(s.row()) return {};
     }
     if(committed_changes_supported()) {
-        Statement stale(impl_->db,"SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch JOIN review_stamps s USING(batch,ordinal,revision) JOIN entry_heads h ON h.batch=v.duplicate_batch AND h.ordinal=v.duplicate_ordinal JOIN entry_revisions e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision WHERE b.account_id=spentit_account() AND b.state=0 AND v.decision=2 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) AND (s.target_revision!=h.revision OR s.target_active!=e.active) LIMIT 1");if(stale.row())return {};
+        Statement stale(impl_->db,"SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch JOIN review_stamps s USING(batch,ordinal,revision) JOIN entry_heads h ON h.batch=v.duplicate_batch AND h.ordinal=v.duplicate_ordinal JOIN entry_revisions e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision WHERE b.account_id=? AND b.state=0 AND v.decision=2 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) AND (s.target_revision!=h.revision OR s.target_active!=e.active) LIMIT 1");
+        stale.integer(1,id);if(stale.row())return {};
     }
-    const auto a=account(); std::vector<Money> amounts{committed_changes_supported()?committed_balance():a.opening,local_transfer_total(a.identity,true)-local_transfer_total(a.identity,false)};
-    Statement s(impl_->db,committed_changes_supported()?"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)":"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,1) AND v.decision=1 "
+    const auto a=account_by_id(id);std::vector<Money> amounts{committed_changes_supported()?committed_for(id):a.opening,local_transfer_total(id,true)-local_transfer_total(id,false)};
+    Statement s(impl_->db,committed_changes_supported()?"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=? AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)":"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=? AND b.state IN(0,1) AND v.decision=1 "
         "AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
-    while(s.row()) amounts.emplace_back(s.integer(0),a.currency); return imports::sum(a.currency,amounts);
+    s.integer(1,id);while(s.row()) amounts.emplace_back(s.integer(0),a.currency);return imports::sum(a.currency,amounts);
+}
+std::optional<Money> ImportStore::projected_balance() const {return projected_for(impl_->selected_account);}
+std::vector<app::AccountBalance> ImportStore::account_balances() const {
+    Statement ids(impl_->db,"SELECT singleton FROM account WHERE NOT EXISTS(SELECT 1 FROM retired_import_accounts r WHERE r.account_id=singleton) AND NOT EXISTS(SELECT 1 FROM account_retirements d WHERE d.account_id=singleton) ORDER BY singleton");
+    std::vector<app::AccountBalance> result;
+    while(ids.row()) {
+        const auto id=ids.integer(0);
+        if(committed_changes_supported()) result.push_back(app::AccountBalance{id,committed_for(id),projected_for(id)});
+        else if(id==impl_->selected_account && account_selected()) result.push_back(app::AccountBalance{id,committed_balance(),projected_balance()});
+    }
+    return result;
 }
 void ImportStore::verify(const app::OperationContext* context) const {
     ReadStatements read_plans(impl_->db);

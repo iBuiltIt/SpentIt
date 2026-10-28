@@ -40,6 +40,7 @@ public:
     std::vector<app::LedgerRow> ledger(bool p) const override {if(refreshBroken)throw std::runtime_error("Injected ledger refresh failure");return repo().ledger(p);}
     Money committed_balance() const override {return repo().committed_balance();}
     std::optional<Money> projected_balance() const override {return repo().projected_balance();}
+    std::vector<app::AccountBalance> account_balances() const override {return repo().account_balances();}
     bool committed_changes_supported() const override {return repo().committed_changes_supported();}
     bool bulk_supported() const override {return repo().bulk_supported();}
     std::string bulk_group(std::string_view op) const override {return repo().bulk_group(op);}

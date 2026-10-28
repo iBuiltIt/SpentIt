@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 ApplicationWindow {
     id: window
-    width: 1440; height: 850; minimumWidth:1100; minimumHeight:750; visible: true
+    width: 1440; height: 850; minimumWidth:720; minimumHeight:560; visible: true
     title: "SpentIt — durable QIF experiment (synthetic data only)"
     property var s: workflow.state
     property var selected: s.selected || ({})
@@ -155,6 +155,68 @@ ApplicationWindow {
             ledger.contentY+=saved.offset
         } else ledger.positionViewAtBeginning()
     }
+    // Session-only. A restart, or a new dataset, shows the projected balance again.
+    property var sidebarBalanceMode: ({})
+    property var ledgerViewRestore: null
+    property string ledgerViewKind: ""
+    readonly property var ledgerColumnWeights: [0.14, 0.24, 0.17, 0.15, 0.14, 0.16]
+    function sidebarBalanceKind(account) {
+        let chosen=sidebarBalanceMode[account.id]
+        if(chosen==="committed" || !account.projectionAvailable) return "committed"
+        return "projected"
+    }
+    function sidebarBalanceText(account) {
+        let kind=sidebarBalanceKind(account)
+        let amount=kind==="projected"?(account.projectedBalance||""):(account.committedBalance||"")
+        return (kind==="projected"?"Projected":"Committed")+" "+(account.currency||"")+" "+amount
+    }
+    function toggleSidebarBalance(account) {
+        if(!account.projectionAvailable) return
+        let next=Object.assign({},sidebarBalanceMode)
+        next[account.id]=sidebarBalanceKind(account)==="projected"?"committed":"projected"
+        sidebarBalanceMode=next
+    }
+    function captureLedgerView(kind) {
+        if(ledger.count===0) {ledgerViewRestore=null;ledgerViewKind="";return}
+        let first=ledger.indexAt(1,ledger.contentY+1)
+        if(first<0) first=0
+        let item=ledger.itemAtIndex(first)
+        ledgerViewRestore={anchor:workflow.rowIdentity(first),offset:item?ledger.contentY-item.y:0}
+        ledgerViewKind=kind
+    }
+    function guardedPreview(action, args) {
+        guard(function(){
+            captureLedgerView(action==="preview_bulk"?"bulk":action==="rules_reapply_preview"?"reapply":"change")
+            workflow.command(action,args||{})
+        })
+    }
+    function settleLedgerView(action, success) {
+        if(ledgerViewRestore===null) return
+        let related=false
+        let restore=false
+        let clear=false
+        if(ledgerViewKind==="bulk") {
+            related=action==="preview_bulk" || action==="apply_bulk" || action==="cancel_bulk"
+            restore=success && related
+            clear=!success || action==="apply_bulk" || action==="cancel_bulk" || !related
+        } else if(ledgerViewKind==="reapply") {
+            related=action==="rules_reapply_preview" || action==="rules_reapply_apply" || action==="cancel_reapply"
+            restore=success && related
+            clear=!success || action==="rules_reapply_apply" || action==="cancel_reapply" || !related
+        } else if(ledgerViewKind==="change") {
+            related=action==="preview_change" || action==="apply_change" || action==="cancel_change"
+            restore=success && action==="apply_change"
+            clear=!success || action==="apply_change" || action==="cancel_change" || !related
+        } else clear=true
+        if(!related && !restore) {ledgerViewRestore=null;ledgerViewKind="";return}
+        if(restore) {
+            let saved=ledgerViewRestore
+            if(clear) {ledgerViewRestore=null;ledgerViewKind=""}
+            Qt.callLater(function(){restoreViewport(saved)})
+            return
+        }
+        if(clear) {ledgerViewRestore=null;ledgerViewKind=""}
+    }
     // Navigation is local to this document; pages stay alive to retain ledger view state.
     property string currentPage: "ledger"
     property var navigation: ["ledger"]
@@ -277,7 +339,7 @@ ApplicationWindow {
         let rows=s.selection||[]
         if(rows.length===1 && rows[0].batch && rows[0].batch.indexOf("~transfer-")===0)
             transferCommand("transfer_clear_row",{batch:rows[0].batch,ordinal:rows[0].ordinal})
-        else guard(function(){workflow.command("preview_bulk",{kind:"remove"})})
+        else guardedPreview("preview_bulk",{kind:"remove"})
     }
     function chooseCategory(id,path) {
         if(pickerIndex===-2) { ruleCategoryId=id||""; writeRule(); categoryPicker.close(); return }
@@ -538,6 +600,7 @@ ApplicationWindow {
             if(success && action==="select" && searchReturn)searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
+                sidebarBalanceMode=({});ledgerViewRestore=null;ledgerViewKind=""
             }
             if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null}
             if(success) {
@@ -576,6 +639,7 @@ ApplicationWindow {
                 if(action==="create" || action==="unlock") {password.text="";confirmation.text="";unlockPassword.text=""}
                 if(action==="close") {if(closingRequested){allowClose=true;Qt.callLater(function(){window.close()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
+            settleLedgerView(action,success)
         }
     }
     Component.onCompleted: {
@@ -929,20 +993,33 @@ ApplicationWindow {
                 ColumnLayout {
                     anchors.fill:parent
                     Label {text:"Accounts";font.bold:true}
-                    ScrollView {
-                        id:accountScroll;Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth;clip:true
+                    SplitView {
+                        orientation:Qt.Vertical;Layout.fillWidth:true;Layout.fillHeight:true
+                        ScrollView {
+                        id:accountScroll;SplitView.fillHeight:true;SplitView.minimumHeight:120;contentWidth:availableWidth;clip:true
                         ColumnLayout {
                             width:accountScroll.availableWidth
                             Repeater {
                                 model:s.accounts||[]
-                                Button {
+                                ColumnLayout {
                                     required property var modelData
-                                    objectName:modelData.id===s.accountId?"accountNavigation":"accountNavigation_"+modelData.id
-                                    Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
-                                    highlighted:modelData.id===s.accountId && currentPage==="ledger"
-                                    contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
-                                    Accessible.name:"Open account "+modelData.name
-                                    onClicked:chooseAccount(modelData.id)
+                                    Layout.fillWidth:true;spacing:0
+                                    Button {
+                                        objectName:modelData.id===s.accountId?"accountNavigation":"accountNavigation_"+modelData.id
+                                        Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
+                                        highlighted:modelData.id===s.accountId && currentPage==="ledger"
+                                        contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
+                                        Accessible.name:"Open account "+modelData.name
+                                        onClicked:chooseAccount(modelData.id)
+                                    }
+                                    Button {
+                                        objectName:"accountBalance_"+modelData.id
+                                        Layout.fillWidth:true;Layout.minimumHeight:28;text:sidebarBalanceText(modelData);enabled:!workflow.busy
+                                        topPadding:2;bottomPadding:2;leftPadding:4;rightPadding:4
+                                        onClicked:toggleSidebarBalance(modelData)
+                                        Accessible.name:text
+                                        contentItem:Label {text:parent.text;wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d";width:parent.width}
+                                    }
                                 }
                             }
                             TextField {
@@ -956,14 +1033,25 @@ ApplicationWindow {
                             Label {text:"Archived";font.bold:true;visible:(s.archivedAccounts||[]).length>0}
                             Repeater {
                                 model:s.archivedAccounts||[]
-                                Button {
+                                ColumnLayout {
                                     required property var modelData
-                                    objectName:"archivedAccount_"+modelData.id
-                                    Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
-                                    highlighted:modelData.id===s.accountId
-                                    contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
-                                    Accessible.name:"Open archived account "+modelData.name
-                                    onClicked:chooseAccount(modelData.id)
+                                    Layout.fillWidth:true;spacing:0
+                                    Button {
+                                        objectName:"archivedAccount_"+modelData.id
+                                        Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
+                                        highlighted:modelData.id===s.accountId
+                                        contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
+                                        Accessible.name:"Open archived account "+modelData.name
+                                        onClicked:chooseAccount(modelData.id)
+                                    }
+                                    Button {
+                                        objectName:"accountBalance_"+modelData.id
+                                        Layout.fillWidth:true;Layout.minimumHeight:28;text:sidebarBalanceText(modelData);enabled:!workflow.busy
+                                        topPadding:2;bottomPadding:2;leftPadding:4;rightPadding:4
+                                        onClicked:toggleSidebarBalance(modelData)
+                                        Accessible.name:text
+                                        contentItem:Label {text:parent.text;wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d";width:parent.width}
+                                    }
                                 }
                             }
                             Button {objectName:"renameAccount";text:"Rename…";Layout.fillWidth:true;visible:!!s.accountSelected;enabled:!workflow.busy;onClicked:guard(function(){renameField.text=s.name||"";renameDialog.open()})}
@@ -974,9 +1062,17 @@ ApplicationWindow {
                             Button {objectName:"reassignCurrency";text:"Reassign currency…";Layout.fillWidth:true;visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onClicked:guard(function(){currencySearch.text="";currencyDialog.open()})}
                             Button {objectName:"undoAccountCommand";text:"Undo opening or currency…";Layout.fillWidth:true;visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onClicked:guard(function(){workflow.command("undo_account",{operation:workflow.newIdentity(),undoOf:s.undoableAccountOperation})})}
                         }
+                        }
+                        Item {
+                            objectName:"reportsOutside"
+                            SplitView.preferredHeight:110;SplitView.minimumHeight:72;SplitView.maximumHeight:180
+                            ColumnLayout {
+                                anchors.fill:parent;anchors.margins:6
+                                Label {text:"Reports";font.bold:true}
+                                Label {objectName:"reportsOutsideNote";text:"Reports stay outside this work. Nothing is created here.";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                            }
+                        }
                     }
-                    Label {textFormat:Text.PlainText;text:(s.mode==="Projected"?"Projected":"Committed")+" balance";Layout.fillWidth:true;wrapMode:Text.Wrap}
-                    Label {textFormat:Text.PlainText;text:(s.currency||"")+" "+(s.mode==="Projected"?(s.projected||"Unavailable"):(s.committed||""));Layout.fillWidth:true;wrapMode:Text.Wrap;font.bold:true}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
                     Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.rulesSupported;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(!rulesDirty)workflow.command("rules_load")})}
                     Button {objectName:"historyNavigation";text:"Committed changes";Layout.fillWidth:true;visible:!!s.committedChangesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("history");workflow.command("history")})}
@@ -1113,7 +1209,7 @@ ApplicationWindow {
                             Button {objectName:"applyRules";text:"Apply";visible:currentPage==="rules" && !!s.pending && !s.pending.processingIncomplete && !selected.committed;enabled:!rulesDirty && replaceManualFields.checked===!!((s.rulePreview||{}).replaceManual) && applyReady();onClicked:applyRules()}
                         }
                         Label {objectName:"rulesCommittedNotice";visible:currentPage==="rules" && (!!selected.committed || !s.pending);text:"Committed records are not changed by Apply.";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
-                        Button {objectName:"reapplyRules";text:"Reapply to this account";visible:!!s.rulesSupported;enabled:!rulesDirty && !workflow.busy;onClicked:workflow.command("rules_reapply_preview",{replaceManual:replaceManualFields.checked})}
+                        Button {objectName:"reapplyRules";text:"Reapply to this account";visible:!!s.rulesSupported;enabled:!rulesDirty && !workflow.busy;onClicked:guardedPreview("rules_reapply_preview",{replaceManual:replaceManualFields.checked})}
                         Label {objectName:"rulePreviewStatus";text:(s.rulePreview||{}).label||"";font.bold:true;textFormat:Text.PlainText}
                         Label {objectName:"rulePreviewBody";text:(s.rulePreview||{}).summaryText||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                         Label {text:(s.rulePreview||{}).overlap||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
@@ -1157,9 +1253,9 @@ ApplicationWindow {
                                         TextArea {text:modelData.details;readOnly:true;selectByMouse:true;textFormat:TextEdit.PlainText;wrapMode:TextEdit.Wrap}
                                     }
                                     Label {textFormat:Text.PlainText;text:modelData.undoReason;visible:!modelData.undoEligible;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                                    Button {objectName:"undo_"+modelData.operation;text:"Review Undo…";enabled:modelData.undoEligible;onClicked:workflow.command("preview_change",{kind:"undo",operation:modelData.operation,batch:modelData.batch,ordinal:modelData.ordinal})}
-                                    Button {text:"Review group Undo…";visible:!!modelData.bulkGroup;onClicked:workflow.command("preview_bulk",{kind:"undo",operation:modelData.bulkGroup})}
-                                    Button {text:"Review group Undo…";visible:!!modelData.reapplyGroup;onClicked:workflow.command("rules_reapply_preview",{undoOf:modelData.reapplyGroup})}
+                                    Button {objectName:"undo_"+modelData.operation;text:"Review Undo…";enabled:modelData.undoEligible;onClicked:guardedPreview("preview_change",{kind:"undo",operation:modelData.operation,batch:modelData.batch,ordinal:modelData.ordinal})}
+                                    Button {text:"Review group Undo…";visible:!!modelData.bulkGroup;onClicked:guardedPreview("preview_bulk",{kind:"undo",operation:modelData.bulkGroup})}
+                                    Button {text:"Review group Undo…";visible:!!modelData.reapplyGroup;onClicked:guardedPreview("rules_reapply_preview",{undoOf:modelData.reapplyGroup})}
                                 }
                             }
                         }
@@ -1181,7 +1277,7 @@ ApplicationWindow {
                     }
                 }
                 ScrollView {
-                    id:ledgerScroll;anchors.fill:parent;visible:currentPage==="ledger";clip:true
+                    id:ledgerScroll;objectName:"ledgerScroll";anchors.fill:parent;visible:currentPage==="ledger";clip:true
                     // Keep controls reachable in a narrow window or with a wide sidebar.
                     contentWidth:Math.max(1080,availableWidth);contentHeight:availableHeight
                     ColumnLayout {
@@ -1242,7 +1338,7 @@ ApplicationWindow {
             Label {objectName:"committedChangeReceipt";textFormat:Text.PlainText;text:(s.changeReceipt||{}).summary||"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? "Committed "+s.receipt.operation+" · included "+s.receipt.included+", excluded "+s.receipt.excluded+" · "+s.receipt.before+" + ("+s.receipt.change+") = "+s.receipt.after:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
-                CheckBox {id:projected;checked:true;text:"Projected ledger";onClicked:guard(query)}
+                CheckBox {id:projected;objectName:"projectedLedger";checked:true;text:"Projected ledger";onClicked:guard(query)}
                 TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply filter";onClicked:guard(query)}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
@@ -1251,15 +1347,22 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.fillWidth:true;visible:!!s.bulkSupported
-                Button {objectName:"bulkRemove";text:"Delete selected…";enabled:!s.readOnly && (s.selectionCount||0)>0;onClicked:guard(function(){workflow.command("preview_bulk",{kind:"remove"})})}
+                Button {objectName:"bulkRemove";text:"Delete selected…";enabled:!s.readOnly && (s.selectionCount||0)>0;onClicked:guardedPreview("preview_bulk",{kind:"remove"})}
                 ComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).filter(function(c){return c.assignable}));textRole:"path";Layout.preferredWidth:220;Accessible.name:"Category for selected transactions"}
-                Button {objectName:"bulkCategorize";text:"Change category…";enabled:!s.readOnly && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0;onClicked:guard(function(){workflow.command("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})})}
+                Button {objectName:"bulkCategorize";text:"Change category…";enabled:!s.readOnly && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0;onClicked:guardedPreview("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})}
                 Label {textFormat:Text.PlainText;text:(s.bulkReceipt||{}).summary||"Committed rows only · every allocation";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                Button {objectName:"undoBulk";text:"Undo group…";visible:!!(s.bulkReceipt||{}).operation;onClicked:guard(function(){workflow.command("preview_bulk",{kind:"undo",operation:s.bulkReceipt.operation})})}
+                Button {objectName:"undoBulk";text:"Undo group…";visible:!!(s.bulkReceipt||{}).operation;onClicked:guardedPreview("preview_bulk",{kind:"undo",operation:s.bulkReceipt.operation})}
             }
-            RowLayout {
+            Row {
+                Layout.fillWidth:true;spacing:0
                 Repeater {model:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
-                    Button {required property string modelData;required property int index;text:modelData+(index===(s.sort||0)?(s.descending?" ▼":" ▲"):"");Layout.fillWidth:true;onClicked:guard(function(){query(index,s.sort===index?!s.descending:false)})}
+                    Button {
+                        required property string modelData;required property int index
+                        objectName:"ledgerColumn_"+index
+                        width:ledger.width*window.ledgerColumnWeights[index]
+                        text:modelData+(index===(s.sort||0)?(s.descending?" ▼":" ▲"):"")
+                        onClicked:guard(function(){query(index,s.sort===index?!s.descending:false)})
+                    }
                 }
             }
             ListView {
@@ -1308,13 +1411,13 @@ ApplicationWindow {
                         onDoubleClicked:function(mouse){if(mouse.button===Qt.LeftButton && record.batch.length)inspectRecord(record.batch,record.ordinal)}
                     }
                     Row {
-                        width:parent.width;height:34;spacing:4
+                        width:parent.width;height:34;spacing:0
                         Repeater {model:[record.date,record.payee+(record.status==="Draft"?" [Draft]":""),record.category,record.withdrawal,record.deposit,record.balance]
                             Item {
                                 required property string modelData
                                 required property int index
-                                width:(ledger.width-24)/6;height:34
-                                Label {anchors.fill:parent;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;visible:index!==2 || record.splits.length<2}
+                                width:ledger.width*window.ledgerColumnWeights[index];height:34
+                                Label {anchors.fill:parent;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>=3?Text.AlignRight:Text.AlignLeft;visible:index!==2 || record.splits.length<2}
                                 Button {
                                     anchors.fill:parent;visible:index===2 && record.splits.length>1
                                     objectName:index===2 && record.batch.length?"splitToggle_"+record.ordinal:""

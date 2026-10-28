@@ -562,7 +562,13 @@ struct ImportModel::Worker {
         if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
         auto& repo=gateway->repository();catalog();
         if(metadata.isEmpty()) {
-            auto packAccount=[&](const app::Account& item){return QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())},{"archived",item.archived}};};
+            std::map<std::int64_t,QVariantMap> accountBalances;
+            for(const auto& item:repo.account_balances()) accountBalances.emplace(item.identity,QVariantMap{{"committedBalance",money(item.committed)},{"projectedBalance",item.projected?money(*item.projected):QString()},{"projectionAvailable",item.projected.has_value()}});
+            auto packAccount=[&](const app::Account& item){
+                const auto found=accountBalances.find(item.identity);
+                const auto extra=found==accountBalances.end()?QVariantMap{}:found->second;
+                return QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())},{"archived",item.archived},{"committedBalance",extra.value("committedBalance")},{"projectedBalance",extra.value("projectedBalance")},{"projectionAvailable",extra.value("projectionAvailable",false)}};
+            };
             QVariantList archivedList;for(const auto& item:repo.archived_accounts()) archivedList.push_back(packAccount(item));
             state["archivedAccounts"]=archivedList;
             state["committedChangesSupported"]=repo.committed_changes_supported();state["categoriesSupported"]=repo.categories_supported();
