@@ -10,7 +10,7 @@ void bulk_bound(const app::BulkRequest& request) {
 }
 bool same_preview(const app::BulkPreview& a,const app::BulkPreview& b){
     if(a.request!=b.request || a.preview_sequence!=b.preview_sequence || a.catalog_revision!=b.catalog_revision || a.before!=b.before || a.change!=b.change || a.after!=b.after || a.entries.size()!=b.entries.size())return false;
-    for(std::size_t i=0;i<a.entries.size();++i){const auto& x=a.entries[i];const auto& y=b.entries[i];if(x.expected!=y.expected || x.before_entry.active!=y.before_entry.active || x.after_entry.active!=y.after_entry.active || !same_draft(x.before_entry.draft,y.before_entry.draft) || !same_draft(x.after_entry.draft,y.after_entry.draft))return false;}
+    for(std::size_t i=0;i<a.entries.size();++i){const auto& x=a.entries[i];const auto& y=b.entries[i];if(x.expected!=y.expected || x.relationship!=y.relationship || x.link_stamp!=y.link_stamp || x.before_entry.active!=y.before_entry.active || x.after_entry.active!=y.after_entry.active || !same_draft(x.before_entry.draft,y.before_entry.draft) || !same_draft(x.after_entry.draft,y.after_entry.draft))return false;}
     return true;
 }
 }
@@ -58,7 +58,7 @@ app::BulkPreview ImportStore::preview_bulk(const app::BulkRequest& request) cons
             for(auto& value:values){value.category=path;value.category_binding=request.category.empty()?std::optional<CategoryBinding>{}:CategoryBinding{request.category,epoch};value.category_owner=FieldOwnership::manual;value.category_rule.reset();}
             draft.transaction=draft.transaction.corrected(draft.transaction.effective_total(),std::move(values));change.correction=std::move(draft);
         }else if(undo)change.undo_of=undo->entries[i].operation;
-        auto preview=preview_committed_change(change);preview.before=result.after;preview.after=preview.before+preview.change;preview.preview_sequence=sequence+integer(i);
+        auto preview=preview_change(change,false);preview.before=result.after;preview.after=preview.before+preview.change;preview.preview_sequence=sequence+integer(i);
         result.after=preview.after;deltas.push_back(preview.change);result.entries.push_back(std::move(preview));
     }
     result.change=imports::sum(before.currency(),deltas);return result;

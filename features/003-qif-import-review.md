@@ -111,7 +111,7 @@ The [multi-account prerequisite](../doc/accounts.md) gives each account an indep
 
 ## QIF transfer destinations — 2026-10-26
 
-The [bounded destination extension](../doc/qif-transfers.md) admits whole-record and split `[Account]` notation, requires explicit account/link resolution, and guards commit and rule application against losing transfer intent. See that contract and its verification link. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27). Committed transfer reversal remains point 6.
+The [bounded destination extension](../doc/qif-transfers.md) admits whole-record and split `[Account]` notation, requires explicit account/link resolution, and guards commit and rule application against losing transfer intent. See that contract and its verification link. Allocation-level Merge, unlink, and the locked committed link edits are implemented in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-committed-transfer-editing--2026-10-27). Moving a committed row and rewriting source-occurrence links remain open.
 
 
 ## Ordinary profile and unavailable original amounts — 2026-10-26

@@ -37,6 +37,7 @@ public:
     std::int64_t transfer_sequence() const override;
     std::vector<app::TransferView> transfers() const override;
     app::TransferReceipt apply_transfer(std::string_view,const app::TransferRequest&) override;
+    app::TransferPreview preview_transfer(const app::TransferRequest&) const override;
     std::optional<app::TransferReceipt> transfer_outcome(std::string_view) const override;
     std::vector<app::TransferJournalEntry> transfer_journal() const override;
     std::vector<app::Account> accounts() const override;
@@ -127,6 +128,17 @@ private:
     std::vector<app::LedgerRow> local_transfer_ledger(bool) const;
     void verify_transfers(const app::OperationContext*) const;
     void require_unlinked(const imports::Occurrence&) const;
+    bool transfer_linked(const imports::Occurrence&) const;
+    app::ChangePreview preview_change(const app::ChangeRequest&,bool links) const;
+    struct EntryLinkPlan {
+        std::vector<app::TransferView> changed;
+        std::string relationship;
+        std::string stamp;
+    };
+    EntryLinkPlan plan_entry_links(const std::vector<app::TransferView>&,const imports::Occurrence&,const imports::DraftRow&,const imports::DraftRow&,bool remove) const;
+    EntryLinkPlan plan_restore(std::string_view) const;
+    bool later_relationship_blocks(const imports::Occurrence&,std::string_view) const;
+    void write_entry_links(std::string_view,std::int64_t,app::TransferAction,std::int64_t,const std::vector<app::TransferView>&);
     Money transfer_import_transition(std::string_view,std::string_view,bool);
     Money transfer_import_adjustment(std::string_view) const;
     std::set<std::size_t> protected_import_rows(std::string_view) const;

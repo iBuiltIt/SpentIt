@@ -284,7 +284,7 @@ ApplicationWindow {
         if(pickerIndex<0 || pickerIndex>=splitModel.count)return
         let split=splitModel.get(pickerIndex)
         let link=originLink(split.allocationId)
-        if(link) {
+        if(link && !committedEditing) {
             categoryPicker.close()
             transferCommand("transfer_retarget",{link:link,batch:selected.batch,ordinal:selected.ordinal,allocation:split.allocationId,mode:0,categoryId:id||"",categoryPath:path||""})
             return
@@ -517,7 +517,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {addingAccount=false;bulkDialog.close();changePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {addingAccount=false;bulkDialog.close();changePreview.close();mergePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -559,6 +559,8 @@ ApplicationWindow {
                 if(action==="apply_category") {let next=pendingAction;pendingAction=null;dismiss(categoryChangePreview);categoryDirty=false;if(!dirty)loadEditor();if(next)guard(next)}
                 if(action==="preview_change") changePreview.open()
                 if(action==="apply_change") dismiss(changePreview)
+                if(action==="transfer_merge" && (s.transferMergePreview||{}).id) mergePreview.open()
+                if(action==="transfer_merge_apply") dismiss(mergePreview)
                 if(["inspect","entry_history","import","map_import","group_abort","resume","save","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
                 if(action==="save" || action==="apply_change") {
                     dirty=false
@@ -669,6 +671,23 @@ ApplicationWindow {
             RowLayout {
                 Button {objectName:"applyCommittedChange";text:(s.changePreview||{}).applyLabel||"Apply";enabled:!workflow.busy && !!(s.changePreview||{}).id;onClicked:workflow.command("apply_change",{preview:s.changePreview.id})}
                 Button {objectName:"cancelCommittedChange";text:"Cancel";enabled:!workflow.busy;onClicked:{changePreview.close();pendingAction=null;workflow.command("cancel_change")}}
+            }
+        }
+    }
+    Dialog {
+        id:mergePreview;objectName:"mergePreview";modal:true;anchors.centerIn:parent
+        width:Math.min(window.width-48,720)
+        title:"Review merge"
+        onRejected:if(!guardHandoff)workflow.command("cancel_merge")
+        ColumnLayout {
+            anchors.fill:parent
+            Label {objectName:"mergePreviewNote";textFormat:Text.PlainText;text:(s.transferMergePreview||{}).note||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {objectName:"mergePreviewImpact";textFormat:Text.PlainText;text:(s.transferMergePreview||{}).balanceImpact||"";font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {textFormat:Text.PlainText;text:"The generated duplicate leaves the committed ledger. Evidence and history stay. The other account is unchanged.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Button {objectName:"confirmMerge";text:"Merge";enabled:!workflow.busy && !!(s.transferMergePreview||{}).id;onClicked:workflow.command("transfer_merge_apply",{preview:s.transferMergePreview.id})}
+                Button {objectName:"cancelMerge";text:"Cancel";enabled:!workflow.busy;onClicked:{mergePreview.close();workflow.command("cancel_merge")}}
             }
         }
     }

@@ -20,6 +20,8 @@ bool shows(ImportStore& store,const std::string& batch){for(const auto& row:stor
 app::TransferRequest command(ImportStore& s,app::TransferAction action,std::string id="manual"){app::TransferRequest r{};r.action=action;r.link=id;r.expected_sequence=s.transfer_sequence();return r;}
 app::TransferRequest merge_of(ImportStore& store,std::string link,transfers::AllocationFact left,transfers::AllocationFact right,std::int64_t left_revision,std::int64_t right_revision,std::string payee=""){auto request=command(store,app::TransferAction::merge,std::move(link));request.kept=request.link+"-kept";request.left=std::move(left);request.right=std::move(right);request.batch_revision=left_revision;request.right_revision=right_revision;request.payee=std::move(payee);return request;}
 app::TransferRequest retarget_of(ImportStore& store,std::string link,transfers::AllocationFact origin,std::int64_t revision,std::string category,std::string category_id=""){auto request=command(store,app::TransferAction::retarget,std::move(link));request.kept=request.link+"-kept";request.mode=0;request.left=std::move(origin);request.batch_revision=revision;request.category_path=std::move(category);request.category_id=std::move(category_id);return request;}
+app::ChangeReceipt apply_change(ImportStore& store,const std::string& id,const app::ChangeRequest& request){const auto preview=store.preview_committed_change(request);const auto receipt=store.apply_committed_change(id,request,preview.expected,preview.preview_sequence);check(store.apply_committed_change(id,request,preview.expected,preview.preview_sequence).sequence==receipt.sequence);return receipt;}
+bool contains(const std::string& value,const char* text){return value.find(text)!=std::string::npos;}
 auto create(ImportStore& s){auto r=command(s,app::TransferAction::manual);r.destination=2;r.amount=Money(-10000,cad);r.date="2026-10-26";r.payee="SYNTHETIC-TRANSFER-MARKER";return r;}
 void basics(){Directory d;auto path=d.path/"doc";
  {auto s=ImportStore::create(path,password,"Checking",cad,"2026-10-26");s.create_account(2,"Visa",cad,"2026-10-26");auto request=create(s);const auto created=s.apply_transfer("create",request);check(created.change.units()==0);check(s.apply_transfer("create",request).sequence==created.sequence);request.amount=Money(-9999,cad);rejected([&]{s.apply_transfer("create",request);});
@@ -161,9 +163,14 @@ void management(){
             s.apply_transfer("merge-protected",merge_of(s,"generated-c",allocation_fact(2,"~transfer-generated-c-destination","generated",Money(10000,cad),"2026-10-27",transfers::State::draft,false,true),allocation_fact(2,"visa-c","source-0",Money(10000,cad),"2026-10-30",transfers::State::draft,true),0,0));
             check(view_of(s,"generated-c").link.origin.state==transfers::State::committed && view_of(s,"generated-c").link.destination.endpoint.entry.batch=="visa-c" && view_of(s,"generated-c").link.origin.amount==Money(-10000,cad));
             s.commit("visa-c",0,"commit-visa-c");s.select_account(1);s.ingest("origin-d","D02/11/2026\nT-100\nPCommitted generated\n^\n",qif::DateOrder::dmy);assign=command(s,app::TransferAction::from_draft,"generated-d");assign.origin=imports::Occurrence{"origin-d",0};assign.allocation="source-0";assign.destination=2;s.apply_transfer("assign-d",assign);
-            s.select_account(2);s.apply_transfer("accept-d",command(s,app::TransferAction::accept,"generated-d"));s.apply_transfer("commit-d",command(s,app::TransferAction::commit_local,"generated-d"));s.ingest("visa-d","D03/11/2026\nT100\nPExtra\n^\n",qif::DateOrder::dmy);const auto before=s.committed_balance();
-            message_has("point 6",[&]{s.apply_transfer("merge-committed-generated",merge_of(s,"generated-d",allocation_fact(2,"~transfer-generated-d-destination","generated",Money(10000,cad),"2026-11-02",transfers::State::committed,false,true),allocation_fact(2,"visa-d","source-0",Money(10000,cad),"2026-11-03",transfers::State::draft,true),0,0));});
-            check(s.committed_balance()==before && view_of(s,"generated-d").link.destination.endpoint.allocation=="generated" && shows(s,"visa-d"));
+            s.select_account(2);s.apply_transfer("accept-d",command(s,app::TransferAction::accept,"generated-d"));s.apply_transfer("commit-d",command(s,app::TransferAction::commit_local,"generated-d"));s.ingest("visa-d","D03/11/2026\nT100\nPExtra\n^\n",qif::DateOrder::dmy);
+            const auto visa_evidence=s.record_evidence({"visa-d",0});check(!visa_evidence.empty());
+            const auto retiring=merge_of(s,"generated-d",allocation_fact(2,"~transfer-generated-d-destination","generated",Money(10000,cad),"2026-11-02",transfers::State::committed,false,true),allocation_fact(2,"visa-d","source-0",Money(10000,cad),"2026-11-03",transfers::State::draft,true),0,0);
+            s.select_account(1);message_has("generated duplicate",[&]{s.apply_transfer("merge-wrong-account",retiring);});s.select_account(2);const auto before=s.committed_balance();
+            const auto looked=s.preview_transfer(retiring);check(looked.change==Money(-10000,cad) && looked.before==before && contains(looked.note,"Visa") && contains(looked.note,"Checking"));
+            const auto retired=s.apply_transfer("merge-committed-generated",retiring);check(retired.change==Money(-10000,cad) && retired.before==before && retired.after==before+retired.change && s.apply_transfer("merge-committed-generated",retiring).sequence==retired.sequence);
+            const auto retired_view=view_of(s,"generated-d");check(s.committed_balance()==before+Money(-10000,cad) && retired_view.link.destination.endpoint.entry.batch=="visa-d" && retired_view.link.destination.endpoint.allocation=="source-0" && retired_view.link.destination.date=="2026-11-03");
+            check(retired_view.link.origin.amount==Money(-10000,cad) && retired_view.link.origin.date=="2026-11-02" && !shows(s,"~transfer-generated-d-destination") && s.record_evidence({"visa-d",0})==visa_evidence);
             s.select_account(1);s.commit("origin-d",0,"commit-origin-d");s.ingest("unequal","D26/10/2026\nT-50\nPUnequal\n^\n",qif::DateOrder::dmy);
             message_has("disagree",[&]{s.apply_transfer("merge-unequal",merge_of(s,"bad",allocation_fact(1,"unequal","source-0",Money(-5000,cad),"2026-10-26",transfers::State::draft,true),allocation_fact(2,"visa-d","source-0",Money(10000,cad),"2026-11-03",transfers::State::draft,true),0,0));});
             s.create_account(4,"Foreign",usd,"2026-10-26");s.select_account(4);s.opening(0,"2026-10-26",Money(0,usd));s.ingest("fx-row","D28/10/2026\nT-100\nPForeign\n^\n",qif::DateOrder::dmy);
@@ -222,9 +229,20 @@ void management(){
             s.select_account(1);check(s.row({"committed-origin",0}).draft->transaction.allocations().at(0).category=="Fees");
             s.commit("committed-origin",1,"commit-origin-later");check(view_of(s,"open").link.unresolved && view_of(s,"open").link.destination.amount==Money(7000,cad));
             s.ingest("locked","D26/10/2026\nT-20\nPLocked\n^\n",qif::DateOrder::dmy);assign=command(s,app::TransferAction::from_draft,"locked-link");assign.origin=imports::Occurrence{"locked",0};assign.allocation="source-0";assign.destination=2;s.apply_transfer("assign-locked",assign);s.commit("locked",0,"commit-locked");
-            message_has("point 6",[&]{s.apply_transfer("rewrite-committed",retarget_of(s,"locked-link",allocation_fact(1,"locked","source-0",Money(-2000,cad),"2026-10-26",transfers::State::committed,true),1,"Fees","fees"));});
-            check(view_of(s,"locked-link").link.origin.state==transfers::State::committed && !view_of(s,"locked-link").link.unresolved && view_of(s,"locked-link").link.destination.endpoint.allocation=="generated" && view_of(s,"locked-link").link.origin.amount==Money(-2000,cad));
-            check(s.committed_entry({"locked",0}).current.draft.transaction.allocations().at(0).category!="Fees");
+            s.select_account(2);const auto visa_locked=s.committed_balance();s.select_account(1);
+            const auto rewrite=retarget_of(s,"locked-link",allocation_fact(1,"locked","source-0",Money(-2000,cad),"2026-10-26",transfers::State::committed,true),1,"Fees","fees");
+            const auto rewrite_preview=s.preview_transfer(rewrite);check(rewrite_preview.change.units()==0);
+            const auto rewritten=s.apply_transfer("rewrite-committed",rewrite);check(rewritten.change.units()==0 && s.apply_transfer("rewrite-committed",rewrite).sequence==rewritten.sequence);
+            const auto locked=view_of(s,"locked-link");check(locked.link.origin.state==transfers::State::removed && locked.link.destination.state==transfers::State::removed && locked.link.origin.amount==Money(-2000,cad));
+            check(s.committed_entry({"locked",0}).current.draft.transaction.effective_total()==Money(-2000,cad) && s.committed_entry({"locked",0}).current.draft.transaction.allocations().at(0).category=="Fees");
+            s.select_account(2);check(s.committed_balance()==visa_locked && !shows(s,"~transfer-locked-link-destination"));s.select_account(1);
+            auto manual_cat=command(s,app::TransferAction::manual,"manual-cat");manual_cat.destination=2;manual_cat.amount=Money(-3000,cad);manual_cat.date="2026-10-26";manual_cat.payee="SYNTHETIC-TRANSFER-MARKER";s.apply_transfer("create-manual-cat",manual_cat);
+            s.select_account(2);s.apply_transfer("accept-manual-cat-dest",command(s,app::TransferAction::accept,"manual-cat"));s.apply_transfer("commit-manual-cat-dest",command(s,app::TransferAction::commit_local,"manual-cat"));
+            s.select_account(1);s.apply_transfer("accept-manual-cat-origin",command(s,app::TransferAction::accept,"manual-cat"));s.apply_transfer("commit-manual-cat-origin",command(s,app::TransferAction::commit_local,"manual-cat"));
+            auto manual_category=retarget_of(s,"manual-cat",allocation_fact(1,"~transfer-manual-cat-origin","manual",Money(-3000,cad),"2026-10-26",transfers::State::committed,false),0,"Fees","fees");manual_category.left->manually_entered=true;
+            const auto manual_preview=s.preview_transfer(manual_category);check(manual_preview.change.units()==0);
+            const auto manual_receipt=s.apply_transfer("retarget-manual-cat",manual_category);check(manual_receipt.change.units()==0 && s.apply_transfer("retarget-manual-cat",manual_category).sequence==manual_receipt.sequence);
+            const auto categorized=view_of(s,"manual-cat");check(categorized.link.origin_category=="Fees" && categorized.link.unresolved && categorized.link.origin.amount==Money(-3000,cad) && categorized.link.destination.amount==Money(3000,cad));s.verify();
             s.apply_transfer("create-manual",create(s));s.select_account(2);s.apply_transfer("accept-manual",command(s,app::TransferAction::accept));s.apply_transfer("commit-manual",command(s,app::TransferAction::commit_local));s.select_account(1);s.apply_transfer("accept-manual-origin",command(s,app::TransferAction::accept));s.apply_transfer("commit-manual-origin",command(s,app::TransferAction::commit_local));
             s.select_account(2);s.reassign_currency("scale-visa",usd);s.select_account(1);const auto preserved=view_of(s,"manual");check(preserved.link.preserved_amounts);
             auto repair=retarget_of(s,"manual",allocation_fact(1,"~transfer-manual-origin","manual",preserved.link.origin.amount,preserved.link.origin.date,transfers::State::committed,false),0,"Fees","fees");repair.left->manually_entered=true;
@@ -234,6 +252,55 @@ void management(){
             s.verify();s.backup_to(d.path/"backup",password);}
         {auto restored=ImportStore::open(d.path/"backup",password);check(view_of(restored,"move-link").link.destination.endpoint.account==3);restored.select_account(3);check(restored.account().name=="Reserve");restored.verify();}
     }
+    {
+        Directory d;const auto path=d.path/"doc";
+        auto s=ImportStore::create(path,password,"Checking",cad,"2026-10-26");s.create_account(2,"Visa",cad,"2026-10-26");s.opening(0,"2026-10-26",Money(0,cad));s.select_account(2);s.opening(0,"2026-10-26",Money(0,cad));s.select_account(1);
+        auto link_pair=[&](const std::string& link,const std::string& origin,const std::string& destination,const std::string& origin_qif,const std::string& destination_qif,const std::string& origin_date,const std::string& destination_date){
+            s.select_account(1);s.ingest(origin,origin_qif,qif::DateOrder::dmy);s.select_account(2);s.ingest(destination,destination_qif,qif::DateOrder::dmy);s.select_account(1);
+            s.apply_transfer("link-"+link,merge_of(s,link,allocation_fact(1,origin,"source-0",Money(-9500,cad),origin_date,transfers::State::draft,true),allocation_fact(2,destination,"source-0",Money(9500,cad),destination_date,transfers::State::draft,true),0,0));
+            s.commit(origin,0,"commit-"+origin);s.select_account(2);s.commit(destination,0,"commit-"+destination);s.select_account(1);
+        };
+        link_pair("link-a","chk-a","visa-a","D02/11/2026\nT-95\nPChecking A\n^\n","D04/11/2026\nT95\nPVisa A\n^\n","2026-11-02","2026-11-04");
+        message_has("one at a time",[&]{s.preview_bulk({app::ChangeKind::remove,{{"chk-a",0}},{},{}});});
+        const auto checking_evidence=s.record_evidence({"chk-a",0});s.select_account(2);const auto visa_evidence=s.record_evidence({"visa-a",0});const auto visa_balance=s.committed_balance();s.select_account(1);
+        const auto checking_balance=s.committed_balance();const auto visa_date=view_of(s,"link-a").link.destination.date;
+        auto dated=s.committed_entry({"chk-a",0}).current.draft;dated.date="2026-11-20";
+        app::ChangeRequest date_request{app::ChangeKind::correct,{"chk-a",0},dated,{}};
+        const auto date_preview=s.preview_committed_change(date_request);check(date_preview.change.units()==0 && contains(date_preview.relationship,"remains"));
+        const auto dated_receipt=apply_change(s,"date-a",date_request);check(dated_receipt.change.units()==0 && s.committed_balance()==checking_balance && view_of(s,"link-a").link.origin_date_corrected && view_of(s,"link-a").link.origin.date=="2026-11-20" && view_of(s,"link-a").link.destination.date==visa_date && view_of(s,"link-a").link.destination.amount==Money(9500,cad));
+        apply_change(s,"undo-date-a",{app::ChangeKind::undo,{"chk-a",0},{},"date-a"});
+        check(!view_of(s,"link-a").link.origin_date_corrected && !view_of(s,"link-a").link.unresolved && view_of(s,"link-a").link.origin.date=="2026-11-02" && s.committed_balance()==checking_balance);
+        auto amount=s.committed_entry({"chk-a",0}).current.draft;auto parts=amount.transaction.allocations();parts[0].amount=Money(-9000,cad);amount.transaction=amount.transaction.corrected(Money(-9000,cad),parts);
+        app::ChangeRequest amount_request{app::ChangeKind::correct,{"chk-a",0},amount,{}};
+        const auto amount_preview=s.preview_committed_change(amount_request);check(amount_preview.change==Money(500,cad) && contains(amount_preview.relationship,"ends") && contains(amount_preview.relationship,"Visa"));
+        const auto amount_receipt=apply_change(s,"amount-a",amount_request);check(amount_receipt.change==Money(500,cad) && s.committed_balance()==checking_balance+Money(500,cad));
+        check(view_of(s,"link-a").link.unresolved && view_of(s,"link-a").link.destination.amount==Money(9500,cad) && view_of(s,"link-a").link.destination.date==visa_date);
+        s.select_account(2);check(s.committed_balance()==visa_balance);s.select_account(1);
+        apply_change(s,"undo-amount-a",{app::ChangeKind::undo,{"chk-a",0},{},"amount-a"});
+        check(!view_of(s,"link-a").link.unresolved && view_of(s,"link-a").link.origin.amount==Money(-9500,cad) && s.committed_entry({"chk-a",0}).current.draft.transaction.effective_total()==Money(-9500,cad) && s.committed_balance()==checking_balance);
+        apply_change(s,"amount-again",amount_request);check(view_of(s,"link-a").link.unresolved && s.committed_balance()==checking_balance+Money(500,cad));
+        s.select_account(2);auto visa_edit=s.committed_entry({"visa-a",0}).current.draft;visa_edit.date="2026-12-01";
+        const auto visa_preview=s.preview_committed_change({app::ChangeKind::correct,{"visa-a",0},visa_edit,{}});check(visa_preview.change.units()==0 && visa_preview.relationship.empty());
+        apply_change(s,"visa-date",{app::ChangeKind::correct,{"visa-a",0},visa_edit,{}});check(s.committed_balance()==visa_balance && s.committed_entry({"visa-a",0}).current.draft.date=="2026-12-01");
+        s.select_account(1);message_has("transfer relationship",[&]{s.preview_committed_change({app::ChangeKind::undo,{"chk-a",0},{},"amount-again"});});
+        auto reused=s.committed_entry({"chk-a",0}).current.draft;reused.payee="Different synthetic";
+        const auto reused_preview=s.preview_committed_change({app::ChangeKind::correct,{"chk-a",0},reused,{}});
+        message_has("reused",[&]{s.apply_committed_change("amount-again",{app::ChangeKind::correct,{"chk-a",0},reused,{}},reused_preview.expected,reused_preview.preview_sequence);});
+        check(s.record_evidence({"chk-a",0})==checking_evidence);s.select_account(2);check(s.record_evidence({"visa-a",0})==visa_evidence);s.select_account(1);
+        link_pair("link-b","chk-b","visa-b","D06/11/2026\nT-95\nPChecking B\n^\n","D08/11/2026\nT95\nPVisa B\n^\n","2026-11-06","2026-11-08");
+        const auto before_removal=s.committed_balance();s.select_account(2);const auto visa_before_removal=s.committed_balance();s.select_account(1);
+        const auto removal_preview=s.preview_committed_change({app::ChangeKind::remove,{"chk-b",0},{},{}});check(removal_preview.change==Money(9500,cad) && contains(removal_preview.relationship,"ends") && contains(removal_preview.relationship,"Visa"));
+        const auto removed=apply_change(s,"remove-b",{app::ChangeKind::remove,{"chk-b",0},{},{}});check(removed.change==Money(9500,cad) && s.committed_balance()==before_removal+Money(9500,cad) && view_of(s,"link-b").link.unresolved && view_of(s,"link-b").link.destination.amount==Money(9500,cad));
+        s.select_account(2);check(s.committed_balance()==visa_before_removal && s.committed_entry({"visa-b",0}).current.draft.transaction.effective_total()==Money(9500,cad));s.select_account(1);
+        apply_change(s,"undo-remove-b",{app::ChangeKind::undo,{"chk-b",0},{},"remove-b"});
+        check(!view_of(s,"link-b").link.unresolved && view_of(s,"link-b").link.origin.state==transfers::State::committed && view_of(s,"link-b").link.destination.state==transfers::State::committed && s.committed_balance()==before_removal && s.committed_entry({"chk-b",0}).current.active);
+        s.select_account(2);const auto visa_generated=s.committed_balance();s.select_account(1);
+        s.ingest("chk-c","D12/11/2026\nT-40\nPGenerated C\n^\n",qif::DateOrder::dmy);auto assign=command(s,app::TransferAction::from_draft,"link-c");assign.origin=imports::Occurrence{"chk-c",0};assign.allocation="source-0";assign.destination=2;s.apply_transfer("assign-c",assign);s.commit("chk-c",0,"commit-c");
+        const auto generated_preview=s.preview_committed_change({app::ChangeKind::remove,{"chk-c",0},{},{}});check(contains(generated_preview.relationship,"generated") && contains(generated_preview.relationship,"removed") && generated_preview.change==Money(4000,cad));
+        apply_change(s,"remove-c",{app::ChangeKind::remove,{"chk-c",0},{},{}});
+        check(view_of(s,"link-c").link.origin.state==transfers::State::removed && view_of(s,"link-c").link.destination.state==transfers::State::removed);
+        s.select_account(2);check(s.committed_balance()==visa_generated && !shows(s,"~transfer-link-c-destination"));s.select_account(1);s.verify();
+    }
 }
 void no_leaks(const fs::path& path){for(const auto& entry:fs::directory_iterator(path))if(entry.is_regular_file()){std::ifstream stream(entry.path(),std::ios::binary);std::string bytes{std::istreambuf_iterator<char>(stream),{}};check(!bytes.starts_with("SQLite format 3") && bytes.find(password)==bytes.npos && bytes.find("SYNTHETIC-TRANSFER-MARKER")==bytes.npos);}}
 void fault_setup(const fs::path& path,int mode){
@@ -242,6 +309,15 @@ void fault_setup(const fs::path& path,int mode){
   if(mode==12){
    s.ingest("left-row","D26/10/2026\nT-100\nPLeft\n^\n",qif::DateOrder::dmy);s.commit("left-row",0,"commit-left");
    s.select_account(2);s.ingest("right-row","D28/10/2026\nT100\nPRight\n^\n",qif::DateOrder::dmy);s.commit("right-row",0,"commit-right");return;
+  }
+  if(mode==13){
+   s.ingest("origin-d","D02/11/2026\nT-100\nPCommitted generated\n^\n",qif::DateOrder::dmy);
+   auto r=command(s,app::TransferAction::from_draft,"generated-d");r.origin=imports::Occurrence{"origin-d",0};r.allocation="source-0";r.destination=2;s.apply_transfer("assign-d",r);
+   s.select_account(2);s.apply_transfer("accept-d",command(s,app::TransferAction::accept,"generated-d"));s.apply_transfer("commit-d",command(s,app::TransferAction::commit_local,"generated-d"));s.ingest("visa-d","D03/11/2026\nT100\nPExtra\n^\n",qif::DateOrder::dmy);return;
+  }
+  if(mode==14){
+   s.ingest("locked","D26/10/2026\nT-20\nPLocked\n^\n",qif::DateOrder::dmy);
+   auto r=command(s,app::TransferAction::from_draft,"locked-link");r.origin=imports::Occurrence{"locked",0};r.allocation="source-0";r.destination=2;s.apply_transfer("assign-locked",r);s.commit("locked",0,"commit-locked");return;
   }
   s.ingest("origin","D26/10/2026\nT-100\nPOrigin\n^\n",qif::DateOrder::dmy);
   auto r=command(s,app::TransferAction::from_draft,"generated-link");r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;s.apply_transfer("assign",r);
@@ -259,11 +335,13 @@ void fault_setup(const fs::path& path,int mode){
  r=command(s,app::TransferAction::propose_match);r.evidence=transfers::BankEvidence{{2,{"bank",0},"source-0"},Money(10000,cad),"2026-10-28"};s.apply_transfer("proposal",r);
 }
 void fault_execute(ImportStore& s,int mode,std::int64_t expected){
- s.select_account(mode==3 || mode==5 || mode==6 || mode==8 || mode==10?2:1);
+ s.select_account(mode==3 || mode==5 || mode==6 || mode==8 || mode==10 || mode==13?2:1);
  if(mode>=10){
   app::TransferRequest r{};r.expected_sequence=expected;r.kept="operation-kept";r.payee="Synthetic";
   if(mode==10){r.action=app::TransferAction::merge;r.link="generated-link";r.left=allocation_fact(2,"~transfer-generated-link-destination","generated",Money(10000,cad),"2026-10-26",transfers::State::draft,false,true);r.right=allocation_fact(2,"visa-row","source-0",Money(10000,cad),"2026-10-28",transfers::State::draft,true);r.batch_revision=0;r.right_revision=0;}
   else if(mode==11){r.action=app::TransferAction::retarget;r.link="generated-link";r.mode=0;r.category_path="Fees";r.left=allocation_fact(1,"origin","source-0",Money(-10000,cad),"2026-10-26",transfers::State::draft,true);r.batch_revision=0;}
+  else if(mode==13){r.action=app::TransferAction::merge;r.link="generated-d";r.left=allocation_fact(2,"~transfer-generated-d-destination","generated",Money(10000,cad),"2026-11-02",transfers::State::committed,false,true);r.right=allocation_fact(2,"visa-d","source-0",Money(10000,cad),"2026-11-03",transfers::State::draft,true);r.batch_revision=0;r.right_revision=0;}
+  else if(mode==14){r.action=app::TransferAction::retarget;r.link="locked-link";r.mode=0;r.category_path="Fees";r.left=allocation_fact(1,"locked","source-0",Money(-2000,cad),"2026-10-26",transfers::State::committed,true);r.batch_revision=1;}
   else{r.action=app::TransferAction::merge;r.link="merged";r.left=allocation_fact(1,"left-row","source-0",Money(-10000,cad),"2026-10-26",transfers::State::committed,true);r.right=allocation_fact(2,"right-row","source-0",Money(10000,cad),"2026-10-28",transfers::State::committed,true);r.batch_revision=1;r.right_revision=1;}
   s.apply_transfer("operation",r);return;
  }
@@ -279,7 +357,7 @@ void fault_execute(ImportStore& s,int mode,std::int64_t expected){
 }
 void faults(bool crash){
  fault_vfs::install();
- for(int mode=0;mode<13;++mode){Directory fixture;const auto seed=fixture.path/"seed";fault_setup(seed,mode);std::int64_t expected;
+ for(int mode=0;mode<15;++mode){Directory fixture;const auto seed=fixture.path/"seed";fault_setup(seed,mode);std::int64_t expected;
  {auto s=ImportStore::open(seed,password);expected=s.transfer_sequence();}
  int count=0;{Directory sample;const auto path=sample.path/"doc";fs::copy_file(seed,path);auto s=ImportStore::open(path,password);fault_vfs::arm(-1);fault_execute(s,mode,expected);count=fault_vfs::seen;fault_vfs::disarm();s.verify();}check(count>0);
  for(int position=1;position<=count;++position){Directory d;const auto path=d.path/"doc";fs::copy_file(seed,path);

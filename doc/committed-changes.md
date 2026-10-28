@@ -1,8 +1,8 @@
 # Ordinary committed changes
 
-Last updated: 2026-10-26
+Last updated: 2026-10-27
 
-State: bounded experimental implementation verified on available macOS configurations. The owner accepted [feature 011](../features/011-committed-editing-and-reversal.md). This implements ordinary per-account corrections, removal and strict Undo. It does not implement transfer changes, opening-balance changes, currency reassignment, transfer-aware Undo or migrations.
+State: bounded experimental implementation verified on available macOS configurations. The owner accepted [feature 011](../features/011-committed-editing-and-reversal.md). This implements ordinary per-account corrections, removal and strict Undo. Opening-balance correction and currency reassignment are the point-4 account commands. The [2026-10-27 transfer edits](../features/011-committed-editing-and-reversal.md#accepted-committed-transfer-editing--2026-10-27) add transfer-aware correction, removal, and Undo for the locked cases. Moving a committed row, rewriting source-occurrence links, and migrations are not part of this workflow.
 
 The current follow-up supports committed bulk category changes/removal and strict atomic group Undo, including retained group history after reopening. See [search and ledger](search-ledger.md) for the accepted scope, retry/recovery semantics and verification. The original single-row implementation details and historical verification below remain useful; experimental-format compatibility is not an obligation before the owner announces a release.
 
@@ -26,7 +26,7 @@ A known durable receipt resolves a lost acknowledgement. An unreadable outcome c
 
 ## Dependencies and duplicate review
 
-Strict Undo requires the target revision and all recorded dependencies to remain unchanged. Dependencies include each batch that ever explicitly referenced the target through retained duplicate-decision history, with its revision and state. Deciding away, editing/reviewing that referencing batch, committing it or discarding it cannot erase the newer dependency. Unrelated batches do not block Undo. Original whole-batch publication is inspectable but is not an undoable correction in this scope.
+Strict Undo requires the target revision and all recorded dependencies to remain unchanged. Dependencies include each batch that ever explicitly referenced the target through retained duplicate-decision history, with its revision and state. Deciding away, editing/reviewing that referencing batch, committing it or discarding it cannot erase the newer dependency. Unrelated batches do not block Undo. Original whole-batch publication is inspectable but is not an undoable correction in this scope. A later ordinary edit of either side of a transfer, a newer transfer relationship, or a newer source association also blocks Undo. The entry's own publication association does not. A date-only correction of a linked import keeps the link and says so in the preview. An amount correction or removal ends the link, leaves a committed counterpart's amount, and removes a purely generated uncommitted counterpart in the same operation. Linked rows are refused by bulk category and bulk removal.
 
 Duplicate matching still uses immutable original source facts. A byte-identical reimport matching a removed occurrence becomes unresolved rather than automatically excluded or restored. Explicit choices are Keep removed or Include as a separate transaction. Restoration uses a separate eligible history Undo; import review never restores a committed entry implicitly.
 

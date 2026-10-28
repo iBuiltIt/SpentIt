@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-27  
-Implementation: ordinary committed storage/UI operations are implemented per account in the [current multi-account experiment](../doc/accounts.md); schema 4 was the original one-account checkpoint. **The owner accepted the ordinary correction/removal/strict-undo policy on 2026-10-25.** Bounded verification is recorded in the [implementation report](../doc/committed-changes.md) and [project status](../doc/status.md), including configuration-specific results and limits. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27). Committed transfer reversal remains point 6. This feature remains active.
+Implementation: ordinary committed storage/UI operations are implemented per account in the [current multi-account experiment](../doc/accounts.md); schema 4 was the original one-account checkpoint. **The owner accepted the ordinary correction/removal/strict-undo policy on 2026-10-25.** Bounded verification is recorded in the [implementation report](../doc/committed-changes.md) and [project status](../doc/status.md), including configuration-specific results and limits. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27). The [2026-10-27 committed transfer edits](#accepted-committed-transfer-editing--2026-10-27) are implemented for the locked cases. Moving a committed row and rewriting source links remain open, so this feature remains active.
 
 Accepted and implemented follow-up, 2026-10-26: committed-only bulk category/removal operations exclude Opening Balance and reject draft/mixed selections. Category changes affect every allocation while retaining amounts and memos. Exact previews, durable group receipts, atomic Apply and strict group Undo are documented in [search and ledger](../doc/search-ledger.md).
 
@@ -80,15 +80,26 @@ The existing exclusion relationship provides the bounded QIF evidence link. This
 
 ## Transfer boundary and future proposal
 
-The first implementation rejects committed mutation/undo if transfer dependencies are present. This is a bounded implementation restriction, not a change to the accepted requirement to support those operations eventually.
+The first implementation rejected committed mutation when a live transfer link was present. That restriction was the starting point. The [accepted committed transfer edits](#accepted-committed-transfer-editing--2026-10-27) now cover the locked cases. An ordinary non-transfer command still refuses a live linked entry. After the link has ended, the unresolved imported counterpart is an ordinary committed row.
 
-For the later transfer design, retain the accepted distinction:
+The accepted distinction remains:
 
 - Removing an origin may remove its purely generated, uncommitted counterpart atomically, with history and protection/link updates.
 - Independently evidenced counterparts retain their transaction and evidence when the origin link is removed; make the unresolved relationship visible.
 - A committed destination must never be silently removed or changed by an origin action. Explicit per-account commitment still applies.
 
-The preview must enumerate affected account states and dependencies. Destination-first commitment, independent amount/date disagreement, corrections after both sides commit, and transfer allocations within splits require their own concrete policy. This document does not authorize cascading committed deletions or reinterpret transfer principal as ordinary category spending.
+This document does not authorize cascading committed deletions or reinterpret transfer principal as ordinary category spending.
+
+## Accepted committed transfer editing — 2026-10-27
+
+The owner locked these answers for point 6. They keep the 2026-10-25 rule: Undo does not un-commit an import, does not create an opposite payment, and has no force-undo. A later edit on either affected side blocks Undo. The same block applies to a newer transfer relationship or a newer source association. The entry's own publication association does not block Undo of a later correction.
+
+- Merge of a purely generated committed duplicate with an independent row of the same amount: one confirmed Merge inactivates the generated row like an ordinary removal. It does not post an offsetting payment. The independent row is linked. The survivor's amount and date stay. The generated row's account balance drops by that amount. The other account is unchanged. Evidence and history stay. The preview names both accounts. A generated row that has its own import evidence is not removed. A Merge that changes no committed money still applies immediately.
+- Category rewrite or removal of a committed transfer origin, while the counterpart is already committed: change only the edited side. The committed counterpart's amount and balance stay. The link ends. The counterpart stays visible and unresolved. A purely generated counterpart that is still an uncommitted draft is removed in the same operation. A committed counterpart is not deleted.
+- Amount correction of one side of a both-committed link: change only that side and end the link. The other amount stays. Both amounts remain and are no longer one movement. There is no fee and no rate. A date-only correction keeps the link and does not change the other side's date or amount. Linking unequal amounts is still refused. A link that still has attached or proposed evidence refuses the correction, including a payee-only edit.
+- Settled account and source-association corrections: do not move a committed row to another account and do not rewrite source-occurrence links. Those links stay immutable. History records them. Wrong-account posting, cross-format evidence-link repair, and explicit same-currency account moves of a committed row stay open and are not done.
+
+Bulk category or removal of a transfer-linked row is refused; those rows are corrected one at a time. Committed rule reapplication remains point 7. The preview of a linked correction states whether the other account's date and amount stay and whether the link remains or ends. A money-changing Merge states the selected account's balance change and that the other account is unchanged. Cancel writes nothing. Identical operation-id retry does not apply twice. A conflicting reuse of that id fails. New documents stay schema 20 with rules and 21 without. These commands did not add a ledger kind.
 
 ## Owner decision — accepted 2026-10-25
 
@@ -96,7 +107,7 @@ The owner explicitly accepted the recommended bundle:
 
 > For ordinary committed transactions, correct or remove the current ledger interpretation while keeping all evidence and history. Removing an erroneous entry changes current historical balances; it does not add a dated offsetting payment. Actual refunds remain separate transactions. Undo appends history and is refused if that transaction or a dependent relationship has changed since. Reimports matching removed entries require explicit review. Begin without transfers, opening-balance changes or currency reassignment.
 
-No further owner approval is needed for routine implementation choices that preserve this policy. Detailed committed transfer changes, opening-balance/currency corrections and source-association repair remain separate gates. The engineering contract below passed independent review and is implemented for the bounded experimental scope. It does not settle the deferred financial policies.
+No further owner approval is needed for routine implementation choices that preserve this policy. The locked committed transfer edits are settled above. Opening-balance and currency corrections were point 4. Source-association repair, moving a committed row, and committed rule reapplication remain separate gates. The engineering contract below passed independent review and is implemented for the bounded experimental scope. It does not settle the remaining open policies.
 
 ## Verification obligations and evidence
 
@@ -107,7 +118,7 @@ No further owner approval is needed for routine implementation choices that pres
 - Disk-full/write/sync failures, abrupt exits before/after durable completion, lost acknowledgements and idempotent/conflicting retries for every new command.
 - Restart and restored backup retain active/removed state, evidence, operation outcomes, histories and undo eligibility.
 - UI Save/Discard/Stay and document switching preserve buffers/isolation; projected balances incorporate the changed committed base exactly once while leaving unrelated pending work intact.
-- Financially unsupported transfer/opening/currency paths fail in domain/storage validation, not just by hiding buttons.
+- Account moves of a committed row, source-link rewrites, and other financially unsupported transfer paths fail in domain/storage validation, not just by hiding buttons.
 
 Independent storage tests exercise these bounded behaviors, including interleaved publication/change receipts, exact money, stale review and Undo dependencies, genuine legacy schemas, restored backups, authenticated corruption, and failure/crash retries. UI tests cover guarded editing, retained buffers, explicit previews, removal/history/Undo, and known/unknown durable outcomes. Configuration-specific executed results and limitations are maintained in the [implementation report](../doc/committed-changes.md) and [project status](../doc/status.md); this list is not a claim of exhaustive failure coverage. Destructive migration and silently rewriting experimental documents remain prohibited.
 
@@ -152,7 +163,7 @@ Use two distinct notions of freshness:
 1. **Entry/dependency token:** target occurrence, current entry revision, and an exact ordered list of dependency stamps. Each stamp identifies a batch that has ever explicitly referenced that target through retained duplicate-decision history, together with that batch's current revision and lifecycle state. Search immutable decision history, not only the latest disposition: deciding away from a reference must not erase the dependency's existence. Include pending, committed and discarded referencing batches. A new reference, review edit, commit or discard changes the token. In this bounded design even an unrelated row edit within a referencing batch invalidates the token conservatively; unrelated batches do not.
 2. **Preview account sequence:** the latest global financial timeline sequence when the before/delta/after preview was computed. If another financial operation changes this sequence, refresh the preview before applying. This does not change Undo eligibility when the target/dependencies themselves are untouched.
 
-Compare dependency lists exactly rather than using a lossy count or unchecked hash. Their ordering must be deterministic. No transfer or general evidence-association dependency is supported implicitly; reject those cases until their models are implemented.
+Compare dependency lists exactly rather than using a lossy count or unchecked hash. Their ordering must be deterministic. A live transfer link is not an implicit bulk dependency: linked rows are corrected one at a time, and Undo also refuses a newer transfer relationship or a newer source association. Source-occurrence links themselves are not rewritten.
 
 An operation stores the entry/dependency token of its resulting state. Undo eligibility requires the current entry revision to equal that operation's result revision and the dependency list to remain identical. A later operation on the same entry blocks the older Undo even if it restores equal values. A newer referencing-batch review/discard also blocks it. An unrelated transaction change does not block eligibility, but can require a refreshed balance preview.
 

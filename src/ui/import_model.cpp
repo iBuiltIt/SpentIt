@@ -291,7 +291,9 @@ struct ImportModel::Worker {
     bool active=false,projected=true;
     QString path,filter;
     int sort=0; bool descending=false;
-    QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt;
+    QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt,transferMergePreview;
+    std::optional<app::TransferRequest> preparedMerge;
+    std::string mergeOperation;
     QVariantList transferCandidates;QString candidateLink;
     QVariantMap bulkPreview,bulkReceipt;
     struct PreparedImport {std::string id,bytes,label;statements::Index document;qif::DateOrder profile;};
@@ -355,7 +357,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {transferReceipt.clear();transferCandidates.clear();candidateLink.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         auto& repo=gateway->repository();
         const auto changes=repo.committed_changes(before,50);if(!append)history.clear();
@@ -532,7 +534,15 @@ struct ImportModel::Worker {
             selected["duplicate"]=text(row.decision.duplicate_of->batch)+" / "+QString::number(row.decision.duplicate_of->ordinal+1);
             selected["removedDuplicate"]=repo.committed_changes_supported() && !repo.committed_entry(*row.decision.duplicate_of).current.active;
         }
-        for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed && (side->endpoint.entry==imports::Occurrence{batch,ordinal} || (side->attached_evidence && side->attached_evidence->endpoint.entry==imports::Occurrence{batch,ordinal}) || (side->proposed_evidence && side->proposed_evidence->endpoint.entry==imports::Occurrence{batch,ordinal}))){selected["editable"]=false;selected["canCorrect"]=false;selected["transferId"]=text(value.link.identity);}
+        bool linked=false,endpoint=false,evidence=false;std::string transfer_id;const imports::Occurrence row_id{batch,ordinal};
+        for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination}){
+            if(side->state==transfers::State::removed)continue;
+            const bool hit_endpoint=side->endpoint.entry==row_id;
+            const bool hit_evidence=(side->attached_evidence && side->attached_evidence->endpoint.entry==row_id) || (side->proposed_evidence && side->proposed_evidence->endpoint.entry==row_id);
+            if(!hit_endpoint && !hit_evidence)continue;
+            linked=true;endpoint=endpoint||hit_endpoint;evidence=evidence||hit_evidence;transfer_id=value.link.identity;
+        }
+        if(linked){selected["editable"]=false;if(!(committed && endpoint && !evidence && !batch.starts_with("~transfer-")))selected["canCorrect"]=false;selected["transferId"]=text(transfer_id);}
         QVariantList origins;
         for(const auto& value:transferLinks)if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed && value.link.origin.endpoint.account==acct.identity && value.link.origin.endpoint.entry==imports::Occurrence{batch,ordinal})origins.push_back(QVariantMap{{"allocation",text(value.link.origin.endpoint.allocation)},{"link",text(value.link.identity)}});
         selected["transferOrigins"]=origins;
@@ -700,7 +710,7 @@ struct ImportModel::Worker {
         selection=std::move(retained);
         QVariantList selectedIds;QVariantMap selectedKeys;
         for(const auto& id:selection){selectedIds.push_back(QVariantMap{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}});selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
-        state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;
+        state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;state["transferMergePreview"]=transferMergePreview;
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
         int focus=-1;
         if(selectionFocus)for(std::size_t i=0;i<cachedView->order.size();++i)if(cachedView->rows[cachedView->order[i]].identity==*selectionFocus){focus=static_cast<int>(i);break;}
@@ -744,8 +754,8 @@ struct ImportModel::Worker {
     }
     void execute(const QString& action,const QVariantMap& a, app::OperationContext& context) {
         context.checkpoint();
-        if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -764,6 +774,7 @@ struct ImportModel::Worker {
             return;
         }
         if(action=="close") {gateway->close();clearChanges();active=false;selected.clear();receipt.clear();selectedBatch.clear();filter.clear();projected=true;sort=0;descending=false;return;}
+        if(action=="cancel_merge") {preparedMerge.reset();mergeOperation.clear();transferMergePreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
         auto& repo=gateway->repository();
         if(action=="transfer_candidates"){
@@ -788,8 +799,13 @@ struct ImportModel::Worker {
             return;
         }
         if(action.startsWith("transfer_")){
-            const auto operation=str(a.value("operation"));
-            app::TransferRequest request{};request.link=str(a.value("link"));request.expected_sequence=a.value("sequence").toString().toLongLong();
+            std::string operation=str(a.value("operation"));
+            app::TransferRequest request{};
+            if(action=="transfer_merge_apply"){
+                if(!preparedMerge || str(a.value("preview"))!=text(mergeOperation))throw std::logic_error("Review the merge preview first");
+                request=*preparedMerge;operation=mergeOperation;
+            }else{
+            request.link=str(a.value("link"));request.expected_sequence=a.value("sequence").toString().toLongLong();
             if(action=="transfer_manual"){
                 request.action=app::TransferAction::manual;request.destination=a.value("destination").toString().toLongLong();request.amount=Money::parse(str(a.value("amount")),repo.account().currency);request.date=str(a.value("date"));request.payee=str(a.value("payee"));request.memo=str(a.value("memo"));
             }else if(action=="transfer_from_draft"){
@@ -828,6 +844,12 @@ struct ImportModel::Worker {
                 request.link=left.linked?left.link:right.linked?right.link:request.link.empty()?operation:request.link;
                 request.left=left.fact;request.right=right.fact;request.batch_revision=left.revision;request.right_revision=right.revision;
                 request.payee=origin.payee;request.memo=origin.memo;
+                const auto preview=repo.preview_transfer(request);
+                if(preview.change.units()!=0){
+                    preparedMerge=request;mergeOperation=operation;
+                    transferMergePreview={{"id",text(operation)},{"note",text(preview.note)},{"balanceImpact",balanceImpact(preview.before,preview.change,preview.after)}};
+                    return;
+                }
             }else if(action=="transfer_retarget"){
                 const auto choice=read_transfer_choice(repo,QVariantMap{{"account",QString::number(repo.account().identity)},{"batch",a.value("batch")},{"ordinal",a.value("ordinal")},{"allocation",a.value("allocation")}});
                 request.action=app::TransferAction::retarget;request.kept=operation+"-kept";request.left=choice.fact;request.batch_revision=choice.revision;
@@ -848,10 +870,11 @@ struct ImportModel::Worker {
                     request.generated.reset();request.generated_currency.clear();
                 }else throw std::invalid_argument("Unknown transfer command");
             }else throw std::invalid_argument("Unknown transfer command");
+            }
             std::optional<app::TransferReceipt> result;
             try{result=repo.apply_transfer(operation,request);}catch(...){const auto failure=std::current_exception();try{result=repo.transfer_outcome(operation);if(result)result=repo.apply_transfer(operation,request);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Transfer outcome could not be confirmed. Reopen and inspect transfers before retrying.");}if(!result)std::rethrow_exception(failure);}
             transferReceipt={{"operation",text(operation)},{"summary","Transfer operation saved · "+balanceImpact(result->before,result->change,result->after)}};
-            transferCandidates.clear();candidateLink.clear();
+            transferCandidates.clear();candidateLink.clear();preparedMerge.reset();mergeOperation.clear();transferMergePreview.clear();
             if(selectedBatch.starts_with("~transfer-")){
                 bool present=false;const auto account=repo.account().identity;
                 for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})
@@ -991,9 +1014,11 @@ struct ImportModel::Worker {
             else if(kind!="remove")throw std::invalid_argument("Unknown committed change");
             auto preview=repo.preview_committed_change(request);
             preparedOperation=identity();preparedChange=preview;
+            auto impact=balanceImpact(preview.before,preview.change,preview.after);
+            if(!preview.relationship.empty())impact+="\n"+text(preview.relationship);
             changePreview={{"id",text(preparedOperation)},{"title",changeName(request.kind)+" preview"},
                 {"applyLabel",request.kind==app::ChangeKind::correct?"Apply correction":request.kind==app::ChangeKind::remove?"Remove transaction":"Apply Undo"},
-                {"balanceImpact",balanceImpact(preview.before,preview.change,preview.after)},
+                {"balanceImpact",impact},
                 {"snapshots",QVariantList{snapshotMap(preview.before_entry,"Before"),snapshotMap(preview.after_entry,"After")}}};
         } else if(action=="apply_change") {
             changeReceipt.clear();

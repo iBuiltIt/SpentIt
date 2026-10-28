@@ -39,6 +39,12 @@ struct Link {
     bool preserved_amounts=false;
     // The origin no longer participates. A kept counterpart stays, with its amount.
     bool unresolved=false;
+    // A committed correction changed the origin posting date. The counterpart date stays.
+    bool origin_date_corrected=false;
+    // The destination allocation was corrected or removed. The origin entry stays.
+    bool destination_released=false;
+    // A committed manual origin released to an ordinary category. Its amount stays.
+    std::string origin_category;
 };
 // One named allocation. Identity is the endpoint, never its position in a row.
 struct AllocationFact {
@@ -53,6 +59,13 @@ struct AllocationFact {
 struct LinkEdit {
     Link link;
     std::optional<Link> kept;
+    // A purely generated committed allocation that left the active ledger.
+    std::optional<Side> retired_committed;
+};
+enum class LinkFate { unchanged, dated, released, removed_generated };
+struct EntryLinkEdit {
+    Link link;
+    LinkFate fate=LinkFate::unchanged;
 };
 enum class Error { invalid_relationship, cross_currency, amount_mismatch,
                    unresolved_policy, acceptance_required, origin_controls_draft,
@@ -88,7 +101,13 @@ LinkEdit merge(std::span<const Link>,const AllocationFact&,const AllocationFact&
 // Category release passes no generated endpoint. An account choice passes a new
 // synthetic endpoint and that account's currency. This does not search for an
 // existing independent row and does not auto-link one.
-LinkEdit retarget(std::span<const Link>,const AllocationFact& origin,std::string identity,std::string kept_identity,std::optional<Endpoint> generated,std::optional<Currency> generated_currency);
+LinkEdit retarget(std::span<const Link>,const AllocationFact& origin,std::string identity,std::string kept_identity,std::optional<Endpoint> generated,std::optional<Currency> generated_currency,std::string_view category={});
+// One linked allocation of a committed entry. keep_transfer is true only when
+// that allocation's amount and category are unchanged. A date-only change keeps
+// the link and does not change the other side. Removing the entry, changing the
+// amount, or leaving the transfer category ends the link. A committed
+// counterpart stays. A purely generated uncommitted counterpart is removed.
+EntryLinkEdit edit_linked_allocation(std::span<const Link>,const AllocationFact& before,bool remove,bool keep_transfer,const Money& after_amount,std::string_view after_date);
 // Pass the complete relationship set for the operation. A protected allocation
 // preserves its entire source transaction, including sibling transfer links.
 // Duplicate endpoints and inconsistent states of a shared entry are rejected.

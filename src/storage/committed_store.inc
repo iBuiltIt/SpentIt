@@ -81,16 +81,26 @@ std::optional<app::ChangeReceipt> ImportStore::committed_change_outcome(std::str
     Statement dd(impl_->db,"SELECT batch,revision,state FROM change_dependencies WHERE operation=? ORDER BY batch");dd.text(1,operation);while(dd.row())deps.push_back({dd.bytes(0),dd.integer(1),static_cast<app::BatchState>(dd.integer(2))});
     return app::ChangeReceipt{std::string(operation),static_cast<app::ChangeKind>(row.integer(0)),id,entry_snapshot(id,row.integer(3)),entry_snapshot(id,row.integer(4)),Money(row.integer(5),currency),Money(row.integer(6),currency),Money(row.integer(7),currency),row.bytes(8),{id,row.integer(4),std::move(deps)},row.integer(9)};
 }
-app::ChangePreview ImportStore::preview_committed_change(const app::ChangeRequest& request) const {
-    require_unlinked(request.identity);
+app::ChangePreview ImportStore::preview_change(const app::ChangeRequest& request,bool links) const {
+    if(!links && transfer_linked(request.identity))fail(SQLITE_CONSTRAINT,"Transfer-linked rows are corrected one at a time.");
     const auto current=committed_entry(request.identity);auto after=current.current;
     if(current.current.revision==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");after.revision++;
     if(request.kind==app::ChangeKind::correct){if(!current.current.active || !request.correction || !request.undo_of.empty())fail(SQLITE_CONSTRAINT,"Invalid correction request");after.draft=canonical_draft(request.identity,*request.correction,current.current.draft,after.revision,true);const bool reassigned=current.source.source_currency && after.draft.transaction.effective_total().currency()!=*current.source.source_currency;imports::validate_draft(current.source,after.draft,reassigned);}
     else if(request.kind==app::ChangeKind::remove){if(!current.current.active || request.correction || !request.undo_of.empty())fail(SQLITE_CONSTRAINT,"Invalid removal request");after.active=false;}
-    else if(request.kind==app::ChangeKind::undo){if(request.correction || request.undo_of.empty())fail(SQLITE_CONSTRAINT,"Choose a committed change to undo");const auto original=committed_change_outcome(request.undo_of);if(!original || original->identity!=request.identity || original->result_token!=current.token)fail(SQLITE_CONSTRAINT,"Newer transaction or dependent review prevents Undo");after.draft=original->before_entry.draft;after.active=original->before_entry.active;}
+    else if(request.kind==app::ChangeKind::undo){if(request.correction || request.undo_of.empty())fail(SQLITE_CONSTRAINT,"Choose a committed change to undo");const auto original=committed_change_outcome(request.undo_of);if(!original || original->identity!=request.identity || original->result_token!=current.token)fail(SQLITE_CONSTRAINT,"Newer transaction or dependent review prevents Undo");if(later_relationship_blocks(request.identity,request.undo_of))fail(SQLITE_CONSTRAINT,"Newer transaction, transfer relationship, or source association prevents Undo");after.draft=original->before_entry.draft;after.active=original->before_entry.active;}
     else fail(SQLITE_CONSTRAINT,"Import publication cannot be undone by this command");
+    std::string relationship,link_stamp;
+    if(links){
+        try{
+            const auto plan=request.kind==app::ChangeKind::undo?plan_restore(request.undo_of):plan_entry_links(all_transfers(),request.identity,current.current.draft,after.draft,request.kind==app::ChangeKind::remove);
+            relationship=plan.relationship;link_stamp=plan.stamp;
+        }catch(const transfers::TransferError& error){fail(SQLITE_CONSTRAINT,error.what());}
+    }
     const auto currency=account().currency;const Money zero(0,currency);const auto delta=(after.active?after.draft.transaction.effective_total():zero)-(current.current.active?current.current.draft.transaction.effective_total():zero);
-    const auto before=committed_balance();auto canonical=request;if(canonical.correction)canonical.correction=after.draft;return {canonical,current.current,std::move(after),before,delta,before+delta,current.token,financial_sequence(impl_->db),categories_supported()?catalog_sequence(impl_->db):0};
+    const auto before=committed_balance();auto canonical=request;if(canonical.correction)canonical.correction=after.draft;return {canonical,current.current,std::move(after),before,delta,before+delta,current.token,financial_sequence(impl_->db),categories_supported()?catalog_sequence(impl_->db):0,std::move(relationship),std::move(link_stamp)};
+}
+app::ChangePreview ImportStore::preview_committed_change(const app::ChangeRequest& request) const {
+    return preview_change(request,true);
 }
 app::ChangeReceipt ImportStore::apply_committed_change(std::string_view operation,const app::ChangeRequest& request,const app::EntryToken& expected,std::int64_t preview_sequence) {
     return apply_committed_change_with_catalog(operation,request,expected,preview_sequence,0);
@@ -120,8 +130,17 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
 #endif
     Atomic transaction(impl_->db);
     if(committed_entry(request.identity).token!=expected || financial_sequence(impl_->db)!=preview_sequence || (categories_supported()?catalog_sequence(impl_->db):0)!=catalog_revision)fail(SQLITE_CONSTRAINT,"Preview changed; refresh before applying");
+    EntryLinkPlan fresh;
+    try{
+        if(request.kind==app::ChangeKind::undo){
+            if(later_relationship_blocks(request.identity,request.undo_of))fail(SQLITE_CONSTRAINT,"Preview changed; refresh before applying");
+            fresh=plan_restore(request.undo_of);
+        }else fresh=plan_entry_links(all_transfers(),request.identity,preview.before_entry.draft,preview.after_entry.draft,request.kind==app::ChangeKind::remove);
+    }catch(const transfers::TransferError& error){fail(SQLITE_CONSTRAINT,error.what());}
+    if(fresh.stamp!=preview.link_stamp)fail(SQLITE_CONSTRAINT,"Preview changed; refresh before applying");
     store_entry(impl_->db,request.identity,preview.after_entry,restored_ruleset);
     append_financial(impl_->db,operation,request.kind,request.identity,preview.before_entry.revision,preview.after_entry.revision,preview.before,preview.change,preview.after,request.undo_of,preview_sequence,catalog_revision);
+    if(!fresh.stamp.empty())write_entry_links(operation,account().identity,request.kind==app::ChangeKind::undo?app::TransferAction::restore:app::TransferAction::relink,preview_sequence+1,fresh.changed);
     for(const auto& dependency:expected.dependencies){Statement d(impl_->db,"INSERT INTO change_dependencies VALUES(?,?,?,?)");d.text(1,operation);d.text(2,dependency.batch);d.integer(3,dependency.revision);d.integer(4,static_cast<int>(dependency.state));d.done();}
     impl_->finish(transaction);return *committed_change_outcome(operation);
 }
@@ -129,7 +148,7 @@ std::vector<app::CommittedHistoryItem> ImportStore::committed_history(const impo
     const auto current=committed_entry(id);std::vector<app::CommittedHistoryItem> result;
     Statement rows(impl_->db,"SELECT o.id,o.kind,o.prior_revision,o.result_revision,o.before,o.change,o.after,o.sequence,h.sequence FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE o.batch=? AND (o.kind=0 OR o.ordinal=?) ORDER BY o.sequence");rows.text(1,id.batch);rows.integer(2,integer(id.ordinal));
     while(rows.row()){const auto currency=currency_as_of(impl_->db,account_for_batch(id.batch).identity,rows.integer(8));const auto kind=static_cast<app::ChangeKind>(rows.integer(1));std::optional<app::EntrySnapshot> before;bool eligible=false;std::string reason="Import publication is not an undoable correction";
-        if(kind!=app::ChangeKind::publication){before=entry_snapshot(id,rows.integer(2));const auto receipt=committed_change_outcome(rows.bytes(0));eligible=receipt->result_token==current.token;reason=eligible?"":"Newer transaction or dependent review prevents Undo";}
+        if(kind!=app::ChangeKind::publication){before=entry_snapshot(id,rows.integer(2));const auto operation=rows.bytes(0);const auto receipt=committed_change_outcome(operation);eligible=receipt->result_token==current.token;reason=eligible?"":"Newer transaction or dependent review prevents Undo";if(eligible && later_relationship_blocks(id,operation)){eligible=false;reason="Newer transaction, transfer relationship, or source association prevents Undo";}}
         result.push_back({rows.bytes(0),kind,std::move(before),entry_snapshot(id,kind==app::ChangeKind::publication?0:rows.integer(3)),Money(rows.integer(4),currency),Money(rows.integer(5),currency),Money(rows.integer(6),currency),eligible,reason,rows.integer(7)});
     }return result;
 }

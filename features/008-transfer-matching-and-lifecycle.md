@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-27  
-Implementation: the [multi-account workflow](../doc/accounts.md) and [bounded durable transfer integration](../doc/transfer-engine.md) implement manual/imported-allocation creation, generated counterparts, acceptance, provisional bank matching, per-account commit, draft protection, counterpart navigation, allocation-level Merge, unlink and replacement, and a read-only transfer journal. [Bounded QIF transfer admission and explicit resolution](../doc/qif-transfers.md) and account entries in the category selector are implemented. Committed transfer reversal remains point 6. Verified scope and remaining decisions are distinguished below.
+Implementation: the [multi-account workflow](../doc/accounts.md) and [bounded durable transfer integration](../doc/transfer-engine.md) implement manual/imported-allocation creation, generated counterparts, acceptance, provisional bank matching, per-account commit, draft protection, counterpart navigation, allocation-level Merge, unlink and replacement, and a read-only transfer journal. [Bounded QIF transfer admission and explicit resolution](../doc/qif-transfers.md) and account entries in the category selector are implemented. The [2026-10-27 committed-editing decisions](#accepted-committed-transfer-editing--2026-10-27) cover retiring a purely generated committed duplicate, ending a link when one committed side's amount, category, or removal changes, and keeping a date-only link. Moving a committed row to another account and rewriting source-occurrence links remain open. Verified scope and remaining decisions are distinguished below.
 
 ## Accepted requirements
 
@@ -47,7 +47,7 @@ Deletion/reversal depends on provenance and state:
 - Removing an uncommitted origin also removes its purely generated, uncommitted counterpart as part of the same operation.
 - After the origin commits, the destination's protected generated draft survives clearing/discarding the destination import workspace. To remove that generated movement, edit/reverse the origin and break its transfer connection; destination clearing must not change the committed origin.
 - If the counterpart was independently imported/matched, removing or retargeting the origin removes the link, not that independently supported counterpart. Surface its now-unresolved transfer relationship. The same preservation rule applies when an originally generated entry later acquires independent import evidence, and when that counterpart is already committed.
-- Removing a committed generated duplicate, rewriting a committed allocation's category, and reversing a committed transfer remain point 6. Do not infer blanket cascade deletion from the purely generated draft case.
+- A purely generated committed duplicate is retired by one confirmed Merge, as in the [committed-editing decisions](#accepted-committed-transfer-editing--2026-10-27). A generated row that has its own import evidence is not removed. Do not infer blanket cascade deletion of a committed counterpart.
 
 ### Match navigation
 
@@ -63,7 +63,7 @@ The owner accepted these five decisions for the first transfer package:
 4. **Transfers belong to allocations.** Support a destination account per allocation, with each counterpart linked to its originating allocation. A split transaction can therefore contain ordinary categories and transfers to multiple destinations. Do not infer identity from allocation position or combine repeated equal allocations.
 5. **Cross-currency transfers are deferred.** The first package must reject them with an explicit unsupported-operation error. Do not infer exchange rates or reinterpret amounts. This bounds implementation; it does not remove the broader product requirement. Point 4 currency reassignment, recorded in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27), may leave an already linked same-currency pair as two preserved opposite decimals in different currencies. That preservation does not create a match, a rate, a fee, or equality, and new transfer generation, proposal, and commit still reject a cross-currency match. It is not transfer repair or committed transfer reversal.
 
-These decisions settle the corresponding first-scope questions below. They do not authorize automatic matching, silent mismatch repair, or cascade removal of committed or independently supported entries. Merge, unlink, and replacement for the cases in the [2026-10-27 decisions](#accepted-transfer-management-decisions--2026-10-27) are accepted. Committed reversal remains point 6.
+These decisions settle the corresponding first-scope questions below. They do not authorize automatic matching, silent mismatch repair, or cascade removal of committed or independently supported entries. Merge, unlink, and replacement for the cases in the [2026-10-27 decisions](#accepted-transfer-management-decisions--2026-10-27) are accepted. Committed editing of an existing link is the later [2026-10-27 committed-editing section](#accepted-committed-transfer-editing--2026-10-27).
 
 ### Accepted matching and unmatched-commit decisions — 2026-10-26
 
@@ -72,11 +72,11 @@ These decisions settle the corresponding first-scope questions below. They do no
 - Acceptance resolves the lack of a bank match, not inconsistent money. For example, a Checking entry of −100 and a Visa entry of +95 may each be accepted and explicitly committed as valid unmatched entries. They remain unmatched; linking requires the difference to be explicitly accounted for. Do not silently change either amount, assume a fee, or invent a balancing allocation.
 - Cross-currency links remain unsupported in the first slice. Acceptance does not bypass exact-money validation, protection, independent-evidence preservation, or unresolved committed repair/unlink/reversal policies. An unresolved link or repair must not trap otherwise valid manual/unmatched entries in an uncommittable state.
 
-These decisions settle provisional matching/discard and unmatched-entry acceptance. Destination-only cancellation, Merge, and unlink are settled below. Committed reversal remains point 6. The bounded durable implementation now exists; see [workflow and verification limits](../doc/transfer-engine.md).
+These decisions settle provisional matching/discard and unmatched-entry acceptance. Destination-only cancellation, Merge, and unlink are settled below. Committed editing of an existing link is settled in the [2026-10-27 committed-editing section](#accepted-committed-transfer-editing--2026-10-27). The bounded durable implementation now exists; see [workflow and verification limits](../doc/transfer-engine.md).
 
 ## Accepted transfer-management decisions — 2026-10-27
 
-The owner locked these decisions for point 5. They settle Merge, unlink, replacement, allocation-level resolution, destination cancellation, and the transfer journal. Committed reversal remains point 6 and is not implemented.
+The owner locked these decisions for point 5. They settle Merge, unlink, replacement, allocation-level resolution, destination cancellation, and the transfer journal. Point 6 later locked committed editing of an existing link; that behavior is the next section and supersedes the committed-generated refusal below.
 
 ### Link level
 
@@ -89,7 +89,7 @@ The visible command is **Merge**, from the ledger context menu or Ctrl+M (Comman
 - A purely generated uncommitted duplicate on the same account as an independent row: one atomic operation removes only that generated row from the active ledger and links the independent allocation to the origin. Source evidence and history remain. The surviving row's amount and its own posting date do not change. A protected generated draft is still uncommitted, so explicit Merge may retire it. Workspace clearing still does not retire a protected draft.
 - Two independent allocations on opposite accounts, including when both are already committed: record the link only. Both rows stay on the active ledger. Amounts do not change and no row is removed. History records the link.
 - Allocation amounts that are not exact opposites, or a cross-currency pair, refuse with an explicit error. The user splits or chooses equal allocations first.
-- If the redundant generated row is already committed, the command refuses. It does not remove that row and does not also keep it while linking a second row. The error states that removing a committed generated duplicate is committed reversal and remains point 6.
+- If the redundant generated row is already committed, point 5 refused the command. Point 6 replaces that refusal with one confirmed Merge, described in the [committed-editing decisions](#accepted-committed-transfer-editing--2026-10-27). A generated row that has its own import evidence is still not removed.
 - Ambiguous selection refuses. If a selected transaction has more than one allocation that could be the endpoint, the user must choose the allocation explicitly. The command does not guess and does not auto-merge. Allocations that belong to different links also refuse until one relationship is chosen.
 
 ### Unlink, replacement, and destination cancellation
@@ -112,13 +112,35 @@ The read-only transfer journal lists persisted transfer operations for the docum
 
 Point 4 `preserved_amounts` may already show two opposite decimals in different currencies on an old link. That is not a match, a rate, a fee, or equality. These commands do not unlink or repair those rows as a side effect. An explicit retarget or merge of such a link is refused.
 
-Ordinary Undo does not reverse a transfer. Committed transfer reversal, removing a committed generated duplicate, and rewriting a committed allocation's category as part of a transfer remain point 6.
+Ordinary Undo does not un-commit an import, does not create an opposite payment, and has no force-undo. Undo of a transfer-aware correction, removal, or Merge is eligible only while neither affected side has a later edit, a newer transfer relationship, or a newer source association. The committed-editing section states which edits keep the link and which end it.
 
 A committed generated side that still has a pending import proposal is not unlinked until that proposal is committed or discarded. Retiring a purely generated uncommitted duplicate may drop its proposal because the user chose the independent row. Discarding an import that is the destination of a still-resolved link is refused; change the origin first. Generated destination drafts are not import batches, so deleting only that draft uses the origin-controls refusal.
 
-New documents stay on experimental schema 20 with rules and 21 without. Merge and retarget fit the existing transfer event and version blobs, so this package did not change the on-disk shape. Application id remains `1397770577`. There is no migration.
+New documents stay on experimental schema 20 with rules and 21 without. Merge, retarget, and the committed-editing commands fit the existing transfer event and version blobs, so this package did not change the on-disk shape or add a ledger kind. Application id remains `1397770577`. There is no migration.
 
-### Historical implementation starting point
+## Accepted committed transfer editing — 2026-10-27
+
+The owner locked these four answers for point 6. They settle how an existing link behaves when one side is corrected, removed, or merged with an independent row. They do not move a committed row to another account, rewrite source-occurrence links, invent a fee or a rate, or cascade a deletion onto a committed counterpart. Point 7 still owns committed rule reapplication. Reports stay outside this authorization.
+
+### Merge of a committed generated duplicate
+
+One confirmed Merge of a purely generated committed duplicate with an independent row of the same amount inactivates the generated row the way an ordinary removal does. It does not post an offsetting payment. The independent row becomes the linked side. The survivor's amount and date stay. The generated row's account balance drops by that amount. The other account is unchanged. Evidence and history stay. The preview names both accounts before anything is written. Cancel leaves both rows and both balances unchanged. A generated row that has its own import evidence is not removed. A Merge that changes no committed money, including a merge of two uncommitted drafts, still applies immediately. Linking unequal amounts, or a cross-currency pair, is still refused. The command must be issued from the account that holds the generated duplicate.
+
+### Category rewrite or removal while the counterpart is committed
+
+Changing the category of a committed transfer origin, or removing that origin, changes only the edited side. The committed counterpart's amount and balance stay. The link ends. The counterpart stays visible and unresolved. A purely generated counterpart that is still an uncommitted draft is removed in the same operation. A committed counterpart is not deleted, and a committed deletion does not cascade. Removing a checking origin of −100.00 raises checking's balance by 100.00 and still leaves the committed Visa +100.00.
+
+### Amount and date corrections
+
+Correcting the amount on one side of a both-committed link changes only that side and ends the link. The other amount stays. Both amounts remain and are no longer one movement. There is no fee and no rate. A date-only correction keeps the link and does not change the other side's date or amount. Linking unequal amounts is still refused. A link that still has attached or proposed evidence refuses the correction, including a payee-only edit. Replacing that evidence is not this command.
+
+### Account and source links
+
+A committed row is not moved to another account, and source-occurrence links are not rewritten. Those links stay immutable, and history records them. A newer transfer relationship or a newer source association blocks Undo. The entry's own publication association is earlier than a later correction and does not block Undo of that correction. Wrong-account posting and cross-format evidence-link repair stay open and are not done. Explicit same-currency account moves of a committed row stay open and are not done.
+
+Bulk category or removal of a transfer-linked row is refused. Those rows are corrected one at a time. An ordinary non-transfer command still refuses a live linked entry. After the link has ended, the unresolved imported counterpart can be edited by an ordinary correction, and that later edit blocks Undo of the release.
+
+## Historical implementation starting point
 
 Inspection on 2026-10-26 found a singleton account table in `src/storage/import_store.cpp`, an account-less command boundary in `src/app/include/spentit/import_repository.hpp`, and QIF tests that explicitly reject transfer destinations in `tests/engine/qif_tests.cpp`. Existing allocation metadata already carries stable identities. The subsequent [account-scoped implementation](../doc/accounts.md) replaces the singleton restriction and adds account ownership to batches. At that prerequisite checkpoint transfer destinations were still rejected; the subsequent [QIF package](../doc/qif-transfers.md) admits them with explicit resolution.
 
@@ -126,7 +148,7 @@ Proposed sequence: introduce account identities and account-scoped import/ledger
 
 ## Adopted bounded implementation and remaining design
 
-Represent source provenance, transfer relationships, and each account entry's commit state separately. A single committed flag for an entire transfer cannot express the accepted lifecycle. Protection needs a durable relationship to the committed origin; merely disabling a UI delete button is insufficient. The bounded storage schema and command contracts are now documented in [the durable transfer guide](../doc/transfer-engine.md). Ranking remains unresolved. Merge and replacement follow the 2026-10-27 decisions; committed reversal remains point 6.
+Represent source provenance, transfer relationships, and each account entry's commit state separately. A single committed flag for an entire transfer cannot express the accepted lifecycle. Protection needs a durable relationship to the committed origin; merely disabling a UI delete button is insufficient. The bounded storage schema and command contracts are now documented in [the durable transfer guide](../doc/transfer-engine.md). Ranking remains unresolved. Merge, replacement, and committed editing of an existing link follow the 2026-10-27 decisions. Account moves of committed rows and source-link rewrite remain open.
 
 Keep transfer recognition distinct from ordinary duplicate suppression: a matching bank record can provide new evidence for an existing counterpart and must not be silently discarded as an irrelevant duplicate. Reuse [import retry and atomicity requirements](003-qif-import-review.md), preserving history and evidence throughout repair.
 
@@ -139,7 +161,7 @@ Keep transfer recognition distinct from ordinary duplicate suppression: a matchi
 - Clearing Visa drafts after checking commits preserves that protected entry, its link, and projection across restart.
 - Visa becomes committed only after the user explicitly commits it; matching or accepting an unmatched counterpart alone does not commit it.
 - Later Visa import evidence matches the existing movement without adding another amount or losing source records.
-- Merge repairs missed and incorrect links atomically, removes only a purely generated uncommitted duplicate, links two independent opposite allocations without removing either, and preserves source evidence, amounts, and applicable history. A committed generated duplicate remains point 6.
+- Merge repairs missed and incorrect links atomically, removes a purely generated uncommitted duplicate, retires a purely generated committed duplicate after confirmation, links two independent opposite allocations without removing either, and preserves source evidence, amounts, and applicable history. A generated row that has its own import evidence is not removed.
 - Origin deletion/reversal distinguishes generated from independently imported counterparts, including a generated entry that later acquired evidence.
 - Unmatched attention items allow manual matching or acceptance as valid pending entries and remain matchable by later imports.
 - Match navigation works both ways and with Back, including bringing the selected row on-screen and honoring unsaved edits.
@@ -147,8 +169,8 @@ Keep transfer recognition distinct from ordinary duplicate suppression: a matchi
 
 ## Remaining work and open questions
 
-- Committed transfer reversal, ordinary Undo of a transfer, removal of a committed generated duplicate, and rewriting a committed allocation's category through a transfer command remain point 6.
-- Candidate ranking, date windows, references/normalization, and automatic matching remain deferred. Links require explicit confirmation. Cross-currency and fee matching remain deferred; unequal allocations are split or chosen explicitly before a link.
+- Moving a committed row to another account, rewriting source-occurrence links, wrong-account posting, and cross-format evidence-link repair remain open. Explicit same-currency account moves of a committed row are not implemented.
+- Candidate ranking, date windows, references/normalization, and automatic matching remain deferred. Links require explicit confirmation. Cross-currency and fee matching remain deferred; unequal allocations are split or chosen explicitly before a link. Committed rule reapplication remains point 7.
 - Generated counterpart field defaults other than the accepted provisional origin date.
 - Reports and the broader transaction-sheet design remain outside the implemented transfer scope.
 

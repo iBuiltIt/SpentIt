@@ -7,12 +7,12 @@
 namespace spentit::transfers {
 namespace {
 [[noreturn]] void invalid() { throw TransferError(Error::invalid_relationship,"Invalid transfer relationship"); }
+void identity(std::string_view text);
 [[noreturn]] void mismatch() { throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required"); }
 [[noreturn]] void currencies() { throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported"); }
 void preserved(const Link& link) {
     if(link.preserved_amounts) throw TransferError(Error::invalid_relationship,"This link preserves amounts in two currencies. It is not a match and this command does not repair it.");
 }
-[[noreturn]] void reversal() { throw TransferError(Error::committed_reversal,"Removing a committed generated duplicate is committed reversal and remains point 6."); }
 bool counts_locally(const Side& side) { return (side.manually_entered || !side.independent_evidence) && !side.attached_evidence; }
 bool disposable(const Side& side) {
     return side.state==State::draft && !side.independent_evidence && !side.attached_evidence && !side.manually_entered;
@@ -23,7 +23,7 @@ bool committed_generated(const Side& side) {
 void retire_origin(Link& link) {
     link.origin.state=State::removed;link.origin.proposed_evidence.reset();link.origin.attached_evidence.reset();link.origin.accepted_unmatched=false;
     if(link.origin.manually_entered) link.origin.independent_evidence=false;
-    link.origin.provisional_date=false;link.origin.date=link.generated_date;
+    link.origin.provisional_date=false;link.origin.date=link.generated_date;link.origin_date_corrected=false;
 }
 void fact_ok(const AllocationFact& fact);
 Side direct_side(const AllocationFact& fact,bool origin_side) {
@@ -53,12 +53,12 @@ LinkEdit release_link(Link link) {
     if(disposable(link.destination)) {
         link.origin.proposed_evidence.reset();link.destination.proposed_evidence.reset();
         link.origin.state=link.destination.state=State::removed;
-        validate(link);return {std::move(link),std::nullopt};
+        validate(link);return {std::move(link),std::nullopt,std::nullopt};
     }
     // Keeping this side would drop its proposal while its committed amount remains.
     if(link.destination.proposed_evidence)
         throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match explicitly");
-    link.destination.proposed_evidence.reset();link.unresolved=true;retire_origin(link);validate(link);return {std::move(link),std::nullopt};
+    link.destination.proposed_evidence.reset();link.unresolved=true;retire_origin(link);validate(link);return {std::move(link),std::nullopt,std::nullopt};
 }
 Link leftover(const Link& link,std::string identity) {
     if(identity.empty() || identity==link.identity) invalid();
@@ -72,13 +72,32 @@ LinkEdit replace_destination(Link link,const AllocationFact& next,std::string ke
     if(link.unresolved || next.generated || next.manually_entered || next.endpoint.account==link.origin.endpoint.account || next.endpoint==link.destination.endpoint) invalid();
     if(next.amount.currency()!=link.origin.amount.currency() || next.amount.currency()!=link.destination.amount.currency()) currencies();
     if(-link.origin.amount!=next.amount || link.destination.amount!=next.amount) mismatch();
-    if(committed_generated(link.destination)) reversal();
-    LinkEdit edit{link,std::nullopt};
-    if(!disposable(link.destination)) edit.kept=leftover(link,std::move(kept_identity));
+    if(link.destination.proposed_evidence)
+        throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match explicitly");
+    LinkEdit edit{link,std::nullopt,std::nullopt};
+    if(committed_generated(link.destination)) edit.retired_committed=link.destination;
+    else if(!disposable(link.destination)) edit.kept=leftover(link,std::move(kept_identity));
     link.destination.endpoint=next.endpoint;link.destination.date=next.date;link.destination.state=next.state;
     link.destination.independent_evidence=true;link.destination.provisional_date=false;link.destination.manually_entered=false;
     link.destination.accepted_unmatched=false;link.destination.attached_evidence.reset();link.destination.proposed_evidence.reset();
     link.destination.amount=next.amount;validate(link);edit.link=std::move(link);return edit;
+}
+void evidenced_generated(const Link* host,const AllocationFact& fact) {
+    if(!host || !fact.generated) return;
+    const auto& side=host->origin.endpoint==fact.endpoint?host->origin:host->destination;
+    if(side.endpoint==fact.endpoint && (side.independent_evidence || side.attached_evidence))
+        throw TransferError(Error::unresolved_policy,"A generated row that has its own import evidence is not removed.");
+}
+LinkEdit release_manual(Link link,std::string_view category) {
+    preserved(link);
+    if(link.unresolved || link.destination_released || link.origin.state!=State::committed || !link.origin.manually_entered) invalid();
+    identity(category);
+    if(link.destination.proposed_evidence || link.origin.proposed_evidence)
+        throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match explicitly");
+    if(link.destination.attached_evidence || link.origin.attached_evidence)
+        throw TransferError(Error::unresolved_policy,"Replacing transfer evidence requires the repair policy");
+    if(disposable(link.destination)) {link.destination.proposed_evidence.reset();link.destination.state=State::removed;}
+    link.unresolved=true;link.origin_category=std::string(category);validate(link);return {std::move(link),std::nullopt,std::nullopt};
 }
 void identity(std::string_view text) {
     if(text.empty() || text.size()>qif::max_field || !qif::valid_utf8(text)) invalid();
@@ -136,11 +155,17 @@ void validate(const Link& link) {
         throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
     if((!link.origin.independent_evidence && !link.origin.manually_entered) || link.origin.provisional_date) invalid();
     if(!link.origin.manually_entered && (link.origin.attached_evidence || link.origin.proposed_evidence))invalid();
-    if(!link.origin.attached_evidence && link.origin.date!=link.generated_date)invalid();
+    if(link.origin.attached_evidence) { if(link.origin_date_corrected) invalid(); }
+    else if((link.origin.date!=link.generated_date)!=link.origin_date_corrected) invalid();
     if(link.destination.manually_entered)invalid();
     if(link.origin.manually_entered && link.origin.independent_evidence!=link.origin.attached_evidence.has_value())invalid();
     if(link.destination.attached_evidence && !link.destination.independent_evidence)invalid();
-    if(link.unresolved) {
+    if(link.destination_released) {
+        if(link.unresolved || !link.origin_category.empty() || link.destination.state!=State::removed || link.origin.state==State::removed) invalid();
+    } else if(!link.origin_category.empty()) {
+        if(!link.unresolved || !link.origin.manually_entered || link.origin.state!=State::committed) invalid();
+        if(link.destination.state==State::removed && link.destination.independent_evidence) invalid();
+    } else if(link.unresolved) {
         if(link.origin.state!=State::removed) invalid();
     } else {
         if((link.origin.state==State::removed)!=(link.destination.state==State::removed)) invalid();
@@ -164,7 +189,7 @@ Link generate(std::string id,const Endpoint& origin,const imports::DraftRow& dra
     if(found==allocations.end())invalid();
     const bool imported=draft.transaction.original_imported_amount().has_value();
     Link link{std::move(id),{origin,found->amount,draft.date,State::draft,imported,false,!imported},
-        {destination,-found->amount,draft.date,State::draft,false,true},draft.date};
+        {destination,-found->amount,draft.date,State::draft,false,true},draft.date,false,false,false,false,{}};
     validate(link);return link;
 }
 bool protected_draft(const Link& link,std::int64_t account) {
@@ -356,6 +381,7 @@ LinkEdit merge(std::span<const Link> links,const AllocationFact& left,const Allo
     const auto* left_link=owner_of(links,left.endpoint);const auto* right_link=owner_of(links,right.endpoint);
     if(left_link && right_link && left_link!=right_link) throw TransferError(Error::ambiguous_endpoint,"Choose one transfer relationship. These allocations belong to different links.");
     if(left_link && right_link) invalid();
+    evidenced_generated(left_link,left);evidenced_generated(right_link,right);
     if(left_link) agree(left_link->origin.endpoint==left.endpoint?left_link->origin:left_link->destination,left);
     if(right_link) agree(right_link->origin.endpoint==right.endpoint?right_link->origin:right_link->destination,right);
     if(left.endpoint.account==right.endpoint.account) {
@@ -363,14 +389,21 @@ LinkEdit merge(std::span<const Link> links,const AllocationFact& left,const Allo
         if(left.generated && right.imported) {generated=&left;imported=&right;host=left_link;}
         else if(right.generated && left.imported) {generated=&right;imported=&left;host=right_link;}
         else invalid();
-        if(!host || host->identity!=identity || host->destination.endpoint!=generated->endpoint || !disposable(host->destination)) {
-            if(host && committed_generated(host->destination)) reversal();
+        if(!host || host->identity!=identity || host->destination.endpoint!=generated->endpoint) invalid();
+        if(host->destination.proposed_evidence)
+            throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match explicitly");
+        const bool retiring=committed_generated(host->destination);
+        if(!retiring && !disposable(host->destination)) {
+            if(host->destination.attached_evidence || host->destination.independent_evidence)
+                throw TransferError(Error::unresolved_policy,"A generated row that has its own import evidence is not removed.");
             invalid();
         }
         if((generated==&left && right_link) || (generated==&right && left_link)) invalid();
         preserved(*host);
         if(host->destination.amount!=imported->amount) mismatch();
-        LinkEdit edit{*host,std::nullopt};edit.link.destination.endpoint=imported->endpoint;edit.link.destination.date=imported->date;edit.link.destination.state=imported->state;
+        LinkEdit edit{*host,std::nullopt,std::nullopt};
+        if(retiring) edit.retired_committed=host->destination;
+        edit.link.destination.endpoint=imported->endpoint;edit.link.destination.date=imported->date;edit.link.destination.state=imported->state;
         edit.link.destination.independent_evidence=true;edit.link.destination.provisional_date=false;edit.link.destination.manually_entered=false;edit.link.destination.accepted_unmatched=false;
         edit.link.destination.attached_evidence.reset();edit.link.destination.proposed_evidence.reset();validate(edit.link);edited(links,edit);return edit;
     }
@@ -380,14 +413,14 @@ LinkEdit merge(std::span<const Link> links,const AllocationFact& left,const Allo
     }
     if(!left_link && !right_link) {
         const auto origin=ordered_origin(left,right);const auto destination=origin.endpoint==left.endpoint?right:left;
-        LinkEdit edit{Link{std::move(identity),direct_side(origin,true),direct_side(destination,false),origin.date},std::nullopt};
+        LinkEdit edit{Link{std::move(identity),direct_side(origin,true),direct_side(destination,false),origin.date,false,false,false,false,{}},std::nullopt,std::nullopt};
         validate(edit.link);edited(links,edit);return edit;
     }
     const auto* existing=left_link?left_link:right_link;const auto& other=left_link?right:left;const auto& on=left_link?left:right;
     if(existing->identity!=identity || existing->origin.endpoint!=on.endpoint) invalid();
     auto edit=replace_destination(*existing,other,std::move(kept_identity));edited(links,edit);return edit;
 }
-LinkEdit retarget(std::span<const Link> links,const AllocationFact& origin,std::string identity,std::string kept_identity,std::optional<Endpoint> generated,std::optional<Currency> generated_currency) {
+LinkEdit retarget(std::span<const Link> links,const AllocationFact& origin,std::string identity,std::string kept_identity,std::optional<Endpoint> generated,std::optional<Currency> generated_currency,std::string_view category) {
     if(links.size()>qif::max_records) invalid();
     validate_set(links);fact_ok(origin);
     if(origin.generated) throw TransferError(Error::origin_controls_draft,"The origin controls this generated draft. Change or discard the origin instead of deleting the destination.");
@@ -398,9 +431,10 @@ LinkEdit retarget(std::span<const Link> links,const AllocationFact& origin,std::
     else if(identity.empty()) invalid();
     if(!generated) {
         if(!host) invalid();
-        if(origin.manually_entered) throw TransferError(Error::invalid_relationship,"Changing a manual transfer into a category is not this command. Discard the manual origin while it is uncommitted. Committed reversal remains point 6.");
-        if(origin.state==State::committed) throw TransferError(Error::committed_reversal,"Rewriting a committed allocation's category is committed editing and remains point 6. The link was not changed.");
-        auto edit=release_link(*host);edited(links,edit);return edit;
+        if(origin.manually_entered && origin.state!=State::committed)
+            throw TransferError(Error::invalid_relationship,"Changing a manual transfer into a category is not this command. Discard the manual origin while it is uncommitted.");
+        auto edit=origin.manually_entered?release_manual(*host,category):release_link(*host);
+        edited(links,edit);return edit;
     }
     if(!generated_currency) currencies();
     endpoint(*generated);
@@ -411,13 +445,52 @@ LinkEdit retarget(std::span<const Link> links,const AllocationFact& origin,std::
         const auto draft=origin.manually_entered
             ? imports::DraftRow{origin.date,"","",Transaction::manual(origin.amount,{only})}
             : imports::DraftRow{origin.date,"","",Transaction::imported(origin.amount,{only})};
-        LinkEdit edit{generate(std::move(identity),origin.endpoint,draft,*generated,*generated_currency),std::nullopt};
+        LinkEdit edit{generate(std::move(identity),origin.endpoint,draft,*generated,*generated_currency),std::nullopt,std::nullopt};
         if(edit.link.origin.state!=origin.state || edit.link.origin.amount!=origin.amount || edit.link.origin.date!=origin.date) invalid();
         edited(links,edit);return edit;
     }
     Side fresh{*generated,-origin.amount,host->generated_date,State::draft,false,true};
-    LinkEdit edit{*host,std::nullopt};
+    LinkEdit edit{*host,std::nullopt,std::nullopt};
     if(!disposable(host->destination)) edit.kept=leftover(*host,std::move(kept_identity));
     edit.link=*host;edit.link.destination=fresh;validate(edit.link);edited(links,edit);return edit;
+}
+EntryLinkEdit edit_linked_allocation(std::span<const Link> links,const AllocationFact& before,bool remove,bool keep_transfer,const Money& after_amount,std::string_view after_date) {
+    if(links.size()>qif::max_records) invalid();
+    validate_set(links);fact_ok(before);date(after_date);
+    if(after_amount.currency()!=before.amount.currency()) currencies();
+    const auto* host=owner_of(links,before.endpoint);
+    if(!host) invalid();
+    const bool origin_side=host->origin.endpoint==before.endpoint;
+    if(!origin_side && host->destination.endpoint!=before.endpoint) invalid();
+    const auto& current=origin_side?host->origin:host->destination;
+    agree(current,before);preserved(*host);
+    if(host->origin.proposed_evidence || host->destination.proposed_evidence)
+        throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match explicitly");
+    if(host->origin.attached_evidence || host->destination.attached_evidence)
+        throw TransferError(Error::unresolved_policy,"Replacing transfer evidence requires the repair policy");
+    const bool amount_same=after_amount==before.amount;
+    const bool date_same=after_date==before.date;
+    if(!remove && keep_transfer && amount_same && date_same) return {*host,LinkFate::unchanged};
+    if(!remove && keep_transfer && amount_same) {
+        Link link=*host;
+        if(origin_side) {
+            link.origin.date=std::string(after_date);
+            link.origin_date_corrected=link.origin.date!=link.generated_date;
+        } else {
+            if(!link.destination.independent_evidence && after_date!=link.generated_date) invalid();
+            link.destination.date=std::string(after_date);
+        }
+        validate(link);edited(links,{link,std::nullopt,std::nullopt});return {std::move(link),LinkFate::dated};
+    }
+    if(origin_side) {
+        const bool generated_draft=disposable(host->destination);
+        auto edit=release_link(*host);edited(links,edit);
+        return {std::move(edit.link),generated_draft?LinkFate::removed_generated:LinkFate::released};
+    }
+    Link link=*host;
+    if(link.unresolved || link.destination_released || link.destination.state==State::removed || link.origin.state==State::removed) invalid();
+    link.destination.proposed_evidence.reset();link.destination.state=State::removed;link.destination_released=true;
+    validate(link);edited(links,{link,std::nullopt,std::nullopt});
+    return {std::move(link),LinkFate::released};
 }
 } // namespace spentit::transfers

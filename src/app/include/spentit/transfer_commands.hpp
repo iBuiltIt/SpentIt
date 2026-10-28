@@ -2,7 +2,7 @@
 #include <spentit/transfer.hpp>
 
 namespace spentit::app {
-enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard, merge, retarget };
+enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard, merge, retarget, relink, restore };
 struct TransferRequest {
     TransferAction action;
     std::string link;
@@ -39,5 +39,9 @@ struct TransferReceipt {
     std::string operation;
     std::int64_t account,sequence;
     Money before,change,after;
+};
+struct TransferPreview {
+    Money before,change,after;
+    std::string note;
 };
 } // namespace spentit::app

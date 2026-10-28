@@ -41,6 +41,9 @@ struct ChangePreview {
     EntryToken expected;
     std::int64_t preview_sequence;
     std::int64_t catalog_revision=0;
+    // In-memory only. Empty when the correction does not change a transfer link.
+    std::string relationship;
+    std::string link_stamp;
 };
 struct ChangeReceipt {
     std::string operation;
