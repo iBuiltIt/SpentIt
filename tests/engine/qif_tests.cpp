@@ -15,6 +15,8 @@ void invalid(std::string_view s,Issue issue) {
 }
 const std::string wise="D10/08/2026\nNCARD-SYNTHETIC-001\nT-29.31\nPSynthetic Transit\nMExample Person\nEWise Charges for: CARD-SYNTHETIC-001\n$-0.14\nECARD-SYNTHETIC-001\n$-29.17\n^\n";
 void basics() {
+    auto ampersands=parse_dmy("D1/1/2026\nT-10\nLFood: Coffee & Fast Food\n^\nD2/1/2026\nT-10\nSUtilities: TV & Streaming\n$-10\n^\n");
+    check(ampersands.valid() && ampersands.records[0].transaction->allocations()[0].category=="Food: Coffee & Fast Food" && ampersands.records[1].transaction->allocations()[0].category=="Utilities: TV & Streaming");
     auto badDate=parse_dmy("D31/02/2026\nT-10\n^\n");
     check(badDate.records[0].repairable && !badDate.records[0].transaction && badDate.records[0].original_amount->units()==-1000);
     check(parse_dmy("D31/02/2026\nT-10\nL[Visa]\n^\n").records[0].repairable);

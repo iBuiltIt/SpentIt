@@ -27,11 +27,12 @@ using BackupObserver=std::function<void(BackupPhase)>;
 class ImportStore final : public app::ImportRepository {
 public:
     static ImportStore create(const std::filesystem::path&,std::string_view password,
-                              std::string_view name,const Currency&,std::string_view today,bool overwrite=false);
+                              std::string_view name,const Currency&,std::string_view today,bool overwrite=false,const app::DatasetOptions& options={});
     static ImportStore open(const std::filesystem::path&,std::string_view password, const app::OperationContext* = nullptr);
     ~ImportStore();
     ImportStore(ImportStore&&) noexcept;
     ImportStore& operator=(ImportStore&&) noexcept;
+    std::string date_format() const override;
     app::Account account() const override;
     bool transfers_supported() const override { return true; }
     std::int64_t transfer_sequence() const override;
@@ -157,6 +158,8 @@ private:
     std::unique_ptr<Impl> impl_;
     explicit ImportStore(std::unique_ptr<Impl>);
     imports::DraftRow canonical_draft(const imports::Occurrence&,const imports::DraftRow&,const std::optional<imports::DraftRow>&,std::int64_t,bool entry,bool check_assignment=true) const;
+    void initialize_categories();
+    void write_category_change(std::string_view,const app::CategoryPreview&);
     void verify_categories(const app::OperationContext* context) const;
     app::EntrySnapshot entry_snapshot(const imports::Occurrence&,std::int64_t) const;
     std::vector<app::DependencyStamp> dependencies(const imports::Occurrence&,std::int64_t history_before=0) const;

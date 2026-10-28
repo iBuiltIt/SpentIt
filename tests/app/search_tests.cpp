@@ -8,6 +8,11 @@ void check(bool value,const std::source_location& at=std::source_location::curre
 template<class F>void rejects(F action){bool failed=false;try{action();}catch(const std::exception&){failed=true;}check(failed);}
 bool match(std::string_view query,std::string_view date,std::initializer_list<std::string_view> fields,bool source=false){LedgerSearch search(query,2026);return search.matches(date,fields,source);}
 int main(){try{
+    {const std::array<std::string_view,1> gas{"Auto: Gas"},autoOnly{"Auto"},unrelated{"Automobile Club"};
+     LedgerSearch stem("category:auto",2026),exact("category-exact:auto",2026),leaf("category:\"auto: gas\"",2026);
+     check(stem.matches("2026-10-28",{},false,{},gas));check(stem.matches("2026-10-28",{},false,{},autoOnly));check(!stem.matches("2026-10-28",{},false,{},unrelated));
+     check(!exact.matches("2026-10-28",{},false,{},gas));check(exact.matches("2026-10-28",{},false,{},autoOnly));check(leaf.matches("2026-10-28",{},false,{},gas));}
+    {LedgerSearch dates("period:04/03/2026",2026,"DD/MM/YYYY");check(dates.matches("2026-03-04",{},false));check(!dates.matches("2026-04-03",{},false));}
     check(match("coffee food","2026-05-31",{"Coffee Shop","Food: Dining"}));
     check(!match("coffee food","2026-05-31",{"Coffee Shop","Travel"}));
     check(match("\"coffee shop\"","2026-05-31",{"COFFEE SHOP"}));

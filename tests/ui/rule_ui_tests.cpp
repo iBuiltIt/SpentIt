@@ -43,11 +43,8 @@ class RuleUiTests : public QObject {
     static QVariantMap draftOf(const ImportModel& m){return selected(m).value("draft").toMap();}
     static QString page(QObject* root){return root->property("currentPage").toString();}
     void applyCategory(ImportModel& m,QObject* root){QVERIFY(click(root,"saveCategory"));wait(m);QVERIFY(object(root,"categoryChangePreview")->property("visible").toBool());QVERIFY(click(root,"applyCategoryChange"));wait(m);}
-    QString createCategory(ImportModel& m,QObject* root,const QString& name,bool group,const QString& parent={}){
+    QString createCategory(ImportModel& m,QObject* root,const QString& name){
         if(!click(root,"newCategory") || !edit(root,"categoryName",name))qFatal("Category form unavailable");
-        object(root,"categoryKind")->setProperty("currentIndex",group?1:0);
-        auto* picker=object(root,"categoryParent");const auto options=picker->property("model").toList();
-        for(qsizetype n=0;n<options.size();++n)if(options[n].toMap().value("id").toString()==parent)picker->setProperty("currentIndex",n);
         applyCategory(m,root);return m.state().value("categorySelected").toMap().value("id").toString();
     }
     bool pickRuleCategory(QObject* root,const QString& id){
@@ -134,9 +131,8 @@ private slots:
     void previewApplyBlankPayeeCommitAndSourceQuote(){
         Session s;createDocument(s,"Synthetic rule preview");
         QVERIFY(click(s.root,"categoryNavigation"));wait(s.model);
-        const auto travel=createCategory(s.model,s.root,"Travel",true);
-        const auto transport=createCategory(s.model,s.root,"Transport",false,travel);
-        const auto fees=createCategory(s.model,s.root,"Fees",false);
+        const auto transport=createCategory(s.model,s.root,"Travel: Transport");
+        const auto fees=createCategory(s.model,s.root,"Fees");
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
         transactionRule(s.root,"Alpha","^Tfl","Alpha",transport);
         transactionRule(s.root,"Beta","^Tfl","Beta");

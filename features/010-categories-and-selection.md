@@ -1,10 +1,66 @@
 # 010 — Categories and selection
 
 Status: **active**  
-Last updated: 2026-10-27  
-Implementation: bounded catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Current documents use experimental schema 22 with rules and 21 without; both include this catalog. Schema 20 is rejected without migration. The durable category selector lists real accounts as transfer destinations and stores the account identity. Category reports remain unimplemented. See [implementation and recovery](../doc/categories.md) and [transfer management](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27).
+Last updated: 2026-10-28  
+Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 24/23. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
+
+## Exact starter categories — accepted 2026-10-28
+
+**Approved by the owner, with the three Income entries added below.** This translates the original supplied list below into the newly agreed independent-category model. Each line is one selectable, assignable category. No parent-only categories are created. The creation checkbox defaults to checked; unchecked means an empty catalog. Names remain editable after creation.
+
+```text
+Housing: Rent & Mortgage
+Housing: Home Maintenance
+Housing: Home Improvement
+Housing: Furniture & Appliances
+Utilities: Electricity, Gas & Heating
+Utilities: Water, Sewer & Garbage
+Utilities: Internet
+Utilities: Phones
+Utilities: TV & Streaming
+Auto: Gas & Fuel
+Auto: Maintenance & Repair
+Auto: Insurance
+Auto: Parking & Tolls
+Auto: Payment & Other
+Transportation: Public Transit
+Transportation: Rideshare & Taxi
+Food: Groceries
+Food: Restaurants & Dining
+Food: Coffee & Fast Food
+Amazon
+Shopping: Clothing
+Shopping: Electronics & General Shopping
+Medical: Doctor & Hospital
+Medical: Pharmacy
+Health & Wellness: Gym & Fitness
+Health & Wellness: Personal Care
+Entertainment & Hobbies: Entertainment
+Entertainment & Hobbies: Hobbies
+Travel: Flights
+Travel: Hotels & Lodging
+Travel: Other
+Family & Education: Child Expenses & Childcare
+Family & Education: Education
+Other & Miscellaneous: Gifts & Donations
+Other & Miscellaneous: Pets
+Other & Miscellaneous: Insurance
+Other & Miscellaneous: Fees, Interest & Bank Charges
+Other & Miscellaneous: Other
+Income: Salaries & Wages
+Income: Pension
+Income: Investment Income
+```
+
+## Independent categories — accepted 2026-10-28
+
+The owner superseded the explicit parent/group model below and authorized implementation. Every category is independently assignable. A name may have one colon separator, with display spacing `Stem: Name`; a second colon is rejected. Creating `Auto: Gas` creates only that category. Creating `Auto` separately makes it independently assignable. Renaming, archiving, or deleting one does not change others sharing its stem. Stable identities and retained assignment history remain required.
+
+Identity lookup and uniqueness are case-insensitive; preserve the created capitalization for display (until an explicit rename). Typing `auto: gas` selects an existing `Auto: Gas`. Stem matching includes the exact category plus names beginning with that stem and a colon boundary; `Auto` includes `Auto: Gas`, but excludes `Automobile Club`.
+
+For future reports, selecting `Auto` can select all matching categories, after which the user may deselect individual choices. Direct-category values and rollups must be distinguishable and never double-count allocations. Exact report presentation is deferred. The earlier non-assignable parent requirements, group lifecycle, and hierarchy questions below are historical and superseded by this decision.
 
 ## Purpose and roadmap position
 
@@ -12,7 +68,7 @@ The owner discussed categories ahead of their implementation milestone. Preserve
 
 The organizing principle is useful distinctions that the owner can reliably make from statements at a sustainable review effort. Review may happen only every three months. Do not require receipt reconstruction or fine-grained purchase classification merely to satisfy a theoretically uniform taxonomy.
 
-## Accepted requirements and decisions
+## Earlier requirements and decisions — hierarchy superseded 2026-10-28
 
 ### Shallow hierarchy and familiar names
 
@@ -70,14 +126,14 @@ This preserves the supplied grouping and labels, including alternatives separate
 
 The owner's later clarification prefers names such as Utilities: Phones and Utilities: TV & Streaming. Travel is an explicit grouping parent with no direct allocations. Auto must be discoverable directly. The original heading-plus-prefix arrangement is not permission to introduce three levels.
 
-## Implementation direction and deferred options
+## Earlier implementation direction and deferred options
 
 - Store stable category identities and explicit parent relationships; render a path such as Travel: Flights without making mutable text the identity.
 - Match picker searches against both parent and leaf names: Auto reveals its leaves; Parking finds Auto: Parking & Tolls. Show enough context to distinguish identically named leaves, and make parents non-assignable.
 - Starter categories remain optional and editable; this bounded implementation starts with an empty catalog so unresolved starter names do not become financial assumptions.
 - Optional trip/project tags could collect meals, taxis, shopping, and flights for one holiday across categories. This was discussed but not adopted; do not add tags or require them as part of category implementation.
 
-## Open questions for the implementing agent
+## Earlier open questions — hierarchy and starter names resolved above
 
 - Reconcile the original headings with the accepted depth limit. Is Auto a top-level parent alongside Transportation? Similarly, how should Medical relate to Health & Wellness? Do not silently add an extra hierarchy level or a separate presentation-section system. The suggestion to make Auto top-level was not explicitly resolved.
 - Finalize QIF-safe leaf spellings without changing their intended meaning. Standalone assignable categories are accepted; their presentation beside groups is an implementation choice.

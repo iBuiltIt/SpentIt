@@ -34,6 +34,10 @@ qif::Record basis_row(std::string date, std::optional<Money> amount, std::string
     qif::Record row; row.repairable = true; row.date = std::move(date); row.source_currency = cad; row.original_amount = amount; row.fitid = std::move(fit); row.format = std::move(format); row.payee = "Coffee"; return row;
 }
 void parser() {
+    const auto amp_sgml=statements::parse_occurrence(txn("AMP","20261028","-1.00","Coffee & Food"),statements::parser_sgml,cad);
+    check(amp_sgml.records.size()==1 && amp_sgml.records[0].payee=="Coffee & Food");
+    const auto amp_xml=statements::parse_occurrence("<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20261028</DTPOSTED><TRNAMT>-1.00</TRNAMT><FITID>AMP</FITID><NAME>Coffee &amp; Food</NAME></STMTTRN>",statements::parser_xml,cad);
+    check(amp_xml.records.size()==1 && amp_xml.records[0].payee=="Coffee & Food");
     const auto coffee = txn("FIT-1", "20260201120000.000[-5:EST]", "-12.34", "Coffee");
     const auto text = sgml(bank(coffee, "CAD", "1001", "10.00"));
     const auto original = text;

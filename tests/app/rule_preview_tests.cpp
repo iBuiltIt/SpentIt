@@ -12,7 +12,7 @@ int main(){try{
     auto parsed=qif::parse("!Type:Bank\nD01/01/2026\nT-29.31\nPTfl Travel UK\nSUnmapped Fee\nEWise Charges for: card\n$-0.14\nSUnmapped Travel\nECARD-123\n$-29.17\n^\n",qif::DateOrder::dmy,cad);
     require(parsed.valid(),"synthetic fixture");auto source=parsed.records.front();
     imports::DraftRow draft{source.date,source.payee,source.memo,*source.transaction,FieldOwnership::source,FieldOwnership::source};
-    app::CategoryCatalog catalog{3,{{"travel","Travel","",CategoryKind::group,0,false,false},{"transport","Transport","travel",CategoryKind::leaf,0,false,false},{"fees","Service Fees","",CategoryKind::leaf,0,false,false}}};
+    app::CategoryCatalog catalog{3,{{"travel","Travel","",CategoryKind::leaf,0,false,false},{"transport","Travel: Transport","",CategoryKind::leaf,0,false,false},{"fees","Service Fees","",CategoryKind::leaf,0,false,false}}};
     rules::RuleSet rules({{"parent",1,true,rules::Scope::transaction,rules::InputField::payee,"^Tfl",{"TfL",{},"transport",false}},{"fee",1,true,rules::Scope::split,rules::InputField::memo,"^Wise",{{},{},"fees",false}},{"trip",1,true,rules::Scope::split,rules::InputField::memo,"^CARD-",{{},{},{},true}}});
     auto out=app::preview_rules(rules,catalog,{{{"batch",0},source,draft,{}}}).front();
     require(out.after.payee=="TfL"&&out.after.date==draft.date,"display only");

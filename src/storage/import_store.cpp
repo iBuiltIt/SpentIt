@@ -1,5 +1,6 @@
 #include <spentit/import_store.hpp>
 #include <spentit/statements.hpp>
+#include <spentit/date_format.hpp>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <set>
@@ -171,7 +172,7 @@ void require_qif_transfers(const imports::Occurrence& id,const imports::DraftRow
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=21;
+PRAGMA user_version=23;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -305,7 +306,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=22;
+PRAGMA user_version=24;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -527,17 +528,17 @@ CREATE TRIGGER order_account AFTER INSERT ON account_operations BEGIN INSERT INT
 )SQL";
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="17" || version=="19" || version=="21"
+    return version=="3" || version=="4" || version=="17" || version=="19" || version=="23"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="22"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="24"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="17" || version=="19" || version=="21"
+    return version=="4" || version=="17" || version=="19" || version=="23"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="22"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="24"
 #endif
         ;
 }
@@ -590,14 +591,14 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="21"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="23"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16" || version=="18" || version=="20" || version=="22"
+    || version=="6" || version=="16" || version=="18" || version=="20" || version=="24"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="22";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="24";
 #else
     (void)db;return false;
 #endif
@@ -770,9 +771,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="22";
+        constexpr const char* expected_format="24";
 #else
-        constexpr const char* expected_format="21";
+        constexpr const char* expected_format="23";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"This dataset format is not supported by this version of SpentIt; the file has not been changed");
@@ -781,6 +782,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
             fail(SQLITE_SCHEMA,"Account structure does not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('transfer_events','transfer_versions','transfer_heads','retained_transfer_rows')")!="4")fail(SQLITE_SCHEMA,"Transfer structure does not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('source_headers','source_occurrences','source_associations')")!="3")fail(SQLITE_SCHEMA,"Document structure does not match format version");
+        if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='dataset_preferences'")!="1")fail(SQLITE_SCHEMA,"Dataset preferences do not match format version");
         const auto common=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('account','account_creations','sources','batches','records','versions','allocations','operations','events','entry_revisions','entry_allocations','entry_heads','ledger_operations','change_dependencies','history_order','review_stamps','category_state','category_versions','category_heads','category_operations','operation_registry','draft_fields','entry_fields','draft_allocation_meta','entry_allocation_meta')");
         const auto rule_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('rule_state','rule_definitions','rule_heads','rule_operations','rule_operation_requests','rule_snapshots','rule_applications','draft_rule_fields','draft_rule_allocations','entry_rule_fields','entry_rule_allocations','rule_reapplications','rule_reapplication_members')");
         const auto bulk_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('bulk_operations','bulk_members')");
@@ -813,13 +815,15 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
         exec(db, transfer_schema);
         exec(db, source_fact_schema);
         exec(db, account_command_schema);
+        exec(db,"CREATE TABLE dataset_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1),date_format TEXT NOT NULL,default_categories INTEGER NOT NULL CHECK(default_categories IN(0,1))) STRICT; CREATE TRIGGER dataset_preferences_immutable BEFORE UPDATE ON dataset_preferences BEGIN SELECT RAISE(ABORT,'Dataset setup is immutable'); END; CREATE TRIGGER dataset_preferences_keep BEFORE DELETE ON dataset_preferences BEGIN SELECT RAISE(ABORT,'Dataset setup is immutable'); END;");
         transaction.commit();
         sync_directory(path);
     }
     if (!create) {store.impl_->selected_account=smallest_active_account(store.impl_->db);store.verify(context);}
     return store;
 }
-ImportStore ImportStore::create(const std::filesystem::path& path,std::string_view password,std::string_view name,const Currency& currency,std::string_view today,bool overwrite) {
+ImportStore ImportStore::create(const std::filesystem::path& path,std::string_view password,std::string_view name,const Currency& currency,std::string_view today,bool overwrite,const app::DatasetOptions& options) {
+    validate_date_format(options.date_format);
     safe_text(name); if(name.empty()) fail(SQLITE_MISUSE,"Account name is required"); iso_date(today);
     // New accounts must use current selection; persisted definitions remain readable.
     if (Currency(currency.code())!=currency) fail(SQLITE_MISUSE,"Currency cannot be selected for a new account");
@@ -828,7 +832,14 @@ ImportStore ImportStore::create(const std::filesystem::path& path,std::string_vi
     Statement s(store.impl_->db,"INSERT INTO account VALUES(1,?,?,?,0,0,0,0)"); s.text(1,name); s.text(2,currency.definition_id()); s.text(3,today); s.done();
     Statement receipt(store.impl_->db,"INSERT INTO account_creations VALUES(1,?,?,?)");
     receipt.text(1,name);receipt.text(2,currency.definition_id());receipt.text(3,today);receipt.done();
-    a.commit(); store.verify(); return store;
+    Statement preferences(store.impl_->db,"INSERT INTO dataset_preferences VALUES(1,?,?)");preferences.text(1,options.date_format);preferences.integer(2,options.default_categories?1:0);preferences.done();
+    if(options.default_categories)store.initialize_categories();
+    store.impl_->finish(a); store.verify(); return store;
+}
+std::string ImportStore::date_format() const {
+    Statement row(impl_->db,"SELECT date_format,default_categories FROM dataset_preferences WHERE singleton=1");
+    if(!row.row() || (row.integer(1)!=0 && row.integer(1)!=1))fail(SQLITE_CORRUPT,"Dataset preferences are missing or invalid");
+    auto format=row.bytes(0);validate_date_format(format);return format;
 }
 ImportStore ImportStore::open(const std::filesystem::path& path,std::string_view password,const app::OperationContext* context) { return connect(path,password,false,context); }
 app::Account ImportStore::account_by_id(std::int64_t id) const {
@@ -1330,6 +1341,7 @@ std::vector<app::AccountBalance> ImportStore::account_balances() const {
     return result;
 }
 void ImportStore::verify(const app::OperationContext* context) const {
+    (void)date_format();
     ReadStatements read_plans(impl_->db);
     struct VerificationGuard { bool& value; bool prior; ~VerificationGuard(){value=prior;} } guard{impl_->verifying,impl_->verifying};
     impl_->verifying=true;

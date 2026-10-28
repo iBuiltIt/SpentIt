@@ -34,7 +34,7 @@ spentit_compiler_options(spentit_storage_prototype)
 if(SPENTIT_IMPORT_WORKFLOW)
 add_library(spentit_import_store STATIC import_store.cpp document_gateway.cpp)
 target_include_directories(spentit_import_store PUBLIC include "${PROJECT_SOURCE_DIR}/src/app/include")
-target_link_libraries(spentit_import_store PUBLIC SpentIt::engine PRIVATE spentit_sqlcipher)
+target_link_libraries(spentit_import_store PUBLIC SpentIt::engine PRIVATE spentit_sqlcipher spentit_import_view)
 if(SPENTIT_RULES)
   # New layout exception: the repository re-runs the one application matcher.
   # PCRE2 stays on SpentIt::rules, not on SpentIt::engine.

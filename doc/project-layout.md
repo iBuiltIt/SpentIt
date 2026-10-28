@@ -114,3 +114,7 @@ The category types/name validation remain in the standard-C++ engine; SQLCipher 
 ## Account-scoped commands — 2026-10-26
 
 Account enumeration, creation, durable creation-outcome lookup and session selection are exposed through `ImportRepository`. The existing import worker owns selection; storage scopes batches, money and financial commands and verifies all accounts. QML contains no SQL or authoritative money calculations. See [account behavior and limits](accounts.md).
+
+## Creation preferences and independent categories — 2026-10-28
+
+The dependency-free engine validates date patterns/calendar dates and colon-category syntax. The application import-view target owns bounded Unicode caseless category comparison through the existing PCRE2 adapter. Storage links that application matcher to enforce the same uniqueness policy and owns immutable setup preferences plus atomic starter-category history. The serial UI worker converts between stored ISO dates and the dataset display format; QML neither parses financial import dates nor owns initialization transactions.

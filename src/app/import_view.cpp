@@ -62,14 +62,23 @@ LedgerView search_ledger(const Account& account,std::vector<LedgerRow> rows,Ledg
         std::vector<std::string> amounts;amounts.reserve(row.draft.transaction.allocations().size()+2);
         amounts.push_back(decimal(row.draft.transaction.effective_total()));amounts.push_back(decimal(out.balances[index]));
         for(const auto& a:row.draft.transaction.allocations())amounts.push_back(decimal(a.amount));
+        const auto date=query.display_date(row.draft.date);
         std::vector<std::string_view> fields;std::optional<std::string_view> raw;
         if(query.source_mode()) {if(source && !row.identity.batch.empty())raw=source(row.identity);if(raw)fields.push_back(*raw);}
         else {
-            fields={row.draft.date,row.draft.payee,row.draft.memo,account.currency.code()};
+            fields={date,row.draft.payee,row.draft.memo,account.currency.code()};
             for(const auto& amount:amounts)fields.push_back(amount);
             for(const auto& a:row.draft.transaction.allocations()){fields.push_back(a.category);fields.push_back(a.memo);}
         }
-        if(!query.matches(row.draft.date,fields,raw.has_value(),cancelled))continue;
+        std::vector<std::string_view> categories;
+        for(const auto& allocation:row.draft.transaction.allocations())if(allocation.category_binding){
+            std::string_view name=allocation.category;
+            // The UI decorates current bound names; archive status is not part of their identity.
+            constexpr std::string_view archived=" [Archived]";
+            if(name.ends_with(archived))name.remove_suffix(archived.size());
+            categories.push_back(name);
+        }
+        if(!query.matches(row.draft.date,fields,raw.has_value(),cancelled,categories))continue;
         order.push_back(index);const auto total=row.draft.transaction.effective_total();(total.units()<0?withdrawals:deposits).push_back(total);
     }
     out.order=std::move(order);out.withdrawals=imports::sum(account.currency,withdrawals);out.deposits=imports::sum(account.currency,deposits);return out;

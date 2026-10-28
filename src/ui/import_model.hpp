@@ -39,6 +39,10 @@ public:
     QVariant data(const QModelIndex&,int role) const override;
     QHash<int,QByteArray> roleNames() const override;
     Q_INVOKABLE void command(const QString& action,const QVariantMap& args={});
+    Q_INVOKABLE QString suggestedDateFormat(const QString&) const;
+    Q_INVOKABLE QString todayDisplay() const;
+    Q_INVOKABLE QString dateFormatExample(const QString&) const;
+    Q_INVOKABLE bool categoryNameMatches(const QString& name,const QString& selected,bool includeChildren=false);
     Q_INVOKABLE QString newIdentity() const;
     Q_INVOKABLE QString localPath(const QUrl&) const;
     Q_INVOKABLE int selectedRowIndex() const;

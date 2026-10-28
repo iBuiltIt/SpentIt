@@ -43,3 +43,9 @@ Initially show separate totals per currency. Consolidated home-currency totals r
 - Refund/net-spending and income policy, detailed rollup presentation/filter behavior, account selection, and sorting of credits. Feature 010 accepts one grouping level, non-assignable parents, and descendant rollups; it does not settle refund treatment.
 - Additional criteria such as payee, memo, note, or amount range.
 - Charts, exports, saved-report configuration/creation-dialog details, and consolidated CAD reporting remain unspecified. The sidebar entry point for saved reports is accepted.
+
+## Category selection follow-up — accepted 2026-10-28
+
+Categories are [independent assignable names](010-categories-and-selection.md#independent-categories--accepted-2026-10-28), optionally containing one colon. A future report category checklist may include both `Auto` and `Auto: Gas`; selecting Auto checks its matching `Auto:` categories, and the user can deselect any of them individually. A stem without a separately created category is not an assignable parent object.
+
+Presentation remains open. The owner discussed either showing direct Auto spending plus subcategories with a separate total, or showing an inclusive Auto total with subcategory detail. For direct Auto 1000, Gas 50 and Other 25, the inclusive total is 1075; detail and subtotal must not be added twice. This does not authorize report implementation or settle income/refund/currency policies. Starter Income categories are ordinary neutral classifications, not rules for recognizing report income.

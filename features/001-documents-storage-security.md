@@ -1,7 +1,7 @@
 # 001 — Documents, storage, and security
 
 Status: **active**  
-Last updated: 2026-10-26  
+Last updated: 2026-10-28  
 Implementation: partial; optional SQLCipher synthetic-data storage/recovery prototype and [headless durable-import experiment](../doc/durable-import.md). Bounded document switching, backup/restore, ordinary strict Undo and atomic group Undo are implemented; full application lifecycle and password changes remain incomplete.
 
 Accepted format policy, 2026-10-26: no datasets exist in the wild. Experimental formats need no migration, upgrade or backward-compatibility work until the owner explicitly announces a release. Migration requirements below apply only once that gate makes them relevant; encryption, current-format atomicity and recovery remain required. Current group-history behavior is described in [search and ledger](../doc/search-ledger.md).
@@ -27,6 +27,16 @@ Show only SpentIt, “Where did my money go?”, the dataset prompt/path, Browse
 Creation defaults to account name SpentIt, CAD, and password protection on. Missing passwords produce “Enter a password to create a password-protected dataset.” Password confirmation and both protection explanations remain. New Dataset resets its proposed path to the Documents default; an existing selected document is not renamed.
 
 If the creation destination exists, show its path with Cancel and Overwrite. Cancel does not modify it. Overwrite explicitly authorizes destructive replacement at creation time: no mandatory backup, staged replacement, or second confirmation. This is not an atomic preservation/recovery operation for the discarded dataset. A failure or interruption can leave an incomplete replacement; report failure and permit another explicit overwrite attempt. Validate creation inputs before destruction and retain exclusive document locking, regular-file restrictions and encryption. Do not replace a dataset held open by another process or follow a symlink. Backup and restore-to-new-file behavior is unchanged.
+
+## Creation date format and starter categories — accepted 2026-10-28
+
+New Dataset includes a date-format selector with presets and Custom. The selected format applies to user-facing dates and manual date entry across the dataset, including dates in ledger search. Imported dates are interpreted only by the source-format parser and explicit QIF order, never by this display preference. Stored dates remain canonical Gregorian calendar dates with no timezone conversion; original evidence stays unchanged. Parsed-source date presentation follows the preference; raw evidence remains verbatim.
+
+Use `YYYY`, `MM`, and `DD` exactly once each. Supported separators are a consistent hyphen, slash, dot, or none; years require four digits and day/month require two. Show a live example; reject invalid patterns and impossible dates explicitly. Presets are `YYYY-MM-DD`, `YYYYMMDD`, `DD-MM-YYYY`, `DD/MM/YYYY`, `MM-DD-YYYY`, and `MM/DD/YYYY`.
+
+Currency selection suggests `MM/DD/YYYY` for USD, `DD/MM/YYYY` for GBP/AUD/NZD, and `YYYY-MM-DD` for CAD, JPY/CNY and all other currencies. These are editable SpentIt suggestions, not authoritative currency standards. Once explicitly overridden, a currency change preserves the chosen format. New Dataset resets the suggestions. The format is stored in the encrypted dataset, survives reopening and backup/restore, and is shown in Settings. Editing an existing dataset's preference is outside this creation slice.
+
+**Use default categories** starts checked. Create the [41 approved independent categories](010-categories-and-selection.md#exact-starter-categories--accepted-2026-10-28) when checked, or an empty catalog when unchecked. Initial account, date preference, and category definitions/history are one atomic initialization transaction. Validate the format before any confirmed destructive overwrite. New experimental formats are 24 with rules and 23 without; previous formats are rejected unchanged, without migration under the pre-release policy.
 
 ## Accepted setup, unlock and recovery behavior — 2026-10-25
 

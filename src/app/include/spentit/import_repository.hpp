@@ -9,6 +9,7 @@
 #include <optional>
 
 namespace spentit::app {
+struct DatasetOptions {std::string date_format="YYYY-MM-DD";bool default_categories=false;};
 // Synchronous application persistence boundary. Call on a worker, never the UI
 // thread. Each command is one complete atomic operation including its history.
 struct Account {
@@ -197,6 +198,7 @@ public:
     // Storage overrides this to reject an unclosed/failed rollback transaction.
     virtual std::optional<Receipt> durable_outcome(std::string_view operation) const { return outcome(operation); }
     virtual std::vector<LedgerRow> ledger(bool projected) const = 0;
+    virtual std::string date_format() const {return "YYYY-MM-DD";}
     virtual bool categories_supported() const { return false; }
     virtual CategoryCatalog category_catalog() const { throw std::logic_error("Categories are not supported by this dataset"); }
     virtual CategoryPreview preview_category_change(const CategoryRequest&) const { throw std::logic_error("Categories are not supported by this dataset"); }

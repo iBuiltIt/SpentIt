@@ -23,11 +23,8 @@ class CategoryUiTests : public QObject {
     void run(ImportModel& m,const QString& action,const QVariantMap& args={},bool success=true){m.command(action,args);wait(m,success);}
     static QVariantMap selected(const ImportModel& m){return m.state().value("selected").toMap();}
     void applyCategory(ImportModel& m,QObject* root){QVERIFY(click(root,"saveCategory"));wait(m);QVERIFY(object(root,"categoryChangePreview")->property("visible").toBool());QVERIFY(click(root,"applyCategoryChange"));wait(m);}
-    QString createCategory(ImportModel& m,QObject* root,const QString& name,bool group,const QString& parent={}){
+    QString createCategory(ImportModel& m,QObject* root,const QString& name){
         if(!click(root,"newCategory") || !edit(root,"categoryName",name))qFatal("Category form unavailable");
-        object(root,"categoryKind")->setProperty("currentIndex",group?1:0);
-        auto* picker=object(root,"categoryParent");const auto options=picker->property("model").toList();
-        for(qsizetype n=0;n<options.size();++n)if(options[n].toMap().value("id").toString()==parent)picker->setProperty("currentIndex",n);
         applyCategory(m,root);return m.state().value("categorySelected").toMap().value("id").toString();
     }
 private slots:
@@ -38,8 +35,9 @@ private slots:
         const auto path=dir.path()+"/document";run(model,"create",{{"path",path},{"protected",false},{"name","Synthetic categories"},{"currency","CAD"}});
         QVERIFY(model.state().value("categoriesSupported").toBool());QVERIFY(model.state().value("categories").toList().isEmpty());
         window->requestActivate();QTest::qWait(100);QVERIFY(pointer(window,root,"categoryNavigation"));QTRY_COMPARE(root->property("currentPage").toString(),"categories");wait(model);
-        const auto group=createCategory(model,root,"Auto",true);QVERIFY(!group.isEmpty());
-        const auto leaf=createCategory(model,root,"Parking",false,group);QVERIFY(!leaf.isEmpty());
+        const auto group=createCategory(model,root,"Auto");QVERIFY(!group.isEmpty());
+        const auto leaf=createCategory(model,root,"Auto: Parking");QVERIFY(!leaf.isEmpty());
+        QVERIFY(model.categoryNameMatches("Auto: Parking","auto: parking"));QVERIFY(model.categoryNameMatches("Auto: Parking","AUTO",true));QVERIFY(!model.categoryNameMatches("Automobile","Auto",true));
         QVERIFY(click(root,"accountNavigation"));
         QFile file(dir.path()+"/source.qif");QVERIFY(file.open(QIODevice::WriteOnly));const QByteArray bytes="D1/1/2026\nT-10\nPSynthetic parking\nLLegacy:Transport\n^\n";QCOMPARE(file.write(bytes),bytes.size());file.close();
         run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});const auto occurrence=model.rowIdentity(model.selectedRowIndex());
@@ -49,21 +47,21 @@ private slots:
         QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryDisplay").toString(),"Uncategorized");
         QVERIFY(click(root,"splitCategory_0"));QVERIFY(edit(root,"unmappedCategoryText","Explicit review label"));QVERIFY(click(root,"chooseUnmapped"));QVERIFY(click(root,"saveDraft"));wait(model);
         QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryDisplay").toString(),"Unmapped: Explicit review label");
-        QVERIFY(click(root,"splitCategory_0"));QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_PICKER_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_PICKER_SCREENSHOT")));QVERIFY(object(root,"pickCategory_"+group));QVERIFY(!object(root,"pickCategory_"+group)->property("enabled").toBool());
-        QVERIFY(edit(root,"categoryPickerSearch","Auto"));QVERIFY(click(root,"pickCategory_"+leaf));QVERIFY(click(root,"saveDraft"));wait(model);
+        QVERIFY(click(root,"splitCategory_0"));QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_PICKER_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_PICKER_SCREENSHOT")));QVERIFY(object(root,"pickCategory_"+group));QVERIFY(object(root,"pickCategory_"+group)->property("enabled").toBool());
+        QVERIFY(edit(root,"categoryPickerSearch","auto: parking"));QVERIFY(QMetaObject::invokeMethod(object(root,"categoryPickerSearch"),"accepted"));QVERIFY(click(root,"saveDraft"));wait(model);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("allocationId").toString(),allocationId);
         run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(model,"commit");
-        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",group}});QVERIFY(click(root,"renameCategory"));QVERIFY(edit(root,"categoryName","Transport"));applyCategory(model,root);
+        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"renameCategory"));QVERIFY(edit(root,"categoryName","Transport: Parking"));applyCategory(model,root);
         QVERIFY(click(root,"accountNavigation"));run(model,"query",{{"filter","Transport: Parking"},{"projected",false}});QCOMPARE(model.rowCount(),1);
         QCOMPARE(model.data(model.index(0,0),Qt::UserRole).toMap().value("category").toString(),"Transport: Parking");run(model,"inspect",occurrence);QVERIFY(selected(model).value("source").toString().contains("LLegacy:Transport"));
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("category").toString(),"Auto: Parking");QCOMPARE(allocation.value("categoryDisplay").toString(),"Transport: Parking");
-        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",group}});QVERIFY(click(root,"archiveCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);
+        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"archiveCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);
         QVERIFY(!model.state().value("categoryById").toMap().value(leaf).toMap().value("assignable").toBool());
         QVERIFY(click(root,"accountNavigation"));run(model,"inspect",occurrence);QVERIFY(click(root,"editCommitted"));QVERIFY(edit(root,"durablePayee","Edited payee, retained category"));QVERIFY(click(root,"saveDraft"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("allocationId").toString(),allocationId);QVERIFY(allocation.value("categoryDisplay").toString().contains("Archived"));QCOMPARE(model.state().value("committed").toString(),"-10.00");
-        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",group}});QVERIFY(click(root,"archiveCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);
+        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"archiveCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);
         QVERIFY(model.state().value("categoryById").toMap().value(leaf).toMap().value("assignable").toBool());
-        run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"moveCategory"));object(root,"categoryParent")->setProperty("currentIndex",0);QVERIFY(QMetaObject::invokeMethod(object(root,"categoryParent"),"activated",Q_ARG(int,0)));applyCategory(model,root);
+        run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"renameCategory"));QVERIFY(edit(root,"categoryName","Parking"));applyCategory(model,root);
         QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_SCREENSHOT")));
         QVERIFY(click(root,"deleteCategory"));wait(model,false);QVERIFY(model.error().contains("retained assignments",Qt::CaseInsensitive));
         run(model,"close");run(model,"open",{{"path",path}});run(model,"inspect",occurrence);
@@ -74,7 +72,7 @@ private slots:
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
         run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Synthetic category guards"},{"currency","CAD"}});QVERIFY(click(root,"categoryNavigation"));wait(model);QVERIFY(click(root,"newCategory"));QVERIFY(edit(root,"categoryName","Invalid/Name"));QVERIFY(click(root,"accountNavigation"));QVERIFY(object(root,"categoryUnsavedDialog")->property("visible").toBool());QVERIFY(click(root,"categoryGuardSave"));wait(model,false);QVERIFY(root->property("categoryDirty").toBool());QCOMPARE(root->property("currentPage").toString(),"categories");QVERIFY(model.state().value("categories").toList().isEmpty());
         QVERIFY(click(root,"accountNavigation"));QVERIFY(click(root,"categoryGuardStay"));QVERIFY(root->property("categoryDirty").toBool());QVERIFY(click(root,"accountNavigation"));QVERIFY(click(root,"categoryGuardDiscard"));QCOMPARE(root->property("currentPage").toString(),"ledger");
-        QVERIFY(click(root,"categoryNavigation"));wait(model);const auto unused=createCategory(model,root,"Disposable",false);QVERIFY(click(root,"deleteCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);QVERIFY(model.state().value("categoryById").toMap().value(unused).toMap().value("deleted").toBool());
+        QVERIFY(click(root,"categoryNavigation"));wait(model);const auto unused=createCategory(model,root,"Disposable");QVERIFY(click(root,"deleteCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);QVERIFY(model.state().value("categoryById").toMap().value(unused).toMap().value("deleted").toBool());
     }
 };
 int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");CategoryUiTests tests;return QTest::qExec(&tests,argc,argv);}

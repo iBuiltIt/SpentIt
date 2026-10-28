@@ -32,7 +32,7 @@ app::CategoryRequest make(std::string id,std::string name,std::string parent={},
 app::CategoryRequest change(app::CategoryAction action,std::string id,std::string name={},std::string parent={}){return {action,std::move(id),std::move(name),std::move(parent)};}
 app::CategoryReceipt apply(ImportStore& s,std::string_view operation,const app::CategoryRequest& request){auto p=s.preview_category_change(request);return s.apply_category_change(operation,p.request,p.catalog_revision);}
 CategoryDefinition definition(ImportStore& s,std::string_view id){for(const auto& d:s.category_catalog().categories)if(d.identity==id)return d;throw std::runtime_error("Missing category");}
-void seed(ImportStore& s){apply(s,"auto-create",make("auto","Auto",{},CategoryKind::group));apply(s,"travel-create",make("travel","Travel",{},CategoryKind::group));apply(s,"parking-create",make("parking","Parking & Tolls","auto"));}
+void seed(ImportStore& s){apply(s,"auto-create",make("auto","Auto"));apply(s,"travel-create",make("travel","Travel"));apply(s,"parking-create",make("parking","Auto: Parking & Tolls"));}
 void catalog(){
  Directory dir;
  {auto s=create(dir.path/"doc");check(s.category_catalog().revision==0&&s.category_catalog().categories.empty());seed(s);
@@ -41,17 +41,17 @@ void catalog(){
  check(s.apply_category_change("amazon-create",p.request,p.catalog_revision).catalog_after==4);
  rejects([&]{s.apply_category_change("amazon-create",make("other","Other"),p.catalog_revision);});
  rejects([&]{s.apply_category_change("stale",make("other","Other"),p.catalog_revision);});
- check(s.resolve_category("parking").path=="Auto: Parking & Tolls"&&!s.resolve_category("auto").assignable);
- apply(s,"rename",change(app::CategoryAction::rename,"parking","Parking"));
- apply(s,"move",change(app::CategoryAction::move,"parking",{},"travel"));
+ check(s.resolve_category("parking").path=="Auto: Parking & Tolls"&&s.resolve_category("auto").assignable);
+ apply(s,"rename",change(app::CategoryAction::rename,"parking","Auto: Parking"));
+ apply(s,"move",change(app::CategoryAction::rename,"parking","Travel: Parking"));
  check(s.resolve_category("parking").path=="Travel: Parking");
  apply(s,"parent-archive",change(app::CategoryAction::archive,"travel"));
- check(!s.resolve_category("parking").assignable&&s.resolve_category("parking").archived&&!definition(s,"parking").archived);
+ check(s.resolve_category("parking").assignable&&!s.resolve_category("parking").archived&&!definition(s,"parking").archived);
  apply(s,"child-archive",change(app::CategoryAction::archive,"parking"));
  apply(s,"parent-unarchive",change(app::CategoryAction::unarchive,"travel"));
  check(!s.resolve_category("parking").assignable&&definition(s,"parking").archived);
  apply(s,"child-unarchive",change(app::CategoryAction::unarchive,"parking"));check(s.resolve_category("parking").assignable);
- rejects([&]{apply(s,"group-delete",change(app::CategoryAction::erase,"travel"));});
+ apply(s,"group-delete",change(app::CategoryAction::erase,"travel"));check(s.resolve_category("parking").assignable);
  apply(s,"leaf-delete",change(app::CategoryAction::erase,"amazon"));
  rejects([&]{apply(s,"reuse-identity",make("amazon","Different"));});
  apply(s,"reuse-name",make("amazon-two","Amazon"));
@@ -59,15 +59,24 @@ void catalog(){
  check(s.committed_balance().units()==0&&s.ledger(false).empty());s.verify();}
  {auto s=ImportStore::open(dir.path/"doc",password);check(s.resolve_category("parking").path=="Travel: Parking");s.verify();}no_leaks(dir.path);
 }
+void setup(){Directory dir;
+ {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check(s.category_catalog().categories.size()==41);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}
+ {auto s=ImportStore::open(dir.path/"backup",password);check(s.date_format()=="MM/DD/YYYY" && s.category_catalog().categories.size()==41);s.verify();}
+ {auto s=ImportStore::create(dir.path/"empty",password,"Empty",cad,"2026-10-28",false,{"YYYYMMDD",false});check(s.date_format()=="YYYYMMDD" && s.category_catalog().categories.empty());}
+ no_leaks(dir.path);
+}
 void names(){Directory dir;auto s=create(dir.path/"doc");seed(s);
- for(const std::string& name:std::vector<std::string>{"","A/B","A:B","[A]","A|B",std::string("a\0b",3),"line\nfeed",std::string("\xff",1)})rejects([&]{apply(s,"invalid",make("invalid",name));});
+ for(const std::string& name:std::vector<std::string>{"","A/B","A:B:C","A:",":B","[A]","A|B",std::string("a\0b",3),"line\nfeed",std::string("\xff",1)})rejects([&]{apply(s,"invalid",make("invalid",name));});
  rejects([&]{apply(s,"duplicate",make("dupe","Auto"));});
  rejects([&]{apply(s,"deep",make("deep","Deep","parking"));});
  rejects([&]{apply(s,"nested",make("nested","Nested","auto",CategoryKind::group));});
- apply(s,"same-other-parent",make("other-parking","Parking & Tolls","travel"));
+ apply(s,"same-other-parent",make("other-parking","Travel: Parking & Tolls"));
  apply(s,"archive",change(app::CategoryAction::archive,"parking"));
- rejects([&]{apply(s,"archived-collision",make("collision","Parking & Tolls","auto"));});
- apply(s,"case-distinct",make("lower-auto","auto"));
+ rejects([&]{apply(s,"archived-collision",make("collision","auto: parking & tolls"));});
+ rejects([&]{apply(s,"case-distinct",make("lower-auto","auto"));});
+ check(app::category_name_matches("Auto: Gas","auto",true));check(!app::category_name_matches("Automobile","Auto",true));check(!app::category_name_matches("Auto: Gas","Auto"));
+ apply(s,"gas",make("gas","Auto:Gas"));check(s.resolve_category("gas").path=="Auto: Gas");rejects([&]{apply(s,"gas-again",make("gas-again","auto : gas"));});
+ apply(s,"unicode",make("unicode","Énergie"));rejects([&]{apply(s,"unicode-again",make("unicode-again","énergie"));});
  apply(s,"composed",make("composed","Café"));apply(s,"decomposed",make("decomposed","Café"));
  check(s.resolve_category("composed").path!=s.resolve_category("decomposed").path);s.verify();
 }
@@ -95,9 +104,9 @@ void assignments(){Directory dir;auto s=create(dir.path/"doc");seed(s);apply(s,"
  const auto receipt=s.commit("first",batch_revision(s),"publish");check(receipt.after.units()==-2931);
  rejects([&]{apply(s,"delete-used",change(app::CategoryAction::erase,"parking"));});
  auto edit=s.committed_entry(first).current.draft;edit.payee="Manual correction";edit.payee_owner=FieldOwnership::manual;correct(s,"correct",edit);
- apply(s,"move-archived",change(app::CategoryAction::move,"parking",{},"travel"));
- check(s.resolve_category("parking").path=="Travel: Parking & Tolls");
- rejects([&]{apply(s,"delete-former-parent",change(app::CategoryAction::erase,"auto"));});
+ apply(s,"move-archived",change(app::CategoryAction::rename,"parking","Travel: Parking"));
+ check(s.resolve_category("parking").path=="Travel: Parking");
+ apply(s,"delete-former-parent",change(app::CategoryAction::erase,"auto"));
  check(s.committed_entry(first).current.draft.transaction.allocations()[0].category=="Auto: Parking & Tolls");
  app::ChangeRequest u{app::ChangeKind::undo,first,{},"correct"};auto preview=s.preview_committed_change(u);
  s.apply_committed_change_with_catalog("undo",preview.request,preview.expected,preview.preview_sequence,preview.catalog_revision);
@@ -113,7 +122,7 @@ void assignments(){Directory dir;auto s=create(dir.path/"doc");seed(s);apply(s,"
 }
 void history(){Directory dir;auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);s.commit("first",0,"publish");
  auto edit=s.committed_entry(first).current.draft;bind(s,edit,0,"parking");auto preview=s.preview_committed_change({app::ChangeKind::correct,first,edit,{}});
- apply(s,"rename",change(app::CategoryAction::rename,"parking","Parking"));
+ apply(s,"rename",change(app::CategoryAction::rename,"parking","Auto: Parking"));
  rejects([&]{s.apply_committed_change_with_catalog("stale-apply",preview.request,preview.expected,preview.preview_sequence,preview.catalog_revision);});
  bind(s,edit,0,"parking");correct(s,"assign",edit);
  auto current=s.committed_entry(first).current.draft;auto a=current.transaction.allocations();a[0].category_binding.reset();a[0].category="";a[0].category_owner=FieldOwnership::manual;current.transaction=current.transaction.corrected(current.transaction.effective_total(),a);correct(s,"clear",current);
@@ -126,13 +135,13 @@ void history(){Directory dir;auto s=create(dir.path/"doc");seed(s);s.ingest("fir
 }
 
 void backup(){Directory dir;{auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);auto d=*s.row(first).draft;bind(s,d,0,"parking");s.save(first,0,d);apply(s,"archive",change(app::CategoryAction::archive,"auto"));s.backup_to(dir.path/"backup",password);}
- {auto s=ImportStore::open(dir.path/"backup",password);check(s.category_history("auto").size()==2&&s.resolve_category("parking").archived);check(s.row(first).draft->transaction.allocations()[0].category_binding->identity=="parking");check(s.committed_balance().units()==0&&s.projected_balance()->units()==-2931);s.commit("first",batch_revision(s),"publish");s.verify();}no_leaks(dir.path);}
+ {auto s=ImportStore::open(dir.path/"backup",password);check(s.category_history("auto").size()==2&&!s.resolve_category("parking").archived);check(s.row(first).draft->transaction.allocations()[0].category_binding->identity=="parking");check(s.committed_balance().units()==0&&s.projected_balance()->units()==-2931);s.commit("first",batch_revision(s),"publish");s.verify();}no_leaks(dir.path);}
 void legacy(){for(int version:{1,2,3,4}){Directory dir;sqlite3* db=nullptr;check(sqlite3_open((dir.path/"doc").c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
  const char* schema=version==4?schema4_import_fixture:version==3?schema3_import_schema:legacy_import_schema;check(sqlite3_exec(db,schema,nullptr,nullptr,nullptr)==SQLITE_OK);if(version==1)check(sqlite3_exec(db,"PRAGMA user_version=1",nullptr,nullptr,nullptr)==SQLITE_OK);
  sqlite3_stmt* insert=nullptr;check(sqlite3_prepare_v2(db,"INSERT INTO account VALUES(1,'Synthetic',?,'2026-08-01',0,0,0,0)",-1,&insert,nullptr)==SQLITE_OK);const auto definition=cad.definition_id();check(sqlite3_bind_text(insert,1,definition.data(),static_cast<int>(definition.size()),SQLITE_TRANSIENT)==SQLITE_OK);check(sqlite3_step(insert)==SQLITE_DONE);check(sqlite3_finalize(insert)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
  const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);
 }}
-app::CategoryRequest fault_request(int kind){return kind==0?make("new","New"):kind==1?change(app::CategoryAction::move,"parking",{},"travel"):change(app::CategoryAction::erase,"parking");}
+app::CategoryRequest fault_request(int kind){return kind==0?make("new","New"):kind==1?change(app::CategoryAction::rename,"parking","Travel: Parking"):change(app::CategoryAction::erase,"parking");}
 void fault_setup(const fs::path& path){auto s=create(path);seed(s);}
 void recovered(const fs::path& path,const app::CategoryRequest& request,std::int64_t expected){auto s=ImportStore::open(path,password);s.verify();auto outcome=s.category_change_outcome("fault");check(s.category_catalog().revision==expected+(outcome?1:0));auto r=s.apply_category_change("fault",request,expected);check(r.catalog_after==expected+1&&s.category_catalog().revision==expected+1);check(s.apply_category_change("fault",request,expected).catalog_after==r.catalog_after);check(s.committed_balance().units()==0);s.verify();}
 void faults(bool crash){fault_vfs::install();for(int kind=0;kind<3;++kind){const auto request=fault_request(kind);int positions=0;{Directory dir;fault_setup(dir.path/"doc");auto s=ImportStore::open(dir.path/"doc",password);fault_vfs::arm(-1);s.apply_category_change("fault",request,3);positions=fault_vfs::seen;fault_vfs::disarm();check(positions>0);}
@@ -169,10 +178,10 @@ void validation(){const char* damage[]={
  "DROP TRIGGER entry_fields_immutable;UPDATE entry_fields SET payee_owner=3 WHERE batch='first' AND ordinal=0 AND revision=1",
  "DROP TRIGGER entry_allocation_meta_immutable;UPDATE entry_allocation_meta SET source_ordinal=NULL WHERE batch='first' AND ordinal=0 AND revision=1 AND position=0",
  "DROP TRIGGER entry_fields_immutable;UPDATE entry_fields SET memo_owner=1 WHERE batch='first' AND ordinal=0 AND revision=2",
- "PRAGMA user_version=1","PRAGMA user_version=2","PRAGMA user_version=3","PRAGMA user_version=4"
-};for(const auto* sql:damage){Directory dir;{auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);auto d=*s.row(first).draft;bind(s,d,0,"parking");s.save(first,0,d);s.commit("first",1,"publish");d=s.committed_entry(first).current.draft;d.payee="Manual";d.payee_owner=FieldOwnership::manual;d.memo="";d.memo_owner=FieldOwnership::manual;correct(s,"correct",d);d=s.committed_entry(first).current.draft;d.payee="Manual again";correct(s,"correct-again",d);apply(s,"rename",change(app::CategoryAction::rename,"parking","Parking"));s.verify();}
+ "PRAGMA user_version=1","PRAGMA user_version=2","PRAGMA user_version=3","PRAGMA user_version=4","PRAGMA user_version=21","PRAGMA user_version=22"
+};for(const auto* sql:damage){Directory dir;{auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);auto d=*s.row(first).draft;bind(s,d,0,"parking");s.save(first,0,d);s.commit("first",1,"publish");d=s.committed_entry(first).current.draft;d.payee="Manual";d.payee_owner=FieldOwnership::manual;d.memo="";d.memo_owner=FieldOwnership::manual;correct(s,"correct",d);d=s.committed_entry(first).current.draft;d.payee="Manual again";correct(s,"correct-again",d);apply(s,"rename",change(app::CategoryAction::rename,"parking","Auto: Parking"));s.verify();}
  sqlite3* db=nullptr;check(sqlite3_open((dir.path/"doc").c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);
 }}
 
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="catalog")catalog();else if(mode=="names")names();else if(mode=="assignments")assignments();else if(mode=="history")history();else if(mode=="backup")backup();else if(mode=="legacy")legacy();else if(mode=="validation")validation();else if(mode=="io"){faults(false);assignment_faults(false);}else if(mode=="crashes"){faults(true);assignment_faults(true);}else return 2;std::cout<<"Category "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="setup")setup();else if(mode=="catalog")catalog();else if(mode=="names")names();else if(mode=="assignments")assignments();else if(mode=="history")history();else if(mode=="backup")backup();else if(mode=="legacy")legacy();else if(mode=="validation")validation();else if(mode=="io"){faults(false);assignment_faults(false);}else if(mode=="crashes"){faults(true);assignment_faults(true);}else return 2;std::cout<<"Category "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

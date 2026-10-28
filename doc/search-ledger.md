@@ -1,6 +1,6 @@
 # Search, selection, and bulk ledger changes
 
-Last updated: 2026-10-26
+Last updated: 2026-10-28
 
 This is the bounded durable QIF experiment; search and bulk actions operate within the selected [account workspace](accounts.md). Requirements and owner decisions are in [feature 005](../features/005-transaction-sheet-navigation.md). The owner confirmed that experimental formats are disposable until an explicitly announced release; migration and backward-compatibility work are not required during this phase. This work introduces no migration.
 
@@ -39,3 +39,9 @@ Existing experimental-format support remains where already implemented. It is no
 ## Verification
 
 Debug, Release and ASan/UBSan covered the bounded search/bulk paths, including complete bulk fault sweeps. The initial sanitizer run found a test-only temporary-lifetime bug; the corrected case passed. The known Qt delegate-reset warning remains despite passing behavioral assertions. Full results, selected-suite scope, workload measurements and limitations are recorded in [project status](status.md). All fixtures are synthetic. Linux, Windows, physical power loss, and instrumentation of the installed PCRE2 library remain outside the verified scope.
+
+## Dataset dates and category selection — 2026-10-28
+
+Ordinary date text is displayed/searched using the dataset's stored format. Full `period:` dates use that format; named months and four-digit years retain their existing meaning. For the default ISO format, existing unambiguous year-first compact/slash forms remain accepted. Ranges use `..`. Import parsing and raw `QIF:` evidence searches remain independent of display formatting.
+
+`category:Auto` selects rows with a bound category equal to Auto or beginning with Auto followed by the colon separator. `category-exact:Auto` selects only direct Auto assignments. `category:"Auto: Gas"` selects that independent category. Matching is Unicode caseless, names are literal, one category filter is allowed, and raw source mode cannot combine with category filters. Unmapped text does not become a catalog binding through a name match. These are row filters: the displayed withdrawal/deposit totals still sum complete matching transactions, including all splits. Future allocation reports remain separate.

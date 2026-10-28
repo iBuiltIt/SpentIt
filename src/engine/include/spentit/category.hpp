@@ -23,6 +23,7 @@ struct CategoryDefinition {
     bool archived,deleted;
     bool operator==(const CategoryDefinition&) const = default;
 };
-// Exact UTF-8 identity of names: no normalization, folding or silent trimming.
+// One optional colon; normalize separator spacing without changing capitalization.
+std::string canonical_category_name(std::string_view);
 void validate_category_name(std::string_view);
 }

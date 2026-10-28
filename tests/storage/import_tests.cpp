@@ -6,6 +6,9 @@
 #include <iostream>
 #include <sys/wait.h>
 #include <chrono>
+#include <source_location>
+#include <spawn.h>
+extern char** environ;
 using namespace spentit;
 using namespace spentit::storage;
 namespace fs=std::filesystem;
@@ -13,13 +16,14 @@ namespace {
 constexpr auto password="synthetic-import-password";
 constexpr auto marker="PRIVATE-SYNTHETIC-IMPORT-9ba74";
 const Currency cad("CAD");
+fs::path test_binary;
 const std::string source="!Type:Bank\nD10/08/2026\nT-29.31\nPPRIVATE-SYNTHETIC-IMPORT-9ba74\nEfee\n$-0.14\nEtransport\n$-29.17\n^\nD11/08/2026\nT50\nPIncome\n^\n";
 struct Directory {
     fs::path path;
     Directory(){ std::string s=(fs::temp_directory_path()/"spentit-import-XXXXXX").string(); auto* p=mkdtemp(s.data()); if(!p) throw std::runtime_error("Temporary directory failed"); path=fs::canonical(p); }
     ~Directory(){std::error_code e; fs::remove_all(path,e);}
 };
-void check(bool b){if(!b) throw std::runtime_error("Import assertion failed");}
+void check(bool b,const std::source_location& at=std::source_location::current()){if(!b) throw std::runtime_error("Import assertion failed at line "+std::to_string(at.line()));}
 template<class F> void fails(F f){bool threw=false;try{f();}catch(const ImportError&){threw=true;}catch(const FinancialError&){threw=true;}catch(const std::invalid_argument&){threw=true;}check(threw);}
 std::string bytes(const fs::path& p){std::ifstream f(p,std::ios::binary);return {std::istreambuf_iterator<char>(f),{}};}
 void no_leaks(const fs::path& dir){for(const auto& p:fs::directory_iterator(dir))if(p.is_regular_file()){auto s=bytes(p);check(s.find(password)==s.npos && s.find(marker)==s.npos && !s.starts_with("SQLite format 3"));}}
@@ -460,32 +464,46 @@ void validation(){
     alter("DROP TRIGGER allocation_immutable; UPDATE allocations SET units=units+1 WHERE batch='first' AND ordinal=0 AND position=0");
     fails([&]{ImportStore::open(d.path/"doc",password);});
 }
+pid_t replacement_child(const fs::path& path,int position) {
+    // Start with a fresh runtime: instrumented macOS children must not allocate
+    // between fork and exec (Foundation/libplatform locks are not fork-safe).
+    auto binary=test_binary.string(),filename=path.string(),target=std::to_string(position);
+    char mode[]="replacement_child";
+    char* arguments[]{binary.data(),mode,filename.data(),target.data(),nullptr};
+    pid_t child=0;check(posix_spawn(&child,binary.c_str(),nullptr,nullptr,arguments,environ)==0);return child;
+}
 void replacement(){
     Directory d;const auto path=d.path/"replace.spentit";prepare(path);const auto original=bytes(path);
-    auto replace=[&]{return ImportStore::create(path,password,"Replacement",cad,"2026-10-28",true);};
+    auto replace=[&]{return ImportStore::create(path,password,"Replacement",cad,"2026-10-28",true,{"DD/MM/YYYY",true});};
     fails([&]{create(path);});check(bytes(path)==original);
     {auto held=ImportStore::open(path,password);fails([&]{replace();});check(bytes(path)==original);}
     fails([&]{ImportStore::create(path,password,"",cad,"2026-10-28",true);});check(bytes(path)==original);
+    fails([&]{ImportStore::create(path,password,"Replacement",cad,"2026-10-28",true,{"YYYY-MM",true});});check(bytes(path)==original);
     const auto alias=d.path/"alias";fs::create_symlink(path,alias);
     fails([&]{ImportStore::create(alias,password,"Replacement",cad,"2026-10-28",true);});check(bytes(path)==original);
-    {auto s=replace();check(s.batches().empty() && s.account().name=="Replacement");s.verify();}
-    {auto s=ImportStore::open(path,password);check(s.batches().empty());s.verify();}
+    {auto s=replace();check(s.batches().empty() && s.account().name=="Replacement" && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==41);s.verify();}
+    {auto s=ImportStore::open(path,password);check(s.batches().empty() && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==41);s.verify();}
     fault_vfs::install();fault_vfs::arm(100000);{auto s=replace();}const int count=fault_vfs::seen;fault_vfs::disarm();check(count>0);
     for(int error:{SQLITE_FULL,SQLITE_IOERR_WRITE})for(int position:{1,std::max(1,count/2),count}) {
         fault_vfs::arm(position,error);bool failed=false;try{auto s=replace();}catch(const ImportError&){failed=true;}
         const bool fired=fault_vfs::fired;fault_vfs::disarm();check(fired && failed);
+        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==41);}
+        catch(const ImportError&) {} // An interrupted destructive creation may be incomplete, never partially usable.
         // Overwrite is destructive by owner choice. Failure must be reported;
         // an explicit retry must replace any incomplete database and journals.
         {auto s=replace();s.verify();check(s.batches().empty());}
         {auto s=ImportStore::open(path,password);s.verify();}
     }
-    for(bool after:{false,true}) {
-        const auto child=fork();check(child>=0);
-        if(child==0){if(!after)fault_vfs::arm(1,SQLITE_IOERR_WRITE,true,true);{auto s=replace();}_exit(72);}
-        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==(after?72:71));
-        if(after){auto s=ImportStore::open(path,password);s.verify();check(s.batches().empty());}
-        else {auto s=replace();s.verify();}
+    for(int position:{1,std::max(1,count/2),count}) {
+        const auto child=replacement_child(path,position);
+        int status=0;const auto waited=waitpid(child,&status,0);if(waited!=child || !WIFEXITED(status) || WEXITSTATUS(status)!=71)std::cerr<<"Creation interruption position "<<position<<" of "<<count<<", process status "<<status<<"\n";check(waited==child && WIFEXITED(status) && WEXITSTATUS(status)==71);
+        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==41);}
+        catch(const ImportError&) {}
+        {auto s=replace();s.verify();}
     }
+    const auto child=replacement_child(path,0);
+    int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
+    {auto s=ImportStore::open(path,password);s.verify();check(s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==41);}
     no_leaks(d.path);
 }
 void benchmark(std::size_t n){
@@ -499,7 +517,9 @@ void benchmark(std::size_t n){
         <<std::chrono::duration_cast<std::chrono::milliseconds>(committed-staged).count()<<'/'<<std::chrono::duration_cast<std::chrono::milliseconds>(queried-committed).count()<<'\n';
 }
 }
-int main(int argc,char** argv){try{
+int main(int argc,char** argv){try{test_binary=fs::absolute(argv[0]);
+    if(argc==4 && std::string_view(argv[1])=="replacement_child"){fault_vfs::install();const int position=std::stoi(argv[3]);if(position>0)fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);{auto store=ImportStore::create(argv[2],password,"Replacement",cad,"2026-10-28",true,{"DD/MM/YYYY",true});}_exit(72);}
+
     const std::string mode=argc>1?argv[1]:"";
     if(mode=="replacement")replacement();else if(mode=="amount_candidate_limit")amount_candidate_limit();else if(mode=="amount_repairs")amount_repairs();else if(mode=="basics")basics();else if(mode=="cancellation")cancellation();else if(mode=="review")review();else if(mode=="repairs")repairs();else if(mode=="errors")errors();else if(mode=="backup")backup();
     else if(mode=="io")io(false);else if(mode=="crashes")io(true);else if(mode=="backup_failures")backup_failures();else if(mode=="backup_crashes")backup_failures(true);else if(mode=="backup_publication")backup_publication();else if(mode=="backup_cancellation")backup_cancellation();else if(mode=="validation")validation();else if(mode=="opening")opening_policy();else if(mode=="benchmark")benchmark(argc>2?std::stoul(argv[2]):100000);else return 2;

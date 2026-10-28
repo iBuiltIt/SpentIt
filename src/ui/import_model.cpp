@@ -4,6 +4,7 @@
 #include <QtConcurrent>
 #include <QFutureWatcher>
 #include <QDate>
+#include <spentit/date_format.hpp>
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
@@ -129,8 +130,8 @@ QVariantMap allocationMap(const Allocation& a,const QVariantMap& labels={}) {
 QVariantList allocations(const Transaction& t,const QVariantMap& labels={}) {
     QVariantList out;for(const auto& a:t.allocations())out.push_back(allocationMap(a,labels));return out;
 }
-QVariantMap draft(const imports::DraftRow& d,const QVariantMap& labels={}) {
-    return {{"date",text(d.date)},{"payee",text(d.payee)},{"memo",text(d.memo)},
+QVariantMap draft(const imports::DraftRow& d,const QVariantMap& labels={},std::string_view format="YYYY-MM-DD") {
+    return {{"date",text(display_date(d.date,format))},{"payee",text(d.payee)},{"memo",text(d.memo)},
         {"payeeOwner",ownerName(d.payee_owner)},{"memoOwner",ownerName(d.memo_owner)},{"payeeRule",markText(d.payee_rule)},{"memoRule",markText(d.memo_rule)},
         {"total",money(d.transaction.effective_total())},{"splits",allocations(d.transaction,labels)}};
 }
@@ -221,17 +222,17 @@ QString changeName(app::ChangeKind kind) {
         case app::ChangeKind::remove:return "Removal";case app::ChangeKind::undo:return "Undo";case app::ChangeKind::transfer:return "Transfer";}
     return {};
 }
-QString snapshotText(const app::EntrySnapshot& entry) {
+QString snapshotText(const app::EntrySnapshot& entry,std::string_view format) {
     const auto& d=entry.draft;
     return QString("Revision %1 · %2\n%3 · %4\nMemo: %5\nEffective total: %6 %7 · original imported: %8")
-        .arg(entry.revision).arg(entry.active?"Active":"Removed",text(d.date),text(d.payee),text(d.memo),
+        .arg(entry.revision).arg(entry.active?"Active":"Removed",text(display_date(d.date,format)),text(d.payee),text(d.memo),
         text(d.transaction.effective_total().currency().code()),money(d.transaction.effective_total()),d.transaction.original_imported_amount()?money(*d.transaction.original_imported_amount()):QString("Unavailable"));
 }
-QVariantMap snapshotMap(const app::EntrySnapshot& entry,const QString& label) {
-    return {{"label",label},{"summary",snapshotText(entry)},{"splits",allocations(entry.draft.transaction)}};
+QVariantMap snapshotMap(const app::EntrySnapshot& entry,const QString& label,std::string_view format) {
+    return {{"label",label},{"summary",snapshotText(entry,format)},{"splits",allocations(entry.draft.transaction)}};
 }
-QString snapshotDetails(const app::EntrySnapshot& entry) {
-    auto result=snapshotText(entry);
+QString snapshotDetails(const app::EntrySnapshot& entry,std::string_view format) {
+    auto result=snapshotText(entry,format);
     for(const auto& a:entry.draft.transaction.allocations())result+="\nSplit: "+text(a.category)+" · "+text(a.memo)+" · "+money(a.amount);
     return result;
 }
@@ -290,6 +291,8 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
 
 }
 struct ImportModel::Worker {
+    std::string dateFormat="YYYY-MM-DD";
+    QString dateText(std::string_view iso) const {return text(display_date(iso,dateFormat));}
     std::unique_ptr<app::DocumentGateway> gateway;
     bool active=false,projected=true;
     QString path,filter;
@@ -370,7 +373,7 @@ struct ImportModel::Worker {
         const auto changes=repo.committed_changes(before,50);if(!append)history.clear();
         for(const auto& item:changes) {
             history.push_back(QVariantMap{{"operation",text(item.operation)},{"batch",text(item.identity.batch)},{"ordinal",static_cast<int>(item.identity.ordinal)},
-                {"summary",changeName(item.kind)+" · current record: "+text(item.payee)+" · "+text(item.date)+" · "+money(item.total)+" · "+(item.active?"Active":"Removed")+" · operation "+text(item.operation)}});
+                {"summary",changeName(item.kind)+" · current record: "+text(item.payee)+" · "+dateText(item.date)+" · "+money(item.total)+" · "+(item.active?"Active":"Removed")+" · operation "+text(item.operation)}});
         }
         historyMore=changes.size()==50;historyCursor=changes.empty()?QString{}:QString::number(changes.back().sequence);historyLoaded=true;
     }
@@ -380,8 +383,8 @@ struct ImportModel::Worker {
         const auto entries=repo.committed_history(id);
         for(auto it=entries.rbegin();it!=entries.rend();++it) {
             const auto& item=*it;
-            QString details=item.before_entry?"Before\n"+snapshotDetails(*item.before_entry)+"\n":"";
-            details+="After\n"+snapshotDetails(item.after_entry);
+            QString details=item.before_entry?"Before\n"+snapshotDetails(*item.before_entry,dateFormat)+"\n":"";
+            details+="After\n"+snapshotDetails(item.after_entry,dateFormat);
             const auto reapplyGroup=text(repo.rule_reapply_group(item.operation));
             const bool reapply=!reapplyGroup.isEmpty();
             entryHistory.push_back(QVariantMap{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"operation",text(item.operation)},{"summary",changeName(item.kind)+" · "+text(item.operation)+"\n"+balanceImpact(item.before,item.change,item.after)},
@@ -440,7 +443,7 @@ struct ImportModel::Worker {
             for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.account==acct.identity && side->endpoint.entry==imports::Occurrence{batch,ordinal}){
                 selectedBatch=batch;selectedOrdinal=ordinal;selectedCommittedToken.reset();
                 Allocation allocation{"Transfer",value.memo,side->amount,{},side->endpoint.allocation};
-                selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById)}};
+                selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById,dateFormat)}};
                 QVariantList origins;
                 if(!value.link.unresolved && side==&value.link.origin)origins.push_back(QVariantMap{{"allocation",text(side->endpoint.allocation)},{"link",text(value.link.identity)}});
                 selected["transferOrigins"]=origins;return;
@@ -476,7 +479,7 @@ struct ImportModel::Worker {
         if(!source.trntype.empty()) add("Transaction type","trntype",text(source.trntype));
         if(!source.uninterpreted.empty()) add("Uninterpreted evidence","uninterpreted",text(source.uninterpreted));
         if(source.transaction || source.repairable) {
-            if(!source.date.empty()) add(format=="qif"?"Date (ISO, using import date order)":"Date (calendar date in the file)","date",text(source.date));
+            if(!source.date.empty()) add(format=="qif"?"Date (using selected display format)":"Date (calendar date in the file)","date",dateText(source.date));
             add("Payee","payee",text(source.payee));
             add("Memo","memo",text(source.memo));
             if(source.original_amount) add("Original total","total",money(*source.original_amount));
@@ -498,7 +501,7 @@ struct ImportModel::Worker {
                     const auto label=destination?"Transfer destination: "+text(a.category):a.category.empty()?QString("Uncategorized"):"Unmapped: "+text(a.category);
                     splits.push_back(QVariantMap{{"category",text(a.category)},{"categoryDisplay",label},{"memo",text(a.memo)},{"amount",a.amount?money(*a.amount):QString{}},{"allocationId",QString("source-%1").arg(i)},{"categoryId",QString{}},{"bindingRevision",QString{}},{"sourceOrdinal",static_cast<int>(i)},{"categoryOwner","source"},{"memoOwner","source"},{"categoryTouched",false},{"memoTouched",false},{"categoryRule",QString{}},{"memoRule",QString{}},{"transferDestination",destination?text(std::string(*destination)):QString{}},{"transferLabel",(a.amount?money(*a.amount):QString("Unavailable"))+" · "+text(a.category)}});
                 }
-                selected["draft"]=QVariantMap{{"date",text(source.date)},{"payee",text(source.payee)},{"memo",text(source.memo)},
+                selected["draft"]=QVariantMap{{"date",dateText(source.date)},{"payee",text(source.payee)},{"memo",text(source.memo)},
                     {"total",source.original_amount?money(*source.original_amount):QString{}},{"splits",splits},{"payeeOwner","source"},{"memoOwner","source"},{"payeeRule",QString{}},{"memoRule",QString{}}};
                 selected["original"]=source.original_amount?money(*source.original_amount):QString("Unavailable");selected["editable"]=true;selected["repair"]=true;
                 selected["diagnostic"]=selected["diagnostic"].toString()+" — supply valid date, total and splits and save the repair; original evidence is retained.";
@@ -506,7 +509,7 @@ struct ImportModel::Worker {
             attachRules(repo,{batch,ordinal},context);
             return;
         }
-        selected["draft"]=draft(*row.draft,categoryById);
+        selected["draft"]=draft(*row.draft,categoryById,dateFormat);
         if(source.diagnostic) selected["diagnostic"]=selected["diagnostic"].toString()+" — saved interpretation repair; original diagnostic retained.";
         selected["original"]=row.draft->transaction.original_imported_amount()?money(*row.draft->transaction.original_imported_amount()):QString("Unavailable");
         selected["editable"]=found->state==app::BatchState::pending;
@@ -524,7 +527,7 @@ struct ImportModel::Worker {
         const bool committed=found->state==app::BatchState::committed && row.decision.disposition==imports::Disposition::include && !row.excluded_by_clear;
         selected["committed"]=committed;
         if(committed && repo.committed_changes_supported()) {
-            const auto entry=repo.committed_entry({batch,ordinal});selectedCommittedToken=entry.token;selected["draft"]=draft(entry.current.draft,categoryById);
+            const auto entry=repo.committed_entry({batch,ordinal});selectedCommittedToken=entry.token;selected["draft"]=draft(entry.current.draft,categoryById,dateFormat);
             selected["removed"]=!entry.current.active;selected["canCorrect"]=entry.current.active;
         }
         QVariantList candidates;
@@ -535,7 +538,7 @@ struct ImportModel::Worker {
             const bool removed=repo.committed_changes_supported() && !repo.committed_entry(id).current.active;
             const auto basisText=basis?text(imports::basis_label(*basis)):QString("review source evidence");
             candidates.push_back(QVariantMap{{"removed",removed},{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},
-                {"label",text(id.batch)+" / "+QString::number(id.ordinal+1)+" · "+text(prior.source.format.empty()?"qif":prior.source.format)+" · "+text(prior.source.date)+" · "+text(prior.source.payee)+" · "+(prior.source.original_amount?money(*prior.source.original_amount):QString("Unavailable"))+" · "+basisText}});
+                {"label",text(id.batch)+" / "+QString::number(id.ordinal+1)+" · "+text(prior.source.format.empty()?"qif":prior.source.format)+" · "+dateText(prior.source.date)+" · "+text(prior.source.payee)+" · "+(prior.source.original_amount?money(*prior.source.original_amount):QString("Unavailable"))+" · "+basisText}});
         }
         for(auto& value:candidates) {auto candidate=value.toMap();if(candidate.value("removed").toBool())candidate["label"]=candidate.value("label").toString()+" · PREVIOUSLY REMOVED — explicit review required";value=candidate;}
         selected["candidates"]=candidates;
@@ -561,7 +564,7 @@ struct ImportModel::Worker {
     std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot(app::OperationContext* context=nullptr) {
         QVariantMap state{{"active",active},{"path",path},{"canOpen",canOpen},{"unlockRequired",welcomePassword},{"overwriteRequired",overwriteRequired}};
         if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
-        auto& repo=gateway->repository();catalog();
+        auto& repo=gateway->repository();catalog();state["dateFormat"]=text(dateFormat);
         if(metadata.isEmpty()) {
             std::map<std::int64_t,QVariantMap> accountBalances;
             for(const auto& item:repo.account_balances()) accountBalances.emplace(item.identity,QVariantMap{{"committedBalance",money(item.committed)},{"projectedBalance",item.projected?money(*item.projected):QString()},{"projectionAvailable",item.projected.has_value()}});
@@ -605,18 +608,18 @@ struct ImportModel::Worker {
                     QString otherName;const auto otherId=QString::number(other.endpoint.account);
                     for(const auto& item:accountList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
                     if(otherName.isEmpty())for(const auto& item:archivedList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
-                    items.push_back(QVariantMap{{"id",text(value.link.identity)},{"label",otherName+" · "+money(side.amount)+" · "+text(side.date)},{"amount",money(side.amount)},{"date",text(side.date)},{"committed",side.state==transfers::State::committed},{"accepted",side.accepted_unmatched},{"evidenced",side.independent_evidence},{"proposed",side.proposed_evidence.has_value()},{"provisional",side.provisional_date},{"protected",transfers::protected_draft(value.link,acct.identity)},{"local",!side.attached_evidence && (side.manually_entered || !side.independent_evidence)},{"isOrigin",value.link.origin.endpoint.account==acct.identity},{"counterpartAccount",QString::number(target.account)},{"counterpartBatch",text(target.entry.batch)},{"counterpartOrdinal",static_cast<int>(target.entry.ordinal)}});
+                    items.push_back(QVariantMap{{"id",text(value.link.identity)},{"label",otherName+" · "+money(side.amount)+" · "+dateText(side.date)},{"amount",money(side.amount)},{"date",dateText(side.date)},{"committed",side.state==transfers::State::committed},{"accepted",side.accepted_unmatched},{"evidenced",side.independent_evidence},{"proposed",side.proposed_evidence.has_value()},{"provisional",side.provisional_date},{"protected",transfers::protected_draft(value.link,acct.identity)},{"local",!side.attached_evidence && (side.manually_entered || !side.independent_evidence)},{"isOrigin",value.link.origin.endpoint.account==acct.identity},{"counterpartAccount",QString::number(target.account)},{"counterpartBatch",text(target.entry.batch)},{"counterpartOrdinal",static_cast<int>(target.entry.ordinal)}});
                 }state["transfers"]=items;
                 QVariantList journal;
                 for(const auto& entry:repo.transfer_journal()){
-                    const auto line=text(entry.action)+" · "+text(entry.link)+" · account "+QString::number(entry.origin_account)+" "+money(entry.origin_amount)+" "+text(entry.origin_date)+" → account "+QString::number(entry.destination_account)+" "+money(entry.destination_amount)+" "+text(entry.destination_date)+" · sequence "+QString::number(entry.sequence)+(entry.unresolved?" · unresolved":"");
-                    journal.push_back(QVariantMap{{"operation",text(entry.operation)},{"action",text(entry.action)},{"link",text(entry.link)},{"sequence",QString::number(entry.sequence)},{"originAccount",QString::number(entry.origin_account)},{"destinationAccount",QString::number(entry.destination_account)},{"originAmount",money(entry.origin_amount)},{"destinationAmount",money(entry.destination_amount)},{"originDate",text(entry.origin_date)},{"destinationDate",text(entry.destination_date)},{"unresolved",entry.unresolved},{"text",line}});
+                    const auto line=text(entry.action)+" · "+text(entry.link)+" · account "+QString::number(entry.origin_account)+" "+money(entry.origin_amount)+" "+dateText(entry.origin_date)+" → account "+QString::number(entry.destination_account)+" "+money(entry.destination_amount)+" "+dateText(entry.destination_date)+" · sequence "+QString::number(entry.sequence)+(entry.unresolved?" · unresolved":"");
+                    journal.push_back(QVariantMap{{"operation",text(entry.operation)},{"action",text(entry.action)},{"link",text(entry.link)},{"sequence",QString::number(entry.sequence)},{"originAccount",QString::number(entry.origin_account)},{"destinationAccount",QString::number(entry.destination_account)},{"originAmount",money(entry.origin_amount)},{"destinationAmount",money(entry.destination_amount)},{"originDate",dateText(entry.origin_date)},{"destinationDate",dateText(entry.destination_date)},{"unresolved",entry.unresolved},{"text",line}});
                 }
                 state["transferJournal"]=journal;
             }
             state["nextAccountId"]=QString::number(repo.next_account_identity());
             state["name"]=text(acct.name); state["currency"]=text(acct.currency.code());
-            state["openingDate"]=text(acct.opening_date); state["opening"]=money(acct.opening);
+            state["openingDate"]=dateText(acct.opening_date); state["opening"]=money(acct.opening);
             state["frozen"]=acct.frozen; state["confirmed"]=acct.opening_confirmed;
             state["committed"]=money(repo.committed_balance()); const auto projection=repo.projected_balance();
             state["projectionAvailable"]=projection.has_value(); state["projected"]=projection?money(*projection):"Incomplete — review import";
@@ -690,7 +693,7 @@ struct ImportModel::Worker {
                     row.draft.transaction=row.draft.transaction.corrected(row.draft.transaction.effective_total(),std::move(values));
                 }
             }
-            app::LedgerSearch query(filter.toStdString(),QDate::currentDate().year());
+            app::LedgerSearch query(filter.toStdString(),QDate::currentDate().year(),dateFormat);
             struct SourceFile {std::string bytes;std::vector<std::pair<std::size_t,std::size_t>> spans;};
             std::map<std::string,SourceFile> sources;std::size_t sourceBytes=0;
             const auto lookup=[&](const imports::Occurrence& id)->std::optional<std::string_view>{
@@ -768,7 +771,14 @@ struct ImportModel::Worker {
             {"operation",result.unsaved_rules?QString():text(ruleApplyOperation)},{"evaluated",static_cast<int>(result.evaluated)},{"changed",static_cast<int>(result.changed)},
             {"overlap","Overlap results are only for the records just evaluated."},{"records",records},{"summaryText",lines.join('\n')}};
     }
-    void execute(const QString& action,const QVariantMap& a, app::OperationContext& context) {
+    void execute(const QString& action,const QVariantMap& input, app::OperationContext& context) {
+        auto a=input;
+        if(active && a.contains("date"))a["date"]=text(parse_display_date(str(a.value("date")),dateFormat));
+        if(active && action=="map_import") {
+            auto mappings=a.value("mappings").toList();
+            for(auto& item:mappings){auto mapping=item.toMap();if(mapping.value("create").toBool())mapping["date"]=text(parse_display_date(str(mapping.value("date")),dateFormat));item=mapping;}
+            a["mappings"]=mappings;
+        }
         context.checkpoint();
         overwriteRequired=false;
         if(action=="prepare_create") {
@@ -794,12 +804,12 @@ struct ImportModel::Worker {
                 const QFileInfo location(path);
                 if(location.exists() && !a.value("overwrite").toBool()) {overwriteRequired=true;throw std::runtime_error((path+" already exists").toStdString());}
                 if(!QDir().mkpath(location.absolutePath())) throw std::runtime_error("Cannot create dataset directory");
-                gateway->create_selected(path.toStdString(),a.value("overwrite").toBool(),a.value("protected",true).toBool(),str(a.value("password")),str(a.value("name")),Currency(str(a.value("currency"))),QDate::currentDate().toString(Qt::ISODate).toStdString());
+                gateway->create_configured(path.toStdString(),a.value("overwrite").toBool(),a.value("protected",true).toBool(),str(a.value("password")),str(a.value("name")),Currency(str(a.value("currency"))),QDate::currentDate().toString(Qt::ISODate).toStdString(),{str(a.value("dateFormat","YYYY-MM-DD")),a.value("defaultCategories",false).toBool()});
             } else {
                 gateway->open_controlled(path.toStdString(),action=="unlock"?std::optional(str(a.value("password"))):std::nullopt,context);
                 try { context.seal(); } catch (...) { gateway->close(); throw; }
             }
-            active=true; selected.clear(); receipt.clear();clearChanges();
+            dateFormat=gateway->repository().date_format();active=true; selected.clear(); receipt.clear();clearChanges();
             QSettings settings; settings.setValue("datasetPath",path); settings.sync();
             if(settings.status()!=QSettings::NoError) throw std::runtime_error("Dataset is open, but the startup path could not be saved in Settings");
             return;
@@ -821,7 +831,7 @@ struct ImportModel::Worker {
                         bool used=false;for(const auto& link:links)for(const auto* end:{&link.link.origin,&link.link.destination})if(end->state!=transfers::State::removed){const transfers::Endpoint candidate{repo.account().identity,{batch.id,ordinal},allocation.identity};used|=end->endpoint==candidate || (end->attached_evidence && end->attached_evidence->endpoint==candidate) || (end->proposed_evidence && end->proposed_evidence->endpoint==candidate);}
                         if(used)continue;
                         if(transferCandidates.size()==100){full=true;break;}
-                        transferCandidates.push_back(QVariantMap{{"batch",text(batch.id)},{"ordinal",static_cast<int>(ordinal)},{"allocation",text(allocation.identity)},{"label",text(row.draft->date)+" · "+text(row.draft->payee)+" · "+money(allocation.amount)+" · "+text(batch.id)+" / "+QString::number(ordinal+1)}});
+                        transferCandidates.push_back(QVariantMap{{"batch",text(batch.id)},{"ordinal",static_cast<int>(ordinal)},{"allocation",text(allocation.identity)},{"label",dateText(row.draft->date)+" · "+text(row.draft->payee)+" · "+money(allocation.amount)+" · "+text(batch.id)+" / "+QString::number(ordinal+1)}});
                     }
                     if(full)break;
                 }
@@ -1051,7 +1061,7 @@ struct ImportModel::Worker {
             changePreview={{"id",text(preparedOperation)},{"title",changeName(request.kind)+" preview"},
                 {"applyLabel",request.kind==app::ChangeKind::correct?"Apply correction":request.kind==app::ChangeKind::remove?"Remove transaction":"Apply Undo"},
                 {"balanceImpact",impact},
-                {"snapshots",QVariantList{snapshotMap(preview.before_entry,"Before"),snapshotMap(preview.after_entry,"After")}}};
+                {"snapshots",QVariantList{snapshotMap(preview.before_entry,"Before",dateFormat),snapshotMap(preview.after_entry,"After",dateFormat)}}};
         } else if(action=="apply_change") {
             changeReceipt.clear();
             if(!preparedChange || str(a.value("preview"))!=preparedOperation)throw std::logic_error("Review a fresh committed-change preview first");
@@ -1082,7 +1092,7 @@ struct ImportModel::Worker {
             else if(kind!="remove" && kind!="category")throw std::invalid_argument("Unknown bulk action");
             auto preview=repo.preview_bulk(request);QStringList lines;
             for(const auto& entry:preview.entries){
-                lines<<text(entry.before_entry.draft.date)+" · "+text(entry.before_entry.draft.payee)+" · "+money(entry.before_entry.draft.transaction.effective_total());
+                lines<<dateText(entry.before_entry.draft.date)+" · "+text(entry.before_entry.draft.payee)+" · "+money(entry.before_entry.draft.transaction.effective_total());
                 lines<<(entry.before_entry.active?"Before: active":"Before: removed")<< (entry.after_entry.active?"After: active":"After: removed");
                 const auto& before=entry.before_entry.draft.transaction.allocations();const auto& after=entry.after_entry.draft.transaction.allocations();
                 for(std::size_t i=0;i<before.size();++i)lines<<"  "+money(before[i].amount)+" · "+allocationMap(before[i],categoryById).value("categoryDisplay").toString()+" → "+allocationMap(after[i],categoryById).value("categoryDisplay").toString()+" · "+text(before[i].memo);
@@ -1104,7 +1114,7 @@ struct ImportModel::Worker {
             auto preview=repo.preview_rule_reapply(a.value("replaceManual").toBool(),str(a.value("undoOf")),context);
             QStringList lines;
             for(const auto& record:preview.records){
-                lines<<text(record.before.date)+" · "+text(record.before.payee);
+                lines<<dateText(record.before.date)+" · "+text(record.before.payee);
                 for(const auto& diff:record.diffs) lines<<fieldName(diff.field)+" · "+text(diff.before_text)+" -> "+text(diff.after_text)+" · "+diffWording(diff.removed,diff.assigned);
             }
             for(const auto& skip:preview.skips) lines<<text(skip.note);
@@ -1273,7 +1283,7 @@ struct ImportModel::Worker {
         else if(action=="query") {
             // Validate and evaluate before publishing the new query state. A bad
             // query must not enter the generic document-refresh failure path.
-            app::LedgerSearch validate(str(a.value("filter")),QDate::currentDate().year());
+            app::LedgerSearch validate(str(a.value("filter")),QDate::currentDate().year(),dateFormat);
             const auto oldFilter=filter;const auto oldSort=sort;const auto oldDescending=descending,oldProjected=projected;
             const auto oldView=cachedView;auto oldLedger=std::move(cachedLedger);
             const auto oldSelected=selected;const auto oldBatch=selectedBatch;const auto oldOrdinal=selectedOrdinal;
@@ -1433,7 +1443,7 @@ QVariant ImportModel::data(const QModelIndex& index,int role) const {
     const auto& r=rows_->rows[i];const auto& t=r.draft.transaction;const auto amount=t.effective_total();
     // QML requests only visible delegates: no per-account QVariant tree.
     const auto labels=state_.value("categoryById").toMap();
-    auto row=draft(r.draft,labels);
+    auto row=draft(r.draft,labels,state_.value("dateFormat","YYYY-MM-DD").toString().toStdString());
     if(state_.value("categoriesSupported").toBool()) {
         auto splits=row.value("splits").toList();
         for(qsizetype n=0;n<splits.size();++n) {auto a=splits[n].toMap();a["categoryDisplay"]=text(t.allocations()[static_cast<std::size_t>(n)].category);splits[n]=a;}
@@ -1472,11 +1482,11 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     connect(watcher,&QFutureWatcher<Result>::finished,this,[this,watcher,action]{
         auto result=watcher->result();watcher->deleteLater();
         if(rows_!=result.rows) {
-            beginResetModel();auto retired=std::move(rows_);rows_=std::move(result.rows);endResetModel();
+            beginResetModel();state_=std::move(result.state);auto retired=std::move(rows_);rows_=std::move(result.rows);endResetModel();
             // Destruction of large retired snapshots must not stall the UI thread.
             pool_.start([retired=std::move(retired)]{});
-        }
-        state_=std::move(result.state);error_=std::move(result.error);busy_=false;phase_.clear();operation_->progress={};operation_.reset();emit changed();emit completed(action,result.success);
+        } else state_=std::move(result.state);
+        error_=std::move(result.error);busy_=false;phase_.clear();operation_->progress={};operation_.reset();emit changed();emit completed(action,result.success);
         if(pendingInspection_ && !busy_){auto args=std::move(*pendingInspection_);pendingInspection_.reset();if(state_.value("active").toBool())command("inspect",args);}
     });
     watcher->setFuture(QtConcurrent::run(&pool_,[worker=worker_,action,args,operation]{
@@ -1511,3 +1521,13 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         result.state["unlockRequired"]=unlock || worker->welcomePassword;return result;
     }));
 }
+
+bool ImportModel::categoryNameMatches(const QString& name,const QString& selected,bool includeChildren) {
+    try {return spentit::app::category_name_matches(name.toStdString(),selected.toStdString(),includeChildren);}
+    catch(const std::invalid_argument&) {return false;} // Incomplete text is not yet a selectable category name.
+    catch(const std::exception& error) {error_=QString::fromUtf8(error.what());emit changed();return false;}
+}
+
+QString ImportModel::suggestedDateFormat(const QString& currency) const {return text(suggested_date_format(currency.toStdString()));}
+QString ImportModel::todayDisplay() const {return text(display_date(QDate::currentDate().toString(Qt::ISODate).toStdString(),state_.value("dateFormat","YYYY-MM-DD").toString().toStdString()));}
+QString ImportModel::dateFormatExample(const QString& format) const {try{return text(display_date("2026-10-28",format.toStdString()));}catch(const std::exception&){return "Invalid format: use YYYY, MM and DD once each";}}

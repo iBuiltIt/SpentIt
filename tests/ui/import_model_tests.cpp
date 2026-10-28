@@ -443,6 +443,22 @@ private slots:
         QTRY_VERIFY(m.state().value("active").toBool());
     }
 
+    void configuredDatesAndCategories() {
+        QTemporaryDir dir;const auto path=dir.path()+"/dates.spentit";
+        ImportModel m(storage::document_gateway());
+        run(m,"create",{{"path",path},{"name","Dates"},{"currency","CAD"},{"protected",false},{"dateFormat","DD/MM/YYYY"},{"defaultCategories",true}});
+        QCOMPARE(m.state().value("dateFormat").toString(),QString("DD/MM/YYYY"));QCOMPARE(m.state().value("categories").toList().size(),41);
+        run(m,"opening",{{"date","28/10/2026"},{"amount","0.00"}});
+        QCOMPARE(m.state().value("openingDate").toString(),QString("28/10/2026"));
+        QFile source(dir.path()+"/dates.qif");QVERIFY(source.open(QIODevice::WriteOnly));source.write("D10/11/2026\nT-1.00\nPSynthetic date\n^\n");source.close();
+        run(m,"import",{{"path",source.fileName()},{"profile","MDY"}});
+        auto selected=m.state().value("selected").toMap();auto draft=selected.value("draft").toMap();QCOMPARE(draft.value("date").toString(),QString("11/10/2026"));
+        draft["date"]="29/02/2026";run(m,"save",draft,false);QVERIFY(!m.error().isEmpty());
+        draft["date"]="12/10/2026";run(m,"save",draft);run(m,"commit");
+        run(m,"query",{{"filter","period:12/10/2026"},{"projected",false}});QCOMPARE(m.rowCount(),1);QCOMPARE(m.rowRecord(0).value("date").toString(),QString("12/10/2026"));
+        run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("dateFormat").toString(),QString("DD/MM/YYYY"));
+        run(m,"close");auto gateway=storage::document_gateway();gateway->open(path.toStdString(),std::nullopt);QCOMPARE(gateway->repository().ledger(false).front().draft.date,std::string("2026-10-12"));
+    }
     void welcomeFlow() {
         QTemporaryDir dir;const auto missing=dir.path()+"/missing.spentit";
         QSettings().setValue("datasetPath",missing);
@@ -462,6 +478,13 @@ private slots:
         QCOMPARE(find("initialAccountName")->property("text").toString(),QString("SpentIt"));
         QCOMPARE(find("setupCurrency")->property("currentText").toString(),QString("CAD"));
         QVERIFY(find("passwordProtection")->property("checked").toBool());
+        QVERIFY(find("defaultCategories")->property("checked").toBool());
+        QCOMPARE(find("setupDateFormat")->property("currentText").toString(),QString("YYYY-MM-DD"));
+        find("setupCurrency")->setProperty("currentIndex",m.currencies().indexOf("USD"));QVERIFY(QMetaObject::invokeMethod(find("setupCurrency"),"activated",Q_ARG(int,m.currencies().indexOf("USD"))));
+        QCOMPARE(find("setupDateFormat")->property("currentText").toString(),QString("MM/DD/YYYY"));
+        find("setupDateFormat")->setProperty("currentIndex",1);QVERIFY(QMetaObject::invokeMethod(find("setupDateFormat"),"activated",Q_ARG(int,1)));
+        find("setupCurrency")->setProperty("currentIndex",m.currencies().indexOf("CAD"));QVERIFY(QMetaObject::invokeMethod(find("setupCurrency"),"activated",Q_ARG(int,m.currencies().indexOf("CAD"))));
+        QCOMPARE(find("setupDateFormat")->property("currentText").toString(),QString("YYYYMMDD"));
         auto* popup=find("setupCurrency")->property("popup").value<QObject*>();QVERIFY(popup);QVERIFY(QMetaObject::invokeMethod(popup,"open"));
         auto* bar=popup->findChild<QQuickItem*>("comboScrollBar");QVERIFY(bar);QTRY_VERIFY(bar->isVisible() && bar->height()>30);
         QVERIFY(bar->property("interactive").toBool());QVERIFY(bar->width()>=16);
@@ -474,6 +497,11 @@ private slots:
         QTRY_VERIFY(bar->property("position").toDouble()!=oldPosition);
         if(qEnvironmentVariableIsSet("SPENTIT_SETUP_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_SETUP_SCREENSHOT")));}
         QVERIFY(QMetaObject::invokeMethod(popup,"close"));
+        if(qEnvironmentVariableIsSet("SPENTIT_SETUP_SCREENSHOT")){
+            auto* flick=find("welcomeScreen")->property("contentItem").value<QObject*>();QVERIFY(flick);
+            flick->setProperty("contentY",std::max(0.0,flick->property("contentHeight").toDouble()-flick->property("height").toDouble()));
+            QTest::qWait(200);QVERIFY(qobject_cast<QQuickWindow*>(root)->grabWindow().save(qEnvironmentVariable("SPENTIT_SETUP_SCREENSHOT")));
+        }
         const auto path=dir.path()+"/created.spentit";find("datasetPath")->setProperty("text",path);
         QVERIFY(click("createDataset"));QTRY_VERIFY(!m.busy());QVERIFY(m.error().contains("Enter a password"));QVERIFY(!QFile::exists(path));
         find("newDatasetPassword")->setProperty("text","synthetic-password");find("confirmDatasetPassword")->setProperty("text","synthetic-password");

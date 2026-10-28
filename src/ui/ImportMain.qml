@@ -103,7 +103,7 @@ ApplicationWindow {
                             UsableComboBox {id:transferDestination;objectName:"transferDestination";model:transferDestinations();textRole:"name";currentIndex:0;onModelChanged:currentIndex=0;Layout.fillWidth:true;Accessible.name:"Transfer destination account"}
                         }
                         RowLayout {
-                            TextField {id:transferDate;objectName:"transferDate";text:Qt.formatDate(new Date(),"yyyy-MM-dd");placeholderText:"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
+                            TextField {id:transferDate;objectName:"transferDate";text:workflow.todayDisplay();placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
                             TextField {id:transferAmount;objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
                             TextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
                             Button {objectName:"createManualTransfer";text:"Create manual draft";enabled:!s.readOnly && transferDestination.currentIndex>0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
@@ -343,19 +343,14 @@ ApplicationWindow {
     function loadCategoryForm() {
         let c=s.categorySelected||{}
         categoryFormId=c.id||"";categoryFormRevision=s.catalogRevision||""
-        categoryName.text=c.name||"";categoryParent.currentIndex=0
-        for(let i=0;i<categoryParent.model.length;i++) if(categoryParent.model[i].id===(c.parent||""))categoryParent.currentIndex=i
-        categoryKind.currentIndex=c.group?1:0;categoryAction="";categoryDirty=false
+        categoryName.text=c.name||"";categoryAction="";categoryDirty=false
     }
     function newCategory() {
-        categoryFormId="";categoryFormRevision=s.catalogRevision||"";categoryName.clear();categoryParent.currentIndex=0;categoryKind.currentIndex=0;categoryAction="create";categoryDirty=true
-    }
-    function categoryParents() {
-        return [{id:"",path:"Standalone / no parent"}].concat((s.categories||[]).filter(function(c){return c.group && !c.archived && !c.deleted}))
+        categoryFormId="";categoryFormRevision=s.catalogRevision||"";categoryName.clear();categoryAction="create";categoryDirty=true
     }
     function saveCategoryForm(action) {
         workflow.command("preview_category",{action:action||categoryAction,id:categoryFormId,revision:categoryFormRevision,
-            name:categoryName.text,parent:categoryKind.currentIndex===1?"":categoryParent.currentIndex>=0?categoryParent.model[categoryParent.currentIndex].id:"",group:categoryKind.currentIndex===1})
+            name:categoryName.text})
     }
     function openCategoryPicker(index) {
         pickerIndex=index;let row=splitModel.get(index);unmappedCategory.text=row.category;categorySearch.clear();categoryPicker.open()
@@ -681,7 +676,7 @@ ApplicationWindow {
             if(success && action==="select" && searchReturn)searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
-                sidebarBalanceMode=({});ledgerViewRestore=null;ledgerViewKind=""
+                transferDate.text=workflow.todayDisplay();sidebarBalanceMode=({});ledgerViewRestore=null;ledgerViewKind=""
             }
             if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null}
             if(success) {
@@ -740,9 +735,16 @@ ApplicationWindow {
         if(workflow.busy || s.path!==location.text)return
         workflow.command(s.unlockRequired?"unlock":"open",{path:location.text,password:unlockPassword.text})
     }
+    property bool setupDateOverridden: false
+    property var datePresets: ["YYYY-MM-DD","YYYYMMDD","DD-MM-YYYY","DD/MM/YYYY","MM-DD-YYYY","MM/DD/YYYY","Custom…"]
+    function suggestSetupDate() {
+        if(setupDateOverridden)return
+        let format=workflow.suggestedDateFormat(currency.currentText)
+        setupDate.currentIndex=datePresets.indexOf(format);customDate.text=format
+    }
     function createDataset(overwrite) {
         location.text=workflow.datasetFilename(location.text)
-        workflow.command("create",{path:location.text,name:accountName.text,currency:currency.currentText,protected:protection.checked,password:password.text,confirmation:confirmation.text,overwrite:overwrite})
+        workflow.command("create",{path:location.text,name:accountName.text,currency:currency.currentText,protected:protection.checked,password:password.text,confirmation:confirmation.text,overwrite:overwrite,dateFormat:setupDate.currentIndex===6?customDate.text:setupDate.currentText,defaultCategories:defaultCategories.checked})
     }
     Dialog {
         id:overwriteDialog;objectName:"overwriteDatasetDialog";width:Math.min(600,window.width-64);title:"Overwrite dataset?";modal:true;anchors.centerIn:parent
@@ -773,7 +775,7 @@ ApplicationWindow {
             let options=[{id:"",label:"Choose an account"},{id:"new",label:"Create a new account"}]
             for(let a of (s.accounts||[])) options.push({id:a.id,label:a.name+" · "+a.currency+" · #"+a.id})
             choices=options
-            mappings=(s.importPlan||[]).map(function(a){return {source:a.source,account:"",create:false,currency:a.currency,date:Qt.formatDate(new Date(),"yyyy-MM-dd")}})
+            mappings=(s.importPlan||[]).map(function(a){return {source:a.source,account:"",create:false,currency:a.currency,date:workflow.todayDisplay()}})
         }
         function update(index,key,value){let rows=mappings.slice();let row=Object.assign({},rows[index]);row[key]=value;rows[index]=row;mappings=rows}
         contentItem:ColumnLayout {
@@ -791,7 +793,7 @@ ApplicationWindow {
                         Label {text:"Currency"}
                         UsableComboBox {objectName:"sourceCurrency_"+index;model:workflow.currencies;currentIndex:workflow.currencies.indexOf((importMapping.mappings[mappingDelegate.index]||{}).currency);Accessible.name:"Currency for "+modelData.name;onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"currency",currentText)}}
                         Label {text:"Opening date"}
-                        TextField {text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
+                        TextField {text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
                     }
                 }
             }
@@ -944,7 +946,7 @@ ApplicationWindow {
         ColumnLayout {
             width:categoryChangePreview.availableWidth
             Label {textFormat:Text.PlainText;text:(s.categoryPreview||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {text:"Renaming or moving changes the current category names and grouping used for past transactions. Original source and recorded history remain unchanged. Archiving hides choices for new assignments and retains existing assignments.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:"Renaming changes this category’s current name and grouping for past transactions; other categories are unchanged. Original source and recorded history remain unchanged. Archiving hides choices for new assignments and retains existing assignments.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;color:"#a02020"}
             RowLayout {
                 Button {objectName:"applyCategoryChange";text:"Apply category change";enabled:!workflow.busy && !!(s.categoryPreview||{}).id;onClicked:workflow.command("apply_category",{preview:s.categoryPreview.id})}
@@ -957,7 +959,7 @@ ApplicationWindow {
         ColumnLayout {
             anchors.fill:parent
             Label {textFormat:Text.PlainText;text:pickerIndex>=0 && pickerIndex<splitModel.count?"Current: "+splitModel.get(pickerIndex).categoryDisplay:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            TextField {id:categorySearch;objectName:"categoryPickerSearch";placeholderText:"Search parent or leaf name";Layout.fillWidth:true;maximumLength:256;Accessible.name:"Category search"}
+            TextField {id:categorySearch;objectName:"categoryPickerSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;Accessible.name:"Category search";onAccepted:{let match=(s.categories||[]).find(function(c){return c.assignable && workflow.categoryNameMatches(c.path,categorySearch.text)});if(match)chooseCategory(match.id,match.path)}}
             ListView {
                 id:pickerChoices;Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:true
                 model:(s.categories||[]).filter(function(c){return !c.deleted && !c.archived && c.path.toLowerCase().indexOf(categorySearch.text.toLowerCase())>=0})
@@ -1008,7 +1010,7 @@ ApplicationWindow {
         ColumnLayout {
             width:correctOpeningDialog.availableWidth
             Label {text:"This replaces the current opening amount, date, or both. Transaction amounts and source evidence stay unchanged. The previous opening remains in history.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            TextField {id:correctDate;objectName:"correctOpeningDate";placeholderText:"YYYY-MM-DD";Accessible.name:"Corrected opening date";onAccepted:acceptDialog(correctOpeningDialog)}
+            TextField {id:correctDate;objectName:"correctOpeningDate";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Corrected opening date";onAccepted:acceptDialog(correctOpeningDialog)}
             TextField {id:correctAmount;objectName:"correctOpeningAmount";placeholderText:"Exact amount";Accessible.name:"Corrected opening amount";onAccepted:acceptDialog(correctOpeningDialog)}
         }
         onAccepted:workflow.command("correct_opening",{operation:workflow.newIdentity(),date:correctDate.text,amount:correctAmount.text})
@@ -1081,7 +1083,7 @@ ApplicationWindow {
                 RowLayout {
                     spacing:12;enabled:!workflow.busy
                     Button {objectName:"browseDataset";text:"Browse for Dataset";onClicked:{openDialog.currentFolder=workflow.documentsFolder;openDialog.open()}}
-                    Button {objectName:"newDataset";text:"New Dataset";onClicked:{settingUp=true;location.text=workflow.suggestedPath;accountName.text="SpentIt";protection.checked=true;password.clear();confirmation.clear();currency.currentIndex=workflow.currencies.indexOf("CAD");workflow.command("prepare_create",{path:location.text})}}
+                    Button {objectName:"newDataset";text:"New Dataset";onClicked:{settingUp=true;location.text=workflow.suggestedPath;accountName.text="SpentIt";protection.checked=true;defaultCategories.checked=true;setupDateOverridden=false;password.clear();confirmation.clear();currency.currentIndex=workflow.currencies.indexOf("CAD");suggestSetupDate();workflow.command("prepare_create",{path:location.text})}}
                     Button {objectName:"openPublicDataset";text:"Open Dataset";visible:!settingUp && s.path===location.text && !!s.canOpen && !s.unlockRequired;onClicked:openDataset()}
                 }
                 RowLayout {
@@ -1097,7 +1099,12 @@ ApplicationWindow {
                         Button {text:"Browse new location…";onClicked:{createDialog.currentFolder=workflow.documentsFolder;createDialog.selectedFile=workflow.suggestedFile;createDialog.open()}}
                         Label {text:"Account name"}
                         TextField {id:accountName;objectName:"initialAccountName";text:"SpentIt";placeholderText:"Account name";Layout.fillWidth:true;Accessible.name:"Account name"}
-                        RowLayout {Label {text:"Home / account currency"} UsableComboBox {id:currency;objectName:"setupCurrency";model:workflow.currencies;currentIndex:workflow.currencies.indexOf("CAD");Accessible.name:"Currency"}}
+                        RowLayout {Label {text:"Home / account currency"} UsableComboBox {id:currency;objectName:"setupCurrency";model:workflow.currencies;currentIndex:workflow.currencies.indexOf("CAD");Accessible.name:"Currency";onActivated:suggestSetupDate()}}
+                        Label {text:"Date format"}
+                        UsableComboBox {id:setupDate;objectName:"setupDateFormat";Layout.preferredWidth:230;model:datePresets;Accessible.name:"Date format";onActivated:{setupDateOverridden=true;if(currentIndex<6)customDate.text=currentText}}
+                        TextField {id:customDate;objectName:"customDateFormat";visible:setupDate.currentIndex===6;text:"YYYY-MM-DD";placeholderText:"YYYY-MM-DD";maximumLength:10;Accessible.name:"Custom date format";onTextEdited:setupDateOverridden=true}
+                        Label {text:"Example: "+workflow.dateFormatExample(setupDate.currentIndex===6?customDate.text:setupDate.currentText);wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        CheckBox {id:defaultCategories;objectName:"defaultCategories";text:"Use default categories";checked:true}
                         CheckBox {id:protection;objectName:"passwordProtection";text:"Password protection";checked:true}
                         TextField {id:password;objectName:"newDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Password";Layout.fillWidth:true;Accessible.name:"New password"}
                         TextField {id:confirmation;objectName:"confirmDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Confirm password";Layout.fillWidth:true;Accessible.name:"Confirm password"}
@@ -1121,7 +1128,7 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth:true;spacing:6
                         Label {text:"Accounts";font.bold:true;font.pixelSize:14;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
-                        Button {objectName:"newAccount";text:"+ New Account";font.pixelSize:12;leftPadding:6;rightPadding:6;topPadding:4;bottomPadding:4;Layout.preferredWidth:implicitContentWidth+12;Layout.preferredHeight:28;visible:!addingAccount;enabled:!workflow.busy && !!s.nextAccountId;onClicked:guard(function(){accountCreationId=s.nextAccountId;accountCreationDate=Qt.formatDate(new Date(),"yyyy-MM-dd");newAccountName.clear();addingAccount=true;Qt.callLater(function(){newAccountName.forceActiveFocus();accountScroll.ScrollBar.vertical.position=1})})}
+                        Button {objectName:"newAccount";text:"+ New Account";font.pixelSize:12;leftPadding:6;rightPadding:6;topPadding:4;bottomPadding:4;Layout.preferredWidth:implicitContentWidth+12;Layout.preferredHeight:28;visible:!addingAccount;enabled:!workflow.busy && !!s.nextAccountId;onClicked:guard(function(){accountCreationId=s.nextAccountId;accountCreationDate=workflow.todayDisplay();newAccountName.clear();addingAccount=true;Qt.callLater(function(){newAccountName.forceActiveFocus();accountScroll.ScrollBar.vertical.position=1})})}
                     }
                     SplitView {
                         orientation:Qt.Vertical;Layout.fillWidth:true;Layout.fillHeight:true
@@ -1212,7 +1219,7 @@ ApplicationWindow {
                     ColumnLayout {
                         width:categoryPage.availableWidth;spacing:10
                         Label {text:"Categories";font.pixelSize:20}
-                        Label {text:"Create your own categories. Groups contain leaves; standalone leaves are also assignable. No starter names are added automatically.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {text:"Every category is assignable. Use one colon for a subcategory, for example Auto: Gas. No parent category is required.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         RowLayout {
                             TextField {id:catalogSearch;placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256}
                             CheckBox {id:showArchivedCategories;text:"Show archived / deleted"}
@@ -1228,13 +1235,10 @@ ApplicationWindow {
                         RowLayout {
                             visible:categoryFormId.length>0 && !(s.categorySelected||{}).deleted
                             Button {objectName:"renameCategory";text:"Rename";enabled:!categoryDirty;onClicked:categoryAction="rename"}
-                            Button {objectName:"moveCategory";text:"Move";visible:!(s.categorySelected||{}).group;enabled:!categoryDirty;onClicked:categoryAction="move"}
                             Button {objectName:"archiveCategory";text:(s.categorySelected||{}).ownArchived?"Unarchive":"Archive";enabled:!categoryDirty;onClicked:saveCategoryForm((s.categorySelected||{}).ownArchived?"unarchive":"archive")}
                             Button {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryDirty;onClicked:saveCategoryForm("delete")}
                         }
                         TextField {id:categoryName;objectName:"categoryName";visible:categoryAction==="create" || categoryAction==="rename";placeholderText:"Category name";Layout.fillWidth:true;onTextEdited:categoryDirty=true;Accessible.name:"Category name"}
-                        UsableComboBox {id:categoryKind;objectName:"categoryKind";Accessible.name:"Category kind";visible:categoryAction==="create";model:["Assignable leaf","Non-assignable group"];onActivated:categoryDirty=true}
-                        UsableComboBox {id:categoryParent;objectName:"categoryParent";Accessible.name:"Parent category";visible:categoryAction==="move" || (categoryAction==="create" && categoryKind.currentIndex===0);model:categoryParents();textRole:"path";Layout.fillWidth:true;onActivated:categoryDirty=true}
                         RowLayout {
                             visible:categoryAction.length>0
                             Button {objectName:"saveCategory";text:"Review category save";enabled:categoryDirty;onClicked:saveCategoryForm()}
@@ -1393,6 +1397,7 @@ ApplicationWindow {
                         width:activeSettings.availableWidth;spacing:12
                         Label {text:"Dataset settings";font.pixelSize:20}
                         Label {text:"Active dataset";font.bold:true}
+                        Label {text:"Date format: "+(s.dateFormat||"YYYY-MM-DD")}
                         Label {textFormat:Text.PlainText;text:s.path||"";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere}
                         Label {text:"Close this dataset before opening another. Saved drafts and committed records remain in the dataset.";Layout.fillWidth:true;wrapMode:Text.Wrap}
                         Button {objectName:"closeDataset";text:"Close dataset / choose another…";onClicked:guard(function(){workflow.command("close")})}
@@ -1425,7 +1430,7 @@ ApplicationWindow {
             RowLayout {
                 visible:!s.frozen && !s.groupCreated && !s.readOnly
                 Label {textFormat:Text.PlainText;text:"Opening balance (confirm before commit)"}
-                TextField {id:openingDate;text:s.openingDate||"";placeholderText:"YYYY-MM-DD";Accessible.name:"Opening date"}
+                TextField {id:openingDate;text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date"}
                 TextField {id:openingAmount;text:s.opening||"";placeholderText:"Exact amount";Accessible.name:"Opening amount"}
                 Button {text:s.confirmed?"Update opening":"Confirm opening";onClicked:guard(function(){workflow.command("opening",{date:openingDate.text,amount:openingAmount.text})})}
             }
@@ -1438,7 +1443,7 @@ ApplicationWindow {
                 Label {text:"Reported balance: "+(s.groupReportedBalance||"")+" · Reviewed change: "+(s.groupReviewedChange||"")+" "+(s.currency||"")+" · Proposed opening: "+(s.groupProposedOpening||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 RowLayout {
                     UsableComboBox {id:balanceMeaning;objectName:"groupBalanceMeaning";Layout.preferredWidth:330;model:["Choose balance meaning","Zero opening (balance agrees)","Treat as opening balance","Treat as closing balance","Ignore reported balance"] ;Accessible.name:"Reported balance meaning"}
-                    TextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
+                    TextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
                     Button {objectName:"confirmGroupOpening";text:"Calculate and stage opening";enabled:!s.readOnly && !!s.groupCanReviewBalance && balanceMeaning.currentIndex>0;onClicked:guard(function(){workflow.command("group_balance",{group:s.importGroup.id,source:s.importGroup.sourceAccount,revision:s.pending.revision,choice:balanceMeaning.currentIndex,date:groupOpeningDate.text})})}
                 }
                 Label {text:"The opening stays staged until this account first commits. Existing mapped account openings are never replaced.";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -1465,7 +1470,7 @@ ApplicationWindow {
             Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? "Committed "+s.receipt.operation+" · included "+s.receipt.included+", excluded "+s.receipt.excluded+" · "+s.receipt.before+" + ("+s.receipt.change+") = "+s.receipt.after:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 CheckBox {id:projected;objectName:"projectedLedger";checked:true;text:"Projected ledger";onClicked:guard(query)}
-                TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
+                TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply filter";onClicked:guard(query)}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
                 Label {text:(s.selectionCount||0)+" selected";textFormat:Text.PlainText}
@@ -1615,7 +1620,7 @@ ApplicationWindow {
                 }
                 RowLayout {
                     visible:!!selected.draft
-                    TextField {id:editDate;objectName:"durableDate";placeholderText:"YYYY-MM-DD";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
+                    TextField {id:editDate;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
                     TextField {id:editPayee;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
                     TextField {id:editTotal;objectName:"durableTotal";placeholderText:"Exact total";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
                 }
@@ -1661,7 +1666,7 @@ ApplicationWindow {
                 CheckBox {id:sourceToggle;objectName:"sourceToggle";text:"Show immutable QIF source"}
                 Label {
                     visible:sourceToggle.checked && (selected.sourceFields||[]).length>0;Layout.fillWidth:true;wrapMode:Text.Wrap
-                    text:"Parsed source fields — double-click or use Copy to edit. Dates use the import date order; amounts use the account scale. Copies are unsaved and must pass validation. Split destinations are numbered by their current editor position."
+                    text:"Parsed source fields — double-click or use Copy to edit. Dates use the selected display format; amounts use the account scale. Copies are unsaved and must pass validation. Split destinations are numbered by their current editor position."
                     textFormat:Text.PlainText
                 }
                 Repeater {

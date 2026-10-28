@@ -69,3 +69,8 @@ extern \"C\" int LLVMFuzzerTestOneInput(const unsigned char*, std::size_t) { ret
   spentit_compiler_options(spentit_qif_fuzzer)
   spentit_compiler_options(spentit_statement_fuzzer)
 endif()
+
+add_executable(spentit_date_format_tests date_format_tests.cpp)
+target_link_libraries(spentit_date_format_tests PRIVATE SpentIt::engine)
+spentit_compiler_options(spentit_date_format_tests)
+add_test(NAME engine.date_format COMMAND spentit_date_format_tests)

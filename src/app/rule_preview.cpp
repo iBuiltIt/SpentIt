@@ -38,11 +38,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
     for(const auto& [id,c]:definitions) {
         if(c.deleted||c.kind!=CategoryKind::leaf)continue;
         std::string path=c.name;bool available=!c.archived;
-        if(!c.parent.empty()) {
-            auto parent=definitions.find(c.parent);
-            if(parent==definitions.end()||parent->second.deleted||parent->second.kind!=CategoryKind::group)invalid("Invalid category parent");
-            path=parent->second.name+": "+c.name;available&=!parent->second.archived;
-        }
+        if(!c.parent.empty())invalid("Categories cannot reference parent objects");
         paths.emplace(id,std::move(path));if(available)active.insert(id);
     }
     std::vector<rules::Record> records;records.reserve(inputs.size());std::set<imports::Occurrence> occurrences;

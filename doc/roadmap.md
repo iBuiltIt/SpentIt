@@ -6,6 +6,10 @@ The earlier eight-point sequence used coordinated implementation with delegated 
 
 This is sequencing guidance, not a claim that the listed work exists. [Project status](status.md) records implementation evidence; [feature documents](../features/README.md) own requirements and unresolved decisions.
 
+## Creation preferences and independent categories — 2026-10-28
+
+The owner gave Go for setup date formats, optional starter categories (checked by default), and independent assignable categories with one optional colon. The approved starter list includes three Income entries; see [the exact list and category contract](../features/010-categories-and-selection.md#exact-starter-categories--accepted-2026-10-28). Currency-based date suggestions remain overrideable, and the dataset preference governs display and manual entry without changing import interpretation. Current experimental schemas are 24/23; older schemas are rejected unchanged, without migration. Reports remain deferred. See [status](status.md) for implementation and verification evidence.
+
 ## Current direction — 2026-10-28
 
 The owner is using the application and wants to improve it piecemeal, beginning with a stable `./build/SpentIt` launch path. Reports, expanded document lifecycle/recovery, and distribution work are explicitly deferred. This supersedes the earlier statement that reports are next; the eight-point handoffs below remain historical evidence. Each subsequent usability change is discussed first and implemented only after the owner explicitly says Go. The owner gave Go for the welcome screen, creation defaults/overwrite, and usable scrollbars on 2026-10-28; icon artwork remains future work.
