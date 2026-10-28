@@ -2,6 +2,12 @@
 
 Last updated: 2026-10-28
 
+## Account sidebar usability — 2026-10-28
+
+Account actions now use a right-click menu on the account name, with guarded selection of the clicked account before actions become available. **+ New Account** sits beside the Accounts heading. Setup clearly labels the initial account name; creation and minimum-one-account deletion rules are unchanged. See [account behavior](accounts.md).
+
+Verification on macOS: rebuilt the rules-enabled Release application, UI and navigation tests. `ctest --test-dir build/import-ui-rules-release -R '^import.(ui|qml|navigation)$' --output-on-failure -j 2` passed **3/3** (44.22 s). After the final menu/header adjustments, `QT_QPA_PLATFORM=offscreen .../spentit_import_ui_tests accountContextMenu` passed (test plus init/cleanup: **3/3**, 1.034 s). It covers right-click targeting, unsaved-edit Stay, rename, eligible empty-account deletion, last-account deletion refusal, and archived-account selection/reactivation. Synthetic menu/header renders were inspected; `git diff --check` passed. No private dataset was opened. Native keyboard interaction, sanitizers, Linux and Windows were not checked for this change.
+
 ## Welcome, creation and usable scrollbars — 2026-10-28
 
 Implemented the owner-approved [welcome and creation flow](../features/001-documents-storage-security.md#welcome-and-creation--accepted-2026-10-28): centered SpentIt/tagline, one path field, Browse/New, conditional Open/password row, and red errors below the controls. A future icon has reserved space without placeholder artwork. Startup probes the remembered path (or Documents/`spentit.spentit`) on the worker; no-password verification does not activate the ledger. Protected/unrecognized encrypted input shows a password field without an initial authentication error. Enter and Open use the same unlock command. File dialogs start in Documents; new names receive `.spentit` when needed. Creation defaults to SpentIt/CAD/password-on and rejects an empty password explicitly.

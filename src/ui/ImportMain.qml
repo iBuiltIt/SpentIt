@@ -269,6 +269,28 @@ ApplicationWindow {
         if(id===s.accountId) {navigate("ledger");return}
         guard(function(){rememberAccountViewport();workflow.command("select_account",{id:id})})
     }
+    property var pendingAccountMenu: null
+    function openAccountMenu(id, item, x, y) {
+        if(workflow.busy) return
+        const point=item.mapToItem(window.contentItem,x,y)
+        guard(function(){
+            if(id===s.accountId) { accountContext.popup(point.x,point.y); return }
+            pendingAccountMenu={id:id,x:point.x,y:point.y}
+            rememberAccountViewport()
+            workflow.command("select_account",{id:id})
+        })
+    }
+    Menu {
+        id:accountContext;objectName:"accountContextMenu"
+        parent:window.contentItem
+        MenuItem {height:visible?implicitHeight:0;objectName:"renameAccount";text:"Rename…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){renameField.text=s.name||"";renameDialog.open()})}
+        MenuItem {height:visible?implicitHeight:0;objectName:"archiveAccount";text:"Archive";visible:!!s.accountSelected && !s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("archive_account",{operation:workflow.newIdentity()})})}
+        MenuItem {height:visible?implicitHeight:0;objectName:"reactivateAccount";text:"Reactivate";visible:!!s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("reactivate_account",{operation:workflow.newIdentity()})})}
+        MenuItem {height:visible?implicitHeight:0;objectName:"deleteAccount";text:"Delete…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){deleteAccountDialog.open()})}
+        MenuItem {height:visible?implicitHeight:0;objectName:"correctOpening";text:"Correct opening…";visible:!!s.accountSelected && !s.readOnly && (!!s.confirmed || !!s.frozen);enabled:!workflow.busy;onTriggered:guard(function(){correctDate.text=s.openingDate||"";correctAmount.text=s.opening||"";correctOpeningDialog.open()})}
+        MenuItem {height:visible?implicitHeight:0;objectName:"reassignCurrency";text:"Reassign currency…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:guard(function(){currencySearch.text="";currencyDialog.open()})}
+        MenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("undo_account",{operation:workflow.newIdentity(),undoOf:s.undoableAccountOperation})})}
+    }
     function revealHistoryOperation(operation) {
         let entries=s.entryHistory||[]
         for(let i=0;i<entries.length;i++) if(entries[i].operation===operation) {
@@ -600,6 +622,11 @@ ApplicationWindow {
         // The occurrence selection remains in the workflow and is restored below.
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onCompleted(action,success) {
+            if(action==="select_account" && pendingAccountMenu) {
+                const request=pendingAccountMenu;pendingAccountMenu=null
+                if(success && s.accountId===request.id) accountContext.popup(request.x,request.y)
+            }
+            if(!s.active) {pendingAccountMenu=null;accountContext.close()}
             if(action==="create" && s.overwriteRequired)overwriteDialog.open()
             ledger.currentIndex=workflow.selectedRowIndex()
             if(action==="select")ledger.currentIndex=s.selectionIndex===undefined?-1:s.selectionIndex
@@ -1038,6 +1065,7 @@ ApplicationWindow {
                     ColumnLayout {
                         anchors.fill:parent;spacing:12
                         Button {text:"Browse new location…";onClicked:{createDialog.currentFolder=workflow.documentsFolder;createDialog.selectedFile=workflow.suggestedFile;createDialog.open()}}
+                        Label {text:"Account name"}
                         TextField {id:accountName;objectName:"initialAccountName";text:"SpentIt";placeholderText:"Account name";Layout.fillWidth:true;Accessible.name:"Account name"}
                         RowLayout {Label {text:"Home / account currency"} UsableComboBox {id:currency;objectName:"setupCurrency";model:workflow.currencies;currentIndex:workflow.currencies.indexOf("CAD");Accessible.name:"Currency"}}
                         CheckBox {id:protection;objectName:"passwordProtection";text:"Password protection";checked:true}
@@ -1060,7 +1088,11 @@ ApplicationWindow {
                 SplitView.preferredWidth:200;SplitView.minimumWidth:140;SplitView.maximumWidth:Math.max(140,Math.min(360,shell.width*0.35))
                 ColumnLayout {
                     anchors.fill:parent
-                    Label {text:"Accounts";font.bold:true}
+                    RowLayout {
+                        Layout.fillWidth:true;spacing:6
+                        Label {text:"Accounts";font.bold:true;font.pixelSize:14;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
+                        Button {objectName:"newAccount";text:"+ New Account";font.pixelSize:12;leftPadding:6;rightPadding:6;topPadding:4;bottomPadding:4;Layout.preferredWidth:implicitContentWidth+12;Layout.preferredHeight:28;visible:!addingAccount;enabled:!workflow.busy && !!s.nextAccountId;onClicked:guard(function(){accountCreationId=s.nextAccountId;accountCreationDate=Qt.formatDate(new Date(),"yyyy-MM-dd");newAccountName.clear();addingAccount=true;Qt.callLater(function(){newAccountName.forceActiveFocus();accountScroll.ScrollBar.vertical.position=1})})}
+                    }
                     SplitView {
                         orientation:Qt.Vertical;Layout.fillWidth:true;Layout.fillHeight:true
                         UsableScrollView {
@@ -1079,6 +1111,12 @@ ApplicationWindow {
                                         contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
                                         Accessible.name:"Open account "+modelData.name
                                         onClicked:chooseAccount(modelData.id)
+                                        Keys.onMenuPressed:openAccountMenu(modelData.id,this,0,height)
+                                        Keys.onPressed:function(event) {if(event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier)){openAccountMenu(modelData.id,this,0,height);event.accepted=true}}
+                                        MouseArea {
+                                            anchors.fill:parent;acceptedButtons:Qt.RightButton
+                                            onClicked:function(mouse){openAccountMenu(modelData.id,parent,mouse.x,mouse.y)}
+                                        }
                                     }
                                     Button {
                                         objectName:"accountBalance_"+modelData.id
@@ -1097,7 +1135,6 @@ ApplicationWindow {
                                 Keys.onEscapePressed:addingAccount=false
                             }
                             Button {text:"Cancel";visible:addingAccount;enabled:!workflow.busy;onClicked:addingAccount=false}
-                            Button {objectName:"newAccount";text:"+ New account";Layout.fillWidth:true;visible:!addingAccount;enabled:!workflow.busy && !!s.nextAccountId;onClicked:guard(function(){accountCreationId=s.nextAccountId;accountCreationDate=Qt.formatDate(new Date(),"yyyy-MM-dd");newAccountName.clear();addingAccount=true;Qt.callLater(function(){newAccountName.forceActiveFocus();accountScroll.ScrollBar.vertical.position=1})})}
                             Label {text:"Archived";font.bold:true;visible:(s.archivedAccounts||[]).length>0}
                             Repeater {
                                 model:s.archivedAccounts||[]
@@ -1111,6 +1148,12 @@ ApplicationWindow {
                                         contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
                                         Accessible.name:"Open archived account "+modelData.name
                                         onClicked:chooseAccount(modelData.id)
+                                        Keys.onMenuPressed:openAccountMenu(modelData.id,this,0,height)
+                                        Keys.onPressed:function(event) {if(event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier)){openAccountMenu(modelData.id,this,0,height);event.accepted=true}}
+                                        MouseArea {
+                                            anchors.fill:parent;acceptedButtons:Qt.RightButton
+                                            onClicked:function(mouse){openAccountMenu(modelData.id,parent,mouse.x,mouse.y)}
+                                        }
                                     }
                                     Button {
                                         objectName:"accountBalance_"+modelData.id
@@ -1122,13 +1165,6 @@ ApplicationWindow {
                                     }
                                 }
                             }
-                            Button {objectName:"renameAccount";text:"Rename…";Layout.fillWidth:true;visible:!!s.accountSelected;enabled:!workflow.busy;onClicked:guard(function(){renameField.text=s.name||"";renameDialog.open()})}
-                            Button {objectName:"archiveAccount";text:"Archive";Layout.fillWidth:true;visible:!!s.accountSelected && !s.archived;enabled:!workflow.busy;onClicked:guard(function(){workflow.command("archive_account",{operation:workflow.newIdentity()})})}
-                            Button {objectName:"reactivateAccount";text:"Reactivate";Layout.fillWidth:true;visible:!!s.archived;enabled:!workflow.busy;onClicked:guard(function(){workflow.command("reactivate_account",{operation:workflow.newIdentity()})})}
-                            Button {objectName:"deleteAccount";text:"Delete…";Layout.fillWidth:true;visible:!!s.accountSelected;enabled:!workflow.busy;onClicked:guard(function(){deleteAccountDialog.open()})}
-                            Button {objectName:"correctOpening";text:"Correct opening…";Layout.fillWidth:true;visible:!!s.accountSelected && !s.readOnly && (!!s.confirmed || !!s.frozen);enabled:!workflow.busy;onClicked:guard(function(){correctDate.text=s.openingDate||"";correctAmount.text=s.opening||"";correctOpeningDialog.open()})}
-                            Button {objectName:"reassignCurrency";text:"Reassign currency…";Layout.fillWidth:true;visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onClicked:guard(function(){currencySearch.text="";currencyDialog.open()})}
-                            Button {objectName:"undoAccountCommand";text:"Undo opening or currency…";Layout.fillWidth:true;visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onClicked:guard(function(){workflow.command("undo_account",{operation:workflow.newIdentity(),undoOf:s.undoableAccountOperation})})}
                         }
                         }
 

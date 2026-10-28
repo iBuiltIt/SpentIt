@@ -1038,6 +1038,63 @@ private slots:
         const auto batch=m.state().value("pending").toMap().value("id");run(m,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Edited through QML");
     }
+    void accountContextMenu() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");
+        run(m,"create_account",{{"id","2"},{"name","Second"},{"currency","CAD"},{"date","2026-01-01"}});
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* menu=root->findChild<QObject*>("accountContextMenu");QVERIFY(menu);
+        QQuickItem* first=nullptr;
+        QTRY_VERIFY(first=visualItem(window->contentItem(),"accountNavigation_1"));
+        auto* add=root->findChild<QQuickItem*>("newAccount");QVERIFY(add);
+        QVERIFY(add->mapToScene(QPointF()).y()<first->mapToScene(QPointF()).y());
+        root->setProperty("dirty",true);
+        QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,first->mapToScene(QPointF(first->width()/2,first->height()/2)).toPoint());
+        QTRY_VERIFY(root->findChild<QObject*>("unsavedDialog")->property("visible").toBool());
+        QVERIFY(!menu->property("visible").toBool());
+        QCOMPARE(m.state().value("accountId").toString(),QString("2"));
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardStay"),"clicked"));
+        root->setProperty("dirty",false);
+        QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,first->mapToScene(QPointF(first->width()/2,first->height()/2)).toPoint());
+        QTRY_VERIFY(menu->property("visible").toBool());
+        QCOMPARE(m.state().value("accountId").toString(),QString("1"));
+        auto* rename=root->findChild<QObject*>("renameAccount");QVERIFY(rename);
+        QVERIFY(QMetaObject::invokeMethod(rename,"triggered"));
+        auto* dialog=root->findChild<QObject*>("renameAccountDialog");QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        root->findChild<QObject*>("renameAccountName")->setProperty("text","Renamed first");
+        QVERIFY(QMetaObject::invokeMethod(menu,"close"));
+        QVERIFY(QMetaObject::invokeMethod(dialog,"accepted"));
+        QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("name").toString(),QString("Renamed first"));
+        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
+        run(m,"select_account",{{"id","2"}});
+        QCOMPARE(m.state().value("name").toString(),QString("Second"));
+        // Existing empty-account deletion still permits removing the extra account,
+        // while refusing to remove the only remaining account.
+        run(m,"delete_account",{{"operation",m.newIdentity()}});
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("accounts").toList().size(),1);
+        run(m,"delete_account",{{"operation",m.newIdentity()}},false);
+        QCOMPARE(m.state().value("accounts").toList().size(),1);
+        QVERIFY(!m.error().isEmpty());
+        run(m,"archive_account",{{"operation",m.newIdentity()}});
+        QQuickItem* archived=nullptr;
+        QTRY_VERIFY(archived=visualItem(window->contentItem(),"archivedAccount_1"));
+        QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,archived->mapToScene(QPointF(archived->width()/2,archived->height()/2)).toPoint());
+        QTRY_VERIFY(menu->property("visible").toBool());
+        QCOMPARE(m.state().value("accountId").toString(),QString("1"));
+        QVERIFY(!root->findChild<QObject*>("archiveAccount")->property("visible").toBool());
+        auto* reactivate=root->findChild<QObject*>("reactivateAccount");QVERIFY(reactivate->property("visible").toBool());
+        if(qEnvironmentVariableIsSet("SPENTIT_ACCOUNT_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_ACCOUNT_SCREENSHOT")));}
+        QVERIFY(QMetaObject::invokeMethod(reactivate,"triggered"));
+        QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QVERIFY(!m.state().value("archived").toBool());
+    }
+
     void ledgerInteractions() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
