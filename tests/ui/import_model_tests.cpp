@@ -1038,6 +1038,56 @@ private slots:
         const auto batch=m.state().value("pending").toMap().value("id");run(m,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Edited through QML");
     }
+    void accountDialogKeyboard_data() {
+        QTest::addColumn<int>("key");
+        QTest::newRow("return")<<int(Qt::Key_Return);
+        QTest::newRow("keypad-enter")<<int(Qt::Key_Enter);
+    }
+    void accountDialogKeyboard() {
+        QFETCH(int,key);
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* dialog=root->findChild<QObject*>("renameAccountDialog");
+        auto* field=root->findChild<QQuickItem*>("renameAccountName");QVERIFY(dialog && field);
+        const auto original=m.state().value("name").toString();
+        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
+        QTRY_VERIFY(dialog->property("opened").toBool());field->setProperty("text","Canceled rename");field->forceActiveFocus();
+        QTest::keyClick(window,Qt::Key_Escape);
+        QTRY_VERIFY(!dialog->property("visible").toBool());QCOMPARE(m.state().value("name").toString(),original);
+        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(dialog->property("opened").toBool());
+        field->setProperty("text","Keyboard name");field->forceActiveFocus();
+        QTest::keyClick(window,Qt::Key(key));
+        QTRY_COMPARE(m.state().value("name").toString(),QString("Keyboard name"));
+        QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());QVERIFY(!dialog->property("visible").toBool());
+        // The same command validation rejects a blank name submitted by keyboard.
+        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(dialog->property("opened").toBool());
+        field->setProperty("text"," ");field->forceActiveFocus();QTest::keyClick(window,Qt::Key(key));
+        QTRY_VERIFY(!m.error().isEmpty());QCOMPARE(m.state().value("name").toString(),QString("Keyboard name"));
+        auto* currency=root->findChild<QObject*>("currencyDialog");
+        auto* search=root->findChild<QQuickItem*>("currencySearch");QVERIFY(currency && search);
+        QVERIFY(QMetaObject::invokeMethod(currency,"open"));QTRY_VERIFY(currency->property("opened").toBool());
+        search->setProperty("text","INVALID");search->forceActiveFocus();QTest::keyClick(window,Qt::Key(key));
+        QVERIFY(currency->property("visible").toBool());QVERIFY(!m.busy());
+        search->setProperty("text","JPY");QTest::keyClick(window,Qt::Key(key));
+        QTRY_COMPARE(m.state().value("currency").toString(),QString("JPY"));QTRY_VERIFY(!m.busy());
+        QVERIFY(m.error().isEmpty());QVERIFY(!currency->property("visible").toBool());
+        run(m,"create_account",{{"id","2"},{"name","Opening keyboard test"},{"currency","JPY"},{"date","2026-01-01"}});
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0"}});
+        auto* opening=root->findChild<QObject*>("correctOpeningDialog");
+        auto* date=root->findChild<QQuickItem*>("correctOpeningDate");
+        auto* amount=root->findChild<QQuickItem*>("correctOpeningAmount");QVERIFY(opening && date && amount);
+        for(int i=1;i<=2;++i) {
+            QVERIFY(QMetaObject::invokeMethod(opening,"open"));QTRY_VERIFY(opening->property("opened").toBool());
+            date->setProperty("text","2026-01-01");amount->setProperty("text",QString::number(i));
+            (i==1?date:amount)->forceActiveFocus();QTest::keyClick(window,Qt::Key(key));
+            QTRY_COMPARE(m.state().value("opening").toString(),QString::number(i));
+            QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());QVERIFY(!opening->property("visible").toBool());
+        }
+    }
+
     void accountContextMenu() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

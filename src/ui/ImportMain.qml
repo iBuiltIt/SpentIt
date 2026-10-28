@@ -269,6 +269,10 @@ ApplicationWindow {
         if(id===s.accountId) {navigate("ledger");return}
         guard(function(){rememberAccountViewport();workflow.command("select_account",{id:id})})
     }
+    function acceptDialog(dialog) {
+        const ok=dialog.standardButton(Dialog.Ok)
+        if(dialog.opened && !workflow.busy && ok && ok.enabled) dialog.accept()
+    }
     property var pendingAccountMenu: null
     function openAccountMenu(id, item, x, y) {
         if(workflow.busy) return
@@ -958,11 +962,11 @@ ApplicationWindow {
         }
     }
     Dialog {
-        id:renameDialog;objectName:"renameAccountDialog";title:"Rename account";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
+        id:renameDialog;onOpened:renameField.forceActiveFocus();objectName:"renameAccountDialog";title:"Rename account";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
         width:Math.min(window.width-48,480)
         ColumnLayout {
             width:renameDialog.availableWidth
-            TextField {id:renameField;objectName:"renameAccountName";Layout.fillWidth:true;Accessible.name:"Account name"}
+            TextField {id:renameField;objectName:"renameAccountName";Layout.fillWidth:true;Accessible.name:"Account name";onAccepted:acceptDialog(renameDialog)}
             Label {text:"This changes the current display name only.";wrapMode:Text.Wrap;Layout.fillWidth:true}
         }
         onAccepted:workflow.command("rename_account",{operation:workflow.newIdentity(),name:renameField.text})
@@ -978,8 +982,8 @@ ApplicationWindow {
         ColumnLayout {
             width:correctOpeningDialog.availableWidth
             Label {text:"This replaces the current opening amount, date, or both. Transaction amounts and source evidence stay unchanged. The previous opening remains in history.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            TextField {id:correctDate;objectName:"correctOpeningDate";placeholderText:"YYYY-MM-DD";Accessible.name:"Corrected opening date"}
-            TextField {id:correctAmount;objectName:"correctOpeningAmount";placeholderText:"Exact amount";Accessible.name:"Corrected opening amount"}
+            TextField {id:correctDate;objectName:"correctOpeningDate";placeholderText:"YYYY-MM-DD";Accessible.name:"Corrected opening date";onAccepted:acceptDialog(correctOpeningDialog)}
+            TextField {id:correctAmount;objectName:"correctOpeningAmount";placeholderText:"Exact amount";Accessible.name:"Corrected opening amount";onAccepted:acceptDialog(correctOpeningDialog)}
         }
         onAccepted:workflow.command("correct_opening",{operation:workflow.newIdentity(),date:correctDate.text,amount:correctAmount.text})
     }
@@ -989,14 +993,14 @@ ApplicationWindow {
             width:currencyDialog.availableWidth
             Label {text:"Choose a current catalog currency. The numeric decimal stays the same.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {objectName:"currencyWarning";visible:!!s.currencyWarning;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText;color:"#855100";text:"This reassigns the account currency without conversion. Numeric amounts stay the same decimal. It does not apply an exchange rate."}
-            TextField {id:currencySearch;objectName:"currencySearch";placeholderText:"Type a currency code";Layout.fillWidth:true;Accessible.name:"Currency code"}
+            TextField {id:currencySearch;objectName:"currencySearch";placeholderText:"Type a currency code";Layout.fillWidth:true;Accessible.name:"Currency code";onAccepted:if(confirmCurrency.enabled)confirmCurrency.clicked()}
             UsableComboBox {
                 id:currencyPick;objectName:"currencyPick";Layout.fillWidth:true;Accessible.name:"Matching currencies"
                 model:{var typed=currencySearch.text.toUpperCase();var all=workflow.currencies;var out=[];for(var i=0;i<all.length;i++) if(typed.length===0 || all[i].indexOf(typed)===0) out.push(all[i]);return out}
                 onActivated:function(index){currencySearch.text=currencyPick.model[index]}
             }
             RowLayout {
-                Button {objectName:"confirmCurrency";text:"Reassign";enabled:!workflow.busy && workflow.currencies.indexOf(currencySearch.text.toUpperCase())>=0;onClicked:{let code=currencySearch.text.toUpperCase();currencyDialog.close();workflow.command("reassign_currency",{operation:workflow.newIdentity(),currency:code})}}
+                Button {id:confirmCurrency;objectName:"confirmCurrency";text:"Reassign";enabled:!workflow.busy && workflow.currencies.indexOf(currencySearch.text.toUpperCase())>=0;onClicked:{let code=currencySearch.text.toUpperCase();currencyDialog.close();workflow.command("reassign_currency",{operation:workflow.newIdentity(),currency:code})}}
                 Button {objectName:"cancelCurrency";text:"Cancel";onClicked:currencyDialog.close()}
             }
         }
