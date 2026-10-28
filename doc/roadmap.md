@@ -21,7 +21,23 @@ The owner selected the following eight-point sequence and gave **Go for point 1*
 
 After **each point**, update relevant feature documents and project status, write a durable handoff with completed work, actual verification, limitations, unresolved decisions and downstream dependencies, and commit all task changes while preserving unrelated work. Then ask whether to proceed to the next point or stop, and wait. A material financial/security ambiguity is an earlier decision gate; Go does not settle it. Dependencies on later points must be recorded explicitly rather than silently reducing completion scope. Hardening continues in later points as their behavior changes; point 2 is not a final verification claim for future code. Reports and licensing/distribution are outside this eight-point authorization.
 
-Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Coordinator review on 2026-10-27 accepted the point-4 implementation at schemas 20 and 21, with the limits recorded below. The owner then said Go for point 5 and locked the allocation-level Merge, unlink, and committed-link decisions. Coordinator review on 2026-10-27 accepted the point-5 implementation with the limits recorded below. The owner then said Go for point 6 and locked the four committed-editing answers below. Point 6 is committed as `cfad307`. Points 7–8 have not been started. The owner is asked whether to proceed to point 7 or stop.
+Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Coordinator review on 2026-10-27 accepted the point-4 implementation at schemas 20 and 21, with the limits recorded below. The owner then said Go for point 5 and locked the allocation-level Merge, unlink, and committed-link decisions. Coordinator review on 2026-10-27 accepted the point-5 implementation with the limits recorded below. The owner then said Go for point 6 and locked the four committed-editing answers below. Point 6 is committed as `cfad307`. Point 7 is committed as `b6b9346`. Point 8 has not been started. The owner is asked whether to proceed to point 8 or stop.
+
+## Point 7 completion handoff — 2026-10-27
+
+Read [feature 004](../features/004-rules-and-explanations.md#accepted-committed-reapplication--2026-10-27) and [point-7 evidence](status.md#point-7-committed-rule-reapplication--2026-10-27). One agent implemented this checkpoint from HEAD `9f3f513`. It is committed as `b6b9346`. Point 8 was not started. No license, publication, report, starter-catalog spelling, or Auto/Medical hierarchy was decided.
+
+The owner said Go for point 7 and declined the scope question. The command is one explicit Reapply of the selected account's active committed entry heads. Drafts, removed rows, and other accounts stay. One preview, one Apply, and one group Undo. Manual fields, including blanks, stay unless Replace manual was part of that preview. Amounts, dates, split structure, evidence bytes, and transfer links stay. A rule category change that would rewrite a live transfer-linked allocation is left unchanged and named in the preview. The account balance does not change. Pending Apply still refuses a committed batch. Save still does not change rows. Rules still do not create transfers, allocations, money, or dates.
+
+New rules documents are schema 22. Rules-off documents stay schema 21 and the reapply command is unavailable there. Schema 20 is rejected with `Unsupported experimental format; no migration was attempted`. Application id remains `1397770577`. There is no migration.
+
+The category picker, Uncategorized, and per-row explanations already existed and were not rebuilt. Starter-catalog spelling and the Auto/Medical hierarchy stay open. Features 004, 008, 010, and 011 stay active. Account moves of a committed row, source-link rewrite, wrong-account posting, cross-format evidence-link repair, and reports stay open.
+
+The 4096-row preview limit is implemented. A document with 4097 active committed rows was not executed. The refusal that a reapply must not change committed money is implemented. That sentence was not executed, because the rule preview does not change amounts. The fault probe counted 121 write/sync positions and ran the before-commit and after-commit observers plus one disk-full injection. It did not sweep all 121 positions. Statement-file reapply uses the same committed entry path when the source record has a payee or memo. That OFX path was not run again. Linux and Windows are unverified. The selected runs are not a full suite. Rules-off Debug was the schema gate only. Qt was offscreen. There was no native visual inspection.
+
+Exact commands and passing counts are in status.
+
+Coordinator review on 2026-10-27 accepted this diff with the limits recorded here and in status. The owner is asked: **proceed to point 8 or stop**.
 
 ## Point 6 completion handoff — 2026-10-27
 
@@ -39,7 +55,7 @@ Wrong-account posting, cross-format evidence-link repair, and explicit same-curr
 
 Exact commands and passing counts are in status.
 
-Coordinator review on 2026-10-27 accepted this diff with the limits recorded here and in status. The owner is asked: **proceed to point 7 or stop**.
+Coordinator review on 2026-10-27 accepted this diff with the limits recorded here and in status. The owner was asked at this delivery: **proceed to point 7 or stop**. Point 7 is now the [next handoff](#point-7-completion-handoff--2026-10-27). The wait instruction above is the historical stop at point-6 delivery.
 
 ## Point 5 completion handoff — 2026-10-27
 
@@ -155,7 +171,7 @@ The earlier authorization allowed independent packages to run concurrently with 
 
 - Committed changes: ordinary correction/removal, removed-record review and strict Undo are accepted and implemented in the bounded scope. Remaining gates concern linked transfers and other explicitly deferred operations.
 - Transfers: destination-first commit with symmetric draft protection, explicit matching confirmation, provisional origin dates, per-allocation destinations and initial cross-currency rejection are accepted. Remaining gates include mismatch-resolution commands, destination-only draft cancellation, and committed repair/unlink/reversal with independent evidence or later edits.
-- Categories/rules: current taxonomy, lifecycle, rule precedence/phases, manual protection and independent rule Save are accepted. Do not re-ask these decisions. Bulk committed reapplication remains deferred.
+- Categories/rules: current taxonomy, lifecycle, rule precedence/phases, manual protection and independent rule Save are accepted. Do not re-ask these decisions. Selected-account committed reapplication is implemented: one preview, one Apply, and one group Undo. Manual fields stay unless that preview replaces them. Amounts, dates, evidence, and a live transfer category stay. Starter-catalog spelling and the Auto/Medical hierarchy stay open.
 - Search/ledger: grammar, inclusive date boundaries, original-record scope, multiselection and bounded committed bulk behavior were accepted on 2026-10-26 and implemented. Broader feature-005 UI scope remains active.
 - Reports: refund/income treatment, comparison boundaries, currency policy, and requested report-creation contents.
 - Lifecycle: any destructive retention policy, protection changes, or migration behavior after the release gate.

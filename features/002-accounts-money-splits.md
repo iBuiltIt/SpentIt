@@ -4,7 +4,7 @@ Status: **active**
 Last updated: 2026-10-27  
 Implementation: partial; exact in-memory money, validated allocations, and original/effective totals are implemented. The pinned ISO currency catalog and engine remainder editing are also implemented. Production accounts, transfers and UI remain unimplemented; a separate [synthetic sheet experiment](../doc/sheet-prototype.md) exercises the engine. The optional storage prototype now round-trips the engine subset; production account/document persistence remains unimplemented.
 
-The [account-scoped durable workflow](../doc/accounts.md) adds account creation/selection, independent drafts, ordinary financial histories, and the point-4 account commands below. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md). Reports, exchange rates, and committed transfer reversal remain unfinished. Feature 002 stays **active**.
+The [account-scoped durable workflow](../doc/accounts.md) adds account creation/selection, independent drafts, ordinary financial histories, and the point-4 account commands below. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md). New documents now use schema 22 with rules and 21 without. The point-4 paragraph below records schema 20 for that checkpoint. Schema 20 is rejected without migration. Reports and exchange rates remain unfinished. Feature 002 stays **active**.
 
 ## Accepted requirements
 

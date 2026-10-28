@@ -30,7 +30,7 @@ The settled policies and schema pair are in [feature 002](../features/002-accoun
 
 ## Experimental formats
 
-Rules-enabled builds create and open schema **20**; rules-off builds create and open schema **21**. These are the same experimental shape with rules present only in schema 20. Schemas 18 and 19, and every other unexpected `user_version`, are rejected with `Unsupported experimental format; no migration was attempted`. The application id remains `1397770577`. Earlier sentences in historical status entries that name schemas 12 and 13 describe those checkpoints. This follows the owner's pre-release format policy. No migration was added.
+Rules-enabled builds create and open schema **22**; rules-off builds create and open schema **21**. These are the same experimental shape with rules, including committed reapply, present only in schema 22. Schema 20, schemas 18 and 19, and every other unexpected `user_version`, are rejected with `Unsupported experimental format; no migration was attempted`. The application id remains `1397770577`. Earlier sentences in historical status entries that name schemas 12 and 13 describe those checkpoints. This follows the owner's pre-release format policy. No migration was added.
 
 ## Verification
 

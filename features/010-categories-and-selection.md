@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-27  
-Implementation: bounded catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Current documents use experimental schema 20 with rules and 21 without; both include this catalog. The durable category selector lists real accounts as transfer destinations and stores the account identity. Category reports remain unimplemented. See [implementation and recovery](../doc/categories.md) and [transfer management](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27).
+Implementation: bounded catalog, allocation assignments and editor are implemented and verified on available macOS configurations. Current documents use experimental schema 22 with rules and 21 without; both include this catalog. Schema 20 is rejected without migration. The durable category selector lists real accounts as transfer destinations and stores the account identity. Category reports remain unimplemented. See [implementation and recovery](../doc/categories.md) and [transfer management](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27).
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 

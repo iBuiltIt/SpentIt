@@ -14,7 +14,7 @@ Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCip
 - [Account-scoped workflow and current experimental formats](doc/accounts.md)
 - [QIF transfer destinations and explicit resolution](doc/qif-transfers.md)
 - [Search and bulk ledger contract](doc/search-ledger.md)
-- [Current handoff and next-work gates](doc/roadmap.md#point-6-completion-handoff--2026-10-27)
+- [Current handoff and next-work gates](doc/roadmap.md#point-7-completion-handoff--2026-10-27)
 - [Feature requirements and open decisions](features/README.md)
 - [Contributor instructions](AGENTS.md) and [dependency boundaries](doc/project-layout.md)
 

@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-27
 
-State: bounded experimental category catalog verified on available macOS configurations. Current rules-enabled documents use schema 20 and rules-off documents use schema 21. Schemas 12 and 13 describe earlier checkpoints. The owner accepted the [category lifecycle policy](../features/010-categories-and-selection.md). This implements a catalog, editor, allocation picker, and account transfer destinations within the durable import experiment. It does not implement category reports, automatic starter categories, or migrations. The rules page is specified in [durable rules](durable-rules.md). Account destinations use the [transfer commands](transfer-engine.md).
+State: bounded experimental category catalog verified on available macOS configurations. Current rules-enabled documents use schema 22 and rules-off documents use schema 21. Schema 20 is rejected without migration. Schemas 12 and 13 describe earlier checkpoints. The owner accepted the [category lifecycle policy](../features/010-categories-and-selection.md). This implements a catalog, editor, allocation picker, and account transfer destinations within the durable import experiment. It does not implement category reports, automatic starter categories, or migrations. The rules page is specified in [durable rules](durable-rules.md). Account destinations use the [transfer commands](transfer-engine.md).
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 

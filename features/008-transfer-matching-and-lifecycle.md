@@ -170,7 +170,7 @@ Keep transfer recognition distinct from ordinary duplicate suppression: a matchi
 ## Remaining work and open questions
 
 - Moving a committed row to another account, rewriting source-occurrence links, wrong-account posting, and cross-format evidence-link repair remain open. Explicit same-currency account moves of a committed row are not implemented.
-- Candidate ranking, date windows, references/normalization, and automatic matching remain deferred. Links require explicit confirmation. Cross-currency and fee matching remain deferred; unequal allocations are split or chosen explicitly before a link. Committed rule reapplication remains point 7.
+- Candidate ranking, date windows, references/normalization, and automatic matching remain deferred. Links require explicit confirmation. Cross-currency and fee matching remain deferred; unequal allocations are split or chosen explicitly before a link. Selected-account committed rule reapplication is the point-7 command in [feature 004](004-rules-and-explanations.md#accepted-committed-reapplication--2026-10-27).
 - Generated counterpart field defaults other than the accepted provisional origin date.
 - Reports and the broader transaction-sheet design remain outside the implemented transfer scope.
 

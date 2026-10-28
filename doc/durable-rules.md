@@ -10,7 +10,7 @@
 
 ## Current follow-up — 2026-10-26
 
-[Account-scoped workspaces](accounts.md) retain document-wide saved rules and limit Apply to the selected account. Earlier experimental layouts are rejected without migration.
+[Account-scoped workspaces](accounts.md) retain document-wide saved rules and limit Apply to the selected account. Earlier experimental layouts are rejected without migration. Current documents are schema 22 with rules and 21 without. Schema 20 is rejected without migration. Selected-account committed reapplication is in [feature 004](../features/004-rules-and-explanations.md#accepted-committed-reapplication--2026-10-27). The table above and the schema-6 design below are earlier contracts.
 
 The earlier verification gap is closed: the rules-enabled `3f94fe6` baseline passed all 72 tests in Release and ASan/UBSan. [Search/ledger work](search-ledger.md) now adds combined search, multiselection, and schema-7 bulk receipts. The owner clarified that pre-release formats need no migration or compatibility commitment until an announced release. The historical design and checkpoint below are retained; their Debug-only and search-not-done statements do not describe current status. See [project status](status.md) for evidence and limitations.
 

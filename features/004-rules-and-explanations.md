@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-27  
-Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply and rules sheet implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 20; rules-off documents use schema 21. Schema 8 was an earlier account-scoped checkpoint and is rejected without migration. See [status and verification](../doc/status.md), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Bulk committed rule reapplication remains deferred.
+Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 22; rules-off documents use schema 21. Schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter-catalog spelling, the Auto/Medical hierarchy, and reports remain open.
 
 ## Accepted requirements
 
@@ -61,4 +61,19 @@ Initial actions change displayed payees, memos and assignable category identitie
 
 For the Wise-shaped example, source payee `^Tfl Travel.*` supplies display payee TfL and parent classification Transport. Source split memo `^Wise Charges for:` assigns Service Fees; `^CARD-` explicitly inherits the parent classification. The -29.31 total remains exactly -0.14 plus -29.17; parent classification never creates another allocation. A single-allocation transaction's category action targets that allocation. Missing parent classification leaves inheritance unapplied with an explanation.
 
-Source-split rules require stable retained source-allocation associations, not current ordinal guesses. Manually created splits are excluded from source-split matching initially and retain manual classification. Catalog lifecycle and starter names remain governed separately by feature 010. The owner accepted this bounded policy on 2026-10-25. Concrete capture-template syntax, resource limits and persistence contracts remain engineering work.
+Source-split rules require stable retained source-allocation associations, not current ordinal guesses. Manually created splits are excluded from source-split matching initially and retain manual classification. Catalog lifecycle and starter names remain governed separately by feature 010. The owner accepted this bounded policy on 2026-10-25. Concrete capture-template syntax, resource limits and persistence contracts remain engineering work. The deferred bulk reapplication in the paragraph above is the explicit selected-account command in the next section. That 2026-10-25 sentence is the decision as it stood then.
+
+## Accepted committed reapplication — 2026-10-27
+
+The owner said Go for point 7 and declined a further scope question. This command is the committed reapplication that the 2026-10-25 policy left deferred. It does not mark feature 004 landed.
+
+- The user reapply runs on the selected account's active committed entry heads. Drafts, removed rows, rows in other accounts, and generated `~transfer-` rows stay out of the evaluation.
+- One preview, one Apply, and one group Undo. Cancel writes nothing. A zero-change preview writes nothing and does not consume the operation id. An id that already belongs to another command fails even when the fresh preview changes nothing.
+- Manual fields, including blanks, stay unless Replace manual was part of that preview. Amounts, dates, split structure, evidence bytes, and transfer links stay. The account balance does not change.
+- When a rule would change the category text or binding of a live transfer-linked allocation, storage leaves the category, binding, owner, and rule mark as they were and the preview names the skip. The link stays. A payee change on that row can still be written. Owner or mark changes alone do not end a link.
+- Pending Apply still refuses a committed batch. Save publishes rules and does not change rows. Rules do not create transfers, allocations, money, or dates.
+- Rules documents are schema 22. Rules-off documents stay schema 21, and preview and Apply fail with `Rules require a new experimental dataset`. Schema 20 is rejected with `Unsupported experimental format; no migration was attempted`. There is no migration. Application id remains `1397770577`.
+- The category picker, Uncategorized filter, and per-row explanations already existed and were not rebuilt. Starter-catalog spelling and the Auto/Medical hierarchy stay open.
+- A preview of more than 4096 active committed rows is refused. That 4097-row case was not executed. The refusal of a reapply that would change committed money is implemented and was not executed.
+
+Verification is the selected macOS run in [status](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27). This checkpoint is committed as `b6b9346`.
