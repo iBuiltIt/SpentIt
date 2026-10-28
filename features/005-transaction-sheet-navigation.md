@@ -1,7 +1,7 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**  
-Last updated: 2026-10-27  
+Last updated: 2026-10-28  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Accepted requirements
@@ -166,6 +166,6 @@ Ledger columns are Date, Payee, Category, Withdrawal, Deposit, and Balance, in t
 
 Bulk removal, bulk category, rule reapply, and history undo go through Save / Discard / Stay. The visible row is captured only after the user leaves the edit. Bulk and reapply put that row back after preview and Apply. History undo puts it back on Apply. Stay does not arm a restore. A missing row opens at the top. An ordinary one-row save does not capture. The new test clicks bulk category. It does not click history undo or reapply.
 
-Reports are a note: "Reports stay outside this work. Nothing is created here." There is no add button and no report dialog. Ask the owner before building a report.
+Reports are a note: "Reports stay outside this work. Nothing is created here." There is no add button and no report dialog. On 2026-10-28 the owner said the eight-point sequence was the work before reports. Building a report waits for an explicit Go and the open questions in [feature 006](006-reporting-drill-down.md).
 
 This slice does not add a separate note field, a multiline Enter exception, a date-format preference, same-date ordering, persisted column or sidebar sizes, or a new money formula. Feature 005 stays active. Verification is in [status](../doc/status.md#point-8-sheet-and-sidebar-interactions--2026-10-27).

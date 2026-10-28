@@ -1,8 +1,8 @@
 # 004 — Rules and explanations
 
 Status: **active**  
-Last updated: 2026-10-27  
-Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 22; rules-off documents use schema 21. Schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter-catalog spelling, the Auto/Medical hierarchy, and reports remain open.
+Last updated: 2026-10-28  
+Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 22; rules-off documents use schema 21. Schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter-catalog spelling and the Auto/Medical hierarchy stay open. Reports are [feature 006](006-reporting-drill-down.md).
 
 ## Accepted requirements
 

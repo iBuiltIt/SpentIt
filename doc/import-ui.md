@@ -1,6 +1,6 @@
 # Durable QIF UI experiment
 
-Last updated: 2026-10-26
+Last updated: 2026-10-28
 
 The optional `spentit_import_experiment` executable connects setup/unlocking and a writable Qt Quick review screen to the existing durable import commands. It is for synthetic inputs. Feature 009 remains **active**; this is not a production financial application or completion of the full sheet design.
 
@@ -206,4 +206,4 @@ The ledger columns use the ratios 0.14 date, 0.24 payee, 0.17 category, 0.15 wit
 
 Bulk removal, bulk category, rule reapply, and history undo capture the visible row after Save / Discard / Stay allows the command. Bulk and reapply put that row back after preview and Apply. History undo puts it back on Apply. Stay does not capture. A missing row opens at the top. The new test checks bulk category. It does not click history undo or reapply.
 
-Sidebar balances and the reports note are in [accounts](accounts.md). Verification is in [status](status.md#point-8-sheet-and-sidebar-interactions--2026-10-27). Feature 005 stays active.
+Sidebar balances and the reports note are in [accounts](accounts.md). Verification is in [status](status.md#point-8-sheet-and-sidebar-interactions--2026-10-27). Feature 005 stays active. On 2026-10-28 the owner said the finished sequence was the work before reports. The note stays until that work has an explicit Go. The open questions are in [feature 006](../features/006-reporting-drill-down.md).

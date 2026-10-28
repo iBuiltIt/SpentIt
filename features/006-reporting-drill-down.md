@@ -1,8 +1,8 @@
 # 006 — Reporting and drill-down
 
 Status: **active**  
-Last updated: 2026-10-27  
-Implementation: none; requirements and proposed design only.
+Last updated: 2026-10-28  
+Implementation: none; requirements and proposed design only. On 2026-10-28 the owner said the finished eight-point sequence was the work before this feature. Implementation waits for an explicit Go. The open questions below are unset.
 
 ## Accepted requirements
 
