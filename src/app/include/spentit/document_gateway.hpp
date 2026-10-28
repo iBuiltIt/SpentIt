@@ -13,6 +13,11 @@ public:
     virtual ~DocumentGateway() = default;
     virtual void create(const std::filesystem::path&, bool protected_mode, std::string_view password,
                         std::string_view name, const Currency&, std::string_view today) = 0;
+    virtual void create_selected(const std::filesystem::path& path, bool overwrite, bool protected_mode,
+                                 std::string_view password, std::string_view name, const Currency& currency, std::string_view today) {
+        if(overwrite) throw std::logic_error("Dataset replacement is not supported by this gateway");
+        create(path,protected_mode,password,name,currency,today);
+    }
     virtual void open(const std::filesystem::path&, std::optional<std::string> password) = 0;
     virtual void open_controlled(const std::filesystem::path& path, std::optional<std::string> password,
                                  const OperationContext& context) {

@@ -93,7 +93,7 @@ private slots:
         Session legacy;writeSchema5(legacy.path());
         run(legacy.model,"open",{{"path",legacy.path()}},false);
         QVERIFY(!legacy.model.state().value("active").toBool());
-        QVERIFY(legacy.model.error().contains("Unsupported experimental format"));
+        QVERIFY(legacy.model.error().contains("This dataset format is not supported"));
     }
     void saveDiscardStayAndDraftPrecedesRules(){
         Session s;createDocument(s,"Synthetic rule guards");

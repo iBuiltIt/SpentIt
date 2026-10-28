@@ -67,12 +67,12 @@ std::vector<app::DependencyStamp> ImportStore::dependencies(const imports::Occur
     }return result;
 }
 app::CommittedEntry ImportStore::committed_entry(const imports::Occurrence& id) const {
-    if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Committed changes require a new experimental dataset");
+    if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Editing committed transactions is not supported by this dataset");
     Statement head(impl_->db,"SELECT h.revision,r.sequence FROM entry_heads h JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch=? AND h.ordinal=?");head.text(1,id.batch);head.integer(2,integer(id.ordinal));if(!head.row())fail(SQLITE_CONSTRAINT,"Choose an included committed transaction");
     const auto revision=head.integer(0);return {id,head.integer(1),entry_snapshot(id,revision),load_row(id,false).source,{id,revision,dependencies(id)}};
 }
 std::optional<app::ChangeReceipt> ImportStore::committed_change_outcome(std::string_view operation) const {
-    if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Committed changes require a new experimental dataset");
+    if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Editing committed transactions is not supported by this dataset");
     if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement row(impl_->db,"SELECT kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,sequence FROM ledger_operations WHERE id=?");row.text(1,operation);if(!row.row()){if(categories_supported()){Statement other(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");other.text(1,operation);if(other.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");}return {};}
     if(row.integer(0)==5)fail(SQLITE_CONSTRAINT,"Operation identity belongs to an account command");
@@ -159,7 +159,7 @@ std::vector<app::CommittedHistoryItem> ImportStore::committed_history(const impo
     }return result;
 }
 std::vector<app::CommittedChangeSummary> ImportStore::committed_changes(std::int64_t before,std::size_t limit) const {
-    if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Committed changes require a new experimental dataset");if(before<0 || limit==0 || limit>100)fail(SQLITE_CONSTRAINT,"History page limit is invalid");
+    if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Editing committed transactions is not supported by this dataset");if(before<0 || limit==0 || limit>100)fail(SQLITE_CONSTRAINT,"History page limit is invalid");
     Statement rows(impl_->db,"SELECT o.id,o.kind,o.batch,o.ordinal,o.sequence,e.active,e.date,e.payee,e.total,h.revision FROM ledger_operations o JOIN entry_heads h ON h.batch=o.batch AND h.ordinal=o.ordinal JOIN entry_revisions e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision WHERE o.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND o.kind!=0 AND (?=0 OR o.sequence<?) ORDER BY o.sequence DESC LIMIT ?");rows.integer(1,before);rows.integer(2,before);rows.integer(3,integer(limit));std::vector<app::CommittedChangeSummary> result;
     while(rows.row())result.push_back({rows.bytes(0),static_cast<app::ChangeKind>(rows.integer(1)),{rows.bytes(2),static_cast<std::size_t>(rows.integer(3))},rows.integer(4),rows.integer(5)!=0,rows.bytes(6),rows.bytes(7),Money(rows.integer(8),entry_currency(impl_->db,rows.bytes(2),rows.integer(3),rows.integer(9)))});return result;
 }

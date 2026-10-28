@@ -43,6 +43,11 @@ if(SPENTIT_IMPORT_UI)
   target_link_libraries(spentit_import_model PUBLIC spentit_import_view Qt6::Core PRIVATE Qt6::Concurrent)
   spentit_compiler_options(spentit_import_model)
   qt_add_executable(spentit_import_experiment import_main.cpp)
+  set(SPENTIT_APPLICATION_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}" CACHE PATH
+      "Directory for the SpentIt application executable")
+  set_target_properties(spentit_import_experiment PROPERTIES
+      OUTPUT_NAME SpentIt
+      RUNTIME_OUTPUT_DIRECTORY "${SPENTIT_APPLICATION_OUTPUT_DIRECTORY}")
   target_link_libraries(spentit_import_experiment PRIVATE spentit_import_model spentit_import_store Qt6::Quick Qt6::QuickControls2)
   qt_add_resources(spentit_import_experiment "import_ui" PREFIX "/spentit" FILES ImportMain.qml)
   spentit_compiler_options(spentit_import_experiment)

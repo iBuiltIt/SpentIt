@@ -15,7 +15,7 @@ bool same_preview(const app::BulkPreview& a,const app::BulkPreview& b){
 }
 }
 std::optional<app::BulkReceipt> ImportStore::bulk_outcome(std::string_view operation) const {
-    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes require a new schema-8 dataset");
+    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes are not supported by this dataset");
     if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement group(impl_->db,"SELECT kind,category,undo_of,preview_sequence,catalog_revision,count FROM bulk_operations WHERE id=?");group.text(1,operation);
     if(!group.row()){Statement used(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");used.text(1,operation);if(used.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
@@ -37,7 +37,7 @@ std::optional<app::BulkReceipt> ImportStore::bulk_outcome(std::string_view opera
     return receipt;
 }
 app::BulkPreview ImportStore::preview_bulk(const app::BulkRequest& request) const {
-    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes require a new schema-8 dataset");bulk_bound(request);
+    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes are not supported by this dataset");bulk_bound(request);
     if(request.kind!=app::ChangeKind::correct && request.kind!=app::ChangeKind::remove && request.kind!=app::ChangeKind::undo)fail(SQLITE_CONSTRAINT,"Invalid bulk action");
     if((request.kind!=app::ChangeKind::correct && !request.category.empty()) || (request.kind!=app::ChangeKind::undo && !request.undo_of.empty()))fail(SQLITE_CONSTRAINT,"Invalid bulk fields");
     const auto epoch=catalog_sequence(impl_->db),sequence=financial_sequence(impl_->db);const auto before=committed_balance();

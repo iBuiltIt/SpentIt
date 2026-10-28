@@ -27,7 +27,7 @@ using BackupObserver=std::function<void(BackupPhase)>;
 class ImportStore final : public app::ImportRepository {
 public:
     static ImportStore create(const std::filesystem::path&,std::string_view password,
-                              std::string_view name,const Currency&,std::string_view today);
+                              std::string_view name,const Currency&,std::string_view today,bool overwrite=false);
     static ImportStore open(const std::filesystem::path&,std::string_view password, const app::OperationContext* = nullptr);
     ~ImportStore();
     ImportStore(ImportStore&&) noexcept;
@@ -168,6 +168,6 @@ private:
     app::Account command_account(bool money_edit) const;
     void populate(std::string_view,std::string_view,const qif::Result&,std::int64_t,const app::OperationContext*);
     app::RowView load_row(const imports::Occurrence&, bool candidates) const;
-    static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr);
+    static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr,bool overwrite=false);
 };
 } // namespace spentit::storage

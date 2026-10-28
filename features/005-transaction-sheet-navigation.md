@@ -4,6 +4,14 @@ Status: **active**
 Last updated: 2026-10-28  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
+## Application identity — accepted 2026-10-28
+
+The durable UI is SpentIt, the actual application being improved toward release. Remove prototype-only banners, synthetic setup defaults, obsolete schema-specific guidance and development-plan placeholders from its user-facing screens. Explain real limitations where they affect decisions: forgotten-password recovery is unavailable, and unsupported document formats must still be refused without modifying the file. Keep the separate synthetic development harnesses and historical verification records accurately labeled. This cleanup does not authorize reports, format migrations or distribution work.
+
+## Welcome layout and scrollbars — accepted 2026-10-28
+
+Use the minimal welcome states and creation defaults in [document setup](001-documents-storage-security.md#welcome-and-creation--accepted-2026-10-28). Center a comfortably spaced column with room above the title for future icon artwork. Keep setup scrollable on smaller windows. Currency menus, other selection menus, transaction lists and scrollable panes use draggable 16 px scrollbars with a visible track/thumb whenever content overflows; they do not fade away while idle. Ledger columns reserve space for the vertical bar.
+
 ## Accepted requirements
 
 Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). The bounded catalog and account transfer destinations are implemented. Category reports remain unimplemented.

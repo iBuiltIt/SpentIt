@@ -59,9 +59,9 @@ void load_metadata(sqlite3* db,const imports::Occurrence& id,std::int64_t revisi
 }
 bool ImportStore::categories_supported() const{return categories_format(impl_->db);}
 app::CategoryCatalog ImportStore::category_catalog() const {
-    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories require a new experimental dataset");app::CategoryCatalog result{catalog_sequence(impl_->db),{}};Statement ids(impl_->db,"SELECT id FROM category_heads ORDER BY id");while(ids.row())result.categories.push_back(category_at(impl_->db,ids.bytes(0)));return result;
+    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");app::CategoryCatalog result{catalog_sequence(impl_->db),{}};Statement ids(impl_->db,"SELECT id FROM category_heads ORDER BY id");while(ids.row())result.categories.push_back(category_at(impl_->db,ids.bytes(0)));return result;
 }
-app::CategoryDisplay ImportStore::resolve_category(std::string_view id) const {if(!categories_supported())fail(SQLITE_SCHEMA,"Categories require a new dataset");return category_display(impl_->db,id);}
+app::CategoryDisplay ImportStore::resolve_category(std::string_view id) const {if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");return category_display(impl_->db,id);}
 app::CategoryPreview ImportStore::preview_category_change(const app::CategoryRequest& request) const {
     const auto catalog=category_catalog();identifier(request.identity);std::optional<CategoryDefinition> before;
     auto found=std::find_if(catalog.categories.begin(),catalog.categories.end(),[&](const auto& definition){return definition.identity==request.identity;});
@@ -84,7 +84,7 @@ app::CategoryPreview ImportStore::preview_category_change(const app::CategoryReq
     if(catalog.revision==INT64_MAX)fail(SQLITE_FULL);return {request,catalog.revision,before,after};
 }
 std::optional<app::CategoryReceipt> ImportStore::category_change_outcome(std::string_view operation) const {
-    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories require a new dataset");if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement row(impl_->db,"SELECT action,category,name,parent,kind,catalog_before,catalog_after,before_revision,after_revision FROM category_operations WHERE id=?");row.text(1,operation);if(!row.row()){Statement existing(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");existing.text(1,operation);if(existing.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
     std::optional<CategoryDefinition> before;if(!row.null(7)){before=category_at(impl_->db,row.bytes(1),row.integer(5));if(before->revision!=row.integer(7))fail(SQLITE_CORRUPT);}if(category_at(impl_->db,row.bytes(1),row.integer(6)).revision!=row.integer(8))fail(SQLITE_CORRUPT);return app::CategoryReceipt{std::string(operation),{static_cast<app::CategoryAction>(row.integer(0)),row.bytes(1),row.bytes(2),row.bytes(3),static_cast<CategoryKind>(row.integer(4))},row.integer(5),row.integer(6),before,category_at(impl_->db,row.bytes(1),row.integer(6))};
 }
@@ -96,7 +96,7 @@ app::CategoryReceipt ImportStore::apply_category_change(std::string_view operati
     Statement event(impl_->db,"INSERT INTO category_operations VALUES(?,?,?,?,?,?,?,?,?,?)");event.text(1,operation);event.integer(2,static_cast<int>(request.action));event.text(3,request.identity);event.text(4,request.name);event.text(5,request.parent);event.integer(6,static_cast<int>(request.kind));event.integer(7,expected);event.integer(8,expected+1);if(preview.before)event.integer(9,preview.before->revision);event.integer(10,value.revision);event.done();
     Statement state(impl_->db,"UPDATE category_state SET revision=? WHERE singleton=1");state.integer(1,expected+1);state.done();impl_->finish(transaction);return *category_change_outcome(operation);
 }
-std::vector<app::CategoryReceipt> ImportStore::category_history(std::string_view id) const {if(!categories_supported())fail(SQLITE_SCHEMA,"Categories require a new dataset");std::vector<app::CategoryReceipt> result;Statement operations(impl_->db,"SELECT id FROM category_operations WHERE category=? ORDER BY catalog_after");operations.text(1,id);while(operations.row())result.push_back(*category_change_outcome(operations.bytes(0)));return result;}
+std::vector<app::CategoryReceipt> ImportStore::category_history(std::string_view id) const {if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");std::vector<app::CategoryReceipt> result;Statement operations(impl_->db,"SELECT id FROM category_operations WHERE category=? ORDER BY catalog_after");operations.text(1,id);while(operations.row())result.push_back(*category_change_outcome(operations.bytes(0)));return result;}
 imports::DraftRow ImportStore::canonical_draft(const imports::Occurrence& id,const imports::DraftRow& input,const std::optional<imports::DraftRow>& prior,std::int64_t revision,bool entry,bool check_assignment) const {
     if(!categories_supported())return input;
     auto result=input;const auto source=load_row(id,false).source;const bool rules=rules_format(impl_->db);

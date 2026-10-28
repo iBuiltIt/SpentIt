@@ -9,6 +9,7 @@
 #include <sqlite3.h>
 #include <algorithm>
 #include <climits>
+#include <cerrno>
 #include <charconv>
 #include <fcntl.h>
 #include <limits>
@@ -703,15 +704,14 @@ ImportStore::~ImportStore()=default;
 ImportStore::ImportStore(ImportStore&&) noexcept=default;
 ImportStore& ImportStore::operator=(ImportStore&&) noexcept=default;
 void ImportStore::observer(ImportObserver f) { impl_->observer=std::move(f); }
-ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_view password, bool create, const app::OperationContext* context) {
+ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_view password, bool create, const app::OperationContext* context,bool overwrite) {
     if(context) context->checkpoint("Opening dataset");
     if (password.empty() || password.size() > 1024) fail(SQLITE_MISUSE, "Password length is invalid");
     if (!create) {
         struct stat input{};
         if (::lstat(path.c_str(), &input)!=0 || !S_ISREG(input.st_mode) || input.st_nlink!=1)
-            fail(SQLITE_CANTOPEN, "Dataset is missing, inaccessible, or not a supported regular file");
+            fail(SQLITE_CANTOPEN, "Dataset file not found, inaccessible, or not a supported regular file");
     }
-    if (create) exclusive_file(path);
     auto impl = std::make_unique<Impl>();
     // Use a separate lock inode: on some macOS filesystems SQLite itself uses
     // flock on the database. Never delete the lock file or steal a live lock.
@@ -719,6 +719,28 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     auto lock_path=path; lock_path+=".lock";
     impl->lock=::open(lock_path.c_str(),O_RDWR|O_CREAT|O_NOFOLLOW,0600);
     if (impl->lock<0 || ::flock(impl->lock,LOCK_EX|LOCK_NB)!=0) fail(SQLITE_BUSY,"Document is already open or unavailable");
+    struct stat owned_lock{};
+    if(::fstat(impl->lock,&owned_lock)!=0 || !S_ISREG(owned_lock.st_mode) || owned_lock.st_nlink!=1 || owned_lock.st_uid!=::geteuid())
+        fail(SQLITE_CANTOPEN,"Document lock is not a supported regular file");
+    if(create) {
+        struct stat previous{};
+        if(overwrite && ::lstat(path.c_str(),&previous)==0) {
+            if(!S_ISREG(previous.st_mode) || previous.st_nlink!=1)fail(SQLITE_CANTOPEN,"Dataset is not a supported regular file");
+            // Explicit creation-time replacement discards the old database and its journals.
+            // Keep the document lock throughout so another SpentIt instance cannot use it.
+            for(const auto* suffix:{"-journal","-wal","-shm"}) {
+                const auto sidecar=path.string()+suffix;
+                if(::unlink(sidecar.c_str())!=0 && errno!=ENOENT)fail(SQLITE_IOERR_DELETE,"Cannot remove the old dataset journal");
+            }
+            const int fd=::open(path.c_str(),O_WRONLY|O_NOFOLLOW);
+            if(fd<0)fail(SQLITE_CANTOPEN,"Cannot overwrite dataset");
+            struct stat opened{};
+            const bool same=::fstat(fd,&opened)==0 && opened.st_dev==previous.st_dev && opened.st_ino==previous.st_ino && opened.st_nlink==1;
+            if(!same || ::fchmod(fd,0600)!=0 || ::ftruncate(fd,0)!=0) {::close(fd);fail(SQLITE_IOERR,"Cannot overwrite dataset");}
+            const int synced=::fsync(fd);const int closed=::close(fd);
+            if(synced!=0 || closed!=0)fail(SQLITE_IOERR,"Dataset replacement could not be completed");
+        } else exclusive_file(path);
+    }
     struct stat st{}, lock_st{};
     if (::stat(path.c_str(),&st)!=0 || !S_ISREG(st.st_mode) || st.st_nlink!=1 ||
         ::fstat(impl->lock,&lock_st)!=0 || !S_ISREG(lock_st.st_mode) || lock_st.st_nlink!=1 || lock_st.st_uid!=::geteuid())
@@ -753,7 +775,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
         constexpr const char* expected_format="21";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
-            fail(SQLITE_SCHEMA,"Unsupported experimental format; no migration was attempted");
+            fail(SQLITE_SCHEMA,"This dataset format is not supported by this version of SpentIt; the file has not been changed");
         if(scalar(db,"SELECT count(*) FROM pragma_table_info('batches') WHERE name='account_id'")!="1" ||
            scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='account_creations'")!="1")
             fail(SQLITE_SCHEMA,"Account structure does not match format version");
@@ -797,11 +819,11 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     if (!create) {store.impl_->selected_account=smallest_active_account(store.impl_->db);store.verify(context);}
     return store;
 }
-ImportStore ImportStore::create(const std::filesystem::path& path,std::string_view password,std::string_view name,const Currency& currency,std::string_view today) {
+ImportStore ImportStore::create(const std::filesystem::path& path,std::string_view password,std::string_view name,const Currency& currency,std::string_view today,bool overwrite) {
     safe_text(name); if(name.empty()) fail(SQLITE_MISUSE,"Account name is required"); iso_date(today);
     // New accounts must use current selection; persisted definitions remain readable.
     if (Currency(currency.code())!=currency) fail(SQLITE_MISUSE,"Currency cannot be selected for a new account");
-    auto store=connect(path,password,true);
+    auto store=connect(path,password,true,nullptr,overwrite);
     Atomic a(store.impl_->db);
     Statement s(store.impl_->db,"INSERT INTO account VALUES(1,?,?,?,0,0,0,0)"); s.text(1,name); s.text(2,currency.definition_id()); s.text(3,today); s.done();
     Statement receipt(store.impl_->db,"INSERT INTO account_creations VALUES(1,?,?,?)");
@@ -1032,7 +1054,7 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
     }
 }
 app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app::OperationContext& context) {
-    if(!schema3_batch(impl_->db)) fail(SQLITE_SCHEMA,"Resuming evidence requires a new experimental dataset");
+    if(!schema3_batch(impl_->db)) fail(SQLITE_SCHEMA,"Resuming import review is not supported by this dataset");
     require_account(id);require_writable_account(impl_->db,account_for_batch(id).identity);
     Statement grouped(impl_->db,"SELECT 1 FROM import_group_accounts WHERE batch=?");grouped.text(1,id);if(grouped.row())fail(SQLITE_CONSTRAINT,"Resume all source accounts together");
     if(expected<0)fail(SQLITE_CONSTRAINT,"Invalid import revision");
@@ -1124,7 +1146,7 @@ void ImportStore::save(const imports::Occurrence& id,std::int64_t expected,const
     if(expected==INT64_MAX) fail(SQLITE_FULL);
     if(!old.draft) {
         if(scalar(impl_->db,"PRAGMA user_version")=="1" || !old.source.repairable)
-            fail(SQLITE_CONSTRAINT,"Record repair requires a new experimental dataset");
+            fail(SQLITE_CONSTRAINT,"Record repair is not supported by this dataset");
         const auto bytes=evidence(id.batch);
         Statement sequence(impl_->db,"SELECT coalesce(max(sequence),0) FROM records");
         if(!sequence.row() || sequence.integer(0)==INT64_MAX) fail(SQLITE_FULL);

@@ -11,6 +11,8 @@
 int main(int argc,char** argv) {
     QGuiApplication app(argc,argv);
     app.setOrganizationName("SpentIt");app.setApplicationName("Durable import experiment");
+    // Keep the existing settings identity so the remembered document survives.
+    app.setApplicationDisplayName("SpentIt");
     app.setFont(QFont("Helvetica Neue",13));
     QQuickStyle::setStyle("Basic");
     std::unique_ptr<QTemporaryDir> smokeSettings;
@@ -20,6 +22,7 @@ int main(int argc,char** argv) {
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,smokeSettings->path());
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,smokeSettings->path());
+        QSettings().setValue("datasetPath",smokeSettings->path()+"/missing.spentit");
     }
     ImportModel model(spentit::storage::document_gateway());
     QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);

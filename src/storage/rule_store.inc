@@ -1,7 +1,7 @@
 #ifdef SPENTIT_RULES_STORAGE
 namespace {
 constexpr const char* refresh_rules="Rules, categories, or the import changed; refresh before applying";
-constexpr const char* rules_dataset="Rules require a new experimental dataset";
+constexpr const char* rules_dataset="Rules are not enabled for this dataset";
 constexpr const char* other_command="Operation identity belongs to another command";
 constexpr const char* reused_command="Operation identity was reused with different content";
 constexpr const char* rules_drift="Rule result changed money, dates, allocations, or the decision";
@@ -135,14 +135,14 @@ void bind_request(Statement& row,const app::RuleDefinitionImage& image,int first
 bool ImportStore::rules_supported() const { return rules_format(impl_->db); }
 
 #ifndef SPENTIT_RULES_STORAGE
-app::RuleImage ImportStore::rule_image() const { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-std::vector<app::RuleTombstone> ImportStore::rule_tombstones() const { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-app::RuleSaveReceipt ImportStore::save_rules(std::string_view,const app::RuleSaveRequest&,std::int64_t,const app::OperationContext&) { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-std::optional<app::RuleSaveReceipt> ImportStore::rule_save_outcome(std::string_view) const { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreviewRequest&,const app::OperationContext&) const { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view,const app::RuleApplyRequest&,const app::OperationContext&) { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string_view) const { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence&,const app::OperationContext&) const { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
+app::RuleImage ImportStore::rule_image() const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+std::vector<app::RuleTombstone> ImportStore::rule_tombstones() const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+app::RuleSaveReceipt ImportStore::save_rules(std::string_view,const app::RuleSaveRequest&,std::int64_t,const app::OperationContext&) { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+std::optional<app::RuleSaveReceipt> ImportStore::rule_save_outcome(std::string_view) const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreviewRequest&,const app::OperationContext&) const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view,const app::RuleApplyRequest&,const app::OperationContext&) { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string_view) const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence&,const app::OperationContext&) const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
 void ImportStore::verify_rules(const app::OperationContext*) const {}
 #else
 app::RuleImage ImportStore::rule_image() const {

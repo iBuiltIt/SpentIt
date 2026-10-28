@@ -121,7 +121,7 @@ public:
     virtual std::int64_t next_account_identity() const { std::int64_t last=0;for(const auto& a:accounts())if(a.identity>last)last=a.identity;if(last==INT64_MAX)throw std::overflow_error("Account identities exhausted");return last+1; }
     virtual void select_account(std::int64_t id) { if(id!=account().identity) throw std::logic_error("Unknown account"); }
     virtual Account create_account(std::int64_t, std::string_view, const Currency&, std::string_view) {
-        throw std::logic_error("Multiple accounts require a new dataset");
+        throw std::logic_error("Multiple accounts are not supported by this dataset");
     }
     virtual std::optional<AccountCreation> account_creation_outcome(std::int64_t) const {
         throw std::logic_error("Account creation outcome is unavailable");
@@ -131,14 +131,14 @@ public:
     virtual bool account_selected() const { return true; }
     virtual void release_account_selection() { throw std::logic_error("Account selection is unavailable"); }
     virtual std::vector<Account> archived_accounts() const { return {}; }
-    virtual AccountCommandReceipt rename_account(std::string_view,std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
-    virtual AccountCommandReceipt archive_account(std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
-    virtual AccountCommandReceipt reactivate_account(std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
-    virtual AccountCommandReceipt delete_account(std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
-    virtual AccountCommandReceipt correct_opening(std::string_view,std::string_view,const Money&) { throw std::logic_error("Account commands require a new dataset"); }
-    virtual AccountCommandReceipt reassign_currency(std::string_view,const Currency&) { throw std::logic_error("Account commands require a new dataset"); }
-    virtual AccountCommandReceipt undo_account_operation(std::string_view,std::string_view) { throw std::logic_error("Account commands require a new dataset"); }
-    virtual std::optional<AccountCommandReceipt> account_command_outcome(std::string_view) const { throw std::logic_error("Account commands require a new dataset"); }
+    virtual AccountCommandReceipt rename_account(std::string_view,std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
+    virtual AccountCommandReceipt archive_account(std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
+    virtual AccountCommandReceipt reactivate_account(std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
+    virtual AccountCommandReceipt delete_account(std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
+    virtual AccountCommandReceipt correct_opening(std::string_view,std::string_view,const Money&) { throw std::logic_error("Account changes are not supported by this dataset"); }
+    virtual AccountCommandReceipt reassign_currency(std::string_view,const Currency&) { throw std::logic_error("Account changes are not supported by this dataset"); }
+    virtual AccountCommandReceipt undo_account_operation(std::string_view,std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
+    virtual std::optional<AccountCommandReceipt> account_command_outcome(std::string_view) const { throw std::logic_error("Account changes are not supported by this dataset"); }
     virtual std::optional<std::string> undoable_account_operation() const { return {}; }
     virtual bool account_currency_warning() const { return false; }
     virtual std::vector<BatchInfo> batches() const = 0;
@@ -198,12 +198,12 @@ public:
     virtual std::optional<Receipt> durable_outcome(std::string_view operation) const { return outcome(operation); }
     virtual std::vector<LedgerRow> ledger(bool projected) const = 0;
     virtual bool categories_supported() const { return false; }
-    virtual CategoryCatalog category_catalog() const { throw std::logic_error("Categories require a new dataset"); }
-    virtual CategoryPreview preview_category_change(const CategoryRequest&) const { throw std::logic_error("Categories require a new dataset"); }
-    virtual CategoryReceipt apply_category_change(std::string_view,const CategoryRequest&,std::int64_t) { throw std::logic_error("Categories require a new dataset"); }
-    virtual std::optional<CategoryReceipt> category_change_outcome(std::string_view) const { throw std::logic_error("Categories require a new dataset"); }
-    virtual std::vector<CategoryReceipt> category_history(std::string_view) const { throw std::logic_error("Categories require a new dataset"); }
-    virtual CategoryDisplay resolve_category(std::string_view) const { throw std::logic_error("Categories require a new dataset"); }
+    virtual CategoryCatalog category_catalog() const { throw std::logic_error("Categories are not supported by this dataset"); }
+    virtual CategoryPreview preview_category_change(const CategoryRequest&) const { throw std::logic_error("Categories are not supported by this dataset"); }
+    virtual CategoryReceipt apply_category_change(std::string_view,const CategoryRequest&,std::int64_t) { throw std::logic_error("Categories are not supported by this dataset"); }
+    virtual std::optional<CategoryReceipt> category_change_outcome(std::string_view) const { throw std::logic_error("Categories are not supported by this dataset"); }
+    virtual std::vector<CategoryReceipt> category_history(std::string_view) const { throw std::logic_error("Categories are not supported by this dataset"); }
+    virtual CategoryDisplay resolve_category(std::string_view) const { throw std::logic_error("Categories are not supported by this dataset"); }
     virtual bool committed_changes_supported() const { return false; }
     virtual CommittedEntry committed_entry(const imports::Occurrence&) const { throw std::logic_error("Committed changes require a new dataset"); }
     virtual std::vector<CommittedHistoryItem> committed_history(const imports::Occurrence&) const { throw std::logic_error("Committed history is unavailable"); }
@@ -216,26 +216,26 @@ public:
     virtual Money committed_balance() const = 0;
     virtual bool bulk_supported() const { return false; }
     virtual std::string bulk_group(std::string_view) const { return {}; }
-    virtual BulkPreview preview_bulk(const BulkRequest&) const { throw std::logic_error("Bulk changes require a new schema-7 dataset"); }
-    virtual BulkReceipt apply_bulk(std::string_view,const BulkPreview&) { throw std::logic_error("Bulk changes require a new schema-7 dataset"); }
-    virtual std::optional<BulkReceipt> bulk_outcome(std::string_view) const { throw std::logic_error("Bulk changes require a new schema-7 dataset"); }
+    virtual BulkPreview preview_bulk(const BulkRequest&) const { throw std::logic_error("Bulk changes are not supported by this dataset"); }
+    virtual BulkReceipt apply_bulk(std::string_view,const BulkPreview&) { throw std::logic_error("Bulk changes are not supported by this dataset"); }
+    virtual std::optional<BulkReceipt> bulk_outcome(std::string_view) const { throw std::logic_error("Bulk changes are not supported by this dataset"); }
     // No authoritative projection exists while the pending batch is blocked/unresolved.
     virtual std::optional<Money> projected_balance() const = 0;
     // Same formulas as the selected-account methods, for every live account.
     // Empty when a test double has not forwarded the read.
     virtual std::vector<AccountBalance> account_balances() const { return {}; }
     virtual bool rules_supported() const { return false; }
-    virtual RuleImage rule_image() const { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual std::vector<RuleTombstone> rule_tombstones() const { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual RuleSaveReceipt save_rules(std::string_view,const RuleSaveRequest&,std::int64_t,const OperationContext&) { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual std::optional<RuleSaveReceipt> rule_save_outcome(std::string_view) const { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual RulePreviewResult preview_pending_rules(const RulePreviewRequest&,const OperationContext&) const { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual RuleApplyReceipt apply_pending_rules(std::string_view,const RuleApplyRequest&,const OperationContext&) { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual std::optional<RuleApplyReceipt> rule_apply_outcome(std::string_view) const { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual RuleMatch match_saved_rules(const imports::Occurrence&,const OperationContext&) const { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual RuleReapplyPreview preview_rule_reapply(bool,std::string_view,const OperationContext&) const { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual RuleReapplyReceipt apply_rule_reapply(std::string_view,const RuleReapplyRequest&,const OperationContext&) { throw std::logic_error("Rules require a new experimental dataset"); }
-    virtual std::optional<RuleReapplyReceipt> rule_reapply_outcome(std::string_view) const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual RuleImage rule_image() const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual std::vector<RuleTombstone> rule_tombstones() const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual RuleSaveReceipt save_rules(std::string_view,const RuleSaveRequest&,std::int64_t,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual std::optional<RuleSaveReceipt> rule_save_outcome(std::string_view) const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual RulePreviewResult preview_pending_rules(const RulePreviewRequest&,const OperationContext&) const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual RuleApplyReceipt apply_pending_rules(std::string_view,const RuleApplyRequest&,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual std::optional<RuleApplyReceipt> rule_apply_outcome(std::string_view) const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual RuleMatch match_saved_rules(const imports::Occurrence&,const OperationContext&) const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual RuleReapplyPreview preview_rule_reapply(bool,std::string_view,const OperationContext&) const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual RuleReapplyReceipt apply_rule_reapply(std::string_view,const RuleReapplyRequest&,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual std::optional<RuleReapplyReceipt> rule_reapply_outcome(std::string_view) const { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual std::string rule_reapply_group(std::string_view) const { return {}; }
 };
 } // namespace spentit::app

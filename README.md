@@ -2,7 +2,9 @@
 
 A local, single-user desktop application in development for understanding spending through reliable imports, reviewable categorization, and explainable reports.
 
-Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCipher storage/recovery prototype, an optional synthetic Qt Quick transaction-sheet prototype, and a partial durable import workflow with setup/review UI, multiple account workspaces, QIF and OFX-family bank and credit-card statements, explicit transfer-destination resolution, allocation-level Merge and unlink, categories, rules, combined search, multiselection, atomic committed bulk changes with group Undo, and historied account commands. **There is no production financial-document application yet.** Experiments use synthetic inputs. The standalone sheet is session-only; the durable import UI persists drafts, committed changes, and history. Experimental formats need no migration or compatibility support until the owner explicitly announces a release.
+SpentIt is the application being developed and used: it persists documents, imports, drafts, committed changes, and history. It supports multiple accounts, QIF and OFX-family statements, transfers, categories, rules, search, bulk editing, and Undo. Current work improves its usability piecemeal. Reports, expanded document lifecycle/recovery, and distribution are deferred.
+
+This is an unreleased application. Format compatibility remains governed by the pre-release policy; verification limits and unfinished features are recorded in [project status](doc/status.md). The separate synthetic sheet and storage prototypes are development harnesses, not the application to launch.
 
 ## Start here
 
@@ -14,9 +16,21 @@ Currently implemented: an exact-money C++20 engine, an optional synthetic SQLCip
 - [Account-scoped workflow and current experimental formats](doc/accounts.md)
 - [QIF transfer destinations and explicit resolution](doc/qif-transfers.md)
 - [Search and bulk ledger contract](doc/search-ledger.md)
-- [Current handoff](doc/roadmap.md#point-8-completion-handoff--2026-10-27)
+- [Current handoff](doc/roadmap.md#application-usability-handoff--2026-10-28)
 - [Feature requirements and open decisions](features/README.md)
 - [Contributor instructions](AGENTS.md) and [dependency boundaries](doc/project-layout.md)
+
+## Run the application
+
+For the existing rules-enabled Release build:
+
+```sh
+cmake -S . -B build/import-ui-rules-release -DSPENTIT_APPLICATION_OUTPUT_DIRECTORY="$PWD/build"
+cmake --build build/import-ui-rules-release --target spentit_import_experiment -j 2
+./build/SpentIt
+```
+
+The output location is saved in that build's CMake cache; subsequent rebuilds update `./build/SpentIt`. For dependency setup on a fresh checkout, see [building](doc/building.md) and [the UI setup](doc/import-ui.md). Other build trees default to producing `SpentIt` inside their own build directory.
 
 ## Engine quick start
 

@@ -2,9 +2,21 @@
 
 Last updated: 2026-10-28
 
-The owner authorized coordinated implementation with delegated agents, continuing through routine implementation and verification without asking for approval at every step. Ask for concrete missing information or material financial/security decisions when dependent work reaches them. Routine editor layout choices can be implemented and revised after owner review. This authorization does not select a license, authorize publication, or settle unresolved financial semantics.
+The earlier eight-point sequence used coordinated implementation with delegated agents. That sequence is complete; the current direction below governs new work. Ask for concrete missing information or material financial/security decisions when dependent work reaches them. Routine editor layout choices can be implemented and revised after owner review. This authorization does not select a license, authorize publication, or settle unresolved financial semantics.
 
 This is sequencing guidance, not a claim that the listed work exists. [Project status](status.md) records implementation evidence; [feature documents](../features/README.md) own requirements and unresolved decisions.
+
+## Current direction — 2026-10-28
+
+The owner is using the application and wants to improve it piecemeal, beginning with a stable `./build/SpentIt` launch path. Reports, expanded document lifecycle/recovery, and distribution work are explicitly deferred. This supersedes the earlier statement that reports are next; the eight-point handoffs below remain historical evidence. Each subsequent usability change is discussed first and implemented only after the owner explicitly says Go. The owner gave Go for the welcome screen, creation defaults/overwrite, and usable scrollbars on 2026-10-28; icon artwork remains future work.
+
+## Application usability handoff — 2026-10-28
+
+The owner reviewed the welcome-screen result positively and requested documentation and commit. This checkpoint includes the stable `./build/SpentIt` executable, removal of prototype wording from the application, the welcome/password/create flow, explicit creation-time overwrite, and draggable scrollbars. The executable's internal CMake target and Settings identity are retained; remembered document paths are preserved. Rebuild and launch instructions are in the [README](../README.md#run-the-application).
+
+Read [document setup decisions](../features/001-documents-storage-security.md#welcome-and-creation--accepted-2026-10-28), [layout and scrollbar requirements](../features/005-transaction-sheet-navigation.md#welcome-layout-and-scrollbars--accepted-2026-10-28), and [verification evidence](status.md#welcome-creation-and-usable-scrollbars--2026-10-28). Final selected Release verification passed 8/8; focused ASan/UBSan replacement and UI checks passed after increasing the single document worker's stack to 4 MiB. Native macOS startup passed. Linux/Windows and a complete regression/fault sweep remain unverified for this checkpoint. No personal financial data or generated build output belongs in the commit.
+
+Creation-time Overwrite deliberately discards the previous dataset under its exclusive lock, as explicitly requested; it does not promise recovery of that discarded file after failure. Backup/restore semantics are unchanged. Future icon artwork is not created; space is reserved above the title. Reports, broader lifecycle/recovery, distribution and licensing remain deferred. Discuss the next requested change and wait for an explicit Go before implementation.
 
 ## Current authorization and delivery checkpoints — 2026-10-26
 

@@ -460,6 +460,34 @@ void validation(){
     alter("DROP TRIGGER allocation_immutable; UPDATE allocations SET units=units+1 WHERE batch='first' AND ordinal=0 AND position=0");
     fails([&]{ImportStore::open(d.path/"doc",password);});
 }
+void replacement(){
+    Directory d;const auto path=d.path/"replace.spentit";prepare(path);const auto original=bytes(path);
+    auto replace=[&]{return ImportStore::create(path,password,"Replacement",cad,"2026-10-28",true);};
+    fails([&]{create(path);});check(bytes(path)==original);
+    {auto held=ImportStore::open(path,password);fails([&]{replace();});check(bytes(path)==original);}
+    fails([&]{ImportStore::create(path,password,"",cad,"2026-10-28",true);});check(bytes(path)==original);
+    const auto alias=d.path/"alias";fs::create_symlink(path,alias);
+    fails([&]{ImportStore::create(alias,password,"Replacement",cad,"2026-10-28",true);});check(bytes(path)==original);
+    {auto s=replace();check(s.batches().empty() && s.account().name=="Replacement");s.verify();}
+    {auto s=ImportStore::open(path,password);check(s.batches().empty());s.verify();}
+    fault_vfs::install();fault_vfs::arm(100000);{auto s=replace();}const int count=fault_vfs::seen;fault_vfs::disarm();check(count>0);
+    for(int error:{SQLITE_FULL,SQLITE_IOERR_WRITE})for(int position:{1,std::max(1,count/2),count}) {
+        fault_vfs::arm(position,error);bool failed=false;try{auto s=replace();}catch(const ImportError&){failed=true;}
+        const bool fired=fault_vfs::fired;fault_vfs::disarm();check(fired && failed);
+        // Overwrite is destructive by owner choice. Failure must be reported;
+        // an explicit retry must replace any incomplete database and journals.
+        {auto s=replace();s.verify();check(s.batches().empty());}
+        {auto s=ImportStore::open(path,password);s.verify();}
+    }
+    for(bool after:{false,true}) {
+        const auto child=fork();check(child>=0);
+        if(child==0){if(!after)fault_vfs::arm(1,SQLITE_IOERR_WRITE,true,true);{auto s=replace();}_exit(72);}
+        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==(after?72:71));
+        if(after){auto s=ImportStore::open(path,password);s.verify();check(s.batches().empty());}
+        else {auto s=replace();s.verify();}
+    }
+    no_leaks(d.path);
+}
 void benchmark(std::size_t n){
     Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-08-01",Money(0,cad));std::string input;
     for(std::size_t i=0;i<n;++i) input+="D1/1/2026\nT0.01\nN"+std::to_string(i)+"\nPSynthetic\n^\n";
@@ -473,7 +501,7 @@ void benchmark(std::size_t n){
 }
 int main(int argc,char** argv){try{
     const std::string mode=argc>1?argv[1]:"";
-    if(mode=="amount_candidate_limit")amount_candidate_limit();else if(mode=="amount_repairs")amount_repairs();else if(mode=="basics")basics();else if(mode=="cancellation")cancellation();else if(mode=="review")review();else if(mode=="repairs")repairs();else if(mode=="errors")errors();else if(mode=="backup")backup();
+    if(mode=="replacement")replacement();else if(mode=="amount_candidate_limit")amount_candidate_limit();else if(mode=="amount_repairs")amount_repairs();else if(mode=="basics")basics();else if(mode=="cancellation")cancellation();else if(mode=="review")review();else if(mode=="repairs")repairs();else if(mode=="errors")errors();else if(mode=="backup")backup();
     else if(mode=="io")io(false);else if(mode=="crashes")io(true);else if(mode=="backup_failures")backup_failures();else if(mode=="backup_crashes")backup_failures(true);else if(mode=="backup_publication")backup_publication();else if(mode=="backup_cancellation")backup_cancellation();else if(mode=="validation")validation();else if(mode=="opening")opening_policy();else if(mode=="benchmark")benchmark(argc>2?std::stoul(argv[2]):100000);else return 2;
     std::cout<<"Import "<<mode<<" passed\n";
 }catch(const ImportError& e){std::cerr<<"Storage code "<<e.code()<<": "<<e.what()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

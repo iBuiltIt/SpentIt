@@ -1,12 +1,14 @@
-# Durable QIF UI experiment
+# SpentIt application UI
 
 Last updated: 2026-10-28
 
-The optional `spentit_import_experiment` executable connects setup/unlocking and a writable Qt Quick review screen to the existing durable import commands. It is for synthetic inputs. Feature 009 remains **active**; this is not a production financial application or completion of the full sheet design.
+The `SpentIt` executable (internal CMake target `spentit_import_experiment`) is the application used for document setup, imports, account management, transaction editing, categories and rules. Feature 009 remains **active** because its wider scope is incomplete. The historical verification sections below use synthetic fixtures; that describes the tests, not a restriction on application use.
 
 Current follow-up: [account creation and guarded switching](accounts.md) now provide independent account workspaces. [Combined search, stable multiselection and atomic committed bulk actions](search-ledger.md) now run on the import worker, alongside categories and the rules sheet. Enable `SPENTIT_RULES=ON` for current schema-12 creation and bulk actions; [current build and verification instructions](building.md#search-and-bulk-follow-up--2026-10-26) include the pinned PCRE2 dependency, also required for rules-off search. No pre-release migration/upgrade work is required. Historical test counts and walkthroughs below describe earlier checkpoints; [status](status.md) records current verification and native-window limits.
 
 ## Build and run
+
+The normal local Release launch path is now `./build/SpentIt`; see [the application launch instructions](../README.md#run-the-application). `SPENTIT_APPLICATION_OUTPUT_DIRECTORY` selects its output directory. The default is the individual CMake build directory, keeping Debug and sanitizer builds separate.
 
 Prepare the pinned dependency as described in [storage setup](storage-prototype.md), then configure:
 
@@ -19,14 +21,20 @@ cmake -S . -B build/import-ui-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DSPENTIT_SQLCIPHER_SOURCE="$PWD/build/dependencies/sqlcipher-build"
 cmake --build build/import-ui-debug
 ctest --test-dir build/import-ui-debug --output-on-failure -j 3
-build/import-ui-debug/src/ui/spentit_import_experiment
+build/import-ui-debug/SpentIt
 ```
 
 The Qt/OpenSSL prefixes above are macOS Homebrew examples; use the installed dependency locations on your machine. The synthetic sheet executable remains separate. The import UI requires Qt 6.8 or newer; this implementation was exercised with Qt 6.12.0. No Qt dependency was added to the engine or storage contracts.
 
+## Welcome and new datasets
+
+The welcome page now follows [the accepted flow](../features/001-documents-storage-security.md#welcome-and-creation--accepted-2026-10-28). It probes the selected path on the serial worker without activating the ledger or saving that path. Public-key verification enables Open Dataset; an authentication failure offers a password without showing an error until an unlock is attempted. Missing paths and known format/integrity errors are shown below the controls. A successful explicit open still saves the startup path.
+
+New Dataset defaults to Documents/`spentit.spentit`, account SpentIt, CAD and password protection on. Creation normalizes the suffix and asks Cancel/Overwrite for an existing destination. Confirmed overwrite is deliberately destructive at creation time, under the document lock; failure can leave an incomplete new file, which another explicit overwrite can replace. This differs from the unchanged backup/restore operation, which still publishes only to a new destination. Menus and scrollable panes now have persistent draggable scrollbars when needed.
+
 ## Owner walkthrough
 
-1. Choose **New dataset**, a new file outside the checkout, an account name and CAD. The suggested location is the platform Documents folder under `SpentIt`. Password protection starts checked and requires matching entries. Unchecking it displays the explicit confidentiality waiver. Existing files are never overwritten by creation.
+1. Choose **New dataset**, a new file outside the checkout, an account name and CAD. The suggested location is `spentit.spentit` in the platform Documents folder. Password protection starts checked and requires matching entries. Unchecking it displays the explicit confidentiality waiver. Existing files are replaced only after the creation-time Overwrite confirmation.
 2. Set Opening Balance to `100.00`, date `2026-08-01`, and confirm it. Choose **DMY** and import the [authored synthetic fixture](../tests/fixtures/qif/durable-review-synthetic.qif).
 3. Committed balance should remain `100.00`, with projected balance `120.69`. The first source date is 10 August. Inspect record 1, including the original `-29.31` and its two allocations.
 4. Change the total to `-30.00` and the second allocation to `-29.86`. Save draft. The projection becomes `120.00`; original evidence remains unchanged. Trying only the total change fails the exact split-sum validation.

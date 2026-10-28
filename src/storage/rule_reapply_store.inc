@@ -1,8 +1,8 @@
 #ifndef SPENTIT_RULES_STORAGE
 std::string ImportStore::rule_reapply_group(std::string_view) const { return {}; }
-app::RuleReapplyPreview ImportStore::preview_rule_reapply(bool,std::string_view,const app::OperationContext&) const { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-app::RuleReapplyReceipt ImportStore::apply_rule_reapply(std::string_view,const app::RuleReapplyRequest&,const app::OperationContext&) { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
-std::optional<app::RuleReapplyReceipt> ImportStore::rule_reapply_outcome(std::string_view) const { fail(SQLITE_SCHEMA,"Rules require a new experimental dataset"); }
+app::RuleReapplyPreview ImportStore::preview_rule_reapply(bool,std::string_view,const app::OperationContext&) const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+app::RuleReapplyReceipt ImportStore::apply_rule_reapply(std::string_view,const app::RuleReapplyRequest&,const app::OperationContext&) { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
+std::optional<app::RuleReapplyReceipt> ImportStore::rule_reapply_outcome(std::string_view) const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
 void ImportStore::verify_rule_reapply(const app::OperationContext*) const {}
 #else
 namespace {

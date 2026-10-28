@@ -401,7 +401,58 @@ private slots:
         QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("ImportUi");
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
-    void init() {QSettings().clear();QTest::failOnWarning(QRegularExpression(".*DelegateModel::cancel.*"));}
+    void init() {QSettings().clear();QSettings().setValue("datasetPath",settings.path()+"/missing.spentit");QTest::failOnWarning(QRegularExpression(".*DelegateModel::cancel.*"));}
+    void welcomeFlow() {
+        QTemporaryDir dir;const auto missing=dir.path()+"/missing.spentit";
+        QSettings().setValue("datasetPath",missing);
+        ImportModel m(storage::document_gateway());
+        QCOMPARE(QFileInfo(m.suggestedPath()).fileName(),QString("spentit.spentit"));
+        QCOMPARE(m.datasetFilename("Stefan.0001"),QString("Stefan.0001.spentit"));
+        QCOMPARE(m.datasetFilename("Stefan.SPENTIT"),QString("Stefan.SPENTIT"));
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        QTRY_VERIFY(m.error().contains("not found"));QVERIFY(!m.state().value("active").toBool());
+        auto find=[&](const char* name){return root->findChild<QObject*>(name);};
+        auto click=[&](const char* name){return QMetaObject::invokeMethod(find(name),"clicked");};
+        QVERIFY(!find("openPublicDataset")->property("visible").toBool());
+        QVERIFY(!find("openProtectedDataset")->property("visible").toBool());
+        if(qEnvironmentVariableIsSet("SPENTIT_WELCOME_SCREENSHOT")){QTest::qWait(100);QVERIFY(qobject_cast<QQuickWindow*>(root)->grabWindow().save(qEnvironmentVariable("SPENTIT_WELCOME_SCREENSHOT")));}
+        QVERIFY(click("newDataset"));QTRY_VERIFY(!m.busy());
+        QCOMPARE(find("initialAccountName")->property("text").toString(),QString("SpentIt"));
+        QCOMPARE(find("setupCurrency")->property("currentText").toString(),QString("CAD"));
+        QVERIFY(find("passwordProtection")->property("checked").toBool());
+        auto* popup=find("setupCurrency")->property("popup").value<QObject*>();QVERIFY(popup);QVERIFY(QMetaObject::invokeMethod(popup,"open"));
+        auto* bar=popup->findChild<QQuickItem*>("comboScrollBar");QVERIFY(bar);QTRY_VERIFY(bar->isVisible() && bar->height()>30);
+        QVERIFY(bar->property("interactive").toBool());QVERIFY(bar->width()>=16);
+        const auto oldPosition=bar->property("position").toDouble();
+        const auto thumb=bar->property("visualPosition").toDouble()+bar->property("visualSize").toDouble()/2;
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,bar->mapToScene(QPointF(bar->width()/2,bar->height()*thumb)).toPoint());
+        QTest::mouseMove(window,bar->mapToScene(QPointF(bar->width()/2,bar->height()*0.8)).toPoint(),30);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,bar->mapToScene(QPointF(bar->width()/2,bar->height()*0.8)).toPoint());
+        QTRY_VERIFY(bar->property("position").toDouble()!=oldPosition);
+        if(qEnvironmentVariableIsSet("SPENTIT_SETUP_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_SETUP_SCREENSHOT")));}
+        QVERIFY(QMetaObject::invokeMethod(popup,"close"));
+        const auto path=dir.path()+"/created.spentit";find("datasetPath")->setProperty("text",path);
+        QVERIFY(click("createDataset"));QTRY_VERIFY(!m.busy());QVERIFY(m.error().contains("Enter a password"));QVERIFY(!QFile::exists(path));
+        find("newDatasetPassword")->setProperty("text","synthetic-password");find("confirmDatasetPassword")->setProperty("text","synthetic-password");
+        QVERIFY(click("createDataset"));QTRY_VERIFY(!m.busy());QVERIFY2(m.state().value("active").toBool(),qPrintable(m.error()));
+        run(m,"close");QTRY_VERIFY(m.state().value("unlockRequired").toBool());
+        QVERIFY(m.error().isEmpty());QVERIFY(find("openProtectedDataset")->property("visible").toBool());
+        find("unlockPassword")->setProperty("text","wrong");QVERIFY(QMetaObject::invokeMethod(find("unlockPassword"),"accepted"));QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QVERIFY(!m.state().value("active").toBool());
+        find("unlockPassword")->setProperty("text","synthetic-password");QVERIFY(QMetaObject::invokeMethod(find("unlockPassword"),"accepted"));QTRY_VERIFY(!m.busy());QVERIFY(m.state().value("active").toBool());
+        run(m,"close");QTRY_VERIFY(m.state().value("unlockRequired").toBool());
+        QVERIFY(click("newDataset"));QTRY_VERIFY(!m.busy());find("datasetPath")->setProperty("text",path);find("passwordProtection")->setProperty("checked",false);
+        QFile file(path);QVERIFY(file.open(QIODevice::ReadOnly));const auto before=file.readAll();file.close();
+        QVERIFY(click("createDataset"));QTRY_VERIFY(!m.busy());QVERIFY(m.state().value("overwriteRequired").toBool());
+        QVERIFY(file.open(QIODevice::ReadOnly));QCOMPARE(file.readAll(),before);file.close();
+        QVERIFY(QMetaObject::invokeMethod(find("overwriteDatasetDialog"),"reject"));
+        QVERIFY(file.open(QIODevice::ReadOnly));QCOMPARE(file.readAll(),before);file.close();
+        QVERIFY(click("createDataset"));QTRY_VERIFY(!m.busy());QVERIFY(click("confirmOverwriteDataset"));QTRY_VERIFY(!m.busy());
+        QVERIFY2(m.state().value("active").toBool(),qPrintable(m.error()));QCOMPARE(m.state().value("name").toString(),QString("SpentIt"));
+        run(m,"close");QTRY_VERIFY(m.state().value("canOpen").toBool());QVERIFY(!m.state().value("unlockRequired").toBool());
+        QVERIFY(!m.state().value("active").toBool());QVERIFY(click("openPublicDataset"));QTRY_VERIFY(!m.busy());QVERIFY(m.state().value("active").toBool());
+    }
     void cancellationBoundaries() {
         QTemporaryDir dir; const auto path=dir.path()+"/doc";
         ImportModel m(storage::document_gateway());create(m,path);run(m,"close");
@@ -663,7 +714,7 @@ private slots:
         QCOMPARE(sqlite3_step(query),SQLITE_ROW);QCOMPARE(sqlite3_column_int64(query,0),123);sqlite3_finalize(query);
         QCOMPARE(sqlite3_exec(raw,"PRAGMA user_version=99",nullptr,nullptr,nullptr),SQLITE_OK);QCOMPARE(sqlite3_close(raw),SQLITE_OK);
         ImportModel unsupported(storage::document_gateway());run(unsupported,"open",{{"path",dir.path()+"/portable"}},false);
-        QVERIFY(!unsupported.state().value("unlockRequired").toBool());QVERIFY(unsupported.error().contains("Unsupported experimental format"));
+        QVERIFY(!unsupported.state().value("unlockRequired").toBool());QVERIFY(unsupported.error().contains("This dataset format is not supported"));
         g=storage::document_gateway();
         g->create((dir.path()+"/protected").toStdString(),true,storage::public_document_key,"Synthetic",Currency("CAD"),"2026-10-25");g->close();
         QVERIFY_THROWS_EXCEPTION(app::UnlockRequired,g->open((dir.path()+"/protected").toStdString(),{}));
@@ -1071,10 +1122,6 @@ private slots:
         QTRY_VERIFY(payeeCol->width()>withdrawalCol->width());
         QTRY_VERIFY(payeeCol->width()>depositCol->width());
         QTRY_VERIFY(payeeCol->width()>balanceCol->width());
-        auto* reports=root->findChild<QQuickItem*>("reportsOutside");QVERIFY(reports);QTRY_VERIFY(reports->isVisible());
-        auto* reportsNote=root->findChild<QQuickItem*>("reportsOutsideNote");QVERIFY(reportsNote);
-        QCOMPARE(reportsNote->property("text").toString(),QString("Reports stay outside this work. Nothing is created here."));
-        for(auto* child:reports->findChildren<QObject*>()) QVERIFY(!QString::fromLatin1(child->metaObject()->className()).contains("Button"));
         run(m,"commit");
         QByteArray rows;
         for(int i=0;i<40;++i) rows+="D2/1/2026\nT-1.00\nPRow "+QByteArray::number(i)+"\n^\n";
@@ -1083,14 +1130,23 @@ private slots:
         run(m,"select",{{"row",last}});run(m,"select",{{"row",last-1},{"range",true}});
         QCOMPARE(m.state().value("selectionCount").toInt(),2);
         auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        auto* bar=root->findChild<QQuickItem*>("ledgerScrollBar");QVERIFY(bar);QTRY_VERIFY(bar->isVisible());QVERIFY(bar->width()>=16);QVERIFY(bar->property("interactive").toBool());
+        const auto oldPosition=bar->property("position").toDouble();
+        const auto thumb=bar->property("visualPosition").toDouble()+bar->property("visualSize").toDouble()/2;
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,bar->mapToScene(QPointF(bar->width()/2,bar->height()*thumb)).toPoint());
+        const double destination=oldPosition>0.3?0.15:0.85;
+        QTest::mouseMove(window,bar->mapToScene(QPointF(bar->width()/2,bar->height()*destination)).toPoint(),30);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,bar->mapToScene(QPointF(bar->width()/2,bar->height()*destination)).toPoint());
+        QTRY_VERIFY(bar->property("position").toDouble()!=oldPosition);
+
         auto visibleRow=[&]{
             int index=-1;const double y=ledger->property("contentY").toDouble();
             if(!QMetaObject::invokeMethod(ledger,"indexAt",Q_RETURN_ARG(int,index),Q_ARG(double,1.0),Q_ARG(double,y+1))) return -1;
             return index;
         };
-        QTest::qWait(100);ledger->setProperty("contentY",450);QTest::qWait(50);
+        QTest::qWait(100);ledger->setProperty("contentY",ledger->property("originY").toDouble()+450);QTest::qWait(50);
         QVERIFY(ledger->property("contentY").toDouble()>300);
-        const int anchorRow=visibleRow();QVERIFY(anchorRow>2);
+        const int anchorRow=visibleRow();QVERIFY2(anchorRow>2,qPrintable(QString("anchor %1 y %2 origin %3 count %4").arg(anchorRow).arg(ledger->property("contentY").toDouble()).arg(ledger->property("originY").toDouble()).arg(ledger->property("count").toInt())));
         const auto anchorId=m.rowIdentity(anchorRow);QVERIFY(!anchorId.isEmpty());
         const auto sameAnchor=[&]{return visibleRow()==m.occurrenceIndex(anchorId.value("batch").toString(),anchorId.value("ordinal").toInt());};
         auto* bulkCategory=root->findChild<QObject*>("bulkCategory");QVERIFY(bulkCategory);

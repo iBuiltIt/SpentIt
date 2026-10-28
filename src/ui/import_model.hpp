@@ -4,6 +4,7 @@
 #include <QAbstractListModel>
 #include <QThreadPool>
 #include <QVariantMap>
+#include <QUrl>
 #include <functional>
 class ImportModel final : public QAbstractListModel {
     Q_OBJECT
@@ -16,6 +17,8 @@ class ImportModel final : public QAbstractListModel {
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(QStringList currencies READ currencies CONSTANT)
     Q_PROPERTY(QString suggestedPath READ suggestedPath CONSTANT)
+    Q_PROPERTY(QUrl documentsFolder READ documentsFolder CONSTANT)
+    Q_PROPERTY(QUrl suggestedFile READ suggestedFile CONSTANT)
 public:
     explicit ImportModel(std::unique_ptr<spentit::app::DocumentGateway>,QObject* parent=nullptr);
     ~ImportModel() override;
@@ -29,6 +32,9 @@ public:
     QString error() const { return error_; }
     QStringList currencies() const;
     QString suggestedPath() const;
+    QUrl documentsFolder() const;
+    QUrl suggestedFile() const;
+    Q_INVOKABLE QString datasetFilename(const QString&) const;
     int rowCount(const QModelIndex& parent={}) const override;
     QVariant data(const QModelIndex&,int role) const override;
     QHash<int,QByteArray> roleNames() const override;

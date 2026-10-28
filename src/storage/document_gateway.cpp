@@ -14,7 +14,7 @@ std::filesystem::path document_path(const std::filesystem::path& path) {
     const auto absolute=std::filesystem::absolute(path,error);
     if(error) throw std::runtime_error("Cannot resolve dataset location");
     const auto parent=std::filesystem::canonical(absolute.parent_path(),error);
-    if(error) throw std::runtime_error("Dataset directory is missing or inaccessible");
+    if(error) throw std::runtime_error("Dataset file not found or inaccessible");
     return parent/absolute.filename();
 }
 class Gateway final : public app::DocumentGateway {
@@ -25,9 +25,13 @@ public:
     void close() override { store_.reset(); std::fill(key_.begin(),key_.end(),'\0'); key_.clear(); }
     void create(const std::filesystem::path& p,bool protected_mode,std::string_view password,
                 std::string_view name,const Currency& currency,std::string_view today) override {
+        create_selected(p,false,protected_mode,password,name,currency,today);
+    }
+    void create_selected(const std::filesystem::path& p,bool overwrite,bool protected_mode,std::string_view password,
+                         std::string_view name,const Currency& currency,std::string_view today) override {
         if(store_) throw std::logic_error("Close the current dataset first");
         auto key=protected_mode?password_key(password):std::string(public_document_key);
-        auto created=ImportStore::create(document_path(p),key,name,currency,today);
+        auto created=ImportStore::create(document_path(p),key,name,currency,today,overwrite);
         store_=std::make_unique<ImportStore>(std::move(created)); key_=std::move(key);
     }
     void open(const std::filesystem::path& p,std::optional<std::string> password) override {

@@ -293,6 +293,7 @@ struct ImportModel::Worker {
     std::unique_ptr<app::DocumentGateway> gateway;
     bool active=false,projected=true;
     QString path,filter;
+    bool canOpen=false, welcomePassword=false, overwriteRequired=false;
     int sort=0; bool descending=false;
     QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt,transferMergePreview;
     std::optional<app::TransferRequest> preparedMerge;
@@ -489,7 +490,7 @@ struct ImportModel::Worker {
         }
         selected["sourceFields"]=fields;
         if(!row.draft) {
-            if(source.repairable && !row.source.repairable) selected["diagnostic"]=selected["diagnostic"].toString()+" — repair requires a new experimental dataset; this older dataset was not migrated.";
+            if(source.repairable && !row.source.repairable) selected["diagnostic"]=selected["diagnostic"].toString()+" — record repair is not supported by this dataset.";
             if(row.source.repairable && found->state==app::BatchState::pending) {
                 QVariantList splits;
                 for(std::size_t i=0;i<source.source_allocation_fields.size();++i){const auto& a=source.source_allocation_fields[i];
@@ -558,7 +559,7 @@ struct ImportModel::Worker {
         attachRules(repo,{batch,ordinal},context);
     }
     std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot(app::OperationContext* context=nullptr) {
-        QVariantMap state{{"active",active},{"path",path}};
+        QVariantMap state{{"active",active},{"path",path},{"canOpen",canOpen},{"unlockRequired",welcomePassword},{"overwriteRequired",overwriteRequired}};
         if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
         auto& repo=gateway->repository();catalog();
         if(metadata.isEmpty()) {
@@ -769,16 +770,31 @@ struct ImportModel::Worker {
     }
     void execute(const QString& action,const QVariantMap& a, app::OperationContext& context) {
         context.checkpoint();
+        overwriteRequired=false;
+        if(action=="prepare_create") {
+            if(active) throw std::logic_error("Close the current dataset first");
+            path=a.value("path").toString();canOpen=false;welcomePassword=false;return;
+        }
+        if(action=="probe") {
+            if(active) throw std::logic_error("Close the current dataset first");
+            path=a.value("path").toString();canOpen=false;welcomePassword=false;
+            if(!QFileInfo(path).isFile()) throw std::runtime_error("Dataset file not found or inaccessible");
+            try {gateway->open_controlled(path.toStdString(),std::nullopt,context);gateway->close();canOpen=true;}
+            catch(const app::UnlockRequired&) {welcomePassword=true;}
+            return;
+        }
         if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
         if(action=="close" || action=="open" || action=="unlock" || action=="create"){preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
             if(action=="create") {
+                if(a.value("protected",true).toBool() && a.value("password").toString().isEmpty()) throw std::invalid_argument("Enter a password to create a password-protected dataset.");
                 if(a.value("protected",true).toBool() && a.value("password")!=a.value("confirmation")) throw std::invalid_argument("Passwords do not match");
                 const QFileInfo location(path);
+                if(location.exists() && !a.value("overwrite").toBool()) {overwriteRequired=true;throw std::runtime_error((path+" already exists").toStdString());}
                 if(!QDir().mkpath(location.absolutePath())) throw std::runtime_error("Cannot create dataset directory");
-                gateway->create(path.toStdString(),a.value("protected",true).toBool(),str(a.value("password")),str(a.value("name")),Currency(str(a.value("currency"))),QDate::currentDate().toString(Qt::ISODate).toStdString());
+                gateway->create_selected(path.toStdString(),a.value("overwrite").toBool(),a.value("protected",true).toBool(),str(a.value("password")),str(a.value("name")),Currency(str(a.value("currency"))),QDate::currentDate().toString(Qt::ISODate).toStdString());
             } else {
                 gateway->open_controlled(path.toStdString(),action=="unlock"?std::optional(str(a.value("password"))):std::nullopt,context);
                 try { context.seal(); } catch (...) { gateway->close(); throw; }
@@ -1083,7 +1099,7 @@ struct ImportModel::Worker {
             selected.clear();selectedBatch.clear();selectedCommittedToken.reset();
             try{if(historyLoaded)listHistory();}catch(...){throw std::runtime_error("Bulk change was saved durably, but history could not be refreshed. Reopen and inspect committed history; do not apply it again.");}
         } else if(action=="rules_reapply_preview") {
-            if(!repo.rules_supported()) throw std::invalid_argument("Rules require a new experimental dataset");
+            if(!repo.rules_supported()) throw std::invalid_argument("Rules are not enabled for this dataset");
             preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();
             auto preview=repo.preview_rule_reapply(a.value("replaceManual").toBool(),str(a.value("undoOf")),context);
             QStringList lines;
@@ -1287,7 +1303,7 @@ struct ImportModel::Worker {
                 throw;
             }
         } else if(action=="rules_load" || action=="rules_discard" || action=="rules_save" || action=="rules_preview" || action=="rules_apply" || action=="rules_prefill") {
-            if(!repo.rules_supported()) throw std::invalid_argument("Rules require a new experimental dataset");
+            if(!repo.rules_supported()) throw std::invalid_argument("Rules are not enabled for this dataset");
             auto closeUnknown=[&](const char* message){gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error(message);};
             auto refreshFailed=[&](const QString& sentence){const auto saved=ruleReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();ruleReceipt=saved;throw std::runtime_error(sentence.toStdString());};
             const auto images=[&]{
@@ -1381,11 +1397,17 @@ struct ImportModel::Worker {
     }
 };
 ImportModel::ImportModel(std::unique_ptr<app::DocumentGateway> gateway,QObject* parent):QAbstractListModel(parent),worker_(std::make_shared<Worker>(std::move(gateway))) {
+    // SQLCipher verification under ASan exceeds macOS's small default worker stack.
+    // Reserve a bounded stack for the single document worker in every build.
+    pool_.setStackSize(4 * 1024 * 1024);
     pool_.setMaxThreadCount(1); state_={{"active",false},{"path",QSettings().value("datasetPath",suggestedPath())},{"startup",QSettings().contains("datasetPath")}};
 }
 ImportModel::~ImportModel() {pool_.waitForDone();worker_->gateway->close();}
 QStringList ImportModel::currencies() const {QStringList out;for(const auto& c:supported_currencies())out<<text(c.code);return out;}
-QString ImportModel::suggestedPath() const {return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/SpentIt/Experimental.spentit";}
+QString ImportModel::suggestedPath() const {return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/spentit.spentit";}
+QUrl ImportModel::documentsFolder() const {return QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));}
+QUrl ImportModel::suggestedFile() const {return QUrl::fromLocalFile(suggestedPath());}
+QString ImportModel::datasetFilename(const QString& path) const {return path.endsWith(".spentit",Qt::CaseInsensitive)?path:path+".spentit";}
 QString ImportModel::localPath(const QUrl& url) const {return url.toLocalFile();}
 QString ImportModel::newIdentity() const {return QUuid::createUuid().toString(QUuid::WithoutBraces);}
 int ImportModel::selectedRowIndex() const {return state_.value("selectedIndex",-1).toInt();}
@@ -1434,7 +1456,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     activeAction_=action;
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
-    if(action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates") operation->seal();
+    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates") operation->seal();
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
         if(!operation) return;
@@ -1486,6 +1508,6 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             result.state={{"active",false},{"path",worker->path},{"bulkReceipt",worker->bulkReceipt},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt},{"ruleReceipt",worker->ruleReceipt},{"reapplyReceipt",worker->reapplyReceipt}};
             result.success=false;
         }
-        result.state["unlockRequired"]=unlock;return result;
+        result.state["unlockRequired"]=unlock || worker->welcomePassword;return result;
     }));
 }
