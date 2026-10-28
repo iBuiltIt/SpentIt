@@ -21,7 +21,23 @@ The owner selected the following eight-point sequence and gave **Go for point 1*
 
 After **each point**, update relevant feature documents and project status, write a durable handoff with completed work, actual verification, limitations, unresolved decisions and downstream dependencies, and commit all task changes while preserving unrelated work. Then ask whether to proceed to the next point or stop, and wait. A material financial/security ambiguity is an earlier decision gate; Go does not settle it. Dependencies on later points must be recorded explicitly rather than silently reducing completion scope. Hardening continues in later points as their behavior changes; point 2 is not a final verification claim for future code. Reports and licensing/distribution are outside this eight-point authorization.
 
-Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Coordinator review on 2026-10-27 accepted the point-4 implementation at schemas 20 and 21, with the limits recorded below. The owner then said Go for point 5 and locked the allocation-level Merge, unlink, and committed-link decisions. Coordinator review on 2026-10-27 accepted the point-5 implementation with the limits recorded below. The owner then said Go for point 6 and locked the four committed-editing answers below. Point 6 is committed as `cfad307`. Point 7 is committed as `b6b9346`. Point 8 has not been started. The owner is asked whether to proceed to point 8 or stop.
+Point 1 is complete and committed as `933ede1` and `f77b4ac`. Point 2 is complete and committed as `ec17bb2`. The owner excluded Linux and Windows from point 2; those platforms remain unverified. The owner then authorized point 3. Coordinator review on 2026-10-27 accepted the point-3 implementation and the available macOS verification, with the limits recorded below. ASO is admitted as the inspected OFX 1.0.2 SGML credit-card label. Coordinator review on 2026-10-27 accepted the point-4 implementation at schemas 20 and 21, with the limits recorded below. The owner then said Go for point 5 and locked the allocation-level Merge, unlink, and committed-link decisions. Coordinator review on 2026-10-27 accepted the point-5 implementation with the limits recorded below. The owner then said Go for point 6 and locked the four committed-editing answers below. Point 6 is committed as `cfad307`. Point 7 is committed as `b6b9346`. Point 8 is committed as `b1ff74b`. The eight-point sequence is complete. The owner is asked whether to stop.
+
+## Point 8 completion handoff — 2026-10-27
+
+Read [feature 005](../features/005-transaction-sheet-navigation.md#point-8-sheet-slice--2026-10-27) and [point-8 evidence](status.md#point-8-sheet-and-sidebar-interactions--2026-10-27). One agent implemented this checkpoint from HEAD `b594e15`. It is committed as `b1ff74b`. There is no point 9. No license, publication, report, starter catalog, multiline note, or date-format preference was decided.
+
+The owner said Go for point 8. The slice is session sidebar balances, fixed ledger column ratios, a narrow window that scrolls the sheet, and viewport retention when bulk category, bulk removal, rule reapply, or history undo runs. An unsaved edit still asks Save, Discard, or Stay before those commands. Manual money, dates, evidence, and transfer links stay. Schema 22 and schema 21 stay as they were.
+
+The sidebar balance uses the existing committed and projected formulas. It does not change the ledger. The choice is not saved. Reports remain a note. Nothing is created there. Column widths are not draggable and are not saved. The shortcut stays Ctrl+Shift+B.
+
+Features 004, 005, 008, 010, and 011 stay active. Account moves of a committed row, source-link rewrite, reports, multiline notes, persisted layout, same-date ordering, and spoken accessibility stay open.
+
+The Release UI checks passed, including the new `ledgerInteractions` slot. Account basics and account lifecycle behavior passed in Release and under ASan/UBSan. The sanitizer UI checks aborted while SQLite prepared an existing verify statement on the worker thread. That statement was not part of this change. Linux and Windows are unverified. The selected runs are not a full suite. Qt was offscreen. There was no native visual inspection.
+
+Exact commands and passing counts are in status.
+
+Coordinator review on 2026-10-27 accepted this diff with the limits recorded here and in status. The eight-point sequence is complete. The owner is asked whether to stop.
 
 ## Point 7 completion handoff — 2026-10-27
 

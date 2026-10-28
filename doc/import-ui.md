@@ -198,4 +198,12 @@ The review screen separates repairable counts from unsupported structures and sh
 
 The reproduced Qt delegate-reset warning is addressed by disabling asynchronous offscreen cache incubation while keeping the model attached and visible delegates reusable. Twenty repeated warning-fatal navigation/split-view pairs and broader viewport/unsaved-editor tests passed; the paired native cache experiment and remaining performance limits are recorded in [hardening](hardening.md).
 
-The ledger now exposes accessible list/row names, selection and currency/status context. Named category/rule controls and operation/error announcements accompany keyboard/focus tests. The final Cocoa scripted keyboard/accessibility case passed; closed guard controls report invisible. Native accessibility-tree inspection observed named rows/fields, but actual spoken VoiceOver and full manual assistive traversal remain unverified. This supersedes the earlier warning status only for the exercised interactions, not every Qt sequence or the broader point-8 layout/keyboard scope.
+The ledger now exposes accessible list/row names, selection and currency/status context. Named category/rule controls and operation/error announcements accompany keyboard/focus tests. The final Cocoa scripted keyboard/accessibility case passed; closed guard controls report invisible. Native accessibility-tree inspection observed named rows/fields, but actual spoken VoiceOver and full manual assistive traversal remain unverified. This supersedes the earlier warning status only for the exercised interactions, not every Qt sequence. The point 8 slice is below.
+
+## Point 8 sheet interactions — 2026-10-27
+
+The ledger columns use the ratios 0.14 date, 0.24 payee, 0.17 category, 0.15 withdrawal, 0.14 deposit, and 0.16 balance. Money text is right-aligned. The user cannot drag a column, and the widths are not saved. The window minimum is 720 by 560. The default size stays 1440 by 850. The ledger content width is at least 1080, so a narrow window scrolls sideways. The sidebar toggle, Back, and Forward stay in the top toolbar.
+
+Bulk removal, bulk category, rule reapply, and history undo capture the visible row after Save / Discard / Stay allows the command. Bulk and reapply put that row back after preview and Apply. History undo puts it back on Apply. Stay does not capture. A missing row opens at the top. The new test checks bulk category. It does not click history undo or reapply.
+
+Sidebar balances and the reports note are in [accounts](accounts.md). Verification is in [status](status.md#point-8-sheet-and-sidebar-interactions--2026-10-27). Feature 005 stays active.

@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-27  
-Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
+Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Accepted requirements
 
@@ -147,11 +147,25 @@ The durable UI now implements the accepted search-return behavior for its existi
 
 ## Account navigation follow-up — 2026-10-26
 
-The durable UI now includes a scrolling account list, inline name entry using the setup currency, independent durable account workspaces and guarded switching/Back/Forward. The [account contract](../doc/accounts.md) records verification and limits. At this 2026-10-26 checkpoint, account switches reset selection, search, and viewport, and counterpart navigation, account lifecycle actions, report panes, and the full sidebar balance layout were unfinished. Counterpart navigation and the point-4 account commands later landed. Report panes and the full sidebar balance layout remain unfinished.
+The durable UI now includes a scrolling account list, inline name entry using the setup currency, independent durable account workspaces and guarded switching/Back/Forward. The [account contract](../doc/accounts.md) records verification and limits. At this 2026-10-26 checkpoint, account switches reset selection, search, and viewport, and counterpart navigation, account lifecycle actions, report panes, and the full sidebar balance layout were unfinished. Counterpart navigation and the point-4 account commands later landed. Report panes remain unfinished. Point 8 later added a session sidebar balance toggle. Persistence, a reports list, and the rest of the layout remain unfinished.
 
 
 ## Durable ledger hardening — 2026-10-26
 
 The current durable ledger now exposes named list/row accessibility semantics with selection, currency and transaction status, and announces operation/error text. Keyboard/focus regressions cover navigation, editor traversal, modal cancellation, saving and search return. Closed guard controls are marked invisible through Qt accessibility; the final focused Cocoa test passed. A native accessibility-tree inspection observed the named rows and fields, but actual spoken VoiceOver output remains unverified. See [hardening evidence and limitations](../doc/hardening.md).
 
-Disabling asynchronous offscreen delegate caching addresses the reproduced Qt reset warning while retaining visible virtualization, reuse and existing viewport/unsaved-edit behavior. Warning-fatal repeated reset regressions and large-workload scrolling measurements are recorded with their exact scope. This does not complete the broader layout, shortcuts, narrow-window, multiline or bulk interaction requirements reserved for roadmap point 8.
+Disabling asynchronous offscreen delegate caching addresses the reproduced Qt reset warning while retaining visible virtualization, reuse and existing viewport/unsaved-edit behavior. Warning-fatal repeated reset regressions and large-workload scrolling measurements are recorded with their exact scope. The point 8 slice below covers a bounded part of the layout. Multiline notes, the exact shortcut, persisted columns, and the rest of this feature stay open.
+
+## Point 8 sheet slice — 2026-10-27
+
+The owner said Go for point 8. The durable UI now does this much of the accepted layout, and no more.
+
+The sidebar lists each account with a separate balance control. The text is Committed or Projected, the currency code, and the amount. The amount is the account's existing committed or projected total. The choice starts on projected when a projection exists, and on committed when it does not. A click switches that account only. It does not change ledger search, sort, or the Projected ledger checkbox. The choice lasts for the session and is cleared when the document is created, opened, unlocked, or left. It is not stored. A restart was not run as its own case. The value is a window property, not a saved setting.
+
+Ledger columns are Date, Payee, Category, Withdrawal, Deposit, and Balance, in the ratios 0.14, 0.24, 0.17, 0.15, 0.14, and 0.16. Money columns are right-aligned. The user cannot drag a column. Widths are not saved. The window minimum is 720 by 560. The default size stays 1440 by 850. The ledger content width is at least 1080, so a narrower window scrolls sideways. The top toolbar keeps the sidebar toggle, Back, and Forward. The sidebar shortcut stays Ctrl+Shift+B. The accepted layout still leaves the exact shortcut unresolved.
+
+Bulk removal, bulk category, rule reapply, and history undo go through Save / Discard / Stay. The visible row is captured only after the user leaves the edit. Bulk and reapply put that row back after preview and Apply. History undo puts it back on Apply. Stay does not arm a restore. A missing row opens at the top. An ordinary one-row save does not capture. The new test clicks bulk category. It does not click history undo or reapply.
+
+Reports are a note: "Reports stay outside this work. Nothing is created here." There is no add button and no report dialog. Ask the owner before building a report.
+
+This slice does not add a separate note field, a multiline Enter exception, a date-format preference, same-date ordering, persisted column or sidebar sizes, or a new money formula. Feature 005 stays active. Verification is in [status](../doc/status.md#point-8-sheet-and-sidebar-interactions--2026-10-27).
