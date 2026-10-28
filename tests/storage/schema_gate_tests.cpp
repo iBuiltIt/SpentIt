@@ -23,9 +23,9 @@ std::string bytes(const fs::path& p){std::ifstream f(p,std::ios::binary);return 
 std::string query(const fs::path& p,const char* sql){sqlite3* db=nullptr;check(sqlite3_open(p.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);sqlite3_stmt* st=nullptr;check(sqlite3_prepare_v2(db,sql,-1,&st,nullptr)==SQLITE_OK);check(sqlite3_step(st)==SQLITE_ROW);const auto* text=sqlite3_column_text(st,0);std::string value=text?reinterpret_cast<const char*>(text):"";check(sqlite3_finalize(st)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);return value;}
 void gate(){
     Directory dir;const auto path=dir.path/"doc";
-    {auto s=ImportStore::create(path,password,"Synthetic account",Currency("CAD"),"2026-08-01");check(!s.rules_supported());app::OperationContext context;rejects_text([&]{s.save_rules("rules",{},0,context);},"Rules require a new experimental dataset");}
+    {auto s=ImportStore::create(path,password,"Synthetic account",Currency("CAD"),"2026-08-01");check(!s.rules_supported());app::OperationContext context;rejects_text([&]{s.save_rules("rules",{},0,context);},"Rules require a new experimental dataset");rejects_text([&]{s.preview_rule_reapply(false,"",context);},"Rules require a new experimental dataset");rejects_text([&]{s.apply_rule_reapply("reapply",{},context);},"Rules require a new experimental dataset");check(s.rule_reapply_group("reapply").empty());}
     check(query(path,"PRAGMA user_version")=="21");
-    for(const char* version:{"6","16","17","18","19","20"}) {
+    for(const char* version:{"6","16","17","18","19","20","22"}) {
         sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,(std::string("PRAGMA user_version=")+version).c_str(),nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
         const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Unsupported experimental format; no migration was attempted");check(bytes(path)==before);check(query(path,"PRAGMA user_version")==version);
     }

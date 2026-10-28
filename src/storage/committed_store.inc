@@ -108,6 +108,12 @@ app::ChangeReceipt ImportStore::apply_committed_change(std::string_view operatio
 app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_view operation,const app::ChangeRequest& request,const app::EntryToken& expected,std::int64_t preview_sequence,std::int64_t catalog_revision) {
     identifier(operation);
     if(bulk_supported()){Statement member(impl_->db,"SELECT 1 FROM bulk_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a bulk command");}
+#ifdef SPENTIT_RULES_STORAGE
+    if(scalar(impl_->db,"PRAGMA user_version")=="22"){
+        Statement member(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");
+        if(request.kind==app::ChangeKind::undo){Statement target(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");target.text(1,request.undo_of);if(target.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");}
+    }
+#endif
     if(const auto prior=committed_change_outcome(operation)){
         Statement stored(impl_->db,categories_supported()?"SELECT preview_sequence,catalog_revision FROM ledger_operations WHERE id=?":"SELECT preview_sequence,0 FROM ledger_operations WHERE id=?");stored.text(1,operation);if(!stored.row())fail(SQLITE_CORRUPT);
         auto prior_token=prior->result_token;prior_token.revision=prior->before_entry.revision;
@@ -219,7 +225,15 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
             const Money zero(0,currency);const auto delta=(after.active?after.draft.transaction.effective_total():zero)-(before.active?before.draft.transaction.effective_total():zero);if(delta!=receipt->change)fail(SQLITE_CORRUPT);
             if(kind==app::ChangeKind::correct){if(!before.active || !after.active || !receipt->undo_of.empty())fail(SQLITE_CORRUPT);
 #ifdef SPENTIT_RULES_STORAGE
-                if(rules_format(impl_->db))check_rule_transition(before.draft,after.draft,false,false);
+                if(rules_format(impl_->db)){
+                    bool reapply=false,replace_manual=false;
+                    if(scalar(impl_->db,"PRAGMA user_version")=="22"){
+                        Statement member(impl_->db,"SELECT g.replace_manual,g.undo_of IS NULL FROM rule_reapplication_members m JOIN rule_reapplications g ON g.id=m.operation WHERE m.entry_operation=?");
+                        member.text(1,operation);
+                        if(member.row()){if(member.integer(1)==0)fail(SQLITE_CORRUPT,"Rule reapply Undo used a correction");reapply=true;replace_manual=member.integer(0)!=0;}
+                    }
+                    check_rule_transition(before.draft,after.draft,reapply,replace_manual);
+                }
 #endif
             }
             else if(kind==app::ChangeKind::remove){if(!before.active || after.active || !same_draft(before.draft,after.draft) || !receipt->undo_of.empty())fail(SQLITE_CORRUPT);}

@@ -1,4 +1,5 @@
 #pragma once
+#include <spentit/committed_changes.hpp>
 #include <spentit/rule_preview.hpp>
 #include <cstdint>
 #include <optional>
@@ -99,6 +100,47 @@ struct RuleMatch {
     std::vector<rules::Explanation> explanations;
     std::vector<std::string> winner_lines;
     std::string error;
+};
+struct RuleReapplySkip {
+    imports::Occurrence identity;
+    std::string allocation;
+    std::string payee;
+    std::string category;
+    std::string note;
+};
+struct RuleReapplyRecord {
+    imports::Occurrence identity;
+    imports::DraftRow before;
+    imports::DraftRow after;
+    std::vector<RuleFieldDiff> diffs;
+    std::vector<rules::Explanation> explanations;
+    EntryToken expected;
+    // Undo restores this ledger operation. Empty on a forward reapply.
+    std::string prior_operation;
+};
+struct RuleReapplyRequest {
+    std::int64_t ruleset_revision = 0;
+    std::int64_t catalog_revision = 0;
+    bool replace_manual = false;
+    std::string undo_of;
+    std::int64_t preview_sequence = 0;
+    std::size_t evaluated = 0;
+    std::size_t changed = 0;
+    bool operator==(const RuleReapplyRequest&) const = default;
+};
+struct RuleReapplyPreview {
+    RuleReapplyRequest request;
+    Money before, change, after;
+    std::vector<RuleReapplyRecord> records;
+    std::vector<RuleReapplySkip> skips;
+    // In-memory live-link stamp. The client request does not carry it.
+    std::string protection;
+};
+struct RuleReapplyReceipt {
+    std::string operation;
+    RuleReapplyRequest request;
+    std::vector<ChangeReceipt> entries;
+    Money before, change, after;
 };
 // Quote a source field as one literal. A source that contains \E closes the
 // quote, emits \\E, and reopens it. Empty source is an empty whole field.

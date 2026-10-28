@@ -112,6 +112,10 @@ public:
     app::RuleApplyReceipt apply_pending_rules(std::string_view,const app::RuleApplyRequest&,const app::OperationContext&) override;
     std::optional<app::RuleApplyReceipt> rule_apply_outcome(std::string_view) const override;
     app::RuleMatch match_saved_rules(const imports::Occurrence&,const app::OperationContext&) const override;
+    app::RuleReapplyPreview preview_rule_reapply(bool,std::string_view,const app::OperationContext&) const override;
+    app::RuleReapplyReceipt apply_rule_reapply(std::string_view,const app::RuleReapplyRequest&,const app::OperationContext&) override;
+    std::optional<app::RuleReapplyReceipt> rule_reapply_outcome(std::string_view) const override;
+    std::string rule_reapply_group(std::string_view) const override;
     void verify(const app::OperationContext* = nullptr) const;
     void backup_to(const std::filesystem::path&,std::string_view password,
                    const BackupObserver& observer = {}, const app::OperationContext* context = nullptr) const;
@@ -155,6 +159,7 @@ private:
     void verify_committed(const app::OperationContext* = nullptr) const;
     void verify_rules(const app::OperationContext* = nullptr) const;
     void verify_bulk(const app::OperationContext* = nullptr) const;
+    void verify_rule_reapply(const app::OperationContext* = nullptr) const;
     void verify_account_commands(const app::OperationContext* = nullptr) const;
     app::Account command_account(bool money_edit) const;
     void populate(std::string_view,std::string_view,const qif::Result&,std::int64_t,const app::OperationContext*);

@@ -210,6 +210,18 @@ private slots:
             if(expression=="^(?:\\QTfl Travel UK\\E)$")quoted=true;
         }
         QVERIFY(quoted);
+        QVERIFY(!s.root->property("rulesDirty").toBool());
+        QVERIFY(click(s.root,"reapplyRules"));wait(s.model);
+        QVERIFY(object(s.root,"reapplyDialog")->property("visible").toBool());
+        const auto reapply=s.model.state().value("reapplyPreview").toMap();
+        QVERIFY(reapply.value("evaluated").toInt()>=1);
+        QCOMPARE(reapply.value("changed").toInt(),0);
+        QVERIFY(reapply.value("impact").toString().contains("Account balance is unchanged."));
+        QVERIFY(object(s.root,"rulesCommittedNotice")->property("visible").toBool());
+        QCOMPARE(object(s.root,"rulesCommittedNotice")->property("text").toString(),"Committed records are not changed by Apply.");
+        QVERIFY(click(s.root,"applyReapply"));wait(s.model);
+        QCOMPARE(s.model.state().value("reapplyReceipt").toMap().value("summary").toString(),"No committed rows were changed");
+        QVERIFY(!object(s.root,"reapplyDialog")->property("visible").toBool());
     }
     void obsoleteDerivedPayeeRemoval(){
         Session s;createDocument(s,"Synthetic obsolete rule");

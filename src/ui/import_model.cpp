@@ -190,6 +190,7 @@ QString ruleLimitText(){
 }
 QString ruleSaveRefreshFailure(const QString& operation){return "Rule save "+operation+" was saved durably, but the refreshed view could not be loaded. Reopen and inspect rule history; do not save it again.";}
 QString ruleApplyRefreshFailure(const QString& operation){return "Rule application "+operation+" was saved durably, but the refreshed view could not be loaded. Reopen and inspect the pending drafts; do not apply it again.";}
+QString ruleReapplyRefreshFailure(const QString& operation){return "Rule reapply "+operation+" was saved durably, but the refreshed view could not be loaded. Reopen and inspect committed history; do not apply it again.";}
 QString phaseFor(const QString& action){
     if(action=="open"||action=="unlock")return "Opening dataset";
     if(action=="import")return "Reading statement file";
@@ -204,6 +205,8 @@ QString phaseFor(const QString& action){
     if(action=="rules_preview")return "Evaluating rules";
     if(action=="rules_save")return "Saving rules";
     if(action=="rules_apply")return "Applying rules";
+    if(action=="rules_reapply_preview")return "Evaluating committed rules";
+    if(action=="rules_reapply_apply")return "Reapplying rules";
     if(action=="rename_account")return "Renaming account";
     if(action=="archive_account")return "Archiving account";
     if(action=="reactivate_account")return "Reactivating account";
@@ -317,6 +320,9 @@ struct ImportModel::Worker {
     QVariantMap rulePreview,ruleReceipt,rulePrefill;
     std::optional<app::RuleApplyRequest> preparedApply;
     std::string ruleApplyOperation;
+    QVariantMap reapplyPreview,reapplyReceipt;
+    std::optional<app::RuleReapplyPreview> preparedReapply;
+    std::string reapplyOperation;
     std::int64_t ruleRevision=0;bool rulesLoaded=false;
     std::optional<app::ImportGroup> durableGroup(std::string_view id) {
         try{return gateway->repository().import_group_outcome(id);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();preparedImport.reset();preparedMappings.reset();importPlan.clear();throw std::runtime_error("Import operation outcome is uncertain. Reopen and inspect the retained source and account drafts before retrying.");}
@@ -356,7 +362,7 @@ struct ImportModel::Worker {
     std::optional<app::EntryToken> selectedCommittedToken;
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
-    void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();ruleRevision=0;rulesLoaded=false;}
+    void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
     void clearChanges() {transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         auto& repo=gateway->repository();
@@ -375,8 +381,10 @@ struct ImportModel::Worker {
             const auto& item=*it;
             QString details=item.before_entry?"Before\n"+snapshotDetails(*item.before_entry)+"\n":"";
             details+="After\n"+snapshotDetails(item.after_entry);
+            const auto reapplyGroup=text(repo.rule_reapply_group(item.operation));
+            const bool reapply=!reapplyGroup.isEmpty();
             entryHistory.push_back(QVariantMap{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"operation",text(item.operation)},{"summary",changeName(item.kind)+" · "+text(item.operation)+"\n"+balanceImpact(item.before,item.change,item.after)},
-                {"details",details},{"bulkGroup",text(repo.bulk_group(item.operation))},{"undoEligible",item.undo_eligible},{"undoReason",text(item.blocked_reason)}});
+                {"details",details},{"bulkGroup",text(repo.bulk_group(item.operation))},{"reapplyGroup",reapplyGroup},{"undoEligible",reapply?false:item.undo_eligible},{"undoReason",reapply?QString("Undo the whole rule reapply."):text(item.blocked_reason)}});
         }
     }
     // Session-local verified reads. Every mutation (including a failed command)
@@ -658,6 +666,7 @@ struct ImportModel::Worker {
         state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;state["ruleLimits"]=ruleLimitText();
         state["selected"]=selected;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
         state["bulkSupported"]=repo.bulk_supported();state["bulkPreview"]=bulkPreview;state["bulkReceipt"]=bulkReceipt;
+        state["reapplyPreview"]=reapplyPreview;state["reapplyReceipt"]=reapplyReceipt;
         state["history"]=history;state["entryHistory"]=entryHistory;state["historyTitle"]=historyTitle;state["historyMore"]=historyMore;state["historyCursor"]=historyCursor;
         state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
         state["selectedIndex"]=-1;
@@ -754,7 +763,7 @@ struct ImportModel::Worker {
     }
     void execute(const QString& action,const QVariantMap& a, app::OperationContext& context) {
         context.checkpoint();
-        if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
+        if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
         if(action=="close" || action=="open" || action=="unlock" || action=="create"){preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
@@ -775,6 +784,7 @@ struct ImportModel::Worker {
         }
         if(action=="close") {gateway->close();clearChanges();active=false;selected.clear();receipt.clear();selectedBatch.clear();filter.clear();projected=true;sort=0;descending=false;return;}
         if(action=="cancel_merge") {preparedMerge.reset();mergeOperation.clear();transferMergePreview.clear();return;}
+        if(action=="cancel_reapply") {preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
         auto& repo=gateway->repository();
         if(action=="transfer_candidates"){
@@ -1066,6 +1076,47 @@ struct ImportModel::Worker {
             preparedBulk.reset();bulkOperation.clear();bulkPreview.clear();
             selected.clear();selectedBatch.clear();selectedCommittedToken.reset();
             try{if(historyLoaded)listHistory();}catch(...){throw std::runtime_error("Bulk change was saved durably, but history could not be refreshed. Reopen and inspect committed history; do not apply it again.");}
+        } else if(action=="rules_reapply_preview") {
+            if(!repo.rules_supported()) throw std::invalid_argument("Rules require a new experimental dataset");
+            preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();
+            auto preview=repo.preview_rule_reapply(a.value("replaceManual").toBool(),str(a.value("undoOf")),context);
+            QStringList lines;
+            for(const auto& record:preview.records){
+                lines<<text(record.before.date)+" · "+text(record.before.payee);
+                for(const auto& diff:record.diffs) lines<<fieldName(diff.field)+" · "+text(diff.before_text)+" -> "+text(diff.after_text)+" · "+diffWording(diff.removed,diff.assigned);
+            }
+            for(const auto& skip:preview.skips) lines<<text(skip.note);
+            QString omitted;
+            if(lines.size()>40){omitted=QString::number(lines.size()-40)+" lines omitted.";lines=lines.mid(0,40);lines<<omitted;}
+            reapplyOperation=identity();preparedReapply=std::move(preview);
+            const auto& request=preparedReapply->request;
+            reapplyPreview={{"id",text(reapplyOperation)},{"title",request.undo_of.empty()?QString("Reapply rules to this account"):QString("Undo rule reapply")},
+                {"evaluated",static_cast<int>(request.evaluated)},{"changed",static_cast<int>(request.changed)},
+                {"impact",balanceImpact(preparedReapply->before,preparedReapply->change,preparedReapply->after)+"\nAccount balance is unchanged."},
+                {"lines",lines},{"omitted",omitted},{"replaceManual",request.replace_manual},
+                {"rulesetRevision",QString::number(request.ruleset_revision)},{"catalogRevision",QString::number(request.catalog_revision)},
+                {"undoOf",text(request.undo_of)},{"previewSequence",QString::number(request.preview_sequence)}};
+        } else if(action=="rules_reapply_apply") {
+            reapplyReceipt.clear();
+            if(!preparedReapply || str(a.value("preview"))!=reapplyOperation) throw std::logic_error("Review a fresh rule reapply preview first");
+            const auto request=preparedReapply->request;const auto operation=reapplyOperation;
+            std::optional<app::RuleReapplyReceipt> result;
+            try {result=repo.apply_rule_reapply(operation,request,context);}
+            catch(...) {
+                const auto failure=std::current_exception();
+                try {result=repo.rule_reapply_outcome(operation);}
+                catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error("Rule reapply outcome is uncertain. Reopen and inspect committed history before retrying.");}
+                if(!result){preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();std::rethrow_exception(failure);}
+            }
+            reapplyReceipt=result->operation.empty()?QVariantMap{{"operation",QString()},{"summary","No committed rows were changed"}}
+                :QVariantMap{{"operation",text(result->operation)},{"summary",(request.undo_of.empty()?QString("Rule reapply "):QString("Undo rule reapply "))+text(result->operation)+" changed "+QString::number(result->request.changed)+" committed row(s) · "+balanceImpact(result->before,result->change,result->after)}};
+            preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();
+            try {if(historyLoaded)listHistory();if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);}
+            catch(...) {
+                const auto saved=reapplyReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();reapplyReceipt=saved;
+                const auto savedOperation=saved.value("operation").toString();
+                throw std::runtime_error(savedOperation.isEmpty()?"Unable to refresh verified dataset state. Close and reopen before continuing.":ruleReapplyRefreshFailure(savedOperation).toStdString());
+            }
         } else if(action=="import") {
             QFile file(a.value("path").toString()); const QFileInfo info(file);
             if(!info.isFile() || !file.open(QIODevice::ReadOnly)) throw std::runtime_error("Cannot read statement file");
@@ -1377,7 +1428,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     activeAction_=action;
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
-    if(action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="transfer_candidates") operation->seal();
+    if(action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates") operation->seal();
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
         if(!operation) return;
@@ -1413,6 +1464,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         catch(const std::exception&){
             worker->invalidate();
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
+            const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
             result.error=(action=="create_account" && result.success)?"Account was created durably, but its view could not be refreshed. Reopen and inspect the account list before retrying."
                 :((action=="map_import" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved durably, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :(action.startsWith("transfer_") && result.success)?"Transfer operation was saved durably, but its view could not be refreshed. Reopen and inspect transfers before retrying."
@@ -1420,11 +1472,12 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
                 :(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Committed change "+worker->changeReceipt.value("operation").toString()+" was saved durably, but the refreshed ledger could not be loaded. Reopen and inspect committed history; do not apply the change again."
                 :(action=="rules_apply" && !ruleOperation.isEmpty())?ruleApplyRefreshFailure(ruleOperation)
                 :(action=="rules_save" && !ruleOperation.isEmpty())?ruleSaveRefreshFailure(ruleOperation)
+                :(action=="rules_reapply_apply" && !reapplyOperationText.isEmpty())?ruleReapplyRefreshFailure(reapplyOperationText)
                 :(action=="apply_bulk" && !worker->bulkReceipt.isEmpty())?"Bulk change "+worker->bulkReceipt.value("operation").toString()+" was saved durably, but its refreshed view could not be loaded. Reopen and inspect committed history; do not apply it again."
                 :((action=="rename_account" || action=="archive_account" || action=="reactivate_account" || action=="delete_account" || action=="correct_opening" || action=="reassign_currency" || action=="undo_account") && result.success)?"Account command was saved durably, but its view could not be refreshed. Reopen and inspect the account before retrying."
                 :"Unable to refresh verified dataset state. Close and reopen before continuing.";
             worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();
-            result.state={{"active",false},{"path",worker->path},{"bulkReceipt",worker->bulkReceipt},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt},{"ruleReceipt",worker->ruleReceipt}};
+            result.state={{"active",false},{"path",worker->path},{"bulkReceipt",worker->bulkReceipt},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt},{"ruleReceipt",worker->ruleReceipt},{"reapplyReceipt",worker->reapplyReceipt}};
             result.success=false;
         }
         result.state["unlockRequired"]=unlock;return result;

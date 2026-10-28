@@ -223,5 +223,9 @@ public:
     virtual RuleApplyReceipt apply_pending_rules(std::string_view,const RuleApplyRequest&,const OperationContext&) { throw std::logic_error("Rules require a new experimental dataset"); }
     virtual std::optional<RuleApplyReceipt> rule_apply_outcome(std::string_view) const { throw std::logic_error("Rules require a new experimental dataset"); }
     virtual RuleMatch match_saved_rules(const imports::Occurrence&,const OperationContext&) const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual RuleReapplyPreview preview_rule_reapply(bool,std::string_view,const OperationContext&) const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual RuleReapplyReceipt apply_rule_reapply(std::string_view,const RuleReapplyRequest&,const OperationContext&) { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual std::optional<RuleReapplyReceipt> rule_reapply_outcome(std::string_view) const { throw std::logic_error("Rules require a new experimental dataset"); }
+    virtual std::string rule_reapply_group(std::string_view) const { return {}; }
 };
 } // namespace spentit::app

@@ -304,7 +304,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=20;
+PRAGMA user_version=22;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -480,6 +480,12 @@ CREATE TRIGGER bulk_operations_immutable BEFORE UPDATE ON bulk_operations BEGIN 
 CREATE TRIGGER bulk_operations_keep BEFORE DELETE ON bulk_operations BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER bulk_members_immutable BEFORE UPDATE ON bulk_members BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER bulk_members_keep BEFORE DELETE ON bulk_members BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TABLE rule_reapplications(id TEXT PRIMARY KEY REFERENCES ledger_operations(id),account INTEGER NOT NULL REFERENCES account(singleton),ruleset_revision INTEGER NOT NULL CHECK(ruleset_revision>=0),catalog_revision INTEGER NOT NULL CHECK(catalog_revision>=0),replace_manual INTEGER NOT NULL CHECK(replace_manual IN(0,1)),evaluated INTEGER NOT NULL CHECK(evaluated BETWEEN 0 AND 4096),changed_count INTEGER NOT NULL CHECK(changed_count BETWEEN 1 AND 4096 AND changed_count<=evaluated),preview_sequence INTEGER NOT NULL CHECK(preview_sequence>=0),undo_of TEXT REFERENCES rule_reapplications(id)) STRICT;
+CREATE TRIGGER rule_reapplications_immutable BEFORE UPDATE ON rule_reapplications BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER rule_reapplications_keep BEFORE DELETE ON rule_reapplications BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TABLE rule_reapplication_members(operation TEXT NOT NULL REFERENCES rule_reapplications(id),position INTEGER NOT NULL CHECK(position>=0),entry_operation TEXT NOT NULL UNIQUE REFERENCES ledger_operations(id),PRIMARY KEY(operation,position)) STRICT;
+CREATE TRIGGER rule_reapplication_members_immutable BEFORE UPDATE ON rule_reapplication_members BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER rule_reapplication_members_keep BEFORE DELETE ON rule_reapplication_members BEGIN SELECT RAISE(ABORT,'immutable'); END;
 )SQL";
 #endif
 constexpr const char* source_fact_schema = R"SQL(
@@ -522,7 +528,7 @@ bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
     return version=="3" || version=="4" || version=="17" || version=="19" || version=="21"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="22"
 #endif
         ;
 }
@@ -530,7 +536,7 @@ bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
     return version=="4" || version=="17" || version=="19" || version=="21"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="22"
 #endif
         ;
 }
@@ -585,12 +591,12 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
 bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="21"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16" || version=="18" || version=="20"
+    || version=="6" || version=="16" || version=="18" || version=="20" || version=="22"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="22";
 #else
     (void)db;return false;
 #endif
@@ -742,7 +748,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="20";
+        constexpr const char* expected_format="22";
 #else
         constexpr const char* expected_format="21";
 #endif
@@ -754,10 +760,10 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('transfer_events','transfer_versions','transfer_heads','retained_transfer_rows')")!="4")fail(SQLITE_SCHEMA,"Transfer structure does not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('source_headers','source_occurrences','source_associations')")!="3")fail(SQLITE_SCHEMA,"Document structure does not match format version");
         const auto common=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('account','account_creations','sources','batches','records','versions','allocations','operations','events','entry_revisions','entry_allocations','entry_heads','ledger_operations','change_dependencies','history_order','review_stamps','category_state','category_versions','category_heads','category_operations','operation_registry','draft_fields','entry_fields','draft_allocation_meta','entry_allocation_meta')");
-        const auto rule_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('rule_state','rule_definitions','rule_heads','rule_operations','rule_operation_requests','rule_snapshots','rule_applications','draft_rule_fields','draft_rule_allocations','entry_rule_fields','entry_rule_allocations')");
+        const auto rule_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('rule_state','rule_definitions','rule_heads','rule_operations','rule_operation_requests','rule_snapshots','rule_applications','draft_rule_fields','draft_rule_allocations','entry_rule_fields','entry_rule_allocations','rule_reapplications','rule_reapplication_members')");
         const auto bulk_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('bulk_operations','bulk_members')");
 #ifdef SPENTIT_RULES_STORAGE
-        if(common!="25" || rule_tables!="11" || bulk_tables!="2")
+        if(common!="25" || rule_tables!="13" || bulk_tables!="2")
 #else
         if(common!="25" || rule_tables!="0" || bulk_tables!="0")
 #endif
@@ -1393,7 +1399,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
     }
     if(categories_supported())verify_categories(context);
     if(rules_format(impl_->db))verify_rules(context);
-    if(committed_changes_supported()){verify_transfers(context);verify_committed(context);if(bulk_supported())verify_bulk(context);return;}
+    if(committed_changes_supported()){verify_transfers(context);verify_committed(context);if(bulk_supported())verify_bulk(context);if(rules_format(impl_->db))verify_rule_reapply(context);return;}
     const auto acct=account();
     Money balance=acct.opening;
     Statement ops(impl_->db,"SELECT id FROM operations ORDER BY rowid");
@@ -1450,6 +1456,7 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
 #include "committed_store.inc"
 #include "bulk_store.inc"
 #include "rule_store.inc"
+#include "rule_reapply_store.inc"
 #include "transfer_store.inc"
 #include "import_group_store.inc"
 #include "account_lifecycle.inc"

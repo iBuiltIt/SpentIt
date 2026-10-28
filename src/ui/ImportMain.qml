@@ -517,7 +517,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {addingAccount=false;bulkDialog.close();changePreview.close();mergePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -553,6 +553,8 @@ ApplicationWindow {
                 if(action.indexOf("transfer_")===0)loadEditor()
                 if(action==="preview_bulk")bulkDialog.open()
                 if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
+                if(action==="rules_reapply_preview")reapplyDialog.open()
+                if(action==="rules_reapply_apply"){reapplyDialog.close();loadEditor()}
                 projected.checked=s.mode!=="Committed"
                 if(action==="preview_category") categoryChangePreview.open()
                 if(action==="category_select" || action==="apply_category")loadCategoryForm()
@@ -706,6 +708,25 @@ ApplicationWindow {
             RowLayout {
                 Button {objectName:"applyBulk";text:"Apply all";enabled:!workflow.busy && !!(s.bulkPreview||{}).id;onClicked:workflow.command("apply_bulk",{preview:s.bulkPreview.id})}
                 Button {objectName:"cancelBulk";text:"Cancel";enabled:!workflow.busy;onClicked:{bulkDialog.close();workflow.command("cancel_bulk")}}
+            }
+        }
+    }
+    Dialog {
+        id:reapplyDialog;objectName:"reapplyDialog";title:(s.reapplyPreview||{}).title||"Reapply rules";modal:true;anchors.centerIn:parent;width:Math.min(850,window.width-80);height:Math.min(600,window.height-80)
+        ColumnLayout {
+            anchors.fill:parent
+            Label {text:(s.reapplyPreview||{}).impact||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:((s.reapplyPreview||{}).evaluated||0)+" committed rows evaluated · "+((s.reapplyPreview||{}).changed||0)+" changed";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ListView {
+                id:reapplyLines;objectName:"reapplyPreviewLines";model:(s.reapplyPreview||{}).lines||[];clip:true;reuseItems:true;Layout.fillWidth:true;Layout.fillHeight:true
+                ScrollBar.vertical:ScrollBar {}
+                delegate:Label {required property string modelData;width:reapplyLines.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
+            }
+            Label {text:(s.reapplyPreview||{}).omitted||"";visible:text.length>0;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:workflow.error;textFormat:Text.PlainText;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Button {objectName:"applyReapply";text:"Apply";enabled:!workflow.busy && !!(s.reapplyPreview||{}).id;onClicked:workflow.command("rules_reapply_apply",{preview:s.reapplyPreview.id})}
+                Button {objectName:"cancelReapply";text:"Cancel";enabled:!workflow.busy;onClicked:{reapplyDialog.close();workflow.command("cancel_reapply")}}
             }
         }
     }
@@ -1092,6 +1113,7 @@ ApplicationWindow {
                             Button {objectName:"applyRules";text:"Apply";visible:currentPage==="rules" && !!s.pending && !s.pending.processingIncomplete && !selected.committed;enabled:!rulesDirty && replaceManualFields.checked===!!((s.rulePreview||{}).replaceManual) && applyReady();onClicked:applyRules()}
                         }
                         Label {objectName:"rulesCommittedNotice";visible:currentPage==="rules" && (!!selected.committed || !s.pending);text:"Committed records are not changed by Apply.";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                        Button {objectName:"reapplyRules";text:"Reapply to this account";visible:!!s.rulesSupported;enabled:!rulesDirty && !workflow.busy;onClicked:workflow.command("rules_reapply_preview",{replaceManual:replaceManualFields.checked})}
                         Label {objectName:"rulePreviewStatus";text:(s.rulePreview||{}).label||"";font.bold:true;textFormat:Text.PlainText}
                         Label {objectName:"rulePreviewBody";text:(s.rulePreview||{}).summaryText||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                         Label {text:(s.rulePreview||{}).overlap||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
@@ -1137,6 +1159,7 @@ ApplicationWindow {
                                     Label {textFormat:Text.PlainText;text:modelData.undoReason;visible:!modelData.undoEligible;wrapMode:Text.Wrap;Layout.fillWidth:true}
                                     Button {objectName:"undo_"+modelData.operation;text:"Review Undo…";enabled:modelData.undoEligible;onClicked:workflow.command("preview_change",{kind:"undo",operation:modelData.operation,batch:modelData.batch,ordinal:modelData.ordinal})}
                                     Button {text:"Review group Undo…";visible:!!modelData.bulkGroup;onClicked:workflow.command("preview_bulk",{kind:"undo",operation:modelData.bulkGroup})}
+                                    Button {text:"Review group Undo…";visible:!!modelData.reapplyGroup;onClicked:workflow.command("rules_reapply_preview",{undoOf:modelData.reapplyGroup})}
                                 }
                             }
                         }
