@@ -44,3 +44,7 @@ endif()
 set_target_properties(spentit_import_store PROPERTIES CXX_EXTENSIONS OFF)
 spentit_compiler_options(spentit_import_store)
 endif()
+
+if(TARGET spentit_import_store)
+ target_link_libraries(spentit_import_store PUBLIC spentit_diagnostics)
+endif()

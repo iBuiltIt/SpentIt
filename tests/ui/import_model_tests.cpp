@@ -1,6 +1,7 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QTest>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QFileInfo>
@@ -399,6 +400,7 @@ private slots:
         run(m,"close");create(m,dir.path()+"/second");QCOMPARE(m.state().value("selectionCount").toInt(),0);
     }
     void initTestCase() {
+        if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS"))QVERIFY(spentit::diagnostics::Collector::instance().enable());
         QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("ImportUi");
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
@@ -436,9 +438,19 @@ private slots:
         QTRY_VERIFY(root->findChild<QObject*>("unsavedDialog")->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardStay"),"clicked"));QVERIFY(m.state().value("active").toBool());
         QVERIFY(QMetaObject::invokeMethod(close,"triggered"));
+        QSignalSpy lifecycle(&m,&ImportModel::completed);
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardDiscard"),"clicked"));
-        QTRY_VERIFY(!m.state().value("active").toBool());QTRY_VERIFY(m.state().value("canOpen").toBool());
-        QTest::qWait(500);QVERIFY(!m.state().value("active").toBool());
+        QTRY_VERIFY(!m.state().value("active").toBool());
+        // Closing schedules a probe. Its retained canOpen flag is not a new
+        // completion, and a fixed sleep can click Open while that probe is busy.
+        const auto probed=[&]{for(const auto& event:lifecycle)if(event[0].toString()=="probe")return true;return false;};
+        QTRY_VERIFY_WITH_TIMEOUT(probed(),30000);
+        if(m.diagnosticsEnabled()) {
+            const auto observed=diagnostics::Collector::instance().snapshot();
+            QCOMPARE(observed.latest.action,diagnostics::Action::probe);
+            QVERIFY(observed.latest.delivered!=0);
+        }
+        QVERIFY(m.state().value("canOpen").toBool());QVERIFY(!m.state().value("active").toBool());
         QVERIFY(root->findChild<QObject*>("welcomeScreen")->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("openPublicDataset"),"clicked"));
         QTRY_VERIFY(m.state().value("active").toBool());
@@ -632,6 +644,12 @@ private slots:
             if(action=="balance"){command="group_balance";args={{"group",m.state().value("importGroup").toMap().value("id")},{"source",0},{"revision",1},{"choice",1},{"date","2026-01-01"}};}
             if(action=="abort"){command="group_abort";args={{"group",m.state().value("importGroup").toMap().value("id")}};}
             run(m,command,args,fault==OutcomeGateway::after || (action=="balance" && fault==OutcomeGateway::before));
+            if(m.diagnosticsEnabled() && action=="resume" && fault==OutcomeGateway::before) {
+                const auto observed=diagnostics::Collector::instance().snapshot();
+                QCOMPARE(observed.latest.result,diagnostics::Result::failed);
+                QCOMPARE(observed.latest.persistence,diagnostics::Persistence::confirmed_saved);
+                QCOMPARE(observed.latest.presentation,diagnostics::Presentation::model_applied);
+            }
             if(fault==OutcomeGateway::unknown)QVERIFY(!m.state().value("active").toBool());
             else if(fault==OutcomeGateway::before && action=="capture"){QCOMPARE(m.state().value("accounts").toList().size(),1);seam->fault=OutcomeGateway::none;run(m,"map_import",args);}
             if(m.state().value("active").toBool())run(m,"close");

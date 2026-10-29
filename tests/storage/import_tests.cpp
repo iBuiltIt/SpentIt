@@ -1,3 +1,5 @@
+#include <spentit/diagnostics.hpp>
+#include <cstdlib>
 #include <spentit/import_store.hpp>
 #include "fault_vfs.hpp"
 #include "import_legacy_schema.hpp"
@@ -536,7 +538,7 @@ void benchmark(std::size_t n){
         <<std::chrono::duration_cast<std::chrono::milliseconds>(committed-staged).count()<<'/'<<std::chrono::duration_cast<std::chrono::milliseconds>(queried-committed).count()<<'\n';
 }
 }
-int main(int argc,char** argv){try{test_binary=fs::absolute(argv[0]);
+int main(int argc,char** argv){if(std::getenv("SPENTIT_TEST_DIAGNOSTICS"))spentit::diagnostics::Collector::instance().enable();try{test_binary=fs::absolute(argv[0]);
     if(argc==4 && std::string_view(argv[1])=="replacement_child"){fault_vfs::install();const int position=std::stoi(argv[3]);if(position>0)fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);{auto store=ImportStore::create(argv[2],password,"Replacement",cad,"2026-10-28",true,{"DD/MM/YYYY",true});}_exit(72);}
 
     const std::string mode=argc>1?argv[1]:"";

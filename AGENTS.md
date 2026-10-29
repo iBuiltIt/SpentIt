@@ -9,6 +9,10 @@ SpentIt is a local, single-user desktop application for understanding spending t
 3. Inspect existing implementation and tests when they exist. Documentation is not evidence that code exists or works.
 4. Identify accepted requirements, provisional designs, and open questions before making changes. Ask about material ambiguities; do not invent financial or security behavior.
 
+## Diagnostics hooks and agent profiling
+
+When the owner mentions hooks, diagnostics, introspection, observing the app, or agent-assisted profiling, read [Agent guide: using SpentIt diagnostics hooks for profiling](doc/agent-diagnostics-guide.md) first, then its linked runtime contract. The guide covers build variants, endpoint discovery, read-only CLI use, operation/UI correlation, timing interpretation and reproducible workloads. Hooks do not grant permission to access private datasets, perform financial actions or implement optimizations.
+
 ## Where information belongs
 
 - `AGENTS.md`: durable contributor instructions, discovery, and engineering discipline. Keep detailed feature designs elsewhere.

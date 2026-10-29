@@ -80,7 +80,7 @@ class RuleUiTests : public QObject {
         QCOMPARE(sqlite3_step(insert),SQLITE_DONE);QCOMPARE(sqlite3_finalize(insert),SQLITE_OK);QCOMPARE(sqlite3_close(db),SQLITE_OK);
     }
 private slots:
-    void initTestCase(){QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("RuleUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
+    void initTestCase(){if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS"))QVERIFY(spentit::diagnostics::Collector::instance().enable());QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("RuleUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
     void init(){QSettings().clear();qunsetenv("SPENTIT_RULE_CANCEL_WINDOW");qunsetenv("SPENTIT_RULE_REFRESH_FAIL");}
     void currentFormatShowsRulesAndOldFormatIsRejected(){
         Session current;createDocument(current,"Current rules");
@@ -277,6 +277,11 @@ private slots:
         const auto id=s.model.state().value("ruleReceipt").toMap().value("operation").toString();
         const auto error=s.model.error();
         QVERIFY(!id.isEmpty());
+        if(s.model.diagnosticsEnabled()) {
+            const auto observation=spentit::diagnostics::Collector::instance().snapshot();
+            QCOMPARE(observation.latest.persistence,spentit::diagnostics::Persistence::confirmed_saved);
+            QCOMPARE(observation.latest.presentation,spentit::diagnostics::Presentation::failed);
+        }
         QVERIFY(error.contains("was saved durably"));QVERIFY(error.contains(id));QVERIFY(error.contains("do not apply it again"));
         QVERIFY(!error.contains("rollback",Qt::CaseInsensitive));
         QVERIFY(!s.model.state().value("active").toBool());

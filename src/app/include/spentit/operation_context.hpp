@@ -16,7 +16,10 @@ struct OperationContext {
     enum State { available, requested, sealed };
     mutable std::atomic<State> state{available};
     std::function<void(std::string_view)> progress;
-    bool request() const { auto expected=available; return state.compare_exchange_strong(expected,requested); }
+    // Optional observation is contained: it cannot veto or acknowledge work.
+    std::function<void(State)> observeCancellation;
+    void observeState() const noexcept {try{if(observeCancellation)observeCancellation(state.load());}catch(...) {}}
+    bool request() const { auto expected=available; const bool accepted=state.compare_exchange_strong(expected,requested);if(accepted)observeState();return accepted; }
     void checkpoint(std::string_view phase={}) const {
         if(!phase.empty() && progress) progress(phase);
         if(state.load()==requested) throw OperationCancelled();
@@ -25,6 +28,7 @@ struct OperationContext {
     void seal() const {
         auto expected=available;
         if(!state.compare_exchange_strong(expected,sealed) && expected==requested) throw OperationCancelled();
+        observeState();
     }
 };
 }

@@ -49,6 +49,7 @@ static double residentMiB() {
 int main(int argc,char** argv) {
     const auto startup=Clock::now();
     QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");
+    if(qEnvironmentVariableIsSet("SPENTIT_BENCHMARK_DIAGNOSTICS"))require(diagnostics::Collector::instance().enable(),"Diagnostics unsupported");
     try {
         const int count=argc>1?std::stoi(argv[1]):100000;
         const bool groups=argc==3 && std::string_view(argv[2])=="--groups";
@@ -79,10 +80,26 @@ int main(int argc,char** argv) {
             maxGap=0;ticks=0;previous=clock.nsecsElapsed();const auto start=Clock::now();
             QEventLoop loop;bool success=false;bool finished=false;
             auto connection=QObject::connect(&model,&ImportModel::completed,&loop,[&](const QString&,bool ok){success=ok;finished=true;loop.quit();});
-            model.command(action,args);if(!finished)loop.exec();QObject::disconnect(connection);
-            const auto duration=elapsed(start);if(!success || !model.error().isEmpty()) throw std::runtime_error("Benchmark command failed: "+action.toStdString()+": "+model.error().toStdString());
-            settle(30); // Include delivery/reset work in event-loop-gap sampling.
-            std::cout<<"phase="<<phase<<" ms="<<duration<<" ui_gap_ms="<<maxGap<<" ticks="<<ticks<<" rss_mib="<<residentMiB()<<" peak_mib="<<peakMiB();
+            require(!model.busy(),"Benchmark command admission is busy");
+            model.command(action,args);const auto expectedOperation=diagnostics::Collector::instance().snapshot().active.id;
+            if(!finished)loop.exec();QObject::disconnect(connection);
+            const auto duration=elapsed(start);double interactionReadyMs=-1;
+            if(!success || !model.error().isEmpty())throw std::runtime_error("Benchmark command failed: "+action.toStdString()+": "+model.error().toStdString());
+            if(model.diagnosticsEnabled()) {
+                const auto observation=diagnostics::Collector::instance().snapshot();
+                require(observation.latest.id==expectedOperation && observation.latest.delivered!=0,"Wrong diagnostic operation completed");
+                QCoreApplication::processEvents();QMetaObject::invokeMethod(window,"publishDiagnostics");
+                if(!diagnostics::Collector::instance().snapshot().ui.interaction_ready){
+                    QEventLoop readyLoop;QTimer poll,deadline;poll.setInterval(100);deadline.setSingleShot(true);
+                    QObject::connect(&poll,&QTimer::timeout,&readyLoop,[&]{const auto current=diagnostics::Collector::instance().snapshot();if(current.view!=observation.view || current.ui.interaction_ready)readyLoop.quit();});
+                    QObject::connect(&deadline,&QTimer::timeout,&readyLoop,&QEventLoop::quit);poll.start();deadline.start(10000);readyLoop.exec();
+                }
+                const auto settled=diagnostics::Collector::instance().snapshot();
+                if(settled.view==observation.view){require(settled.ui.generation==observation.view && settled.ui.interaction_ready,"UI interaction readiness not established");interactionReadyMs=elapsed(start);}
+                else std::cout<<"diagnostic_phase="<<phase<<" requested_generation="<<observation.view<<" replacement_generation="<<settled.view<<" readiness=superseded"<<std::endl;
+            }
+            QCoreApplication::processEvents(); // Deliver pending GUI work; no fixed command-settle sleep.
+            std::cout<<"phase="<<phase<<" ms="<<duration<<" interaction_ready_ms="<<interactionReadyMs<<" ui_gap_ms="<<maxGap<<" ticks="<<ticks<<" rss_mib="<<residentMiB()<<" peak_mib="<<peakMiB();
             std::cout<<std::endl;
         };
         const auto path=dir.path()+"/synthetic.spentit";

@@ -6,6 +6,7 @@
 #include <QVariantMap>
 #include <QUrl>
 #include <functional>
+#include <spentit/diagnostics.hpp>
 class ImportModel final : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(QVariantMap state READ state NOTIFY changed)
@@ -19,7 +20,12 @@ class ImportModel final : public QAbstractListModel {
     Q_PROPERTY(QString suggestedPath READ suggestedPath CONSTANT)
     Q_PROPERTY(QUrl documentsFolder READ documentsFolder CONSTANT)
     Q_PROPERTY(QUrl suggestedFile READ suggestedFile CONSTANT)
+    Q_PROPERTY(bool diagnosticsEnabled READ diagnosticsEnabled CONSTANT)
+    Q_PROPERTY(qulonglong diagnosticGeneration READ diagnosticGeneration NOTIFY changed)
 public:
+    bool diagnosticsEnabled() const { return spentit::diagnostics::Collector::instance().enabled(); }
+    qulonglong diagnosticGeneration() const { return spentit::diagnostics::Collector::instance().generation(); }
+    Q_INVOKABLE void observeUi(const QVariantMap&);
     explicit ImportModel(std::unique_ptr<spentit::app::DocumentGateway>,QObject* parent=nullptr);
     ~ImportModel() override;
     QVariantMap state() const { return state_; }
@@ -56,6 +62,7 @@ private:
     QThreadPool pool_;
     QVariantMap state_;
     std::shared_ptr<const spentit::app::LedgerView> rows_;
+    spentit::diagnostics::Id diagnosticOperation_=0, deferredDiagnostic_=0, resumedDiagnostic_=0, diagnosticFrameRequested_=UINT64_MAX;
     bool busy_=false;
     QString error_,phase_;
     QString activeAction_;

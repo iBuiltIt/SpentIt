@@ -98,7 +98,9 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
     const bool cacheable=sqlite3_get_autocommit(impl_->db) && !impl_->verifying;
     const auto changes=sqlite3_total_changes64(impl_->db);
     if(cacheable && impl_->group_snapshot && impl_->group_snapshot_changes==changes && impl_->group_snapshot->id==id)
-        return *impl_->group_snapshot;
+        {diag::cache(diag::Code::group_cache,diag::EventKind::cache_hit);return *impl_->group_snapshot;}
+    diag::cache(diag::Code::group_cache,cacheable?diag::EventKind::cache_miss:diag::EventKind::cache_bypass);
+    if(impl_->group_snapshot)diag::cache(diag::Code::group_cache,diag::EventKind::invalidated);
     impl_->group_snapshot.reset();
     Statement group(impl_->db,"SELECT profile,state FROM import_groups WHERE id=?");group.text(1,id);if(!group.row())fail(SQLITE_NOTFOUND,"Import group does not exist");
     app::ImportGroup result{std::string(id),static_cast<app::GroupState>(group.integer(1)),static_cast<qif::DateOrder>(group.integer(0)),{}};

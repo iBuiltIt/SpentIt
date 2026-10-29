@@ -118,3 +118,10 @@ Account enumeration, creation, durable creation-outcome lookup and session selec
 ## Creation preferences and independent categories — 2026-10-28
 
 The dependency-free engine validates date patterns/calendar dates and colon-category syntax. The application import-view target owns bounded Unicode caseless category comparison through the existing PCRE2 adapter. Storage links that application matcher to enforce the same uniqueness policy and owns immutable setup preferences plus atomic starter-category history. The serial UI worker converts between stored ISO dates and the dataset display format; QML neither parses financial import dates nor owns initialization transactions.
+
+
+## Optional application diagnostics — 2026-10-29
+
+`src/diagnostics/` owns the standard-C++ typed observation contract, bounded collector and serialization. It depends on neither Qt nor SQLCipher and is not linked into the engine. `SPENTIT_DIAGNOSTICS` gates runtime enablement; its disabled sink remains available to the storage/UI adapters. Executable wiring explicitly enables it before constructing the application model. Storage observes existing work through process-local operation scope; it never asks the UI for state or performs a diagnostic query against financial data.
+
+The QML adapter publishes an explicit semantic allowlist. The optional Qt local IPC server runs on its own thread and reads published summaries; it never traverses QML or calls the repository. The CLI has only status, bounded events and observation waits. See [the diagnostics contract and verification](application-diagnostics.md). Diagnostics-specific tests are under `tests/diagnostics/`; existing synthetic UI/storage tests retain their independent financial assertions.

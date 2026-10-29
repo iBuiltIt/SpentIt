@@ -1,3 +1,7 @@
+#include <exception>
+#include <QGuiApplication>
+#include <QWindow>
+#include <spentit/diagnostics.hpp>
 #include "import_model.hpp"
 #include <spentit/import_view.hpp>
 #include <spentit/statements.hpp>
@@ -290,7 +294,16 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
 }
 
 }
+namespace diag = spentit::diagnostics;
 struct ImportModel::Worker {
+    bool diagnosticSaved=false,diagnosticUnchanged=false,diagnosticPresentationFailed=false;
+    struct PresentationRead {
+        bool& failed;int exceptions=std::uncaught_exceptions();
+        ~PresentationRead(){if(std::uncaught_exceptions()>exceptions)failed=true;}
+    };
+    void observedSaved(diag::Code stage=diag::Code::unclassified) noexcept {
+        diagnosticSaved=true;diag::durable(stage);
+    }
     std::string dateFormat="YYYY-MM-DD";
     QString dateText(std::string_view iso) const {return text(display_date(iso,dateFormat));}
     std::unique_ptr<app::DocumentGateway> gateway;
@@ -335,6 +348,8 @@ struct ImportModel::Worker {
         try{return gateway->repository().resume_import_group(id,context);}catch(...){const auto failure=std::current_exception();const auto saved=durableGroup(id);if(saved && (saved->state==app::GroupState::reviewing || saved->state==app::GroupState::started))return *saved;try{std::rethrow_exception(failure);}catch(const app::OperationCancelled&){throw app::OperationCancelled("Processing cancelled. The whole source and account mappings are saved; resume or abort the entire import.");}}
     }
     void catalog() {
+        PresentationRead observation{diagnosticPresentationFailed};
+        diag::cache(diag::Code::catalog,catalogLoaded?diag::EventKind::cache_hit:diag::EventKind::cache_miss);
         if(catalogLoaded)return;
         categories.clear();categoryById.clear();catalogRevision=0;
         auto& repo=gateway->repository();
@@ -354,6 +369,7 @@ struct ImportModel::Worker {
         catalogLoaded=true;
     }
     void selectCategory(std::string_view id) {
+        PresentationRead observation{diagnosticPresentationFailed};
         catalog();categorySelected=categoryById.value(text(id)).toMap();categoryHistory.clear();
         if(categorySelected.isEmpty())throw std::invalid_argument("Choose an existing category");
         for(const auto& item:gateway->repository().category_history(id)) {
@@ -370,6 +386,7 @@ struct ImportModel::Worker {
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
     void clearChanges() {transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
+        PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository();
         const auto changes=repo.committed_changes(before,50);if(!append)history.clear();
         for(const auto& item:changes) {
@@ -379,6 +396,7 @@ struct ImportModel::Worker {
         historyMore=changes.size()==50;historyCursor=changes.empty()?QString{}:QString::number(changes.back().sequence);historyLoaded=true;
     }
     void entryDetails(const imports::Occurrence& id) {
+        PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository();const auto entry=repo.committed_entry(id);
         historyTitle="History · "+text(entry.current.draft.payee)+" · "+(entry.current.active?"Active":"Removed");entryHistory.clear();
         const auto entries=repo.committed_history(id);
@@ -398,7 +416,7 @@ struct ImportModel::Worker {
     std::optional<app::Account> cachedAccount;
     std::shared_ptr<std::vector<app::LedgerRow>> cachedLedger;
     std::shared_ptr<const app::LedgerView> cachedView;
-    void invalidate() {catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
+    void invalidate() {diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
     std::size_t selectedOrdinal=0;
     std::int64_t selectedRevision=0;
@@ -406,6 +424,7 @@ struct ImportModel::Worker {
     // resolve the same durable operation without storing local financial metadata.
     explicit Worker(std::unique_ptr<app::DocumentGateway> g):gateway(std::move(g)){}
     void loadRules() {
+        PresentationRead observation{diagnosticPresentationFailed};
         rules.clear();ruleTombstones.clear();ruleRevision=0;rulePrefill.clear();
         auto& repo=gateway->repository();
         if(!repo.rules_supported()){rulesLoaded=true;return;}
@@ -439,6 +458,7 @@ struct ImportModel::Worker {
         catch(const std::exception& error){selected["ruleMatchError"]=text(error.what());}
     }
     void inspect(std::string batch,std::size_t ordinal,app::OperationContext& context) {
+        PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository(); const auto acct=repo.account();catalog();
         if(batch.starts_with("~transfer-")){
             for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.account==acct.identity && side->endpoint.entry==imports::Occurrence{batch,ordinal}){
@@ -563,9 +583,11 @@ struct ImportModel::Worker {
         attachRules(repo,{batch,ordinal},context);
     }
     std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot(app::OperationContext* context=nullptr) {
+        diag::Span span(diag::Code::snapshot);
         QVariantMap state{{"active",active},{"path",path},{"canOpen",canOpen},{"unlockRequired",welcomePassword},{"overwriteRequired",overwriteRequired}};
         if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
         auto& repo=gateway->repository();catalog();state["dateFormat"]=text(dateFormat);
+        diag::cache(diag::Code::metadata,metadata.isEmpty()?diag::EventKind::cache_miss:diag::EventKind::cache_hit);
         if(metadata.isEmpty()) {
             std::map<std::int64_t,QVariantMap> accountBalances;
             for(const auto& item:repo.account_balances()) accountBalances.emplace(item.identity,QVariantMap{{"committedBalance",money(item.committed)},{"projectedBalance",item.projected?money(*item.projected):QString()},{"projectionAvailable",item.projected.has_value()}});
@@ -694,8 +716,12 @@ struct ImportModel::Worker {
         state["selectedIndex"]=-1;
         // Never substitute a partial projected ledger for an authoritative one.
         if(!repo.account_selected() || (projected && !state.value("projectionAvailable").toBool())) return {state,{}};
+        diag::cache(diag::Code::search,cachedView?diag::EventKind::cache_hit:diag::EventKind::cache_miss);
         if(!cachedView) {
+            diag::Span searchSpan(diag::Code::search);
+            diag::cache(diag::Code::ledger,cachedLedger?diag::EventKind::cache_hit:diag::EventKind::cache_miss);
             if(!cachedLedger) {
+                diag::Span ledgerSpan(diag::Code::ledger);
                 cachedLedger=std::make_shared<std::vector<app::LedgerRow>>(repo.ledger(projected));
                 // A presentation-only copy resolves current names for both visible
                 // rows and literal filtering. Stored interpretations remain intact.
@@ -784,6 +810,7 @@ struct ImportModel::Worker {
             {"overlap","Overlap results are only for the records just evaluated."},{"records",records},{"summaryText",lines.join('\n')}};
     }
     void execute(const QString& action,const QVariantMap& input, app::OperationContext& context) {
+        diagnosticSaved=false;diagnosticUnchanged=false;diagnosticPresentationFailed=false;
         auto a=input;
         if(active && a.contains("date"))a["date"]=text(parse_display_date(str(a.value("date")),dateFormat));
         if(active && action=="map_import") {
@@ -816,7 +843,7 @@ struct ImportModel::Worker {
                 const QFileInfo location(path);
                 if(location.exists() && !a.value("overwrite").toBool()) {overwriteRequired=true;throw std::runtime_error((path+" already exists").toStdString());}
                 if(!QDir().mkpath(location.absolutePath())) throw std::runtime_error("Cannot create dataset directory");
-                gateway->create_configured(path.toStdString(),a.value("overwrite").toBool(),a.value("protected",true).toBool(),str(a.value("password")),str(a.value("name")),Currency(str(a.value("currency"))),QDate::currentDate().toString(Qt::ISODate).toStdString(),{str(a.value("dateFormat","YYYY-MM-DD")),a.value("defaultCategories",false).toBool()});
+                gateway->create_configured(path.toStdString(),a.value("overwrite").toBool(),a.value("protected",true).toBool(),str(a.value("password")),str(a.value("name")),Currency(str(a.value("currency"))),QDate::currentDate().toString(Qt::ISODate).toStdString(),{str(a.value("dateFormat","YYYY-MM-DD")),a.value("defaultCategories",false).toBool()});observedSaved();
             } else {
                 gateway->open_controlled(path.toStdString(),action=="unlock"?std::optional(str(a.value("password"))):std::nullopt,context);
                 try { context.seal(); } catch (...) { gateway->close(); throw; }
@@ -927,7 +954,7 @@ struct ImportModel::Worker {
             }
             std::optional<app::TransferReceipt> result;
             try{result=repo.apply_transfer(operation,request);}catch(...){const auto failure=std::current_exception();try{result=repo.transfer_outcome(operation);if(result)result=repo.apply_transfer(operation,request);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Transfer outcome could not be confirmed. Reopen and inspect transfers before retrying.");}if(!result)std::rethrow_exception(failure);}
-            transferReceipt={{"operation",text(operation)},{"summary","Transfer operation saved · "+balanceImpact(result->before,result->change,result->after)}};
+            transferReceipt={{"operation",text(operation)},{"summary","Transfer operation saved · "+balanceImpact(result->before,result->change,result->after)}};observedSaved();
             transferCandidates.clear();candidateLink.clear();preparedMerge.reset();mergeOperation.clear();transferMergePreview.clear();
             if(selectedBatch.starts_with("~transfer-")){
                 bool present=false;const auto account=repo.account().identity;
@@ -951,6 +978,7 @@ struct ImportModel::Worker {
                 return saved.kind==6;
             };
             auto settle=[&]{
+                PresentationRead observation{diagnosticPresentationFailed};
                 if(move){
                     selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();receipt.clear();
                     if(!repo.account_selected() || repo.account().archived){
@@ -977,7 +1005,7 @@ struct ImportModel::Worker {
                 catch(...) {gateway->close();active=false;selected.clear();receipt.clear();selectedBatch.clear();throw std::runtime_error("Account command outcome is uncertain. Reopen and inspect the account before retrying.");}
                 if(!saved || !matches(*saved)) std::rethrow_exception(failure);
             }
-            settle();
+            observedSaved();settle();
             return;
         }
         if(action=="select_account" || action=="create_account") {
@@ -998,11 +1026,13 @@ struct ImportModel::Worker {
                     if(!saved || saved->name!=name || saved->currency!=currency || saved->date!=date)std::rethrow_exception(failure);
                 }
             }
+            if(action=="create_account")observedSaved();
             std::optional<std::int64_t> priorAccount;std::optional<AccountView> priorView;
             if(repo.account_selected()){priorAccount=repo.account().identity;priorView=AccountView{filter,projected,sort,descending,selectedBatch,selectedOrdinal,selection,selectionAnchor,selectionFocus};}
             try {repo.select_account(id);}
             catch(...) {
                 if(action!="create_account")throw;
+                diagnosticPresentationFailed=true;
                 gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();
                 throw std::runtime_error("Account was created durably, but could not be selected. Reopen and inspect the account list before retrying.");
             }
@@ -1045,7 +1075,7 @@ struct ImportModel::Worker {
                 catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error("Category change outcome is uncertain. Reopen the dataset and inspect category history before retrying.");}
                 if(!result)std::rethrow_exception(failure);
             }
-            categoryReceipt={{"operation",text(result->operation)},{"summary","Category change saved at catalog revision "+QString::number(result->catalog_after)}};
+            categoryReceipt={{"operation",text(result->operation)},{"summary","Category change saved at catalog revision "+QString::number(result->catalog_after)}};observedSaved();
             preparedCategory.reset();categoryOperation.clear();categoryPreview.clear();
             try {catalog();selectCategory(result->after.identity);if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);}
             catch(...) {const auto saved=categoryReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();categoryReceipt=saved;throw std::runtime_error("Category change was saved durably, but its refreshed view could not be loaded. Reopen and inspect category history; do not apply it again.");}
@@ -1087,7 +1117,7 @@ struct ImportModel::Worker {
                 catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error("Committed change outcome is uncertain. Reopen this dataset and inspect its committed history before retrying.");}
                 if(!result)std::rethrow_exception(failure);
             }
-            changeReceipt={{"operation",text(result->operation)},{"summary",changeName(result->kind)+" applied · "+balanceImpact(result->before,result->change,result->after)}};
+            changeReceipt={{"operation",text(result->operation)},{"summary",changeName(result->kind)+" applied · "+balanceImpact(result->before,result->change,result->after)}};observedSaved();
             preparedChange.reset();preparedOperation.clear();changePreview.clear();
             try {inspect(result->identity.batch,result->identity.ordinal,context);entryDetails(result->identity);if(historyLoaded)listHistory();}
             catch(...) {
@@ -1116,7 +1146,7 @@ struct ImportModel::Worker {
             std::optional<app::BulkReceipt> result;
             try{result=repo.apply_bulk(bulkOperation,*preparedBulk);}
             catch(...){const auto failure=std::current_exception();try{result=repo.bulk_outcome(bulkOperation);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Bulk outcome is uncertain. Reopen and inspect committed history before retrying.");}if(!result)std::rethrow_exception(failure);}
-            bulkReceipt={{"operation",text(result->operation)},{"summary",changeName(result->request.kind)+" applied to "+QString::number(result->entries.size())+" transactions · "+balanceImpact(result->before,result->change,result->after)}};
+            bulkReceipt={{"operation",text(result->operation)},{"summary",changeName(result->request.kind)+" applied to "+QString::number(result->entries.size())+" transactions · "+balanceImpact(result->before,result->change,result->after)}};observedSaved();
             preparedBulk.reset();bulkOperation.clear();bulkPreview.clear();
             selected.clear();selectedBatch.clear();selectedCommittedToken.reset();
             try{if(historyLoaded)listHistory();}catch(...){throw std::runtime_error("Bulk change was saved durably, but history could not be refreshed. Reopen and inspect committed history; do not apply it again.");}
@@ -1152,6 +1182,7 @@ struct ImportModel::Worker {
                 catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error("Rule reapply outcome is uncertain. Reopen and inspect committed history before retrying.");}
                 if(!result){preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();std::rethrow_exception(failure);}
             }
+            if(result->operation.empty())diagnosticUnchanged=true;else observedSaved();
             reapplyReceipt=result->operation.empty()?QVariantMap{{"operation",QString()},{"summary","No committed rows were changed"}}
                 :QVariantMap{{"operation",text(result->operation)},{"summary",(request.undo_of.empty()?QString("Rule reapply "):QString("Undo rule reapply "))+text(result->operation)+" changed "+QString::number(result->request.changed)+" committed row(s) · "+balanceImpact(result->before,result->change,result->after)}};
             preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();
@@ -1191,7 +1222,7 @@ struct ImportModel::Worker {
                 for(std::size_t i=0;i<document.accounts.size();++i){const auto& source=document.accounts[i];importPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",source.reported_balance?text(*source.reported_balance):QString("Not supplied")},{"currency",text(document.format=="qif"?home:source.currency_code)}});}
                 return;
             }
-            const auto batch=repo.ingest_controlled(identity(),owned,order,context);
+            const auto batch=repo.ingest_controlled(identity(),owned,order,context);observedSaved(diag::Code::prepare);
             projected=true; selected.clear();selectedBatch.clear();
             if(batch.count && !batch.processing_incomplete) inspect(batch.id,0,context);
             else selected={{"batch",text(batch.id)},{"editable",false},{"source",evidencePreview(owned)}};
@@ -1212,12 +1243,13 @@ struct ImportModel::Worker {
             std::optional<app::ImportGroup> saved;
             try{saved=repo.prepare_import_group(preparedImport->id,preparedImport->bytes,preparedImport->profile,*preparedMappings,context,preparedImport->label);}
             catch(...){const auto failure=std::current_exception();try{saved=repo.import_group_outcome(preparedImport->id);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();preparedImport.reset();preparedMappings.reset();importPlan.clear();throw std::runtime_error("Import capture outcome is uncertain. Reopen and inspect the account imports before retrying.");}if(!saved){preparedMappings.reset();std::rethrow_exception(failure);}}
+            observedSaved(diag::Code::capture);
             auto group=*saved;
             preparedImport.reset();importPlan.clear();
             if(group.state==app::GroupState::aborted)throw std::runtime_error("This import was already aborted; choose the file again to start a new import.");
             accountViews.insert_or_assign(repo.account().identity,AccountView{filter,projected,sort,descending,selectedBatch,selectedOrdinal,selection,selectionAnchor,selectionFocus});
-            try{repo.select_account(group.accounts.front().account);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Import source and accounts were saved, but selection failed. Reopen and resume or abort the retained import.");}selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;
-            if(group.state==app::GroupState::captured){auto sealed=app::OperationContext::sealed;if(!context.state.compare_exchange_strong(sealed,app::OperationContext::available))throw std::logic_error("Invalid import cancellation gate");group=resumeGroup(group.id,context);}
+            try{repo.select_account(group.accounts.front().account);}catch(...){diagnosticPresentationFailed=true;gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Import source and accounts were saved, but selection failed. Reopen and resume or abort the retained import.");}selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;
+            if(group.state==app::GroupState::captured){auto sealed=app::OperationContext::sealed;if(!context.state.compare_exchange_strong(sealed,app::OperationContext::available))throw std::logic_error("Invalid import cancellation gate");context.observeState();group=resumeGroup(group.id,context);}
 
             if(!group.accounts.empty()){const auto batches=repo.batches();const auto b=std::find_if(batches.begin(),batches.end(),[&](const auto& b){return b.id==group.accounts.front().batch;});if(b!=batches.end() && b->count)inspect(b->id,0,context);}
         } else if(action=="group_resolve_transfers") {
@@ -1261,18 +1293,18 @@ struct ImportModel::Worker {
             auto row=repo.row({selectedBatch,selectedOrdinal});
             if(!row.draft && !row.source.repairable) throw std::invalid_argument("This record cannot be repaired");
             const auto edit=editedDraft(a,row.source.original_amount,repo,row.draft?&*row.draft:nullptr,&row.source);
-            repo.save({selectedBatch,selectedOrdinal},selectedRevision,edit); inspect(selectedBatch,selectedOrdinal,context);
+            repo.save({selectedBatch,selectedOrdinal},selectedRevision,edit);observedSaved(); inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="decide") {
             imports::Decision decision{imports::Disposition::include,{}};
             if(a.value("duplicate").toBool()) decision={imports::Disposition::duplicate,imports::Occurrence{str(a.value("batch")),a.value("ordinal").toUInt()}};
-            repo.decide({selectedBatch,selectedOrdinal},selectedRevision,decision);inspect(selectedBatch,selectedOrdinal,context);
+            repo.decide({selectedBatch,selectedOrdinal},selectedRevision,decision);observedSaved();inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="opening") {
-            const auto acct=repo.account();repo.opening(acct.revision,str(a.value("date")),Money::parse(str(a.value("amount")),acct.currency));
+            const auto acct=repo.account();repo.opening(acct.revision,str(a.value("date")),Money::parse(str(a.value("amount")),acct.currency));observedSaved();
             if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="commit" || action=="discard") {
             const auto batches=repo.batches(); const auto b=std::find_if(batches.begin(),batches.end(),[&](const auto& item){return a.contains("batch")?item.id==str(a.value("batch")):(item.state==app::BatchState::pending || item.state==app::BatchState::captured);});
             if(b==batches.end()) throw std::logic_error("No pending import");
-            if(action=="discard") repo.discard(b->id,b->revision);
+            if(action=="discard") {repo.discard(b->id,b->revision);observedSaved();}
             else {
                 const auto operation="commit-"+b->id+"-"+std::to_string(b->revision);
                 auto result=repo.durable_outcome(operation);
@@ -1291,7 +1323,7 @@ struct ImportModel::Worker {
                     }
                 }
                 receipt={{"operation",text(result->operation)},{"included",static_cast<int>(result->included)},{"excluded",static_cast<int>(result->excluded)},
-                    {"before",money(result->before)},{"change",money(result->change)},{"after",money(result->after)}};
+                    {"before",money(result->before)},{"change",money(result->change)},{"after",money(result->after)}};observedSaved();
             }
             if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="backup") gateway->backup_controlled(str(a.value("path")),context);
@@ -1330,7 +1362,7 @@ struct ImportModel::Worker {
         } else if(action=="rules_load" || action=="rules_discard" || action=="rules_save" || action=="rules_preview" || action=="rules_apply" || action=="rules_prefill") {
             if(!repo.rules_supported()) throw std::invalid_argument("Rules are not enabled for this dataset");
             auto closeUnknown=[&](const char* message){gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error(message);};
-            auto refreshFailed=[&](const QString& sentence){const auto saved=ruleReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();ruleReceipt=saved;throw std::runtime_error(sentence.toStdString());};
+            auto refreshFailed=[&](const QString& sentence){diagnosticPresentationFailed=true;const auto saved=ruleReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();ruleReceipt=saved;throw std::runtime_error(sentence.toStdString());};
             const auto images=[&]{
                 const auto rows=a.value("rules").toList();
                 if(rows.size()>static_cast<qsizetype>(rules::EvaluationLimits::rules)) throw std::invalid_argument("Too many rules");
@@ -1387,6 +1419,7 @@ struct ImportModel::Worker {
                     catch(...) {closeUnknown("Rule save outcome is uncertain. Reopen the dataset and inspect rule history before retrying.");}
                     if(!result) std::rethrow_exception(failure);
                 }
+                if(result->unchanged)diagnosticUnchanged=true;else observedSaved();
                 ruleReceipt=result->unchanged?QVariantMap{{"operation",QString()},{"unchanged",true},{"summary","Rules unchanged"}}
                     :QVariantMap{{"operation",text(result->operation)},{"unchanged",false},{"summary","Rules saved at revision "+QString::number(result->ruleset_after)}};
                 rulePreview.clear();preparedApply.reset();ruleApplyOperation.clear();
@@ -1409,6 +1442,7 @@ struct ImportModel::Worker {
                     catch(...) {closeUnknown("Rule application outcome is uncertain. Reopen the dataset and inspect the pending drafts before retrying.");}
                     if(!result) {ruleApplyOperation.clear();preparedApply.reset();rulePreview.clear();std::rethrow_exception(failure);}
                 }
+                if(result->operation.empty())diagnosticUnchanged=true;else observedSaved();
                 ruleReceipt=result->operation.empty()?QVariantMap{{"operation",QString()},{"summary","No pending drafts were changed"}}
                     :QVariantMap{{"operation",text(result->operation)},{"summary","Rule application "+text(result->operation)+" changed "+QString::number(result->changed)+" draft(s)"}};
                 rulePreview.clear();preparedApply.reset();ruleApplyOperation.clear();
@@ -1474,14 +1508,33 @@ QVariant ImportModel::data(const QModelIndex& index,int role) const {
 }
 QHash<int,QByteArray> ImportModel::roleNames() const {return {{Qt::UserRole,"record"}};}
 void ImportModel::requestCancel() {
-    if(busy_ && operation_ && operation_->request()) {phase_="Cancellation requested";emit changed();}
+    if(busy_ && operation_ && operation_->request()) {diag::Collector::instance().cancel(diagnosticOperation_,diag::Code::requested);phase_="Cancellation requested";emit changed();}
 }
 void ImportModel::command(const QString& action,const QVariantMap& args) {
-    if(busy_) {if(action=="inspect" && activeAction_=="select")pendingInspection_=args;return;}
+    auto& observer=diag::Collector::instance();
+    auto safeAction=diag::Action::unclassified;
+    for(unsigned i=1;i<static_cast<unsigned>(diag::Action::count);++i){
+        const auto candidate=static_cast<diag::Action>(i);const auto name=diag::name(candidate);
+        if(action==QLatin1StringView(name.data(),static_cast<qsizetype>(name.size()))){safeAction=candidate;break;}
+    }
+
+    if(busy_) {
+        if(action=="inspect" && activeAction_=="select") {
+            if(deferredDiagnostic_)observer.admit(safeAction,diag::EventKind::superseded,deferredDiagnostic_);
+            deferredDiagnostic_=observer.admit(safeAction,diag::EventKind::deferred);observer.deferred(deferredDiagnostic_);pendingInspection_=args;
+        } else observer.admit(safeAction,diag::EventKind::rejected_busy);
+        return;
+    }
+    if(safeAction==diag::Action::unclassified){observer.admit(safeAction,diag::EventKind::rejected_invalid);diagnosticOperation_=0;}
+    else diagnosticOperation_=observer.admit(safeAction,diag::EventKind::admitted,resumedDiagnostic_);
+    resumedDiagnostic_=0;
+    const auto diagnosticId=diagnosticOperation_;
     activeAction_=action;
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
+    if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
     if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates") operation->seal();
+    observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
         if(!operation) return;
@@ -1494,27 +1547,94 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     busy_=true;error_.clear();emit changed();
     struct Result {QVariantMap state;std::shared_ptr<const app::LedgerView> rows;QString error;bool success=false;};
     auto* watcher=new QFutureWatcher<Result>(this);
-    connect(watcher,&QFutureWatcher<Result>::finished,this,[this,watcher,action]{
+    connect(watcher,&QFutureWatcher<Result>::finished,this,[this,watcher,action,diagnosticId]{
+        diag::Scope scope(diagnosticId);diag::Span applySpan(diag::Code::model_apply);
         auto result=watcher->result();watcher->deleteLater();
         if(rows_!=result.rows) {
             beginResetModel();state_=std::move(result.state);auto retired=std::move(rows_);rows_=std::move(result.rows);endResetModel();
             // Destruction of large retired snapshots must not stall the UI thread.
-            pool_.start([retired=std::move(retired)]{});
+            diag::Collector::instance().job(true);
+            pool_.start([retired=std::move(retired),diagnosticId]() mutable {diag::Scope scope(diagnosticId);diag::Span span(diag::Code::cleanup);retired.reset();diag::Collector::instance().job(false);});
         } else state_=std::move(result.state);
+        diag::Collector::instance().applied(diagnosticId,action=="close" || action=="open" || action=="unlock" || action=="create");
         error_=std::move(result.error);busy_=false;phase_.clear();operation_->progress={};operation_.reset();emit changed();emit completed(action,result.success);
-        if(pendingInspection_ && !busy_){auto args=std::move(*pendingInspection_);pendingInspection_.reset();if(state_.value("active").toBool())command("inspect",args);}
+        if(pendingInspection_ && !busy_){auto args=std::move(*pendingInspection_);pendingInspection_.reset();resumedDiagnostic_=deferredDiagnostic_;deferredDiagnostic_=0;diag::Collector::instance().deferred(0);if(state_.value("active").toBool())command("inspect",args);else{diag::Collector::instance().admit(diag::Action::inspect,diag::EventKind::superseded,resumedDiagnostic_);resumedDiagnostic_=0;}}
     });
-    watcher->setFuture(QtConcurrent::run(&pool_,[worker=worker_,action,args,operation]{
-        Result result; bool unlock=false;
-        try {worker->execute(action,args,*operation);result.success=true;}
-        catch(const app::OperationOutcomeUnknown& e){worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();worker->selectedBatch.clear();worker->invalidate();result.error=QString::fromUtf8(e.what());}
-        catch(const app::OperationCancelled& e){if(action!="query")worker->invalidate();result.error=action=="backup"?"Backup cancelled before publication. The source dataset is unchanged. An encrypted .partial candidate may remain; retry to a new destination.":QString::fromUtf8(e.what());}
+    watcher->setFuture(QtConcurrent::run(&pool_,[worker=worker_,action,args,operation,diagnosticId,safeAction]{
+        diag::Scope scope(diagnosticId);diag::Span workerSpan(diag::Code::worker);auto& observer=diag::Collector::instance();observer.start(diagnosticId);
+        auto outcome=diag::Result::failed;auto persistence=diag::Persistence::unknown;auto presentation=diag::Presentation::awaiting_refresh;
+        Result result; bool unlock=false,uncertain=false;
+        try {worker->execute(action,args,*operation);result.success=true;outcome=diag::Result::succeeded;
+            // Successful return from these existing complete commands confirms persistence.
+            switch(safeAction) {
+            case diag::Action::create_account:
+            case diag::Action::rename_account:
+            case diag::Action::archive_account:
+            case diag::Action::reactivate_account:
+            case diag::Action::delete_account:
+            case diag::Action::correct_opening:
+            case diag::Action::reassign_currency:
+            case diag::Action::undo_account:
+            case diag::Action::map_import:
+            case diag::Action::group_balance:
+            case diag::Action::group_abort:
+            case diag::Action::group_resolve_transfers:
+            case diag::Action::resume:
+            case diag::Action::save:
+            case diag::Action::commit:
+            case diag::Action::discard:
+            case diag::Action::opening:
+            case diag::Action::apply_change:
+            case diag::Action::apply_bulk:
+            case diag::Action::apply_category:
+            case diag::Action::backup:
+                persistence=diag::Persistence::confirmed_saved;break;
+            case diag::Action::probe:
+            case diag::Action::open:
+            case diag::Action::unlock:
+            case diag::Action::close:
+            case diag::Action::select:
+            case diag::Action::select_account:
+            case diag::Action::inspect:
+            case diag::Action::query:
+            case diag::Action::evidence:
+            case diag::Action::history:
+            case diag::Action::entry_history:
+            case diag::Action::rules_load:
+            case diag::Action::rules_preview:
+            case diag::Action::rules_reapply_preview:
+            case diag::Action::preview_change:
+            case diag::Action::preview_category:
+            case diag::Action::transfer_candidates:
+            case diag::Action::prepare_create:
+            case diag::Action::cancel_change:
+            case diag::Action::cancel_bulk:
+            case diag::Action::cancel_merge:
+            case diag::Action::cancel_reapply:
+            case diag::Action::category_select:
+            case diag::Action::rules_discard:
+            case diag::Action::rules_prefill:
+            case diag::Action::cancel_category_preview:
+            case diag::Action::category_list:
+            case diag::Action::preview_bulk:
+            case diag::Action::cancel_import_mapping:
+                persistence=diag::Persistence::not_applicable;break;
+            default:break;
+            }
+        }
+        catch(const app::OperationOutcomeUnknown& e){uncertain=true;worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();worker->selectedBatch.clear();worker->invalidate();result.error=QString::fromUtf8(e.what());}
+        catch(const app::OperationCancelled& e){outcome=diag::Result::cancelled;if(action!="query")worker->invalidate();result.error=action=="backup"?"Backup cancelled before publication. The source dataset is unchanged. An encrypted .partial candidate may remain; retry to a new destination.":QString::fromUtf8(e.what());}
         catch(const app::UnlockRequired& e){worker->invalidate();result.error=QString::fromUtf8(e.what());unlock=true;}
         catch(const std::exception& e){if(action!="query")worker->invalidate();result.error=QString::fromUtf8(e.what());}
-        operation->state.store(app::OperationContext::sealed);
+        if(worker->diagnosticUnchanged)persistence=diag::Persistence::confirmed_unchanged;
+        if(worker->diagnosticSaved || diag::context().saved)persistence=diag::Persistence::confirmed_saved;
+        if(worker->diagnosticPresentationFailed && outcome!=diag::Result::cancelled)presentation=diag::Presentation::failed;
+        if(uncertain)persistence=diag::Persistence::unknown;
+        operation->state.store(app::OperationContext::sealed);observer.cancel(diagnosticId,diag::Code::sealed);
         operation->checkpoint("Refreshing verified ledger");
         try {auto snapshot=worker->snapshot();result.state=std::move(snapshot.first);result.rows=std::move(snapshot.second);}
         catch(const std::exception&){
+            presentation=diag::Presentation::failed;
             worker->invalidate();
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
@@ -1533,6 +1653,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             result.state={{"active",false},{"path",worker->path},{"bulkReceipt",worker->bulkReceipt},{"changeReceipt",worker->changeReceipt},{"categoryReceipt",worker->categoryReceipt},{"ruleReceipt",worker->ruleReceipt},{"reapplyReceipt",worker->reapplyReceipt}};
             result.success=false;
         }
+        observer.finish(diagnosticId,outcome,persistence,presentation);
         result.state["unlockRequired"]=unlock || worker->welcomePassword;return result;
     }));
 }
@@ -1546,3 +1667,41 @@ bool ImportModel::categoryNameMatches(const QString& name,const QString& selecte
 QString ImportModel::suggestedDateFormat(const QString& currency) const {return text(suggested_date_format(currency.toStdString()));}
 QString ImportModel::todayDisplay() const {return text(display_date(QDate::currentDate().toString(Qt::ISODate).toStdString(),state_.value("dateFormat","YYYY-MM-DD").toString().toStdString()));}
 QString ImportModel::dateFormatExample(const QString& format) const {try{return text(display_date("2026-10-28",format.toStdString()));}catch(const std::exception&){return "Invalid format: use YYYY, MM and DD once each";}}
+
+void ImportModel::observeUi(const QVariantMap& values) {
+    auto& observer=diag::Collector::instance();if(!observer.enabled())return;
+    try {
+    diag::Ui ui;ui.generation=values.value("generation").toULongLong();
+    ui.surface=diag::surface(values.value("surface").toString().toStdString());
+    ui.modal_mask=values.value("modals").toULongLong() & ((1ULL<<40)-1);
+    ui.pending_mask=values.value("pending").toULongLong() & 4095;
+    ui.control_visible=values.value("visibleControls").toULongLong() & 65535;
+    ui.control_enabled=values.value("enabledControls").toULongLong() & 65535;
+    ui.selection=state_.value("selectionCount").toUInt();ui.filtered=static_cast<std::uint32_t>(rowCount());
+    ui.loaded=rows_?static_cast<std::uint32_t>(rows_->rows.size()):0;
+    ui.delegates=values.value("delegates").toUInt();ui.first=values.value("first",-1).toInt();ui.last=values.value("last",-1).toInt();
+    ui.editor_kind=std::clamp(values.value("editorKind").toInt(),0,3);
+    for(const auto& value:values.value("modalStack").toList()){
+        const int code=value.toInt();if(code<0 || code>29 || ui.modal_count==ui.modal_stack.size())continue;
+        ui.modal_stack[ui.modal_count++]=static_cast<unsigned>(code);
+        ui.modal_mask|=1ULL<<static_cast<unsigned>(code);
+    }
+    ui.focus_role=std::clamp(values.value("focusRole").toInt(),0,11);
+    ui.sort=state_.value("sort").toInt();ui.descending=state_.value("descending").toBool();
+    ui.projected=state_.value("mode")=="Projected";ui.search=values.value("search").toBool();ui.search_valid=values.value("searchValid").toBool();
+    ui.sidebar=values.value("sidebar").toBool();ui.dirty=values.value("dirty").toBool();ui.selected_visible=values.value("selectedVisible").toBool();
+    const auto group=state_.value("importGroup").toMap();ui.blockers=static_cast<std::uint32_t>(group.value("blockers").toList().size());ui.blockers_total=group.value("unresolved").toUInt();
+    ui.native_exposed=false;
+    if(QGuiApplication::platformName()!="offscreen" && QGuiApplication::platformName()!="minimal")for(auto* window:QGuiApplication::topLevelWindows())if(window->isExposed() && window->visibility()!=QWindow::Minimized)ui.native_exposed=true;
+    ui.interaction_ready=values.value("ready").toBool() && !busy_;
+    // Native chooser pixels are outside this QQuickWindow frame proxy.
+    if(ui.modal_mask & ((1ULL<<8)|(1ULL<<9)|(1ULL<<11)|(1ULL<<12)))ui.native_exposed=false;
+    observer.publish(ui);
+    const auto uiRevision=observer.snapshot(UINT64_MAX).ui.revision;
+    if(!ui.native_exposed)diagnosticFrameRequested_=UINT64_MAX;
+    if(ui.interaction_ready && ui.native_exposed && diagnosticFrameRequested_!=uiRevision){
+        diagnosticFrameRequested_=uiRevision;
+        for(auto* window:QGuiApplication::topLevelWindows())if(window->isExposed())window->requestUpdate();
+    }
+    }catch(...){observer.healthFailure();}
+}

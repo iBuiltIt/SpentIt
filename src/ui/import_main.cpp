@@ -1,3 +1,9 @@
+#include <spentit/diagnostics.hpp>
+#include <QQuickWindow>
+#include <iostream>
+#ifdef SPENTIT_DIAGNOSTICS
+#include "diagnostic_transport.hpp"
+#endif
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QGuiApplication>
@@ -12,6 +18,13 @@
 #include <QStyleHints>
 int main(int argc,char** argv) {
     QGuiApplication app(argc,argv);
+    const bool diagnosticsRequested=app.arguments().contains("--diagnostics");
+    if(diagnosticsRequested && !spentit::diagnostics::Collector::instance().enable()){std::cerr<<"Diagnostics unsupported in this build.\n";return 2;}
+#ifdef SPENTIT_DIAGNOSTICS
+    DiagnosticTransport transport;
+    if(diagnosticsRequested){if(!transport.start()){std::cerr<<"Diagnostics endpoint unavailable; permissions were not relaxed.\n";return 2;}std::cerr<<"Diagnostics endpoint: "<<transport.endpoint().toStdString()<<'\n';}
+#endif
+    const auto diagnosticStartup=spentit::diagnostics::now();
     app.setOrganizationName("SpentIt");app.setApplicationName("Durable import experiment");
     // Keep the existing settings identity so the remembered document survives.
     app.setApplicationDisplayName("SpentIt");
@@ -39,7 +52,24 @@ int main(int argc,char** argv) {
     }
     ImportModel model(spentit::storage::document_gateway());
     QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);
-    engine.load(QUrl("qrc:/spentit/ImportMain.qml"));if(engine.rootObjects().isEmpty())return 1;
-    if(app.arguments().contains("--smoke"))QTimer::singleShot(500,&app,[&]{engine.rootObjects().first()->setProperty("allowClose",true);app.quit();});
+    {spentit::diagnostics::Span qmlSpan(spentit::diagnostics::Code::qml_creation);
+    engine.load(QUrl("qrc:/spentit/ImportMain.qml"));if(engine.rootObjects().isEmpty())return 1;}
+    if(diagnosticsRequested) {
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        if(window) {
+            auto frameGeneration=std::make_shared<std::atomic<qulonglong>>(UINT64_MAX);
+            auto frameRevision=std::make_shared<std::atomic<qulonglong>>(UINT64_MAX);
+            QObject::connect(window,&QQuickWindow::beforeSynchronizing,window,[frameGeneration,frameRevision]{
+                const auto snapshot=spentit::diagnostics::Collector::instance().snapshot(UINT64_MAX);
+                frameGeneration->store(snapshot.ui.interaction_ready && snapshot.ui.generation==snapshot.view?snapshot.view:UINT64_MAX);
+                frameRevision->store(snapshot.ui.revision);
+            },Qt::DirectConnection);
+            QObject::connect(window,&QQuickWindow::frameSwapped,window,[frameGeneration,frameRevision]{
+                spentit::diagnostics::Collector::instance().frame(frameGeneration->load(),frameRevision->load());
+            },Qt::DirectConnection);
+        }
+    }
+    if(app.arguments().contains("--smoke"))QTimer::singleShot(diagnosticsRequested?1500:500,&app,[&]{engine.rootObjects().first()->setProperty("allowClose",true);app.quit();});
+    spentit::diagnostics::Collector::instance().metric(spentit::diagnostics::Code::startup,spentit::diagnostics::now()-diagnosticStartup,0,false);
     return app.exec();
 }

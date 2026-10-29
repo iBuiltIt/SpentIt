@@ -23,6 +23,7 @@ ApplicationWindow {
     component UsableComboBox: ComboBox {
         id:combo
         popup:Popup {
+            onVisibleChanged:window.diagnosticModalChanged(29,visible)
             y:combo.height;width:Math.max(combo.width,180);padding:4
             height:Math.min(320,menu.contentHeight+8)
             contentItem:ListView {
@@ -34,11 +35,103 @@ ApplicationWindow {
     }
     width: 1440; height: 850; minimumWidth:720; minimumHeight:560; visible: true
     title: "SpentIt"
+
+    property var diagnosticModalStack: []
+    function diagnosticModalChanged(code,opened) {
+        if(!workflow.diagnosticsEnabled)return
+        let next=diagnosticModalStack.filter(function(value){return value!==code})
+        if(opened)next.push(code)
+        diagnosticModalStack=next
+    }
+    Connections {target:diagnosticFileMenu;function onVisibleChanged(){window.diagnosticModalChanged(0,diagnosticFileMenu.visible)}}
+    Connections {target:importBlockersDialog;function onVisibleChanged(){window.diagnosticModalChanged(1,importBlockersDialog.visible)}}
+    Connections {target:transferDialog;function onVisibleChanged(){window.diagnosticModalChanged(2,transferDialog.visible)}}
+    Connections {target:transferCommit;function onVisibleChanged(){window.diagnosticModalChanged(3,transferCommit.visible)}}
+    Connections {target:protectedCommit;function onVisibleChanged(){window.diagnosticModalChanged(4,protectedCommit.visible)}}
+    Connections {target:ledgerContext;function onVisibleChanged(){window.diagnosticModalChanged(5,ledgerContext.visible)}}
+    Connections {target:accountContext;function onVisibleChanged(){window.diagnosticModalChanged(6,accountContext.visible)}}
+    Connections {target:overwriteDialog;function onVisibleChanged(){window.diagnosticModalChanged(7,overwriteDialog.visible)}}
+    Connections {target:openDialog;function onVisibleChanged(){window.diagnosticModalChanged(8,openDialog.visible)}}
+    Connections {target:createDialog;function onVisibleChanged(){window.diagnosticModalChanged(9,createDialog.visible)}}
+    Connections {target:importMapping;function onVisibleChanged(){window.diagnosticModalChanged(10,importMapping.visible)}}
+    Connections {target:importDialog;function onVisibleChanged(){window.diagnosticModalChanged(11,importDialog.visible)}}
+    Connections {target:backupDialog;function onVisibleChanged(){window.diagnosticModalChanged(12,backupDialog.visible)}}
+    Connections {target:unsaved;function onVisibleChanged(){window.diagnosticModalChanged(13,unsaved.visible)}}
+    Connections {target:changePreview;function onVisibleChanged(){window.diagnosticModalChanged(14,changePreview.visible)}}
+    Connections {target:mergePreview;function onVisibleChanged(){window.diagnosticModalChanged(15,mergePreview.visible)}}
+    Connections {target:bulkDialog;function onVisibleChanged(){window.diagnosticModalChanged(16,bulkDialog.visible)}}
+    Connections {target:reapplyDialog;function onVisibleChanged(){window.diagnosticModalChanged(17,reapplyDialog.visible)}}
+    Connections {target:rulesUnsaved;function onVisibleChanged(){window.diagnosticModalChanged(18,rulesUnsaved.visible)}}
+    Connections {target:matchedRuleDialog;function onVisibleChanged(){window.diagnosticModalChanged(19,matchedRuleDialog.visible)}}
+    Connections {target:categoryContext;function onVisibleChanged(){window.diagnosticModalChanged(20,categoryContext.visible)}}
+    Connections {target:categoryPicker;function onVisibleChanged(){window.diagnosticModalChanged(21,categoryPicker.visible)}}
+    Connections {target:renameDialog;function onVisibleChanged(){window.diagnosticModalChanged(22,renameDialog.visible)}}
+    Connections {target:deleteAccountDialog;function onVisibleChanged(){window.diagnosticModalChanged(23,deleteAccountDialog.visible)}}
+    Connections {target:correctOpeningDialog;function onVisibleChanged(){window.diagnosticModalChanged(24,correctOpeningDialog.visible)}}
+    Connections {target:currencyDialog;function onVisibleChanged(){window.diagnosticModalChanged(25,currencyDialog.visible)}}
+    Connections {target:importCategoriesDialog;function onVisibleChanged(){window.diagnosticModalChanged(26,importCategoriesDialog.visible)}}
+    Connections {target:discardDialog;function onVisibleChanged(){window.diagnosticModalChanged(27,discardDialog.visible)}}
+    Connections {target:commitDialog;function onVisibleChanged(){window.diagnosticModalChanged(28,commitDialog.visible)}}
+    // Diagnostics publishes only this explicit semantic allowlist, at <=10 Hz.
+    Label {z:1000;anchors.right:parent.right;anchors.top:parent.top;text:"Diagnostics enabled";visible:workflow.diagnosticsEnabled;color:"#9b5a00"}
+    property bool diagnosticSearchValid: true
+    Connections {target:workflow;function onCompleted(action,success){if(action==="query")window.diagnosticSearchValid=success}}
+    function publishDiagnostics() {
+        let modals=0
+        if(diagnosticFileMenu.visible) modals+=Math.pow(2,0)
+        if(importBlockersDialog.visible) modals+=Math.pow(2,1)
+        if(transferDialog.visible) modals+=Math.pow(2,2)
+        if(transferCommit.visible) modals+=Math.pow(2,3)
+        if(protectedCommit.visible) modals+=Math.pow(2,4)
+        if(ledgerContext.visible) modals+=Math.pow(2,5)
+        if(accountContext.visible) modals+=Math.pow(2,6)
+        if(overwriteDialog.visible) modals+=Math.pow(2,7)
+        if(openDialog.visible) modals+=Math.pow(2,8)
+        if(createDialog.visible) modals+=Math.pow(2,9)
+        if(importMapping.visible) modals+=Math.pow(2,10)
+        if(importDialog.visible) modals+=Math.pow(2,11)
+        if(backupDialog.visible) modals+=Math.pow(2,12)
+        if(unsaved.visible) modals+=Math.pow(2,13)
+        if(changePreview.visible) modals+=Math.pow(2,14)
+        if(mergePreview.visible) modals+=Math.pow(2,15)
+        if(bulkDialog.visible) modals+=Math.pow(2,16)
+        if(reapplyDialog.visible) modals+=Math.pow(2,17)
+        if(rulesUnsaved.visible) modals+=Math.pow(2,18)
+        if(matchedRuleDialog.visible) modals+=Math.pow(2,19)
+        if(categoryContext.visible) modals+=Math.pow(2,20)
+        if(categoryPicker.visible) modals+=Math.pow(2,21)
+        if(renameDialog.visible) modals+=Math.pow(2,22)
+        if(deleteAccountDialog.visible) modals+=Math.pow(2,23)
+        if(correctOpeningDialog.visible) modals+=Math.pow(2,24)
+        if(currencyDialog.visible) modals+=Math.pow(2,25)
+        if(importCategoriesDialog.visible) modals+=Math.pow(2,26)
+        if(discardDialog.visible) modals+=Math.pow(2,27)
+        if(commitDialog.visible) modals+=Math.pow(2,28)
+        let pending=(startupPending?1:0)+(pendingAction?2:0)+(pendingSearch?4:0)+(pendingAccountNavigation?8:0)+(pendingCounterpart?16:0)+(ledgerViewRestore?32:0)+(closingRequested?64:0)+(guardHandoff?128:0)+(workflow.busy?256:0)+(probeTimer.running?512:0)
+        let first=ledger.indexAt(1,ledger.contentY+1)
+        let last=ledger.indexAt(1,ledger.contentY+ledger.height-1)
+        let count=0
+        for(let i=0;i<ledger.contentItem.children.length;i++)if(ledger.contentItem.children[i].hasOwnProperty("record"))count++
+        let controls=[search,projected,editDate,editPayee,editMemo,editTotal,catalogSearch,ruleLabel,ruleExpression,location,unlockPassword]
+        let visibleControls=0,enabledControls=0,focusRole=0
+        for(let i=0;i<controls.length;i++){
+            if(controls[i].visible)visibleControls+=Math.pow(2,i)
+            if(controls[i].enabled)enabledControls+=Math.pow(2,i)
+            if(controls[i].activeFocus)focusRole=i+1
+        }
+        workflow.observeUi({modalStack:diagnosticModalStack,editorKind:currentPage==="rules"?3:currentPage==="categories"?2:editEnabled?1:0,focusRole:focusRole,visibleControls:visibleControls,enabledControls:enabledControls,generation:workflow.diagnosticGeneration,surface:s.active?currentPage:settingUp?"setup":s.unlockRequired?"unlock":"welcome",modals:modals,pending:pending,
+          sidebar:sidebarVisible,dirty:dirty||categoryDirty||rulesDirty,search:search.text.length>0,searchValid:diagnosticSearchValid,
+          first:first,last:last,delegates:count,selectedVisible:!!ledger.currentItem && ledger.currentItem.y>=ledger.contentY && ledger.currentItem.y<ledger.contentY+ledger.height,
+          ready:modals!==0 || (pending===0 && (!s.active || currentPage!=="ledger" || ledger.count===0 || first>=0)),nativeExposed:false,
+          blockers:(s.importBlockers||[]).length,blockersTotal:s.importBlockerCount||0})
+    }
+    Timer {interval:100;repeat:true;running:workflow.diagnosticsEnabled;onTriggered:window.publishDiagnostics()}
     property var s: workflow.state
     property bool startupPending: false
     property string startupPath: ""
     menuBar: MenuBar {
         Menu {
+            id:diagnosticFileMenu
             title: "File"
             MenuItem {
                 objectName: "fileCloseDataset";text: "Close Dataset"

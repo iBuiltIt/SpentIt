@@ -35,6 +35,7 @@ class RecoveryUiTests : public QObject {
     }
 private slots:
     void initTestCase() {
+        if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS"))QVERIFY(spentit::diagnostics::Collector::instance().enable());
         QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("RecoveryUi");
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());

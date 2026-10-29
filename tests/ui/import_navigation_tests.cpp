@@ -15,7 +15,10 @@ class NavigationTests : public QObject {
     Q_OBJECT
     QTemporaryDir settings;
     void run(ImportModel& model,const QString& action,const QVariantMap& args={}) {
-        model.command(action,args);QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
+        model.command(action,args);
+        const auto id=spentit::diagnostics::Collector::instance().snapshot().active.id;
+        if(model.diagnosticsEnabled())QTRY_VERIFY_WITH_TIMEOUT(spentit::diagnostics::Collector::instance().snapshot().latest.id==id && spentit::diagnostics::Collector::instance().snapshot().latest.delivered!=0,30000);
+        else QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
         QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
     }
     static bool click(QObject* root,const char* name) {
@@ -28,10 +31,26 @@ class NavigationTests : public QObject {
     }
 private slots:
     void initTestCase() {
+        if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS"))QVERIFY(spentit::diagnostics::Collector::instance().enable());
         QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("Navigation");
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());QSettings().clear();
+    }
+    void diagnosticSemanticPrivacy() {
+        if(!spentit::diagnostics::Collector::instance().enabled())QSKIP("Opt-in diagnostics test");
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
+        run(model,"create",{{"path",dir.path()+"/CANARY-path"},{"protected",true},{"password","CANARY-password"},{"confirmation","CANARY-password"},{"name","CANARY-account"},{"currency","CAD"}});
+        root->setProperty("currentPage","settings");QVERIFY(QMetaObject::invokeMethod(root,"publishDiagnostics"));
+        auto observation=spentit::diagnostics::Collector::instance().snapshot();QCOMPARE(observation.ui.surface,spentit::diagnostics::Surface::settings);
+        root->setProperty("dirty",true);QVERIFY(QMetaObject::invokeMethod(root,"publishDiagnostics"));QVERIFY(spentit::diagnostics::Collector::instance().snapshot().ui.dirty);
+        window->hide();QVERIFY(QMetaObject::invokeMethod(root,"publishDiagnostics"));QVERIFY(!spentit::diagnostics::Collector::instance().snapshot().ui.native_exposed);
+        QVERIFY(spentit::diagnostics::Collector::instance().json().find("CANARY")==std::string::npos);
+        const auto generation=model.diagnosticGeneration();model.observeUi({{"generation",generation-1},{"surface","CANARY-payee"},{"ready",true}});
+        QCOMPARE(spentit::diagnostics::Collector::instance().snapshot().ui.surface,spentit::diagnostics::Surface::settings);
     }
     void guardedNavigationAndIsolation() {
         QTemporaryDir dir;
@@ -45,6 +64,20 @@ private slots:
         QFile file(dir.path()+"/source.qif");QVERIFY(file.open(QIODevice::WriteOnly));
         const QByteArray bytes="D1/1/2026\nT-1\nPOriginal\n^\n";QCOMPARE(file.write(bytes),bytes.size());file.close();
         run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        if(model.diagnosticsEnabled()) {
+            const auto record=model.rowIdentity(0);
+            model.command("select",{{"row",0}});
+            const auto selectedOperation=spentit::diagnostics::Collector::instance().snapshot().active.id;
+            model.command("history");
+            model.command("inspect",record);const auto deferred=spentit::diagnostics::Collector::instance().snapshot().deferred;
+            model.command("inspect",record);
+            QVERIFY(deferred!=0);QVERIFY(spentit::diagnostics::Collector::instance().snapshot().deferred!=deferred);
+            auto observation=spentit::diagnostics::Collector::instance().snapshot();
+            QCOMPARE(observation.outcomes[deferred%32].result,spentit::diagnostics::Result::superseded);
+            QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
+            QVERIFY(spentit::diagnostics::Collector::instance().snapshot().latest.id!=selectedOperation);
+            QTRY_COMPARE(spentit::diagnostics::Collector::instance().snapshot().cleanup,0ULL);
+        }
         const auto identity=model.rowIdentity(model.selectedRowIndex());
         QCOMPARE(root->property("currentPage").toString(),"ledger");
         auto* toggle=root->findChild<QQuickItem*>("sidebarToggle");QVERIFY(toggle);

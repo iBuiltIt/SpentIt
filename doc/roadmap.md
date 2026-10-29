@@ -1,6 +1,6 @@
 # Coordinated implementation roadmap
 
-Current priority: [application performance before repeated-transfer matching](import-performance-handoff.md), reordered and authorized by the owner on 2026-10-29. The bounded performance pass is implemented; full verified opening remains above target. Repeated-transfer matching is still pending its own Go.
+Current priority: [application diagnostics investigation and plan](../features/012-application-diagnostics.md), ahead of the remaining [performance and repeated-transfer matching handoff](import-performance-handoff.md). The owner subsequently authorized all seven diagnostics stages on 2026-10-29; implementation and verification are recorded in [the diagnostics guide](application-diagnostics.md). Screenshots and MCP are excluded. Remaining performance optimization and repeated-transfer matching are not authorized by that Go. The earlier bounded performance pass is implemented, but verified opening remains above target and repeated-transfer matching remains pending.
 
 Last updated: 2026-10-29
 
@@ -254,3 +254,6 @@ At this destination-package checkpoint, a unified category/account picker and br
 Do not re-ask accepted choices: either account may commit first and protect the other draft; matches require explicit confirmation; generated dates are provisional origin dates; destinations and links belong to allocations; pending bank matches stay provisional until their import commits; discard retains evidence and drops the proposal; manual/unmatched entries may be accepted and committed independently. Acceptance never authorizes unequal-amount linking. The pre-release format policy remains in effect.
 
 No private financial inputs, licensing, publication or release decisions are part of this package.
+
+
+Diagnostics implementation update (2026-10-29): the owner authorized all seven stages of [feature 012](../features/012-application-diagnostics.md), excluding screenshots/MCP, with the existing documentation changes preserved. See [the runtime contract and verification record](application-diagnostics.md). This authorization does not resume performance optimization or repeated-transfer matching.

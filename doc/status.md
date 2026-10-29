@@ -2,6 +2,22 @@
 
 Last updated: 2026-10-29
 
+## Agent diagnostics handoff — 2026-10-29
+
+Added an [agent-facing hooks/profiling guide](agent-diagnostics-guide.md), discoverable directly from `AGENTS.md`. It covers setup, intended-instance endpoint discovery, exact-operation and UI waits, numeric outcome decoding, timing/counter attribution, failure handling and reproducible synthetic comparisons. Recorded the owner’s acceptance of the existing OFF/ON build switch, including inert-code and distribution limitations. This follow-up changes documentation only; it does not start profiling or performance optimization. Verification: all 609 relative links/anchors across 41 repository Markdown documents passed; `git diff --check` passed. Runtime tests were not repeated for this documentation-only follow-up.
+
+## Application diagnostics implementation — 2026-10-29
+
+The owner gave Go for all seven diagnostics stages, excluding screenshots and MCP and stopping before performance optimization or repeated-transfer matching. The current change adds the optional standard-C++ collector, worker/outcome/storage/cache hooks, semantic QML state, owner-only local IPC on an independent thread, a read-only CLI, and correlated test/profiling support. No schema, financial command semantics, validation, durability or matching policy changes are intended. The prior documentation edits are retained.
+
+Verification includes 91/91 broad Release checks, ordinary-import I/O/interruption sweeps, targeted sanitizer checks, native JSON readiness and twelve serial workload comparisons. Grouped medians met the provisional 5% observation budget; ordinary pending reopen measured +15.2% amid substantial variation, so the overall overhead target remains unverified. The 19,000-row sanitizer replay passed import/reopen/edit/search/scroll. Actual verification and limitations are recorded in [application diagnostics](application-diagnostics.md). Feature 012 remains active while its documented semantic/profiling and platform/fault coverage gaps remain. Normal launch is disabled; explicitly use `./build/SpentIt --diagnostics` after building with the diagnostics option.
+
+## Application diagnostics investigation and plan — 2026-10-29
+
+Completed the owner-authorized investigation and documentation only. [Feature 012](../features/012-application-diagnostics.md) records inspected worker/model/QML/storage/test seams, privacy boundaries, operation/durability/presentation distinctions, semantic screen state, bounded local observation and a seven-step implementation plan. Screenshots are excluded. Tests and local profiling will use the same observation contract without requiring MCP; a possible MCP adapter remains separate future scope.
+
+This planning-only checkpoint preceded the remaining performance and repeated-transfer matching work. At that checkpoint no hooks, endpoint, MCP server, financial behavior or runtime changes were implemented; the implementation authorization and subsequent evidence are recorded above. No private dataset was accessed and no runtime tests or benchmarks were run. Documentation verification: all 202 relative links and referenced heading anchors across the five changed/new documents passed; `git diff --check` passed.
+
 ## Performance-first application pass — 2026-10-29
 
 The owner reversed the handoff order and gave Go for performance first. Implemented scoped SQL-plan reuse for reads and writes; candidate queries driven by the selected account's committed batches; a write-invalidated group snapshot for read-only switching; one starting committed balance per account during draft-only linking/Abort; bounded page caching; equivalent append-only transfer-history validation; and a single read of each committed batch's evidence associations. Identical progress labels no longer trigger repeated UI refreshes. Full verification, exact money, encryption, durable atomic commands, and current mutual-unique transfer matching remain in place. Existing schema-30/29 datasets need no reimport or migration. See [implementation and measurement boundaries](import-ui-performance.md#application-performance-work--2026-10-29).

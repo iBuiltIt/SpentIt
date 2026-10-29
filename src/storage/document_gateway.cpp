@@ -1,3 +1,4 @@
+#include <spentit/diagnostics.hpp>
 #include <spentit/storage_document_gateway.hpp>
 #include <algorithm>
 namespace spentit::storage {
@@ -42,6 +43,7 @@ public:
         app::OperationContext context; open_controlled(p,std::move(password),context);
     }
     void open_controlled(const std::filesystem::path& p,std::optional<std::string> password,const app::OperationContext& context) override {
+        diagnostics::Span span(diagnostics::Code::gateway);
         context.checkpoint("Opening dataset");
         if(store_) throw std::logic_error("Close the current dataset first");
         auto key=password?password_key(*password):std::string(public_document_key);
@@ -57,6 +59,7 @@ public:
         if(!store_) throw std::logic_error("No dataset is open"); return *store_;
     }
     void backup_controlled(const std::filesystem::path& p,const app::OperationContext& context) override {
+        diagnostics::Span span(diagnostics::Code::gateway);
         if(!store_) throw std::logic_error("No dataset is open");
         try { store_->backup_to(document_path(p),key_,{},&context); }
         catch(const app::OperationCancelled&) {

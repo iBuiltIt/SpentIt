@@ -1,3 +1,5 @@
+#include <spentit/diagnostics.hpp>
+namespace diag = spentit::diagnostics;
 #include <spentit/import_store.hpp>
 #include <spentit/statements.hpp>
 #include <spentit/date_format.hpp>
@@ -64,6 +66,7 @@ class Statement {
 public:
     Statement(sqlite3* db, const char* sql) {
         cache_=ScopedStatements::current(db);if(cache_){slot_=cache_->slot(sql);stmt_=cache_->take(slot_);}
+        diag::Collector::instance().statement(stmt_!=nullptr);
         if(!stmt_){const auto rc=sqlite3_prepare_v2(db,sql,-1,&stmt_,nullptr);if(rc!=SQLITE_OK){sqlite3_finalize(stmt_);fail(rc);}}
     }
     ~Statement() { if(!cache_ || !cache_->put(slot_,stmt_))sqlite3_finalize(stmt_); }
@@ -113,7 +116,7 @@ class Atomic {
 public:
     explicit Atomic(sqlite3* db) : db_(db) { exec(db_, "BEGIN IMMEDIATE"); }
     ~Atomic() { if (active_) sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); }
-    void commit() { exec(db_, "COMMIT"); active_ = false; }
+    void commit() { diag::Span commitSpan(diag::Code::transaction);exec(db_, "COMMIT"); active_ = false; }
 private:
     sqlite3* db_;
     bool active_ = true;
@@ -1069,13 +1072,13 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
         insert.text(1,id);insert.integer(2,static_cast<int>(profile));insert.text(3,qif::parser_version);insert.integer(4,integer(parsed.records.size()));insert.done();
         pin_source_currency(impl_->db,id,acct.currency);
         Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'capture')");event.text(1,id);event.done();
-        context.seal();context.checkpoint("Finishing source evidence retention");impl_->finish(transaction);
+        context.seal();context.checkpoint("Finishing source evidence retention");impl_->finish(transaction);diag::durable(diag::Code::capture);
     } catch (...) {
         const auto failure=std::current_exception();
         if(!sqlite3_get_autocommit(impl_->db)){context.state.store(app::OperationContext::sealed);throw app::OperationOutcomeUnknown();}
         try {
             Statement saved(impl_->db,"SELECT id FROM batches WHERE id=?");saved.text(1,id);
-            if(saved.row()) {context.state.store(app::OperationContext::sealed);return batch(impl_->db,id);}
+            if(saved.row()) {diag::durable(diag::Code::capture);context.state.store(app::OperationContext::sealed);return batch(impl_->db,id);}
         } catch (...) {context.state.store(app::OperationContext::sealed);throw app::OperationOutcomeUnknown();}
         std::rethrow_exception(failure);
     }
@@ -1083,6 +1086,7 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
     // can be lost here, because request() cannot change sealed to requested.
     auto sealed=app::OperationContext::sealed;
     if(!context.state.compare_exchange_strong(sealed,app::OperationContext::available)) fail(SQLITE_MISUSE);
+    context.observeState();
     parsed={};
     try {
         context.checkpoint("Source evidence retained");
@@ -1112,14 +1116,14 @@ app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app
             update.integer(1,parsed.valid()?0:1);update.text(2,id);update.done();
             Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,?,'materialize')");event.text(1,id);event.integer(2,expected+1);event.done();
             populate(id,bytes,parsed,expected+1,&context);
-            context.seal();context.checkpoint("Finishing draft interpretations");impl_->finish(transaction);
+            context.seal();context.checkpoint("Finishing draft interpretations");impl_->finish(transaction);diag::durable(diag::Code::prepare);
         } catch (...) {
             const auto failure=std::current_exception();
             if(!sqlite3_get_autocommit(impl_->db)){context.state.store(app::OperationContext::sealed);throw app::OperationOutcomeUnknown();}
             try {
                 Statement saved(impl_->db,"SELECT materialized_revision FROM batches WHERE id=?");saved.text(1,id);
                 if(!saved.row()) fail(SQLITE_CORRUPT);
-                if(!saved.null(0) && saved.integer(0)==expected+1) {context.state.store(app::OperationContext::sealed);return batch(impl_->db,id);}
+                if(!saved.null(0) && saved.integer(0)==expected+1) {diag::durable(diag::Code::prepare);context.state.store(app::OperationContext::sealed);return batch(impl_->db,id);}
             } catch (...) {context.state.store(app::OperationContext::sealed);throw app::OperationOutcomeUnknown();}
             std::rethrow_exception(failure);
         }
@@ -1370,13 +1374,16 @@ std::vector<app::AccountBalance> ImportStore::account_balances() const {
     return result;
 }
 void ImportStore::verify(const app::OperationContext* context) const {
+    diag::Span verificationSpan(diag::Code::verify);
     (void)date_format();
     ScopedStatements read_plans(impl_->db);
     struct VerificationGuard { bool& value; bool prior; ~VerificationGuard(){value=prior;} } guard{impl_->verifying,impl_->verifying};
     impl_->verifying=true;
     if(context) context->checkpoint("Verifying dataset integrity");
+    {diag::Span integritySpan(diag::Code::integrity);
     if(scalar(impl_->db,"PRAGMA integrity_check")!="ok") fail(SQLITE_CORRUPT);
     for(const char* sql:{"PRAGMA cipher_integrity_check","PRAGMA foreign_key_check"}) { Statement s(impl_->db,sql); if(s.row()) fail(SQLITE_CORRUPT); }
+    }
     std::vector<app::Account> all_accounts;Statement account_ids(impl_->db,"SELECT singleton FROM account ORDER BY singleton");while(account_ids.row())all_accounts.push_back(account_by_id(account_ids.integer(0)));if(all_accounts.empty() || all_accounts.front().identity!=1)fail(SQLITE_CORRUPT);
     for(const auto& acct:all_accounts){safe_text(acct.name);iso_date(acct.opening_date);if(acct.name.empty() || (acct.frozen && !acct.opening_confirmed))fail(SQLITE_CORRUPT);}
     Statement creation(impl_->db,"SELECT 1 FROM account a LEFT JOIN account_creations c ON c.identity=a.singleton WHERE c.identity IS NULL");if(creation.row())fail(SQLITE_CORRUPT);
@@ -1384,8 +1391,8 @@ void ImportStore::verify(const app::OperationContext* context) const {
         Statement original(impl_->db,"SELECT opening_date FROM account_creations WHERE identity=?");original.integer(1,acct.identity);if(!original.row())fail(SQLITE_CORRUPT);iso_date(original.bytes(0));
         if(acct.opening_confirmed!=(acct.revision>0) || (acct.revision==0 && (acct.opening.units()!=0 || acct.opening_date!=original.bytes(0))))fail(SQLITE_CORRUPT,"Account opening does not match its creation");
     }
-    verify_account_commands(context);
-    verify_import_groups(context);
+    {diag::Span phaseSpan(diag::Code::accounts);verify_account_commands(context);}
+    {diag::Span phaseSpan(diag::Code::groups);verify_import_groups(context);}
     Statement invalid(impl_->db,
         "SELECT 1 FROM batches b WHERE parser NOT IN('bank-v6','ofx-sgml-1','ofx-xml-2') OR (state=1)!=(EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
         "OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR revision+1!=(SELECT count(*) FROM events WHERE batch=b.id) "
@@ -1397,6 +1404,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
     if(headers.row()) fail(SQLITE_CORRUPT,"Source evidence does not match its import");
     Statement all_batches(impl_->db,"SELECT id FROM batches ORDER BY rowid");
     while(all_batches.row()) {
+        diag::Span evidenceSpan(diag::Code::evidence);
         const auto b=batch(impl_->db,all_batches.bytes(0));const auto acct=account_for_batch(b.id);
         if(context) context->checkpoint("Verifying import evidence");
         const auto bytes=evidence(b.id); const auto parsed=parsed_source(b.id,[&]{if(context)context->checkpoint();});
@@ -1478,9 +1486,9 @@ void ImportStore::verify(const app::OperationContext* context) const {
         Statement duplicates(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=2 AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) "
             "GROUP BY duplicate_batch,duplicate_ordinal HAVING count(*)>1"); duplicates.text(1,b.id); if(duplicates.row()) fail(SQLITE_CORRUPT);
     }
-    if(categories_supported())verify_categories(context);
-    if(rules_format(impl_->db))verify_rules(context);
-    if(committed_changes_supported()){verify_transfers(context);verify_committed(context);if(bulk_supported())verify_bulk(context);if(rules_format(impl_->db))verify_rule_reapply(context);return;}
+    if(categories_supported()){diag::Span phaseSpan(diag::Code::categories);verify_categories(context);}
+    if(rules_format(impl_->db)){diag::Span phaseSpan(diag::Code::rules);verify_rules(context);}
+    if(committed_changes_supported()){{diag::Span phaseSpan(diag::Code::transfers);verify_transfers(context);}{diag::Span phaseSpan(diag::Code::committed);verify_committed(context);}if(bulk_supported()){diag::Span phaseSpan(diag::Code::bulk);verify_bulk(context);}if(rules_format(impl_->db)){diag::Span phaseSpan(diag::Code::reapply);verify_rule_reapply(context);}return;}
     const auto acct=account();
     Money balance=acct.opening;
     Statement ops(impl_->db,"SELECT id FROM operations ORDER BY rowid");

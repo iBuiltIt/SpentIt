@@ -2,6 +2,8 @@
 
 Last updated: 2026-10-29
 
+Current prerequisite (2026-10-29): complete the [diagnostics implementation plan](../features/012-application-diagnostics.md) before resuming these priorities. The owner subsequently gave Go for all seven stages; see [implementation and verification](application-diagnostics.md), including the unresolved ordinary-workload overhead target. This Go does not authorize resuming performance optimization or repeated-transfer matching. Screenshots are excluded. This supersedes the next-work ordering below, while retaining the performance targets and accepted repeated-transfer behavior. A possible MCP adapter is separate future scope.
+
 Update 2026-10-29: the owner reversed the order and gave Go for performance first. See [implementation and measurement boundaries](import-ui-performance.md#application-performance-work--2026-10-29) and [current status](status.md). Repeated-transfer matching still waits for its own Go. The original handoff below preserves the accepted behavior and initial measurements.
 
 Owner-requested handoff for the next session. The two priorities below are agreed; neither is implemented by this documentation change. Resume with an explicit **Go** before coding. Preserve the existing working tree and dataset; recreating the dataset does not fix these implementation problems. Do not access or retain private financial files for benchmarking; use synthetic equivalents.
@@ -41,8 +43,11 @@ Aim for dataset opening in a few seconds and account switching below one second 
 
 ## Resume and validation
 
-Read [project status](status.md), [QIF account imports](qif-account-imports.md), and [diagnostic usage/privacy](qif-diagnostics.md). Existing schema-30/29 drafts are the current baseline. Existing changes are uncommitted; preserve them and keep private diagnostic artifacts out of commits.
+Read [project status](status.md), [QIF account imports](qif-account-imports.md), and [diagnostic usage/privacy](qif-diagnostics.md). Existing schema-30/29 drafts are the current baseline. The earlier performance checkpoint is committed; preserve any subsequent working-tree changes and keep private diagnostic artifacts out of commits.
 
 Local application: `./build/SpentIt`. Build tree: `build/import-ui-rules-release`. Relevant existing tests include `accounts.groups`, `accounts.validation`, storage transfer tests and offscreen mapped-transfer/blocker UI tests. `spentit_account_tests group_benchmark` provides a synthetic group workload. Select additional recovery and sanitizer checks according to the changed paths. Record measured results in status; do not claim native macOS, Linux or Windows validation from offscreen tests.
 
 This handoff changes documentation only; no application rebuild or runtime verification is implied.
+
+
+Diagnostics implementation update (2026-10-29): the owner authorized all seven stages of [feature 012](../features/012-application-diagnostics.md), excluding screenshots/MCP, with the existing documentation changes preserved. See [the runtime contract and verification record](application-diagnostics.md). This authorization does not resume performance optimization or repeated-transfer matching.
