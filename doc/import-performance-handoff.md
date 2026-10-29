@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-29
 
-Current prerequisite (2026-10-29): complete the [diagnostics implementation plan](../features/012-application-diagnostics.md) before resuming these priorities. The owner subsequently gave Go for all seven stages; see [implementation and verification](application-diagnostics.md), including the unresolved ordinary-workload overhead target. This Go does not authorize resuming performance optimization or repeated-transfer matching. Screenshots are excluded. This supersedes the next-work ordering below, while retaining the performance targets and accepted repeated-transfer behavior. A possible MCP adapter is separate future scope.
+Current checkpoint (2026-10-29): diagnostics and the subsequent [performance follow-up](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) are implemented. The owner measured startup at about seven seconds, accepted current performance for now and considers the application usable. The current performance pass is closed; a startup/loading-screen redesign is deferred. Repeated-transfer matching still requires its own explicit Go. The earlier ordering and measurements below are historical context, not instructions to resume work automatically. Screenshots remain excluded; a possible MCP adapter remains separate future scope.
 
 Update 2026-10-29: the owner reversed the order and gave Go for performance first. See [implementation and measurement boundaries](import-ui-performance.md#application-performance-work--2026-10-29) and [current status](status.md). Repeated-transfer matching still waits for its own Go. The original handoff below preserves the accepted behavior and initial measurements.
 

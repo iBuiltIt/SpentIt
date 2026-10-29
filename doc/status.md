@@ -2,6 +2,16 @@
 
 Last updated: 2026-10-29
 
+## Diagnostics-guided startup and account switching — 2026-10-29
+
+Owner acceptance (2026-10-29): the owner measured startup at approximately **7 seconds**, accepted the current performance for now, and considers the application usable. This closes the current performance pass without claiming near-instant startup. A redesigned startup/loading screen is deferred; its design and implementation require a later discussion and explicit Go.
+
+Implemented the owner-authorized second performance pass: automatic startup now opens/verifies once; scoped format checks avoid repeated format reads; QIF category lookup is built only when slash notation needs it; bounded validated-row reuse covers verification and subsequent read-only views. Any write or transactional access invalidates the connection cache, every explicit verification starts fresh, and failed verification publishes no cached state. Financial checks, encryption, format, locking, matching and durability policies remain unchanged. No private dataset copy, financial export or screenshot was created; regression/fault inputs remain synthetic.
+
+On the authorized dataset, a final native launch reached observed matching-frame readiness in **7.715 s**, versus the owner's approximately 30 s baseline. Two large-account switches reached observed native readiness in **0.567–0.617 s**, with **0.282–0.287 s** worker time. Startup is still not near-instant: **6.375 s** was full verification. Native sample count is limited, caches were warm, and the Qt frame/readiness proxy is not physical display latency. [Detailed measurement boundaries and verification](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) preserve these limitations.
+
+Release regression passed 91 sandbox-compatible checks plus both IPC checks rerun with required socket access. ASan/UBSan selected checks passed **26/26**, rules-disabled selected storage checks **3/3**, and final five-case startup checks passed in Release, sanitizer and rules-disabled builds. Ordinary-import I/O/interruption sweeps passed **2/2**. The rebuilt application is `build/SpentIt`. Three final 18,972-row synthetic grouped runs passed, with verified reopening median **5.958 s** and 36 switches median **0.410 s**. A separate 19,000-row ordinary full workload passed import/edit/evidence/search/scroll/commit/reopen assertions; committed reopening remained **9.389 s**. This does not complete the wider sheet feature or authorize deferred report/matching work.
+
 ## Agent diagnostics handoff — 2026-10-29
 
 Added an [agent-facing hooks/profiling guide](agent-diagnostics-guide.md), discoverable directly from `AGENTS.md`. It covers setup, intended-instance endpoint discovery, exact-operation and UI waits, numeric outcome decoding, timing/counter attribution, failure handling and reproducible synthetic comparisons. Recorded the owner’s acceptance of the existing OFF/ON build switch, including inert-code and distribution limitations. This follow-up changes documentation only; it does not start profiling or performance optimization. Verification: all 609 relative links/anchors across 41 repository Markdown documents passed; `git diff --check` passed. Runtime tests were not repeated for this documentation-only follow-up.

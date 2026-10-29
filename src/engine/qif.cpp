@@ -182,11 +182,15 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
     bool repair_allowed=true;
     auto error = [&](Issue issue,std::size_t at,SplitProblem problem=SplitProblem::none) { if(issue!=Issue::date && issue!=Issue::split_total && issue!=Issue::amount && issue!=Issue::missing_field) repair_allowed=false; if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at,problem}; };
     std::set<std::string,std::less<>> catalog_names;
-    for(const auto& category:categories)catalog_names.insert(category.name);
+    bool catalog_loaded=false;
     auto category_parts = [&](std::string_view value,std::size_t at,std::string& target,std::string& class_label) {
         // Catalog-declared literal slashes are an export convention. Refuse the
         // ambiguous case rather than silently choosing category versus class.
         auto slash=value.find('/');
+        if(slash!=value.npos && !catalog_loaded) {
+            for(const auto& definition:categories)catalog_names.insert(definition.name);
+            catalog_loaded=true;
+        }
         const auto last=value.rfind('/');
         const bool declared_prefix=last!=value.npos && catalog_names.contains(value.substr(0,last));
         if(slash!=value.npos && catalog_names.contains(value)) {

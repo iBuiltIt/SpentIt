@@ -128,7 +128,6 @@ ApplicationWindow {
     Timer {interval:100;repeat:true;running:workflow.diagnosticsEnabled;onTriggered:window.publishDiagnostics()}
     property var s: workflow.state
     property bool startupPending: false
-    property string startupPath: ""
     menuBar: MenuBar {
         Menu {
             id:diagnosticFileMenu
@@ -841,15 +840,6 @@ ApplicationWindow {
         // The occurrence selection remains in the workflow and is restored below.
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onCompleted(action,success) {
-            if(action==="probe" && startupPending) {
-                if(success && s.canOpen && !s.unlockRequired && s.path===startupPath && location.text===startupPath) {
-                    Qt.callLater(function(){
-                        if(startupPending && !workflow.busy && !s.active && location.text===startupPath)
-                            workflow.command("open",{path:startupPath})
-                        else startupPending=false
-                    })
-                } else startupPending=false
-            }
             if(["open","unlock","create","close","prepare_create"].indexOf(action)>=0) startupPending=false
             if(action==="select_account" && pendingAccountMenu) {
                 const request=pendingAccountMenu;pendingAccountMenu=null
@@ -933,15 +923,14 @@ ApplicationWindow {
     }
     Component.onCompleted: {
         startupPending=!!s.startup
-        startupPath=location.text
         probeTimer.start()
     }
     Timer {
-        id:probeTimer;interval:350
+        id:probeTimer;interval:startupPending?0:350
         onTriggered: {
             if(s.active || settingUp)return
             if(workflow.busy){restart();return}
-            workflow.command("probe",{path:location.text})
+            workflow.command(startupPending?"open":"probe",{path:location.text,startup:startupPending})
         }
     }
     function openDataset() {

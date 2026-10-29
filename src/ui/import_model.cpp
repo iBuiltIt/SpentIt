@@ -845,7 +845,13 @@ struct ImportModel::Worker {
                 if(!QDir().mkpath(location.absolutePath())) throw std::runtime_error("Cannot create dataset directory");
                 gateway->create_configured(path.toStdString(),a.value("overwrite").toBool(),a.value("protected",true).toBool(),str(a.value("password")),str(a.value("name")),Currency(str(a.value("currency"))),QDate::currentDate().toString(Qt::ISODate).toStdString(),{str(a.value("dateFormat","YYYY-MM-DD")),a.value("defaultCategories",false).toBool()});observedSaved();
             } else {
-                gateway->open_controlled(path.toStdString(),action=="unlock"?std::optional(str(a.value("password"))):std::nullopt,context);
+                canOpen=false;welcomePassword=false;
+                try {gateway->open_controlled(path.toStdString(),action=="unlock"?std::optional(str(a.value("password"))):std::nullopt,context);}
+                catch(const app::UnlockRequired&) {
+                    if(action!="open" || !a.value("startup").toBool())throw;
+                    welcomePassword=true;return;
+                }
+                canOpen=true;
                 try { context.seal(); } catch (...) { gateway->close(); throw; }
             }
             dateFormat=gateway->repository().date_format();active=true; selected.clear(); receipt.clear();clearChanges();

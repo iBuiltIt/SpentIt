@@ -8,6 +8,51 @@ These native durable-UI measurements predate both the schema-7 search checkpoint
 
 Current-format point-2 evidence and updated measurement boundaries are recorded in [hardening](hardening.md). The implementation and component-timing descriptions below describe the historical checkpoint; current benchmarks use the complete production gateway without the obsolete timing decorator.
 
+## Diagnostics-guided startup and switching follow-up — 2026-10-29
+
+The owner authorized a further performance pass and read-only opening/account switching on an existing private dataset. No dataset copy, financial export, screenshot, record content, account names or private filesystem paths were saved to the repository. Synthetic fixtures remain the regression and failure-test inputs.
+
+Diagnostics identified two complete verifications during automatic startup: the welcome probe opened and verified the document, closed it, then the automatic Open repeated the work. Startup now submits a single controlled Open using the public credential. Authentication failure still presents the password form without an initial error. Welcome browsing and returning after Close still probe without activating a document; explicit Open remains required there. Corrupt, missing and locked documents still fail before activation.
+
+Storage now reuses successfully validated row heads across the independent evidence, category, rules and history checks within one verification. Each verification starts with an empty cache, including explicit verification after opening; failed or cancelled verification cannot publish partial cache results. Successful verification seeds the connection's read-only row cache. Account ownership is checked before lookup. Any connection write, including rolled-back/trigger writes, invalidates it via SQLite's total-change counter; transactional reads discard and bypass the connection cache. Candidate enumeration is not cached. Neither the cache nor any financial record is persisted separately. Admission stops at 65,536 heads or 128 MiB of accounted object/string/vector capacity, with a node allowance; allocator overhead and transient copies are additional. On a miss or admission limit, the ordinary validated read still runs. Closing destroys the cache.
+
+Repository-scoped format checks reuse the immutable format version during that operation. QIF parsing constructs its category-name lookup only when slash notation needs it; literal slash/category-class ambiguity rules are unchanged. No schema change, weakened verification, deferred integrity check, matching-policy change or durability-setting change is included.
+
+Verification so far on macOS arm64:
+
+- Broad Release selection: 91 checks passed in the sandbox; the two IPC checks failed there because the sandbox denies their socket access, then passed **2/2** with the required local IPC access. The original 93-check run took 118.97 s; the IPC rerun took 1.83 s.
+- ASan/UBSan financial/storage/UI selection: **26/26 passed**, 148.33 s, with no sanitizer diagnostic. Rules-disabled Debug account validation/group/basic-import selection: **3/3 passed**, 21.00 s.
+- Startup tests cover public, protected, missing, invalid and locked datasets; they now assert one startup Open completion. Final startup-only Release and sanitizer runs each passed **7/7 including init/cleanup**, 2.922 s and 4.203 s. The automatic startup has no path-edit debounce; welcome path editing retains its 350 ms debounce.
+- The added basic-import regression exercises cached ledger reads, transactional read-your-writes, injected pre-commit rollback, successful retry, explicit verification and account isolation. Existing validation suites still reject corrupted evidence/history/ownership; backup and transfer/account/rule tests exercise their existing independent financial assertions.
+
+- Ordinary-import injected disk-full/write-failure and process-interruption sweeps: **2/2 passed**, 317.44 s with both running in parallel. Existing restart/retry, before/after durable-boundary and encrypted-marker assertions passed. The larger grouped-import fault sweeps were not repeated in this follow-up.
+- Rules-disabled final startup tests also passed **7/7 including init/cleanup**, 2.714 s.
+
+The final rules-enabled Release native app (SHA-256 `006d63a0e7d2e34971cc84713863bbe4bc28a672b474cf53354902b981835f36`, Qt 6.12.0 Cocoa) was measured with diagnostics enabled, after all builds/tests finished. One process launch on the owner-authorized dataset reached observed matching-generation native readiness in **7.715 s**. Its single Open worker took **6.805 s**, including **6.375 s** verification and **0.341 s** snapshot construction. Initial GUI application took **0.165 s**. The earlier baseline executed two verifications totaling **25.003 s**, with probe plus open worker time **27.637 s**; the owner's launch-to-usable estimate was about 30 s. The baseline was not captured with the final external launch timer, so these are not identical timing boundaries.
+
+Two switches to the owner-requested large account took **0.282/0.287 s** on the worker, including **0.145/0.146 s** ledger loading; GUI application was **0.183/0.184 s**. Observed native readiness was **0.617/0.567 s** after enqueue. An intervening smaller-account switch took **0.150 s** worker / **0.499 s** observed native readiness. The intermediate build before connection-cache retention took **1.809 s** worker, of which **1.670 s** was ledger loading. The owner previously observed about 2.5 s before this pass; that is not an instrumented baseline. All final observed operations succeeded, with zero reported event drops/health failures. Readiness is sampled via the 10 Hz semantic feed and a matching Qt native-frame proxy, not physical display/input latency. Warm filesystem cache, same-machine observations and the small native sample count limit generalization; no disk-cold, Linux or Windows performance claim is made.
+
+Startup remains well short of near-instant: full integrity/evidence/financial-history verification remains the dominant cost. These changes reduce repeated work; they do not defer required checks until after activation.
+
+Owner acceptance (2026-10-29): the owner measured startup at approximately **7 seconds**, accepted the current performance for now, and considers the application usable. This closes the current performance pass without claiming near-instant startup. A redesigned startup/loading screen is deferred; its design and implementation require a later discussion and explicit Go.
+
+Final synthetic measurements used the rules-enabled Release/offscreen benchmark with diagnostics enabled and SHA-256 `2274c2b9b58d880a275f0a5265e78b370b8c06df20cfd9d03f79aecf48b1f939`. Runs were serial with no concurrent builds/tests/native measurements. All three 18,972-row grouped runs and the separate 19,000-row ordinary full run passed their independent correctness assertions.
+
+| Grouped phase | Median | Range | Samples |
+|---|---:|---:|---:|
+| Verified reopen through model completion | 5.958 s | 5.831–6.027 s | 3 |
+| Account switch through model completion | 0.410 s | 0.387–0.492 s | 36 (12 per run) |
+| Preparation | 7.560 s | 7.389–7.622 s | 3 |
+| Save and refresh | 2.349 s | 2.318–2.373 s | 3 |
+| Resolve existing mapped transfers | 0.835 s | 0.816–0.848 s | 3 |
+| Abort | 2.879 s | 2.789–2.957 s | 3 |
+
+An earlier instrumented intermediate build in this pass, before row-cache reuse, measured grouped reopening at 13.397 s and switches at 0.703–0.785 s (one run). This is not the original pre-pass baseline; the historical prior-pass results below remain separate evidence.
+
+The ordinary full run measured pending reopening **5.666 s**, saved reopening **5.463 s**, commit **8.435 s**, and committed reopening **9.389 s**. It passed exact signed-split totals, saved-edit/source-evidence preservation, search, both scroll paths, commit and reopen assertions; peak RSS was **298.422 MiB**. This one-run committed result remains substantial and is not a broad responsiveness guarantee. Offscreen frame samples do not establish native rendering speed. No 100k/200k durable workload or additional native platforms were tested in this follow-up.
+
+Reproduction: use the existing commands below with `SPENTIT_BENCHMARK_DIAGNOSTICS=1`; run the grouped workload three times, serially, then the ordinary 19,000-row workload. The broad/fault/sanitizer selections below were used with the scope differences stated above. The earlier measurements below remain historical evidence, not results of these changes.
+
 ## Application performance work — 2026-10-29
 
 The owner authorized performance before repeated-transfer matching. Matching policy remains mutual-unique-only; the accepted repeated-group extension is still pending. Existing schema-30/29 datasets remain usable without reimport or a format change.

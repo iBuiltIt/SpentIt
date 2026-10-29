@@ -421,10 +421,13 @@ private slots:
         }
         QSettings().setValue("datasetPath",path);
         ImportModel m(storage::document_gateway());
+        QSignalSpy startupCommands(&m,&ImportModel::completed);
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
         auto* close=root->findChild<QObject*>("fileCloseDataset");QVERIFY(close);
         QTRY_VERIFY(!root->property("startupPending").toBool());QTRY_VERIFY(!m.busy());
+        QCOMPARE(startupCommands.size(),1);
+        QCOMPARE(startupCommands.front()[0].toString(),QString("open"));
         if(kind!="public") {
             QVERIFY(!m.state().value("active").toBool());QVERIFY(!close->property("enabled").toBool());
             QVERIFY(root->findChild<QObject*>("welcomeScreen")->property("visible").toBool());

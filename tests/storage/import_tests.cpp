@@ -59,7 +59,29 @@ void embedded_returns(){
     }
     no_leaks(d.path);
 }
+void read_cache_invalidation(){
+    Directory d;const auto path=d.path/"cache";prepare(path);
+    auto s=ImportStore::open(path,password);
+    const auto total=[&]{return s.ledger(true).front().draft.transaction.effective_total().units();};
+    check(total()==-2931);check(total()==-2931);
+    auto edit=*s.row({"first",0}).draft;
+    edit.transaction=edit.transaction.corrected(Money(-3000,cad),{{"Fees","fee",Money(-3000,cad)}});
+    bool inside=false;
+    s.observer([&](ImportPhase phase){if(phase==ImportPhase::before_commit){
+        // Transactional reads must see their own write, never the cached head.
+        check(total()==-3000);inside=true;throw ImportError(SQLITE_IOERR,"Injected rollback");
+    }});
+    fails([&]{s.save({"first",0},0,edit);});s.observer({});
+    check(inside && total()==-2931); // Rolled-back reads cannot escape the transaction.
+    s.save({"first",0},0,edit);check(total()==-3000);
+    s.verify();check(total()==-3000);
+    s.create_account(2,"Other",cad,"2026-08-01");s.select_account(2);
+    check(s.ledger(true).empty());fails([&]{s.row({"first",0});});
+    s.select_account(1);check(total()==-3000);
+    no_leaks(d.path);
+}
 void basics(){
+    read_cache_invalidation();
     embedded_returns();
     Directory d;const auto p=d.path/"doc";prepare(p);
     {

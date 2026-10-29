@@ -1,6 +1,6 @@
 # Coordinated implementation roadmap
 
-Current priority: [application diagnostics investigation and plan](../features/012-application-diagnostics.md), ahead of the remaining [performance and repeated-transfer matching handoff](import-performance-handoff.md). The owner subsequently authorized all seven diagnostics stages on 2026-10-29; implementation and verification are recorded in [the diagnostics guide](application-diagnostics.md). Screenshots and MCP are excluded. Remaining performance optimization and repeated-transfer matching are not authorized by that Go. The earlier bounded performance pass is implemented, but verified opening remains above target and repeated-transfer matching remains pending.
+Current handoff: the [diagnostics-guided performance follow-up](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) is implemented and accepted for now. On 2026-10-29 the owner measured startup at about seven seconds and judged the application usable. Further performance work is not the automatic next task. A [startup/loading-screen redesign](../features/001-documents-storage-security.md#startup-presentation-follow-up--deferred-2026-10-29) is deferred, as are reports and the remaining repeated-transfer matching work. Discuss the next change and wait for explicit Go. Diagnostics remain available through [the agent guide](agent-diagnostics-guide.md).
 
 Last updated: 2026-10-29
 
@@ -9,6 +9,8 @@ The earlier eight-point sequence used coordinated implementation with delegated 
 This is sequencing guidance, not a claim that the listed work exists. [Project status](status.md) records implementation evidence; [feature documents](../features/README.md) own requirements and unresolved decisions.
 
 ## Performance handoff — 2026-10-29
+
+Historical checkpoint; the accepted follow-up at the top of this roadmap supersedes its next-work priority.
 
 The owner gave Go for performance first so application use and later transfer verification become easier. Read [the current implementation and measurements](import-ui-performance.md#application-performance-work--2026-10-29) and [verification evidence](status.md#performance-first-application-pass--2026-10-29). The Release executable remains `./build/SpentIt`; existing schema-30/29 datasets remain usable. Preparation and account switching improved substantially on synthetic multi-account workloads. Verified opening is faster but still exceeds the few-seconds target, especially with committed history. That remaining performance work is not represented as finished.
 

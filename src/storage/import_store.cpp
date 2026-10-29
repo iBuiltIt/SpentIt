@@ -41,6 +41,7 @@ public:
     ~ScopedStatements(){active_=previous_;for(auto& [sql,slot]:plans_)sqlite3_finalize(slot.statement);}
     ScopedStatements(const ScopedStatements&)=delete;
     ScopedStatements& operator=(const ScopedStatements&)=delete;
+    std::optional<std::string> format_version;
     static ScopedStatements* current(sqlite3* db){return active_ && active_->db_==db?active_:nullptr;}
     Slot* slot(const char* sql){
         const auto found=plans_.find(sql);if(found!=plans_.end())return &found->second;
@@ -106,10 +107,15 @@ private:
     sqlite3_stmt* stmt_ = nullptr;
 };
 std::string scalar(sqlite3* db, const char* sql) {
+    // Format is immutable during repository operations. This value lives only
+    // as long as their statement scope; a new open/verification reads it again.
+    auto* scope=std::string_view(sql)=="PRAGMA user_version"?ScopedStatements::current(db):nullptr;
+    if(scope && scope->format_version)return *scope->format_version;
     Statement query(db, sql);
     if (!query.row()) fail(SQLITE_ERROR);
     const auto value = query.bytes(0);
     if (query.row()) fail(SQLITE_ERROR);
+    if(scope)scope->format_version=value;
     return value;
 }
 class Atomic {
@@ -703,12 +709,64 @@ void store_entry(sqlite3*,const imports::Occurrence&,const app::EntrySnapshot&,s
 void append_financial(sqlite3*,std::string_view,app::ChangeKind,const imports::Occurrence&,std::int64_t,std::int64_t,const Money&,const Money&,const Money&,std::string_view,std::int64_t,std::int64_t=0);
 #include "account_money.inc"
 }
+// Bounded validated row heads for read-only access. Verification starts fresh;
+// only its successful result can seed the connection cache. Transactional reads
+// bypass it, and any connection write (including rollback) invalidates it.
+struct VerificationRows {
+    std::map<imports::Occurrence,app::RowView> rows;
+    std::size_t bytes=0;
+    static std::size_t text_size(const std::string& s){return s.capacity()+1;}
+    static std::size_t currency_size(const Currency& c){return text_size(c.code())+text_size(c.definition_id());}
+    static std::size_t allocations_size(const std::vector<Allocation>& values){
+        std::size_t size=values.capacity()*sizeof(Allocation);
+        for(const auto& a:values){
+            size+=text_size(a.category)+text_size(a.memo)+text_size(a.identity)+currency_size(a.amount.currency());
+            if(a.category_binding)size+=text_size(a.category_binding->identity);
+            if(a.category_rule)size+=text_size(a.category_rule->identity);
+            if(a.memo_rule)size+=text_size(a.memo_rule->identity);
+        }
+        return size;
+    }
+    static std::size_t transaction_size(const Transaction& t){
+        return allocations_size(t.allocations())+currency_size(t.effective_total().currency())+
+            (t.original_imported_amount()?currency_size(t.original_imported_amount()->currency()):0);
+    }
+    static std::size_t row_size(const app::RowView& row){
+        // Includes container/node allowance and retained dynamic capacities.
+        std::size_t size=sizeof(app::RowView)+sizeof(imports::Occurrence)+128+2*text_size(row.identity.batch);
+        const auto& s=row.source;
+        for(const auto* value:{&s.date,&s.payee,&s.memo,&s.reference,&s.cleared,&s.source_category,&s.source_class,
+            &s.format,&s.grammar,&s.fitid,&s.source_account_key,&s.time_evidence,&s.trntype,&s.uninterpreted,&s.associated_fitid})size+=text_size(*value);
+        size+=s.source_allocation_classes.capacity()*sizeof(std::string);
+        for(const auto& value:s.source_allocation_classes)size+=text_size(value);
+        size+=s.source_allocation_fields.capacity()*sizeof(qif::SourceAllocation);
+        for(const auto& a:s.source_allocation_fields){size+=text_size(a.category)+text_size(a.memo)+text_size(a.class_label);if(a.amount)size+=currency_size(a.amount->currency());}
+        size+=allocations_size(s.source_allocations);
+        if(s.source_currency)size+=currency_size(*s.source_currency);
+        if(s.original_amount)size+=currency_size(s.original_amount->currency());
+        if(s.transaction)size+=transaction_size(*s.transaction);
+        if(row.draft){const auto& d=*row.draft;size+=text_size(d.date)+text_size(d.payee)+text_size(d.memo)+transaction_size(d.transaction);if(d.payee_rule)size+=text_size(d.payee_rule->identity);if(d.memo_rule)size+=text_size(d.memo_rule->identity);}
+        if(row.decision.duplicate_of)size+=text_size(row.decision.duplicate_of->batch);
+        return size;
+    }
+    void remember(const app::RowView& row){
+        constexpr std::size_t limit=128*1024*1024;
+        if(rows.size()>=65536)return;
+        const auto size=row_size(row);
+        if(size>limit-bytes)return;
+        if(rows.emplace(row.identity,row).second)bytes+=size;
+    }
+};
+
 struct ImportStore::Impl {
     sqlite3* db=nullptr;
     int lock=-1;
     std::int64_t selected_account=1;
     int account_command=0;
     bool verifying=false;
+    mutable VerificationRows* verification_rows=nullptr;
+    mutable VerificationRows read_rows;
+    mutable sqlite3_int64 read_rows_changes=-1;
     mutable std::string category_source, binding_group;
     mutable std::vector<qif::CategoryDefinition> source_category_cache;
     mutable std::int64_t binding_epoch=-1;
@@ -971,7 +1029,16 @@ std::string ImportStore::record_evidence(const imports::Occurrence& id) const {
 }
 app::RowView ImportStore::row(const imports::Occurrence& id) const { return load_row(id,true); }
 app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates) const {
-    require_account(id.batch);const auto b=batch(impl_->db,id.batch); const auto source_currency=pinned_currency(impl_->db,id.batch);
+    require_account(id.batch);
+    auto* rows=impl_->verification_rows;
+    if(!rows){
+        const auto changes=sqlite3_total_changes64(impl_->db);
+        const bool cacheable=sqlite3_get_autocommit(impl_->db)!=0;
+        if(!cacheable || impl_->read_rows_changes!=changes){impl_->read_rows=VerificationRows{};impl_->read_rows_changes=changes;}
+        if(cacheable)rows=&impl_->read_rows;
+    }
+    if(!candidates && rows){const auto found=rows->rows.find(id);if(found!=rows->rows.end())return found->second;}
+    const auto b=batch(impl_->db,id.batch); const auto source_currency=pinned_currency(impl_->db,id.batch);
     Statement src(impl_->db,"SELECT raw FROM records WHERE batch=? AND ordinal=?"); src.text(1,id.batch); src.integer(2,integer(id.ordinal));
     if(!src.row()) {
         auto parsed=parsed_source(id.batch);
@@ -1012,7 +1079,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         target.text(1,out.decision.duplicate_of->batch);target.integer(2,integer(out.decision.duplicate_of->ordinal));target.text(3,id.batch);target.integer(4,integer(id.ordinal));target.integer(5,v.integer(0));
         if(!target.row())fail(SQLITE_CORRUPT);out.review_stale=target.integer(0)!=target.integer(2) || target.integer(1)!=target.integer(3);
     }
-    if (!candidates) return out;
+    if (!candidates) {if(rows)rows->remember(out);return out;}
     const auto candidate_sql=std::string("SELECT r.batch,r.ordinal FROM batches b CROSS JOIN records r ON r.batch=b.id CROSS JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" ORDER BY r.batch,r.ordinal LIMIT 4097";
     Statement c(impl_->db,candidate_sql.c_str());
     bind_candidate(c,out.source);
@@ -1379,6 +1446,19 @@ void ImportStore::verify(const app::OperationContext* context) const {
     ScopedStatements read_plans(impl_->db);
     struct VerificationGuard { bool& value; bool prior; ~VerificationGuard(){value=prior;} } guard{impl_->verifying,impl_->verifying};
     impl_->verifying=true;
+    impl_->read_rows=VerificationRows{};impl_->read_rows_changes=-1;
+    VerificationRows verified_rows;
+    struct RowsGuard {
+        Impl& state;VerificationRows& rows;VerificationRows* prior;
+        int exceptions=std::uncaught_exceptions();
+        ~RowsGuard(){
+            state.verification_rows=prior;
+            if(!prior && std::uncaught_exceptions()==exceptions && sqlite3_get_autocommit(state.db)){
+                state.read_rows=std::move(rows);state.read_rows_changes=sqlite3_total_changes64(state.db);
+            }
+        }
+    } rows_guard{*impl_,verified_rows,impl_->verification_rows};
+    impl_->verification_rows=&verified_rows;
     if(context) context->checkpoint("Verifying dataset integrity");
     {diag::Span integritySpan(diag::Code::integrity);
     if(scalar(impl_->db,"PRAGMA integrity_check")!="ok") fail(SQLITE_CORRUPT);
