@@ -137,8 +137,8 @@ private slots:
         run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Synthetic category guards"},{"currency","CAD"},{"defaultCategories",true}});
         QVERIFY(click(root,"categoryNavigation"));wait(model);
         QVERIFY(click(root,"newCategory"));QTest::qWait(50);auto* field=qobject_cast<QQuickItem*>(object(root,"categoryName"));QVERIFY(field);QVERIFY(field->hasActiveFocus());
-        QVERIFY(edit(root,"categoryName","Invalid/Name"));applyInvalid(model,root,window);
-        QCOMPARE(object(root,"categoryName")->property("text").toString(),"Invalid/Name");QVERIFY(root->property("categoryDirty").toBool());
+        QVERIFY(edit(root,"categoryName","Invalid|Name"));applyInvalid(model,root,window);
+        QCOMPARE(object(root,"categoryName")->property("text").toString(),"Invalid|Name");QVERIFY(root->property("categoryDirty").toBool());
         QTest::keyClick(window,Qt::Key_Escape);QVERIFY(!root->property("categoryDirty").toBool());
         QVERIFY(click(root,"newCategory"));QTest::qWait(30);QTest::keyClick(window,Qt::Key_Escape);QVERIFY(!root->property("categoryDirty").toBool());
         const auto unused=createCategory(model,root,"Disposable");
@@ -149,7 +149,7 @@ private slots:
         menu(model,root,unused,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Discarded rename"));QTest::keyClick(window,Qt::Key_Escape);
         QCOMPARE(model.state().value("categoryById").toMap().value(unused).toMap().value("name").toString(),"Disposable");
         QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(pointer(window,root,"catalogSearch"));QTest::qWait(30);QVERIFY(!root->property("categoryDirty").toBool());
-        QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(edit(root,"categoryName","Invalid/Navigation"));QVERIFY(click(root,"accountNavigation"));wait(model,false);QCOMPARE(root->property("currentPage").toString(),"categories");QTest::qWait(30);QTest::keyClick(window,Qt::Key_Escape);
+        QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(edit(root,"categoryName","Invalid|Navigation"));QVERIFY(click(root,"accountNavigation"));wait(model,false);QCOMPARE(root->property("currentPage").toString(),"categories");QTest::qWait(30);QTest::keyClick(window,Qt::Key_Escape);
         QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(edit(root,"categoryName","Saved on navigation"));QVERIFY(click(root,"accountNavigation"));wait(model);QTRY_COMPARE(root->property("currentPage").toString(),"ledger");
         QCOMPARE(model.state().value("categorySelected").toMap().value("name").toString(),"Saved on navigation");
         QVERIFY(click(root,"categoryNavigation"));wait(model);

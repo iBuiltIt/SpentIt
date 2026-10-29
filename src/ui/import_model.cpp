@@ -461,7 +461,7 @@ struct ImportModel::Worker {
         selectedBatch=batch; selectedOrdinal=ordinal; selectedRevision=found->revision;
         selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},
             {"source",evidencePreview(raw)}};
-        if(source.diagnostic) selected["diagnostic"]=text(qif::message(source.diagnostic->issue));
+        if(source.diagnostic) selected["diagnostic"]=text(qif::message(*source.diagnostic));
         QStringList classes;
         if(!source.source_class.empty())classes<<"Record class: "+text(source.source_class);
         if(source.has_source_splits)for(std::size_t i=0;i<source.source_allocation_fields.size();++i)if(!source.source_allocation_fields[i].class_label.empty())classes<<QString("Split %1 class: ").arg(i+1)+text(source.source_allocation_fields[i].class_label);
@@ -630,10 +630,11 @@ struct ImportModel::Worker {
                 if(b.processing_incomplete) info["diagnostics"]="Source evidence retained. Processing is incomplete; resume or discard this import.";
                 else if(b.blocked) {
                     const auto parsed=repo.parsed_source(b.id);
+                    const auto sourceBytes=repo.evidence(b.id);
                     QStringList diagnostics;
                     if(parsed.diagnostic) diagnostics<<text(qif::message(parsed.diagnostic->issue))+" at byte "+QString::number(parsed.diagnostic->offset);
                     for(std::size_t i=0;i<parsed.records.size() && diagnostics.size()<100;++i) if(parsed.records[i].diagnostic)
-                        diagnostics<<"Record "+QString::number(i+1)+": "+text(qif::message(parsed.records[i].diagnostic->issue));
+                        diagnostics<<text(qif::describe_record(sourceBytes,parsed.records[i],i));
                     info["diagnostics"]=diagnostics.join('\n');
                 }
                 if(b.state==app::BatchState::pending || b.state==app::BatchState::captured){const auto progress=repo.repair_progress(b.id);info["repairs"]=static_cast<int>(progress.total);info["repairsDone"]=static_cast<int>(progress.done);info["amountRepairs"]=static_cast<int>(progress.amounts);info["unsupported"]=static_cast<int>(progress.blocked);}
@@ -647,8 +648,18 @@ struct ImportModel::Worker {
                 if(member==group.accounts.end())continue;
                 const auto own=std::find_if(batches.begin(),batches.end(),[&](const auto& v){return str(v.toMap().value("id"))==member->batch;});
                 if(own==batches.end() || own->toMap().value("status")=="Discarded" || own->toMap().value("status")=="Committed")continue;
-                const auto document=qif::index_document(repo.evidence(member->batch));
-                state["importGroup"]=QVariantMap{{"id",text(group.id)},{"started",group.state==app::GroupState::started},{"ready",group.unresolved==0},{"repairs",static_cast<int>(group.repairs_total)},{"done",static_cast<int>(group.repairs_done)},{"amountRepairs",static_cast<int>(group.amount_repairs)},{"blocked",static_cast<int>(group.blocked_records)},{"unresolved",static_cast<int>(group.unresolved)},{"sourceAccount",static_cast<int>(member->source_account)}};
+                const auto document=statements::inspect(repo.evidence(member->batch),"");
+                QVariantList importedCategories;
+                for(const auto& c:document.categories)importedCategories.push_back(QVariantMap{{"name",text(c.name)},{"description",text(c.description)},{"type",c.type=='I'?"Income":c.type=='E'?"Expense":"Unspecified"},{"taxSchedule",text(c.tax_schedule)},{"budget",text(c.budget)},{"taxRelated",c.tax_related}});
+                QVariantList blockers;
+                const auto groupAccounts=repo.accounts();
+                const auto accountName=[&](std::int64_t id){const auto account=std::find_if(groupAccounts.begin(),groupAccounts.end(),[&](const auto& a){return a.identity==id;});return account==groupAccounts.end()?QString::number(id):text(account->name);};
+                for(const auto& item:group.blockers){
+                    QVariantList candidates;
+                    for(const auto& candidate:item.candidates)candidates.push_back(QVariantMap{{"account",QString::number(candidate.account)},{"name",accountName(candidate.account)},{"batch",text(candidate.batch)},{"record",static_cast<int>(candidate.ordinal)},{"allocation",text(candidate.allocation)},{"date",dateText(candidate.date)},{"amount",money(candidate.amount)},{"currency",text(candidate.amount.currency().code())},{"status",text(candidate.status)}});
+                    blockers.push_back(QVariantMap{{"account",QString::number(item.account)},{"name",accountName(item.account)},{"batch",text(item.batch)},{"record",item.ordinal?static_cast<int>(*item.ordinal):-1},{"reason",text(item.reason)},{"allocation",text(item.allocation)},{"candidates",candidates},{"candidateCount",static_cast<int>(item.candidate_count)}});
+                }
+                state["importGroup"]=QVariantMap{{"id",text(group.id)},{"started",group.state==app::GroupState::started},{"blockers",blockers},{"unresolvedTransfers",static_cast<int>(group.unresolved_transfers)},{"ready",group.unresolved==0},{"repairs",static_cast<int>(group.repairs_total)},{"done",static_cast<int>(group.repairs_done)},{"amountRepairs",static_cast<int>(group.amount_repairs)},{"blocked",static_cast<int>(group.blocked_records)},{"unresolved",static_cast<int>(group.unresolved)},{"sourceAccount",static_cast<int>(member->source_account)},{"categories",importedCategories}};
                 state["groupCreated"]=member->created && !acct.frozen;
                 state["groupOpeningReady"]=member->created && member->balance_choice!=app::ReportedBalanceChoice::unreviewed;
                 state["groupReviewedChange"]=member->reviewed_change?money(*member->reviewed_change):QString("Incomplete");
@@ -1170,11 +1181,11 @@ struct ImportModel::Worker {
             const std::string requested=suffix=="qif"||suffix=="ofx"||suffix=="qfx"||suffix=="qbo"||suffix=="aso"?suffix:"";
             const auto owned=bytes.toStdString();
             const auto document=statements::inspect(owned,requested,[&]{context.checkpoint();});
-            if(document.format=="qif" && document.explicit_accounts && (document.diagnostic || !document.admissible)) throw std::invalid_argument("Unsupported account section structure; no import was saved. The original file is unchanged.");
+            if(document.format=="qif" && (document.explicit_accounts || !document.categories.empty()) && (document.diagnostic || !document.admissible)) throw std::invalid_argument("Unsupported account section structure; no import was saved. The original file is unchanged.");
             if(!document.admissible) throw std::invalid_argument(document.refusal.empty()?"Statement exceeds a resource limit. The original file is unchanged.":document.refusal);
             if(!document.refusal.empty() || (document.format!="qif" && document.diagnostic)) throw std::invalid_argument(document.refusal.empty()?"Unsupported account section structure; no import was saved. The original file is unchanged.":document.refusal);
             const auto order=document.format=="qif"?(profile=="DMY"?qif::DateOrder::dmy:qif::DateOrder::mdy):qif::DateOrder::dmy;
-            if(document.format!="qif" || document.explicit_accounts) {
+            if(document.format!="qif" || document.explicit_accounts || !document.categories.empty()) {
                 preparedImport=PreparedImport{identity(),owned,document.format,document,order};preparedMappings.reset();importMappingArgs.clear();importPlan.clear();
                 const auto home=repo.accounts().empty()?std::string{}:repo.accounts().front().currency.code();
                 for(std::size_t i=0;i<document.accounts.size();++i){const auto& source=document.accounts[i];importPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",source.reported_balance?text(*source.reported_balance):QString("Not supplied")},{"currency",text(document.format=="qif"?home:source.currency_code)}});}
@@ -1209,6 +1220,9 @@ struct ImportModel::Worker {
             if(group.state==app::GroupState::captured){auto sealed=app::OperationContext::sealed;if(!context.state.compare_exchange_strong(sealed,app::OperationContext::available))throw std::logic_error("Invalid import cancellation gate");group=resumeGroup(group.id,context);}
 
             if(!group.accounts.empty()){const auto batches=repo.batches();const auto b=std::find_if(batches.begin(),batches.end(),[&](const auto& b){return b.id==group.accounts.front().batch;});if(b!=batches.end() && b->count)inspect(b->id,0,context);}
+        } else if(action=="group_resolve_transfers") {
+            try{repo.resolve_import_transfers(str(a.value("group")),context);}catch(...){const auto failure=std::current_exception();(void)durableGroup(str(a.value("group")));std::rethrow_exception(failure);}
+            if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="group_balance") {
             const auto review=[&]{repo.review_import_balance(str(a.value("group")),a.value("source").toUInt(),a.value("revision").toLongLong(),static_cast<app::ReportedBalanceChoice>(a.value("choice").toInt()),str(a.value("date")));};
             try{review();}catch(...){const auto failure=std::current_exception();if(!durableGroup(str(a.value("group"))))std::rethrow_exception(failure);review();}

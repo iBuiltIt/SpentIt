@@ -19,3 +19,8 @@ if(SPENTIT_RULES)
   set_target_properties(spentit_rules PROPERTIES CXX_EXTENSIONS OFF)
   spentit_compiler_options(spentit_rules)
 endif()
+
+# Local, read-only structural diagnostics; no storage or UI dependency.
+add_executable(spentit_qif_diagnose ../../tools/qif_diagnose.cpp)
+target_link_libraries(spentit_qif_diagnose PRIVATE SpentIt::engine)
+spentit_compiler_options(spentit_qif_diagnose)

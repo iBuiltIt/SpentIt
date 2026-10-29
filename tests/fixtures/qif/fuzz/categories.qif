@@ -1,0 +1,25 @@
+!Option:AutoSwitch
+!Account
+NSynthetic checking
+TBank
+B1,200.00
+^
+!Clear:AutoSwitch
+!Type:Cat
+NTelephone/Cellular
+E
+DSynthetic description
+^
+NUnused
+I
+^
+!Account
+NSynthetic checking
+TBank
+^
+!Type:Bank
+D2026-01-01
+T1,234.56
+PSynthetic shopSynthetic continuationTnot-an-amount
+LTelephone/Cellular
+^

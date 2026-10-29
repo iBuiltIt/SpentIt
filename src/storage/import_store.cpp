@@ -172,7 +172,7 @@ void require_qif_transfers(const imports::Occurrence& id,const imports::DraftRow
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=23;
+PRAGMA user_version=29;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -306,7 +306,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=24;
+PRAGMA user_version=30;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -528,17 +528,17 @@ CREATE TRIGGER order_account AFTER INSERT ON account_operations BEGIN INSERT INT
 )SQL";
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="17" || version=="19" || version=="23"
+    return version=="3" || version=="4" || version=="17" || version=="19" || version=="29"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="24"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="30"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="17" || version=="19" || version=="23"
+    return version=="4" || version=="17" || version=="19" || version=="29"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="24"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="30"
 #endif
         ;
 }
@@ -591,14 +591,14 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="23"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="29"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16" || version=="18" || version=="20" || version=="24"
+    || version=="6" || version=="16" || version=="18" || version=="20" || version=="30"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="24";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="30";
 #else
     (void)db;return false;
 #endif
@@ -692,6 +692,10 @@ struct ImportStore::Impl {
     std::int64_t selected_account=1;
     int account_command=0;
     bool verifying=false;
+    mutable std::string category_source, binding_group;
+    mutable std::vector<qif::CategoryDefinition> source_category_cache;
+    mutable std::int64_t binding_epoch=-1;
+    mutable std::map<std::string,std::pair<std::string,CategoryBinding>> imported_bindings;
     ImportObserver observer;
     ~Impl() { if (db) sqlite3_close_v2(db); if(lock>=0) ::close(lock); }
     void finish(Atomic& a) {
@@ -771,9 +775,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="24";
+        constexpr const char* expected_format="30";
 #else
-        constexpr const char* expected_format="23";
+        constexpr const char* expected_format="29";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"This dataset format is not supported by this version of SpentIt; the file has not been changed");
@@ -951,7 +955,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         return {id,std::move(source),{}, {imports::Disposition::unresolved,{}},{}};
     }
     Statement parser(impl_->db,"SELECT parser FROM batches WHERE id=?");parser.text(1,id.batch);if(!parser.row())fail(SQLITE_CORRUPT);
-    const auto parsed=parser.bytes(0)==qif::parser_version ? qif::parse(src.bytes(0),b.profile,source_currency) : statements::parse_occurrence(src.bytes(0),parser.bytes(0),source_currency,b.profile);
+    const auto parsed=parser.bytes(0)==qif::parser_version ? qif::parse(src.bytes(0),b.profile,source_currency,{},source_categories(id.batch)) : statements::parse_occurrence(src.bytes(0),parser.bytes(0),source_currency,b.profile);
     if(parsed.diagnostic || parsed.records.size()!=1 || (!parsed.records[0].transaction && !parsed.records[0].repairable)) fail(SQLITE_CORRUPT);
     auto source=parsed.records[0]; overlay_occurrence(impl_->db,id,source);
     if(source.fitid.empty()) {
@@ -1275,7 +1279,7 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
     advance(impl_->db,id,expected,"commit",1);
     exec(impl_->db,"UPDATE account SET frozen=1 WHERE singleton=spentit_account()");
     if(committed_changes_supported()) {
-        for(std::size_t ordinal=0;ordinal<b.count;++ordinal){if(!retained_member(impl_->db,id,ordinal))continue;const auto row=load_row({std::string(id),ordinal},false);if(row.decision.disposition==imports::Disposition::include)store_entry(impl_->db,{std::string(id),ordinal},{0,true,*row.draft});}
+        for(std::size_t ordinal=0;ordinal<b.count;++ordinal){if(!retained_member(impl_->db,id,ordinal))continue;const auto row=load_row({std::string(id),ordinal},false);if(row.decision.disposition==imports::Disposition::include)store_entry(impl_->db,{std::string(id),ordinal},{0,true,bind_import_categories(id,*row.draft)});}
         append_financial(impl_->db,operation,app::ChangeKind::publication,{std::string(id),0},-1,0,before,change,after,"",0);
     }
     impl_->finish(a); return {std::string(operation),std::string(id),expected,included,excluded,before,change,after};
@@ -1358,13 +1362,13 @@ void ImportStore::verify(const app::OperationContext* context) const {
     verify_account_commands(context);
     verify_import_groups(context);
     Statement invalid(impl_->db,
-        "SELECT 1 FROM batches b WHERE parser NOT IN('bank-v3','ofx-sgml-1','ofx-xml-2') OR (state=1)!=(EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
+        "SELECT 1 FROM batches b WHERE parser NOT IN('bank-v6','ofx-sgml-1','ofx-xml-2') OR (state=1)!=(EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
         "OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR revision+1!=(SELECT count(*) FROM events WHERE batch=b.id) "
         "UNION ALL SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch WHERE v.revision>b.revision "
         "UNION ALL SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id) "
         "UNION ALL SELECT 1 FROM account a WHERE frozen!=(EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id=a.singleton) OR EXISTS(SELECT 1 FROM transfer_events t WHERE t.account=a.singleton AND t.did_commit=1))");
     if(invalid.row()) fail(SQLITE_CORRUPT,"Invalid import history relationships");
-    Statement headers(impl_->db,"SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM source_headers h WHERE h.source_id=s.id) UNION ALL SELECT 1 FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE NOT ((b.parser='bank-v3' AND h.format='qif' AND h.grammar='qif') OR (b.parser='ofx-sgml-1' AND h.grammar='ofx-sgml' AND h.format IN('ofx','qfx','qbo','aso')) OR (b.parser='ofx-xml-2' AND h.grammar='ofx-xml' AND h.format IN('ofx','qfx','qbo','aso'))) UNION ALL SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.source_batch WHERE b.state!=1 UNION ALL SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.ledger_batch WHERE b.state!=1");
+    Statement headers(impl_->db,"SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM source_headers h WHERE h.source_id=s.id) UNION ALL SELECT 1 FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE NOT ((b.parser='bank-v6' AND h.format='qif' AND h.grammar='qif') OR (b.parser='ofx-sgml-1' AND h.grammar='ofx-sgml' AND h.format IN('ofx','qfx','qbo','aso')) OR (b.parser='ofx-xml-2' AND h.grammar='ofx-xml' AND h.format IN('ofx','qfx','qbo','aso'))) UNION ALL SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.source_batch WHERE b.state!=1 UNION ALL SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.ledger_batch WHERE b.state!=1");
     if(headers.row()) fail(SQLITE_CORRUPT,"Source evidence does not match its import");
     Statement all_batches(impl_->db,"SELECT id FROM batches ORDER BY rowid");
     while(all_batches.row()) {

@@ -70,6 +70,9 @@ void matching() {
     check(unlinked.destination.amount==evidenced_draft.destination.amount && unlinked.destination.date==evidenced_draft.destination.date);
     check(unlinked.destination.state==State::draft && unlinked.destination.endpoint==evidenced_draft.destination.endpoint);
     check(unlinked.destination.attached_evidence==evidenced_draft.destination.attached_evidence);
+    rejected(Error::origin_controls_draft,[&]{clear_workspace(unlinked,2);});
+    auto direct=unlinked;direct.destination.attached_evidence.reset();
+    const auto discarded=clear_workspace(direct,2);check(discarded.origin.state==State::removed && discarded.destination.state==State::removed);validate(discarded);
 }
 void boundaries() {
     const auto original=generated();

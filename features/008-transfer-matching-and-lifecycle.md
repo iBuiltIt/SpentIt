@@ -180,3 +180,9 @@ Keep transfer recognition distinct from ordinary duplicate suppression: a matchi
 - [QIF import and review](003-qif-import-review.md)
 - [Documents, storage, and security](001-documents-storage-security.md)
 - [Transaction sheet and navigation](005-transaction-sheet-navigation.md)
+
+## Confirmed whole-export mapping exception — accepted 2026-10-28
+
+Subsequent accepted extension, pending implementation: equivalent repeated reciprocal groups with equal eligible counts must pair one-to-one, consuming each endpoint once and preserving all occurrences. Repetition alone must not block legitimate transfers. Already-linked endpoints are unavailable; unequal counts and meaningful differences remain reviewable. This supersedes the mutual-unique-only restriction below for those groups. See the [next-session handoff](../doc/import-performance-handoff.md) for scope and verification requirements.
+
+For a named-account QIF export with an explicitly confirmed account mapping, the owner approved reusing that mapping and automatically associating unambiguous imported counterparts. This supersedes explicit per-pair confirmation only for mutual unique reciprocal account references with exactly opposite amounts, identical currency definitions and the same date. No generated posting is needed because both source allocations already exist. Both accounts still commit explicitly. Other candidates remain reviewable blockers; no general date-tolerance, fuzzy-name or cross-currency policy is introduced. Existing drafts can invoke the operation without reimport, and whole-import Abort rolls back the staged relationships with the rest of the draft. See [implementation contract](../doc/qif-account-imports.md#reusing-confirmed-mappings-for-transfer-pairs--accepted-2026-10-28) and [verification](../doc/status.md).

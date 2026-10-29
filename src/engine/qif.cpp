@@ -1,4 +1,7 @@
 #include <spentit/qif.hpp>
+#include <spentit/category.hpp>
+#include <set>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
@@ -6,6 +9,37 @@
 #include <stdexcept>
 
 namespace spentit::qif {
+std::string_view message(const Diagnostic& diagnostic) noexcept {
+    switch(diagnostic.split_problem) {
+    case SplitProblem::missing_amount: return "Split is missing its $ amount before the terminator";
+    case SplitProblem::repeated_category: return "Repeated S category before a split $ amount";
+    case SplitProblem::repeated_memo: return "Repeated E memo before a split $ amount";
+    case SplitProblem::parent_after_split: return "Parent or unsupported field follows the start of splits";
+    case SplitProblem::parent_category: return "Parent L category conflicts with split allocations";
+    case SplitProblem::none: return message(diagnostic.issue);
+    }
+    return message(diagnostic.issue);
+}
+std::string describe_record(std::string_view bytes,const Record& record,std::size_t ordinal,bool fields) {
+    const auto line_at=[&](std::size_t at){return 1+static_cast<std::size_t>(std::count(bytes.begin(),bytes.begin()+std::min(at,bytes.size()),'\n'));};
+    std::string out="Record "+std::to_string(ordinal+1)+" (source lines "+std::to_string(line_at(record.begin))+"–"+std::to_string(line_at(record.end>record.begin?record.end-1:record.end))+")";
+    if(record.diagnostic)out+=", error at line "+std::to_string(line_at(record.diagnostic->offset))+": "+std::string(message(*record.diagnostic));
+    if(fields) {
+        out+="; fields: ";
+        auto pos=record.begin;
+        std::size_t count=0;
+        while(pos<record.end && pos<bytes.size() && count++<100) {
+            const auto end=bytes.find('\n',pos);
+            const char key=bytes[pos];
+            // Never echo unknown bytes, field values, names or headers.
+            out+=std::string_view("DTPMNLCSE$A^").find(key)!=std::string_view::npos?key:'?';
+            out+=' ';
+            pos=end==bytes.npos?bytes.size():end+1;
+        }
+        if(pos<record.end)out+="[remaining fields omitted]";
+    }
+    return out;
+}
 std::string_view message(Issue issue) noexcept {
     switch (issue) {
     case Issue::encoding: return "Invalid UTF-8 or unsupported control character";
@@ -22,7 +56,7 @@ std::string_view message(Issue issue) noexcept {
     case Issue::split_structure: return "Ambiguous or incomplete split structure";
     case Issue::split_total: return "Splits do not equal the exact total";
     case Issue::transfer: return "Invalid or unsupported transfer destination syntax";
-    case Issue::category_class: return "Invalid or unsupported category/class notation";
+    case Issue::category_class: return "Invalid or ambiguous category/class notation; check slash-containing category names against the catalog";
     case Issue::cleared_status: return "Unsupported cleared or budget status";
     case Issue::currency_mismatch: return "Currency does not match the target account; no conversion was applied";
     case Issue::financial_blocker: return "This statement field could change financial meaning and is not interpreted";
@@ -57,10 +91,31 @@ std::optional<std::string_view> transfer_destination(std::string_view text) noex
     if(name.find_first_of("[]/|\t\r\n")!=name.npos || name.find_first_not_of(' ')==name.npos)return {};
     return name;
 }
-bool supported_category(std::string_view text) noexcept { return text.find_first_of("[]/|") == text.npos; }
+bool supported_category(std::string_view text) noexcept { return text.find_first_of("[]|") == text.npos; }
+Money amount(std::string_view text, const Currency& currency) {
+    if(text.find(',')==text.npos)return Money::parse(text,currency);
+    auto digits=text;
+    if(!digits.empty() && (digits.front()=='-' || digits.front()=='+'))digits.remove_prefix(1);
+    const auto dot=digits.find('.');const auto integral=digits.substr(0,dot);
+    std::size_t start=0,group=0;
+    while(start<integral.size()) {
+        auto end=integral.find(',',start);if(end==integral.npos)end=integral.size();
+        const auto count=end-start;
+        if(count==0 || (group==0?count>3:count!=3))throw FinancialError(ErrorCode::invalid_decimal,"Invalid QIF digit grouping");
+        for(char c:integral.substr(start,count))if(c<'0' || c>'9')throw FinancialError(ErrorCode::invalid_decimal,"Invalid QIF digit grouping");
+        ++group;start=end+1;
+    }
+    if(integral.empty() || integral.back()==',' || (dot!=digits.npos && digits.substr(dot).find(',')!=digits.npos))throw FinancialError(ErrorCode::invalid_decimal,"Invalid QIF digit grouping");
+    std::string plain;plain.reserve(text.size());for(char c:text)if(c!=',')plain+=c;
+    return Money::parse(plain,currency);
+}
 std::string date(std::string_view s, DateOrder order) {
     auto fail = []() -> void { throw std::invalid_argument("Invalid QIF date/profile"); };
     if (order != DateOrder::dmy && order != DateOrder::mdy) fail();
+    if(s.size()==10 && s[4]=='-' && s[7]=='-') {
+        const auto normalized=std::string(s.substr(8,2))+"/"+std::string(s.substr(5,2))+"/"+std::string(s.substr(0,4));
+        return date(normalized,DateOrder::dmy);
+    }
     const auto first = s.find('/'), second = first == s.npos ? s.npos : s.find('/', first + 1);
     if (first < 1 || first > 2 || second == s.npos || second - first < 2 || second - first > 3 || s.size() - second != 5) fail();
     auto number = [&](std::string_view part) {
@@ -73,24 +128,47 @@ std::string date(std::string_view s, DateOrder order) {
     if (y == 0 || !std::chrono::year_month_day(std::chrono::year(static_cast<int>(y)),std::chrono::month(m),std::chrono::day(d)).ok()) fail();
     char out[11]; std::snprintf(out,sizeof(out),"%04u-%02u-%02u",y,m,d); return out;
 }
+// LF/CRLF delimit fields. A lone CR belongs only to a free-text value;
+// it must never turn embedded text into another amount, header or terminator.
+static std::optional<std::size_t> invalid_control(std::string_view bytes,const std::function<void()>& checkpoint) {
+    enum class Section { ordinary, account, category };
+    auto section=Section::ordinary;
+    std::size_t start=bytes.starts_with("\xef\xbb\xbf")?3:0;
+    while(start<bytes.size()) {
+        if(checkpoint)checkpoint();
+        const auto newline=bytes.find('\n',start);
+        const auto end=newline==bytes.npos?bytes.size():newline;
+        auto line=bytes.substr(start,end-start);
+        if(newline!=bytes.npos && line.ends_with('\r'))line.remove_suffix(1);
+        const char key=line.empty()?0:line.front();
+        const bool free_text=section==Section::ordinary?std::string_view("PMNEA").find(key)!=std::string_view::npos:
+            section==Section::account?key=='D':key=='D'||key=='R';
+        for(std::size_t i=0;i<line.size();++i) {
+            if(checkpoint && i%4096==0)checkpoint();
+            const auto c=static_cast<unsigned char>(line[i]);
+            if(c==127 || (c<32 && c!='\t' && !(c=='\r' && i>0 && free_text)))return start+i;
+        }
+        if(line=="!Account")section=Section::account;
+        else if(line=="!Type:Cat")section=Section::category;
+        else if(line.starts_with("!Type:") || line=="!Option:AutoSwitch" || line=="!Clear:AutoSwitch")section=Section::ordinary;
+        if(newline==bytes.npos)break;
+        start=newline+1;
+    }
+    return {};
+}
 bool Result::valid() const noexcept {
     if (diagnostic || !admissible || records.empty()) return false;
     for (const auto& r : records) if (r.diagnostic || !r.transaction) return false;
     return true;
 }
-Result parse(std::string_view bytes, DateOrder order, const Currency& currency,const std::function<void()>& checkpoint) {
+Result parse(std::string_view bytes, DateOrder order, const Currency& currency,const std::function<void()>& checkpoint, const std::vector<CategoryDefinition>& categories) {
     if(checkpoint) checkpoint();
     if (order != DateOrder::dmy && order != DateOrder::mdy) throw std::invalid_argument("Invalid QIF profile");
     Result out;
     auto file_error = [&](Issue issue, std::size_t offset) { out.diagnostic = Diagnostic{issue,offset}; if (issue == Issue::resource_limit) out.admissible = false; };
     if (bytes.size() > max_file) { file_error(Issue::resource_limit,0); return out; }
     if (!checked_utf8(bytes,checkpoint)) { file_error(Issue::encoding,0); return out; }
-    for (std::size_t i=0;i<bytes.size();++i) {
-        if(checkpoint && i % 4096 == 0) checkpoint();
-        auto c = static_cast<unsigned char>(bytes[i]);
-        if ((c < 32 && c != '\n' && c != '\t' && c != '\r') || c == 127 ||
-            (c == '\r' && (i+1 == bytes.size() || bytes[i+1] != '\n'))) { file_error(Issue::encoding,i); return out; }
-    }
+    if(const auto at=invalid_control(bytes,checkpoint)){file_error(Issue::encoding,*at);return out;}
     Record r; r.source_currency=currency;
     std::array<bool,256> seen{};
     std::optional<Money> total;
@@ -102,9 +180,20 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
     unsigned addresses=0;
     std::size_t split_count=0;
     bool repair_allowed=true;
-    auto error = [&](Issue issue,std::size_t at) { if(issue!=Issue::date && issue!=Issue::split_total && issue!=Issue::amount && issue!=Issue::missing_field) repair_allowed=false; if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at}; };
+    auto error = [&](Issue issue,std::size_t at,SplitProblem problem=SplitProblem::none) { if(issue!=Issue::date && issue!=Issue::split_total && issue!=Issue::amount && issue!=Issue::missing_field) repair_allowed=false; if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at,problem}; };
+    std::set<std::string,std::less<>> catalog_names;
+    for(const auto& category:categories)catalog_names.insert(category.name);
     auto category_parts = [&](std::string_view value,std::size_t at,std::string& target,std::string& class_label) {
-        const auto slash=value.find('/');
+        // Catalog-declared literal slashes are an export convention. Refuse the
+        // ambiguous case rather than silently choosing category versus class.
+        auto slash=value.find('/');
+        const auto last=value.rfind('/');
+        const bool declared_prefix=last!=value.npos && catalog_names.contains(value.substr(0,last));
+        if(slash!=value.npos && catalog_names.contains(value)) {
+            if(declared_prefix)error(Issue::category_class,at);
+            target=value;class_label.clear();return;
+        }
+        if(declared_prefix)slash=last;
         const auto base=value.substr(0,slash);
         target=base; class_label.clear();
         if(slash!=value.npos) {
@@ -124,7 +213,7 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         const auto start=pos, newline=bytes.find('\n',pos);
         pos = newline == bytes.npos ? bytes.size() : newline+1;
         auto line=bytes.substr(start,(newline == bytes.npos ? bytes.size() : newline)-start);
-        if (line.ends_with('\r')) line.remove_suffix(1);
+        if (newline != bytes.npos && line.ends_with('\r')) line.remove_suffix(1);
         if (line.size() > max_field+1 || pos-r.begin > max_record) { file_error(Issue::resource_limit,start); return out; }
         if (!any && out.records.empty() && start == (bytes.starts_with("\xef\xbb\xbf") ? 3u : 0u) && (line == "!Type:Bank" || line == "!Type:Cash" || line == "!Type:CCard")) { r.begin=pos; continue; }
         if (line.starts_with('!')) { file_error(Issue::header,start); return out; }
@@ -132,8 +221,8 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
             if (out.records.size() == max_records) { file_error(Issue::resource_limit,start); return out; }
             if (!any) error(Issue::empty_record,start);
             if (!seen['D'] || !seen['T']) error(Issue::missing_field,start);
-            if (has_s || has_e || (split_started && source_fields.empty())) error(Issue::split_structure,start);
-            if (!source_fields.empty() && !category.empty() && category != "--Split--") error(Issue::split_structure,start);
+            if (has_s || has_e || (split_started && source_fields.empty())) error(Issue::split_structure,start,SplitProblem::missing_amount);
+            if (!source_fields.empty() && !category.empty() && category != "--Split--") error(Issue::split_structure,start,SplitProblem::parent_category);
             r.original_amount=total;
             if (!split_started) {
                 source_fields.push_back({category,r.memo,source_class,total}); allocation_classes.push_back(source_class);
@@ -160,25 +249,25 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         const auto key=static_cast<unsigned char>(line.front()); const auto value=line.substr(1);
         if (key=='S' || key=='E' || key=='$') {
             split_started=true;
-            if (key=='S') { if (has_s || has_e) error(Issue::split_structure,start); has_s=true; category_parts(value,start,split_category,split_class); }
-            if (key=='E') { if (has_e) error(Issue::split_structure,start); has_e=true; split_memo=value; }
+            if (key=='S') { if (has_s) error(Issue::split_structure,start,SplitProblem::repeated_category); has_s=true; category_parts(value,start,split_category,split_class); }
+            if (key=='E') { if (has_e) error(Issue::split_structure,start,SplitProblem::repeated_memo); has_e=true; split_memo=value; }
             if (key=='$') {
                 if (++split_count > max_allocations) { file_error(Issue::resource_limit,start); return out; }
                 std::optional<Money> split_amount;
-                try { split_amount=Money::parse(value,currency); Allocation allocation{split_category,split_memo,*split_amount};allocation.source_ordinal=split_count-1;allocations.push_back(std::move(allocation)); }
+                try { split_amount=amount(value,currency); Allocation allocation{split_category,split_memo,*split_amount};allocation.source_ordinal=split_count-1;allocations.push_back(std::move(allocation)); }
                 catch (const FinancialError&) { error(Issue::amount,start); }
                 source_fields.push_back({split_category,split_memo,split_class,split_amount});allocation_classes.push_back(split_class);
                 split_category.clear(); split_memo.clear(); split_class.clear(); has_s=has_e=false;
             }
             continue;
         }
-        if (split_started) error(Issue::split_structure,start);
+        if (split_started) error(Issue::split_structure,start,SplitProblem::parent_after_split);
         if (key=='A') { if (++addresses > 6) error(Issue::repeated_field,start); continue; }
         if (seen[key]) error(Issue::repeated_field,start);
         seen[key]=true;
         switch (key) {
         case 'D': try { r.date=date(value,order); } catch (const std::invalid_argument&) { error(Issue::date,start); } break;
-        case 'T': try { total=Money::parse(value,currency); } catch (const FinancialError&) { error(Issue::amount,start); } break;
+        case 'T': try { total=amount(value,currency); } catch (const FinancialError&) { error(Issue::amount,start); } break;
         case 'P': r.payee=value; break;
         case 'M': r.memo=value; break;
         case 'N': r.reference=value; break;
@@ -197,23 +286,20 @@ Document index_document(std::string_view bytes,const std::function<void()>& chec
     auto fail=[&](Issue issue,std::size_t at) {out.diagnostic=Diagnostic{issue,at};if(issue==Issue::resource_limit)out.admissible=false;};
     if(bytes.size()>max_file){fail(Issue::resource_limit,0);return out;}
     if(!checked_utf8(bytes,checkpoint)){fail(Issue::encoding,0);return out;}
-    for(std::size_t i=0;i<bytes.size();++i) {
-        if(checkpoint && i%4096==0)checkpoint();
-        const auto c=static_cast<unsigned char>(bytes[i]);
-        if((c<32 && c!='\n' && c!='\t' && c!='\r') || c==127 || (c=='\r' && (i+1==bytes.size() || bytes[i+1]!='\n'))) {
-            fail(Issue::encoding,i);return out;
-        }
-    }
+    if(const auto at=invalid_control(bytes,checkpoint)){fail(Issue::encoding,*at);return out;}
     // A plain single-account source retains the existing parser's diagnostics.
     const auto content=bytes.starts_with("\xef\xbb\xbf")?bytes.substr(3):bytes;
     auto header_present=[&](std::string_view h){return content.starts_with(h) || content.find(std::string("\n")+std::string(h))!=content.npos;};
-    if(!header_present("!Account") && !header_present("!Option:") && !header_present("!Clear:")) {
+    if(!header_present("!Account") && !header_present("!Option:") && !header_present("!Clear:") && !header_present("!Type:Cat")) {
         out.accounts.push_back({});out.sections.push_back({0,0,bytes.size()});return out;
     }
-    out.explicit_accounts=true;
+    out.explicit_accounts=header_present("!Account");
+    if(!out.explicit_accounts)out.accounts.push_back({});
     std::map<std::string,std::size_t> names;
-    std::optional<std::size_t> selected;
-    bool definitions=false, record_open=false;
+    std::optional<std::size_t> selected=out.explicit_accounts?std::optional<std::size_t>{}:std::optional<std::size_t>{0};
+    bool definitions=false, catalog=false, record_open=false;
+    CategoryDefinition category;
+    std::set<std::string> category_names;
     AccountDefinition definition;
     std::array<bool,256> seen{};
     std::size_t records=0;
@@ -225,20 +311,47 @@ Document index_document(std::string_view bytes,const std::function<void()>& chec
         const auto start=pos, newline=bytes.find('\n',pos);
         pos=newline==bytes.npos?bytes.size():newline+1;
         auto line=bytes.substr(start,(newline==bytes.npos?bytes.size():newline)-start);
-        if(line.ends_with('\r'))line.remove_suffix(1);
+        if(newline!=bytes.npos && line.ends_with('\r'))line.remove_suffix(1);
         if(line.size()>max_field+1){fail(Issue::resource_limit,start);return out;}
         if(line.starts_with('!')) {
             if(record_open){fail(Issue::unterminated,start);return out;}
             close_section(start);
+            catalog=false;
             if(line=="!Option:AutoSwitch" || line=="!Clear:AutoSwitch") {definitions=false;continue;}
             if(line=="!Account") {definitions=true;continue;}
+            if(line=="!Type:Cat") {definitions=false;catalog=true;continue;}
             if(line.starts_with("!Type:") && ordinary(line.substr(6)) && selected) {
                 if(out.sections.size()==10000){fail(Issue::resource_limit,start);return out;}
                 definitions=false;out.sections.push_back({*selected,start,0});continue;
             }
             fail(Issue::header,start);return out;
         }
-        if(definitions) {
+        if(catalog) {
+            if(!record_open){category=CategoryDefinition{};category.begin=start;seen.fill(false);}
+            if(line=="^") {
+                if(!seen['N'] || (seen['I'] && seen['E'])){fail(Issue::category_class,start);return out;}
+                try {(void)canonical_category_name(category.name);}catch(const std::invalid_argument&){fail(Issue::category_class,start);return out;}
+                if(!category_names.insert(category.name).second){fail(Issue::repeated_field,start);return out;}
+                if(out.categories.size()==4096){fail(Issue::resource_limit,start);return out;}
+                category.end=pos;out.categories.push_back(category);record_open=false;continue;
+            }
+            if(line.empty()){fail(Issue::empty_record,start);return out;}
+            record_open=true;
+            if(pos-category.begin>max_record){fail(Issue::resource_limit,start);return out;}
+            const auto key=static_cast<unsigned char>(line.front());
+            if(seen[key]){fail(Issue::repeated_field,start);return out;}seen[key]=true;
+            const auto value=line.substr(1);
+            switch(key) {
+            case 'N':category.name=value;break;
+            case 'D':category.description=value;break;
+            case 'R':category.tax_schedule=value;break;
+            case 'B':category.budget=value;break;
+            case 'I':case 'E':case 'T':
+                if(!value.empty()){fail(Issue::category_class,start);return out;}
+                if(key=='T')category.tax_related=true;else category.type=static_cast<char>(key);break;
+            default:fail(Issue::unknown_field,start);return out;
+            }
+        } else if(definitions) {
             if(!record_open){definition=AccountDefinition{};definition.begin=start;seen.fill(false);}
             if(line=="^") {
                 if(!seen['N'] || definition.name.empty() || definition.name.find_first_not_of(' ')==std::string::npos || (seen['T'] && !ordinary(definition.type))) {
@@ -292,7 +405,7 @@ Result parse_account(std::string_view bytes,const Document& document,std::size_t
     for(const auto& section:document.sections) {
         if(section.account!=account)continue;
         if(section.begin>section.end || section.end>bytes.size())throw std::invalid_argument("Invalid QIF source range");
-        auto parsed=parse(bytes.substr(section.begin,section.end-section.begin),order,currency,checkpoint);
+        auto parsed=parse(bytes.substr(section.begin,section.end-section.begin),order,currency,checkpoint,document.categories);
         if(!parsed.admissible)result.admissible=false;
         if(parsed.diagnostic && parsed.diagnostic->issue==Issue::empty_file && parsed.records.empty() && document.explicit_accounts)continue;
         if(parsed.diagnostic) {

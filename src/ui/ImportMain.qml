@@ -87,6 +87,52 @@ ApplicationWindow {
             workflow.command("select_account",{id:item.counterpartAccount,reveal:true,batch:item.counterpartBatch,ordinal:item.counterpartOrdinal})
         })
     }
+    function openImportReview(item) {
+        importBlockersDialog.close()
+        guard(function(){
+            rememberAccountViewport()
+            pendingCounterpart=item.record>=0?{batch:item.batch,ordinal:item.record}:null
+            workflow.command("select_account",{id:item.account,reveal:item.record>=0,batch:item.batch,ordinal:item.record})
+        })
+    }
+    Dialog {
+        id:importBlockersDialog;objectName:"importBlockersDialog";title:"What’s blocking commit?";modal:true
+        width:Math.min(parent.width-40,900);height:Math.min(parent.height-40,600);anchors.centerIn:parent
+        standardButtons:Dialog.Close
+        contentItem:ListView {
+            id:blockerList;objectName:"importBlockerList";clip:true;spacing:12
+            model:s.importGroup?s.importGroup.blockers:[]
+            boundsBehavior:Flickable.StopAtBounds
+            header:Label {width:blockerList.width-24;text:"Open a blocked record or inspect a possible counterpart. Up to 200 blockers and 10 counterparts per blocker are shown. Inspecting does not link or change a transaction.";wrapMode:Text.Wrap;padding:8}
+            ScrollBar.vertical:UsableScrollBar {objectName:"importBlockerScrollBar";policy:ScrollBar.AlwaysOn}
+            delegate:ColumnLayout {
+                id:blockerDelegate
+                required property int index
+                required property var modelData
+                width:blockerList.width-24;spacing:4
+                Button {
+                    objectName:"importBlocker_"+index
+                    Layout.fillWidth:true
+                    text:modelData.name+(modelData.record>=0?" · Record "+(modelData.record+1):"")+" · "+modelData.reason
+                    contentItem:Label {text:parent.text;wrapMode:Text.Wrap;textFormat:Text.PlainText}
+                    onClicked:openImportReview(modelData)
+                }
+                Label {visible:modelData.candidateCount>0;Layout.fillWidth:true;text:"Possible counterparts ("+modelData.candidateCount+") — inspect before matching:";wrapMode:Text.Wrap}
+                Repeater {
+                    model:modelData.candidates
+                    delegate:Button {
+                        required property int index
+                        objectName:"importCounterpart_"+blockerDelegate.index+"_"+index
+                        required property var modelData
+                        Layout.fillWidth:true;Layout.leftMargin:20
+                        text:modelData.name+" · Record "+(modelData.record+1)+" · "+modelData.date+" · "+modelData.amount+" "+modelData.currency+" · "+modelData.status
+                        contentItem:Label {text:parent.text;wrapMode:Text.Wrap;textFormat:Text.PlainText}
+                        onClicked:openImportReview(modelData)
+                    }
+                }
+            }
+        }
+    }
     Dialog {
         id:transferDialog;objectName:"transferDialog";title:"Transfers · "+(s.name||"")
         anchors.centerIn:parent;width:Math.min(window.width-60,1000);height:Math.min(window.height-60,680);modal:true;standardButtons:Dialog.Close
@@ -175,7 +221,7 @@ ApplicationWindow {
     Dialog {
         id:transferCommit;width:520;property var item:({});title:"Commit transfer in this account?";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
         onAccepted:transferCommand("transfer_commit",{link:item.id})
-        Label {text:(transferCommit.item.label||"")+"\nOnly "+(s.name||"")+" commits. The opposite draft stays uncommitted and protected."+(s.importGroup && !s.importGroup.started?"\nThis ends whole-import Abort.":"");wrapMode:Text.Wrap;width:480}
+        Label {text:(transferCommit.item.label||"")+"\nOnly "+(s.name||"")+" commits. The opposite draft stays uncommitted and protected."+(s.importGroup && !s.importGroup.started?"\nThis ends whole-import Abort and publishes the complete imported category catalog.":"");wrapMode:Text.Wrap;width:480}
     }
     Dialog {
         id:protectedCommit;width:520;property var item:({});title:"Commit protected drafts?";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
@@ -756,7 +802,7 @@ ApplicationWindow {
             if(success) {
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
-                    if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0)ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain)})}
+                    if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
                     else if(accountViewports[s.accountId])Qt.callLater(function(){restoreViewport(accountViewports[s.accountId])})
                     if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
@@ -1090,15 +1136,33 @@ ApplicationWindow {
         }
     }
     Dialog {
+        id:importCategoriesDialog;objectName:"importCategoriesDialog";title:"Imported category catalog";modal:true;anchors.centerIn:parent
+        width:Math.min(window.width-48,680);height:Math.min(window.height-48,520);standardButtons:Dialog.Close
+        ColumnLayout {
+            anchors.fill:parent
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.importGroup && s.importGroup.started?"The full catalog was published with the first account commit. Source metadata below does not set reporting or tax behavior.":"These categories are staged with this import. The first account commit publishes the full catalog, including unused categories. Abort discards all staged categories. Income/expense and descriptions are source metadata."}
+            ListView {
+                id:importCategoryList;objectName:"importCategoryList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true
+                model:s.importGroup?s.importGroup.categories:[]
+                ScrollBar.vertical:ScrollBar {policy:ScrollBar.AlwaysOn;implicitWidth:16;minimumSize:0.08}
+                delegate:Label {
+                    required property var modelData
+                    width:importCategoryList.width-20;padding:6;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                    text:modelData.name+" · "+modelData.type+(modelData.description?"\n"+modelData.description:"")+(modelData.taxSchedule?"\nTax schedule (source): "+modelData.taxSchedule:"")+(modelData.budget?"\nBudget (source): "+modelData.budget:"")+(modelData.taxRelated?"\nTax-related (source)":"")
+                }
+            }
+        }
+    }
+    Dialog {
         id:discardDialog;objectName:"discardImportDialog";width:Math.min(window.width-48,640);title:s.importGroup && !s.importGroup.started?"Abort the entire import?":"Discard pending import?";modal:true;anchors.centerIn:parent
         standardButtons:Dialog.Ok|Dialog.Cancel
-        Label {width:discardDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.importGroup && !s.importGroup.started?"Discard every account draft and all earlier saved repairs from this source. Unused accounts created by this import are removed from the account list. Encrypted source evidence and history are retained.":processingIncomplete?"Discard this incomplete import. Encrypted source evidence and history are retained.":"Remove the draft projection. Encrypted source evidence and history are retained."}
+        Label {width:discardDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.importGroup && !s.importGroup.started?"Discard every account draft, every staged imported category (including those used by drafts), and all earlier saved repairs from this source. Unused accounts created by this import are removed from the account list. Encrypted source evidence and history are retained.":processingIncomplete?"Discard this incomplete import. Encrypted source evidence and history are retained.":"Remove the draft projection. Encrypted source evidence and history are retained."}
         onAccepted:s.importGroup && !s.importGroup.started?workflow.command("group_abort",{group:s.importGroup.id}):workflow.command("discard")
     }
     Dialog {
-        id:commitDialog;width:Math.min(window.width-48,640);title:"Commit the whole reviewed import?";modal:true;anchors.centerIn:parent
+        id:commitDialog;width:Math.min(window.width-48,640);title:"Commit this account’s reviewed import?";modal:true;anchors.centerIn:parent
         standardButtons:Dialog.Ok|Dialog.Cancel
-        Label {width:commitDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Publish all included records atomically and freeze the opening balance.\nExcluded duplicate occurrences remain in history."+(s.importGroup && !s.importGroup.started?"\nThis first commit ends whole-import Abort. Other accounts remain drafts and must be committed separately.":"")}
+        Label {width:commitDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Publish all included records atomically and freeze the opening balance.\nExcluded duplicate occurrences remain in history."+(s.importGroup && !s.importGroup.started?"\nThis first commit also publishes the complete imported category catalog, including unused categories, and ends whole-import Abort. Other accounts remain drafts and must be committed separately.":"")}
         onAccepted:workflow.command("commit")
     }
     ColumnLayout {
@@ -1515,6 +1579,12 @@ ApplicationWindow {
                 text:s.pending?"Repairs: "+s.pending.repairsDone+" / "+s.pending.repairs+" records ("+s.pending.amountRepairs+" need amount repair). Unsupported records/sections: "+s.pending.unsupported+". "+(s.pendingProtected?"Protected transfer drafts survive discard; whole-import Abort is no longer available.":"Abort discards this entire import, including earlier saved repairs."):""}
             Label {objectName:"groupRepairProgress";visible:!!s.importGroup;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
                 text:s.importGroup?"Whole import repairs: "+s.importGroup.done+" / "+s.importGroup.repairs+" records ("+s.importGroup.amountRepairs+" need amount repair). Unsupported records/sections: "+s.importGroup.blocked+". Outstanding review items: "+s.importGroup.unresolved+". Review each mapped account before committing.":""}
+            RowLayout {
+                visible:!!s.importGroup;Layout.fillWidth:true
+                Button {objectName:"resolveMappedTransfers";text:"Resolve mapped transfers";enabled:!s.readOnly && !processingIncomplete && !!s.importGroup && s.importGroup.unresolvedTransfers>0;onClicked:guard(function(){workflow.command("group_resolve_transfers",{group:s.importGroup.id})})}
+                Button {objectName:"showImportBlockers";text:"What’s blocking commit? ("+(s.importGroup?s.importGroup.unresolved:0)+")";enabled:!!s.importGroup && s.importGroup.unresolved>0;onClicked:importBlockersDialog.open()}
+            }
+            Button {objectName:"reviewImportedCategories";visible:!!s.importGroup && s.importGroup.categories.length>0;text:"Review imported categories ("+(s.importGroup?s.importGroup.categories.length:0)+")…";onClicked:importCategoriesDialog.open()}
             ColumnLayout {
                 visible:!!s.groupCreated;Layout.fillWidth:true
                 Label {text:"Reported balance: "+(s.groupReportedBalance||"")+" · Reviewed change: "+(s.groupReviewedChange||"")+" "+(s.currency||"")+" · Proposed opening: "+(s.groupProposedOpening||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}

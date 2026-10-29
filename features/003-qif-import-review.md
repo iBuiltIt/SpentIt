@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-28  
-Implementation: partial. Bank-v3 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 24 with rules and schema 23 without rules. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
+Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 30 with rules and schema 29 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
 
 ## Accepted requirements
 
@@ -119,3 +119,7 @@ The [bounded destination extension](../doc/qif-transfers.md) admits whole-record
 The [v3 profile](009-qif-profile.md) now admits ordinary Bank/Cash/CCard records and separate class metadata. Structurally intact date/amount repairs preserve unknown original money as unavailable and keep every original split position and transfer destination. Explicit repaired interpretations and duplicate decisions remain separate; no guessed original, zero substitution or automatic repaired-record exclusion is permitted. The [current checkpoint](../doc/status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26) records verification and format scope.
 
 The subsequent [whole-source account workflow](../doc/qif-account-imports.md) implements named sections, explicit mapping or creation, repair counts/progress, staged reported-balance interpretation and whole-import Abort under the accepted policies. Selected current-format verification is recorded in [status](../doc/status.md#whole-source-qif-account-review--2026-10-26). General cross-format associations and wider compatibility remain outside this QIF profile; the feature stays active.
+
+## Complete QIF exports — accepted 2026-10-28
+
+The owner gave Go for full category catalogs alongside existing account definitions/switching, ISO dates and validated comma-grouped amounts. Categories stage with the import and publish atomically with its first account commit; Abort removes the entire staged catalog even when drafts use it. See the [profile](009-qif-profile.md) and [publication contract](../doc/qif-account-imports.md#staged-category-catalog--2026-10-28). This is a bounded import extension, not universal QIF support or report implementation.

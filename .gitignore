@@ -86,6 +86,7 @@ Desktop.ini
 !/tests/fixtures/qif/fuzz/split.qif
 !/tests/fixtures/qif/fuzz/repair.qif
 !/tests/fixtures/qif/fuzz/accounts.qif
+!/tests/fixtures/qif/fuzz/categories.qif
 !/tests/fixtures/qif/fuzz/malformed.qif
 !/tests/fixtures/qif/fuzz/overflow.qif
 !/tests/fixtures/statements/bank-sgml.ofx

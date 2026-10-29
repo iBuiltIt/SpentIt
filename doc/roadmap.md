@@ -1,5 +1,7 @@
 # Coordinated implementation roadmap
 
+Next-session priority: [repeated transfers with one-to-one links, then application performance](import-performance-handoff.md) (owner handoff, 2026-10-28). Both remain pending implementation; resume after explicit Go.
+
 Last updated: 2026-10-28
 
 The earlier eight-point sequence used coordinated implementation with delegated agents. That sequence is complete; the current direction below governs new work. Ask for concrete missing information or material financial/security decisions when dependent work reaches them. Routine editor layout choices can be implemented and revised after owner review. This authorization does not select a license, authorize publication, or settle unresolved financial semantics.

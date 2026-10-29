@@ -5,7 +5,25 @@ CategoryDefinition category_at(sqlite3* db,std::string_view id,std::int64_t cata
 }
 app::CategoryDisplay category_display(sqlite3* db,std::string_view id,std::int64_t catalog=INT64_MAX){const auto category=category_at(db,id,catalog);if(category.deleted)fail(SQLITE_CONSTRAINT,"Category was deleted");if(category.kind!=CategoryKind::leaf || !category.parent.empty())fail(SQLITE_CORRUPT);return {category.identity,category.name,!category.archived,category.archived};}
 void validate_binding(sqlite3* db,const Allocation& allocation){if(!allocation.category_binding)return;const auto& binding=*allocation.category_binding;if(binding.catalog_revision<1 || binding.catalog_revision>catalog_sequence(db))fail(SQLITE_CONSTRAINT,"Category assignment revision is invalid");const auto at=category_display(db,binding.identity,binding.catalog_revision);if(!at.assignable || at.path!=allocation.category)fail(SQLITE_CONSTRAINT,"Category assignment does not match its retained definition");}
-bool category_referenced(sqlite3* db,std::string_view id){Statement used(db,"SELECT 1 FROM (SELECT category_id FROM draft_allocation_meta WHERE category_id IS NOT NULL UNION ALL SELECT category_id FROM entry_allocation_meta WHERE category_id IS NOT NULL) WHERE category_id=? LIMIT 1");used.text(1,id);if(used.row())return true;if(!rules_format(db))return false;Statement rules(db,"SELECT 1 FROM rule_definitions WHERE category_id=? LIMIT 1");rules.text(1,id);return rules.row();}
+bool category_referenced(sqlite3* db,std::string_view id){Statement used(db,"SELECT 1 FROM (SELECT category_id FROM draft_allocation_meta WHERE category_id IS NOT NULL UNION ALL SELECT category_id FROM entry_allocation_meta WHERE category_id IS NOT NULL) WHERE category_id=? LIMIT 1");used.text(1,id);if(used.row())return true;
+    // Publication pins identities for other accounts whose source assignments
+    // remain drafts. These references also prevent deletion/name reuse.
+    Statement groups(db,"SELECT g.id,l.catalog_revision,s.bytes FROM import_groups g JOIN ledger_operations l ON l.id=g.publication JOIN sources s ON s.id=g.id JOIN source_headers h ON h.source_id=g.id WHERE g.state=2 AND h.format='qif'");
+    while(groups.row()) {
+        Statement existed(db,"SELECT 1 FROM category_versions WHERE id=? AND catalog_revision<=?");existed.text(1,id);existed.integer(2,groups.integer(1));if(!existed.row())continue;
+        const auto definition=category_at(db,id,groups.integer(1));if(definition.deleted)continue;
+        const auto catalog=qif::index_document(groups.bytes(2)).categories;
+        if(std::none_of(catalog.begin(),catalog.end(),[&](const auto& c){return app::category_name_matches(c.name,definition.name);}))continue;
+        Statement labels(db,"SELECT DISTINCT a.category FROM allocations a JOIN draft_allocation_meta m USING(batch,ordinal,revision,position) JOIN import_group_accounts g ON g.batch=a.batch WHERE g.group_id=? AND m.category_owner=1 AND m.category_id IS NULL");labels.text(1,groups.bytes(0));
+        while(labels.row()) {try {if(app::category_name_matches(labels.bytes(0),definition.name))return true;}catch(const std::invalid_argument&) {}}
+    }
+    if(!rules_format(db))return false;Statement rules(db,"SELECT 1 FROM rule_definitions WHERE category_id=? LIMIT 1");rules.text(1,id);return rules.row();}
+bool source_category_equal(const Allocation& allocation,const qif::SourceAllocation* original) {
+    if(!original)return false;
+    if(!allocation.category_binding)return allocation.category==original->category;
+    try {return app::category_name_matches(allocation.category,original->category);}
+    catch(const std::invalid_argument&){return false;}
+}
 void validate_owner(FieldOwnership owner){if(owner!=FieldOwnership::source && owner!=FieldOwnership::manual)fail(SQLITE_CONSTRAINT,"Unknown or unverified field ownership");}
 void accept_rule_owner(FieldOwnership owner,const std::optional<RuleMark>& mark,bool reading){const int code=reading?SQLITE_CORRUPT:SQLITE_CONSTRAINT;if((owner==FieldOwnership::rule)!=mark.has_value())fail(code,"Rule provenance does not match its ownership");if(owner==FieldOwnership::rule){if(!reading)identifier(mark->identity);if(mark->version<0)fail(code,"Rule provenance does not match its ownership");}else validate_owner(owner);}
 std::int64_t carried_ruleset(sqlite3* db,const imports::Occurrence& id,std::int64_t revision,bool entry){
@@ -130,7 +148,7 @@ imports::DraftRow ImportStore::canonical_draft(const imports::Occurrence& id,con
         Statement old(impl_->db,"SELECT source_ordinal FROM draft_allocation_meta WHERE batch=?1 AND ordinal=?2 AND identity=?3 UNION ALL SELECT source_ordinal FROM entry_allocation_meta WHERE batch=?1 AND ordinal=?2 AND identity=?3");old.text(1,id.batch);old.integer(2,integer(id.ordinal));old.text(3,allocation.identity);while(old.row())if(old.null(0)!=!allocation.source_ordinal || (!old.null(0) && old.integer(0)!=integer(*allocation.source_ordinal)))fail(SQLITE_CONSTRAINT,"Allocation identity was rebound");
         const qif::SourceAllocation* original=allocation.source_ordinal?&source.source_allocation_fields[*allocation.source_ordinal]:nullptr;
         const auto memo_owner=settle(allocation.memo_owner,rules?allocation.memo_rule:std::optional<RuleMark>{},previous?previous->memo_owner:FieldOwnership::source,previous?previous->memo_rule:std::optional<RuleMark>{},previous && allocation.memo==previous->memo,original && allocation.memo==original->memo);
-        const auto category_owner=settle(allocation.category_owner,rules?allocation.category_rule:std::optional<RuleMark>{},previous?previous->category_owner:FieldOwnership::source,previous?previous->category_rule:std::optional<RuleMark>{},previous && allocation.category==previous->category && allocation.category_binding==previous->category_binding,original && !allocation.category_binding && allocation.category==original->category);
+        const auto category_owner=settle(allocation.category_owner,rules?allocation.category_rule:std::optional<RuleMark>{},previous?previous->category_owner:FieldOwnership::source,previous?previous->category_rule:std::optional<RuleMark>{},previous && allocation.category==previous->category && allocation.category_binding==previous->category_binding,source_category_equal(allocation,original));
         allocation.memo_owner=memo_owner.owner;allocation.category_owner=category_owner.owner;if(rules){allocation.memo_rule=memo_owner.mark;allocation.category_rule=category_owner.mark;}
         if(allocation.category_binding){validate_binding(impl_->db,allocation);const bool unchanged=previous && previous->category_binding==allocation.category_binding && previous->category==allocation.category;
             if(check_assignment && !unchanged){const auto display=resolve_category(allocation.category_binding->identity);if(allocation.category_binding->catalog_revision!=catalog_sequence(impl_->db) || !display.assignable || display.path!=allocation.category)fail(SQLITE_CONSTRAINT,"Category choice changed or is archived; choose an active leaf again");}
@@ -202,7 +220,7 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
                 identifier(allocation.identity);if(!identities.insert(allocation.identity).second || (allocation.source_ordinal && !sources.insert(*allocation.source_ordinal).second))fail(SQLITE_CORRUPT);
                 const qif::SourceAllocation* original=nullptr;if(allocation.source_ordinal){if(*allocation.source_ordinal>=source.source_allocation_fields.size() || allocation.identity!="source-"+std::to_string(*allocation.source_ordinal))fail(SQLITE_CORRUPT);original=&source.source_allocation_fields[*allocation.source_ordinal];}
                 else if(allocation.identity.starts_with("source-"))fail(SQLITE_CORRUPT);
-                if((allocation.memo_owner==FieldOwnership::source && (!original || allocation.memo!=original->memo)) || (allocation.category_owner==FieldOwnership::source && (!original || allocation.category_binding || allocation.category!=original->category)))fail(SQLITE_CORRUPT);
+                if((allocation.memo_owner==FieldOwnership::source && (!original || allocation.memo!=original->memo)) || (allocation.category_owner==FieldOwnership::source && !source_category_equal(allocation,original)))fail(SQLITE_CORRUPT);
                 Statement associations(impl_->db,"SELECT source_ordinal FROM draft_allocation_meta WHERE batch=?1 AND ordinal=?2 AND identity=?3 UNION ALL SELECT source_ordinal FROM entry_allocation_meta WHERE batch=?1 AND ordinal=?2 AND identity=?3");associations.text(1,id.batch);associations.integer(2,integer(id.ordinal));associations.text(3,allocation.identity);while(associations.row())if(associations.null(0)!=!allocation.source_ordinal || (!associations.null(0) && associations.integer(0)!=integer(*allocation.source_ordinal)))fail(SQLITE_CORRUPT);
                 bool carried=false,previous_identity=false;
                 const bool prior_entry=entry && revision>0;
@@ -210,7 +228,7 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
                 if(entry && revision==0){Statement prior(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");prior.text(1,id.batch);prior.integer(2,integer(id.ordinal));if(!prior.row() || prior.null(0))fail(SQLITE_CORRUPT);previous_revision=prior.integer(0);}
                 if(previous_revision){Statement previous(impl_->db,prior_entry?"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM entry_allocation_meta m JOIN entry_allocations a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?":"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM draft_allocation_meta m JOIN allocations a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?");previous.text(1,id.batch);previous.integer(2,integer(id.ordinal));previous.integer(3,*previous_revision);previous.text(4,allocation.identity);if(previous.row()){if(!undo && ((previous.integer(3)==static_cast<int>(FieldOwnership::manual) && allocation.category_owner==FieldOwnership::source) || (previous.integer(4)==static_cast<int>(FieldOwnership::manual) && allocation.memo_owner==FieldOwnership::source)))fail(SQLITE_CORRUPT,"Manual allocation ownership was silently removed");previous_identity=true;carried=allocation.category_binding && !previous.null(0) && previous.bytes(0)==allocation.category_binding->identity && previous.integer(1)==allocation.category_binding->catalog_revision && previous.bytes(2)==allocation.category;}}
                 if(allocation.source_ordinal && previous_revision && !previous_identity && !undo)fail(SQLITE_CORRUPT,"Source association was recreated without Undo");
-                if(allocation.category_binding){validate_binding(impl_->db,allocation);if(allocation.category_binding->catalog_revision>current_catalog || (!carried && !undo && allocation.category_binding->catalog_revision!=current_catalog))fail(SQLITE_CORRUPT,"Category assignment bypassed catalog freshness");}
+                if(allocation.category_binding){validate_binding(impl_->db,allocation);if(allocation.category_binding->catalog_revision>current_catalog || (!carried && !undo && allocation.category_owner!=FieldOwnership::source && allocation.category_binding->catalog_revision!=current_catalog))fail(SQLITE_CORRUPT,"Category assignment bypassed catalog freshness");}
             }
         }
     }
@@ -236,4 +254,71 @@ void ImportStore::initialize_categories() {
         const auto preview=preview_category_change({app::CategoryAction::create,id,names[i],{},CategoryKind::leaf});
         write_category_change("setup-"+id,preview);
     }
+}
+
+// The immutable encrypted whole source is the category staging store. It never
+// enters category_heads until the group's first financial publication.
+const std::vector<qif::CategoryDefinition>& ImportStore::source_categories(std::string_view batch_id) const {
+    Statement source(impl_->db,"SELECT b.source_id,h.format FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE b.id=?");source.text(1,batch_id);if(!source.row())fail(SQLITE_CORRUPT);
+    const auto id=source.bytes(0);
+    if(impl_->category_source!=id) {
+        std::vector<qif::CategoryDefinition> categories;
+        if(source.bytes(1)=="qif") {
+            Statement bytes(impl_->db,"SELECT bytes FROM sources WHERE id=?");bytes.text(1,id);if(!bytes.row())fail(SQLITE_CORRUPT);
+            categories=qif::index_document(bytes.bytes(0)).categories;
+        }
+        impl_->source_category_cache=std::move(categories);impl_->category_source=id;
+    }
+    return impl_->source_category_cache;
+}
+void ImportStore::publish_import_categories(std::string_view batch_id) {
+    const auto definitions=source_categories(batch_id);
+    for(std::size_t i=0;i<definitions.size();++i) {
+        const auto name=canonical_category_name(definitions[i].name);
+        const auto catalog=category_catalog();
+        const auto found=std::find_if(catalog.categories.begin(),catalog.categories.end(),[&](const auto& c){return !c.deleted && app::category_name_matches(c.name,name);});
+        if(found!=catalog.categories.end()) {
+            if(found->archived)fail(SQLITE_CONSTRAINT,"An imported category matches an archived category. Reactivate that category before committing the import.");
+            continue;
+        }
+        const auto id="qif-cat-"+impl_->category_source+"-"+std::to_string(i);
+        identifier(id);
+        write_category_change(id,preview_category_change({app::CategoryAction::create,id,name,{},CategoryKind::leaf}));
+    }
+}
+imports::DraftRow ImportStore::bind_import_categories(std::string_view batch_id,const imports::DraftRow& input) const {
+    const auto& definitions=source_categories(batch_id);
+    if(definitions.empty())return input;
+    Statement group(impl_->db,"SELECT g.id,g.state,l.catalog_revision FROM import_groups g JOIN import_group_accounts m ON m.group_id=g.id LEFT JOIN ledger_operations l ON l.id=g.publication WHERE m.batch=?");group.text(1,batch_id);
+    if(!group.row() || group.integer(1)!=2) return input;
+    // During publication the financial receipt follows entry creation inside the
+    // same transaction; after it, its immutable epoch pins category identities.
+    if(group.null(2) && sqlite3_get_autocommit(impl_->db))fail(SQLITE_CORRUPT,"Missing category publication receipt");
+    const auto epoch=group.null(2)?catalog_sequence(impl_->db):group.integer(2);
+    if(impl_->binding_group!=group.bytes(0) || impl_->binding_epoch!=epoch) {
+        std::vector<CategoryDefinition> catalog;
+        Statement ids(impl_->db,"SELECT DISTINCT id FROM category_versions WHERE catalog_revision<=?");ids.integer(1,epoch);
+        while(ids.row())catalog.push_back(category_at(impl_->db,ids.bytes(0),epoch));
+        std::map<std::string,std::pair<std::string,CategoryBinding>> bindings;
+        for(const auto& definition:definitions) {
+            const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& c){return !c.deleted && !c.archived && app::category_name_matches(c.name,definition.name);});
+            if(found==catalog.end())fail(SQLITE_CORRUPT,"Imported category catalog was not published completely");
+            bindings.emplace(definition.name,std::make_pair(found->name,CategoryBinding{found->identity,epoch}));
+        }
+        impl_->imported_bindings=std::move(bindings);impl_->binding_group=group.bytes(0);impl_->binding_epoch=epoch;
+    }
+    auto result=input;auto allocations=input.transaction.allocations();
+    for(auto& allocation:allocations) {
+        if(allocation.category_owner!=FieldOwnership::source || allocation.category_binding || allocation.category.empty() || qif::transfer_destination(allocation.category))continue;
+        auto found=impl_->imported_bindings.find(allocation.category);
+        if(found==impl_->imported_bindings.end()) {
+            // Undeclared source labels may not satisfy editable-name syntax.
+            // Preserve them as unmapped evidence rather than invent a category.
+            try {(void)canonical_category_name(allocation.category);}catch(const std::invalid_argument&){continue;}
+            // Match only catalog identity, never similar spelling or a prefix.
+            found=std::find_if(impl_->imported_bindings.begin(),impl_->imported_bindings.end(),[&](const auto& pair){return app::category_name_matches(pair.first,allocation.category);});
+        }
+        if(found!=impl_->imported_bindings.end()){allocation.category=found->second.first;allocation.category_binding=found->second.second;}
+    }
+    result.transaction=input.transaction.corrected(input.transaction.effective_total(),std::move(allocations));return result;
 }

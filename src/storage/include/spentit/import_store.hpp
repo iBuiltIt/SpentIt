@@ -66,6 +66,7 @@ public:
     app::ImportGroup prepare_import_group(std::string_view,std::string_view,qif::DateOrder,const std::vector<app::ImportAccountMapping>&,app::OperationContext&,std::string_view ="qif") override;
     app::ImportGroup resume_import_group(std::string_view,app::OperationContext&) override;
     void abort_import_group(std::string_view) override;
+    void resolve_import_transfers(std::string_view,app::OperationContext&) override;
     void review_import_balance(std::string_view,std::size_t,std::int64_t,app::ReportedBalanceChoice,std::string_view) override;
     app::BatchInfo ingest(std::string_view,std::string_view,qif::DateOrder) override;
     app::BatchInfo ingest_controlled(std::string_view,std::string_view,qif::DateOrder,app::OperationContext&) override;
@@ -123,10 +124,14 @@ public:
                    const BackupObserver& observer = {}, const app::OperationContext* context = nullptr) const;
     void observer(ImportObserver);
 private:
+    void resolve_group_transfers(std::string_view,const app::OperationContext&);
     app::ImportGroup import_group(std::string_view) const;
     void require_group_ready(std::string_view) const;
     std::set<std::string> financial_group_batches(std::int64_t) const;
     void publish_group_opening(std::int64_t);
+    const std::vector<qif::CategoryDefinition>& source_categories(std::string_view batch) const;
+    void publish_import_categories(std::string_view batch);
+    imports::DraftRow bind_import_categories(std::string_view batch,const imports::DraftRow&) const;
     void start_import_groups(const std::set<std::string>&,std::string_view);
     void verify_import_groups(const app::OperationContext*) const;
     std::vector<app::TransferView> all_transfers() const;

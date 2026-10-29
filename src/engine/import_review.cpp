@@ -6,9 +6,9 @@
 namespace spentit::imports {
 namespace {
 [[noreturn]] void invalid() { throw std::invalid_argument("Invalid import review operation"); }
-void text(std::string_view value) {
+void text(std::string_view value,bool embedded_breaks=false) {
     if (value.size()>qif::max_field || !qif::valid_utf8(value)) invalid();
-    for (const char ch:value) { const auto c=static_cast<unsigned char>(ch); if ((c<32 && c!='\t') || c==127) invalid(); }
+    for (const char ch:value) { const auto c=static_cast<unsigned char>(ch); if ((c<32 && c!='\t' && !(embedded_breaks && c=='\r')) || c==127) invalid(); }
 }
 }
 EvidenceKey evidence_key(const qif::Record& source) {
@@ -61,7 +61,7 @@ void validate_draft(const qif::Record& source,const DraftRow& edit,bool reassign
     if(reassigned && edit.transaction.reassigned_currency()==false && edit.transaction.effective_total().currency()!=*source.source_currency)invalid();
     if (edit.date.size()!=10 || edit.date[4]!='-' || edit.date[7]!='-') invalid();
     if (qif::date(edit.date.substr(8,2)+"/"+edit.date.substr(5,2)+"/"+edit.date.substr(0,4),qif::DateOrder::dmy)!=edit.date) invalid();
-    text(edit.payee); text(edit.memo);
+    text(edit.payee,true); text(edit.memo,true);
     if (edit.transaction.allocations().size()>qif::max_allocations) invalid();
     // Source transfer intent cannot disappear through an ordinary category/split edit.
     for(std::size_t ordinal=0;ordinal<source.source_allocation_fields.size();++ordinal){const auto& original=source.source_allocation_fields[ordinal];if(!qif::transfer_destination(original.category))continue;
@@ -71,7 +71,7 @@ void validate_draft(const qif::Record& source,const DraftRow& edit,bool reassign
     }
     std::size_t size=edit.payee.size()+edit.memo.size();
     for (const auto& allocation:edit.transaction.allocations()) {
-        text(allocation.category); text(allocation.memo);
+        text(allocation.category); text(allocation.memo,true);
         if (!qif::supported_category(allocation.category) && !qif::transfer_destination(allocation.category)) invalid();
         if(qif::transfer_destination(allocation.category)) {
             if(allocation.category_binding || allocation.category_rule)invalid();

@@ -46,7 +46,7 @@ app::TransferView transition_transfer(app::TransferView value,const app::Transfe
         if(!request.evidence || current.proposed_evidence!=request.evidence)fail(SQLITE_CONSTRAINT,"Match proposal changed");
         value.link=transfers::discard_import_match(value.link,account,request.evidence->endpoint.entry.batch);break;
     case app::TransferAction::clear_local:
-        if(!local_side(current))fail(SQLITE_CONSTRAINT,"Clear imported entries through their import");
+        if(!local_side(current) && !(current.independent_evidence && current.state==transfers::State::draft && (account==value.link.origin.endpoint.account || (value.link.unresolved && !current.attached_evidence && !current.proposed_evidence))))fail(SQLITE_CONSTRAINT,"Clear imported entries through their import");
         value.link=transfers::clear_workspace(value.link,account);break;
     default:fail(SQLITE_CONSTRAINT,"Invalid transfer command");
     }
@@ -107,7 +107,8 @@ std::vector<app::TransferView> manage_views(const std::vector<app::TransferView>
         if(!prior) fail(SQLITE_CONSTRAINT,"Invalid transfer command");
         out.push_back({*edit.kept,prior->payee,prior->memo,prior->created_sequence});
     }
-    for(const auto& value:values) if(std::none_of(out.begin(),out.end(),[&](const auto& next){return next.link.identity==value.link.identity;}))
+    std::set<std::string> retained_ids;for(const auto& value:out)retained_ids.insert(value.link.identity);
+    for(const auto& value:values) if(!retained_ids.contains(value.link.identity))
         fail(SQLITE_CONSTRAINT,"Invalid transfer command");
     validate_transfer_set(out);return out;
 }

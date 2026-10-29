@@ -42,7 +42,7 @@ class RuleUiTests : public QObject {
     static QVariantMap selected(const ImportModel& m){return m.state().value("selected").toMap();}
     static QVariantMap draftOf(const ImportModel& m){return selected(m).value("draft").toMap();}
     static QString page(QObject* root){return root->property("currentPage").toString();}
-    void applyCategory(ImportModel& m,QObject* root){QVERIFY(click(root,"saveCategory"));wait(m);QVERIFY(object(root,"categoryChangePreview")->property("visible").toBool());QVERIFY(click(root,"applyCategoryChange"));wait(m);}
+    void applyCategory(ImportModel& m,QObject* root){auto* field=qobject_cast<QQuickItem*>(object(root,"categoryName"));QVERIFY(field);field->forceActiveFocus();QTest::keyClick(qobject_cast<QQuickWindow*>(root),Qt::Key_Return);wait(m);QTRY_VERIFY(!root->property("categoryDirty").toBool());}
     QString createCategory(ImportModel& m,QObject* root,const QString& name){
         if(!click(root,"newCategory") || !edit(root,"categoryName",name))qFatal("Category form unavailable");
         applyCategory(m,root);return m.state().value("categorySelected").toMap().value("id").toString();

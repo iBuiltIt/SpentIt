@@ -2,7 +2,7 @@
 
 Status: **active**  
 Last updated: 2026-10-28  
-Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 24/23. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
+Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 30/29. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 
@@ -117,9 +117,9 @@ Use the accepted [transfer lifecycle](008-transfer-matching-and-lifecycle.md): p
 
 ### QIF-compatible category names
 
-Category names must respect the supported QIF format. In particular, do not allow a literal slash in an editable category name: it has structural meaning in QIF category/class notation. Validate at category creation/rename with an explanation; do not defer errors until export or silently strip/replace characters. Preserve immutable imported source evidence.
+Category names must respect the supported QIF format. The original proposal prohibited a literal slash because it has structural meaning in QIF category/class notation. That restriction is superseded by the accepted complete-catalog behavior below. Validate at category creation/rename with an explanation; do not defer errors until export or silently strip/replace characters. Preserve immutable imported source evidence.
 
-The current bounded implementation in `src/engine/qif.cpp` rejects category text containing `[]/|`; this is an implementation fact about a restricted parser, not a completed naming specification. Before implementation, verify the full naming contract against the supported QIF profile, including reserved account-transfer notation, hierarchy delimiters, control characters, and import/export behavior. Do not interpret the slash-separated labels in the discussion list below as approved literal names.
+The original restricted parser rejected category text containing `[]/|`; the current parser accepts catalog-declared literal slashes and keeps conventional class notation outside that context. Before implementation, verify the full naming contract against the supported QIF profile, including reserved account-transfer notation, hierarchy delimiters, control characters, and import/export behavior. Do not interpret the slash-separated labels in the discussion list below as approved literal names.
 
 ## Owner's proposed category set — retained for discussion
 
@@ -181,3 +181,9 @@ For example, moving Parking & Tolls from Auto to Travel would move last year's p
 Archive removes a category from new assignment choices but keeps existing allocations, balances, history and report visibility. Delete only never-referenced empty entries, retaining definition audit; otherwise use archive. Do not merge or reclassify allocations implicitly. Existing free-text classifications remain visibly unmapped until deliberate mapping; do not silently convert them to Uncategorized. A committed allocation reassignment uses the accepted committed-correction history rather than catalog renaming.
 
 The starter catalog remains optional/proposed so its unresolved headings and final spellings do not prevent the model and editor from being implemented. This accepted lifecycle policy does not settle transfer behavior or reporting sign/refund policy.
+
+## Complete imported catalogs — accepted 2026-10-28
+
+The owner approved importing the full source category catalog when porting an application's data, normally into a dataset created without starter categories. Similar names must not be merged. Existing case-insensitive category identity matching remains; all unused source definitions are included. Imported categories remain draft state until the first account explicitly commits; that commit atomically publishes the complete catalog. Whole-import Abort rolls back every staged definition, including definitions used by draft transactions. Preserved encrypted evidence is not an active category.
+
+This supersedes the earlier blanket slash prohibition: literal `/` is allowed in category names. QIF catalog context disambiguates literal names from class suffixes where possible; ambiguous references are blocked explicitly. Income/expense markers, descriptions, budgets and tax metadata remain source evidence, not new category types or report policy. See [QIF profile](009-qif-profile.md#category-catalog-and-literal-slash-names--accepted-2026-10-28) and [staging/publication contract](../doc/qif-account-imports.md#staged-category-catalog--2026-10-28). Category reports remain unimplemented.

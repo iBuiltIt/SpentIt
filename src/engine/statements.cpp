@@ -571,6 +571,7 @@ Index inspect(std::string_view bytes, std::string_view requested, const std::fun
         }
         const auto document = qif::index_document(bytes, checkpoint);
         Index index; index.parser = std::string(qif::parser_version); index.format = "qif"; index.grammar = "qif";
+        index.categories = document.categories;
         index.explicit_accounts = document.explicit_accounts; index.admissible = document.admissible; index.diagnostic = document.diagnostic;
         for(const auto& account : document.accounts) index.accounts.push_back(Account{account.name, account.type, account.reported_balance, {}, {}, {}, {}, account.begin, account.end});
         return index;
@@ -589,7 +590,7 @@ Index inspect(std::string_view bytes, std::string_view requested, const std::fun
 qif::Result parse_mapped(std::string_view bytes, const Index& index, std::size_t account, qif::DateOrder order, const Currency& currency, const std::function<void()>& checkpoint) {
     if(index.format == "qif" || index.parser == qif::parser_version) {
         const auto document = qif::index_document(bytes, checkpoint);
-        if(!document.explicit_accounts) return qif::parse(bytes, order, currency, checkpoint);
+        if(!document.explicit_accounts && document.categories.empty()) return qif::parse(bytes, order, currency, checkpoint);
         return qif::parse_account(bytes, document, account, order, currency, checkpoint);
     }
     qif::Result rejected;

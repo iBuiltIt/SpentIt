@@ -4,8 +4,8 @@
 namespace spentit {
 namespace {
 void validate_segment(std::string_view name) {
-    if(name.empty() || name.size()>256 || !qif::valid_utf8(name) || name.front()==' ' || name.back()==' ' || name.find_first_of("[]/|:")!=name.npos)
-        throw std::invalid_argument("Category names must be nonempty UTF-8 segments without surrounding spaces or []/|:");
+    if(name.empty() || name.size()>256 || !qif::valid_utf8(name) || name.front()==' ' || name.back()==' ' || name.find_first_of("[]|:")!=name.npos)
+        throw std::invalid_argument("Category names must be nonempty UTF-8 segments without surrounding spaces or []|:");
     const auto whitespace=[](unsigned value){return value==0x20 || value==0x85 || value==0xa0 || value==0x1680 || (value>=0x2000 && value<=0x200a) || value==0x2028 || value==0x2029 || value==0x202f || value==0x205f || value==0x3000;};
     for(std::size_t i=0;i<name.size();) {
         const auto start=i;unsigned value=static_cast<unsigned char>(name[i++]);unsigned trailing=0;

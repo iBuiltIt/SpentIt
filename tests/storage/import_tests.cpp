@@ -39,7 +39,26 @@ void legacy_create(const fs::path& path,int schema_version) {
     const auto definition=cad.definition_id();check(sqlite3_bind_text(statement,1,definition.data(),static_cast<int>(definition.size()),SQLITE_TRANSIENT)==SQLITE_OK);
     check(sqlite3_step(statement)==SQLITE_DONE);check(sqlite3_finalize(statement)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
 }
+void embedded_returns(){
+    Directory d;const auto path=d.path/"embedded-text";
+    const std::string raw="D2026-09-27\nT-10.38\nPSYNTHETIC SHOP\rTEXT AGAIN\rT999.00\nMFirst\rSecond\nEPart one\rPart two\nSFood\n$-10.38\n^\n";
+    {
+        auto s=create(path);s.opening(0,"2026-08-01",Money(0,cad));s.ingest("cr",raw,qif::DateOrder::dmy);
+        auto row=s.row({"cr",0});check(row.draft && row.draft->payee=="SYNTHETIC SHOP\rTEXT AGAIN\rT999.00");
+        auto edit=*row.draft;s.save(row.identity,0,edit);check(s.commit("cr",1,"cr-commit").after==Money(-1038,cad));
+        edit.memo="Changed\rMemo";const auto preview=s.preview_committed_change({app::ChangeKind::correct,row.identity,edit,{}});
+        s.apply_committed_change_with_catalog("cr-edit",preview.request,preview.expected,preview.preview_sequence,preview.catalog_revision);
+        s.verify();s.backup_to(d.path/"restored",password);
+    }
+    for(const auto& p:{path,d.path/"restored"}) {
+        auto s=ImportStore::open(p,password);check(s.evidence("cr")==raw && s.record_evidence({"cr",0})==raw);
+        const auto entry=s.committed_entry({"cr",0});check(entry.current.draft.payee=="SYNTHETIC SHOP\rTEXT AGAIN\rT999.00" && entry.current.draft.memo=="Changed\rMemo");
+        check(entry.current.draft.transaction.allocations()[0].memo=="Part one\rPart two" && s.committed_balance()==Money(-1038,cad));s.verify();
+    }
+    no_leaks(d.path);
+}
 void basics(){
+    embedded_returns();
     Directory d;const auto p=d.path/"doc";prepare(p);
     {
         auto s=ImportStore::open(p,password);check(s.committed_balance().units()==10000 && s.projected_balance()->units()==12069);

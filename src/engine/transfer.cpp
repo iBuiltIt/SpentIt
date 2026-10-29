@@ -253,6 +253,7 @@ Link commit_import_match(const Link& link,std::int64_t account,const BankEvidenc
 Link clear_workspace(const Link& link,std::int64_t account) {
     validate(link);
     if(chosen(link,account).state!=State::draft || protected_draft(link,account))return link;
+    if(link.unresolved && account==link.destination.endpoint.account && link.destination.independent_evidence && !link.destination.attached_evidence && !link.destination.proposed_evidence){auto result=link;result.destination.state=State::removed;validate(result);return result;}
     if(account==link.destination.endpoint.account)
         throw TransferError(Error::origin_controls_draft,"The origin controls this generated draft. Change or discard the origin instead of deleting the destination.");
     if(link.unresolved)return link;

@@ -77,12 +77,30 @@ struct ImportGroupAccount {
     std::optional<Money> reviewed_change, proposed_opening;
     std::string opening_date;
 };
+struct ImportCounterpart {
+    std::int64_t account;
+    std::string batch;
+    std::size_t ordinal;
+    std::string allocation,date;
+    Money amount;
+    std::string status;
+};
+struct ImportBlocker {
+    std::int64_t account;
+    std::string batch;
+    std::optional<std::size_t> ordinal;
+    std::string allocation, reason;
+    std::vector<ImportCounterpart> candidates={};
+    std::size_t candidate_count=0;
+};
 struct ImportGroup {
     std::string id;
     GroupState state;
     qif::DateOrder profile;
     std::vector<ImportGroupAccount> accounts;
     std::size_t repairs_total=0, repairs_done=0, unresolved=0, blocked_records=0, amount_repairs=0;
+    std::size_t unresolved_transfers=0;
+    std::vector<ImportBlocker> blockers={};
 };
 struct ImportRepairProgress {std::size_t total=0,done=0,amounts=0,blocked=0;};
 struct RowView {
@@ -151,6 +169,7 @@ public:
     }
     virtual ImportGroup resume_import_group(std::string_view,OperationContext&) { throw std::logic_error("Grouped imports unavailable"); }
     virtual void abort_import_group(std::string_view) { throw std::logic_error("Grouped imports unavailable"); }
+    virtual void resolve_import_transfers(std::string_view,app::OperationContext&) { throw std::logic_error("Mapped transfer resolution unavailable"); }
     virtual void review_import_balance(std::string_view,std::size_t,std::int64_t,ReportedBalanceChoice,std::string_view) {
         throw std::logic_error("Grouped imports unavailable");
     }

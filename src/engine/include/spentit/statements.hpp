@@ -24,6 +24,7 @@ struct Index {
     bool admissible = true;
     std::optional<qif::Diagnostic> diagnostic;
     std::vector<Account> accounts;
+    std::vector<qif::CategoryDefinition> categories;
 };
 
 // label is qif, ofx, qfx, qbo, aso, or empty to sniff.

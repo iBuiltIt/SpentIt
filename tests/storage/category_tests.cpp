@@ -68,7 +68,7 @@ void setup(){Directory dir;
  no_leaks(dir.path);
 }
 void names(){Directory dir;auto s=create(dir.path/"doc");seed(s);
- for(const std::string& name:std::vector<std::string>{"","A/B","A:B:C","A:",":B","[A]","A|B",std::string("a\0b",3),"line\nfeed",std::string("\xff",1)})rejects([&]{apply(s,"invalid",make("invalid",name));});
+ for(const std::string& name:std::vector<std::string>{"","A:B:C","A:",":B","[A]","A|B",std::string("a\0b",3),"line\nfeed",std::string("\xff",1)})rejects([&]{apply(s,"invalid",make("invalid",name));});
  rejects([&]{apply(s,"duplicate",make("dupe","Auto"));});
  rejects([&]{apply(s,"deep",make("deep","Deep","parking"));});
  rejects([&]{apply(s,"nested",make("nested","Nested","auto",CategoryKind::group));});
