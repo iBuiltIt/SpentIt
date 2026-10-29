@@ -1,10 +1,24 @@
 # 010 — Categories and selection
 
 Status: **active**  
-Last updated: 2026-10-28  
+Last updated: 2026-10-29  
 Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 30/29. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
+
+## Account names and aliases — accepted 2026-10-29
+
+Accounts participate in every category-selection list as typed transfer destinations. They also appear in the category editor, labelled Account, with aliases visible/searchable; their category-editor rename/archive/delete controls are disabled. Account management owns those operations. Ordinary categories, account display names and confirmed aliases share a case-insensitive namespace. New conflicting names are refused explicitly. A source catalog definition naming an existing account is retained as evidence but creates no ordinary category; the import catalog review displays an informational warning.
+
+An account retains its creation name and every explicit rename as aliases. A named QIF source account explicitly mapped to that identity also supplies an alias. Display always uses the creation name or latest explicit rename; imports never override it. Names are derived from retained creation records, rename history and confirmed source mappings, including mappings to surviving accounts after Abort. Retired accounts supply no active aliases. No filesystem-local alias state or new schema is required.
+
+A bracketed or unbracketed allocation naming an account/alias is transfer intent. Confirmed grouped imports resolve reciprocal eligible allocations using the same exact-money/date/currency and one-to-one count rules. The transaction's total may include ordinary fee splits; matching operates on the transfer allocation. Linking preserves source bytes and every occurrence, and each account still commits explicitly. Existing drafts can use Resolve mapped transfers. Ordinary category assignment cannot bypass transfer commands by writing an account name as text. Account references established in transfer history use stable identities and survive renames.
+
+Existing category/account conflicts remain inspectable and require renaming the ordinary category before automatic resolution. Ambiguous account aliases are reported as blockers, never chosen arbitrarily; new mappings that introduce such ambiguity are refused. Historical committed ordinary classifications are not retroactively changed solely by adding this policy. Imported catalog duplicates are not errors when they identify the same account.
+
+Rules preserve recognized account allocations even with Replace manual fields. Rules and bulk category selectors display accounts but explicitly direct users to the transfer workflow; those selectors cannot create account transfers. This is an explicit capability boundary, not storage of account names as ordinary categories. Single-allocation account selection continues to invoke the existing atomic transfer command.
+
+This supersedes earlier statements below that an ordinary category may share an account name or that unbracketed account names always remain ordinary assignments. Exact verification is recorded in [status](../doc/status.md#account-aliases-and-transfer-categories--2026-10-29).
 
 ## Compact category editor — accepted and implemented 2026-10-28
 

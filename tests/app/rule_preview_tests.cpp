@@ -78,14 +78,14 @@ int main(){try{
     auto manual=out.after;manual.payee="";manual.payee_owner=FieldOwnership::manual;manual.payee_rule.reset();auto provenance=out.provenance;provenance.erase(provenance.begin());
     auto protected_result=app::preview_rules(rules,catalog,{{{"batch",0},source,manual,provenance}}).front();require(protected_result.after.payee.empty(),"manual blank preserved");
     bool rejected=false;try{app::preview_rules(rules,catalog,{{{"batch",0},source,out.after,{}}});}catch(const std::invalid_argument&){rejected=true;}require(rejected,"missing provenance rejected");
-    for(const auto raw:{"D1/1/2026\nT-10\nPTfl\nL[Visa]\n^\n", "D1/1/2026\nT-10\nPTfl\nS[Visa]\nEWise transfer\n$-9\nSFee\nEWise fee\n$-1\n^\n"}) {
+    for(const auto raw:{"D1/1/2026\nT-10\nPTfl\nLVisa\n^\n", "D1/1/2026\nT-10\nPTfl\nL[Visa]\n^\n", "D1/1/2026\nT-10\nPTfl\nS[Visa]\nEWise transfer\n$-9\nSFee\nEWise fee\n$-1\n^\n"}) {
         const auto parsed_transfer=qif::parse(raw,qif::DateOrder::dmy,cad);require(parsed_transfer.valid(),"transfer parses");
         const auto& src=parsed_transfer.records.front();
         imports::DraftRow transfer{src.date,src.payee,src.memo,*src.transaction,FieldOwnership::source,FieldOwnership::source};
         for(bool replace:{false,true}) {
-            const auto result=app::preview_rules(rules,catalog,{{{"transfer",0},src,transfer,{}}},replace).front();
+            const auto result=app::preview_rules(rules,catalog,{{{"transfer",0},src,transfer,{}, {"source-0"}}},replace).front();
             const auto& first=result.after.transaction.allocations().front();
-            require(first.category=="[Visa]" && !first.category_binding && !first.category_rule,"rules preserve transfer intent even with replacement");
+            require(first.category==src.source_allocation_fields.front().category && !first.category_binding && !first.category_rule,"rules preserve transfer intent even with replacement");
             bool explained=false;for(const auto& e:result.explanations)explained|=e.effect==rules::Effect::transfer_protected;
             require(explained,"transfer protection explained");
         }

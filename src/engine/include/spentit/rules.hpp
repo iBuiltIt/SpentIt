@@ -44,6 +44,7 @@ struct AllocationFields {
     std::optional<std::size_t> source_ordinal;
     Field<std::string> memo;
     Field<CategoryValue> category;
+    bool transfer=false;
 };
 struct Record {
     Source source;

@@ -139,7 +139,7 @@ app::RuleReapplyPreview ImportStore::preview_rule_reapply(bool replace_manual,st
     std::vector<app::RuleProposal> proposals;
     try{
         rules::RuleSet compiled(rules_at(impl_->db,ruleset_revision(impl_->db)));
-        proposals=app::preview_rules(compiled,category_catalog(),inputs_from(rows),replace_manual,[&]{return context.state.load()==app::OperationContext::requested;});
+        proposals=app::preview_rules(compiled,category_catalog(),inputs_from(rows,*this),replace_manual,[&]{return context.state.load()==app::OperationContext::requested;});
     }catch(const rules::RegexError& error){
         if(error.kind()==rules::RegexFailure::cancelled)throw app::OperationCancelled(error.what());
         throw;

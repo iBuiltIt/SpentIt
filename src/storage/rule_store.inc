@@ -84,13 +84,14 @@ PreparedScope pending_scope(const ImportStore& store,std::string_view requested)
     for(std::size_t ordinal=0;ordinal<found->count;++ordinal){auto viewed=store.row({scope.batch,ordinal});if(viewed.draft)scope.rows.push_back(std::move(viewed));}
     return scope;
 }
-std::vector<app::RuleInput> inputs_from(const std::vector<app::RowView>& rows){
+std::vector<app::RuleInput> inputs_from(const std::vector<app::RowView>& rows,const app::ImportRepository& repo){
     std::vector<app::RuleInput> inputs;
     for(const auto& viewed:rows){
         app::RuleInput input{viewed.identity,viewed.source,*viewed.draft,{}};
         auto add=[&](app::RuleField field,const std::string& allocation,const std::optional<RuleMark>& mark){if(mark)input.provenance.push_back({field,allocation,{mark->identity,mark->version}});};
         add(app::RuleField::payee,"",input.draft.payee_rule);add(app::RuleField::memo,"",input.draft.memo_rule);
         for(const auto& allocation:input.draft.transaction.allocations()){add(app::RuleField::allocation_memo,allocation.identity,allocation.memo_rule);add(app::RuleField::allocation_category,allocation.identity,allocation.category_rule);}
+        for(const auto& allocation:input.draft.transaction.allocations())if(repo.resolve_account_name(allocation.category))input.transfer_allocations.push_back(allocation.identity);
         inputs.push_back(std::move(input));
     }
     return inputs;
@@ -239,7 +240,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
     const auto rules=request.editor?compile_images(impl_->db,*request.editor,false):rules_at(impl_->db,result.ruleset_revision<0?0:result.ruleset_revision);
     rules::RuleSet ruleset(rules);
     std::vector<app::RuleProposal> proposals;
-    try { proposals=app::preview_rules(ruleset,category_catalog(),inputs_from(scope.rows),request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;}); }
+    try { proposals=app::preview_rules(ruleset,category_catalog(),inputs_from(scope.rows,*this),request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;}); }
     catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled) throw app::OperationCancelled(); throw;}
     catch(const std::invalid_argument&){ fail(SQLITE_CONSTRAINT,rules_drift); }
     result.evaluated=proposals.size();
@@ -270,7 +271,7 @@ app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operatio
     {
         rules::RuleSet ruleset(rules_at(impl_->db,request.ruleset_revision));
         std::vector<app::RuleProposal> proposals;
-        try { proposals=app::preview_rules(ruleset,category_catalog(),inputs_from(scope.rows),request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;}); }
+        try { proposals=app::preview_rules(ruleset,category_catalog(),inputs_from(scope.rows,*this),request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;}); }
         catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled) throw app::OperationCancelled(); throw;}
         catch(const std::invalid_argument&){ fail(SQLITE_CONSTRAINT,rules_drift); }
         if(proposals.size()!=scope.rows.size()) fail(SQLITE_CONSTRAINT,rules_drift);
@@ -312,7 +313,7 @@ app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence& id,cons
         if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
         app::RowView row;row.identity=id;row.source=viewed.source;row.draft=draft;
         rules::RuleSet ruleset(rules_at(impl_->db,ruleset_revision(impl_->db)));
-        auto proposals=app::preview_rules(ruleset,category_catalog(),inputs_from({row}),false,[&]{return context.state.load()==app::OperationContext::requested;});
+        auto proposals=app::preview_rules(ruleset,category_catalog(),inputs_from({row},*this),false,[&]{return context.state.load()==app::OperationContext::requested;});
         if(proposals.size()==1) match.explanations=std::move(proposals.front().explanations);
     } catch(const rules::RegexError& error) { match.error=error.what(); }
     auto winner=[&](const std::optional<RuleMark>& mark){if(!mark)return;Statement definition(impl_->db,"SELECT label FROM rule_definitions WHERE id=? AND version=?");definition.text(1,mark->identity);definition.integer(2,mark->version);if(!definition.row())fail(SQLITE_CORRUPT);match.winner_lines.push_back("Assigned by "+definition.bytes(0)+" v"+std::to_string(mark->version));};

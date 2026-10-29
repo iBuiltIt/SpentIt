@@ -5,6 +5,8 @@
 namespace spentit::app {
 // Unicode caseless literal matching, with a colon boundary for stem selection.
 bool category_name_matches(std::string_view name, std::string_view selected, bool include_children=false);
+// Unicode caseless account-name matching without category syntax restrictions.
+bool account_name_matches(std::string_view, std::string_view);
 enum class CategoryAction { create, rename, move, archive, unarchive, erase };
 struct CategoryCatalog { std::int64_t revision;std::vector<CategoryDefinition> categories;
     // Immutable creation catalog revision; later edits do not change this order.

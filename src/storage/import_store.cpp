@@ -42,6 +42,9 @@ public:
     ScopedStatements(const ScopedStatements&)=delete;
     ScopedStatements& operator=(const ScopedStatements&)=delete;
     std::optional<std::string> format_version;
+    std::string alias_signature;
+    std::optional<std::vector<app::AccountAlias>> aliases;
+    std::map<std::string,std::optional<std::int64_t>,std::less<>> alias_resolutions;
     static ScopedStatements* current(sqlite3* db){return active_ && active_->db_==db?active_:nullptr;}
     Slot* slot(const char* sql){
         const auto found=plans_.find(sql);if(found!=plans_.end())return &found->second;
@@ -170,10 +173,6 @@ ResolvedTransfers resolved_transfers(const std::vector<app::TransferView>& value
         if(side->attached_evidence)add(side->attached_evidence->endpoint);
     }
     return result;
-}
-void require_qif_transfers(const imports::Occurrence& id,const imports::DraftRow& draft,const ResolvedTransfers& resolved) {
-    for(const auto& a:draft.transaction.allocations())if(qif::transfer_destination(a.category) && !resolved.contains({id.batch,id.ordinal,a.identity}))
-        fail(SQLITE_CONSTRAINT,"Resolve every QIF transfer destination in Transfers before committing: choose an account or explicitly match an existing transfer");
 }
 
 #include "transfer_schema.inc"
@@ -767,6 +766,9 @@ struct ImportStore::Impl {
     mutable VerificationRows* verification_rows=nullptr;
     mutable VerificationRows read_rows;
     mutable sqlite3_int64 read_rows_changes=-1;
+    mutable sqlite3_int64 alias_changes=-1;
+    mutable std::vector<app::AccountAlias> alias_cache;
+    mutable std::map<std::string,std::optional<std::int64_t>,std::less<>> alias_resolutions;
     mutable std::string category_source, binding_group;
     mutable std::vector<qif::CategoryDefinition> source_category_cache;
     mutable std::int64_t binding_epoch=-1;
@@ -975,6 +977,7 @@ app::Account ImportStore::create_account(std::int64_t id,std::string_view name,c
         if(account_lifecycle_retired(impl_->db,id))fail(SQLITE_CONSTRAINT,"Account identity was retired");
         transaction.commit();return account_by_id(id);
     }
+    require_account_name(name,id);
     Statement row(impl_->db,"INSERT INTO account VALUES(?,?,?,?,0,0,0,0)");
     row.integer(1,id);row.text(2,name);row.text(3,currency.definition_id());row.text(4,today);row.done();
     Statement receipt(impl_->db,"INSERT INTO account_creations VALUES(?,?,?,?)");
@@ -1248,6 +1251,7 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
     }
 }
 void ImportStore::save(const imports::Occurrence& id,std::int64_t expected,const imports::DraftRow& edit) {
+    ScopedStatements plans(impl_->db);
     require_unlinked(id);require_writable_account(impl_->db,account_for_batch(id.batch).identity);
     Atomic a(impl_->db); expect(impl_->db,id.batch,expected); const auto old=load_row(id,false);
     const auto canonical=canonical_draft(id,edit,old.draft,expected+1,false);
@@ -1621,6 +1625,7 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
     sync_directory(destination);
     if(observer) observer(BackupPhase::complete);
 }
+#include "account_aliases.inc"
 #include "category_store.inc"
 #include "committed_store.inc"
 #include "bulk_store.inc"

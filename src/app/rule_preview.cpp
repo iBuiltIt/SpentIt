@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <spentit/rule_preview.hpp>
 #include <spentit/rule_commands.hpp>
 #include <map>
@@ -26,6 +27,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
         checkpoint();const auto& allocations=input.draft.transaction.allocations();
         if(allocations.size()>rules::EvaluationLimits::scope_allocations-allocation_count||input.source.source_allocation_fields.size()>rules::EvaluationLimits::scope_allocations-source_count)throw rules::RegexError(rules::RegexFailure::resource_limit,"Rule preview allocation count exceeds limit");
         allocation_count+=allocations.size();source_count+=input.source.source_allocation_fields.size();
+        if(input.transfer_allocations.size()>allocations.size())invalid("Too many protected transfer allocations");
         if(input.provenance.size()>2+2*allocations.size())invalid("Too much rule field provenance");
         count(input.source.payee);count(input.source.memo);count(input.source.source_category);count(input.draft.payee);count(input.draft.memo);
         for(const auto& a:input.source.source_allocation_fields){checkpoint();count(a.category);count(a.memo);}
@@ -66,6 +68,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
             rules::CategoryValue value=a.category_binding?rules::CategoryValue{a.category_binding->identity,""}:rules::CategoryValue{"",a.category};
             record.allocations.push_back({a.source_ordinal,{a.memo,owner(a.memo_owner),contribution(RuleField::allocation_memo,a.identity,a.memo_owner)},{std::move(value),owner(a.category_owner),contribution(RuleField::allocation_category,a.identity,a.category_owner)}});
         }
+        for(std::size_t n=0;n<record.allocations.size();++n)record.allocations[n].transfer=std::find(input.transfer_allocations.begin(),input.transfer_allocations.end(),input.draft.transaction.allocations()[n].identity)!=input.transfer_allocations.end();
         if(!contributions.empty())invalid("Rule provenance references an absent field");
         records.push_back(std::move(record));
     }

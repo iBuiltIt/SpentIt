@@ -1,8 +1,10 @@
 # Import matching and performance handoff
 
+Current next-session priority (2026-10-29): [discuss the whole import/commit approach](import-commit-discussion.md), including redundant readiness checks and the owner-reported 18-second commit. The confirmation-dialog removal and any redesign remain unimplemented pending discussion and explicit Go. Historical implementation notes below do not authorize that work.
+
 Last updated: 2026-10-29
 
-Current checkpoint (2026-10-29): diagnostics and the subsequent [performance follow-up](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) are implemented. The owner measured startup at about seven seconds, accepted current performance for now and considers the application usable. The current performance pass is closed; a startup/loading-screen redesign is deferred. Repeated-transfer matching still requires its own explicit Go. The earlier ordering and measurements below are historical context, not instructions to resume work automatically. Screenshots remain excluded; a possible MCP adapter remains separate future scope.
+Current checkpoint (2026-10-29): diagnostics and the subsequent [performance follow-up](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) are implemented. The owner measured startup at about seven seconds, accepted current performance for now and considers the application usable. The current performance pass is closed; a startup/loading-screen redesign is deferred. The owner subsequently gave Go for repeated-transfer matching; it is implemented with verification recorded in [status](status.md#repeated-transfer-matching--2026-10-29). The earlier ordering and measurements below are historical context, not instructions to resume work automatically. Screenshots remain excluded; a possible MCP adapter remains separate future scope.
 
 Update 2026-10-29: the owner reversed the order and gave Go for performance first. See [implementation and measurement boundaries](import-ui-performance.md#application-performance-work--2026-10-29) and [current status](status.md). Repeated-transfer matching still waits for its own Go. The original handoff below preserves the accepted behavior and initial measurements.
 
@@ -12,7 +14,7 @@ Owner-requested handoff for the next session. The two priorities below are agree
 
 Accepted behavior: legitimate repeated transfers between the same accounts on the same date must not remain blocked merely because their amounts repeat. Banks can impose a per-transfer limit, requiring several separate transfers. Every withdrawal must link to exactly one deposit, and each endpoint may be used once only. Preserve every source transaction, amount and evidence record; do not merge repeated occurrences into one movement or create extra postings.
 
-The current resolver requires mutually unique candidates. It refuses repeated candidates rather than linking several withdrawals to one deposit. The UI's imported “Transfer destination” label identifies source intent, not a completed relationship. The owner confirmed that the repeated occurrences in the reported case are real separate transfers.
+Before the 2026-10-29 extension, the resolver required mutually unique candidates. It refused repeated candidates rather than linking several withdrawals to one deposit. The UI's imported “Transfer destination” label identifies source intent, not a completed relationship. The owner confirmed that the repeated occurrences in the reported case are real separate transfers.
 
 For equivalent reciprocal groups under the confirmed account mapping, with identical dates, identical currency definitions, exactly opposite amounts and equal eligible occurrence counts, pair the available entries one-to-one. Skip already-linked endpoints. A stable order may choose among otherwise equivalent occurrences; it must not claim that source evidence identifies a unique historical pair. Unequal remaining counts or meaningful differences still require review. Do not broaden date matching, infer currency conversion, discard repeats or bypass existing eligibility checks.
 
@@ -20,7 +22,7 @@ Implementation starting points: `resolve_group_transfers` and blocker analysis i
 
 Required synthetic verification: repeated balanced groups, already-linked endpoints and reruns, unequal counts, differing dates/currencies/amounts, excluded or stale rows, split allocations, preservation of occurrence counts and balances, independent account commit in either order, reopen, Abort, atomic failure/cancellation and retry. Keep existing per-account commit and history guarantees.
 
-This accepted extension supersedes the mutual-unique-only restriction for equivalent repeated groups in [feature 008](../features/008-transfer-matching-and-lifecycle.md). The existing [implementation contract](qif-account-imports.md#reusing-confirmed-mappings-for-transfer-pairs--accepted-2026-10-28) describes the code before this extension.
+This accepted extension supersedes the mutual-unique-only restriction for equivalent repeated groups in [feature 008](../features/008-transfer-matching-and-lifecycle.md). The existing [implementation contract](qif-account-imports.md#reusing-confirmed-mappings-for-transfer-pairs--accepted-2026-10-28) now includes this extension.
 
 ## 2. Make application performance usable
 

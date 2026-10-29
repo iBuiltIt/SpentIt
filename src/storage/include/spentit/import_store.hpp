@@ -1,3 +1,4 @@
+#include <tuple>
 #pragma once
 #include <spentit/import_repository.hpp>
 #include <spentit/operation_context.hpp>
@@ -84,6 +85,8 @@ public:
     std::optional<app::Receipt> durable_outcome(std::string_view) const override;
     std::vector<app::LedgerRow> ledger(bool) const override;
     bool categories_supported() const override;
+    std::vector<app::AccountAlias> account_aliases() const override;
+    std::optional<std::int64_t> resolve_account_name(std::string_view) const override;
     app::CategoryCatalog category_catalog() const override;
     app::CategoryPreview preview_category_change(const app::CategoryRequest&) const override;
     app::CategoryReceipt apply_category_change(std::string_view,const app::CategoryRequest&,std::int64_t) override;
@@ -124,6 +127,9 @@ public:
                    const BackupObserver& observer = {}, const app::OperationContext* context = nullptr) const;
     void observer(ImportObserver);
 private:
+    void require_account_name(std::string_view,std::int64_t) const;
+    std::optional<std::string> transfer_name(std::string_view) const;
+    void require_qif_transfers(const imports::Occurrence&,const imports::DraftRow&,const std::set<std::tuple<std::string,std::size_t,std::string>>&) const;
     void resolve_group_transfers(std::string_view,const app::OperationContext&);
     app::ImportGroup import_group(std::string_view) const;
     void require_group_ready(std::string_view) const;

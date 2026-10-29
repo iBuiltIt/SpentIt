@@ -51,6 +51,7 @@ app::AccountCommandReceipt ImportStore::rename_account(std::string_view operatio
     if(auto prior=matching_account_command(impl_->db,id,content)) return *prior;
     const auto acct=command_account(false);
     Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
+    require_account_name(name,acct.identity);
     insert_account_op(impl_->db,id,acct.identity,0,name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),acct.opening.units(),acct.opening.units(),acct.opening_date,acct.opening_date,acct.archived?1:0,acct.archived?1:0,0,"",content,acct.revision,acct.frozen?1:0,acct.opening_confirmed?1:0);
     Statement update(impl_->db,"UPDATE account SET name=? WHERE singleton=?");update.text(1,name);update.integer(2,acct.identity);update.done();
     impl_->finish(transaction);return *account_command_row(impl_->db,id);

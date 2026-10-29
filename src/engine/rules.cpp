@@ -83,15 +83,15 @@ std::vector<Result> RuleSet::evaluate(const std::vector<Record>& records,const s
         reset(row.payee,row.source.payee);reset(row.memo,row.source.memo);
         for(auto& allocation:row.allocations)if(allocation.source_ordinal) {
             const auto& s=row.source.allocations[*allocation.source_ordinal];
-            reset(allocation.memo,s.memo);reset(allocation.category,CategoryValue{"",s.category});
+            reset(allocation.memo,s.memo);if(!allocation.transfer)reset(allocation.category,CategoryValue{"",s.category});
         }
         auto explain=[&](const Rule& r,std::optional<std::size_t> allocation,std::string field,Effect effect) {
             if(++explanations>EvaluationLimits::explanations)throw RegexError(RegexFailure::resource_limit,"Rule explanation limit reached");
             out.explanations.push_back({{r.identity,r.version},allocation,std::move(field),effect});
         };
         auto assign=[&]<class T>(Field<T>& field,T value,const Rule& r,std::optional<std::size_t> index,const char* name) {
-            if(index && std::string_view(name)=="category" && row.allocations[*index].source_ordinal &&
-               qif::transfer_destination(row.source.allocations[*row.allocations[*index].source_ordinal].category)) {
+            if(index && std::string_view(name)=="category" && (row.allocations[*index].transfer || (row.allocations[*index].source_ordinal &&
+               qif::transfer_destination(row.source.allocations[*row.allocations[*index].source_ordinal].category)))) {
                 explain(r,index,name,Effect::transfer_protected);return;
             }
             if(field.ownership==Ownership::manual&&!replace){explain(r,index,name,Effect::manual_protected);return;}

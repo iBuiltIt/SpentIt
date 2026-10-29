@@ -479,6 +479,7 @@ ApplicationWindow {
     property string categoryFormId: ""
     property string categoryFormRevision: ""
     property int pickerIndex: -1
+    property string pickerFeedback: ""
     property string categoryEditText: ""
     property bool categorySaving: false
     property string categoryError: ""
@@ -488,7 +489,7 @@ ApplicationWindow {
     Settings {id:categoryPreferences;category:"CategoryEditor";property string sortMode:""}
     property alias categorySort: categoryPreferences.sortMode
     function categoryRows() {
-        let rows=(s.categories||[]).filter(function(c){return (categoryAction==="rename" && c.id===categoryFormId) || ((showArchivedCategories.checked || (!c.archived && !c.deleted)) && (c.id===categoryReveal || c.path.toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0))})
+        let rows=(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return (categoryAction==="rename" && c.id===categoryFormId) || ((showArchivedCategories.checked || (!c.archived && !c.deleted)) && (c.id===categoryReveal || (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0))})
         if(categorySort==="ascending" || categorySort==="descending")rows.sort(function(a,b){
             let order=a.path.toLowerCase().localeCompare(b.path.toLowerCase())
             if(order===0)order=a.id.localeCompare(b.id)
@@ -608,7 +609,20 @@ ApplicationWindow {
             transferCommand("transfer_clear_row",{batch:rows[0].batch,ordinal:rows[0].ordinal})
         else guardedPreview("preview_bulk",{kind:"remove"})
     }
+    function accountForName(name) {
+        let matches=(s.accountAliases||[]).filter(function(a){return workflow.accountNameMatches(a.name,name)})
+        if(!matches.length)return ""
+        if(matches.some(function(a){return a.accountId!==matches[0].accountId}))return "ambiguous"
+        return matches[0].accountId
+    }
     function chooseCategory(id,path) {
+        let account=accountForName(path)
+        if(account) {
+            if(account==="ambiguous"){pickerFeedback="This alias identifies more than one account. Review the account mapping.";return}
+            if(pickerIndex===-2){pickerFeedback="Rules cannot create account transfers. Use the transfer workflow.";return}
+            if(account===s.accountId){pickerFeedback="A transfer must go to a different account.";return}
+            chooseAccountDestination(account);return
+        }
         if(pickerIndex===-2) { ruleCategoryId=id||""; writeRule(); categoryPicker.close(); return }
         if(pickerIndex<0 || pickerIndex>=splitModel.count)return
         let split=splitModel.get(pickerIndex)
@@ -987,7 +1001,7 @@ ApplicationWindow {
                 delegate:ColumnLayout {
                     required property var modelData;required property int index
                     id:mappingDelegate; width:mappingList.width
-                    Label {text:modelData.name+" · "+modelData.type+" · reported balance: "+modelData.reported;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                    Label {text:modelData.name+" · "+modelData.type+(modelData.warning?"\n"+modelData.warning:"")+" · reported balance: "+modelData.reported;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
                     UsableComboBox {objectName:"sourceAccountChoice_"+index;model:importMapping.choices;textRole:"label";currentIndex:importMapping.choices.findIndex(function(c){return c.id===(importMapping.mappings[mappingDelegate.index]||{}).account});Layout.fillWidth:true;Accessible.name:"Destination for "+modelData.name
                         onActivated:function(choiceIndex){let item=importMapping.choices[choiceIndex];importMapping.update(mappingDelegate.index,"account",item.id);importMapping.update(mappingDelegate.index,"create",item.id==="new")}}
                     RowLayout {
@@ -1134,41 +1148,27 @@ ApplicationWindow {
     }
     Menu {
         id:categoryContext;objectName:"categoryContextMenu"
-        MenuItem {objectName:"renameCategory";text:"Rename";enabled:!categoryMenuEntry.deleted;onTriggered:categoryMenuAction("rename")}
-        MenuItem {objectName:"archiveCategory";text:categoryMenuEntry.ownArchived?"Unarchive":"Archive";enabled:!categoryMenuEntry.deleted;onTriggered:categoryMenuAction(categoryMenuEntry.ownArchived?"unarchive":"archive")}
-        MenuItem {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryMenuEntry.deleted;onTriggered:categoryMenuAction("delete")}
+        MenuItem {objectName:"renameCategory";text:"Rename";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction("rename")}
+        MenuItem {objectName:"archiveCategory";text:categoryMenuEntry.ownArchived?"Unarchive":"Archive";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction(categoryMenuEntry.ownArchived?"unarchive":"archive")}
+        MenuItem {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction("delete")}
     }
     Dialog {
-        id:categoryPicker;objectName:"categoryPicker";title:"Choose allocation category";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700);height:Math.min(window.height-80,650)
+        id:categoryPicker;objectName:"categoryPicker";onOpened:pickerFeedback="";title:"Choose allocation category";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700);height:Math.min(window.height-80,650)
         ColumnLayout {
             anchors.fill:parent
             Label {textFormat:Text.PlainText;text:pickerIndex>=0 && pickerIndex<splitModel.count?"Current: "+splitModel.get(pickerIndex).categoryDisplay:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            TextField {id:categorySearch;objectName:"categoryPickerSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;Accessible.name:"Category search";onAccepted:{let match=(s.categories||[]).find(function(c){return c.assignable && workflow.categoryNameMatches(c.path,categorySearch.text)});if(match)chooseCategory(match.id,match.path)}}
+            TextField {id:categorySearch;objectName:"categoryPickerSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;Accessible.name:"Category search";onAccepted:{let account=accountForName(categorySearch.text);if(account){chooseCategory("",categorySearch.text);return}let match=(s.categories||[]).find(function(c){return c.assignable && workflow.categoryNameMatches(c.path,categorySearch.text)});if(match)chooseCategory(match.id,match.path)}}
             ListView {
                 id:pickerChoices;Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:true
-                model:(s.categories||[]).filter(function(c){return !c.deleted && !c.archived && c.path.toLowerCase().indexOf(categorySearch.text.toLowerCase())>=0})
+                model:(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return !c.deleted && !c.archived && (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(categorySearch.text.toLowerCase())>=0})
                 ScrollBar.vertical:UsableScrollBar {}
-                delegate:Button {required property var modelData;width:pickerChoices.width;text:modelData.path+(modelData.group?" (group)":"");enabled:modelData.assignable;objectName:"pickCategory_"+modelData.id;onClicked:chooseCategory(modelData.id,modelData.path)}
+                delegate:Button {required property var modelData;width:pickerChoices.width;text:modelData.path+(modelData.account?" [Account]"+(pickerIndex===-2?" — use transfer workflow":"")+(modelData.accountId===s.accountId?" — current account":""):(modelData.group?" (group)":""));enabled:modelData.account?(pickerIndex!==-2 && modelData.accountId!==s.accountId):modelData.assignable;objectName:modelData.account?"pickAccount_"+modelData.accountId:"pickCategory_"+modelData.id;onClicked:if(modelData.account)chooseAccountDestination(modelData.accountId);else chooseCategory(modelData.id,modelData.path)}
             }
             Button {objectName:"chooseUncategorized";text:"Uncategorized";onClicked:chooseCategory("","")}
             TextField {id:unmappedCategory;objectName:"unmappedCategoryText";placeholderText:"Explicit unmapped classification text";Layout.fillWidth:true;Accessible.name:"Unmapped category text"}
             Button {objectName:"chooseUnmapped";text:"Keep as unmapped text";enabled:unmappedCategory.text.length>0;onClicked:chooseCategory("",unmappedCategory.text)}
-            ColumnLayout {
-                visible:pickerIndex!==-2
-                Layout.fillWidth:true
-                Label {text:"Accounts are transfer destinations. Choosing one stores that account. A category with the same name does not create a transfer.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                Repeater {
-                    objectName:"accountDestinationRepeater"
-                    model:pickerIndex===-2?[]:(s.accounts||[]).filter(function(a){return a.id!==s.accountId})
-                    delegate:Button {
-                        required property var modelData
-                        objectName:"pickAccount_"+modelData.id
-                        text:modelData.name+" · "+modelData.currency+" · account "+modelData.id
-                        Layout.fillWidth:true
-                        onClicked:chooseAccountDestination(modelData.id)
-                    }
-                }
-            }
+            Label {text:pickerFeedback;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:"Accounts are transfer destinations. Their aliases identify the same account. Rules cannot create transfers; use the transfer workflow.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {text:"Groups cannot receive allocations.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Button {text:"Cancel";onClicked:categoryPicker.close()}
         }
@@ -1230,7 +1230,7 @@ ApplicationWindow {
                 delegate:Label {
                     required property var modelData
                     width:importCategoryList.width-20;padding:6;wrapMode:Text.Wrap;textFormat:Text.PlainText
-                    text:modelData.name+" · "+modelData.type+(modelData.description?"\n"+modelData.description:"")+(modelData.taxSchedule?"\nTax schedule (source): "+modelData.taxSchedule:"")+(modelData.budget?"\nBudget (source): "+modelData.budget:"")+(modelData.taxRelated?"\nTax-related (source)":"")
+                    text:modelData.name+" · "+modelData.type+(modelData.warning?"\n"+modelData.warning:"")+(modelData.description?"\n"+modelData.description:"")+(modelData.taxSchedule?"\nTax schedule (source): "+modelData.taxSchedule:"")+(modelData.budget?"\nBudget (source): "+modelData.budget:"")+(modelData.taxRelated?"\nTax-related (source)":"")
                 }
             }
         }
@@ -1443,6 +1443,7 @@ ApplicationWindow {
                             id:catalogList;objectName:"catalogList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:false
                             boundsBehavior:Flickable.StopAtBounds
                             model:categoryRows()
+                            onModelChanged:window.revealCategorySelection()
                             ScrollBar.vertical:UsableScrollBar {id:catalogBar;objectName:"catalogScrollBar"}
                             delegate:Rectangle {
                                 id:categoryRow
@@ -1453,7 +1454,7 @@ ApplicationWindow {
                                 property bool editing:categoryAction==="create"?!!modelData.pending:categoryAction==="rename" && modelData.id===categoryFormId
                                 function focusEditor(){inlineCategory.forceActiveFocus();inlineCategory.selectAll()}
                                 Rectangle {anchors.bottom:parent.bottom;width:parent.width;height:1;color:"#dce1e5"}
-                                Label {anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignLeft;textFormat:Text.PlainText;elide:Text.ElideRight;color:"#18232d";visible:!categoryRow.editing;text:modelData.path+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"")}
+                                Label {anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignLeft;textFormat:Text.PlainText;elide:Text.ElideRight;color:"#18232d";visible:!categoryRow.editing;text:modelData.path+(modelData.account?" [Account — edit in Accounts]"+(modelData.aliases?" · Aliases: "+modelData.aliases:""):"")+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"")}
                                 MouseArea {
                                     anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton;enabled:!categoryRow.editing && !workflow.busy && !categorySaving
                                     onClicked:function(mouse){
@@ -1708,8 +1709,8 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth:true;visible:!!s.bulkSupported
                 Button {objectName:"bulkRemove";text:"Delete selected…";enabled:!s.readOnly && (s.selectionCount||0)>0;onClicked:guardedPreview("preview_bulk",{kind:"remove"})}
-                UsableComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).filter(function(c){return c.assignable}));textRole:"path";Layout.preferredWidth:220;Accessible.name:"Category for selected transactions"}
-                Button {objectName:"bulkCategorize";text:"Change category…";enabled:!s.readOnly && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0;onClicked:guardedPreview("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})}
+                UsableComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,path:c.path+" [Account — use transfer workflow]",account:true}:c}));textRole:"path";Layout.preferredWidth:220;Accessible.name:"Category for selected transactions"}
+                Button {objectName:"bulkCategorize";text:"Change category…";enabled:!s.readOnly && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0 && !bulkCategory.model[bulkCategory.currentIndex].account;onClicked:guardedPreview("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})}
                 Label {textFormat:Text.PlainText;text:(s.bulkReceipt||{}).summary||"Committed rows only · every allocation";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Button {objectName:"undoBulk";text:"Undo group…";visible:!!(s.bulkReceipt||{}).operation;onClicked:guardedPreview("preview_bulk",{kind:"undo",operation:s.bulkReceipt.operation})}
             }

@@ -4,6 +4,12 @@ Last updated: 2026-10-28
 
 This implements the multi-account prerequisite for [transfer lifecycle work](../features/008-transfer-matching-and-lifecycle.md). Accounts can be created and selected in the durable UI, with independent ordinary QIF imports, opening balances, drafts, committed balances, corrections and history. The subsequent [bounded transfer integration](transfer-engine.md) adds links, generated counterparts, protected drafts and provisional evidence matching. [QIF transfer destinations](qif-transfers.md) now require explicit resolution through those commands. This remains a synthetic-data experiment.
 
+## Display names and aliases — 2026-10-29
+
+Account identity is stable. The display name is the creation name or latest explicit rename; it is never replaced by import naming. The alias list is reconstructed from retained creation names, rename history and explicitly confirmed named-QIF mappings. Matching is Unicode caseless and literal, without fuzzy matching. New names/mappings that conflict with another account alias or an ordinary category are refused. Category-editor account rows are read-only; use account management for account changes. See the [shared category namespace](../features/010-categories-and-selection.md#account-names-and-aliases--accepted-2026-10-29).
+
+Alias reads use bounded caches invalidated by writes; transactional name snapshots are scoped to the operation and keyed by the relevant retained-history counts/catalog revision. Rollbacks cannot publish a transactional alias cache. Original import bytes remain unchanged. Existing schema 30/29 documents need no migration.
+
 ## Persistence and command boundary
 
 `ImportRepository` exposes account enumeration, creation, creation-outcome lookup and selection. Commands run on the existing serial worker. Each account has a positive stable integer identity and a retained currency definition; setup creates account 1. Batch identities and operation identities remain document-wide. Every batch has immutable account ownership and each account may have its own pending or retained-evidence import.

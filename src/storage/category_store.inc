@@ -102,6 +102,8 @@ app::CategoryPreview ImportStore::preview_category_change(const app::CategoryReq
         if(category_referenced(impl_->db,request.identity))fail(SQLITE_CONSTRAINT,"Category has retained assignments; archive it instead");after.deleted=true;break;}
     default:fail(SQLITE_CONSTRAINT,"Unknown category action");}
     after.name=canonical_category_name(after.name);if(after.kind!=CategoryKind::leaf || !after.parent.empty())fail(SQLITE_CONSTRAINT,"Create an assignable category using one optional colon, without a parent object");
+    if(request.action==app::CategoryAction::create || request.action==app::CategoryAction::rename || request.action==app::CategoryAction::unarchive)
+        for(const auto& alias:account_aliases())if(app::account_name_matches(alias.name,after.name))fail(SQLITE_CONSTRAINT,"That name belongs to an account or account alias. Select the account as a transfer destination instead.");
     if(!after.deleted)for(const auto& category:catalog.categories)if(!category.deleted && category.identity!=after.identity && app::category_name_matches(category.name,after.name))fail(SQLITE_CONSTRAINT,"That category name already exists (case-insensitive)");
     if(catalog.revision==INT64_MAX)fail(SQLITE_FULL);return {request,catalog.revision,before,after};
 }
@@ -147,6 +149,9 @@ imports::DraftRow ImportStore::canonical_draft(const imports::Occurrence& id,con
         if(previous && previous->source_ordinal!=allocation.source_ordinal)fail(SQLITE_CONSTRAINT,"Source association cannot be removed or rebound");
         Statement old(impl_->db,"SELECT source_ordinal FROM draft_allocation_meta WHERE batch=?1 AND ordinal=?2 AND identity=?3 UNION ALL SELECT source_ordinal FROM entry_allocation_meta WHERE batch=?1 AND ordinal=?2 AND identity=?3");old.text(1,id.batch);old.integer(2,integer(id.ordinal));old.text(3,allocation.identity);while(old.row())if(old.null(0)!=!allocation.source_ordinal || (!old.null(0) && old.integer(0)!=integer(*allocation.source_ordinal)))fail(SQLITE_CONSTRAINT,"Allocation identity was rebound");
         const qif::SourceAllocation* original=allocation.source_ordinal?&source.source_allocation_fields[*allocation.source_ordinal]:nullptr;
+        if(check_assignment && resolve_account_name(allocation.category) &&
+           !(previous && previous->category==allocation.category) && !(original && original->category==allocation.category))
+            fail(SQLITE_CONSTRAINT,"An account name is a transfer destination. Use the account transfer command rather than saving ordinary category text.");
         const auto memo_owner=settle(allocation.memo_owner,rules?allocation.memo_rule:std::optional<RuleMark>{},previous?previous->memo_owner:FieldOwnership::source,previous?previous->memo_rule:std::optional<RuleMark>{},previous && allocation.memo==previous->memo,original && allocation.memo==original->memo);
         const auto category_owner=settle(allocation.category_owner,rules?allocation.category_rule:std::optional<RuleMark>{},previous?previous->category_owner:FieldOwnership::source,previous?previous->category_rule:std::optional<RuleMark>{},previous && allocation.category==previous->category && allocation.category_binding==previous->category_binding,source_category_equal(allocation,original));
         allocation.memo_owner=memo_owner.owner;allocation.category_owner=category_owner.owner;if(rules){allocation.memo_rule=memo_owner.mark;allocation.category_rule=category_owner.mark;}
@@ -274,6 +279,7 @@ const std::vector<qif::CategoryDefinition>& ImportStore::source_categories(std::
 void ImportStore::publish_import_categories(std::string_view batch_id) {
     const auto definitions=source_categories(batch_id);
     for(std::size_t i=0;i<definitions.size();++i) {
+        if(resolve_account_name(definitions[i].name))continue; // Existing account; no ordinary category is created.
         const auto name=canonical_category_name(definitions[i].name);
         const auto catalog=category_catalog();
         const auto found=std::find_if(catalog.categories.begin(),catalog.categories.end(),[&](const auto& c){return !c.deleted && app::category_name_matches(c.name,name);});
@@ -302,6 +308,7 @@ imports::DraftRow ImportStore::bind_import_categories(std::string_view batch_id,
         std::map<std::string,std::pair<std::string,CategoryBinding>> bindings;
         for(const auto& definition:definitions) {
             const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& c){return !c.deleted && !c.archived && app::category_name_matches(c.name,definition.name);});
+            if(found==catalog.end() && resolve_account_name(definition.name))continue;
             if(found==catalog.end())fail(SQLITE_CORRUPT,"Imported category catalog was not published completely");
             bindings.emplace(definition.name,std::make_pair(found->name,CategoryBinding{found->identity,epoch}));
         }

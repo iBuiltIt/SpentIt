@@ -599,7 +599,10 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
     Statement committed(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.state=1 AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     while(committed.row()) {
         const imports::Occurrence id{committed.bytes(0),static_cast<std::size_t>(committed.integer(1))};
-        if(retained_member(impl_->db,id.batch,id.ordinal))require_qif_transfers(id,*load_row(id,false).draft,resolved);
+        if(retained_member(impl_->db,id.batch,id.ordinal)) {
+            const auto row=load_row(id,false);
+            for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category) && !resolved.contains({id.batch,id.ordinal,allocation.identity}))fail(SQLITE_CORRUPT,"Committed QIF transfer destination has no retained link");
+        }
     }
     Statement extra(impl_->db,"SELECT 1 FROM ledger_operations o WHERE kind=4 AND NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=o.id)");if(extra.row())fail(SQLITE_CORRUPT);
 }

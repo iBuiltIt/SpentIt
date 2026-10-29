@@ -25,6 +25,7 @@ struct Account {
 };
 // Read-only copy of one account's committed and projected totals. Money has no
 // default value, so construct this only with all three fields.
+struct AccountAlias { std::int64_t account; std::string name; };
 struct AccountBalance {
     std::int64_t identity=0;
     Money committed;
@@ -137,6 +138,15 @@ public:
     virtual Account account() const = 0;
     // Serial-worker session selection; commands never span accounts implicitly.
     virtual std::vector<Account> accounts() const { return {account()}; }
+    virtual std::vector<AccountAlias> account_aliases() const { std::vector<AccountAlias> names;for(const auto& a:accounts())names.push_back({a.identity,a.name});return names; }
+    virtual std::optional<std::int64_t> resolve_account_name(std::string_view name) const {
+        std::optional<std::int64_t> found;
+        for(const auto& alias:account_aliases())if(account_name_matches(alias.name,name)) {
+            if(found && *found!=alias.account)throw std::invalid_argument("Account name or alias is ambiguous; review the account mapping");
+            found=alias.account;
+        }
+        return found;
+    }
     virtual std::int64_t next_account_identity() const { std::int64_t last=0;for(const auto& a:accounts())if(a.identity>last)last=a.identity;if(last==INT64_MAX)throw std::overflow_error("Account identities exhausted");return last+1; }
     virtual void select_account(std::int64_t id) { if(id!=account().identity) throw std::logic_error("Unknown account"); }
     virtual Account create_account(std::int64_t, std::string_view, const Currency&, std::string_view) {

@@ -48,6 +48,7 @@ public:
     Q_INVOKABLE QString suggestedDateFormat(const QString&) const;
     Q_INVOKABLE QString todayDisplay() const;
     Q_INVOKABLE QString dateFormatExample(const QString&) const;
+    Q_INVOKABLE bool accountNameMatches(const QString& name,const QString& selected);
     Q_INVOKABLE bool categoryNameMatches(const QString& name,const QString& selected,bool includeChildren=false);
     Q_INVOKABLE QString newIdentity() const;
     Q_INVOKABLE QString localPath(const QUrl&) const;

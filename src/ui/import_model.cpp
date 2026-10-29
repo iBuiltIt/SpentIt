@@ -124,9 +124,16 @@ QString ownerName(FieldOwnership owner){
 QVariantMap allocationMap(const Allocation& a,const QVariantMap& labels={}) {
     const auto categoryId=a.category_binding?text(a.category_binding->identity):QString{};
     const auto display=labels.value(categoryId).toMap();
-    const auto label=qif::transfer_destination(a.category)?"Transfer destination: "+text(a.category):categoryId.isEmpty()?(a.category.empty()?QString("Uncategorized"):"Unmapped: "+text(a.category)):display.value("path",text(a.category)).toString()+(display.value("archived").toBool()?" [Archived]":"");
+    auto label=qif::transfer_destination(a.category)?"Transfer destination: "+text(a.category):categoryId.isEmpty()?(a.category.empty()?QString("Uncategorized"):"Unmapped: "+text(a.category)):display.value("path",text(a.category)).toString()+(display.value("archived").toBool()?" [Archived]":"");
+    const auto destination=qif::transfer_destination(a.category).value_or(a.category);
+    QString accountId;
+    for(const auto& value:labels.value("@aliases").toList()) {
+        const auto alias=value.toMap();if(!app::account_name_matches(str(alias.value("name")),destination))continue;
+        if(!accountId.isEmpty() && accountId!=alias.value("accountId").toString()){label="Ambiguous account alias: "+text(a.category);break;}
+        accountId=alias.value("accountId").toString();label=categoryId.isEmpty()?"Transfer destination: "+alias.value("display").toString():"Category/account name conflict: "+display.value("path",text(a.category)).toString();
+    }
     return {{"category",text(a.category)},{"memo",text(a.memo)},{"amount",money(a.amount)},
-        {"transferDestination",qif::transfer_destination(a.category)?text(std::string(*qif::transfer_destination(a.category))):QString{}},{"transferLabel",money(a.amount)+" · "+text(a.category)+" · "+text(a.identity)},{"categoryId",categoryId},{"bindingRevision",a.category_binding?QString::number(a.category_binding->catalog_revision):QString{}},
+        {"transferDestination",qif::transfer_destination(a.category)?text(std::string(*qif::transfer_destination(a.category))):QString{}},{"transferLabel",money(a.amount)+" · "+label+" · "+text(a.identity)},{"categoryId",categoryId},{"bindingRevision",a.category_binding?QString::number(a.category_binding->catalog_revision):QString{}},
         {"allocationId",text(a.identity)},{"categoryDisplay",label},{"categoryTouched",false},{"memoTouched",false},
         {"sourceOrdinal",a.source_ordinal?QVariant(static_cast<int>(*a.source_ordinal)):QVariant(-1)},
         {"categoryOwner",ownerName(a.category_owner)},{"memoOwner",ownerName(a.memo_owner)},{"categoryRule",markText(a.category_rule)},{"memoRule",markText(a.memo_rule)}};
@@ -366,6 +373,18 @@ struct ImportModel::Worker {
                 {"assignable",c.kind==CategoryKind::leaf && !archived && !c.deleted},{"revision",QString::number(c.revision)}};
             categories.push_back(value);categoryById[text(c.identity)]=value;
         }
+        auto accounts=repo.accounts();const auto archived=repo.archived_accounts();accounts.insert(accounts.end(),archived.begin(),archived.end());
+        const auto aliases=repo.account_aliases();
+        QVariantList accountCategories,accountNames;
+        for(const auto& account:accounts) {
+            QStringList names;for(const auto& alias:aliases)if(alias.account==account.identity && alias.name!=account.name)names.push_back(text(alias.name));
+            QVariantMap value{{"id","@account:"+QString::number(account.identity)},{"account",true},{"accountId",QString::number(account.identity)},
+                {"name",text(account.name)},{"path",text(account.name)},{"aliases",names.join("; ")},{"createdOrder",QString::number(account.identity)},
+                {"archived",account.archived},{"deleted",false},{"assignable",false},{"group",false}};
+            accountCategories.push_back(value);
+            for(const auto& alias:aliases)if(alias.account==account.identity)accountNames.push_back(QVariantMap{{"name",text(alias.name)},{"display",text(account.name)},{"accountId",QString::number(account.identity)}});
+        }
+        categoryById["@accounts"]=accountCategories;categoryById["@aliases"]=accountNames;
         catalogLoaded=true;
     }
     void selectCategory(std::string_view id) {
@@ -538,7 +557,8 @@ struct ImportModel::Worker {
         selected["reviewStale"]=row.review_stale;
         if(row.review_stale) selected["diagnostic"]=selected.value("diagnostic").toString()+" The matched committed record changed after this review. Reconfirm Include as separate transaction or the selected duplicate decision before committing this import.";
         const auto transferLinks=repo.transfers();
-        for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category)) {
+        const auto accountAliases=repo.account_aliases();
+        if(found->state==app::BatchState::pending)for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category) || std::any_of(accountAliases.begin(),accountAliases.end(),[&](const auto& alias){return app::account_name_matches(alias.name,allocation.category);})) {
             const transfers::Endpoint endpoint{acct.identity,{batch,ordinal},allocation.identity};bool resolved=false;
             for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed)
                 resolved|=side->endpoint==endpoint || (side->attached_evidence && side->attached_evidence->endpoint==endpoint) || (side->proposed_evidence && side->proposed_evidence->endpoint==endpoint);
@@ -671,8 +691,8 @@ struct ImportModel::Worker {
                 const auto own=std::find_if(batches.begin(),batches.end(),[&](const auto& v){return str(v.toMap().value("id"))==member->batch;});
                 if(own==batches.end() || own->toMap().value("status")=="Discarded" || own->toMap().value("status")=="Committed")continue;
                 const auto document=statements::inspect(repo.evidence(member->batch),"");
-                QVariantList importedCategories;
-                for(const auto& c:document.categories)importedCategories.push_back(QVariantMap{{"name",text(c.name)},{"description",text(c.description)},{"type",c.type=='I'?"Income":c.type=='E'?"Expense":"Unspecified"},{"taxSchedule",text(c.tax_schedule)},{"budget",text(c.budget)},{"taxRelated",c.tax_related}});
+                QVariantList importedCategories;const auto accountAliases=repo.account_aliases();
+                for(const auto& c:document.categories)importedCategories.push_back(QVariantMap{{"name",text(c.name)},{"description",text(c.description)},{"type",c.type=='I'?"Income":c.type=='E'?"Expense":"Unspecified"},{"warning",std::any_of(accountAliases.begin(),accountAliases.end(),[&](const auto& alias){return app::account_name_matches(alias.name,c.name);})?"Import warning: existing account or alias; no ordinary category will be created":""},{"taxSchedule",text(c.tax_schedule)},{"budget",text(c.budget)},{"taxRelated",c.tax_related}});
                 QVariantList blockers;
                 const auto groupAccounts=repo.accounts();
                 const auto accountName=[&](std::int64_t id){const auto account=std::find_if(groupAccounts.begin(),groupAccounts.end(),[&](const auto& a){return a.identity==id;});return account==groupAccounts.end()?QString::number(id):text(account->name);};
@@ -703,6 +723,9 @@ struct ImportModel::Worker {
             }
         } else state=metadata;
         state["importPlan"]=importPlan;
+        QVariantList aliasList;for(const auto& alias:repo.account_aliases())aliasList.push_back(QVariantMap{{"name",text(alias.name)},{"accountId",QString::number(alias.account)}});
+        state["accountAliases"]=aliasList;
+        state["accountCategories"]=categoryById.value("@accounts");
         state["categories"]=categories;state["categoryById"]=categoryById;state["catalogRevision"]=QString::number(catalogRevision);
         state["categorySelected"]=categorySelected;state["categoryHistory"]=categoryHistory;state["categoryPreview"]=categoryPreview;state["categoryReceipt"]=categoryReceipt;
         if(repo.rules_supported() && !rulesLoaded) loadRules();
@@ -1664,6 +1687,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     }));
 }
 
+bool ImportModel::accountNameMatches(const QString& name,const QString& selected) { return app::account_name_matches(str(name),str(selected)); }
 bool ImportModel::categoryNameMatches(const QString& name,const QString& selected,bool includeChildren) {
     try {return spentit::app::category_name_matches(name.toStdString(),selected.toStdString(),includeChildren);}
     catch(const std::invalid_argument&) {return false;} // Incomplete text is not yet a selectable category name.

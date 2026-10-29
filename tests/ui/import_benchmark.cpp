@@ -112,12 +112,12 @@ int main(int argc,char** argv) {
             for(int account=0;account<6;++account) {
                 QByteArray bytes="!Account\nNSynthetic "+QByteArray::number(account)+"\nTBank\n^\n!Type:Bank\n";
                 for(int row=0;row<perAccount;++row) {
-                    // Two genuinely repeated transfers stay blocked under the
-                    // current matching policy; other pairs have unique amounts.
+                    // Two genuinely repeated transfers pair one-to-one; other pairs
+                    // have unique amounts. Exercise bracketed and alias references.
                     const bool transfer=row<perAccount/10;
                     const int units=transfer?(row<2?10:row+10):7;
                     bytes+="D2026-02-01\nT"+QByteArray(account%2==0?"-":"")+QByteArray::number(units)+"\nPSynthetic merchant\nL";
-                    bytes+=transfer?"[Synthetic "+QByteArray::number(account^1)+"]":"General";
+                    bytes+=transfer?(account%2==0?"[Synthetic "+QByteArray::number(account^1)+"]":"Synthetic "+QByteArray::number(account^1)):"General";
                     bytes+="\n^\n";
                 }
                 require(file.write(bytes)==bytes.size(),"Fixture write failed");
@@ -126,7 +126,7 @@ int main(int argc,char** argv) {
             file.close();
             command("group_scan","import",{{"path",file.fileName()},{"profile","DMY"}});
             command("group_prepare","map_import",{{"mappings",mappings}});
-            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==12,"Repeated transfer blockers changed");
+            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==0,"Repeated transfers were not resolved");
             const auto group=model.state().value("importGroup").toMap().value("id");
             command("close_group","close");
             command("open_group","unlock",{{"path",path},{"password","synthetic-benchmark-password"}});
@@ -135,10 +135,11 @@ int main(int argc,char** argv) {
                 require(model.rowCount()==perAccount+1,"Group occurrence count changed");
                 require(model.state().value("committed").toString()=="0.00","Draft changed committed balance");
                 const auto transfers=perAccount/10;
+                require(model.state().value("transfers").toList().size()==transfers,"Transfer occurrence count changed");
                 const auto units=static_cast<std::int64_t>(transfers)*(transfers-1)/2+10*transfers-1+7*(perAccount-transfers);
                 const auto expected=app::decimal(Money((account%2==0?-units:units)*100,Currency("CAD")));
                 require(model.state().value("projected").toString().toStdString()==expected,"Group exact projection changed");
-                require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==12,"Group status changed");
+                require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==0,"Group status changed");
             }
             const auto batch=model.state().value("pending").toMap().value("id");
             command("inspect_group_edit","inspect",{{"batch",batch},{"ordinal",perAccount-1}});
@@ -146,9 +147,9 @@ int main(int argc,char** argv) {
             auto edit=model.state().value("selected").toMap().value("draft").toMap();edit["payee"]="Edited synthetic merchant";
             command("save_group_edit","save",edit);
             require(model.state().value("selected").toMap().value("source")==original,"Group edit changed source evidence");
-            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==12,"Edit hid transfer blockers");
+            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==0,"Ordinary edit changed transfer resolution");
             command("resolve_existing","group_resolve_transfers",{{"group",group}});
-            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==12,"Repeated matching behavior changed");
+            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==0,"Repeated matching behavior changed");
             command("abort_group","group_abort",{{"group",group}});
             command("final_close","close");
             std::cout<<"correctness=passed scope=group-prepare-open-switch-resolve-abort"<<std::endl;return 0;

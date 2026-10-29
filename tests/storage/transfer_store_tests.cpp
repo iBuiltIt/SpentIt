@@ -89,7 +89,7 @@ void qif_destinations(){
   Directory d;const auto path=d.path/"doc";
   {
    auto s=ImportStore::create(path,password,"Checking",cad,"2026-10-26");s.create_account(2,"Visa",cad,"2026-10-26");
-   s.create_account(3,"Visa",cad,"2026-10-26");s.create_account(4,"Foreign",Currency("USD"),"2026-10-26");
+   rejected([&]{s.create_account(3,"Visa",cad,"2026-10-26");});s.create_account(3,"Other Visa",cad,"2026-10-26");s.create_account(4,"Foreign",Currency("USD"),"2026-10-26");
    for(int account:{1,2}){s.select_account(account);s.opening(0,"2026-10-26",Money(0,cad));}
    const auto first=reverse?2:1,second=reverse?1:2;
    s.select_account(first);
@@ -138,7 +138,7 @@ void management(){
             s.apply_transfer("link-b",merge_of(s,"pay-b",allocation_fact(1,"twice","source-1",Money(-9500,cad),"2026-10-27",transfers::State::draft,true),allocation_fact(2,"visa-b","source-0",Money(9500,cad),"2026-10-29",transfers::State::draft,true),0,0));
             check(view_of(s,"pay-a").link.origin.endpoint!=view_of(s,"pay-b").link.origin.endpoint && view_of(s,"pay-a").link.destination.endpoint!=view_of(s,"pay-b").link.destination.endpoint);
             s.commit("twice",0,"commit-twice");s.select_account(2);s.commit("visa-b",0,"commit-visa-b");s.select_account(1);
-            s.ingest("plain","D26/10/2026\nT-3\nPShop\n^\n",qif::DateOrder::dmy);auto edit=*s.row({"plain",0}).draft;auto parts=edit.transaction.allocations();parts[0].category="Visa";parts[0].category_owner=FieldOwnership::manual;edit.transaction=edit.transaction.corrected(edit.transaction.effective_total(),std::move(parts));s.save({"plain",0},0,edit);check(s.transfers().size()==3);
+            s.ingest("plain","D26/10/2026\nT-3\nPShop\n^\n",qif::DateOrder::dmy);auto edit=*s.row({"plain",0}).draft;auto parts=edit.transaction.allocations();parts[0].category="Visa";parts[0].category_owner=FieldOwnership::manual;edit.transaction=edit.transaction.corrected(edit.transaction.effective_total(),std::move(parts));rejected([&]{s.save({"plain",0},0,edit);});check(s.transfers().size()==3);
             s.verify();s.backup_to(d.path/"backup",password);}
         {auto s=ImportStore::open(path,password);check(view_of(s,"pay-95").link.destination.amount==Money(9500,cad));check(s.transfer_journal().size()>=3);s.verify();}
         {auto s=ImportStore::open(d.path/"backup",password);check(s.transfers().size()==3 && view_of(s,"pay-b").link.origin.endpoint.allocation=="source-1");}

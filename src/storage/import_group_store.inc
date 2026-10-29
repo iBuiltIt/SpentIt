@@ -11,7 +11,7 @@ struct GroupSelection {
 }
 // Called within capture materialization or an explicit resolution transaction.
 // Only reciprocal imported allocations are linked: no generated money, no date
-// rewriting, and no greedy pairing of repeated equal transfers.
+// rewriting, and no partial pairing of unequal repeated groups.
 void ImportStore::resolve_group_transfers(std::string_view id,const app::OperationContext& context) {
     ScopedStatements plans(impl_->db);
     GroupSelection selection(impl_->selected_account);
@@ -27,6 +27,10 @@ void ImportStore::resolve_group_transfers(std::string_view id,const app::Operati
         const auto index=static_cast<std::size_t>(mapping.integer(0));if(index>=document.accounts.size())fail(SQLITE_CORRUPT);
         destinations.emplace(document.accounts[index].name,mapping.integer(1));members.push_back({mapping.integer(1),mapping.bytes(2)});
     }
+    for(const auto& alias:account_aliases()) {
+        const auto resolved=resolve_account_name(alias.name);
+        if(resolved){require_account_name(alias.name,*resolved);destinations[alias.name]=*resolved;}
+    }
     auto values=all_transfers();const auto resolved=resolved_transfers(values);
     struct Candidate {transfers::AllocationFact fact;std::int64_t destination,revision;};
     std::vector<Candidate> candidates;
@@ -37,16 +41,17 @@ void ImportStore::resolve_group_transfers(std::string_view id,const app::Operati
         impl_->selected_account=member.account;
         const auto info=batch(impl_->db,member.batch);
         if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)continue;
-        // Inspect only current bracketed allocations, not the entire ledger.
-        Statement rows(impl_->db,"SELECT DISTINCT a.ordinal FROM allocations a JOIN versions v USING(batch,ordinal,revision) WHERE a.batch=? AND v.decision=1 AND a.revision=(SELECT max(revision) FROM versions WHERE batch=a.batch AND ordinal=a.ordinal) AND a.category LIKE '[%' ORDER BY a.ordinal");rows.text(1,member.batch);
+        // Inspect current named allocations, including unbracketed account aliases.
+        Statement rows(impl_->db,"SELECT DISTINCT a.ordinal FROM allocations a JOIN versions v USING(batch,ordinal,revision) WHERE a.batch=? AND v.decision=1 AND a.revision=(SELECT max(revision) FROM versions WHERE batch=a.batch AND ordinal=a.ordinal) AND a.category<>'' ORDER BY a.ordinal");rows.text(1,member.batch);
         while(rows.row()) {
             context.checkpoint("Resolving mapped transfer counterparts");
             const imports::Occurrence identity{member.batch,static_cast<std::size_t>(rows.integer(0))};
             const auto row=load_row(identity,false);if(!row.draft || row.excluded_by_clear || row.review_stale)continue;
             for(const auto& allocation:row.draft->transaction.allocations()) {
-                const auto name=qif::transfer_destination(allocation.category);
+                const auto name=transfer_name(allocation.category);
                 if(!name || resolved.contains({identity.batch,identity.ordinal,allocation.identity}))continue;
-                const auto destination=destinations.find(*name);
+                auto destination=destinations.find(*name);
+                if(destination==destinations.end())if(const auto account=resolve_account_name(*name))destination=destinations.emplace(*name,*account).first;
                 if(destination==destinations.end() || destination->second==member.account)continue;
                 const auto target=account_by_id(destination->second);
                 if(target.archived || target.currency!=allocation.amount.currency() || allocation.amount.units()==INT64_MIN)continue;
@@ -58,11 +63,15 @@ void ImportStore::resolve_group_transfers(std::string_view id,const app::Operati
         }
     }
     std::vector<std::optional<std::size_t>> choices(candidates.size());
-    for(std::size_t i=0;i<candidates.size();++i) {
-        context.checkpoint();const auto& c=candidates[i];
+    // Collection order is source-account, record ordinal, then allocation order.
+    // This is a deterministic association, not evidence of a unique historical pair.
+    for(const auto& [key,indices]:buckets) {
+        context.checkpoint();const auto& c=candidates[indices.front()];
         const auto found=buckets.find({c.destination,c.fact.endpoint.account,c.fact.amount.currency().definition_id(),-c.fact.amount.units(),c.fact.date});
-        if(found==buckets.end())continue;
-        if(found->second.size()==1)choices[i]=found->second.front();
+        if(found==buckets.end() || found->second.size()!=indices.size())continue;
+        for(std::size_t n=0;n<indices.size();++n) {
+            context.checkpoint();choices[indices[n]]=found->second[n];
+        }
     }
     // These are merges of two independent draft allocations: they cannot change
     // committed money. Reuse each account's verified starting balance while
@@ -130,7 +139,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
             Statement stored(impl_->db,"SELECT 1 FROM records WHERE batch=? AND ordinal=?");stored.text(1,batch_id);stored.integer(2,integer(i));
             if(!stored.row()){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"",record.diagnostic?std::string(qif::message(*record.diagnostic)):"Import processing incomplete");}ready=false;continue;}
             const auto row=load_row({batch_id,i},false);
-            if(row.draft && b.state!=app::BatchState::committed && b.state!=app::BatchState::discarded)for(const auto& allocation:row.draft->transaction.allocations())if(const auto destination=qif::transfer_destination(allocation.category)) {
+            if(row.draft && b.state!=app::BatchState::committed && b.state!=app::BatchState::discarded)for(const auto& allocation:row.draft->transaction.allocations())if(const auto destination=transfer_name(allocation.category)) {
                 const bool linked=resolved.contains({batch_id,i,allocation.identity});
                 const bool eligible=!linked && !row.excluded_by_clear && !row.review_stale && row.decision.disposition==imports::Disposition::include && !account.archived;
                 const std::string status=linked?"Already linked":row.excluded_by_clear?"Excluded by discard":row.review_stale?"Review is stale":row.decision.disposition==imports::Disposition::duplicate?"Excluded as duplicate":row.decision.disposition!=imports::Disposition::include?"Inclusion needs review":account.archived?"Account archived":"Available draft";
@@ -138,7 +147,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
             }
             if(record.diagnostic && record.repairable)++result.repairs_done;
             if(!row.draft || row.decision.disposition==imports::Disposition::unresolved || (row.review_stale && b.state!=app::BatchState::committed)){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"","Review transaction inclusion or duplicate decision");}ready=false;continue;}
-            if(active_review && b.state!=app::BatchState::committed && row.decision.disposition==imports::Disposition::include)for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category) && !resolved.contains({batch_id,i,allocation.identity})){++result.unresolved;++result.unresolved_transfers;blocker(account.identity,batch_id,i,allocation.identity,"Transfer counterpart is not linked: resolve mapped transfers, then review missing, repeated, or different-date counterparts");}
+            if(active_review && b.state!=app::BatchState::committed && row.decision.disposition==imports::Disposition::include)for(const auto& allocation:row.draft->transaction.allocations())if(transfer_name(allocation.category) && !resolved.contains({batch_id,i,allocation.identity})){++result.unresolved;++result.unresolved_transfers;blocker(account.identity,batch_id,i,allocation.identity,"Transfer counterpart is not linked: resolve mapped transfers, then review missing, repeated, or different-date counterparts");}
             if(row.decision.disposition==imports::Disposition::include)amounts.push_back(row.draft->transaction.effective_total());
         }
         if(parsed.diagnostic){if(active_review)++result.unresolved;++result.blocked_records;}
@@ -155,6 +164,13 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
     std::map<std::string,std::int64_t,std::less<>> mapped;
     std::map<std::int64_t,app::Account> mapped_accounts;
     for(const auto& member:result.accounts){mapped.emplace(document.accounts[member.source_account].name,member.account);mapped_accounts.emplace(member.account,account_by_id(member.account));}
+    std::set<std::string,std::less<>> ambiguous_names;
+    const auto add_name=[&](const std::string& name) {
+        try {if(const auto account=resolve_account_name(name)){mapped[name]=*account;mapped_accounts.try_emplace(*account,account_by_id(*account));}}
+        catch(const ImportError& error){if(error.code()!=SQLITE_CONSTRAINT)throw;ambiguous_names.insert(name);}
+    };
+    for(const auto& alias:account_aliases())add_name(alias.name);
+    for(const auto& probe:probes)add_name(probe.destination);
     using EndpointKey=std::tuple<std::string,std::size_t,std::string>;
     std::map<EndpointKey,std::size_t> endpoints;
     std::map<std::pair<std::int64_t,std::int64_t>,std::vector<std::size_t>> reciprocal;
@@ -164,6 +180,9 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         const auto at=endpoints.find({item.batch,*item.ordinal,item.allocation});
         if(at==endpoints.end() || probe_limit){item.reason="Transfer analysis limit reached; inspect the source allocation";continue;}
         const auto& own=probes[at->second];const auto target=mapped.find(own.destination);
+        if(ambiguous_names.contains(own.destination)){item.reason="Account alias identifies multiple accounts; review the account mappings";continue;}
+        const auto catalog=category_catalog();
+        if(std::any_of(catalog.categories.begin(),catalog.categories.end(),[&](const auto& c){return !c.deleted && app::account_name_matches(c.name,own.destination);})) {item.reason="Account name conflicts with an ordinary category; rename the ordinary category in Categories";continue;}
         if(!own.eligible){item.reason="Source transfer is unavailable for automatic matching: "+own.item.status;continue;}
         if(target==mapped.end()){item.reason="Destination ["+own.destination+"] is absent from the confirmed source-account mapping";continue;}
         if(target->second==item.account){item.reason="Transfer refers to its own account ["+own.destination+"]; no counterpart can be linked";continue;}
@@ -179,10 +198,11 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         if(same_amount.empty())item.reason="Reciprocal draft allocations exist, but none has the exact opposite amount (source "+signed_decimal(own.item.amount)+" "+own.item.amount.currency().code()+")";
         else if(exact.empty())item.reason="Opposite-amount counterpart has a different date; source date is "+own.item.date;
         else if(available.empty())item.reason="Same-date, opposite-amount counterpart exists but is unavailable; see its review status below";
-        else if(available.size()>1)item.reason="Multiple available counterparts have the same date and opposite amount; choose the actual pair";
         else {
             std::size_t reverse=0;for(const auto n:reciprocal.at({item.account,target->second})){const auto& p=probes[n];if(p.eligible && p.item.date==own.item.date && p.item.amount==own.item.amount)++reverse;}
-            item.reason=reverse>1?"Counterpart also matches other allocations in this account; choose the actual pair":"Unique reciprocal same-date match is available; use Resolve mapped transfers";
+            item.reason=reverse!=available.size()?"Unequal eligible occurrence counts ("+std::to_string(reverse)+" in this account, "+std::to_string(available.size())+" opposite); review the counterparts":
+                reverse==1?"Unique reciprocal same-date match is available; use Resolve mapped transfers":
+                "Equivalent repeated reciprocal group has equal eligible counts; use Resolve mapped transfers for one-to-one links";
         }
     }
     if(cacheable){impl_->group_snapshot=result;impl_->group_snapshot_changes=changes;}
@@ -210,7 +230,8 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         if(mapping.source_account>=document.accounts.size() || !source_ids.insert(mapping.source_account).second || mapping.account<=0 || !target_ids.insert(mapping.account).second)
             fail(SQLITE_CONSTRAINT,"Map each source account once to a distinct account");
         if(mapping.creation) {
-            const auto& c=*mapping.creation;safe_text(c.name);iso_date(c.date);
+            const auto& c=*mapping.creation;
+            safe_text(c.name);iso_date(c.date);
             if(c.identity!=mapping.account || c.name.empty() || Currency(c.currency.code())!=c.currency ||
                (document.explicit_accounts && c.name!=document.accounts[mapping.source_account].name))fail(SQLITE_CONSTRAINT,"Invalid explicit account creation");
         }
@@ -248,10 +269,12 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         context.checkpoint("Retaining mapped source accounts");
         if(mapping.creation) {
             const auto& c=*mapping.creation;
+            require_account_name(c.name,c.identity);
             Statement a(impl_->db,"INSERT INTO account VALUES(?,?,?,?,0,0,0,0)");a.integer(1,c.identity);a.text(2,c.name);a.text(3,c.currency.definition_id());a.text(4,c.date);a.done();
             Statement receipt(impl_->db,"INSERT INTO account_creations VALUES(?,?,?,?)");receipt.integer(1,c.identity);receipt.text(2,c.name);receipt.text(3,c.currency.definition_id());receipt.text(4,c.date);receipt.done();
         }
         const auto account=account_by_id(mapping.account);impl_->selected_account=account.identity;
+        if(document.format=="qif" && document.explicit_accounts)require_account_name(document.accounts[mapping.source_account].name,account.identity);
         if(account_lifecycle_retired(impl_->db,account.identity))fail(SQLITE_CONSTRAINT,"Account identity was retired");
         if(account_row_archived(impl_->db,account.identity))fail(SQLITE_CONSTRAINT,archived_target);
         Statement retired(impl_->db,"SELECT 1 FROM retired_import_accounts WHERE account_id=?");retired.integer(1,account.identity);if(retired.row())fail(SQLITE_CONSTRAINT,"Removed account cannot receive imports");

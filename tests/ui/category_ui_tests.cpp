@@ -53,7 +53,7 @@ class CategoryUiTests : public QObject {
         if(value.metaType()==QMetaType::fromType<QJSValue>())value=value.value<QJSValue>().toVariant();
         return value.toList();
     }
-    static QStringList catalogNames(QObject* root){QStringList names;for(const auto& row:catalogRows(root))names.append(row.toMap().value("path").toString());return names;}
+    static QStringList catalogNames(QObject* root){QStringList names;for(const auto& row:catalogRows(root))if(!row.toMap().value("account").toBool())names.append(row.toMap().value("path").toString());return names;}
     void checkSelected(QObject* root,const QString& id){
         QTRY_COMPARE(root->property("categorySelection").toString(),id);
         QTest::qWait(30);
@@ -67,8 +67,14 @@ private slots:
     void catalogPickerCurrentNamesAndArchive() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
         const auto path=dir.path()+"/document";run(model,"create",{{"path",path},{"protected",false},{"name","Synthetic categories"},{"currency","CAD"}});
-        QVERIFY(model.state().value("categoriesSupported").toBool());QVERIFY(model.state().value("categories").toList().isEmpty());
+        QVERIFY(model.state().value("categoriesSupported").toBool());QVERIFY(model.state().value("categories").toList().isEmpty());QCOMPARE(model.state().value("accountCategories").toList().size(),1);
         window->requestActivate();QTest::qWait(100);QVERIFY(pointer(window,root,"categoryNavigation"));QTRY_COMPARE(root->property("currentPage").toString(),"categories");wait(model);
+        QVERIFY(catalogRows(root).front().toMap().value("account").toBool());
+        auto* accountList=qobject_cast<QQuickItem*>(object(root,"catalogList"));QVERIFY(accountList);
+        QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,accountList->mapToScene(QPointF(40,15)).toPoint());
+        QTRY_VERIFY(object(root,"categoryContextMenu")->property("visible").toBool());
+        QVERIFY(!object(root,"renameCategory")->property("enabled").toBool());QVERIFY(!object(root,"archiveCategory")->property("enabled").toBool());QVERIFY(!object(root,"deleteCategory")->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object(root,"categoryContextMenu"),"close"));
         const auto group=createCategory(model,root,"Auto");QVERIFY(!group.isEmpty());
         const auto leaf=createCategory(model,root,"Auto: Parking");QVERIFY(!leaf.isEmpty());
         QVERIFY(model.categoryNameMatches("Auto: Parking","auto: parking"));QVERIFY(model.categoryNameMatches("Auto: Parking","AUTO",true));QVERIFY(!model.categoryNameMatches("Automobile","Auto",true));
@@ -129,7 +135,7 @@ private slots:
         {
             ImportModel model(storage::document_gateway());run(model,"open",{{"path",path}});QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
             QCOMPARE(root->property("categorySort").toString(),"descending");QVERIFY(click(root,"categoryNavigation"));wait(model);
-            QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogRows(root)[2].toMap().value("id").toString(),middle);QCOMPARE(catalogNames(root).first(),"Aardvark");QCOMPARE(catalogNames(root).last(),"Visible after save");
+            QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogNames(root)[2],QString("Middle"));QCOMPARE(catalogNames(root).first(),"Aardvark");QCOMPARE(catalogNames(root).last(),"Visible after save");
         }
     }
     void inlineEditingAndScroll() {

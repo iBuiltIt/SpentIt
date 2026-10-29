@@ -16,6 +16,7 @@ struct RuleInput {
     qif::Record source;
     imports::DraftRow draft;
     std::vector<RuleProvenance> provenance;
+    std::vector<std::string> transfer_allocations{};
 };
 struct RuleProposal {
     imports::Occurrence identity;

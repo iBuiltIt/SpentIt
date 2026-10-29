@@ -44,6 +44,8 @@ public:
     void review_import_balance(std::string_view id,std::size_t source,std::int64_t revision,app::ReportedBalanceChoice choice,std::string_view date) override {const bool lose=groupBefore("balance");repo().review_import_balance(id,source,revision,choice,date);if(lose)throw std::runtime_error("Injected lost balance acknowledgement");}
     void abort_import_group(std::string_view id) override {const bool lose=groupBefore("abort");repo().abort_import_group(id);if(lose)throw std::runtime_error("Injected lost Abort acknowledgement");}
     app::Account account() const override {return repo().account();}
+    std::vector<app::AccountAlias> account_aliases() const override {return repo().account_aliases();}
+    std::optional<std::int64_t> resolve_account_name(std::string_view name) const override {return repo().resolve_account_name(name);}
     std::vector<app::Account> accounts() const override {if(attempted && failAccountRefresh)throw std::runtime_error("Injected account refresh failure");return repo().accounts();}
     void select_account(std::int64_t id) override {if(attempted && failAccountSelection)throw std::runtime_error("Injected selection failure");repo().select_account(id);}
     app::Account create_account(std::int64_t id,std::string_view name,const Currency& c,std::string_view date) override {
@@ -129,7 +131,7 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D2/1/2026\nT-101\nSFee\n$-1\nS[Visa]\n$-100\n^\n")},{"profile","DMY"}});
         QVERIFY(selected(m).value("diagnostic").toString().contains("QIF transfer destination"));
         QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().last().toMap().value("transferDestination").toString(),QString("Visa"));
-        run(m,"commit",{},false);QVERIFY(m.error().contains("Resolve every QIF"));
+        run(m,"commit",{},false);QVERIFY(m.error().contains("Resolve every account"));
         auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
         const auto visual=[](auto&& self,QQuickItem* item)->QQuickItem*{if(item->objectName()=="splitCategory_1")return item;for(auto* child:item->childItems())if(auto* found=self(self,child))return found;return nullptr;};
         QTRY_VERIFY(visual(visual,window->contentItem()));
@@ -236,12 +238,10 @@ private slots:
         QTRY_VERIFY(visual(visual,window->contentItem(),"splitCategory_0"));
         QVERIFY(QMetaObject::invokeMethod(visual(visual,window->contentItem(),"splitCategory_0"),"clicked"));
         QTRY_VERIFY(root->findChild<QObject*>("categoryPicker")->property("visible").toBool());
-        QTRY_VERIFY(repeaterItem("accountDestinationRepeater",0));
-        QObject* account=nullptr;const auto accountRepeater=root->findChild<QObject*>("accountDestinationRepeater");QVERIFY(accountRepeater);
-        for(int i=0;i<accountRepeater->property("count").toInt();++i){auto* item=repeaterItem("accountDestinationRepeater",i);if(item && item->objectName()=="pickAccount_2")account=item;}
-        QVERIFY(account);
+        QTRY_VERIFY(visual(visual,window->contentItem(),"pickAccount_2"));
+        auto* account=visual(visual,window->contentItem(),"pickAccount_2");QVERIFY(account);
         QVERIFY(account->property("text").toString().contains("Visa"));
-        QVERIFY(account->property("text").toString().contains("account 2"));
+        QVERIFY(account->property("text").toString().contains("[Account]"));
         QVERIFY(QMetaObject::invokeMethod(account,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
         QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         int generated=0,named=0;
@@ -718,16 +718,17 @@ private slots:
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);create(m,dir.path()+"/doc");
-        run(m,"import",{{"path",fixture(dir.path(),"!Account\nNA\nTBank\n^\n!Type:Bank\nD2026-01-02\nT-10\nL[B]\n^\n!Account\nNB\nTBank\n^\n!Type:Bank\nD2026-01-02\nT10\nL[A]\n^\n")},{"profile","DMY"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Cat\nNA\nE\n^\nNFees\nE\n^\n!Account\nNA\nTBank\n^\n!Type:Bank\nD2026-01-02\nT-10.25\nSB\n$-10\nSFees\n$-0.25\n^\nD2026-01-02\nT-10.25\nSB\n$-10\nSFees\n$-0.25\n^\n!Account\nNB\nTBank\n^\n!Type:Bank\nD2026-01-02\nT10\nL[A]\n^\nD2026-01-02\nT10\nL[A]\n^\n")},{"profile","DMY"}});
         QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"currency","CAD"},{"date","2026-01-01"}}};
         run(m,"map_import",{{"mappings",mappings}});
-        auto group=m.state().value("importGroup").toMap();QCOMPARE(group.value("unresolvedTransfers").toInt(),0);QCOMPARE(group.value("unresolved").toInt(),2);QCOMPARE(group.value("blockers").toList().size(),2);QCOMPARE(m.state().value("transfers").toList().size(),1);
+        QCOMPARE(m.state().value("accountCategories").toList().size(),3);
+        auto group=m.state().value("importGroup").toMap();QCOMPARE(group.value("unresolvedTransfers").toInt(),0);QCOMPARE(group.value("unresolved").toInt(),2);QCOMPARE(group.value("blockers").toList().size(),2);QCOMPARE(m.state().value("transfers").toList().size(),2);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"showImportBlockers"),"clicked"));
         auto* dialog=root->findChild<QObject*>("importBlockersDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
-        run(m,"group_resolve_transfers",{{"group",group.value("id")}});QCOMPARE(m.state().value("transfers").toList().size(),1);
+        run(m,"group_resolve_transfers",{{"group",group.value("id")}});QCOMPARE(m.state().value("transfers").toList().size(),2);
         for(int i=0;i<2;++i){run(m,"select_account",{{"id",QString::number(i+2)}});run(m,"group_balance",{{"group",group.value("id")},{"source",i},{"revision",1},{"choice",4},{"date","2026-01-01"}});}
-        QVERIFY(m.state().value("importGroup").toMap().value("ready").toBool());run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"10.00");
-        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),"0.00");run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"-10.00");
+        QVERIFY(m.state().value("importGroup").toMap().value("ready").toBool());run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"20.00");
+        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),"0.00");run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"-20.50");
     }
     void multiAccountImport() {
         QTemporaryDir dir;const auto path=dir.path()+"/document";ImportModel m(storage::document_gateway());
@@ -758,7 +759,7 @@ private slots:
         run(m,"select_account",{{"id","3"}});run(m,"group_balance",{{"group",group.value("id")},{"source",1},{"revision",m.state().value("pending").toMap().value("revision")},{"choice",1},{"date","2026-01-01"}});
         run(m,"commit");QCOMPARE(m.state().value("categories").toList().size(),2);QCOMPARE(m.state().value("committed").toString(),"-10.00");run(m,"select_account",{{"id","2"}});QVERIFY(m.state().value("groupOpeningReady").toBool());run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"50.00");
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("categories").toList().size(),2);run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),"50.00");
-        run(m,"select_account",{{"id","1"}});run(m,"import",{{"path",file},{"profile","DMY"}});run(m,"map_import",{{"mappings",mappings}});group=m.state().value("importGroup").toMap();
+        run(m,"select_account",{{"id","1"}});QFile duplicateFile(file);QVERIFY(duplicateFile.open(QIODevice::ReadOnly));auto duplicateBytes=duplicateFile.readAll();duplicateFile.close();duplicateBytes.replace("Synthetic wallet","Abort wallet");duplicateBytes.replace("Synthetic card","Abort card");run(m,"import",{{"path",fixture(dir.path(),duplicateBytes)},{"profile","DMY"}});run(m,"map_import",{{"mappings",mappings}});group=m.state().value("importGroup").toMap();
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"discardImport"),"clicked"));auto* discard=root->findChild<QObject*>("discardImportDialog");QVERIFY(discard);QTRY_VERIFY(discard->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(discard,"accepted"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("accountId").toString(),"1");QCOMPARE(m.state().value("accounts").toList().size(),3);QCOMPARE(m.state().value("nextAccountId").toString(),"6");
     }
     void unknownAmountRepair() {
