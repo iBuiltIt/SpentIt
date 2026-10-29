@@ -59,7 +59,12 @@ void load_metadata(sqlite3* db,const imports::Occurrence& id,std::int64_t revisi
 }
 bool ImportStore::categories_supported() const{return categories_format(impl_->db);}
 app::CategoryCatalog ImportStore::category_catalog() const {
-    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");app::CategoryCatalog result{catalog_sequence(impl_->db),{}};Statement ids(impl_->db,"SELECT id FROM category_heads ORDER BY id");while(ids.row())result.categories.push_back(category_at(impl_->db,ids.bytes(0)));return result;
+    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");app::CategoryCatalog result{catalog_sequence(impl_->db),{}};Statement ids(impl_->db,"SELECT h.id,v.catalog_revision FROM category_heads h LEFT JOIN category_versions v ON v.id=h.id AND v.revision=0 ORDER BY h.id");
+    while(ids.row()) {
+        if(ids.null(1))fail(SQLITE_CORRUPT,"Category creation history is missing");
+        const auto id=ids.bytes(0);result.categories.push_back(category_at(impl_->db,id));result.creation_order.emplace(id,ids.integer(1));
+    }
+    return result;
 }
 app::CategoryDisplay ImportStore::resolve_category(std::string_view id) const {if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");return category_display(impl_->db,id);}
 app::CategoryPreview ImportStore::preview_category_change(const app::CategoryRequest& request) const {

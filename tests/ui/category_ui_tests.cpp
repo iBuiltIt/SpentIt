@@ -10,6 +10,7 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QFont>
+#include <QJSValue>
 using namespace spentit;
 class CategoryUiTests : public QObject {
     Q_OBJECT
@@ -22,10 +23,43 @@ class CategoryUiTests : public QObject {
     void wait(ImportModel& m,bool success=true){QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty()==success,qPrintable(m.error()));}
     void run(ImportModel& m,const QString& action,const QVariantMap& args={},bool success=true){m.command(action,args);wait(m,success);}
     static QVariantMap selected(const ImportModel& m){return m.state().value("selected").toMap();}
-    void applyCategory(ImportModel& m,QObject* root){QVERIFY(click(root,"saveCategory"));wait(m);QVERIFY(object(root,"categoryChangePreview")->property("visible").toBool());QVERIFY(click(root,"applyCategoryChange"));wait(m);}
+    void applyCategory(ImportModel& m,QObject* root){
+        auto* field=qobject_cast<QQuickItem*>(object(root,"categoryName"));QVERIFY(field);
+        field->forceActiveFocus();QTest::keyClick(qobject_cast<QQuickWindow*>(root),Qt::Key_Return);wait(m);
+        QTRY_VERIFY(!root->property("categoryDirty").toBool());
+        QVERIFY(!object(root,"categoryChangePreview"));
+    }
+    void menu(ImportModel& m,QObject* root,const QString& id,const QString& action){
+        auto* list=qobject_cast<QQuickItem*>(object(root,"catalogList"));QVERIFY(list);
+        auto cats=m.state().value("categories").toList();int index=-1;
+        for(int i=0;i<cats.size();++i)if(cats[i].toMap().value("id").toString()==id){index=i;break;}
+        QVERIFY(index>=0);
+        // Search makes the target the sole row, independent of catalog ordering and scrolling.
+        QVERIFY(edit(root,"catalogSearch",cats[index].toMap().value("path").toString()));QTest::qWait(30);
+        auto point=list->mapToScene(QPointF(40,15)).toPoint();
+        QTest::mouseClick(qobject_cast<QQuickWindow*>(root),Qt::RightButton,Qt::NoModifier,point);
+        QTRY_VERIFY(object(root,"categoryContextMenu")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object(root,action),"triggered"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"categoryContextMenu"),"close"));
+    }
     QString createCategory(ImportModel& m,QObject* root,const QString& name){
-        if(!click(root,"newCategory") || !edit(root,"categoryName",name))qFatal("Category form unavailable");
+        if(!click(root,"newCategory"))qFatal("Category creation unavailable");
+        QTest::qWait(30);
+        if(!edit(root,"categoryName",name))qFatal("Inline category field unavailable");
         applyCategory(m,root);return m.state().value("categorySelected").toMap().value("id").toString();
+    }
+    static QVariantList catalogRows(QObject* root){
+        auto value=object(root,"catalogList")->property("model");
+        if(value.metaType()==QMetaType::fromType<QJSValue>())value=value.value<QJSValue>().toVariant();
+        return value.toList();
+    }
+    static QStringList catalogNames(QObject* root){QStringList names;for(const auto& row:catalogRows(root))names.append(row.toMap().value("path").toString());return names;}
+    void checkSelected(QObject* root,const QString& id){
+        QTRY_COMPARE(root->property("categorySelection").toString(),id);
+        QTest::qWait(30);
+        const auto rows=catalogRows(root);auto* list=object(root,"catalogList");const auto index=list->property("currentIndex").toInt();
+        QVERIFY(index>=0 && index<rows.size());QCOMPARE(rows[index].toMap().value("id").toString(),id);
+        const auto y=index*30.0-list->property("contentY").toDouble();QVERIFY(y>=-1 && y+30<=list->property("height").toDouble()+1);
     }
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("CategoryUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
@@ -51,29 +85,91 @@ private slots:
         QVERIFY(edit(root,"categoryPickerSearch","auto: parking"));QVERIFY(QMetaObject::invokeMethod(object(root,"categoryPickerSearch"),"accepted"));QVERIFY(click(root,"saveDraft"));wait(model);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("allocationId").toString(),allocationId);
         run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(model,"commit");
-        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"renameCategory"));QVERIFY(edit(root,"categoryName","Transport: Parking"));applyCategory(model,root);
+        QVERIFY(click(root,"categoryNavigation"));wait(model);menu(model,root,leaf,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Transport: Parking"));applyCategory(model,root);
         QVERIFY(click(root,"accountNavigation"));run(model,"query",{{"filter","Transport: Parking"},{"projected",false}});QCOMPARE(model.rowCount(),1);
         QCOMPARE(model.data(model.index(0,0),Qt::UserRole).toMap().value("category").toString(),"Transport: Parking");run(model,"inspect",occurrence);QVERIFY(selected(model).value("source").toString().contains("LLegacy:Transport"));
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("category").toString(),"Auto: Parking");QCOMPARE(allocation.value("categoryDisplay").toString(),"Transport: Parking");
-        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"archiveCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);
+        QVERIFY(click(root,"categoryNavigation"));wait(model);menu(model,root,leaf,"archiveCategory");wait(model);
         QVERIFY(!model.state().value("categoryById").toMap().value(leaf).toMap().value("assignable").toBool());
         QVERIFY(click(root,"accountNavigation"));run(model,"inspect",occurrence);QVERIFY(click(root,"editCommitted"));QVERIFY(edit(root,"durablePayee","Edited payee, retained category"));QVERIFY(click(root,"saveDraft"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("allocationId").toString(),allocationId);QVERIFY(allocation.value("categoryDisplay").toString().contains("Archived"));QCOMPARE(model.state().value("committed").toString(),"-10.00");
-        QVERIFY(click(root,"categoryNavigation"));wait(model);run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"archiveCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);
+        QVERIFY(click(root,"categoryNavigation"));wait(model);object(root,"showArchivedCategories")->setProperty("checked",true);menu(model,root,leaf,"archiveCategory");wait(model);
         QVERIFY(model.state().value("categoryById").toMap().value(leaf).toMap().value("assignable").toBool());
-        run(model,"category_select",{{"id",leaf}});QVERIFY(click(root,"renameCategory"));QVERIFY(edit(root,"categoryName","Parking"));applyCategory(model,root);
+        menu(model,root,leaf,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Parking"));applyCategory(model,root);
         QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_SCREENSHOT")));
-        QVERIFY(click(root,"deleteCategory"));wait(model,false);QVERIFY(model.error().contains("retained assignments",Qt::CaseInsensitive));
+        menu(model,root,leaf,"deleteCategory");wait(model,false);QVERIFY(model.error().contains("retained assignments",Qt::CaseInsensitive));
         run(model,"close");run(model,"open",{{"path",path}});run(model,"inspect",occurrence);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("categoryDisplay").toString(),"Parking");
         run(model,"close");auto gateway=storage::document_gateway();gateway->open(path.toStdString(),std::nullopt);const auto entry=gateway->repository().committed_entry({occurrence.value("batch").toString().toStdString(),static_cast<std::size_t>(occurrence.value("ordinal").toInt())});QCOMPARE(entry.current.draft.transaction.allocations().front().identity,allocationId.toStdString());QVERIFY(entry.current.draft.transaction.allocations().front().source_ordinal==std::optional<std::size_t>(0));
     }
-    void invalidCatalogEditGuardAndUnusedDeletion() {
-        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
-        run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Synthetic category guards"},{"currency","CAD"}});QVERIFY(click(root,"categoryNavigation"));wait(model);QVERIFY(click(root,"newCategory"));QVERIFY(edit(root,"categoryName","Invalid/Name"));QVERIFY(click(root,"accountNavigation"));QVERIFY(object(root,"categoryUnsavedDialog")->property("visible").toBool());QVERIFY(click(root,"categoryGuardSave"));wait(model,false);QVERIFY(root->property("categoryDirty").toBool());QCOMPARE(root->property("currentPage").toString(),"categories");QVERIFY(model.state().value("categories").toList().isEmpty());
-        QVERIFY(click(root,"accountNavigation"));QVERIFY(click(root,"categoryGuardStay"));QVERIFY(root->property("categoryDirty").toBool());QVERIFY(click(root,"accountNavigation"));QVERIFY(click(root,"categoryGuardDiscard"));QCOMPARE(root->property("currentPage").toString(),"ledger");
-        QVERIFY(click(root,"categoryNavigation"));wait(model);const auto unused=createCategory(model,root,"Disposable");QVERIFY(click(root,"deleteCategory"));wait(model);QVERIFY(click(root,"applyCategoryChange"));wait(model);QVERIFY(model.state().value("categoryById").toMap().value(unused).toMap().value("deleted").toBool());
+    void explicitSortingAndRetainedSelection() {
+        QTemporaryDir dir;const auto path=dir.path()+"/document";QString middle;
+        {
+            ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+            run(model,"create",{{"path",path},{"protected",false},{"name","Category sorting"},{"currency","CAD"}});QVERIFY(click(root,"categoryNavigation"));wait(model);
+            QCOMPARE(root->property("categorySort").toString(),"");
+            const auto z=createCategory(model,root,"Zulu");const auto a=createCategory(model,root,"alpha");middle=createCategory(model,root,"Middle");checkSelected(root,middle);
+            QStringList stored;for(const auto& c:model.state().value("categories").toList())stored.append(c.toMap().value("path").toString());QCOMPARE(catalogNames(root),stored);
+            QVERIFY(click(root,"categorySortAscending"));QCOMPARE(catalogNames(root),QStringList({"alpha","Middle","Zulu"}));checkSelected(root,middle);
+            QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","alpha"}));checkSelected(root,middle);
+            const auto b=createCategory(model,root,"Beta");QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","Beta","alpha"}));checkSelected(root,b);QCOMPARE(root->property("categorySort").toString(),"descending");
+            QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogNames(root),QStringList({"Zulu","alpha","Middle","Beta"}));checkSelected(root,b);
+            // A rename must retain original creation order, even when its spelling changes substantially.
+            menu(model,root,z,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Aardvark"));applyCategory(model,root);QVERIFY(edit(root,"catalogSearch",""));
+            QCOMPARE(catalogNames(root),QStringList({"Aardvark","alpha","Middle","Beta"}));checkSelected(root,z);
+            for(int i=0;i<24;i++)createCategory(model,root,QString("Extra %1").arg(i,2,10,QChar('0')));
+            const auto last=createCategory(model,root,"A new last entry");QCOMPARE(catalogRows(root).last().toMap().value("id").toString(),last);checkSelected(root,last);
+            QVERIFY(click(root,"categorySortAscending"));QCOMPARE(catalogRows(root).first().toMap().value("id").toString(),last);checkSelected(root,last);
+            QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogRows(root).last().toMap().value("id").toString(),last);checkSelected(root,last);
+            QVERIFY(edit(root,"catalogSearch","no match"));const auto filtered=createCategory(model,root,"Visible after save");checkSelected(root,filtered);QCOMPARE(catalogNames(root),QStringList({"Visible after save"}));
+            QVERIFY(edit(root,"catalogSearch","alpha"));QCOMPARE(catalogNames(root),QStringList({"alpha"}));
+            QCOMPARE(QSettings().value("CategoryEditor/sortMode").toString(),"descending");
+            run(model,"close");
+        }
+        {
+            ImportModel model(storage::document_gateway());run(model,"open",{{"path",path}});QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+            QCOMPARE(root->property("categorySort").toString(),"descending");QVERIFY(click(root,"categoryNavigation"));wait(model);
+            QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogRows(root)[2].toMap().value("id").toString(),middle);QCOMPARE(catalogNames(root).first(),"Aardvark");QCOMPARE(catalogNames(root).last(),"Visible after save");
+        }
     }
+    void inlineEditingAndScroll() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Synthetic category guards"},{"currency","CAD"},{"defaultCategories",true}});
+        QVERIFY(click(root,"categoryNavigation"));wait(model);
+        QVERIFY(click(root,"newCategory"));QTest::qWait(50);auto* field=qobject_cast<QQuickItem*>(object(root,"categoryName"));QVERIFY(field);QVERIFY(field->hasActiveFocus());
+        QVERIFY(edit(root,"categoryName","Invalid/Name"));applyInvalid(model,root,window);
+        QCOMPARE(object(root,"categoryName")->property("text").toString(),"Invalid/Name");QVERIFY(root->property("categoryDirty").toBool());
+        QTest::keyClick(window,Qt::Key_Escape);QVERIFY(!root->property("categoryDirty").toBool());
+        QVERIFY(click(root,"newCategory"));QTest::qWait(30);QTest::keyClick(window,Qt::Key_Escape);QVERIFY(!root->property("categoryDirty").toBool());
+        const auto unused=createCategory(model,root,"Disposable");
+        QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(edit(root,"categoryName","disposable"));applyInvalid(model,root,window);QTest::keyClick(window,Qt::Key_Escape);
+        QVERIFY(edit(root,"catalogSearch","does not match"));QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(edit(root,"categoryName","Focus saved"));
+        QVERIFY(pointer(window,root,"catalogSearch"));QTest::qWait(50);wait(model);QTRY_VERIFY(!root->property("categoryDirty").toBool());
+        QCOMPARE(model.state().value("categorySelected").toMap().value("name").toString(),"Focus saved");
+        menu(model,root,unused,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Discarded rename"));QTest::keyClick(window,Qt::Key_Escape);
+        QCOMPARE(model.state().value("categoryById").toMap().value(unused).toMap().value("name").toString(),"Disposable");
+        QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(pointer(window,root,"catalogSearch"));QTest::qWait(30);QVERIFY(!root->property("categoryDirty").toBool());
+        QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(edit(root,"categoryName","Invalid/Navigation"));QVERIFY(click(root,"accountNavigation"));wait(model,false);QCOMPARE(root->property("currentPage").toString(),"categories");QTest::qWait(30);QTest::keyClick(window,Qt::Key_Escape);
+        QVERIFY(click(root,"newCategory"));QTest::qWait(30);QVERIFY(edit(root,"categoryName","Saved on navigation"));QVERIFY(click(root,"accountNavigation"));wait(model);QTRY_COMPARE(root->property("currentPage").toString(),"ledger");
+        QCOMPARE(model.state().value("categorySelected").toMap().value("name").toString(),"Saved on navigation");
+        QVERIFY(click(root,"categoryNavigation"));wait(model);
+        menu(model,root,unused,"deleteCategory");wait(model);QVERIFY(model.state().value("categoryById").toMap().value(unused).toMap().value("deleted").toBool());
+        QVERIFY(edit(root,"catalogSearch",""));
+        for(int i=0;i<30;i++)createCategory(model,root,QString("Scroll %1").arg(i,2,10,QChar('0')));
+        auto* list=object(root,"catalogList");QVERIFY(list->property("height").toDouble()>400);list->setProperty("contentY",0);QTest::qWait(50);
+        auto* bar=qobject_cast<QQuickItem*>(object(root,"catalogScrollBar"));QVERIFY(bar);QVERIFY(bar->property("size").toDouble()<1);
+        auto* thumb=qvariant_cast<QQuickItem*>(bar->property("contentItem"));QVERIFY(thumb);
+        auto start=thumb->mapToScene(QPointF(thumb->width()/2,thumb->height()/2)).toPoint();auto end=start+QPoint(0,120);
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);QTest::mouseMove(window,end,50);QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,end);
+        QTRY_VERIFY(list->property("contentY").toDouble()>20);
+        QVERIFY(!object(root,"categoryUnsavedDialog"));QVERIFY(!object(root,"categoryChangePreview"));
+        if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_SCREENSHOT")));
+    }
+private:
+    void applyInvalid(ImportModel& model,QObject* root,QQuickWindow* window){
+        qobject_cast<QQuickItem*>(object(root,"categoryName"))->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);wait(model,false);QTest::qWait(30);QVERIFY(!root->property("categoryError").toString().isEmpty());
+    }
+
 };
 int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");CategoryUiTests tests;return QTest::qExec(&tests,argc,argv);}
 #include "category_ui_tests.moc"

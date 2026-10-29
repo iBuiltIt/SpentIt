@@ -6,6 +6,20 @@ Implementation: independent assignable categories, one optional colon, case-inse
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 
+## Compact category editor — accepted and implemented 2026-10-28
+
+The owner approved a compact, left-aligned table filling the available page height, with a draggable scrollbar and the guidance “Use a colon for a subcategory, for example Auto: Gas makes Gas a sub-category of Auto”. This describes the naming convention; it does not restore parent objects or dependent lifecycle behavior.
+
+New category appends a temporary blank row at the bottom, brings it into view even under a search filter, and focuses the name. Enter or focus loss saves; Escape cancels. An untouched empty creation row is discarded. Rename is inline with the same keyboard/focus behavior; Escape retains the saved name. Invalid or duplicate names retain the edit and show an error. Navigation waits for a successful save; invalid edits remain on the page.
+
+Rename, Archive/Unarchive, and Delete unused category are right-click row actions. The separate form, Review category save / Cancel edit buttons, entire review dialog, and visible definition-history section are removed. Menu actions save directly through the existing validated atomic commands. Retained history, reference-based deletion restrictions, and durable outcome handling remain in storage. See [verification](../doc/status.md).
+
+## User-controlled category sorting — accepted and implemented 2026-10-28
+
+The owner explicitly rejected automatically choosing Order added as a new default. Preserve the existing catalog order until the user chooses a sort. The editor offers **A–Z ↑**, **Z–A ↓**, and **Order added** (oldest first). The explicit choice is retained in application settings across navigation, dataset switches and restarts; creation and rename do not change it.
+
+Alphabetical order uses case-insensitive locale comparison of the complete category name, with identity as a deterministic tie-break. Order added uses the immutable creation catalog revision, not the latest edit revision or an invented timestamp. This is read from existing history without changing the dataset format. New editing rows still start at the bottom. On successful save, the saved category is selected and brought into view in the chosen order. Changing sort retains selection and brings it into view. A saved category excluded by the current search is temporarily revealed until the user edits the search; archive/deleted visibility remains controlled separately.
+
 ## Exact starter categories — accepted 2026-10-28
 
 **Approved by the owner, with the three Income entries added below.** This translates the original supplied list below into the newly agreed independent-category model. Each line is one selectable, assignable category. No parent-only categories are created. The creation checkbox defaults to checked; unchecked means an empty catalog. Names remain editable after creation.

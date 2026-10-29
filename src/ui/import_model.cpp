@@ -346,6 +346,7 @@ struct ImportModel::Worker {
             const bool archived=c.archived || (parent && parent->archived);
             const auto path=parent?parent->name+": "+c.name:c.name;
             QVariantMap value{{"id",text(c.identity)},{"name",text(c.name)},{"parent",text(c.parent)},{"path",text(path)},
+                {"createdOrder",QString::number(current.creation_order.at(c.identity))},
                 {"group",c.kind==CategoryKind::group},{"archived",archived},{"ownArchived",c.archived},{"deleted",c.deleted},
                 {"assignable",c.kind==CategoryKind::leaf && !archived && !c.deleted},{"revision",QString::number(c.revision)}};
             categories.push_back(value);categoryById[text(c.identity)]=value;

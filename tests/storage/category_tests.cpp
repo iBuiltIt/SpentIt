@@ -45,6 +45,7 @@ void catalog(){
  apply(s,"rename",change(app::CategoryAction::rename,"parking","Auto: Parking"));
  apply(s,"move",change(app::CategoryAction::rename,"parking","Travel: Parking"));
  check(s.resolve_category("parking").path=="Travel: Parking");
+ check(s.category_catalog().creation_order.at("parking")==3);
  apply(s,"parent-archive",change(app::CategoryAction::archive,"travel"));
  check(s.resolve_category("parking").assignable&&!s.resolve_category("parking").archived&&!definition(s,"parking").archived);
  apply(s,"child-archive",change(app::CategoryAction::archive,"parking"));
@@ -55,9 +56,10 @@ void catalog(){
  apply(s,"leaf-delete",change(app::CategoryAction::erase,"amazon"));
  rejects([&]{apply(s,"reuse-identity",make("amazon","Different"));});
  apply(s,"reuse-name",make("amazon-two","Amazon"));
+ check(s.category_catalog().creation_order.at("amazon")==4 && s.category_catalog().creation_order.at("amazon-two")>4);
  check(s.category_history("parking").size()==5&&s.category_history("amazon").size()==2);
  check(s.committed_balance().units()==0&&s.ledger(false).empty());s.verify();}
- {auto s=ImportStore::open(dir.path/"doc",password);check(s.resolve_category("parking").path=="Travel: Parking");s.verify();}no_leaks(dir.path);
+ {auto s=ImportStore::open(dir.path/"doc",password);check(s.resolve_category("parking").path=="Travel: Parking");check(s.category_catalog().creation_order.at("parking")==3);s.verify();}no_leaks(dir.path);
 }
 void setup(){Directory dir;
  {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check(s.category_catalog().categories.size()==41);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}

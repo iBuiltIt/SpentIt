@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import QtCore
 ApplicationWindow {
     id: window
     component UsableScrollBar: ScrollBar {
@@ -340,17 +341,85 @@ ApplicationWindow {
     property string categoryFormId: ""
     property string categoryFormRevision: ""
     property int pickerIndex: -1
+    property string categoryEditText: ""
+    property bool categorySaving: false
+    property string categoryError: ""
+    property var categoryMenuEntry: ({})
+    property string categorySelection: ""
+    property string categoryReveal: ""
+    Settings {id:categoryPreferences;category:"CategoryEditor";property string sortMode:""}
+    property alias categorySort: categoryPreferences.sortMode
+    function categoryRows() {
+        let rows=(s.categories||[]).filter(function(c){return (categoryAction==="rename" && c.id===categoryFormId) || ((showArchivedCategories.checked || (!c.archived && !c.deleted)) && (c.id===categoryReveal || c.path.toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0))})
+        if(categorySort==="ascending" || categorySort==="descending")rows.sort(function(a,b){
+            let order=a.path.toLowerCase().localeCompare(b.path.toLowerCase())
+            if(order===0)order=a.id.localeCompare(b.id)
+            return categorySort==="descending"?-order:order
+        })
+        else if(categorySort==="added")rows.sort(function(a,b){
+            // Decimal strings preserve the full stored 64-bit revision range.
+            let order=a.createdOrder.length-b.createdOrder.length
+            if(order===0)order=a.createdOrder.localeCompare(b.createdOrder)
+            return order || a.id.localeCompare(b.id)
+        })
+        return rows.concat(categoryAction==="create"?[{id:"",path:"",pending:true}]:[])
+    }
+    function revealCategorySelection() {
+        Qt.callLater(function(){
+            for(let i=0;i<catalogList.count;i++)if(catalogList.model[i].id===categorySelection) {
+                catalogList.currentIndex=i;catalogList.positionViewAtIndex(i,ListView.Contain);break
+            }
+        })
+    }
+    function sortCategories(order) {
+        guard(function(){categorySort=order;categoryPreferences.setValue("sortMode",order);categoryPreferences.sync();revealCategorySelection()})
+    }
     function loadCategoryForm() {
-        let c=s.categorySelected||{}
-        categoryFormId=c.id||"";categoryFormRevision=s.catalogRevision||""
-        categoryName.text=c.name||"";categoryAction="";categoryDirty=false
+        categoryAction="";categoryDirty=false;categorySaving=false;categoryError=""
+    }
+    function focusCategoryEditor() {
+        Qt.callLater(function(){
+            for(let i=0;i<catalogList.count;i++) {
+                let c=catalogList.model[i]
+                if((categoryAction==="create" && c.pending) || (categoryAction==="rename" && c.id===categoryFormId)) {
+                    catalogList.positionViewAtIndex(i,ListView.Contain)
+                    Qt.callLater(function(){let row=catalogList.itemAtIndex(i);if(row)row.focusEditor()})
+                    break
+                }
+            }
+        })
     }
     function newCategory() {
-        categoryFormId="";categoryFormRevision=s.catalogRevision||"";categoryName.clear();categoryAction="create";categoryDirty=true
+        categoryFormId="";categoryFormRevision=s.catalogRevision||"";categoryEditText="";categoryError="";categoryAction="create";categoryDirty=true
+        focusCategoryEditor()
+    }
+    function renameCategory(c) {
+        categoryFormId=c.id;categoryFormRevision=s.catalogRevision||"";categoryEditText=c.name;categoryError="";categoryAction="rename";categoryDirty=true
+        focusCategoryEditor()
+    }
+    function cancelCategoryEdit() {
+        loadCategoryForm();pendingAction=null
+    }
+    function finishCategoryEdit() {
+        if(!categoryDirty || categorySaving)return
+        if(categoryAction==="create" && categoryEditText.length===0) {
+            let next=pendingAction;pendingAction=null;loadCategoryForm();if(next)guard(next)
+            return
+        }
+        saveCategoryForm()
     }
     function saveCategoryForm(action) {
+        if(categorySaving || workflow.busy)return
+        categorySaving=true;categoryError=""
         workflow.command("preview_category",{action:action||categoryAction,id:categoryFormId,revision:categoryFormRevision,
-            name:categoryName.text})
+            name:categoryEditText})
+    }
+    function categoryMenuAction(action) {
+        let c=categoryMenuEntry
+        guard(function(){
+            if(action==="rename")renameCategory(c)
+            else {categoryFormId=c.id;categoryFormRevision=s.catalogRevision||"";categoryEditText=c.name;saveCategoryForm(action)}
+        })
     }
     function openCategoryPicker(index) {
         pickerIndex=index;let row=splitModel.get(index);unmappedCategory.text=row.category;categorySearch.clear();categoryPicker.open()
@@ -432,7 +501,7 @@ ApplicationWindow {
     property bool allowClose: false
     property bool closingRequested: false
     property bool settingUp: false
-    function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else if(categoryDirty) {pendingAction=action;categoryUnsaved.open()} else if(rulesDirty) {pendingAction=action;rulesUnsaved.open()} else action() }
+    function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;rulesUnsaved.open()} else action() }
     function dismiss(dialog) { guardHandoff=true; dialog.close(); Qt.callLater(function(){guardHandoff=false}) }
     function loadEditor() {
         let d=selected.draft
@@ -570,14 +639,14 @@ ApplicationWindow {
     function createFromSource(kind, allocation) {
         if(workflow.busy || !s.rulesSupported) return
         if(dirty) { pendingAction=function(){createFromSource(kind,allocation)}; unsaved.open(); return }
-        if(categoryDirty) { pendingAction=function(){createFromSource(kind,allocation)}; categoryUnsaved.open(); return }
+        if(categoryDirty) { pendingAction=function(){createFromSource(kind,allocation)}; finishCategoryEdit(); return }
         let args={kind:kind}; if(allocation!==undefined) args.allocation=allocation
         workflow.command("rules_prefill",args)
     }
     function editMatched(id) {
         if(workflow.busy) return
         if(dirty) { pendingAction=function(){editMatched(id)}; unsaved.open(); return }
-        if(categoryDirty) { pendingAction=function(){editMatched(id)}; categoryUnsaved.open(); return }
+        if(categoryDirty) { pendingAction=function(){editMatched(id)}; finishCategoryEdit(); return }
         if(!rulesDirty) loadRulesForm()
         for(let i=0;i<ruleModel.count;i++) if(ruleModel.get(i).id===id) { openRule(i); showRulesPage(); matchedRuleDialog.close(); return }
     }
@@ -655,7 +724,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryChangePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -676,7 +745,12 @@ ApplicationWindow {
             if(success && action==="select" && searchReturn)searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
+                loadCategoryForm();categorySelection="";categoryReveal="";categoryMenuEntry=({});categoryContext.close()
                 transferDate.text=workflow.todayDisplay();sidebarBalanceMode=({});ledgerViewRestore=null;ledgerViewKind=""
+            }
+            if(!success && (action==="preview_category" || action==="apply_category")) {
+                categorySaving=false;categoryError=workflow.error
+                if(categoryDirty && s.active)focusCategoryEditor()
             }
             if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null}
             if(success) {
@@ -695,9 +769,9 @@ ApplicationWindow {
                 if(action==="rules_reapply_preview")reapplyDialog.open()
                 if(action==="rules_reapply_apply"){reapplyDialog.close();loadEditor()}
                 projected.checked=s.mode!=="Committed"
-                if(action==="preview_category") categoryChangePreview.open()
+                if(action==="preview_category") workflow.command("apply_category",{preview:s.categoryPreview.id})
                 if(action==="category_select" || action==="apply_category")loadCategoryForm()
-                if(action==="apply_category") {let next=pendingAction;pendingAction=null;dismiss(categoryChangePreview);categoryDirty=false;if(!dirty)loadEditor();if(next)guard(next)}
+                if(action==="apply_category") {categorySelection=(s.categorySelected||{}).id||"";categoryReveal=categorySelection;revealCategorySelection();let next=pendingAction;pendingAction=null;categoryDirty=false;if(!dirty)loadEditor();if(next)guard(next)}
                 if(action==="preview_change") changePreview.open()
                 if(action==="apply_change") dismiss(changePreview)
                 if(action==="transfer_merge" && (s.transferMergePreview||{}).id) mergePreview.open()
@@ -911,16 +985,6 @@ ApplicationWindow {
         }
     }
     Dialog {
-        id:categoryUnsaved;objectName:"categoryUnsavedDialog";title:"Unsaved category edit";modal:true;anchors.centerIn:parent
-        standardButtons:Dialog.NoButton
-        RowLayout {
-            Button {objectName:"categoryGuardSave";text:"Review save";onClicked:{let next=pendingAction;dismiss(categoryUnsaved);pendingAction=next;saveCategoryForm()}}
-            Button {objectName:"categoryGuardDiscard";text:"Discard";onClicked:{let next=pendingAction;pendingAction=null;dismiss(categoryUnsaved);loadCategoryForm();if(next)guard(next)}}
-            Button {objectName:"categoryGuardStay";text:"Stay";onClicked:{categoryUnsaved.close();pendingAction=null}}
-        }
-        onRejected:if(!guardHandoff)pendingAction=null
-    }
-    Dialog {
         id:rulesUnsaved;objectName:"rulesUnsavedDialog";title:"Unsaved rules";modal:true;anchors.centerIn:parent;standardButtons:Dialog.NoButton
         RowLayout {
             Button {objectName:"rulesGuardSave";text:"Save";onClicked:{let next=pendingAction;dismiss(rulesUnsaved);pendingAction=next;saveRules()}}
@@ -940,19 +1004,11 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
-        id:categoryChangePreview;objectName:"categoryChangePreview";title:"Review category change";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,680)
-        onRejected:if(!guardHandoff){pendingAction=null;workflow.command("cancel_category_preview")}
-        ColumnLayout {
-            width:categoryChangePreview.availableWidth
-            Label {textFormat:Text.PlainText;text:(s.categoryPreview||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {text:"Renaming changes this category’s current name and grouping for past transactions; other categories are unchanged. Original source and recorded history remain unchanged. Archiving hides choices for new assignments and retains existing assignments.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;color:"#a02020"}
-            RowLayout {
-                Button {objectName:"applyCategoryChange";text:"Apply category change";enabled:!workflow.busy && !!(s.categoryPreview||{}).id;onClicked:workflow.command("apply_category",{preview:s.categoryPreview.id})}
-                Button {objectName:"cancelCategoryChange";text:"Cancel";enabled:!workflow.busy;onClicked:{categoryChangePreview.close();pendingAction=null;workflow.command("cancel_category_preview")}}
-            }
-        }
+    Menu {
+        id:categoryContext;objectName:"categoryContextMenu"
+        MenuItem {objectName:"renameCategory";text:"Rename";enabled:!categoryMenuEntry.deleted;onTriggered:categoryMenuAction("rename")}
+        MenuItem {objectName:"archiveCategory";text:categoryMenuEntry.ownArchived?"Unarchive":"Archive";enabled:!categoryMenuEntry.deleted;onTriggered:categoryMenuAction(categoryMenuEntry.ownArchived?"unarchive":"archive")}
+        MenuItem {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryMenuEntry.deleted;onTriggered:categoryMenuAction("delete")}
     }
     Dialog {
         id:categoryPicker;objectName:"categoryPicker";title:"Choose allocation category";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700);height:Math.min(window.height-80,650)
@@ -1221,42 +1277,56 @@ ApplicationWindow {
             }
             Item {
                 SplitView.fillWidth:true
-                UsableScrollView {
-                    id:categoryPage;objectName:"categoryPage";anchors.fill:parent;visible:currentPage==="categories";contentWidth:availableWidth;enabled:!workflow.busy
+                Item {
+                    id:categoryPage;objectName:"categoryPage";anchors.fill:parent;visible:currentPage==="categories"
                     ColumnLayout {
-                        width:categoryPage.availableWidth;spacing:10
+                        anchors.fill:parent;spacing:8
                         Label {text:"Categories";font.pixelSize:20}
-                        Label {text:"Every category is assignable. Use one colon for a subcategory, for example Auto: Gas. No parent category is required.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {text:"Use a colon for a subcategory, for example Auto: Gas makes Gas a sub-category of Auto";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         RowLayout {
-                            TextField {id:catalogSearch;placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256}
-                            CheckBox {id:showArchivedCategories;text:"Show archived / deleted"}
-                            Button {objectName:"newCategory";text:"New category";onClicked:guard(newCategory)}
+                            TextField {id:catalogSearch;objectName:"catalogSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;enabled:!categorySaving;onTextEdited:categoryReveal=""}
+                            CheckBox {id:showArchivedCategories;objectName:"showArchivedCategories";text:"Show archived / deleted";enabled:!categorySaving}
+                            Button {objectName:"newCategory";text:"New category";enabled:!workflow.busy && !categorySaving;onClicked:guard(newCategory)}
+                        }
+                        RowLayout {
+                            Button {objectName:"categorySortAscending";text:"A–Z ↑";highlighted:categorySort==="ascending";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("ascending")}
+                            Button {objectName:"categorySortDescending";text:"Z–A ↓";highlighted:categorySort==="descending";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("descending")}
+                            Button {objectName:"categorySortAdded";text:"Order added";highlighted:categorySort==="added";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("added")}
                         }
                         ListView {
-                            id:catalogList;objectName:"catalogList";Layout.fillWidth:true;Layout.preferredHeight:220;clip:true;reuseItems:true
-                            model:(s.categories||[]).filter(function(c){return (showArchivedCategories.checked || (!c.archived && !c.deleted)) && c.path.toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0})
-                            ScrollBar.vertical:UsableScrollBar {}
-                            delegate:Button {required property var modelData;width:catalogList.width;text:modelData.path+(modelData.group?" (group)":"")+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"");objectName:"editCategory_"+modelData.id;onClicked:guard(function(){workflow.command("category_select",{id:modelData.id})})}
+                            id:catalogList;objectName:"catalogList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:false
+                            boundsBehavior:Flickable.StopAtBounds
+                            model:categoryRows()
+                            ScrollBar.vertical:UsableScrollBar {id:catalogBar;objectName:"catalogScrollBar"}
+                            delegate:Rectangle {
+                                id:categoryRow
+                                required property var modelData
+                                required property int index
+                                width:catalogList.width-catalogBar.width;height:30
+                                color:categorySelection===modelData.id && !modelData.pending?"#dce8f2":index%2?"#f1f4f6":"#ffffff"
+                                property bool editing:categoryAction==="create"?!!modelData.pending:categoryAction==="rename" && modelData.id===categoryFormId
+                                function focusEditor(){inlineCategory.forceActiveFocus();inlineCategory.selectAll()}
+                                Rectangle {anchors.bottom:parent.bottom;width:parent.width;height:1;color:"#dce1e5"}
+                                Label {anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignLeft;textFormat:Text.PlainText;elide:Text.ElideRight;color:"#18232d";visible:!categoryRow.editing;text:modelData.path+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"")}
+                                MouseArea {
+                                    anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton;enabled:!categoryRow.editing && !workflow.busy && !categorySaving
+                                    onClicked:function(mouse){
+                                        let c=categoryRow.modelData
+                                        let pt=mapToItem(window.contentItem,mouse.x,mouse.y)
+                                        guard(function(){categorySelection=c.id;if(mouse.button===Qt.RightButton){categoryMenuEntry=c;categoryContext.popup(pt.x,pt.y)}})
+                                    }
+                                }
+                                TextField {
+                                    id:inlineCategory;objectName:categoryRow.editing?"categoryName":"";anchors.fill:parent;visible:categoryRow.editing;enabled:!categorySaving
+                                    text:categoryRow.editing?categoryEditText:"";leftPadding:8;topPadding:2;bottomPadding:2;selectByMouse:true;Accessible.name:"Category name"
+                                    onTextEdited:{categoryEditText=text;categoryError=""}
+                                    onAccepted:finishCategoryEdit()
+                                    Keys.onEscapePressed:function(event){cancelCategoryEdit();event.accepted=true}
+                                    onActiveFocusChanged:if(!activeFocus && categoryRow.editing && !categorySaving)Qt.callLater(function(){if(categoryRow.editing && !inlineCategory.activeFocus)finishCategoryEdit()})
+                                }
+                            }
                         }
-                        Label {textFormat:Text.PlainText;text:(s.categorySelected||{}).path||"New category";font.bold:true;Layout.fillWidth:true;wrapMode:Text.Wrap}
-                        RowLayout {
-                            visible:categoryFormId.length>0 && !(s.categorySelected||{}).deleted
-                            Button {objectName:"renameCategory";text:"Rename";enabled:!categoryDirty;onClicked:categoryAction="rename"}
-                            Button {objectName:"archiveCategory";text:(s.categorySelected||{}).ownArchived?"Unarchive":"Archive";enabled:!categoryDirty;onClicked:saveCategoryForm((s.categorySelected||{}).ownArchived?"unarchive":"archive")}
-                            Button {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryDirty;onClicked:saveCategoryForm("delete")}
-                        }
-                        TextField {id:categoryName;objectName:"categoryName";visible:categoryAction==="create" || categoryAction==="rename";placeholderText:"Category name";Layout.fillWidth:true;onTextEdited:categoryDirty=true;Accessible.name:"Category name"}
-                        RowLayout {
-                            visible:categoryAction.length>0
-                            Button {objectName:"saveCategory";text:"Review category save";enabled:categoryDirty;onClicked:saveCategoryForm()}
-                            Button {objectName:"cancelCategoryEdit";text:"Cancel edit";onClicked:loadCategoryForm()}
-                        }
-                        Label {textFormat:Text.PlainText;text:(s.categoryReceipt||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        Label {text:"Definition history";visible:(s.categoryHistory||[]).length>0;font.bold:true}
-                        ListView {
-                            id:categoryAudit;model:s.categoryHistory||[];Layout.fillWidth:true;Layout.preferredHeight:Math.min(180,contentHeight);clip:true;reuseItems:true;ScrollBar.vertical:UsableScrollBar {}
-                            delegate:Label {required property string modelData;width:categoryAudit.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
-                        }
+                        Label {objectName:"categoryInlineError";text:categoryError;visible:text.length>0;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true;color:"#a02020"}
                     }
                 }
                 UsableScrollView {
