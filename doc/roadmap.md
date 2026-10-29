@@ -12,7 +12,7 @@ The owner gave Go for setup date formats, optional starter categories (checked b
 
 ## Current direction — 2026-10-28
 
-The owner is using the application and wants to improve it piecemeal, beginning with a stable `./build/SpentIt` launch path. Reports, expanded document lifecycle/recovery, and distribution work are explicitly deferred. This supersedes the earlier statement that reports are next; the eight-point handoffs below remain historical evidence. Each subsequent usability change is discussed first and implemented only after the owner explicitly says Go. The owner gave Go for the welcome screen, creation defaults/overwrite, and usable scrollbars on 2026-10-28; icon artwork remains future work.
+The owner is using the application and wants to improve it piecemeal, beginning with a stable `./build/SpentIt` launch path. Reports, expanded document lifecycle/recovery, and public distribution work are explicitly deferred. This supersedes the earlier statement that reports are next; the eight-point handoffs below remain historical evidence. Each subsequent usability change is discussed first and implemented only after the owner explicitly says Go. The owner gave Go for the welcome screen, creation defaults/overwrite, and usable scrollbars on 2026-10-28; the owner subsequently approved supplied icon artwork and local packaging; see [packaging scope](../packaging/README.md).
 
 ## Application usability handoff — 2026-10-28
 
@@ -20,7 +20,7 @@ The owner reviewed the welcome-screen result positively and requested documentat
 
 Read [document setup decisions](../features/001-documents-storage-security.md#welcome-and-creation--accepted-2026-10-28), [layout and scrollbar requirements](../features/005-transaction-sheet-navigation.md#welcome-layout-and-scrollbars--accepted-2026-10-28), and [verification evidence](status.md#welcome-creation-and-usable-scrollbars--2026-10-28). Final selected Release verification passed 8/8; focused ASan/UBSan replacement and UI checks passed after increasing the single document worker's stack to 4 MiB. Native macOS startup passed. Linux/Windows and a complete regression/fault sweep remain unverified for this checkpoint. No personal financial data or generated build output belongs in the commit.
 
-Creation-time Overwrite deliberately discards the previous dataset under its exclusive lock, as explicitly requested; it does not promise recovery of that discarded file after failure. Backup/restore semantics are unchanged. Future icon artwork is not created; space is reserved above the title. Reports, broader lifecycle/recovery, distribution and licensing remain deferred. Discuss the next requested change and wait for an explicit Go before implementation.
+Creation-time Overwrite deliberately discards the previous dataset under its exclusive lock, as explicitly requested; it does not promise recovery of that discarded file after failure. Backup/restore semantics are unchanged. The owner subsequently supplied light/dark artwork and approved its welcome/application integration; see [local packaging](../packaging/README.md). Reports, broader lifecycle/recovery, distribution and licensing remain deferred. Discuss the next requested change and wait for an explicit Go before implementation.
 
 ## Current authorization and delivery checkpoints — 2026-10-26
 

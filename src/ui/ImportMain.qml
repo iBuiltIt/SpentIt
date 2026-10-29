@@ -1069,8 +1069,15 @@ ApplicationWindow {
             ColumnLayout {
                 width:Math.min(welcomeScroll.availableWidth-48,660);x:(welcomeScroll.availableWidth-width)/2
                 spacing:18
-                // Room for a future 96–128 px icon; no placeholder artwork.
+                // Keep the logo responsive to system appearance changes.
                 Item {Layout.preferredHeight:Math.max(28,Math.min(112,window.height*0.13));Layout.fillWidth:true}
+                Image {
+                    objectName: "welcomeLogo"
+                    Layout.preferredWidth:128;Layout.preferredHeight:128;Layout.alignment:Qt.AlignHCenter
+                    source: "qrc:/spentit/images/SpentIt_" + (Application.styleHints.colorScheme === Qt.Dark ? "dark" : "light") + "_256.png"
+                    sourceSize.width:256;sourceSize.height:256;fillMode:Image.PreserveAspectFit
+                    Accessible.ignored:true
+                }
                 Label {text:"SpentIt";font.pixelSize:36;font.bold:true;Layout.alignment:Qt.AlignHCenter}
                 Label {text:"Where did my money go?";font.pixelSize:18;Layout.alignment:Qt.AlignHCenter}
                 Item {Layout.preferredHeight:16}

@@ -2,7 +2,7 @@
 
 A local, single-user desktop application in development for understanding spending through reliable imports, reviewable categorization, and explainable reports.
 
-SpentIt is the application being developed and used: it persists documents, imports, drafts, committed changes, and history. It supports multiple accounts, QIF and OFX-family statements, transfers, categories, rules, search, bulk editing, and Undo. Current work improves its usability piecemeal. Reports, expanded document lifecycle/recovery, and distribution are deferred.
+SpentIt is the application being developed and used: it persists documents, imports, drafts, committed changes, and history. It supports multiple accounts, QIF and OFX-family statements, transfers, categories, rules, search, bulk editing, and Undo. Current work improves its usability piecemeal. Reports, expanded document lifecycle/recovery, and public distribution are deferred. Local application packaging is described in [packaging instructions](packaging/README.md).
 
 This is an unreleased application. Format compatibility remains governed by the pre-release policy; verification limits and unfinished features are recorded in [project status](doc/status.md). The separate synthetic sheet and storage prototypes are development harnesses, not the application to launch.
 

@@ -13,6 +13,7 @@
 #include <QFont>
 #include <QRegularExpression>
 #include <QAccessible>
+#include <QStyleHints>
 #include <sqlite3.h>
 using namespace spentit;
 // Delegates every real storage operation; only caller acknowledgement and
@@ -473,6 +474,20 @@ private slots:
         auto click=[&](const char* name){return QMetaObject::invokeMethod(find(name),"clicked");};
         QVERIFY(!find("openPublicDataset")->property("visible").toBool());
         QVERIFY(!find("openProtectedDataset")->property("visible").toBool());
+        auto* logo=find("welcomeLogo");QVERIFY(logo);
+        QTRY_COMPARE(logo->property("status").toInt(),1); // Image.Ready
+        // Cocoa supports application-local appearance overrides; offscreen does not.
+        if(QGuiApplication::platformName() == "cocoa") {
+            auto* hints=QGuiApplication::styleHints();
+            hints->setColorScheme(Qt::ColorScheme::Dark);
+            QTRY_VERIFY(logo->property("source").toUrl().path().endsWith("SpentIt_dark_256.png"));
+            QTRY_COMPARE(logo->property("status").toInt(),1);
+            if(qEnvironmentVariableIsSet("SPENTIT_WELCOME_DARK_SCREENSHOT")){QTest::qWait(100);QVERIFY(qobject_cast<QQuickWindow*>(root)->grabWindow().save(qEnvironmentVariable("SPENTIT_WELCOME_DARK_SCREENSHOT")));}
+            hints->setColorScheme(Qt::ColorScheme::Light);
+            QTRY_VERIFY(logo->property("source").toUrl().path().endsWith("SpentIt_light_256.png"));
+            QTRY_COMPARE(logo->property("status").toInt(),1);
+            hints->unsetColorScheme();
+        }
         if(qEnvironmentVariableIsSet("SPENTIT_WELCOME_SCREENSHOT")){QTest::qWait(100);QVERIFY(qobject_cast<QQuickWindow*>(root)->grabWindow().save(qEnvironmentVariable("SPENTIT_WELCOME_SCREENSHOT")));}
         QVERIFY(click("newDataset"));QTRY_VERIFY(!m.busy());
         QCOMPARE(find("initialAccountName")->property("text").toString(),QString("SpentIt"));

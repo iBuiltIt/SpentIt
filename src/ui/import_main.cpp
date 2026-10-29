@@ -8,11 +8,24 @@
 #include <QFont>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QIcon>
+#include <QStyleHints>
 int main(int argc,char** argv) {
     QGuiApplication app(argc,argv);
     app.setOrganizationName("SpentIt");app.setApplicationName("Durable import experiment");
     // Keep the existing settings identity so the remembered document survives.
     app.setApplicationDisplayName("SpentIt");
+    app.setDesktopFileName("SpentIt");
+    const auto updateIcon = [] {
+        const QString variant = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark
+            ? QStringLiteral("dark") : QStringLiteral("light");
+        QIcon icon;
+        for (const int size : {16, 32, 64, 128, 256, 512, 1024})
+            icon.addFile(QStringLiteral(":/spentit/images/SpentIt_%1_%2.png").arg(variant).arg(size));
+        QGuiApplication::setWindowIcon(icon);
+    };
+    updateIcon();
+    QObject::connect(app.styleHints(), &QStyleHints::colorSchemeChanged, &app, updateIcon);
     app.setFont(QFont("Helvetica Neue",13));
     QQuickStyle::setStyle("Basic");
     std::unique_ptr<QTemporaryDir> smokeSettings;

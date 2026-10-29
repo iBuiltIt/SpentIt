@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SpentIt
+Comment=Where did my money go?
+Exec=SpentIt
+Icon=SpentIt
+Terminal=false
+Categories=Office;Finance;
+StartupWMClass=SpentIt

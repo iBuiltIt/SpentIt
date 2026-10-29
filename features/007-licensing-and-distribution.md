@@ -1,8 +1,12 @@
 # 007 — Licensing and distribution
 
 Status: **active**  
-Last updated: 2026-10-25  
-Implementation: no license selected or added; no distribution exists.
+Last updated: 2026-10-28  
+Implementation: no license selected or added; local icon/packaging support exists, with Windows blocked by the storage port and Linux execution unverified. No public distribution exists.
+
+## Local packaging — accepted 2026-10-28
+
+The owner approved the supplied PNG/ICNS artwork for the welcome screen and application icons. Welcome/runtime icons follow system appearance with light as the unknown/default fallback. Installed icons use the light variant. Local macOS bundles, Linux install trees/archives, and Windows resource/packaging preparation are in scope; installers and public distribution are not. Windows application storage still requires a separate portability effort; packaging preparation does not claim a working Windows build. See [local package commands and limits](../packaging/README.md) and [verification](../doc/status.md).
 
 ## Accepted intent
 

@@ -1,8 +1,8 @@
-# Qt prototype dependency metadata
+# Qt dependency metadata
 
-Recorded: 2026-10-25
+Dependency versions recorded: 2026-10-25; usage updated: 2026-10-28
 
-Qt is dynamically linked by the optional synthetic transaction-sheet prototype only. It is not a dependency of the financial engine or the storage prototype. Final UI technology and SpentIt licensing remain unresolved; no project license or distribution approval is implied.
+Qt is dynamically linked by the durable application UI and the optional synthetic transaction-sheet prototype. The local macOS bundle also explicitly links QtSvg for deployment discovery. It is not a dependency of the financial engine or the storage prototype. Final UI technology and SpentIt licensing remain unresolved; no project license or public distribution approval is implied. Local packaging is documented in [packaging instructions](../../packaging/README.md).
 
 The tested installation uses Qt 6.12.0, Homebrew package revision 1, arm64 Golden Gate bottles. CMake accepts a separately installed Qt 6.8+ environment and does not fetch mutable dependencies. No Qt source patches or vendored Qt code are present here. Reproducing these exact measurements requires the versions below; a newer compatible installation needs its own verification.
 
