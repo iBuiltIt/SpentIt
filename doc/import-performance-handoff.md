@@ -1,6 +1,8 @@
 # Import matching and performance handoff
 
-Last updated: 2026-10-28
+Last updated: 2026-10-29
+
+Update 2026-10-29: the owner reversed the order and gave Go for performance first. See [implementation and measurement boundaries](import-ui-performance.md#application-performance-work--2026-10-29) and [current status](status.md). Repeated-transfer matching still waits for its own Go. The original handoff below preserves the accepted behavior and initial measurements.
 
 Owner-requested handoff for the next session. The two priorities below are agreed; neither is implemented by this documentation change. Resume with an explicit **Go** before coding. Preserve the existing working tree and dataset; recreating the dataset does not fix these implementation problems. Do not access or retain private financial files for benchmarking; use synthetic equivalents.
 

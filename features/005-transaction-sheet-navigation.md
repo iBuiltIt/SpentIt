@@ -1,8 +1,12 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**  
-Last updated: 2026-10-28  
+Last updated: 2026-10-29  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
+
+## Performance-first application pass — 2026-10-29
+
+The owner gave Go for performance before repeated-transfer matching. The bounded implementation reduces grouped-import preparation and account-switch latency through scoped SQL-plan reuse, committed-batch-first candidate queries and invalidated group snapshots; it also reduces repeated verification work and UI progress notifications. [Current workload results and limitations](../doc/import-ui-performance.md#application-performance-work--2026-10-29) distinguish offscreen timings from native rendering. Full opening remains slower than the few-seconds target. Matching, exact money, evidence, per-account commit and durability policies are unchanged. This is not completion of the broader sheet feature.
 
 ## Application identity — accepted 2026-10-28
 

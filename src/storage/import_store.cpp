@@ -27,27 +27,27 @@ namespace {
 }
 void ok(int rc) { if (rc != SQLITE_OK) fail(rc); }
 void exec(sqlite3* db, const char* sql) { ok(sqlite3_exec(db, sql, nullptr, nullptr, nullptr)); }
-// Reuse prepared read plans only within one bounded read operation. Results are
+// Reuse prepared plans only within one bounded repository operation. Results are
 // never cached: each use binds afresh and steps the database again. Finalizing
 // the scope releases every plan before a document can close or a command return.
-class ReadStatements {
+class ScopedStatements {
 public:
     struct Slot { sqlite3_stmt* statement=nullptr; std::size_t bytes=0; };
-    explicit ReadStatements(sqlite3* db):db_(db),previous_(active_) {
+    explicit ScopedStatements(sqlite3* db):db_(db),previous_(active_) {
         active_=previous_ && previous_->db_==db ? previous_ : this;
     }
-    ~ReadStatements(){active_=previous_;for(auto& [sql,slot]:plans_)sqlite3_finalize(slot.statement);}
-    ReadStatements(const ReadStatements&)=delete;
-    ReadStatements& operator=(const ReadStatements&)=delete;
-    static ReadStatements* current(sqlite3* db){return active_ && active_->db_==db?active_:nullptr;}
+    ~ScopedStatements(){active_=previous_;for(auto& [sql,slot]:plans_)sqlite3_finalize(slot.statement);}
+    ScopedStatements(const ScopedStatements&)=delete;
+    ScopedStatements& operator=(const ScopedStatements&)=delete;
+    static ScopedStatements* current(sqlite3* db){return active_ && active_->db_==db?active_:nullptr;}
     Slot* slot(const char* sql){
         const auto found=plans_.find(sql);if(found!=plans_.end())return &found->second;
-        if(plans_.size()>=64 || std::string_view(sql).size()>4096)return nullptr;
+        if(plans_.size()>=256 || std::string_view(sql).size()>4096)return nullptr;
         return &plans_.try_emplace(sql).first->second;
     }
     sqlite3_stmt* take(Slot* slot){if(!slot)return nullptr;auto* result=slot->statement;cached_bytes_-=slot->bytes;slot->statement=nullptr;slot->bytes=0;return result;}
     bool put(Slot* slot,sqlite3_stmt* statement){
-        if(!slot || slot->statement || !sqlite3_stmt_readonly(statement))return false;
+        if(!slot || slot->statement)return false;
         if(sqlite3_reset(statement)!=SQLITE_OK || sqlite3_clear_bindings(statement)!=SQLITE_OK)return false;
         const auto size=sqlite3_stmt_status(statement,SQLITE_STMTSTATUS_MEMUSED,0);
         if(size<0 || static_cast<std::size_t>(size)>4*1024*1024-cached_bytes_)return false;
@@ -55,15 +55,15 @@ public:
     }
 private:
     sqlite3* db_;
-    ReadStatements* previous_;
+    ScopedStatements* previous_;
     std::map<std::string,Slot,std::less<>> plans_;
     std::size_t cached_bytes_=0;
-    inline static thread_local ReadStatements* active_=nullptr;
+    inline static thread_local ScopedStatements* active_=nullptr;
 };
 class Statement {
 public:
     Statement(sqlite3* db, const char* sql) {
-        cache_=ReadStatements::current(db);if(cache_){slot_=cache_->slot(sql);stmt_=cache_->take(slot_);}
+        cache_=ScopedStatements::current(db);if(cache_){slot_=cache_->slot(sql);stmt_=cache_->take(slot_);}
         if(!stmt_){const auto rc=sqlite3_prepare_v2(db,sql,-1,&stmt_,nullptr);if(rc!=SQLITE_OK){sqlite3_finalize(stmt_);fail(rc);}}
     }
     ~Statement() { if(!cache_ || !cache_->put(slot_,stmt_))sqlite3_finalize(stmt_); }
@@ -98,8 +98,8 @@ public:
         return {ptr, static_cast<std::size_t>(size)};
     }
 private:
-    ReadStatements* cache_=nullptr;
-    ReadStatements::Slot* slot_=nullptr;
+    ScopedStatements* cache_=nullptr;
+    ScopedStatements::Slot* slot_=nullptr;
     sqlite3_stmt* stmt_ = nullptr;
 };
 std::string scalar(sqlite3* db, const char* sql) {
@@ -612,6 +612,8 @@ void bind_candidate(Statement& statement,const qif::Record& record) {
     statement.text(4,record.fitid);
     statement.text(5,record.format.empty()?"qif":record.format);
 }
+// Candidate queries drive from committed batches in the selected account. The
+// explicit join order prevents scanning every pending record for each new amount.
 constexpr const char* candidate_where =
     "b.account_id=spentit_account() AND b.state=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1 "
     "AND ((?4<>'' AND EXISTS(SELECT 1 FROM source_associations fa JOIN source_occurrences fo ON fo.batch=fa.source_batch AND fo.ordinal=fa.source_ordinal WHERE fa.ledger_batch=r.batch AND fa.ledger_ordinal=r.ordinal AND ifnull(fo.fitid,'')=?4)) "
@@ -660,6 +662,19 @@ void verify_source_facts(sqlite3* db,const app::BatchInfo& b,const qif::Result& 
     }
     if(occurrences.integer(0)!=integer(parsed.records.size())) fail(SQLITE_CORRUPT,"Source occurrence does not match its record");
     if(b.state!=app::BatchState::committed && associations.integer(0)!=0) fail(SQLITE_CORRUPT,"Source association exists before commit");
+    // The source side is not the leading key of source_associations. Read its
+    // complete mapping once, preserving multiplicity checks, rather than scan
+    // the association table again for every committed occurrence.
+    std::map<std::size_t,imports::Occurrence> associated;
+    if(b.state==app::BatchState::committed) {
+        Statement links(db,"SELECT source_ordinal,ledger_batch,ledger_ordinal FROM source_associations WHERE source_batch=?");links.text(1,b.id);
+        while(links.row()) {
+            const auto ordinal=links.integer(0);
+            if(ordinal<0 || static_cast<std::size_t>(ordinal)>=parsed.records.size() ||
+               !associated.emplace(static_cast<std::size_t>(ordinal),imports::Occurrence{links.bytes(1),static_cast<std::size_t>(links.integer(2))}).second)
+                fail(SQLITE_CORRUPT,"Committed source has an invalid or repeated evidence association");
+        }
+    }
     for(std::size_t i=0;i<parsed.records.size();++i) {
         const auto& source=parsed.records[i];
         Statement row(db,"SELECT format,grammar,begin_offset,end_offset,fitid,source_account_key,time_evidence,trntype,currency,original_units,original_date,payee,memo,reference,uninterpreted,diagnostic,blocked FROM source_occurrences WHERE batch=? AND ordinal=?");
@@ -668,14 +683,13 @@ void verify_source_facts(sqlite3* db,const app::BatchInfo& b,const qif::Result& 
         const bool same=row.bytes(0)==format && row.bytes(1)==grammar && row.integer(2)==integer(source.begin) && row.integer(3)==integer(source.end) && row.bytes(4)==source.fitid && row.bytes(5)==source.source_account_key && row.bytes(6)==source.time_evidence && row.bytes(7)==source.trntype && row.bytes(8)==source.source_currency->definition_id() && row.null(9)==!source.original_amount && (!source.original_amount || row.integer(9)==source.original_amount->units()) && row.bytes(10)==source.date && row.bytes(11)==source.payee && row.bytes(12)==source.memo && row.bytes(13)==source.reference && row.bytes(14)==source.uninterpreted && row.null(15)==!source.diagnostic && (!source.diagnostic || row.integer(15)==static_cast<int>(source.diagnostic->issue)) && row.integer(16)==(source.diagnostic && !source.repairable?1:0);
         if(!same) fail(SQLITE_CORRUPT,"Source occurrence does not match its record");
         if(b.state!=app::BatchState::committed) continue;
-        Statement links(db,"SELECT ledger_batch,ledger_ordinal FROM source_associations WHERE source_batch=? AND source_ordinal=?");links.text(1,b.id);links.integer(2,integer(i));
+        const auto link=associated.find(i);
         const bool kept=retained_member(db,b.id,i);
         Statement decision(db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=?1 AND ordinal=?2 AND revision=(SELECT max(revision) FROM versions WHERE batch=?1 AND ordinal=?2)");
         decision.text(1,b.id);decision.integer(2,integer(i));if(!decision.row() || decision.integer(0)==0) fail(SQLITE_CORRUPT,"Committed source has no review decision");
-        if(!kept) {if(links.row()) fail(SQLITE_CORRUPT,"Cleared source is associated with a ledger transaction");continue;}
-        if(!links.row()) fail(SQLITE_CORRUPT,"Committed source has no evidence association");
-        const auto ledger_batch=links.bytes(0);const auto ledger_ordinal=links.integer(1);
-        if(links.row()) fail(SQLITE_CORRUPT,"Committed source has more than one evidence association");
+        if(!kept) {if(link!=associated.end()) fail(SQLITE_CORRUPT,"Cleared source is associated with a ledger transaction");continue;}
+        if(link==associated.end()) fail(SQLITE_CORRUPT,"Committed source has no evidence association");
+        const auto& ledger_batch=link->second.batch;const auto ledger_ordinal=integer(link->second.ordinal);
         if(decision.integer(0)==1) {if(ledger_batch!=b.id || ledger_ordinal!=integer(i)) fail(SQLITE_CORRUPT,"Included source is not associated with its ledger transaction");}
         else if(decision.integer(0)==2) {if(ledger_batch!=decision.bytes(1) || ledger_ordinal!=decision.integer(2)) fail(SQLITE_CORRUPT,"Duplicate source is not associated with its ledger transaction");}
         else fail(SQLITE_CORRUPT,"Committed source has no evidence association");
@@ -696,6 +710,11 @@ struct ImportStore::Impl {
     mutable std::vector<qif::CategoryDefinition> source_category_cache;
     mutable std::int64_t binding_epoch=-1;
     mutable std::map<std::string,std::pair<std::string,CategoryBinding>> imported_bindings;
+    // One bounded, account-independent group snapshot. Connection change counts
+    // include trigger writes and rolled-back writes; transactional reads and
+    // verification always bypass it. The document owns an exclusive file lock.
+    mutable std::optional<app::ImportGroup> group_snapshot;
+    mutable sqlite3_int64 group_snapshot_changes=-1;
     ImportObserver observer;
     ~Impl() { if (db) sqlite3_close_v2(db); if(lock>=0) ::close(lock); }
     void finish(Atomic& a) {
@@ -800,10 +819,14 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
            || scalar(db,"SELECT count(*) FROM pragma_table_info('history_order') WHERE name='account_operation'")!="1")
             fail(SQLITE_SCHEMA,"Account structure does not match format version");
     }
+    // Bound the connection page cache at a 32 MiB target to avoid repeatedly
+    // decrypting the same working set. Spill, HMAC, secure memory and durability
+    // settings remain enabled; this is not a persistent format change.
+    exec(db,"PRAGMA cache_size=-32768");
     exec(db, "PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON;"
              "PRAGMA foreign_keys=ON; PRAGMA temp_store=MEMORY; PRAGMA secure_delete=ON");
     for (const auto& setting : {std::pair{"PRAGMA journal_mode", "delete"},
-         {"PRAGMA synchronous", "3"}, {"PRAGMA fullfsync", "1"}, {"PRAGMA foreign_keys", "1"},
+         {"PRAGMA cache_size", "-32768"}, {"PRAGMA synchronous", "3"}, {"PRAGMA fullfsync", "1"}, {"PRAGMA foreign_keys", "1"},
          {"PRAGMA temp_store", "2"}, {"PRAGMA secure_delete", "1"}, {"PRAGMA cipher_page_size", "4096"},
          {"PRAGMA kdf_iter", "256000"}, {"PRAGMA cipher_use_hmac", "1"},
          {"PRAGMA cipher_hmac_algorithm", "HMAC_SHA512"},
@@ -987,7 +1010,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         if(!target.row())fail(SQLITE_CORRUPT);out.review_stale=target.integer(0)!=target.integer(2) || target.integer(1)!=target.integer(3);
     }
     if (!candidates) return out;
-    const auto candidate_sql=std::string("SELECT r.batch,r.ordinal FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" ORDER BY r.batch,r.ordinal LIMIT 4097";
+    const auto candidate_sql=std::string("SELECT r.batch,r.ordinal FROM batches b CROSS JOIN records r ON r.batch=b.id CROSS JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" ORDER BY r.batch,r.ordinal LIMIT 4097";
     Statement c(impl_->db,candidate_sql.c_str());
     bind_candidate(c,out.source);
     while(c.row()) {if(out.candidates.size()==4096)fail(SQLITE_TOOBIG,"More than 4096 possible duplicate occurrences; review requires a narrower source import");out.candidates.push_back({c.bytes(0),static_cast<std::size_t>(c.integer(1))});}
@@ -1106,6 +1129,7 @@ app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app
     }
 }
 void ImportStore::populate(std::string_view id,std::string_view bytes,const qif::Result& parsed,std::int64_t revision,const app::OperationContext* context) {
+    ScopedStatements plans(impl_->db);
     const auto profile=batch(impl_->db,id).profile;
     std::string identical;
     Statement prior(impl_->db,"SELECT batches.id FROM batches JOIN sources ON sources.id=batches.source_id WHERE account_id=spentit_account() AND state=1 AND profile=? AND bytes=? AND source_account IS (SELECT source_account FROM batches WHERE id=?3) ORDER BY batches.rowid DESC LIMIT 1");
@@ -1114,7 +1138,7 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
     auto seq=sequence.integer(0);
     std::map<std::pair<std::string,std::int64_t>,bool> candidate_groups;
     std::unordered_set<std::string> seen_fitids;
-    const auto probe_sql=std::string("SELECT 1 FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" LIMIT 1";
+    const auto probe_sql=std::string("SELECT 1 FROM batches b CROSS JOIN records r ON r.batch=b.id CROSS JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" LIMIT 1";
     for(std::size_t i=0;i<parsed.records.size();++i) {
         if(context) context->checkpoint();
         const auto& r=parsed.records[i];
@@ -1225,6 +1249,7 @@ std::optional<app::Receipt> ImportStore::outcome(std::string_view operation) con
         Money(s.integer(4),c),Money(s.integer(5),c),Money(s.integer(6),c)};
 }
 app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::string_view operation) {
+    ScopedStatements plans(impl_->db);
     require_account(id);require_writable_account(impl_->db,account_for_batch(id).identity);identifier(operation);
     if(rules_format(impl_->db)) {
         if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
@@ -1285,7 +1310,7 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
     impl_->finish(a); return {std::string(operation),std::string(id),expected,included,excluded,before,change,after};
 }
 std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const {
-    ReadStatements read_plans(impl_->db);
+    ScopedStatements read_plans(impl_->db);
     if(committed_changes_supported()) {
         if(projected && !projected_balance())fail(SQLITE_CONSTRAINT,"Projection is incomplete; review the pending import");
         std::vector<app::LedgerRow> result;
@@ -1346,7 +1371,7 @@ std::vector<app::AccountBalance> ImportStore::account_balances() const {
 }
 void ImportStore::verify(const app::OperationContext* context) const {
     (void)date_format();
-    ReadStatements read_plans(impl_->db);
+    ScopedStatements read_plans(impl_->db);
     struct VerificationGuard { bool& value; bool prior; ~VerificationGuard(){value=prior;} } guard{impl_->verifying,impl_->verifying};
     impl_->verifying=true;
     if(context) context->checkpoint("Verifying dataset integrity");

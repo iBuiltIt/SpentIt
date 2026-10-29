@@ -1487,7 +1487,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         if(!operation) return;
         const auto label=text(value);
         QMetaObject::invokeMethod(this,[this,operation,label]{
-            if(busy_ && operation_==operation) {if(!cancellationRequested())phase_=label;emit changed();}
+            if(busy_ && operation_==operation && !cancellationRequested() && phase_!=label) {phase_=label;emit changed();}
         },Qt::QueuedConnection);
     };
     phase_=phaseFor(action);

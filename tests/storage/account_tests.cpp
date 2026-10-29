@@ -52,6 +52,32 @@ void group_benchmark() {
     store.abort_import_group("benchmark");
     timing("Abort");
 }
+void group_snapshot_invalidation() {
+    Directory d;auto s=create(d.path/"snapshots");
+    app::OperationContext capture;
+    s.prepare_import_group("snapshot","!Type:Bank\nD2026-01-02\nT-10\nLGeneral\n^\n",qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Snapshot",cad,"2026-01-01"}}},capture);
+    app::OperationContext resume;s.resume_import_group("snapshot",resume);s.select_account(2);
+    const imports::Occurrence id{"snapshot-account-0",0};
+    const auto snapshot=[&]{return s.import_groups().at(0);};
+    check(snapshot().accounts[0].reviewed_change==Money(-1000,cad));
+    s.select_account(1);check(snapshot().accounts[0].reviewed_change==Money(-1000,cad));s.select_account(2);
+    auto edit=*s.row(id).draft;
+    auto first=edit.transaction.allocations();first[0].amount=Money(-1100,cad);
+    edit.transaction=edit.transaction.corrected(Money(-1100,cad),first);
+    s.save(id,1,edit);
+    check(snapshot().unresolved_transfers==0 && snapshot().accounts[0].reviewed_change==Money(-1100,cad));
+    auto next=*s.row(id).draft;auto allocations=next.transaction.allocations();allocations[0].category="General";allocations[0].amount=Money(-1200,cad);
+    next.transaction=next.transaction.corrected(Money(-1200,cad),allocations);
+    s.observer([](ImportPhase phase){if(phase==ImportPhase::before_commit)throw ImportError(SQLITE_IOERR,"Synthetic pre-commit failure");});
+    rejected([&]{s.save(id,2,next);});s.observer({});
+    check(snapshot().unresolved_transfers==0 && snapshot().accounts[0].reviewed_change==Money(-1100,cad));
+    s.save(id,2,next);
+    check(snapshot().unresolved_transfers==0 && snapshot().accounts[0].reviewed_change==Money(-1200,cad));
+    s.review_import_balance("snapshot",0,3,app::ReportedBalanceChoice::ignore,"2026-01-01");
+    check(snapshot().unresolved==0);
+    s.commit(id.batch,3,"snapshot-commit");check(snapshot().state==app::GroupState::started);
+    s.verify();
+}
 void groups(){
     Directory d;const auto path=d.path/"group";
     const std::string bytes="!Option:AutoSwitch\n!Account\nNFirst synthetic\nTBank\nB25\n^\n!Type:Bank\nD1/1/2026\nTbad\nLFood/Class\n^\n!Account\nNSecond synthetic\nTCCard\nB-10\n^\n!Type:CCard\nD2/1/2026\nT-10\n^\n";
@@ -335,6 +361,19 @@ void basics(){
     // Same currency and same bytes in another account must still be a new movement.
     auto s=ImportStore::open(path,password);s.create_account(3,"Savings",cad,"2026-01-01");s.select_account(3);s.opening(0,"2026-01-01",Money(0,cad));s.ingest("savings",input,qif::DateOrder::dmy);check(s.row({"savings",0}).candidates.empty());s.commit("savings",0,"savings-commit");s.verify();
 }
+void association_validation() {
+    for(const char* sql:{
+        "DELETE FROM source_associations WHERE source_ordinal=0",
+        "INSERT INTO source_associations VALUES('evidence',1,'evidence',0)",
+        "UPDATE source_associations SET ledger_ordinal=1 WHERE source_ordinal=0"}) {
+        Directory d;const auto path=d.path/"association-corruption";
+        {auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));s.ingest("evidence",input+input,qif::DateOrder::dmy);s.commit("evidence",0,"publish");s.verify();}
+        sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
+        check(sqlite3_exec(db,"DROP TRIGGER source_associations_immutable;DROP TRIGGER source_associations_keep",nullptr,nullptr,nullptr)==SQLITE_OK);
+        check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
+        rejected([&]{ImportStore::open(path,password);});no_leaks(d.path);
+    }
+}
 void validation(){
     for(const char* sql:{
         "DELETE FROM account_creations WHERE identity=2",
@@ -382,6 +421,10 @@ void group_validation(){
     struct Corruption {int setup_kind;bool execute;const char* sql;};
     for(const auto& item:std::vector<Corruption>{
         {4,false,"DROP TRIGGER group_mapping_immutable;UPDATE import_group_accounts SET account_id=1 WHERE source_account=0"},
+        {7,true,"DROP TRIGGER transfer_versions_immutable;UPDATE transfer_versions SET payload=x'00'"},
+        {7,true,"DROP TRIGGER transfer_events_immutable;UPDATE transfer_events SET request=x'00'"},
+        {7,true,"DROP TRIGGER transfer_events_immutable;UPDATE transfer_events SET local_change=1"},
+        {7,true,"DROP TRIGGER transfer_heads_keep;DELETE FROM transfer_heads"},
         {4,false,"DROP TRIGGER balance_events_immutable;UPDATE import_balance_events SET reviewed_change=reviewed_change+1 WHERE source_account=0"},
         {4,false,"DROP TRIGGER balance_events_immutable;UPDATE import_balance_events SET opening=opening+1 WHERE source_account=0"},
         {4,false,"DROP TRIGGER balance_history;UPDATE import_group_accounts SET opening=opening+1 WHERE source_account=0"},
@@ -551,4 +594,4 @@ void faults(bool crash){
     }
 }
 }
-int main(int argc,char** argv){try{std::string mode=argc>1?argv[1]:"basics";if(mode=="group_benchmark")group_benchmark();else if(mode=="basics")basics();else if(mode=="combined")combined_recovery();else if(mode=="combined_io")combined_io();else if(mode=="groups"){groups();mapped_transfers();group_categories();group_transfers();group_balances();group_duplicates_and_protection();}else if(mode=="mapped_io")group_faults(false,7);else if(mode=="mapped_crashes")group_faults(true,7);else if(mode=="group_io")group_faults(false);else if(mode=="group_crashes")group_faults(true);else if(mode=="validation"){validation();group_validation();}else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;std::cout<<"Accounts "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{std::string mode=argc>1?argv[1]:"basics";if(mode=="group_benchmark")group_benchmark();else if(mode=="basics")basics();else if(mode=="combined")combined_recovery();else if(mode=="combined_io")combined_io();else if(mode=="groups"){group_snapshot_invalidation();groups();mapped_transfers();group_categories();group_transfers();group_balances();group_duplicates_and_protection();}else if(mode=="mapped_io")group_faults(false,7);else if(mode=="mapped_crashes")group_faults(true,7);else if(mode=="group_io")group_faults(false);else if(mode=="group_crashes")group_faults(true);else if(mode=="validation"){validation();group_validation();association_validation();}else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;std::cout<<"Accounts "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

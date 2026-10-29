@@ -16,7 +16,7 @@ This is an unreleased application. Format compatibility remains governed by the 
 - [Account-scoped workflow and current experimental formats](doc/accounts.md)
 - [QIF transfer destinations and explicit resolution](doc/qif-transfers.md)
 - [Search and bulk ledger contract](doc/search-ledger.md)
-- [Current handoff](doc/roadmap.md#application-usability-handoff--2026-10-28)
+- [Current handoff](doc/roadmap.md#performance-handoff--2026-10-29)
 - [Feature requirements and open decisions](features/README.md)
 - [Contributor instructions](AGENTS.md) and [dependency boundaries](doc/project-layout.md)
 

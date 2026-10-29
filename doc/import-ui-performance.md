@@ -1,12 +1,56 @@
 # Durable UI workload measurements
 
-Last updated: 2026-10-26
+Last updated: 2026-10-29
 
 This is a bounded synthetic benchmark of the experimental durable UI, not a production readiness or portability claim. The owner selected 100,000 transactions as representative and 200,000 as the stress case. These are workload sizes, not new record limits.
 
 These native durable-UI measurements predate both the schema-7 search checkpoint and the current account-scoped formats. Separate 2026-10-26 Release application-search measurements covered 100,000/200,000 synthetic rows and are recorded in [status](status.md#search-selection-and-atomic-bulk-ledger-changes--2026-10-26). Those measurements exclude database/source-file loading and Qt rendering; do not substitute them for current native UI or replay-performance evidence.
 
 Current-format point-2 evidence and updated measurement boundaries are recorded in [hardening](hardening.md). The implementation and component-timing descriptions below describe the historical checkpoint; current benchmarks use the complete production gateway without the obsolete timing decorator.
+
+## Application performance work — 2026-10-29
+
+The owner authorized performance before repeated-transfer matching. Matching policy remains mutual-unique-only; the accepted repeated-group extension is still pending. Existing schema-30/29 datasets remain usable without reimport or a format change.
+
+The added `spentit_import_benchmark 18972 --groups` workload uses six newly mapped accounts, 18,972 synthetic transactions, 942 unique reciprocal transfer links and twelve deliberately unresolved repeated transfer allocations. It exercises the real gateway, serial worker, model and QML. It checks occurrence counts, exact projected amounts, unchanged committed balances, retained blockers, a saved ordinary edit with unchanged source evidence, rerunning resolution and whole-import Abort. `import.group_benchmark_smoke` uses 120 rows. `SPENTIT_BENCHMARK_PHASES=1` prints only phase labels and elapsed times for profiling.
+
+CPU samples identified repeated SQL compilation in group status, repeated committed-balance reconstruction during draft linking, and duplicate-candidate probes scanning pending records. Opening also repeatedly validated and serialized the growing transfer set during history replay. Changes:
+
+- Repository-operation-scoped SQL plans are reset and rebound, including insert plans during materialization/commit. The cache admits up to 256 plans with a 4 MiB retained-plan limit; financial query results are not retained in it.
+- Candidate probes start from committed batches in the selected account, with the same candidate predicates and occurrence rules.
+- One account-independent group snapshot survives read-only switching. Any connection write, including trigger writes or rolled-back writes, invalidates it through SQLite's total-change counter. Transactional reads and verification bypass and discard it. It never crosses a document connection.
+- Independent draft linking and the draft-only portion of Abort reuse each account's starting committed balance within the command. Every event remains separately recorded in the same atomic transaction.
+- A prefix of independent draft Merge history checks each reconstructed link and payload separately, then validates the accumulated set before another transition or final head acceptance. Append-only set validation covers every prefix; general operations and currency-reassignment histories keep ordinary chronological replay.
+- Committed-source verification reads each batch’s evidence associations once, checking missing, repeated and incorrect mappings, instead of rescanning that table for every occurrence.
+- A 32 MiB connection page-cache target reduces repeated decryption. Cipher memory security, HMAC, journal mode, synchronous EXTRA, fullfsync, foreign keys, cache spill and complete opening verification remain enabled.
+- Identical progress labels no longer emit repeated UI-change notifications. Cancellation checkpoints remain unchanged.
+
+The six-account Release/offscreen baseline measured preparation 75.821 s, opening 34.966 s, twelve switches 13.441–14.573 s, rerunning mapped resolution 16.271 s and Abort 31.167 s. The final matching workload measured preparation 8.212 s, opening 14.504 s, twelve switches 0.719–0.756 s, an ordinary save/refresh 2.849 s, resolution after that edit 1.627 s and Abort 3.025 s. Application startup measured separately at 0.393 s. All correctness assertions passed. Baseline preparation overlapped one storage compile; some baseline switches overlapped short builds/tests, and CPU sampling added overhead to selected intermediate runs. These are observations, not controlled distributions or a claimed speed ratio for the owner's export. Final timing runs had no concurrent builds/tests. The final association-read change affects committed verification, not these all-draft group timings.
+
+A separate 19,000-row ordinary-import workload passed import, exact signed-split reconciliation, saved edit/evidence checks, search, two offscreen scroll traversals, successful commit, and committed reopen. Commit measured 8.921 s. Committed reopen dropped from 39.912 s before the association-read change to 26.409 s afterward. This is a comparison between two intermediate optimized builds, not the original application baseline. Full verified opening remains the principal unfinished performance target: neither the grouped nor committed workload opens in a few seconds. Further profiling should focus on repeated row reconstruction and category/committed-history verification while retaining every check.
+
+Final verification is recorded in [project status](status.md). Runs use synthetic temporary encrypted datasets only. Qt offscreen timings measure application work and UI-thread scheduling, not native Cocoa rendering or physical disk-cold performance. A reopened connection is distinct from a cold operating-system page cache. Linux/Windows and the owner's actual dataset remain unmeasured.
+
+### Reproduction and verification commands
+
+Run timing workloads serially, without builds or tests competing for CPU/I/O:
+
+```sh
+cmake --build build/import-ui-rules-release -j 2
+QT_QPA_PLATFORM=offscreen build/import-ui-rules-release/src/ui/spentit_import_benchmark 18972 --groups
+QT_QPA_PLATFORM=offscreen build/import-ui-rules-release/src/ui/spentit_import_benchmark 19000
+```
+
+The broad Release selection excludes the long fault sweeps, which are selected separately. Sanitizer and rules-off checks are selected coverage, not full-suite claims. Final counts/results are in [status](status.md#performance-first-application-pass--2026-10-29).
+
+```sh
+ctest --test-dir build/import-ui-rules-release --output-on-failure -j 2 -E '(_io$|\.io$|_crashes$|\.crashes$|\.faults$|_faults$|backup_failures|backup_publication|backup_cancellation)'
+ctest --test-dir build/import-ui-rules-release --output-on-failure -R '^(accounts.group_(io|crashes)|import.(io|crashes))$'
+cmake --build build/import-ui-rules-sanitized -j 2
+ctest --test-dir build/import-ui-rules-sanitized --output-on-failure -j 2 -R '^(accounts.(groups|validation|combined)|import.(basics|review|repairs|amount_repairs|validation|cancellation|ui|navigation|recovery_ui|group_benchmark_smoke|qml)|transferstore.(imports|management|validation|qif)|statement.review|committed.(basics|history|review|validation)|rulestore.(application|reapply)|category.assignments)$'
+cmake --build build/import-ui-debug --target spentit_account_tests spentit_statement_store_tests -j 2
+ctest --test-dir build/import-ui-debug --output-on-failure -R '^(accounts.(groups|validation)|statement.review)$'
+```
 
 ## Current-format point-2 observations — 2026-10-26
 

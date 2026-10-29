@@ -13,6 +13,7 @@ struct GroupSelection {
 // Only reciprocal imported allocations are linked: no generated money, no date
 // rewriting, and no greedy pairing of repeated equal transfers.
 void ImportStore::resolve_group_transfers(std::string_view id,const app::OperationContext& context) {
+    ScopedStatements plans(impl_->db);
     GroupSelection selection(impl_->selected_account);
     Statement source(impl_->db,"SELECT s.bytes,h.format,g.state FROM sources s JOIN source_headers h ON h.source_id=s.id JOIN import_groups g ON g.id=s.id WHERE s.id=?");source.text(1,id);
     if(!source.row())fail(SQLITE_NOTFOUND);
@@ -63,6 +64,10 @@ void ImportStore::resolve_group_transfers(std::string_view id,const app::Operati
         if(found==buckets.end())continue;
         if(found->second.size()==1)choices[i]=found->second.front();
     }
+    // These are merges of two independent draft allocations: they cannot change
+    // committed money. Reuse each account's verified starting balance while
+    // retaining a separate history event for every link.
+    std::map<std::int64_t,Money> starting_balances;
     for(std::size_t i=0;i<candidates.size();++i) {
         context.checkpoint();if(!choices[i])continue;const auto j=*choices[i];
         if(j<=i || choices[j]!=i)continue;
@@ -74,7 +79,9 @@ void ImportStore::resolve_group_transfers(std::string_view id,const app::Operati
         request.left=left.fact;request.right=right.fact;request.batch_revision=left.revision;request.right_revision=right.revision;
         const auto edit=transfers::merge({},left.fact,right.fact,operation,request.kept);
         const app::TransferView linked{edit.link,"","",sequence+1};
-        const auto before=committed_balance();const Money zero(0,before.currency());
+        auto balance=starting_balances.find(impl_->selected_account);
+        if(balance==starting_balances.end())balance=starting_balances.emplace(impl_->selected_account,committed_balance()).first;
+        const auto before=balance->second;const Money zero(0,before.currency());
         Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,operation);event.integer(2,impl_->selected_account);event.blob(3,transfer_codec::encode(request));event.integer(4,0);event.integer(5,0);event.done();
         store_transfer(impl_->db,linked,sequence+1,true);
         append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,zero,before,"",sequence,catalog_sequence(impl_->db));
@@ -87,12 +94,19 @@ void ImportStore::resolve_import_transfers(std::string_view id,app::OperationCon
     Atomic transaction(impl_->db);resolve_group_transfers(id,context);context.seal();impl_->finish(transaction);
 }
 app::ImportGroup ImportStore::import_group(std::string_view id) const {
+    ScopedStatements plans(impl_->db);
+    const bool cacheable=sqlite3_get_autocommit(impl_->db) && !impl_->verifying;
+    const auto changes=sqlite3_total_changes64(impl_->db);
+    if(cacheable && impl_->group_snapshot && impl_->group_snapshot_changes==changes && impl_->group_snapshot->id==id)
+        return *impl_->group_snapshot;
+    impl_->group_snapshot.reset();
     Statement group(impl_->db,"SELECT profile,state FROM import_groups WHERE id=?");group.text(1,id);if(!group.row())fail(SQLITE_NOTFOUND,"Import group does not exist");
     app::ImportGroup result{std::string(id),static_cast<app::GroupState>(group.integer(1)),static_cast<qif::DateOrder>(group.integer(0)),{}};
     Statement source(impl_->db,"SELECT bytes FROM sources WHERE id=?");source.text(1,id);if(!source.row())fail(SQLITE_CORRUPT);
     const auto bytes=source.bytes(0);const auto document=indexed_source(impl_->db,id,bytes);
     GroupSelection selection(impl_->selected_account);
-    const auto resolved=resolved_transfers(all_transfers());
+    const auto transfers=all_transfers();
+    const auto resolved=resolved_transfers(transfers);
     struct Probe {app::ImportCounterpart item;std::string destination;bool eligible;};
     std::vector<Probe> probes;bool probe_limit=false;
     const auto blocker=[&](std::int64_t account,const std::string& batch,std::optional<std::size_t> ordinal,std::string allocation,std::string reason){if(result.blockers.size()<200)result.blockers.push_back({account,batch,ordinal,std::move(allocation),std::move(reason)});};
@@ -126,7 +140,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
             if(row.decision.disposition==imports::Disposition::include)amounts.push_back(row.draft->transaction.effective_total());
         }
         if(parsed.diagnostic){if(active_review)++result.unresolved;++result.blocked_records;}
-        append_group_local_amounts(amounts,all_transfers(),account.identity);
+        append_group_local_amounts(amounts,transfers,account.identity);
         if(ready)member.reviewed_change=imports::sum(account.currency,amounts);
         if(member.created && !account.frozen && !explicit_account_money(impl_->db,account.identity) && b.state!=app::BatchState::discarded) {
             if(members.null(5) || members.null(9) || !member.reviewed_change || members.integer(9)!=member.reviewed_change->units())member.balance_choice=app::ReportedBalanceChoice::unreviewed;
@@ -169,6 +183,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
             item.reason=reverse>1?"Counterpart also matches other allocations in this account; choose the actual pair":"Unique reciprocal same-date match is available; use Resolve mapped transfers";
         }
     }
+    if(cacheable){impl_->group_snapshot=result;impl_->group_snapshot_changes=changes;}
     return result;
 }
 std::optional<app::ImportGroup> ImportStore::import_group_outcome(std::string_view id) const {
@@ -287,12 +302,14 @@ void ImportStore::review_import_balance(std::string_view id,std::size_t source_a
     Statement update(impl_->db,"UPDATE import_group_accounts SET balance_choice=?,balance_revision=?,opening=?,opening_date=?,balance_sequence=?7,reviewed_change=?8 WHERE group_id=?5 AND source_account=?6");update.integer(1,static_cast<int>(choice));update.integer(2,expected);update.integer(3,opening.units());update.text(4,date);update.text(5,id);update.integer(6,integer(source_account));update.integer(7,transfer_sequence());update.integer(8,found->reviewed_change->units());update.done();impl_->finish(transaction);
 }
 void ImportStore::abort_import_group(std::string_view id) {
+    ScopedStatements plans(impl_->db);
     const auto group=import_group(id);if(group.state==app::GroupState::aborted){Statement retired(impl_->db,"SELECT 1 FROM retired_import_accounts WHERE account_id=spentit_account()");if(retired.row())impl_->selected_account=smallest_active_account(impl_->db);return;}
     if(group.state==app::GroupState::started)fail(SQLITE_CONSTRAINT,"This import has committed effects; whole-import Abort is no longer available");
     GroupSelection selection(impl_->selected_account);Atomic transaction(impl_->db);
     // Release both independently imported sides before discarding any member.
     // This is independent of account order, including reciprocal account cycles.
     std::set<std::string> member_batches;for(const auto& member:group.accounts)member_batches.insert(member.batch);
+    std::map<std::int64_t,Money> starting_balances; // Clearing these draft-only links cannot change committed money.
     for(auto value:all_transfers()) {
         if(!value.link.origin.independent_evidence || !value.link.destination.independent_evidence ||
            !member_batches.contains(value.link.origin.endpoint.entry.batch) || !member_batches.contains(value.link.destination.endpoint.entry.batch) ||
@@ -304,7 +321,9 @@ void ImportStore::abort_import_group(std::string_view id) {
             const auto next=transition_transfer(value,request,account);
             if(transfer_codec::encode(next)==transfer_codec::encode(value))continue;
             const auto operation="group-clear-"+std::to_string(sequence+1);
-            const auto before=committed_balance();const Money zero(0,before.currency());
+            auto balance=starting_balances.find(account);
+            if(balance==starting_balances.end())balance=starting_balances.emplace(account,committed_balance()).first;
+            const auto before=balance->second;const Money zero(0,before.currency());
             Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,operation);event.integer(2,account);event.blob(3,transfer_codec::encode(request));event.integer(4,0);event.integer(5,0);event.done();
             store_transfer(impl_->db,next,sequence+1,false);
             append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,zero,before,"",sequence,catalog_sequence(impl_->db));value=next;

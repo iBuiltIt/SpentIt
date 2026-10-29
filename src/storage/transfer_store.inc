@@ -386,6 +386,14 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
     struct Scale {std::int64_t sequence; std::int64_t account; std::string operation;};
     std::vector<Scale> scales;Statement scale_rows(impl_->db,"SELECT sequence,ordinal,undo_of FROM ledger_operations WHERE kind=5 ORDER BY sequence");
     while(scale_rows.row())scales.push_back({scale_rows.integer(0),scale_rows.integer(1),scale_rows.bytes(2)});
+    // A prefix of independent draft merges only appends links. Validate each
+    // reconstructed link immediately and the entire accumulated set before any
+    // other transition (or at final head comparison). Set constraints are
+    // monotone for additions: validating the union validates every prefix.
+    // Currency rewrites require the ordinary chronological replay throughout.
+    bool append_only=scales.empty();
+    std::set<std::tuple<std::int64_t,imports::Occurrence,std::string>> appended_endpoints;
+    const auto endpoint_key=[](const transfers::Endpoint& e){return std::tuple{e.account,e.entry,e.allocation};};
     std::size_t scale_index=0;
     auto apply_scales=[&](std::int64_t before){
         while(scale_index<scales.size() && scales[scale_index].sequence<before){
@@ -414,6 +422,30 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
         else if(committed_category)expected_kind=static_cast<int>(app::ChangeKind::correct);
         const bool posts_money=request.action==app::TransferAction::commit_local || request.action==app::TransferAction::import_commit || (request.action==app::TransferAction::merge && events.integer(6)!=0);
         if(kind!=expected_kind || request.expected_sequence!=sequence-1 || (request.action!=app::TransferAction::import_commit && events.integer(7)!=sequence-1) || (events.integer(3)!=0)!=posts_money)fail(SQLITE_CORRUPT);
+        if(append_only && request.action==app::TransferAction::merge && !request.kept.empty() && request.left && request.right &&
+           request.left->imported && request.right->imported && !request.left->generated && !request.right->generated &&
+           !request.left->manually_entered && !request.right->manually_entered &&
+           request.left->state==transfers::State::draft && request.right->state==transfers::State::draft &&
+           !previous.contains(request.link) && !appended_endpoints.contains(endpoint_key(request.left->endpoint)) &&
+           !appended_endpoints.contains(endpoint_key(request.right->endpoint))) {
+            if(previous.size()>=qif::max_records)fail(SQLITE_CORRUPT,"Transfer history exceeds the relationship limit");
+            std::vector<app::TransferView> added;
+            try {added=manage_views({},request,sequence);}
+            catch(const transfers::TransferError&){fail(SQLITE_CORRUPT,"Transfer history does not replay");}
+            if(added.size()!=1 || events.integer(6)!=0)fail(SQLITE_CORRUPT,"Transfer history does not replay");
+            const auto recorded=managed_local_change({},added,account.identity,[&](std::int64_t id){return currency_as_of(impl_->db,id,events.integer(9));},SQLITE_CORRUPT,true);
+            if(recorded.units()!=events.integer(6))fail(SQLITE_CORRUPT,"Transfer amount does not reconcile");
+            const auto& value=added.front();
+            Statement stored(impl_->db,"SELECT payload FROM transfer_versions WHERE identity=? AND sequence=?");stored.text(1,value.link.identity);stored.integer(2,sequence);
+            if(!stored.row() || stored.bytes(0)!=transfer_codec::encode(value))fail(SQLITE_CORRUPT,"Transfer history does not replay");
+            appended_endpoints.insert(endpoint_key(value.link.origin.endpoint));
+            appended_endpoints.insert(endpoint_key(value.link.destination.endpoint));
+            previous.emplace(value.link.identity,value);++count;continue;
+        }
+        if(append_only) {
+            std::vector<app::TransferView> prefix;for(const auto& [id,value]:previous){(void)id;prefix.push_back(value);}
+            validate_transfer_set(prefix);append_only=false;appended_endpoints.clear();
+        }
         if(imported){
             if(!request.origin || account_for_batch(request.origin->batch).identity!=account.identity)fail(SQLITE_CORRUPT);
             std::vector<app::TransferView> before;for(const auto& [id,value]:previous){(void)id;before.push_back(value);}

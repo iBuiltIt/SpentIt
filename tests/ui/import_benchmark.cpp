@@ -47,21 +47,29 @@ static double residentMiB() {
 #endif
 }
 int main(int argc,char** argv) {
+    const auto startup=Clock::now();
     QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");
     try {
         const int count=argc>1?std::stoi(argv[1]):100000;
+        const bool groups=argc==3 && std::string_view(argv[2])=="--groups";
         const bool interactionsOnly=argc==3 && std::string_view(argv[2])=="--interactions";
-        require(argc<=3 && (argc<3 || interactionsOnly),"Optional mode is --interactions");
-        require(count>0 && count<=200000 && count%10==0,"Use a multiple of 10 up to 200000");
+        require(argc<=3 && (argc<3 || interactionsOnly || groups),"Optional mode is --interactions or --groups");
+        require(count>0 && count<=200000 && (groups?count%6==0:count%10==0),"Use a multiple of 10 (six for groups) up to 200000");
         QTemporaryDir dir;require(dir.isValid(),"Temporary directory failed");
         QCoreApplication::setOrganizationName("SpentItBenchmark");QCoreApplication::setApplicationName("DurableUi");
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,dir.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,dir.path());
         ImportModel model(storage::document_gateway());
+        QString previousPhase;
+        if(qEnvironmentVariableIsSet("SPENTIT_BENCHMARK_PHASES"))
+            QObject::connect(&model,&ImportModel::changed,&app,[&]{
+                if(model.phase()!=previousPhase){previousPhase=model.phase();if(!previousPhase.isEmpty())std::cout<<"progress_ms="<<elapsed(startup)<<" phase="<<previousPhase.toStdString()<<std::endl;}
+            });
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         require(!engine.rootObjects().isEmpty(),"QML load failed");
         auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());require(window,"No window");
         auto* ledger=window->findChild<QQuickItem*>("durableLedger");require(ledger,"No ledger");
-        std::cout<<"rows="<<count<<" mode="<<(interactionsOnly?"interactions":"full")<<" platform="<<QGuiApplication::platformName().toStdString()<<" qt="<<qVersion()<<std::endl;
+        std::cout<<"phase=application_startup ms="<<elapsed(startup)<<std::endl;
+        std::cout<<"rows="<<count<<" mode="<<(groups?"groups":interactionsOnly?"interactions":"full")<<" platform="<<QGuiApplication::platformName().toStdString()<<" qt="<<qVersion()<<std::endl;
         // Timer gaps measure UI-thread scheduling, not display frame latency.
         QElapsedTimer clock;clock.start();qint64 previous=clock.nsecsElapsed();double maxGap=0;std::size_t ticks=0;
         QTimer heartbeat;heartbeat.setTimerType(Qt::PreciseTimer);heartbeat.setInterval(5);
@@ -79,6 +87,55 @@ int main(int argc,char** argv) {
         };
         const auto path=dir.path()+"/synthetic.spentit";
         command("create","create",{{"path",path},{"protected",true},{"password","synthetic-benchmark-password"},{"confirmation","synthetic-benchmark-password"},{"name","Synthetic benchmark"},{"currency","CAD"}});
+        if(groups) {
+            require(count>=120,"Group workload needs at least 120 rows");
+            QFile file(dir.path()+"/synthetic.qif");require(file.open(QIODevice::WriteOnly),"Fixture open failed");
+            QVariantList mappings;
+            const int perAccount=count/6;
+            for(int account=0;account<6;++account) {
+                QByteArray bytes="!Account\nNSynthetic "+QByteArray::number(account)+"\nTBank\n^\n!Type:Bank\n";
+                for(int row=0;row<perAccount;++row) {
+                    // Two genuinely repeated transfers stay blocked under the
+                    // current matching policy; other pairs have unique amounts.
+                    const bool transfer=row<perAccount/10;
+                    const int units=transfer?(row<2?10:row+10):7;
+                    bytes+="D2026-02-01\nT"+QByteArray(account%2==0?"-":"")+QByteArray::number(units)+"\nPSynthetic merchant\nL";
+                    bytes+=transfer?"[Synthetic "+QByteArray::number(account^1)+"]":"General";
+                    bytes+="\n^\n";
+                }
+                require(file.write(bytes)==bytes.size(),"Fixture write failed");
+                mappings.push_back(QVariantMap{{"source",account},{"create",true},{"currency","CAD"},{"date","2026-01-01"}});
+            }
+            file.close();
+            command("group_scan","import",{{"path",file.fileName()},{"profile","DMY"}});
+            command("group_prepare","map_import",{{"mappings",mappings}});
+            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==12,"Repeated transfer blockers changed");
+            const auto group=model.state().value("importGroup").toMap().value("id");
+            command("close_group","close");
+            command("open_group","unlock",{{"path",path},{"password","synthetic-benchmark-password"}});
+            for(int pass=0;pass<2;++pass)for(int account=0;account<6;++account) {
+                command(("switch_"+std::to_string(pass)+"_"+std::to_string(account)).c_str(),"select_account",{{"id",QString::number(account+2)}});
+                require(model.rowCount()==perAccount+1,"Group occurrence count changed");
+                require(model.state().value("committed").toString()=="0.00","Draft changed committed balance");
+                const auto transfers=perAccount/10;
+                const auto units=static_cast<std::int64_t>(transfers)*(transfers-1)/2+10*transfers-1+7*(perAccount-transfers);
+                const auto expected=app::decimal(Money((account%2==0?-units:units)*100,Currency("CAD")));
+                require(model.state().value("projected").toString().toStdString()==expected,"Group exact projection changed");
+                require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==12,"Group status changed");
+            }
+            const auto batch=model.state().value("pending").toMap().value("id");
+            command("inspect_group_edit","inspect",{{"batch",batch},{"ordinal",perAccount-1}});
+            const auto original=model.state().value("selected").toMap().value("source");
+            auto edit=model.state().value("selected").toMap().value("draft").toMap();edit["payee"]="Edited synthetic merchant";
+            command("save_group_edit","save",edit);
+            require(model.state().value("selected").toMap().value("source")==original,"Group edit changed source evidence");
+            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==12,"Edit hid transfer blockers");
+            command("resolve_existing","group_resolve_transfers",{{"group",group}});
+            require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==12,"Repeated matching behavior changed");
+            command("abort_group","group_abort",{{"group",group}});
+            command("final_close","close");
+            std::cout<<"correctness=passed scope=group-prepare-open-switch-resolve-abort"<<std::endl;return 0;
+        }
         command("opening","opening",{{"date","2026-01-01"},{"amount","100.00"}});
         {
             QFile file(dir.path()+"/synthetic.qif");require(file.open(QIODevice::WriteOnly),"Fixture open failed");

@@ -1,12 +1,18 @@
 # Coordinated implementation roadmap
 
-Next-session priority: [repeated transfers with one-to-one links, then application performance](import-performance-handoff.md) (owner handoff, 2026-10-28). Both remain pending implementation; resume after explicit Go.
+Current priority: [application performance before repeated-transfer matching](import-performance-handoff.md), reordered and authorized by the owner on 2026-10-29. The bounded performance pass is implemented; full verified opening remains above target. Repeated-transfer matching is still pending its own Go.
 
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 
 The earlier eight-point sequence used coordinated implementation with delegated agents. That sequence is complete; the current direction below governs new work. Ask for concrete missing information or material financial/security decisions when dependent work reaches them. Routine editor layout choices can be implemented and revised after owner review. This authorization does not select a license, authorize publication, or settle unresolved financial semantics.
 
 This is sequencing guidance, not a claim that the listed work exists. [Project status](status.md) records implementation evidence; [feature documents](../features/README.md) own requirements and unresolved decisions.
+
+## Performance handoff — 2026-10-29
+
+The owner gave Go for performance first so application use and later transfer verification become easier. Read [the current implementation and measurements](import-ui-performance.md#application-performance-work--2026-10-29) and [verification evidence](status.md#performance-first-application-pass--2026-10-29). The Release executable remains `./build/SpentIt`; existing schema-30/29 datasets remain usable. Preparation and account switching improved substantially on synthetic multi-account workloads. Verified opening is faster but still exceeds the few-seconds target, especially with committed history. That remaining performance work is not represented as finished.
+
+Automatic transfer eligibility and repeated-transfer blockers are unchanged. Do not proceed to repeated one-to-one matching or reports without the next explicit Go. No private financial data, license, publication or distribution decision is included.
 
 ## Creation preferences and independent categories — 2026-10-28
 
