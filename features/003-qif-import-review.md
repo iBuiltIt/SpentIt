@@ -3,8 +3,12 @@
 Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
 
 Status: **active**  
-Last updated: 2026-10-29  
+Last updated: 2026-10-30  
 Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 30 with rules and schema 29 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
+
+## Priority correction — 2026-10-30
+
+The owner prioritised correcting duplicate recognition in the common internal representation ahead of the unified Review sheet. Existing parsed-field candidate detection does not fulfill automatic recognition: QIF currently relies on whole-source equality for automatic exclusion, while otherwise matching rows remain unresolved and contribute again to the ledger/balance. See the [corrective handoff](../doc/import-commit-discussion.md#first-priority-correct-matching-in-the-common-internal-representation--2026-10-30) for confirmed behavior, preferred visible/reversible match design, open decisions and required synthetic verification. This is an unmet existing requirement, not completion of format-independent matching. No correction is implemented by this documentation update; implementation awaits explicit Go.
 
 ## Accepted requirements
 

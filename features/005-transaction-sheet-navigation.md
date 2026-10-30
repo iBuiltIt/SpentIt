@@ -1,8 +1,36 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**  
-Last updated: 2026-10-29  
+Last updated: 2026-10-30  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
+
+## Unified Review sheet — next implementation item, 2026-10-29
+
+Priority update (2026-10-30): the [duplicate-matching correction](../doc/import-commit-discussion.md#first-priority-correct-matching-in-the-common-internal-representation--2026-10-30) comes first. This sheet follows it and must use the corrected match/review states.
+
+State: **accepted product direction; not implemented**. The owner asked to document this as the next item, explicitly for discussion rather than implementation now. Wait for a new explicit Go. Earlier authorization for the completed import/commit storage refactor does not authorize this UI follow-up.
+
+### Accepted direction
+
+- After import, whenever any review issue exists, expose a clearly visible **Review** button on the normal account screen. Users choose when to review; attempting Commit must not be the discovery mechanism.
+- Review opens one sheet containing all transactions needing attention across the dataset. Group items beneath clearly named account separators, for example Checking followed by Visa. Do not restrict the list to the currently selected account or import.
+- Let users work through the items systematically in that sheet. Commit must also offer a route to this same review screen, rather than a separate competing list of problems.
+- Explain each issue and expose the relevant resolution. Possible duplicates, failed/invalid import records and unresolved transfers belong in this unified workflow. Preserve a distinction between overridable review concerns and invalid data requiring repair; merely acknowledging an issue cannot make invalid financial data valid.
+- Use consistent, explicitly scoped counts across entry points. Opening a record, selecting another import/account, opening or closing the sheet, and attempting Commit must not appear to resolve an issue. Only a saved resolution or an actual relevant state change changes the outstanding work. Unresolved work remains available after reopening the dataset.
+
+### Problem evidence and investigation
+
+The owner reported an unresolved count changing from one to zero after Review Record, then returning to one on Commit. This exact sequence has not been reproduced. Code inspection found a selected-import outcome count beside dataset-wide acceptance warnings, so scope changes are a concrete suspected contributor; do not present that as a verified complete diagnosis. Reproduce and fix the inconsistency as part of this item. No private transaction details or attachment paths are needed in fixtures or documentation.
+
+The current duplicate editor mixes split editing, rule creation, internal identifiers and candidate selection. The owner found it too dense to understand the decision. The existing fallback candidate rule can suggest equal amounts with different dates/payees when an OFX-family source is involved. That is separate from strict automatic bank-ID matching. This Review sheet decision does **not** authorize changing matching criteria or silently excluding transactions.
+
+### Design details still to settle
+
+The owner has settled the unified sheet and account grouping, not its detailed layout. A focused incoming/existing comparison, plain-language duplicate choices, optional expanded source/split detail, and next/previous navigation are design candidates. Decide whether counts mean transactions or individual issues, how multiple issues on one transaction appear, and how file-level failures without a usable transaction fit into the same sheet. Keep the user's ability to work systematically through many items central; do not substitute a clickable count that returns to the same dense editor.
+
+### Required verification
+
+Use synthetic fixtures with at least 51 outstanding review items across multiple accounts/imports, including multiple issues on a transaction and a failure without a usable row. Verify account grouping, reachability from both Review and Commit, systematic progression, saved resolutions and reopen, and consistent counts during inspection and navigation. Reproduce the reported count flip before claiming it fixed. Verify that non-overridable errors cannot be accepted through the override action. Record actual results and limits in [status](../doc/status.md); no runtime verification is claimed for this documentation-only handoff.
 
 ## One inclusive balance — 2026-10-29
 

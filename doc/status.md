@@ -1,6 +1,16 @@
 # Project status
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
+
+## First priority: duplicate-matching correction — 2026-10-30
+
+The owner moved correction of matching in the common internal representation ahead of the unified Review sheet. This is an implementation gap against existing requirements: non-identical QIF exports can leave exact date/amount/payee candidates unresolved, and the ordinary ledger/balance includes those incoming rows again. Strict bank-ID overlap and whole-source equality do not complete format-independent recognition. See the [corrective handoff](import-commit-discussion.md#first-priority-correct-matching-in-the-common-internal-representation--2026-10-30) for evidence, preferred visible/reversible match design, unresolved details and verification obligations. No correction has been implemented; this update is documentation only. Implementation awaits explicit Go.
+
+## Following item: unified Review sheet — 2026-10-29
+
+Owner testing identified a discoverability and usability gap: the normal account screen does not consistently lead to all review issues, the duplicate editor is too dense, and an unresolved count reportedly changes during inspection/Commit. The exact count-flip sequence has not been reproduced; current selected-import versus dataset-wide count scopes are a suspected contributor.
+
+The owner selected one Review sheet covering all accounts, grouped under account-name separators, reachable from a post-import **Review** button and from Commit. It must support systematic resolution and consistent counts. See [handoff](import-commit-discussion.md#next-implementation-item-unified-review-sheet--2026-10-29) and [requirements, open design details and verification obligations](../features/005-transaction-sheet-navigation.md#unified-review-sheet--next-implementation-item-2026-10-29). This follows the duplicate-matching correction and is **not yet implemented or authorized to start**. Only documentation changed for this follow-up; existing runtime results below do not verify the proposed sheet or resolve the reported inconsistency.
 
 ## Dataset acceptance storage refactor — 2026-10-29
 

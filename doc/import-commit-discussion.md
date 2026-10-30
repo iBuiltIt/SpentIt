@@ -1,6 +1,33 @@
 # Dataset-wide acceptance of new transactions
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
+
+## First priority: correct matching in the common internal representation — 2026-10-30
+
+The owner put this correction **ahead of the unified Review sheet**. Matching common internal source facts, independent of import language, and automatically recognizing sufficiently certain matches are existing accepted requirements, not a new feature request. The completed acceptance/storage work and strict bank-ID slice do not establish that those matching requirements are fulfilled. This handoff reprioritizes work; no correction is implemented here and implementation still awaits explicit Go.
+
+### Confirmed implementation gap
+
+Code inspection and owner-authorized live debugging confirmed that `ImportStore::populate` automatically excludes QIF occurrences through whole-source byte equality; otherwise it flags candidates for review. The separate automatic bank-ID path requires OFX-family sources in `same_bank_transaction`. An incoming QIF occurrence can therefore agree with a committed occurrence on original date, exact amount and payee and still remain unresolved. `current_ledger` and `balance_for` include unresolved incoming rows, so the possible duplicate appears and contributes to the balance again. QIF-to-QIF candidate lookup also requires agreeing dates when both dates are available; a date difference can leave an occurrence classified as new. Equal amounts alone do not prove that two such occurrences are the same transaction.
+
+The hooks confirmed successful import capture/preparation and delivery, not transaction identity. Read-only inspection established the decision behavior above. No private source paths, records, values or identifying details belong in this handoff or regression fixtures. No runtime correction or new regression tests have been performed. The session also exposed a separate diagnostics limitation: `ImportMain.qml` still references the removed `projected` control in its UI sampler, preventing semantic UI observations; worker hooks remain usable.
+
+### Required correction and design work
+
+- Match parsed common internal source facts within the resolved account against accepted and uncommitted transactions. Original facts remain distinct from later display edits/categorization. A parser/format label must not itself gate automatic recognition; whole-file equality may optimize matching but must not be its only QIF path.
+- Recognize sufficiently certain matches automatically while preserving legitimate repeated occurrences, exact money/currency boundaries, conflicting identifiers, ambiguous candidates and removed-target handling. Define and review the confidence and occurrence-consumption rules explicitly; do not replace the missing implementation with unrestricted date/amount exclusion.
+- The owner favours visible, reversible duplicate links: one monetary posting with attached imported occurrences, a clear ledger indication, paired inspection, and a way to break a wrong match and keep the transactions separate. This is the preferred design direction; exact criteria, normalization, per-import multiplicity, balance treatment of unresolved candidates, search of attached evidence, and accepted-history/Undo behavior still need a concrete design. Do not describe every detail suggested in chat as settled.
+- Use independently synthetic regressions for equivalent QIF files with changed surrounding content, cross-format equivalents, original-versus-edited fields, exact matching candidates, distinct identifiers, ambiguous/date-shifted candidates, repeated identical purchases and repeated imports. Verify visible match inspection/unlinking, exact ledger/balance reconciliation, reopen, ownership cleanup, atomicity and retries around durable boundaries for the chosen design.
+
+The [unified Review sheet](#next-implementation-item-unified-review-sheet--2026-10-29) follows this correction and should consume its final match/review states. Reports and unrelated work remain deferred.
+
+## Next implementation item: unified Review sheet — 2026-10-29
+
+Priority update (2026-10-30): this item follows the matching correction above. The previously selected next item is a **dataset-wide Review sheet**, grouped by account, as specified in [feature 005](../features/005-transaction-sheet-navigation.md#unified-review-sheet--next-implementation-item-2026-10-29). After import, any outstanding issue makes a **Review** button available on the normal account screen. Users open it when ready and work systematically through all affected transactions under account-name separators. Commit also offers entry to this same sheet. There must be one place to find outstanding review work, not a workflow that requires trying Commit to discover it.
+
+This item includes investigating the owner's reported unresolved-count flip when inspecting a record and making counts consistent across review entry points. A selected-import summary currently differs in scope from dataset-wide Commit warnings; the exact reported sequence remains unverified. The dense current duplicate editor must be replaced by understandable issue-specific review presentation. Detailed layout and count semantics remain design work; changing matching policy is not authorized by this decision.
+
+**Documentation only; implementation has not started. Wait for a new Go.** The older Go below applies to the completed storage refactor, not this follow-up. Reports and unrelated work remain deferred.
 
 ## Owner direction and authority
 
