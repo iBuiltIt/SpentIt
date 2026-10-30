@@ -7,6 +7,7 @@
 #include <spentit/transfer_commands.hpp>
 #include <functional>
 #include <optional>
+#include <utility>
 
 namespace spentit::app {
 struct DatasetOptions {std::string date_format="YYYY-MM-DD";bool default_categories=false;};
@@ -227,6 +228,15 @@ public:
     // Storage overrides this to reject an unclosed/failed rollback transaction.
     virtual std::optional<Receipt> durable_outcome(std::string_view operation) const { return outcome(operation); }
     virtual std::vector<LedgerRow> ledger(bool projected) const = 0;
+    // Normal saved ledger, including uncommitted rows. Import failures are
+    // reported separately and never suppress successfully imported rows.
+    virtual std::vector<LedgerRow> current_ledger() const { return ledger(true); }
+    virtual Money balance() const {
+        std::vector<Money> amounts{account().opening};
+        for(const auto& row:current_ledger())amounts.push_back(row.draft.transaction.effective_total());
+        return imports::sum(account().currency,amounts);
+    }
+    virtual std::vector<std::pair<std::int64_t,Money>> balances() const { return {}; }
     virtual std::string date_format() const {return "YYYY-MM-DD";}
     virtual bool categories_supported() const { return false; }
     virtual CategoryCatalog category_catalog() const { throw std::logic_error("Categories are not supported by this dataset"); }

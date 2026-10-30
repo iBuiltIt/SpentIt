@@ -100,9 +100,13 @@ void ImportStore::resolve_group_transfers(std::string_view id,const app::Operati
     validate_transfer_set(values);
 }
 void ImportStore::resolve_import_transfers(std::string_view id,app::OperationContext& context) {
-    Atomic transaction(impl_->db);resolve_group_transfers(id,context);context.seal();impl_->finish(transaction);
+    Atomic transaction(impl_->db);resolve_group_transfers(id,context);context.seal();finish([&]{transaction.commit();});
 }
 app::ImportGroup ImportStore::import_group(std::string_view id) const {
+    if(!impl_->verifying && !impl_->preparing_review && (impl_->publishing_review || impl_->review_changes==sqlite3_total_changes64(impl_->db))) {
+        const auto found=impl_->reviewed_groups.find(std::string(id));
+        if(found!=impl_->reviewed_groups.end())return found->second;
+    }
     ScopedStatements plans(impl_->db);
     const bool cacheable=sqlite3_get_autocommit(impl_->db) && !impl_->verifying;
     const auto changes=sqlite3_total_changes64(impl_->db);
@@ -126,7 +130,14 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         const auto source_account=static_cast<std::size_t>(members.integer(0));const auto account=account_by_id(members.integer(1));impl_->selected_account=account.identity;
         const auto batch_id=members.bytes(2);const auto b=batch(impl_->db,batch_id);
         app::ImportGroupAccount member{source_account,account.identity,batch_id,members.integer(3)!=0,static_cast<app::ReportedBalanceChoice>(members.integer(4)),{},{},members.null(7)?account.opening_date:members.bytes(7)};
-        const auto parsed=statements::parse_mapped(bytes,document,source_account,result.profile,pinned_currency(impl_->db,batch_id));
+        const auto source_currency=pinned_currency(impl_->db,batch_id);
+        const auto source_stamp=source_currency.definition_id()+":"+std::to_string(static_cast<int>(result.profile));
+        auto cached_source=impl_->reviewed_sources.find(batch_id);
+        if(impl_->verifying || cached_source==impl_->reviewed_sources.end() || cached_source->second.first!=source_stamp) {
+            auto parsed=statements::parse_mapped(bytes,document,source_account,result.profile,source_currency);
+            cached_source=impl_->reviewed_sources.insert_or_assign(batch_id,std::pair{source_stamp,std::move(parsed)}).first;
+        }
+        const auto& parsed=cached_source->second.second;
         bool ready=!parsed.diagnostic && b.state!=app::BatchState::captured && b.state!=app::BatchState::discarded;
         const bool active_review=b.state!=app::BatchState::discarded;
         std::vector<Money> amounts;
@@ -287,7 +298,7 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         Statement member(impl_->db,"INSERT INTO import_group_accounts(group_id,source_account,account_id,batch,created) VALUES(?,?,?,?,?)");member.text(1,id);member.integer(2,integer(mapping.source_account));member.integer(3,account.identity);member.text(4,batch_id);member.integer(5,mapping.creation?1:0);member.done();
         Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'capture')");event.text(1,batch_id);event.done();
     }
-    context.seal();impl_->finish(transaction);return import_group(id);
+    context.seal();finish([&]{transaction.commit();});return import_group(id);
 }
 app::ImportGroup ImportStore::resume_import_group(std::string_view id,app::OperationContext& context) {
     auto group=import_group(id);if(group.state!=app::GroupState::captured){context.seal();return group;}
@@ -304,7 +315,7 @@ app::ImportGroup ImportStore::resume_import_group(std::string_view id,app::Opera
     }
     Statement update(impl_->db,"UPDATE import_groups SET state=1 WHERE id=? AND state=0");update.text(1,id);update.done();
     resolve_group_transfers(id,context);
-    context.seal();impl_->finish(transaction);return import_group(id);
+    context.seal();finish([&]{transaction.commit();});return import_group(id);
 }
 void ImportStore::review_import_balance(std::string_view id,std::size_t source_account,std::int64_t expected,app::ReportedBalanceChoice choice,std::string_view date) {
     iso_date(date);auto group=import_group(id);
@@ -324,7 +335,7 @@ void ImportStore::review_import_balance(std::string_view id,std::size_t source_a
     else fail(SQLITE_CONSTRAINT,"Choose how to interpret the reported balance");
     Statement same(impl_->db,"SELECT 1 FROM import_group_accounts WHERE group_id=? AND source_account=? AND balance_choice=? AND balance_revision=? AND opening=? AND opening_date=? AND reviewed_change=?");same.text(1,id);same.integer(2,integer(source_account));same.integer(3,static_cast<int>(choice));same.integer(4,expected);same.integer(5,opening.units());same.text(6,date);same.integer(7,found->reviewed_change->units());if(same.row())return;
     Atomic transaction(impl_->db);
-    Statement update(impl_->db,"UPDATE import_group_accounts SET balance_choice=?,balance_revision=?,opening=?,opening_date=?,balance_sequence=?7,reviewed_change=?8 WHERE group_id=?5 AND source_account=?6");update.integer(1,static_cast<int>(choice));update.integer(2,expected);update.integer(3,opening.units());update.text(4,date);update.text(5,id);update.integer(6,integer(source_account));update.integer(7,transfer_sequence());update.integer(8,found->reviewed_change->units());update.done();impl_->finish(transaction);
+    Statement update(impl_->db,"UPDATE import_group_accounts SET balance_choice=?,balance_revision=?,opening=?,opening_date=?,balance_sequence=?7,reviewed_change=?8 WHERE group_id=?5 AND source_account=?6");update.integer(1,static_cast<int>(choice));update.integer(2,expected);update.integer(3,opening.units());update.text(4,date);update.text(5,id);update.integer(6,integer(source_account));update.integer(7,transfer_sequence());update.integer(8,found->reviewed_change->units());update.done();finish([&]{transaction.commit();});
 }
 void ImportStore::abort_import_group(std::string_view id) {
     ScopedStatements plans(impl_->db);
@@ -367,7 +378,7 @@ void ImportStore::abort_import_group(std::string_view id) {
         for(const auto& transfer:all_transfers())if((transfer.link.origin.endpoint.account==member.account || transfer.link.destination.endpoint.account==member.account) && (transfer.link.origin.state!=transfers::State::removed || transfer.link.destination.state!=transfers::State::removed))unused=false;
         if(unused){Statement retired(impl_->db,"INSERT INTO retired_import_accounts VALUES(?,?)");retired.integer(1,member.account);retired.text(2,id);retired.done();}
     }
-    Statement update(impl_->db,"UPDATE import_groups SET state=3 WHERE id=?");update.text(1,id);update.done();impl_->finish(transaction);
+    Statement update(impl_->db,"UPDATE import_groups SET state=3 WHERE id=?");update.text(1,id);update.done();finish([&]{transaction.commit();});
     Statement retired(impl_->db,"SELECT 1 FROM retired_import_accounts WHERE account_id=?");retired.integer(1,selection.prior);if(retired.row())selection.prior=smallest_active_account(impl_->db);
 }
 void ImportStore::require_group_ready(std::string_view batch_id) const {

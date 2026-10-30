@@ -17,7 +17,7 @@ class ImportAuthenticationError final : public ImportError {
 public:
     explicit ImportAuthenticationError(int code):ImportError(code,"Unable to authenticate encrypted dataset"){}
 };
-enum class ImportPhase { before_commit, after_commit, materialize_row };
+enum class ImportPhase { before_commit, after_commit, materialize_row, review_row, validate_row };
 // Fault-test seam: no UI durability acknowledgement is sent through this hook.
 using ImportObserver=std::function<void(ImportPhase)>;
 enum class BackupPhase { before_publish, before_publish_sync, before_cleanup,
@@ -84,6 +84,9 @@ public:
     std::optional<app::Receipt> outcome(std::string_view) const override;
     std::optional<app::Receipt> durable_outcome(std::string_view) const override;
     std::vector<app::LedgerRow> ledger(bool) const override;
+    std::vector<app::LedgerRow> current_ledger() const override;
+    Money balance() const override;
+    std::vector<std::pair<std::int64_t,Money>> balances() const override;
     bool categories_supported() const override;
     std::vector<app::AccountAlias> account_aliases() const override;
     std::optional<std::int64_t> resolve_account_name(std::string_view) const override;
@@ -127,6 +130,8 @@ public:
                    const BackupObserver& observer = {}, const app::OperationContext* context = nullptr) const;
     void observer(ImportObserver);
 private:
+    void prepare_review();
+    void finish(const std::function<void()>&);
     void require_account_name(std::string_view,std::int64_t) const;
     std::optional<std::string> transfer_name(std::string_view) const;
     void require_qif_transfers(const imports::Occurrence&,const imports::DraftRow&,const std::set<std::tuple<std::string,std::size_t,std::string>>&) const;
@@ -162,6 +167,8 @@ private:
     app::Account account_by_id(std::int64_t) const;
     std::vector<app::BatchInfo> batches_for(std::int64_t) const;
     Money committed_for(std::int64_t) const;
+    Money balance_for(std::int64_t) const;
+    std::vector<app::LedgerRow> ledger_rows(bool,bool) const;
     std::optional<Money> projected_for(std::int64_t) const;
     app::Account account_for_batch(std::string_view) const;
     void require_account(std::string_view) const;

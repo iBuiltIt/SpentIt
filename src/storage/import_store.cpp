@@ -752,11 +752,24 @@ struct VerificationRows {
         constexpr std::size_t limit=128*1024*1024;
         if(rows.size()>=65536)return;
         const auto size=row_size(row);
-        if(size>limit-bytes)return;
+        if(bytes>=limit || size>limit-bytes)return;
         if(rows.emplace(row.identity,row).second)bytes+=size;
     }
 };
 
+struct PreparedImportRow {
+    std::string stamp;
+    app::RowView row;
+    std::string warning;
+    std::string transfer_stamp,transfer_warning;
+};
+struct PreparedImport {
+    std::int64_t revision=0;
+    std::size_t included=0,excluded=0;
+    std::vector<Money> amounts;
+    std::map<std::size_t,PreparedImportRow> rows;
+    std::string warning;
+};
 struct ImportStore::Impl {
     sqlite3* db=nullptr;
     int lock=-1;
@@ -766,6 +779,7 @@ struct ImportStore::Impl {
     mutable VerificationRows* verification_rows=nullptr;
     mutable VerificationRows read_rows;
     mutable sqlite3_int64 read_rows_changes=-1;
+    mutable std::map<imports::Occurrence,std::string> read_stamps;
     mutable sqlite3_int64 alias_changes=-1;
     mutable std::vector<app::AccountAlias> alias_cache;
     mutable std::map<std::string,std::optional<std::int64_t>,std::less<>> alias_resolutions;
@@ -778,13 +792,17 @@ struct ImportStore::Impl {
     // verification always bypass it. The document owns an exclusive file lock.
     mutable std::optional<app::ImportGroup> group_snapshot;
     mutable sqlite3_int64 group_snapshot_changes=-1;
+    std::map<std::string,PreparedImport,std::less<>> reviews;
+    std::map<std::string,app::ImportGroup,std::less<>> reviewed_groups;
+    std::map<std::string,std::pair<std::string,qif::Result>,std::less<>> reviewed_sources;
+    mutable std::string reviewed_transfer_stamp;
+    mutable std::optional<std::vector<app::TransferView>> reviewed_transfers;
+    bool preparing_review=false;
+    bool publishing_review=false;
+    sqlite3_int64 review_changes=-1;
     ImportObserver observer;
     ~Impl() { if (db) sqlite3_close_v2(db); if(lock>=0) ::close(lock); }
-    void finish(Atomic& a) {
-        if (observer) observer(ImportPhase::before_commit);
-        a.commit();
-        if (observer) observer(ImportPhase::after_commit);
-    }
+
 };
 ImportStore::ImportStore(std::unique_ptr<Impl> p):impl_(std::move(p)){}
 ImportStore::~ImportStore()=default;
@@ -909,7 +927,13 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
         transaction.commit();
         sync_directory(path);
     }
-    if (!create) {store.impl_->selected_account=smallest_active_account(store.impl_->db);store.verify(context);}
+    sqlite3_rollback_hook(db,[](void* pointer){
+        auto& state=*static_cast<Impl*>(pointer);
+        state.reviews.clear();state.reviewed_groups.clear();state.reviewed_sources.clear();state.review_changes=-1;
+        state.read_rows=VerificationRows{};state.read_stamps.clear();
+        state.reviewed_transfers.reset();state.reviewed_transfer_stamp.clear();
+    },store.impl_.get());
+    if (!create) {store.impl_->selected_account=smallest_active_account(store.impl_->db);store.verify(context);store.prepare_review();}
     return store;
 }
 ImportStore ImportStore::create(const std::filesystem::path& path,std::string_view password,std::string_view name,const Currency& currency,std::string_view today,bool overwrite,const app::DatasetOptions& options) {
@@ -924,7 +948,7 @@ ImportStore ImportStore::create(const std::filesystem::path& path,std::string_vi
     receipt.text(1,name);receipt.text(2,currency.definition_id());receipt.text(3,today);receipt.done();
     Statement preferences(store.impl_->db,"INSERT INTO dataset_preferences VALUES(1,?,?)");preferences.text(1,options.date_format);preferences.integer(2,options.default_categories?1:0);preferences.done();
     if(options.default_categories)store.initialize_categories();
-    store.impl_->finish(a); store.verify(); return store;
+    store.finish([&]{a.commit();}); store.verify(); return store;
 }
 std::string ImportStore::date_format() const {
     Statement row(impl_->db,"SELECT date_format,default_categories FROM dataset_preferences WHERE singleton=1");
@@ -982,7 +1006,7 @@ app::Account ImportStore::create_account(std::int64_t id,std::string_view name,c
     row.integer(1,id);row.text(2,name);row.text(3,currency.definition_id());row.text(4,today);row.done();
     Statement receipt(impl_->db,"INSERT INTO account_creations VALUES(?,?,?,?)");
     receipt.integer(1,id);receipt.text(2,name);receipt.text(3,currency.definition_id());receipt.text(4,today);receipt.done();
-    impl_->finish(transaction);return account_by_id(id);
+    finish([&]{transaction.commit();});return account_by_id(id);
 }
 void ImportStore::opening(std::int64_t expected,std::string_view date,const Money& amount) {
     Statement grouped(impl_->db,"SELECT 1 FROM import_group_accounts m JOIN import_groups g ON g.id=m.group_id WHERE m.account_id=spentit_account() AND m.created=1 AND g.state IN(0,1,2)");if(grouped.row())fail(SQLITE_CONSTRAINT,"Use the import account balance review for this account");
@@ -993,7 +1017,7 @@ void ImportStore::opening(std::int64_t expected,std::string_view date,const Mone
     Statement s(impl_->db,"UPDATE account SET opening_date=?,opening=?,revision=revision+1,confirmed=1 WHERE singleton=spentit_account()");
     s.text(1,date); s.integer(2,amount.units()); s.done();
     for(const auto& b:batches()) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts) advance(impl_->db,b.id,b.revision,"opening",static_cast<int>(b.state));
-    impl_->finish(a);
+    finish([&]{a.commit();});
 }
 std::vector<app::BatchInfo> ImportStore::batches_for(std::int64_t id) const {
     Statement s(impl_->db,"SELECT id FROM batches WHERE account_id=? ORDER BY rowid");s.integer(1,id);std::vector<app::BatchInfo> result;
@@ -1033,14 +1057,51 @@ std::string ImportStore::record_evidence(const imports::Occurrence& id) const {
 app::RowView ImportStore::row(const imports::Occurrence& id) const { return load_row(id,true); }
 app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates) const {
     require_account(id.batch);
-    auto* rows=impl_->verification_rows;
-    if(!rows){
-        const auto changes=sqlite3_total_changes64(impl_->db);
-        const bool cacheable=sqlite3_get_autocommit(impl_->db)!=0;
-        if(!cacheable || impl_->read_rows_changes!=changes){impl_->read_rows=VerificationRows{};impl_->read_rows_changes=changes;}
-        if(cacheable)rows=&impl_->read_rows;
+    if(!candidates && !impl_->verifying && (impl_->preparing_review || impl_->publishing_review || impl_->review_changes==sqlite3_total_changes64(impl_->db))) {
+        const auto batch=impl_->reviews.find(id.batch);
+        if(batch!=impl_->reviews.end()) {
+            const auto row=batch->second.rows.find(id.ordinal);
+            if(row!=batch->second.rows.end())return row->second.row;
+        }
     }
-    if(!candidates && rows){const auto found=rows->rows.find(id);if(found!=rows->rows.end())return found->second;}
+    auto* rows=impl_->verification_rows;
+    std::string stamp;
+    if(!candidates) {
+        Statement state(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");
+        state.text(1,id.batch);state.integer(2,integer(id.ordinal));
+        if(state.row() && !state.null(0))stamp=std::to_string(state.integer(0));
+        const auto old=impl_->read_stamps.find(id);
+        const auto cached=impl_->read_rows.rows.find(id);
+        if(!rows && cached!=impl_->read_rows.rows.end() && (old==impl_->read_stamps.end() || old->second!=stamp)) {
+            impl_->read_rows.bytes-=VerificationRows::row_size(cached->second);
+            impl_->read_rows.rows.erase(cached);
+        }
+        if(!rows)rows=&impl_->read_rows;
+    }
+    if(!candidates && rows) {
+        const auto found=rows->rows.find(id);
+        if(found!=rows->rows.end()) {
+            auto& cached=found->second;
+            const auto prior_size=VerificationRows::row_size(cached);
+            if(!impl_->verification_rows) {
+                cached.excluded_by_clear=!retained_member(impl_->db,id.batch,id.ordinal);
+                if(cached.source.fitid.empty()) {
+                    cached.source.associated_fitid.clear();
+                    Statement fits(impl_->db,"SELECT DISTINCT fitid FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=? AND a.ledger_ordinal=? AND ifnull(fitid,'')<>''");
+                    fits.text(1,id.batch);fits.integer(2,integer(id.ordinal));
+                    if(fits.row()){cached.source.associated_fitid=fits.bytes(0);if(fits.row())cached.source.associated_fitid.clear();}
+                }
+                if(cached.decision.duplicate_of) {
+                    const auto& target=*cached.decision.duplicate_of;
+                    Statement stale(impl_->db,"SELECT s.target_revision!=h.revision OR s.target_active!=e.active FROM review_stamps s JOIN entry_heads h ON h.batch=? AND h.ordinal=? JOIN entry_revisions e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision WHERE s.batch=? AND s.ordinal=? ORDER BY s.revision DESC LIMIT 1");
+                    stale.text(1,target.batch);stale.integer(2,integer(target.ordinal));stale.text(3,id.batch);stale.integer(4,integer(id.ordinal));
+                    if(!stale.row())fail(SQLITE_CORRUPT);cached.review_stale=stale.integer(0)!=0;
+                }
+            }
+            rows->bytes=rows->bytes-prior_size+VerificationRows::row_size(cached);
+            return cached;
+        }
+    }
     const auto b=batch(impl_->db,id.batch); const auto source_currency=pinned_currency(impl_->db,id.batch);
     Statement src(impl_->db,"SELECT raw FROM records WHERE batch=? AND ordinal=?"); src.text(1,id.batch); src.integer(2,integer(id.ordinal));
     if(!src.row()) {
@@ -1075,6 +1136,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
     out.draft=imports::DraftRow{v.bytes(1),v.bytes(2),v.bytes(3),Transaction::repaired_import(out.source.original_amount,Money(v.integer(4),draft_currency),std::move(aa),reassigned)};
     load_metadata(impl_->db,id,v.integer(0),*out.draft,false);
     imports::validate_draft(out.source,*out.draft,reassigned);
+    if(impl_->observer)impl_->observer(ImportPhase::validate_row);
     out.decision.disposition=static_cast<imports::Disposition>(v.integer(5));
     if(out.decision.disposition==imports::Disposition::duplicate) out.decision.duplicate_of=imports::Occurrence{v.bytes(6),static_cast<std::size_t>(v.integer(7))};
     if(committed_changes_supported() && out.decision.duplicate_of) {
@@ -1082,11 +1144,18 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         target.text(1,out.decision.duplicate_of->batch);target.integer(2,integer(out.decision.duplicate_of->ordinal));target.text(3,id.batch);target.integer(4,integer(id.ordinal));target.integer(5,v.integer(0));
         if(!target.row())fail(SQLITE_CORRUPT);out.review_stale=target.integer(0)!=target.integer(2) || target.integer(1)!=target.integer(3);
     }
-    if (!candidates) {if(rows)rows->remember(out);return out;}
+    if (!candidates) {if(rows){rows->remember(out);if(rows->rows.contains(id))impl_->read_stamps[id]=std::move(stamp);}return out;}
     const auto candidate_sql=std::string("SELECT r.batch,r.ordinal FROM batches b CROSS JOIN records r ON r.batch=b.id CROSS JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" ORDER BY r.batch,r.ordinal LIMIT 4097";
     Statement c(impl_->db,candidate_sql.c_str());
     bind_candidate(c,out.source);
     while(c.row()) {if(out.candidates.size()==4096)fail(SQLITE_TOOBIG,"More than 4096 possible duplicate occurrences; review requires a narrower source import");out.candidates.push_back({c.bytes(0),static_cast<std::size_t>(c.integer(1))});}
+    if(!impl_->verifying && impl_->review_changes==sqlite3_total_changes64(impl_->db)) {
+        const auto reviewed=impl_->reviews.find(id.batch);
+        if(reviewed!=impl_->reviews.end()) {
+            const auto row=reviewed->second.rows.find(id.ordinal);
+            if(row!=reviewed->second.rows.end() && row->second.row.review_stale)out.review_stale=true;
+        }
+    }
     return out;
 }
 app::BatchInfo ImportStore::ingest(std::string_view id,std::string_view bytes,qif::DateOrder profile) {
@@ -1114,7 +1183,7 @@ app::BatchInfo ImportStore::ingest(std::string_view id,std::string_view bytes,qi
     pin_source_currency(impl_->db,id,acct.currency);
     populate(id,bytes,parsed,0,nullptr);
     Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'ingest')"); event.text(1,id); event.done();
-    impl_->finish(a); return batch(impl_->db,id);
+    finish([&]{a.commit();}); return batch(impl_->db,id);
 }
 app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_view bytes,qif::DateOrder profile,app::OperationContext& context) {
     if(!schema3_batch(impl_->db)) {
@@ -1142,7 +1211,7 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
         insert.text(1,id);insert.integer(2,static_cast<int>(profile));insert.text(3,qif::parser_version);insert.integer(4,integer(parsed.records.size()));insert.done();
         pin_source_currency(impl_->db,id,acct.currency);
         Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'capture')");event.text(1,id);event.done();
-        context.seal();context.checkpoint("Finishing source evidence retention");impl_->finish(transaction);diag::durable(diag::Code::capture);
+        context.seal();context.checkpoint("Finishing source evidence retention");finish([&]{transaction.commit();});diag::durable(diag::Code::capture);
     } catch (...) {
         const auto failure=std::current_exception();
         if(!sqlite3_get_autocommit(impl_->db)){context.state.store(app::OperationContext::sealed);throw app::OperationOutcomeUnknown();}
@@ -1186,7 +1255,7 @@ app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app
             update.integer(1,parsed.valid()?0:1);update.text(2,id);update.done();
             Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,?,'materialize')");event.text(1,id);event.integer(2,expected+1);event.done();
             populate(id,bytes,parsed,expected+1,&context);
-            context.seal();context.checkpoint("Finishing draft interpretations");impl_->finish(transaction);diag::durable(diag::Code::prepare);
+            context.seal();context.checkpoint("Finishing draft interpretations");finish([&]{transaction.commit();});diag::durable(diag::Code::prepare);
         } catch (...) {
             const auto failure=std::current_exception();
             if(!sqlite3_get_autocommit(impl_->db)){context.state.store(app::OperationContext::sealed);throw app::OperationOutcomeUnknown();}
@@ -1279,7 +1348,7 @@ void ImportStore::save(const imports::Occurrence& id,std::int64_t expected,const
     }
     // A first repair requires an explicit subsequent duplicate disposition.
     version(impl_->db,id,expected+1,canonical,old.decision,false); advance(impl_->db,id.batch,expected,"save",0,blocked);
-    impl_->finish(a);
+    finish([&]{a.commit();});
 }
 void ImportStore::decide(const imports::Occurrence& id,std::int64_t expected,const imports::Decision& decision) {
     require_unlinked(id);require_writable_account(impl_->db,account_for_batch(id.batch).identity);
@@ -1293,7 +1362,7 @@ void ImportStore::decide(const imports::Occurrence& id,std::int64_t expected,con
         if(used.row()) fail(SQLITE_CONSTRAINT,"That prior occurrence is already matched in this import");
     }
     if(expected==INT64_MAX) fail(SQLITE_FULL);
-    version(impl_->db,id,expected+1,*old.draft,decision); advance(impl_->db,id.batch,expected,"decide"); impl_->finish(a);
+    version(impl_->db,id,expected+1,*old.draft,decision); advance(impl_->db,id.batch,expected,"decide"); finish([&]{a.commit();});
 }
 void ImportStore::discard(std::string_view id,std::int64_t expected) {
     require_account(id);require_writable_account(impl_->db,account_for_batch(id).identity);
@@ -1308,7 +1377,7 @@ void ImportStore::discard(std::string_view id,std::int64_t expected) {
         for(const auto ordinal:protected_rows){Statement keep(impl_->db,"INSERT OR IGNORE INTO retained_transfer_rows VALUES(?,?)");keep.text(1,id);keep.integer(2,integer(ordinal));keep.done();}
         advance(impl_->db,id,expected,"retain",4,0);
     }
-    impl_->finish(a);
+    finish([&]{a.commit();});
 }
 std::optional<app::Receipt> ImportStore::durable_outcome(std::string_view operation) const {
     if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
@@ -1337,6 +1406,20 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
         Statement other(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");other.text(1,operation);
         if(other.row()) fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
     }
+    if(auto prior=outcome(operation)) {
+        if(prior->batch!=id || prior->revision!=expected)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");
+        return *prior;
+    }
+    // Normally prepared by the preceding mutation/open. Rebuild only after a
+    // failed command rolled back and discarded its speculative review state.
+    if(impl_->review_changes!=sqlite3_total_changes64(impl_->db))prepare_review();
+    const auto reviewed=impl_->reviews.find(std::string(id));
+    if(reviewed==impl_->reviews.end())fail(SQLITE_CONSTRAINT,"No pending import review");
+    const auto& ready=reviewed->second;
+    if(ready.revision!=expected)fail(SQLITE_CONSTRAINT,"Import changed since review");
+    if(!ready.warning.empty())fail(SQLITE_CONSTRAINT,ready.warning.c_str());
+    struct PublicationGuard {bool& flag;~PublicationGuard(){flag=false;}} publication{impl_->publishing_review};
+    impl_->publishing_review=true;
     Atomic a(impl_->db);
     if(committed_changes_supported() && !rules_format(impl_->db)) {Statement collision(impl_->db,"SELECT kind FROM ledger_operations WHERE id=?");collision.text(1,operation);if(collision.row() && collision.integer(0)!=0)fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");}
     if(auto prior=outcome(operation)) {
@@ -1348,54 +1431,41 @@ app::Receipt ImportStore::commit(std::string_view id,std::int64_t expected,std::
     const auto acct=account();
     if(!acct.opening_confirmed) fail(SQLITE_CONSTRAINT,"Confirm the opening balance before the first commit");
     const auto before=committed_balance();
-    const auto resolved=resolved_transfers(all_transfers());
-    std::size_t included=0,excluded=0; std::vector<Money> amounts; std::set<imports::Occurrence> matched;
-    for(std::size_t i=0;i<b.count;++i) {
-        if(!retained_member(impl_->db,id,i)){++excluded;continue;}
-        auto r=load_row({std::string(id),i},false);
-        if(r.decision.disposition==imports::Disposition::unresolved) fail(SQLITE_CONSTRAINT,"Review possible duplicates before committing");
-        if(r.decision.disposition==imports::Disposition::include) {
-            require_qif_transfers({std::string(id),i},*r.draft,resolved); ++included; amounts.push_back(r.draft->transaction.effective_total());
-            Statement link(impl_->db,"INSERT INTO source_associations VALUES(?,?,?,?)");link.text(1,id);link.integer(2,integer(i));link.text(3,id);link.integer(4,integer(i));link.done();
-        }
-        else if(r.decision.disposition==imports::Disposition::duplicate && r.decision.duplicate_of) {
-            const auto& target=*r.decision.duplicate_of;
-            const auto other=load_row(target,false);
-            if(committed_changes_supported()) {
-                Statement stamp(impl_->db,"SELECT s.target_revision,s.target_active FROM review_stamps s WHERE s.batch=? AND s.ordinal=? ORDER BY s.revision DESC LIMIT 1");
-                stamp.text(1,id);stamp.integer(2,integer(i));const auto current=committed_entry(target);
-                if(!stamp.row() || stamp.integer(0)!=current.current.revision || stamp.integer(1)!=(current.current.active?1:0))fail(SQLITE_CONSTRAINT,"Duplicate target changed; reconfirm the review decision");
-            }
-            if(batch(impl_->db,target.batch).state!=app::BatchState::committed || other.decision.disposition!=imports::Disposition::include ||
-                !imports::candidate_basis(r.source,other.source) || !matched.insert(target).second) fail(SQLITE_CONSTRAINT,"Invalid duplicate relationship");
-            ++excluded;
-            Statement link(impl_->db,"INSERT INTO source_associations VALUES(?,?,?,?)");link.text(1,target.batch);link.integer(2,integer(target.ordinal));link.text(3,id);link.integer(4,integer(i));link.done();
-        } else fail(SQLITE_CORRUPT);
+    const auto included=ready.included,excluded=ready.excluded;
+    for(const auto& [ordinal,item]:ready.rows) {
+        const auto& row=item.row;
+        if(row.excluded_by_clear)continue;
+        const auto target=row.decision.duplicate_of.value_or(imports::Occurrence{std::string(id),ordinal});
+        Statement link(impl_->db,"INSERT INTO source_associations VALUES(?,?,?,?)");
+        link.text(1,target.batch);link.integer(2,integer(target.ordinal));link.text(3,id);link.integer(4,integer(ordinal));link.done();
     }
     const auto adjustment=transfer_import_transition(id,operation,true);
-    const auto change=imports::sum(acct.currency,amounts)+adjustment; const auto after=before+change;
+    const auto change=imports::sum(acct.currency,ready.amounts)+adjustment; const auto after=before+change;
     Statement op(impl_->db,"INSERT INTO operations VALUES(?,?,?,?,?,?,?,?)"); op.text(1,operation); op.text(2,id); op.integer(3,expected);
     op.integer(4,integer(included)); op.integer(5,integer(excluded)); op.integer(6,before.units()); op.integer(7,change.units()); op.integer(8,after.units()); op.done();
     advance(impl_->db,id,expected,"commit",1);
     exec(impl_->db,"UPDATE account SET frozen=1 WHERE singleton=spentit_account()");
     if(committed_changes_supported()) {
-        for(std::size_t ordinal=0;ordinal<b.count;++ordinal){if(!retained_member(impl_->db,id,ordinal))continue;const auto row=load_row({std::string(id),ordinal},false);if(row.decision.disposition==imports::Disposition::include)store_entry(impl_->db,{std::string(id),ordinal},{0,true,bind_import_categories(id,*row.draft)});}
+        for(const auto& [ordinal,item]:ready.rows)if(!item.row.excluded_by_clear && item.row.decision.disposition==imports::Disposition::include)
+            store_entry(impl_->db,{std::string(id),ordinal},{0,true,bind_import_categories(id,*item.row.draft)});
         append_financial(impl_->db,operation,app::ChangeKind::publication,{std::string(id),0},-1,0,before,change,after,"",0);
     }
-    impl_->finish(a); return {std::string(operation),std::string(id),expected,included,excluded,before,change,after};
+    finish([&]{a.commit();}); return {std::string(operation),std::string(id),expected,included,excluded,before,change,after};
 }
-std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const {
+std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const { return ledger_rows(projected,false); }
+std::vector<app::LedgerRow> ImportStore::current_ledger() const { return ledger_rows(true,true); }
+std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current) const {
     ScopedStatements read_plans(impl_->db);
     if(committed_changes_supported()) {
-        if(projected && !projected_balance())fail(SQLITE_CONSTRAINT,"Projection is incomplete; review the pending import");
+        if(projected && !current && !projected_balance())fail(SQLITE_CONSTRAINT,"Projection is incomplete; review the pending import");
         std::vector<app::LedgerRow> result;
         Statement entries(impl_->db,"SELECT h.batch,h.ordinal,h.revision,r.sequence FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1 ORDER BY e.date,r.sequence");
         while(entries.row()){imports::Occurrence identity{entries.bytes(0),static_cast<std::size_t>(entries.integer(1))};result.push_back({identity,entries.integer(3),entry_snapshot(identity,entries.integer(2)).draft,true});}
-        if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
+        if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND (v.decision=1 OR (?1=1 AND v.decision=0)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");pending.integer(1,current?1:0);while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
         const auto local=local_transfer_ledger(projected);result.insert(result.end(),local.begin(),local.end());
         std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return std::tie(a.draft.date,a.sequence)<std::tie(b.draft.date,b.sequence);});return result;
     }
-    if(projected && !projected_balance()) fail(SQLITE_CONSTRAINT,"Projection is incomplete; resolve the pending import first");
+    if(projected && !current && !projected_balance()) fail(SQLITE_CONSTRAINT,"Projection is incomplete; resolve the pending import first");
     Statement s(impl_->db,"SELECT r.batch,r.ordinal,r.sequence,b.state FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal "
         "WHERE b.account_id=spentit_account() AND (b.state=1 OR (b.state=0 AND ?=1 AND b.blocked=0)) AND v.decision=1 "
         "AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) ORDER BY v.date,r.sequence");
@@ -1404,6 +1474,28 @@ std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const {
         imports::Occurrence id{s.bytes(0),static_cast<std::size_t>(s.integer(1))}; auto r=load_row(id,false);
         result.push_back({id,s.integer(2),std::move(*r.draft),s.integer(3)==1});
     }
+    return result;
+}
+Money ImportStore::balance_for(std::int64_t id) const {
+    const auto acct=account_by_id(id);
+    std::vector<Money> amounts{acct.opening,local_transfer_total(id,true)};
+    Statement rows(impl_->db,
+        "SELECT e.total FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) "
+        "WHERE h.batch IN(SELECT id FROM batches WHERE account_id=?1) AND e.active=1 "
+        "UNION ALL SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch "
+        "WHERE b.account_id=?1 AND b.state IN(0,4) "
+        "AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) "
+        "AND v.decision IN(0,1) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
+    rows.integer(1,id);
+    while(rows.row())amounts.emplace_back(rows.integer(0),acct.currency);
+    return imports::sum(acct.currency,amounts);
+}
+Money ImportStore::balance() const { return balance_for(impl_->selected_account); }
+std::vector<std::pair<std::int64_t,Money>> ImportStore::balances() const {
+    ScopedStatements plans(impl_->db);
+    Statement ids(impl_->db,"SELECT singleton FROM account WHERE NOT EXISTS(SELECT 1 FROM retired_import_accounts r WHERE r.account_id=singleton) AND NOT EXISTS(SELECT 1 FROM account_retirements d WHERE d.account_id=singleton) ORDER BY singleton");
+    std::vector<std::pair<std::int64_t,Money>> result;
+    while(ids.row())result.emplace_back(ids.integer(0),balance_for(ids.integer(0)));
     return result;
 }
 Money ImportStore::committed_for(std::int64_t id) const {
@@ -1421,6 +1513,10 @@ Money ImportStore::committed_balance() const {
 std::optional<Money> ImportStore::projected_for(std::int64_t id) const {
     for(const auto& b:batches_for(id)) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts) {
         if(b.blocked) return {};
+        if(!impl_->verifying && impl_->review_changes==sqlite3_total_changes64(impl_->db)) {
+            const auto reviewed=impl_->reviews.find(b.id);
+            if(reviewed!=impl_->reviews.end() && !reviewed->second.warning.empty())return {};
+        }
         Statement s(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=0 AND (NOT EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch) OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) LIMIT 1");
         s.text(1,b.id); if(s.row()) return {};
     }
@@ -1450,13 +1546,14 @@ void ImportStore::verify(const app::OperationContext* context) const {
     ScopedStatements read_plans(impl_->db);
     struct VerificationGuard { bool& value; bool prior; ~VerificationGuard(){value=prior;} } guard{impl_->verifying,impl_->verifying};
     impl_->verifying=true;
-    impl_->read_rows=VerificationRows{};impl_->read_rows_changes=-1;
+    impl_->read_rows=VerificationRows{};impl_->read_rows_changes=-1;impl_->read_stamps.clear();
     VerificationRows verified_rows;
     struct RowsGuard {
         Impl& state;VerificationRows& rows;VerificationRows* prior;
         int exceptions=std::uncaught_exceptions();
         ~RowsGuard(){
             state.verification_rows=prior;
+            if(std::uncaught_exceptions()!=exceptions){state.reviews.clear();state.reviewed_groups.clear();state.reviewed_sources.clear();state.reviewed_transfers.reset();state.review_changes=-1;state.read_stamps.clear();}
             if(!prior && std::uncaught_exceptions()==exceptions && sqlite3_get_autocommit(state.db)){
                 state.read_rows=std::move(rows);state.read_rows_changes=sqlite3_total_changes64(state.db);
             }
@@ -1634,4 +1731,5 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
 #include "transfer_store.inc"
 #include "import_group_store.inc"
 #include "account_lifecycle.inc"
+#include "import_review.inc"
 } // namespace spentit::storage

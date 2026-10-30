@@ -242,7 +242,7 @@ app::RuleReapplyReceipt ImportStore::apply_rule_reapply(std::string_view operati
     if(!request.undo_of.empty())group.text(9,request.undo_of);
     group.done();
     for(std::size_t index=0;index<operations.size();++index){Statement member(impl_->db,"INSERT INTO rule_reapplication_members VALUES(?,?,?)");member.text(1,operation);member.integer(2,integer(index));member.text(3,operations[index]);member.done();}
-    impl_->finish(transaction);
+    finish([&]{transaction.commit();});
     return *rule_reapply_outcome(operation);
 }
 void ImportStore::verify_rule_reapply(const app::OperationContext* context) const {

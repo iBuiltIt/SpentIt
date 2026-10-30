@@ -610,11 +610,11 @@ struct ImportModel::Worker {
         diag::cache(diag::Code::metadata,metadata.isEmpty()?diag::EventKind::cache_miss:diag::EventKind::cache_hit);
         if(metadata.isEmpty()) {
             std::map<std::int64_t,QVariantMap> accountBalances;
-            for(const auto& item:repo.account_balances()) accountBalances.emplace(item.identity,QVariantMap{{"committedBalance",money(item.committed)},{"projectedBalance",item.projected?money(*item.projected):QString()},{"projectionAvailable",item.projected.has_value()}});
+            for(const auto& [id,total]:repo.balances()) accountBalances.emplace(id,QVariantMap{{"balance",money(total)}});
             auto packAccount=[&](const app::Account& item){
                 const auto found=accountBalances.find(item.identity);
                 const auto extra=found==accountBalances.end()?QVariantMap{}:found->second;
-                return QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())},{"archived",item.archived},{"committedBalance",extra.value("committedBalance")},{"projectedBalance",extra.value("projectedBalance")},{"projectionAvailable",extra.value("projectionAvailable",false)}};
+                return QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())},{"archived",item.archived},{"balance",extra.value("balance")}};
             };
             QVariantList archivedList;for(const auto& item:repo.archived_accounts()) archivedList.push_back(packAccount(item));
             state["archivedAccounts"]=archivedList;
@@ -664,7 +664,7 @@ struct ImportModel::Worker {
             state["name"]=text(acct.name); state["currency"]=text(acct.currency.code());
             state["openingDate"]=dateText(acct.opening_date); state["opening"]=money(acct.opening);
             state["frozen"]=acct.frozen; state["confirmed"]=acct.opening_confirmed;
-            state["committed"]=money(repo.committed_balance()); const auto projection=repo.projected_balance();
+            state["balance"]=accountBalances.contains(acct.identity)?accountBalances.at(acct.identity).value("balance"):QVariant(money(repo.balance())); state["committed"]=money(repo.committed_balance()); const auto projection=repo.projected_balance();
             state["projectionAvailable"]=projection.has_value(); state["projected"]=projection?money(*projection):"Incomplete — review import";
             QVariantList batches;
             for(const auto& b:repo.batches()) {
@@ -737,15 +737,15 @@ struct ImportModel::Worker {
         state["history"]=history;state["entryHistory"]=entryHistory;state["historyTitle"]=historyTitle;state["historyMore"]=historyMore;state["historyCursor"]=historyCursor;
         state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
         state["selectedIndex"]=-1;
-        // Never substitute a partial projected ledger for an authoritative one.
-        if(!repo.account_selected() || (projected && !state.value("projectionAvailable").toBool())) return {state,{}};
+        // Failed records stay in import review; valid saved rows remain visible.
+        if(!repo.account_selected()) return {state,{}};
         diag::cache(diag::Code::search,cachedView?diag::EventKind::cache_hit:diag::EventKind::cache_miss);
         if(!cachedView) {
             diag::Span searchSpan(diag::Code::search);
             diag::cache(diag::Code::ledger,cachedLedger?diag::EventKind::cache_hit:diag::EventKind::cache_miss);
             if(!cachedLedger) {
                 diag::Span ledgerSpan(diag::Code::ledger);
-                cachedLedger=std::make_shared<std::vector<app::LedgerRow>>(repo.ledger(projected));
+                cachedLedger=std::make_shared<std::vector<app::LedgerRow>>(repo.current_ledger());
                 // A presentation-only copy resolves current names for both visible
                 // rows and literal filtering. Stored interpretations remain intact.
                 if(repo.categories_supported())for(auto& row:*cachedLedger) {

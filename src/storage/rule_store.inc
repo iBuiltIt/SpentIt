@@ -217,7 +217,7 @@ app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const ap
         Statement snapshot(impl_->db,"INSERT INTO rule_snapshots VALUES(?,?,?,?,?)");snapshot.integer(1,current+1);snapshot.integer(2,integer(index));snapshot.text(3,item.image.identity);snapshot.integer(4,item.version);snapshot.integer(5,item.image.enabled?1:0);snapshot.done();
     }
     Statement bump(impl_->db,"UPDATE rule_state SET revision=? WHERE singleton=1 AND revision=?");bump.integer(1,current+1);bump.integer(2,current);bump.done();
-    impl_->finish(transaction);
+    finish([&]{transaction.commit();});
     return *rule_save_outcome(operation);
 }
 std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string_view operation) const {
@@ -295,7 +295,7 @@ app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operatio
         advance(impl_->db,scope.batch,request.batch_revision,"apply_rules");
     }
     Statement application(impl_->db,"INSERT INTO rule_applications VALUES(?,?,?,?,?,?,?,?,?)");application.text(1,operation);application.text(2,scope.batch);application.integer(3,request.batch_revision);application.integer(4,after_revision);application.integer(5,request.ruleset_revision);application.integer(6,request.catalog_revision);application.integer(7,request.replace_manual?1:0);application.integer(8,integer(prepared.size()));application.integer(9,integer(changed));application.done();
-    impl_->finish(transaction);
+    finish([&]{transaction.commit();});
     return *rule_apply_outcome(operation);
 }
 app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence& id,const app::OperationContext& context) const {

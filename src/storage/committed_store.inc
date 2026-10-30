@@ -148,7 +148,7 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
     append_financial(impl_->db,operation,request.kind,request.identity,preview.before_entry.revision,preview.after_entry.revision,preview.before,preview.change,preview.after,request.undo_of,preview_sequence,catalog_revision);
     if(!fresh.stamp.empty())write_entry_links(operation,account().identity,request.kind==app::ChangeKind::undo?app::TransferAction::restore:app::TransferAction::relink,preview_sequence+1,fresh.changed);
     for(const auto& dependency:expected.dependencies){Statement d(impl_->db,"INSERT INTO change_dependencies VALUES(?,?,?,?)");d.text(1,operation);d.text(2,dependency.batch);d.integer(3,dependency.revision);d.integer(4,static_cast<int>(dependency.state));d.done();}
-    impl_->finish(transaction);return *committed_change_outcome(operation);
+    finish([&]{transaction.commit();});return *committed_change_outcome(operation);
 }
 std::vector<app::CommittedHistoryItem> ImportStore::committed_history(const imports::Occurrence& id) const {
     const auto current=committed_entry(id);std::vector<app::CommittedHistoryItem> result;

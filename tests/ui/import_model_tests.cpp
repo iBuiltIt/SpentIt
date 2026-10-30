@@ -88,6 +88,9 @@ public:
         return repo().outcome(op);
     }
     std::vector<app::LedgerRow> ledger(bool p) const override {return repo().ledger(p);}
+    std::vector<app::LedgerRow> current_ledger() const override {return repo().current_ledger();}
+    Money balance() const override {return repo().balance();}
+    std::vector<std::pair<std::int64_t,Money>> balances() const override {return repo().balances();}
     Money committed_balance() const override {return repo().committed_balance();}
     std::optional<Money> projected_balance() const override {return repo().projected_balance();}
     std::vector<app::AccountBalance> account_balances() const override {return repo().account_balances();}
@@ -879,7 +882,9 @@ private slots:
         run(m,"close");run(m,"open",{{"path",dir.path()+"/missing"}},false);QVERIFY(!m.state().value("unlockRequired").toBool());QVERIFY(!QFile::exists(dir.path()+"/missing"));
         create(m,dir.path()+"/new");QCOMPARE(m.state().value("committed").toString(),"0.00");QVERIFY(selected(m).isEmpty());
         const auto invalid=fixture(dir.path(),"D1/1/2026\nT1\nL[Other\n^\n");run(m,"import",{{"path",invalid},{"profile","DMY"}});
-        QVERIFY(!m.state().value("projectionAvailable").toBool());QCOMPARE(m.rowCount(),0);run(m,"commit",{},false);
+        QVERIFY(!m.state().value("projectionAvailable").toBool());
+        QCOMPARE(m.rowCount(),1);QCOMPARE(m.rowRecord(0).value("payee").toString(),QString("Opening Balance"));
+        QCOMPARE(m.state().value("balance").toString(),QString("0.00"));run(m,"commit",{},false);
         QVERIFY(!selected(m).value("diagnostic").toString().isEmpty());run(m,"discard");QCOMPARE(m.state().value("committed").toString(),"0.00");
         run(m,"import",{{"path",fixture(dir.path(),QByteArray(1,static_cast<char>(0xff)))},{"profile","DMY"}});
         QVERIFY(selected(m).value("source").toString().contains("hex"));QVERIFY(!selected(m).contains("draft"));run(m,"discard");
@@ -913,8 +918,9 @@ private slots:
         run(m,"import",{{"path",file},{"profile","DMY"}});
         const auto batch=selected(m).value("batch");
         for(int i=0;i<3;++i) {
-            run(m,"query",{{"projected",false}});QCOMPARE(m.rowCount(),1);
-            QCOMPARE(m.state().value("deposits").toString(),"100.00");
+            run(m,"query",{{"projected",false}});QCOMPARE(m.rowCount(),3);
+            QCOMPARE(m.state().value("deposits").toString(),"120.00");
+            QCOMPARE(m.state().value("balance").toString(),"110.00");
             run(m,"query",{{"projected",true},{"filter","First"},{"sort",5},{"descending",true}});
             QCOMPARE(m.rowCount(),1);QCOMPARE(m.state().value("withdrawals").toString(),"-10.00");
             QCOMPARE(m.data(m.index(0),Qt::UserRole).toMap().value("balance").toString(),"90.00");
@@ -1346,43 +1352,24 @@ private slots:
         QVariantMap checking;
         for(const auto& value:m.state().value("accounts").toList()) if(value.toMap().value("id").toString()=="1") checking=value.toMap();
         QVERIFY(!checking.isEmpty());
-        QCOMPARE(checking.value("committedBalance").toString(),QString("100.00"));
-        QCOMPARE(checking.value("projectedBalance").toString(),QString("90.00"));
-        QVERIFY(checking.value("projectionAvailable").toBool());
+        QCOMPARE(checking.value("balance").toString(),QString("90.00"));
+        QCOMPARE(m.state().value("balance").toString(),QString("90.00"));
         QVERIFY(QTest::qWaitForWindowExposed(window));
         auto shown=[&](const char* name){return visualItem(window->contentItem(),QString::fromLatin1(name));};
         QQuickItem* balance=nullptr;
         QTRY_VERIFY(balance=shown("accountBalance_1"));
-        QTRY_COMPARE(balance->property("text").toString(),QString("Projected CAD 90.00"));
-        auto* projected=root->findChild<QQuickItem*>("projectedLedger");QVERIFY(projected);
-        projected->setProperty("checked",false);QVERIFY(QMetaObject::invokeMethod(projected,"clicked"));
-        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(m.error().isEmpty());
-        QCOMPARE(m.state().value("mode").toString(),QString("Committed"));
-        QCOMPARE(projected->property("checked").toBool(),false);
-        QTRY_COMPARE(balance->property("text").toString(),QString("Projected CAD 90.00"));
-        QVERIFY(QMetaObject::invokeMethod(balance,"clicked"));
-        QTRY_COMPARE(balance->property("text").toString(),QString("Committed CAD 100.00"));
-        QCOMPARE(projected->property("checked").toBool(),false);
-        QCOMPARE(m.state().value("mode").toString(),QString("Committed"));
-        QCOMPARE(m.state().value("projected").toString(),QString("90.00"));
+        QTRY_COMPARE(balance->property("text").toString(),QString("Balance CAD 90.00"));
+        QVERIFY(!root->findChild<QQuickItem*>("projectedLedger"));
         run(m,"create_account",{{"id","2"},{"name","Japan"},{"currency","JPY"},{"date","2026-01-01"}});
         QCOMPARE(m.state().value("accountId").toString(),QString("2"));
-        QCOMPARE(m.state().value("mode").toString(),QString("Projected"));
         checking=QVariantMap{};
         for(const auto& value:m.state().value("accounts").toList()) if(value.toMap().value("id").toString()=="1") checking=value.toMap();
-        QCOMPARE(checking.value("committedBalance").toString(),QString("100.00"));
-        QCOMPARE(checking.value("projectedBalance").toString(),QString("90.00"));
-        QVERIFY(checking.value("projectionAvailable").toBool());
+        QCOMPARE(checking.value("balance").toString(),QString("90.00"));
         QTRY_VERIFY(balance=shown("accountBalance_1"));
-        QTRY_COMPARE(balance->property("text").toString(),QString("Committed CAD 100.00"));
+        QTRY_COMPARE(balance->property("text").toString(),QString("Balance CAD 90.00"));
         run(m,"select_account",{{"id","1"}});
         QTRY_VERIFY(balance=shown("accountBalance_1"));
-        QTRY_COMPARE(balance->property("text").toString(),QString("Committed CAD 100.00"));
-        projected->setProperty("checked",true);QVERIFY(QMetaObject::invokeMethod(projected,"clicked"));
-        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        QCOMPARE(m.state().value("mode").toString(),QString("Projected"));
-        QTRY_VERIFY(balance=shown("accountBalance_1"));
-        QTRY_COMPARE(balance->property("text").toString(),QString("Committed CAD 100.00"));
+        QTRY_COMPARE(balance->property("text").toString(),QString("Balance CAD 90.00"));
         const int draftRow=m.occurrenceIndex(batch,0);QVERIFY(draftRow>=0);
         run(m,"select",{{"row",draftRow}});
         auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);

@@ -14,7 +14,7 @@ Every feature document carries a status, last-updated date, and implementation s
 
 Acceptance criteria are verification obligations, not by themselves reports of passing tests. Feature 002 records the implemented engine subset; feature 001 records the optional storage prototype; feature 005 records the optional synthetic sheet experiment. Both link actual verification. When implementation starts, add evidence of actual checks and identify unverified criteria. Keep this index and `doc/status.md` aligned with lifecycle changes.
 
-Next work: [accepted dataset-wide commit/new-transaction model](../doc/import-commit-discussion.md). New rows live in the normal ledger; Commit accepts them across all accounts; accepted rows remain editable; Forget removes exclusively owned import material. This supersedes earlier per-account commit and compulsory permanent evidence retention. Remaining decisions and deferred account/category creation are in the handoff. Not implemented; explicit Go is still required.
+Next work: [accepted dataset-wide commit/new-transaction model](../doc/import-commit-discussion.md). New rows live in the normal ledger; Commit accepts them across all accounts; accepted rows remain editable; Forget removes exclusively owned import material. This supersedes earlier per-account commit and compulsory permanent evidence retention. Settled account-wide rollback, shared ownership, inclusive balance and import-error policies, plus deferred account/category creation, are in the handoff. Go was given on 2026-10-29. The single-balance read/UI slice is implemented; dataset-wide acceptance, source-owned rollback and partial-error acceptance remain incomplete. Preserve existing creation/opening-review behavior.
 
 ## Initial features
 

@@ -115,7 +115,7 @@ std::optional<app::CategoryReceipt> ImportStore::category_change_outcome(std::st
 app::CategoryReceipt ImportStore::apply_category_change(std::string_view operation,const app::CategoryRequest& request,std::int64_t expected) {
     identifier(operation);if(const auto prior=category_change_outcome(operation)){if(prior->request!=request || prior->catalog_before!=expected)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");return *prior;}
     const auto preview=preview_category_change(request);if(preview.catalog_revision!=expected)fail(SQLITE_CONSTRAINT,"Catalog changed; refresh before applying");Atomic transaction(impl_->db);if(catalog_sequence(impl_->db)!=expected)fail(SQLITE_CONSTRAINT,"Catalog changed; refresh before applying");
-    write_category_change(operation,preview);impl_->finish(transaction);return *category_change_outcome(operation);
+    write_category_change(operation,preview);finish([&]{transaction.commit();});return *category_change_outcome(operation);
 }
 void ImportStore::write_category_change(std::string_view operation,const app::CategoryPreview& preview) {
     const auto& request=preview.request;const auto expected=preview.catalog_revision;

@@ -92,7 +92,7 @@ app::BulkReceipt ImportStore::apply_bulk(std::string_view operation,const app::B
     }
     Statement group(impl_->db,"INSERT INTO bulk_operations VALUES(?,?,?,?,?,?,?)");group.text(1,operation);group.integer(2,static_cast<int>(preview.request.kind));if(preview.request.kind==app::ChangeKind::correct)group.text(3,preview.request.category);if(preview.request.kind==app::ChangeKind::undo)group.text(4,preview.request.undo_of);group.integer(5,preview.preview_sequence);group.integer(6,preview.catalog_revision);group.integer(7,integer(preview.entries.size()));group.done();
     for(std::size_t i=0;i<operations.size();++i){Statement member(impl_->db,"INSERT INTO bulk_members VALUES(?,?,?)");member.text(1,operation);member.integer(2,integer(i));member.text(3,operations[i]);member.done();}
-    impl_->finish(transaction);return *bulk_outcome(operation);
+    finish([&]{transaction.commit();});return *bulk_outcome(operation);
 }
 void ImportStore::verify_bulk(const app::OperationContext* context) const {
     Statement groups(impl_->db,"SELECT id FROM bulk_operations ORDER BY preview_sequence");

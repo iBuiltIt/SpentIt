@@ -333,26 +333,12 @@ ApplicationWindow {
             ledger.contentY+=saved.offset
         } else ledger.positionViewAtBeginning()
     }
-    // Session-only. A restart, or a new dataset, shows the projected balance again.
-    property var sidebarBalanceMode: ({})
+    // Viewport restoration is session-only.
     property var ledgerViewRestore: null
     property string ledgerViewKind: ""
     readonly property var ledgerColumnWeights: [0.14, 0.24, 0.17, 0.15, 0.14, 0.16]
-    function sidebarBalanceKind(account) {
-        let chosen=sidebarBalanceMode[account.id]
-        if(chosen==="committed" || !account.projectionAvailable) return "committed"
-        return "projected"
-    }
     function sidebarBalanceText(account) {
-        let kind=sidebarBalanceKind(account)
-        let amount=kind==="projected"?(account.projectedBalance||""):(account.committedBalance||"")
-        return (kind==="projected"?"Projected":"Committed")+" "+(account.currency||"")+" "+amount
-    }
-    function toggleSidebarBalance(account) {
-        if(!account.projectionAvailable) return
-        let next=Object.assign({},sidebarBalanceMode)
-        next[account.id]=sidebarBalanceKind(account)==="projected"?"committed":"projected"
-        sidebarBalanceMode=next
+        return "Balance "+(account.currency||"")+" "+(account.balance||"")
     }
     function captureLedgerView(kind) {
         if(ledger.count===0) {ledgerViewRestore=null;ledgerViewKind="";return}
@@ -865,7 +851,7 @@ ApplicationWindow {
             if(action==="select")ledger.currentIndex=s.selectionIndex===undefined?-1:s.selectionIndex
             if (action==="inspect" || action==="import" || action==="map_import")
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
-            if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null;projected.checked=s.mode!=="Committed"}
+            if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
             if(!s.active) {addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
@@ -889,7 +875,7 @@ ApplicationWindow {
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
                 loadCategoryForm();categorySelection="";categoryReveal="";categoryMenuEntry=({});categoryContext.close()
-                transferDate.text=workflow.todayDisplay();sidebarBalanceMode=({});ledgerViewRestore=null;ledgerViewKind=""
+                transferDate.text=workflow.todayDisplay();ledgerViewRestore=null;ledgerViewKind=""
             }
             if(!success && (action==="preview_category" || action==="apply_category")) {
                 categorySaving=false;categoryError=workflow.error
@@ -911,7 +897,6 @@ ApplicationWindow {
                 if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
                 if(action==="rules_reapply_preview")reapplyDialog.open()
                 if(action==="rules_reapply_apply"){reapplyDialog.close();loadEditor()}
-                projected.checked=s.mode!=="Committed"
                 if(action==="preview_category") workflow.command("apply_category",{preview:s.categoryPreview.id})
                 if(action==="category_select" || action==="apply_category")loadCategoryForm()
                 if(action==="apply_category") {categorySelection=(s.categorySelected||{}).id||"";categoryReveal=categorySelection;revealCategorySelection();let next=pendingAction;pendingAction=null;categoryDirty=false;if(!dirty)loadEditor();if(next)guard(next)}
@@ -995,7 +980,7 @@ ApplicationWindow {
         }
         function update(index,key,value){let rows=mappings.slice();let row=Object.assign({},rows[index]);row[key]=value;rows[index]=row;mappings=rows}
         contentItem:ColumnLayout {
-            Label {text:"Choose an existing account or explicitly create one for every source account. Original names and reported balances are retained. New openings are reviewed after repairs; drafts do not change committed balances.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:"Choose an existing account or explicitly create one for every source account. Original names and reported balances are retained. New openings are reviewed after repairs; saved uncommitted transactions count in the balance.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             ListView {
                 id:mappingList;objectName:"sourceAccountMappingList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:12;model:s.importPlan||[]
                 delegate:ColumnLayout {
@@ -1030,10 +1015,10 @@ ApplicationWindow {
             RowLayout {
                 Button {objectName:"guardSave";text:committedEditing?"Review correction":"Save";onClicked:{let next=pendingAction;dismiss(unsaved);pendingAction=next;saveEditor()}}
                 Button {objectName:"guardDiscard";text:"Discard";onClicked:{let next=pendingAction;pendingAction=null;dismiss(unsaved);loadEditor();if(next)guard(next)}}
-                Button {objectName:"guardStay";text:"Stay";onClicked:{unsaved.close();pendingAction=null;projected.checked=s.mode!=="Committed"}}
+                Button {objectName:"guardStay";text:"Stay";onClicked:{unsaved.close();pendingAction=null}}
             }
         }
-        onRejected:if(!guardHandoff){pendingAction=null;projected.checked=s.mode!=="Committed"}
+        onRejected:if(!guardHandoff){pendingAction=null}
     }
     Dialog {
         id:changePreview;objectName:"committedChangePreview";modal:true;anchors.centerIn:parent
@@ -1364,13 +1349,12 @@ ApplicationWindow {
                                             onClicked:function(mouse){openAccountMenu(modelData.id,parent,mouse.x,mouse.y)}
                                         }
                                     }
-                                    Button {
+                                    Label {
                                         objectName:"accountBalance_"+modelData.id
-                                        Layout.fillWidth:true;Layout.minimumHeight:28;text:sidebarBalanceText(modelData);enabled:!workflow.busy
+                                        Layout.fillWidth:true;Layout.minimumHeight:28;text:sidebarBalanceText(modelData)
                                         topPadding:2;bottomPadding:2;leftPadding:4;rightPadding:4
-                                        onClicked:toggleSidebarBalance(modelData)
+                                        wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d"
                                         Accessible.name:text
-                                        contentItem:Label {text:parent.text;wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d";width:parent.width}
                                     }
                                 }
                             }
@@ -1401,13 +1385,12 @@ ApplicationWindow {
                                             onClicked:function(mouse){openAccountMenu(modelData.id,parent,mouse.x,mouse.y)}
                                         }
                                     }
-                                    Button {
+                                    Label {
                                         objectName:"accountBalance_"+modelData.id
-                                        Layout.fillWidth:true;Layout.minimumHeight:28;text:sidebarBalanceText(modelData);enabled:!workflow.busy
+                                        Layout.fillWidth:true;Layout.minimumHeight:28;text:sidebarBalanceText(modelData)
                                         topPadding:2;bottomPadding:2;leftPadding:4;rightPadding:4
-                                        onClicked:toggleSidebarBalance(modelData)
+                                        wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d"
                                         Accessible.name:text
-                                        contentItem:Label {text:parent.text;wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d";width:parent.width}
                                     }
                                 }
                             }
@@ -1640,7 +1623,7 @@ ApplicationWindow {
             width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight;enabled:!workflow.busy || workflow.selecting
             Label {textFormat:Text.PlainText;text:s.path || "";elide:Text.ElideMiddle;Layout.fillWidth:true}
             RowLayout {
-                Label {textFormat:Text.PlainText;text:"Committed: "+(s.committed||"")+"   Projected: "+(s.projected||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
+                Label {textFormat:Text.PlainText;text:"Balance: "+(s.balance||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
                 UsableComboBox {id:profile;Layout.preferredWidth:200;model:["Choose date order","DMY","MDY"];Accessible.name:"QIF date order"}
                 Label {text:"Date order applies to QIF only";Layout.maximumWidth:160;wrapMode:Text.Wrap}
                 Button {text:"Import statement…";enabled:!s.readOnly && profile.currentIndex>0 && !s.pending;onClicked:guard(function(){importDialog.open()})}
@@ -1693,13 +1676,12 @@ ApplicationWindow {
             Label {
                 objectName:"incompleteImportNotice";visible:processingIncomplete;Layout.fillWidth:true;wrapMode:Text.Wrap
                 textFormat:Text.PlainText;color:"#855100"
-                text:processingIncomplete?"Import processing is incomplete. Original source evidence is saved ("+s.pending.count+" parsed records). No draft amounts have been added and the projected balance is unavailable. Resume to prepare the draft for review, inspect the source file, or discard this import while retaining its evidence.":""
+                text:processingIncomplete?"Import processing is incomplete. Original source evidence is saved ("+s.pending.count+" parsed records). Successfully prepared transactions count in the balance; unprocessed records do not yet have ledger amounts. Resume to prepare the draft for review, inspect the source file, or discard this import while retaining its evidence.":""
             }
             Label {textFormat:Text.PlainText;visible:!!s.pending && !!s.pending.blocked && !processingIncomplete;text:s.pending && s.pending.blocked ? "BLOCKED — no partial commit. Inspect each record. Date and exact-amount repairs are available when record structure is intact; unsupported structures require discard/reimport.\n"+(s.pending.diagnostics||""):"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;maximumLineCount:5;elide:Text.ElideRight}
             Label {objectName:"committedChangeReceipt";textFormat:Text.PlainText;text:(s.changeReceipt||{}).summary||"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? "Committed "+s.receipt.operation+" · included "+s.receipt.included+", excluded "+s.receipt.excluded+" · "+s.receipt.before+" + ("+s.receipt.change+") = "+s.receipt.after:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
-                CheckBox {id:projected;objectName:"projectedLedger";checked:true;text:"Projected ledger";onClicked:guard(query)}
                 TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply filter";onClicked:guard(query)}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
@@ -1776,7 +1758,7 @@ ApplicationWindow {
                     }
                     Row {
                         width:parent.width;height:34;spacing:0
-                        Repeater {model:[record.date,record.payee+(record.status==="Draft"?" [Draft]":""),record.category,record.withdrawal,record.deposit,record.balance]
+                        Repeater {model:[record.date,record.payee+(record.status==="Draft"?" [Uncommitted]":""),record.category,record.withdrawal,record.deposit,record.balance]
                             Item {
                                 required property string modelData
                                 required property int index
@@ -1925,7 +1907,7 @@ ApplicationWindow {
     }
     function query(sort, descending) {
         if(workflow.busy) return
-        let args={filter:search.text,sort:typeof sort==="number"?sort:(s.sort||0),descending:typeof descending==="boolean"?descending:(s.descending||false),projected:projected.checked}
+        let args={filter:search.text,sort:typeof sort==="number"?sort:(s.sort||0),descending:typeof descending==="boolean"?descending:(s.descending||false),projected:true}
         let change={filter:search.text}
         if(!searchReturn && search.text.length>0) {
             let index=ledger.indexAt(1,ledger.contentY+1)

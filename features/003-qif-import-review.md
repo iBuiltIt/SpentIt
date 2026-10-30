@@ -1,6 +1,6 @@
 # 003 — QIF import and review
 
-Current next-work direction (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. Existing implementation is unchanged. Remaining transaction decisions are listed in the handoff; account/category creation is deferred. Implementation requires explicit Go.
+Current next-work direction (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The one-balance ledger/UI slice is implemented; the acceptance/rollback storage model remains incomplete. The handoff records the remaining implementation work.
 
 Status: **active**  
 Last updated: 2026-10-29  

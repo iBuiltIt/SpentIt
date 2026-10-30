@@ -174,9 +174,15 @@ Money managed_local_change(const std::vector<app::TransferView>& before,const st
 }
 std::int64_t ImportStore::transfer_sequence() const{return financial_sequence(impl_->db);}
 std::vector<app::TransferView> ImportStore::all_transfers() const {
+    std::string stamp;
+    Statement heads(impl_->db,"SELECT identity,sequence FROM transfer_heads ORDER BY identity");
+    while(heads.row())stamp+=std::to_string(heads.bytes(0).size())+":"+heads.bytes(0)+":"+std::to_string(heads.integer(1))+";";
+    if(!impl_->verifying && impl_->reviewed_transfers && impl_->reviewed_transfer_stamp==stamp)return *impl_->reviewed_transfers;
     Statement rows(impl_->db,"SELECT v.identity,v.payload FROM transfer_heads h JOIN transfer_versions v USING(identity,sequence) ORDER BY v.identity");std::vector<app::TransferView> out;
     while(rows.row()){auto value=transfer_codec::view(rows.bytes(1));if(value.link.identity!=rows.bytes(0))fail(SQLITE_CORRUPT);out.push_back(std::move(value));if(out.size()>qif::max_records)fail(SQLITE_TOOBIG);}
-    validate_transfer_set(out);return out;
+    validate_transfer_set(out);
+    if(!impl_->verifying){impl_->reviewed_transfer_stamp=std::move(stamp);impl_->reviewed_transfers=out;}
+    return out;
 }
 std::vector<app::TransferView> ImportStore::transfers() const {
     auto out=all_transfers();std::erase_if(out,[&](const auto& value){return value.link.origin.endpoint.account!=impl_->selected_account && value.link.destination.endpoint.account!=impl_->selected_account;});return out;
@@ -317,7 +323,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             append_financial(impl_->db,operation,app::ChangeKind::correct,entry_identity,entry_after->revision-1,entry_after->revision,before,zero,before,"",request.expected_sequence,catalog_sequence(impl_->db));
             for(const auto& dependency:entry_dependencies){Statement d(impl_->db,"INSERT INTO change_dependencies VALUES(?,?,?,?)");d.text(1,operation);d.text(2,dependency.batch);d.integer(3,dependency.revision);d.integer(4,static_cast<int>(dependency.state));d.done();}
         }else append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,before+change,"",request.expected_sequence,catalog_sequence(impl_->db));
-        impl_->finish(transaction);return {std::string(operation),account.identity,sequence,before,entry_category?zero:change,before+(entry_category?zero:change)};
+        finish([&]{transaction.commit();});return {std::string(operation),account.identity,sequence,before,entry_category?zero:change,before+(entry_category?zero:change)};
     }
     if(create){
         if(found!=values.end())fail(SQLITE_CONSTRAINT,"Transfer identity already exists");
@@ -355,7 +361,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     store_transfer(impl_->db,*found,sequence,create);
     append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,after,"",request.expected_sequence,catalog_sequence(impl_->db));
     if(did_commit)exec(impl_->db,"UPDATE account SET frozen=1 WHERE singleton=spentit_account()");
-    impl_->finish(transaction);return {std::string(operation),account.identity,sequence,before,change,after};
+    finish([&]{transaction.commit();});return {std::string(operation),account.identity,sequence,before,change,after};
 }
 std::set<std::size_t> ImportStore::protected_import_rows(std::string_view batch) const {
     std::set<std::size_t> result;
