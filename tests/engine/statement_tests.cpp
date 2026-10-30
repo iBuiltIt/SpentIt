@@ -192,6 +192,23 @@ void parser() {
     check(imports::candidate_basis(qif_row, aso_other_day) == imports::MatchBasis::uncertain_date);
     check(imports::candidate_basis(same, aso_fit) == imports::MatchBasis::same_fitid);
     check(imports::basis_label(imports::MatchBasis::same_fitid).find("FITID") != std::string::npos);
+    // Synthetic decision table: format and text do not change bank identity;
+    // contradictory financial facts and unavailable identities never auto-match.
+    for(const auto label:{"ofx","qfx","qbo","aso"}) {
+        const auto original=sgml(bank(txn("STRICT-1","20260201","-4.25","Cafe & Books")));
+        const auto exported=sgml(bank(txn("STRICT-1","20260201","-4.25","Cafe &amp; Books")));
+        const auto a=statements::parse_mapped(original,statements::inspect(original,"ofx"),0,qif::DateOrder::dmy,cad).records.at(0);
+        auto b=statements::parse_mapped(exported,statements::inspect(exported,label),0,qif::DateOrder::dmy,cad).records.at(0);
+        b.payee="Cafe &amp; Books";b.memo="Export description";
+        check(imports::same_bank_transaction(a,b));
+        b.date="2026-02-02";check(!imports::same_bank_transaction(a,b));b.date=a.date;
+        b.trntype="CREDIT";check(!imports::same_bank_transaction(a,b));b.trntype=a.trntype;
+        b.original_amount=Money(-426,cad);check(!imports::same_bank_transaction(a,b));b.original_amount=a.original_amount;
+        b.source_currency=Currency("USD");check(!imports::same_bank_transaction(a,b));b.source_currency=cad;
+        b.fitid="STRICT-2";check(!imports::same_bank_transaction(a,b));b.fitid.clear();
+        b.associated_fitid=a.fitid;check(!imports::same_bank_transaction(a,b));
+        check(!imports::same_bank_transaction(a,qif_row));
+    }
 }
 }
 int main() {

@@ -46,11 +46,11 @@ void import_flow(){Directory d;const auto path=d.path/"doc";
  s.ingest("new","D27/10/2026\nT-2\nPNew\n^\n",qif::DateOrder::dmy);check(s.projected_balance()==Money(9800,cad));s.commit("origin",1,"commit-protected");s.commit("new",0,"commit-new");check(s.committed_balance()==Money(9800,cad));
  s.select_account(2);s.ingest("bank","D28/10/2026\nT100\nPBank evidence\nL[Checking]\n^\n",qif::DateOrder::dmy);
  r=command(s,app::TransferAction::propose_match,"imported");r.evidence=transfers::BankEvidence{{2,{"bank",0},"source-0"},Money(10000,cad),"2026-10-28"};s.apply_transfer("propose",r);
- check(s.committed_balance()==Money(10000,cad));check(s.projected_balance()==Money(10000,cad));check(s.ledger(true).size()==1);s.discard("bank",0);check(!s.transfers()[0].link.destination.proposed_evidence);check(s.committed_balance()==Money(10000,cad));
+ check(s.committed_balance()==Money(10000,cad));check(s.projected_balance()==Money(10000,cad));check(s.ledger(true).size()==1);s.rollback_account("forget-bank",s.rollback_review().token);check(!s.transfers()[0].link.destination.proposed_evidence);check(s.committed_balance()==Money(10000,cad));
  s.ingest("bank-again","D28/10/2026\nT100\nPBank evidence\nL[Checking]\n^\n",qif::DateOrder::dmy);r=command(s,app::TransferAction::propose_match,"imported");r.evidence=transfers::BankEvidence{{2,{"bank-again",0},"source-0"},Money(10000,cad),"2026-10-28"};s.apply_transfer("propose-again",r);
- const auto receipt=s.commit("bank-again",0,"attach");check(receipt.before==Money(10000,cad) && receipt.change.units()==0 && receipt.after==Money(10000,cad));check(s.ledger(false).size()==1);check(s.transfers()[0].link.destination.attached_evidence.has_value());s.verify();s.backup_to(d.path/"backup",password);}
+ check(s.row({"bank-again",0}).matched_generated);check(s.acceptance_review().transactions==0);check(s.import_result("bank-again").already_present==1);check(s.ledger(false).size()==1);check(!s.transfers()[0].link.destination.proposed_evidence);s.verify();s.backup_to(d.path/"backup",password);}
  {auto s=ImportStore::open(path,password);check(s.committed_balance()==Money(9800,cad));s.select_account(2);check(s.committed_balance()==Money(10000,cad));s.verify();}
- {auto s=ImportStore::open(d.path/"backup",password);s.select_account(2);check(s.transfers()[0].link.destination.date=="2026-10-28");}
+ {auto s=ImportStore::open(d.path/"backup",password);s.select_account(2);check(s.transfers()[0].link.destination.date=="2026-10-26");}
 }
 
 void split_flow(){Directory d;const auto path=d.path/"doc";

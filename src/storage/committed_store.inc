@@ -37,8 +37,13 @@ void check_rule_transition(const imports::DraftRow& before,const imports::DraftR
 }
 #endif
 void store_entry(sqlite3* db,const imports::Occurrence& id,const app::EntrySnapshot& snapshot,std::optional<std::int64_t> ruleset) {
-    Statement row(db,"INSERT INTO entry_revisions VALUES(?,?,?,?,?,?,?,?)");row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,snapshot.revision);row.integer(4,snapshot.active?1:0);row.text(5,snapshot.draft.date);row.text(6,snapshot.draft.payee);row.text(7,snapshot.draft.memo);row.integer(8,snapshot.draft.transaction.effective_total().units());row.done();
-    std::int64_t position=0;for(const auto& a:snapshot.draft.transaction.allocations()){Statement allocation(db,"INSERT INTO entry_allocations VALUES(?,?,?,?,?,?,?)");allocation.text(1,id.batch);allocation.integer(2,integer(id.ordinal));allocation.integer(3,snapshot.revision);allocation.integer(4,position++);allocation.text(5,a.category);allocation.text(6,a.memo);allocation.integer(7,a.amount.units());allocation.done();}
+    if(snapshot.revision==0) {
+        Statement row(db,"INSERT INTO entry_revisions(batch,ordinal,revision,active,draft_revision) SELECT ?1,?2,0,1,max(revision) FROM versions WHERE batch=?1 AND ordinal=?2");
+        row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.done();
+    } else {
+        Statement row(db,"INSERT INTO entry_revisions(batch,ordinal,revision,active,date,payee,memo,total) VALUES(?,?,?,?,?,?,?,?)");row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,snapshot.revision);row.integer(4,snapshot.active?1:0);row.text(5,snapshot.draft.date);row.text(6,snapshot.draft.payee);row.text(7,snapshot.draft.memo);row.integer(8,snapshot.draft.transaction.effective_total().units());row.done();
+        std::int64_t position=0;for(const auto& a:snapshot.draft.transaction.allocations()){Statement allocation(db,"INSERT INTO entry_allocations VALUES(?,?,?,?,?,?,?)");allocation.text(1,id.batch);allocation.integer(2,integer(id.ordinal));allocation.integer(3,snapshot.revision);allocation.integer(4,position++);allocation.text(5,a.category);allocation.text(6,a.memo);allocation.integer(7,a.amount.units());allocation.done();}
+    }
     save_metadata(db,id,snapshot.revision,snapshot.draft,true,ruleset);
     Statement head(db,snapshot.revision==0?"INSERT INTO entry_heads VALUES(?,?,?)":"UPDATE entry_heads SET revision=?3 WHERE batch=?1 AND ordinal=?2");head.text(1,id.batch);head.integer(2,integer(id.ordinal));head.integer(3,snapshot.revision);head.done();
 }
@@ -49,9 +54,9 @@ std::int64_t financial_sequence(sqlite3* db){Statement s(db,"SELECT coalesce(max
 }
 bool ImportStore::committed_changes_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="4" || categories_supported();}
 app::EntrySnapshot ImportStore::entry_snapshot(const imports::Occurrence& id,std::int64_t revision) const {
-    Statement row(impl_->db,"SELECT active,date,payee,memo,total FROM entry_revisions WHERE batch=? AND ordinal=? AND revision=?");row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,revision);if(!row.row())fail(SQLITE_NOTFOUND,"Committed revision does not exist");
+    Statement row(impl_->db,"SELECT active,date,payee,memo,total FROM entry_values WHERE batch=? AND ordinal=? AND revision=?");row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,revision);if(!row.row())fail(SQLITE_NOTFOUND,"Committed revision does not exist");
     const auto original=load_row(id,false).source;const auto currency=entry_currency(impl_->db,id.batch,integer(id.ordinal),revision);const bool reassigned=original.source_currency && *original.source_currency!=currency;std::vector<Allocation> allocations;
-    Statement aa(impl_->db,"SELECT position,category,memo,units FROM entry_allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");aa.text(1,id.batch);aa.integer(2,integer(id.ordinal));aa.integer(3,revision);
+    Statement aa(impl_->db,"SELECT position,category,memo,units FROM entry_allocation_values WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");aa.text(1,id.batch);aa.integer(2,integer(id.ordinal));aa.integer(3,revision);
     while(aa.row()){if(aa.integer(0)!=integer(allocations.size()) || allocations.size()>=qif::max_allocations)fail(SQLITE_CORRUPT);allocations.push_back({aa.bytes(1),aa.bytes(2),Money(aa.integer(3),currency)});}
     imports::DraftRow draft{row.bytes(1),row.bytes(2),row.bytes(3),Transaction::repaired_import(original.original_amount,Money(row.integer(4),currency),std::move(allocations),reassigned)};load_metadata(impl_->db,id,revision,draft,true);imports::validate_draft(original,draft,reassigned);
     return {revision,row.integer(0)!=0,std::move(draft)};
@@ -73,7 +78,7 @@ app::CommittedEntry ImportStore::committed_entry(const imports::Occurrence& id) 
 }
 std::optional<app::ChangeReceipt> ImportStore::committed_change_outcome(std::string_view operation) const {
     if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Editing committed transactions is not supported by this dataset");
-    if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement row(impl_->db,"SELECT kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,sequence FROM ledger_operations WHERE id=?");row.text(1,operation);if(!row.row()){if(categories_supported()){Statement other(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");other.text(1,operation);if(other.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");}return {};}
     if(row.integer(0)==5)fail(SQLITE_CONSTRAINT,"Operation identity belongs to an account command");
     if(row.integer(0)==0)fail(SQLITE_CONSTRAINT,"Operation identity belongs to an import commit");
@@ -109,7 +114,7 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
     identifier(operation);
     if(bulk_supported()){Statement member(impl_->db,"SELECT 1 FROM bulk_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a bulk command");}
 #ifdef SPENTIT_RULES_STORAGE
-    if(scalar(impl_->db,"PRAGMA user_version")=="30"){
+    if(scalar(impl_->db,"PRAGMA user_version")=="32"){
         Statement member(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");
         if(request.kind==app::ChangeKind::undo){Statement target(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");target.text(1,request.undo_of);if(target.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");}
     }
@@ -152,7 +157,7 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
 }
 std::vector<app::CommittedHistoryItem> ImportStore::committed_history(const imports::Occurrence& id) const {
     const auto current=committed_entry(id);std::vector<app::CommittedHistoryItem> result;
-    Statement rows(impl_->db,"SELECT o.id,o.kind,o.prior_revision,o.result_revision,o.before,o.change,o.after,o.sequence,h.sequence FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE o.batch=? AND (o.kind=0 OR o.ordinal=?) ORDER BY o.sequence");rows.text(1,id.batch);rows.integer(2,integer(id.ordinal));
+    Statement rows(impl_->db,"SELECT o.id,o.kind,o.prior_revision,o.result_revision,o.before,o.change,o.after,o.sequence,h.sequence FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE o.batch=?1 AND ((o.kind=0 AND EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.operation=o.id AND a.batch=o.batch AND a.ordinal=?2)) OR o.ordinal=?2) ORDER BY o.sequence");rows.text(1,id.batch);rows.integer(2,integer(id.ordinal));
     while(rows.row()){const auto currency=currency_as_of(impl_->db,account_for_batch(id.batch).identity,rows.integer(8));const auto kind=static_cast<app::ChangeKind>(rows.integer(1));std::optional<app::EntrySnapshot> before;bool eligible=false;std::string reason="Import publication is not an undoable correction";
         if(kind!=app::ChangeKind::publication){before=entry_snapshot(id,rows.integer(2));const auto operation=rows.bytes(0);const auto receipt=committed_change_outcome(operation);eligible=receipt->result_token==current.token;reason=eligible?"":"Newer transaction or dependent review prevents Undo";if(eligible && later_relationship_blocks(id,operation)){eligible=false;reason="Newer transaction, transfer relationship, or source association prevents Undo";}}
         result.push_back({rows.bytes(0),kind,std::move(before),entry_snapshot(id,kind==app::ChangeKind::publication?0:rows.integer(3)),Money(rows.integer(4),currency),Money(rows.integer(5),currency),Money(rows.integer(6),currency),eligible,reason,rows.integer(7)});
@@ -160,13 +165,13 @@ std::vector<app::CommittedHistoryItem> ImportStore::committed_history(const impo
 }
 std::vector<app::CommittedChangeSummary> ImportStore::committed_changes(std::int64_t before,std::size_t limit) const {
     if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Editing committed transactions is not supported by this dataset");if(before<0 || limit==0 || limit>100)fail(SQLITE_CONSTRAINT,"History page limit is invalid");
-    Statement rows(impl_->db,"SELECT o.id,o.kind,o.batch,o.ordinal,o.sequence,e.active,e.date,e.payee,e.total,h.revision FROM ledger_operations o JOIN entry_heads h ON h.batch=o.batch AND h.ordinal=o.ordinal JOIN entry_revisions e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision WHERE o.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND o.kind!=0 AND (?=0 OR o.sequence<?) ORDER BY o.sequence DESC LIMIT ?");rows.integer(1,before);rows.integer(2,before);rows.integer(3,integer(limit));std::vector<app::CommittedChangeSummary> result;
+    Statement rows(impl_->db,"SELECT o.id,o.kind,o.batch,o.ordinal,o.sequence,e.active,e.date,e.payee,e.total,h.revision FROM ledger_operations o JOIN entry_heads h ON h.batch=o.batch AND h.ordinal=o.ordinal JOIN entry_values e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision WHERE o.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND o.kind!=0 AND (?=0 OR o.sequence<?) ORDER BY o.sequence DESC LIMIT ?");rows.integer(1,before);rows.integer(2,before);rows.integer(3,integer(limit));std::vector<app::CommittedChangeSummary> result;
     while(rows.row())result.push_back({rows.bytes(0),static_cast<app::ChangeKind>(rows.integer(1)),{rows.bytes(2),static_cast<std::size_t>(rows.integer(3))},rows.integer(4),rows.integer(5)!=0,rows.bytes(6),rows.bytes(7),Money(rows.integer(8),entry_currency(impl_->db,rows.bytes(2),rows.integer(3),rows.integer(9)))});return result;
 }
 void ImportStore::verify_committed(const app::OperationContext* context) const {
     if(context)context->checkpoint("Verifying committed change history");
     Statement order_check(impl_->db,"SELECT 1 FROM events e WHERE NOT EXISTS(SELECT 1 FROM history_order h WHERE h.batch=e.batch AND h.event_revision=e.revision) UNION ALL SELECT 1 FROM ledger_operations o WHERE NOT EXISTS(SELECT 1 FROM history_order h WHERE h.operation=o.id)");if(order_check.row())fail(SQLITE_CORRUPT,"Missing history ordering");
-    Statement common_order(impl_->db,"SELECT count(*),coalesce(min(sequence),1),coalesce(max(sequence),0) FROM history_order");if(!common_order.row() || common_order.integer(1)!=1 || common_order.integer(0)!=common_order.integer(2))fail(SQLITE_CORRUPT);
+    Statement common_order(impl_->db,"SELECT count(*),coalesce(min(sequence),1),coalesce(max(sequence),0) FROM history_order");if(!common_order.row() || common_order.integer(1)<1 || common_order.integer(0)>common_order.integer(2))fail(SQLITE_CORRUPT);
     Statement batch_order(impl_->db,"SELECT 1 FROM history_order h JOIN history_order prior ON prior.batch=h.batch AND prior.event_revision=h.event_revision-1 WHERE h.sequence<=prior.sequence");if(batch_order.row())fail(SQLITE_CORRUPT);
     Statement event_order(impl_->db,"SELECT 1 FROM events e JOIN events prior ON prior.sequence=e.sequence-1 JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision JOIN history_order p ON p.batch=prior.batch AND p.event_revision=prior.revision WHERE h.sequence<=p.sequence");if(event_order.row())fail(SQLITE_CORRUPT);
     // Each exclusion records the target state at its original review event.
@@ -180,7 +185,19 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
         Statement original(impl_->db,"SELECT v.duplicate_batch,v.duplicate_ordinal,e.kind,s.target_revision,s.target_active,s.review_revision FROM versions v JOIN events e ON e.batch=v.batch AND e.revision=v.revision JOIN review_stamps s USING(batch,ordinal,revision) WHERE v.batch=? AND v.ordinal=? AND v.revision=? AND v.decision=2");original.text(1,batch_id);original.integer(2,ordinal);original.integer(3,origin);
         if(!original.row() || original.bytes(0)!=target.batch || original.integer(1)!=integer(target.ordinal) || (original.bytes(2)!="ingest" && original.bytes(2)!="materialize" && original.bytes(2)!="decide") || original.integer(3)!=reviews.integer(3) || original.integer(4)!=reviews.integer(4) || original.integer(5)!=origin)fail(SQLITE_CORRUPT);
         if(origin!=revision){if(reviews.bytes(9)!="save" && reviews.bytes(9)!="apply_rules" && reviews.bytes(9)!="currency")fail(SQLITE_CORRUPT);Statement previous(impl_->db,"SELECT s.target_revision,s.target_active,s.review_revision,v.duplicate_batch,v.duplicate_ordinal FROM versions v LEFT JOIN review_stamps s USING(batch,ordinal,revision) WHERE v.batch=? AND v.ordinal=? AND v.revision<? ORDER BY v.revision DESC LIMIT 1");previous.text(1,batch_id);previous.integer(2,ordinal);previous.integer(3,revision);if(!previous.row() || previous.null(0) || previous.integer(0)!=reviews.integer(3) || previous.integer(1)!=reviews.integer(4) || previous.integer(2)!=origin || previous.bytes(3)!=target.batch || previous.integer(4)!=integer(target.ordinal))fail(SQLITE_CORRUPT);}
-        Statement then(impl_->db,"SELECT o.result_revision FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE o.batch=? AND (o.kind=0 OR o.ordinal=?) AND h.sequence<? ORDER BY h.sequence DESC LIMIT 1");then.text(1,target.batch);then.integer(2,integer(target.ordinal));then.integer(3,reviews.integer(8));if(!then.row() || then.integer(0)!=reviews.integer(3) || entry_snapshot(target,then.integer(0)).active!=(reviews.integer(4)!=0))fail(SQLITE_CORRUPT,"Invalid review target history");
+        Statement then(impl_->db,"SELECT o.result_revision FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE o.batch=?1 AND ((o.kind=0 AND EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=o.batch AND a.ordinal=?2 AND a.operation=o.id)) OR o.ordinal=?2) AND h.sequence<?3 ORDER BY h.sequence DESC LIMIT 1");then.text(1,target.batch);then.integer(2,integer(target.ordinal));then.integer(3,reviews.integer(8));
+        std::int64_t expected_stamp;bool expected_active=true;
+        if(then.row()) {
+            const auto revision=then.integer(0);expected_active=entry_snapshot(target,revision).active;
+            if(revision>0)expected_stamp=revision;
+            else {Statement ref(impl_->db,"SELECT draft_revision FROM entry_revisions WHERE batch=? AND ordinal=? AND revision=0");ref.text(1,target.batch);ref.integer(2,integer(target.ordinal));if(!ref.row() || ref.null(0))fail(SQLITE_CORRUPT);expected_stamp=-1-ref.integer(0);}
+        } else {
+            Statement draft(impl_->db,"SELECT v.revision,v.decision FROM versions v JOIN history_order h ON h.batch=v.batch AND h.event_revision=v.revision WHERE v.batch=? AND v.ordinal=? AND h.sequence<? ORDER BY v.revision DESC LIMIT 1");draft.text(1,target.batch);draft.integer(2,integer(target.ordinal));draft.integer(3,reviews.integer(8));
+            if(!draft.row() || draft.integer(1)!=1)fail(SQLITE_CORRUPT,"Invalid pending review target history");expected_stamp=-1-draft.integer(0);
+        }
+        Statement match_history(impl_->db,"SELECT v.payload,g.account FROM generated_source_matches g JOIN transfer_versions v ON v.identity=g.link JOIN ledger_operations l ON l.sequence=v.sequence JOIN history_order h ON h.operation=l.id WHERE g.batch=? AND g.ordinal=? AND h.sequence<? ORDER BY v.sequence DESC LIMIT 1");match_history.text(1,target.batch);match_history.integer(2,integer(target.ordinal));match_history.integer(3,reviews.integer(8));
+        if(match_history.row()){const auto value=transfer_codec::view(match_history.bytes(0));const auto& side=value.link.origin.endpoint.account==match_history.integer(1)?value.link.origin:value.link.destination;expected_active=side.state!=transfers::State::removed;}
+        if(expected_stamp!=reviews.integer(3) || expected_active!=(reviews.integer(4)!=0))fail(SQLITE_CORRUPT,"Invalid review target history");
     }
     std::map<imports::Occurrence,std::int64_t> heads;std::map<std::int64_t,Money> balances;std::map<std::int64_t,std::vector<OpeningDelta>> deltas;std::map<std::int64_t,std::size_t> applied;
     Statement live_accounts(impl_->db,"SELECT singleton FROM account WHERE NOT EXISTS(SELECT 1 FROM account_retirements d WHERE d.account_id=account.singleton) ORDER BY singleton");
@@ -196,7 +213,7 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
             if(categories_supported()){Statement epoch(impl_->db,"SELECT o.catalog_revision,(SELECT coalesce(max(c.catalog_after),0) FROM category_operations c JOIN history_order h ON h.category_operation=c.id WHERE h.sequence<?) FROM ledger_operations o WHERE o.id=?");epoch.integer(1,order);epoch.text(2,operation);if(!epoch.row() || epoch.integer(0)!=epoch.integer(1))fail(SQLITE_CORRUPT,"Financial catalog preview does not match history");}
             Statement command(impl_->db,"SELECT prior_definition,definition FROM account_operations WHERE id=?");command.text(1,operations.bytes(9));if(!command.row() || operations.integer(7)!=0 || !operations.bytes(2).empty())fail(SQLITE_CORRUPT,"Currency command is missing its financial anchor");
             const auto before_currency=Currency::from_definition(command.bytes(0));const auto after_currency=Currency::from_definition(command.bytes(1));
-            if(order<=prior_order || sequence!=prior_sequence+1 || found->second.currency()!=before_currency || found->second.units()!=operations.integer(6))fail(SQLITE_CORRUPT,"Financial timeline does not reconcile");
+            if(order<=prior_order || sequence<=prior_sequence || found->second.currency()!=before_currency || found->second.units()!=operations.integer(6))fail(SQLITE_CORRUPT,"Financial timeline does not reconcile");
             Money after_money(operations.integer(8),after_currency);try{if(found->second.rescale(after_currency).units()!=after_money.units())fail(SQLITE_CORRUPT,"Financial timeline does not reconcile");}catch(const FinancialError&){fail(SQLITE_CORRUPT,"Financial timeline does not reconcile");}
             std::size_t bumped=0;for(auto& [identity,revision]:heads)if(account_for_batch(identity.batch).identity==account){++revision;++bumped;}snapshot_count+=bumped;found->second=after_money;prior_sequence=sequence;prior_order=order;continue;
         }
@@ -205,29 +222,44 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
         const auto owner=transfer_owner?*transfer_owner:account_for_batch(operations.bytes(2));apply_openings(owner.identity,order);auto balance_found=balances.find(owner.identity);if(balance_found==balances.end())fail(SQLITE_CORRUPT,"Financial timeline names a retired account");auto& balance=balance_found->second;const auto currency=currency_as_of(impl_->db,owner.identity,order);
         const auto kind=static_cast<app::ChangeKind>(operations.integer(1));
         if(categories_supported()){Statement epoch(impl_->db,"SELECT o.catalog_revision,(SELECT coalesce(max(c.catalog_after),0) FROM category_operations c JOIN history_order h ON h.category_operation=c.id WHERE h.sequence<?) FROM ledger_operations o WHERE o.id=?");epoch.integer(1,order);epoch.text(2,operation);if(!epoch.row() || epoch.integer(0)!=epoch.integer(1))fail(SQLITE_CORRUPT,"Financial catalog preview does not match history");}
-        if(order<=prior_order || sequence!=prior_sequence+1 || (!transfer_nonfinancial && (Money(operations.integer(6),currency)!=balance || balance+Money(operations.integer(7),currency)!=Money(operations.integer(8),currency))))fail(SQLITE_CORRUPT,"Financial timeline does not reconcile");
+        if(order<=prior_order || sequence<=prior_sequence || (!transfer_nonfinancial && (Money(operations.integer(6),currency)!=balance || balance+Money(operations.integer(7),currency)!=Money(operations.integer(8),currency))))fail(SQLITE_CORRUPT,"Financial timeline does not reconcile");
         if(kind==app::ChangeKind::transfer){
-            if(operations.bytes(2)!="" || operations.integer(3)!=0 || operations.integer(4)!=-1 || operations.integer(5)!=0 || !operations.bytes(9).empty() || operations.integer(10)!=prior_sequence || (transfer_nonfinancial && (operations.integer(7)!=0 || operations.integer(6)!=operations.integer(8))))fail(SQLITE_CORRUPT);
+            if(operations.bytes(2)!="" || operations.integer(3)!=0 || operations.integer(4)!=-1 || operations.integer(5)!=0 || !operations.bytes(9).empty() || (operations.integer(10)<prior_sequence || operations.integer(10)>=sequence) || (transfer_nonfinancial && (operations.integer(7)!=0 || operations.integer(6)!=operations.integer(8))))fail(SQLITE_CORRUPT);
         } else if(kind==app::ChangeKind::publication){
             const auto receipt=outcome(operation);if(!receipt || receipt->batch!=operations.bytes(2) || receipt->before!=balance || receipt->change.units()!=operations.integer(7) || receipt->after.units()!=operations.integer(8) || operations.integer(3)!=-1 || operations.integer(4)!=-1 || operations.integer(5)!=0 || !operations.bytes(9).empty() || operations.integer(10)!=0)fail(SQLITE_CORRUPT);
-            Statement event(impl_->db,"SELECT h.sequence FROM history_order h JOIN events e ON e.batch=h.batch AND e.revision=h.event_revision WHERE e.batch=? AND e.kind='commit' AND e.revision=?");event.text(1,receipt->batch);event.integer(2,receipt->revision+1);if(!event.row() || event.integer(0)+1!=order)fail(SQLITE_CORRUPT);
+            Statement event(impl_->db,"SELECT h.sequence FROM history_order h JOIN events e ON e.batch=h.batch AND e.revision=h.event_revision WHERE e.batch=? AND e.kind IN('commit','accept') AND e.revision=?");event.text(1,receipt->batch);event.integer(2,receipt->revision+1);if(!event.row() || event.integer(0)+1!=order)fail(SQLITE_CORRUPT);
             const auto b=batch(impl_->db,receipt->batch);std::vector<Money> values;std::size_t included=0,excluded=0;
-            for(std::size_t ordinal=0;ordinal<b.count;++ordinal){if(context)context->checkpoint();imports::Occurrence identity{b.id,ordinal};if(!retained_member(impl_->db,b.id,ordinal)){++excluded;continue;}const auto row=load_row(identity,false);
-                if(row.decision.disposition==imports::Disposition::include){const auto initial=entry_snapshot(identity,0);if(!initial.active || !same_draft(initial.draft,bind_import_categories(b.id,*row.draft)) || heads.contains(identity))fail(SQLITE_CORRUPT);heads.emplace(identity,0);++snapshot_count;++included;values.push_back(initial.draft.transaction.effective_total());}
-                else if(row.decision.disposition==imports::Disposition::duplicate){++excluded;const auto target=*row.decision.duplicate_of;const auto head=heads.find(target);if(head==heads.end())fail(SQLITE_CORRUPT);Statement stamp(impl_->db,"SELECT target_revision,target_active FROM review_stamps WHERE batch=? AND ordinal=? ORDER BY revision DESC LIMIT 1");stamp.text(1,b.id);stamp.integer(2,integer(ordinal));if(!stamp.row() || stamp.integer(0)!=head->second || (stamp.integer(1)!=0)!=entry_snapshot(target,head->second).active)fail(SQLITE_CORRUPT,"Stale exclusion was committed");}
-                else fail(SQLITE_CORRUPT);
+            if(retained_batch(impl_->db,b.id)) {
+                Statement cleared(impl_->db,"SELECT count(*) FROM records r WHERE batch=? AND NOT EXISTS(SELECT 1 FROM retained_transfer_rows k WHERE k.batch=r.batch AND k.ordinal=r.ordinal)");cleared.text(1,b.id);if(!cleared.row())fail(SQLITE_CORRUPT);excluded=static_cast<std::size_t>(cleared.integer(0));
+            }
+            Statement members(impl_->db,"SELECT ordinal,decision,draft_revision,target_batch,target_ordinal FROM acceptance_members WHERE operation=? ORDER BY ordinal");members.text(1,operation);
+            while(members.row()) {
+                if(context)context->checkpoint();const auto ordinal=static_cast<std::size_t>(members.integer(0));const imports::Occurrence identity{b.id,ordinal};
+                if(members.integer(1)==1) {
+                    const auto initial=entry_snapshot(identity,0);
+                    Statement reference(impl_->db,"SELECT e.draft_revision,a.operation FROM entry_revisions e JOIN accepted_transactions a USING(batch,ordinal) WHERE e.batch=? AND e.ordinal=? AND e.revision=0");reference.text(1,b.id);reference.integer(2,integer(ordinal));
+                    if(!reference.row() || reference.integer(0)!=members.integer(2) || reference.bytes(1)!=operation || !initial.active || heads.contains(identity))fail(SQLITE_CORRUPT,"Acceptance reference does not replay");
+                    heads.emplace(identity,0);++snapshot_count;++included;values.push_back(initial.draft.transaction.effective_total());
+                } else {
+                    ++excluded;
+                    const imports::Occurrence target{members.bytes(3),static_cast<std::size_t>(members.integer(4))};
+                    if(!heads.contains(target)) {
+                        Statement match(impl_->db,"SELECT 1 FROM generated_source_matches g JOIN ledger_operations l ON l.sequence=g.sequence JOIN history_order h ON h.operation=l.id WHERE g.batch=? AND g.ordinal=? AND h.sequence<?");match.text(1,target.batch);match.integer(2,integer(target.ordinal));match.integer(3,order);
+                        if(!match.row())fail(SQLITE_CORRUPT,"Acceptance precedes its duplicate target");
+                    }
+                }
             }
             if(included!=receipt->included || excluded!=receipt->excluded || imports::sum(currency,values)+transfer_import_adjustment(operation)!=receipt->change)fail(SQLITE_CORRUPT);
         } else {
             const auto receipt=committed_change_outcome(operation);if(!receipt)fail(SQLITE_CORRUPT);const auto head=heads.find(receipt->identity);
-            if(head==heads.end() || receipt->before_entry.revision!=head->second || receipt->after_entry.revision!=head->second+1 || operations.integer(10)!=prior_sequence || receipt->result_token.dependencies!=dependencies(receipt->identity,order))fail(SQLITE_CORRUPT,"Invalid committed change dependencies");
+            if(head==heads.end() || receipt->before_entry.revision!=head->second || receipt->after_entry.revision!=head->second+1 || (operations.integer(10)<prior_sequence || operations.integer(10)>=sequence) || receipt->result_token.dependencies!=dependencies(receipt->identity,order))fail(SQLITE_CORRUPT,"Invalid committed change dependencies");
             const auto& before=receipt->before_entry;const auto& after=receipt->after_entry;
             const Money zero(0,currency);const auto delta=(after.active?after.draft.transaction.effective_total():zero)-(before.active?before.draft.transaction.effective_total():zero);if(delta!=receipt->change)fail(SQLITE_CORRUPT);
             if(kind==app::ChangeKind::correct){if(!before.active || !after.active || !receipt->undo_of.empty())fail(SQLITE_CORRUPT);
 #ifdef SPENTIT_RULES_STORAGE
                 if(rules_format(impl_->db)){
                     bool reapply=false,replace_manual=false;
-                    if(scalar(impl_->db,"PRAGMA user_version")=="30"){
+                    if(scalar(impl_->db,"PRAGMA user_version")=="32"){
                         Statement member(impl_->db,"SELECT g.replace_manual,g.undo_of IS NULL FROM rule_reapplication_members m JOIN rule_reapplications g ON g.id=m.operation WHERE m.entry_operation=?");
                         member.text(1,operation);
                         if(member.row()){if(member.integer(1)==0)fail(SQLITE_CORRUPT,"Rule reapply Undo used a correction");reapply=true;replace_manual=member.integer(0)!=0;}
@@ -243,15 +275,19 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
         }
         if(!transfer_nonfinancial)balance=Money(operations.integer(8),currency);prior_sequence=sequence;prior_order=order;
     }
-    Statement counts(impl_->db,"SELECT (SELECT count(*) FROM entry_heads),(SELECT count(*) FROM entry_revisions),(SELECT count(*) FROM operations),(SELECT count(*) FROM ledger_operations WHERE kind=0)");if(!counts.row() || counts.integer(0)!=integer(heads.size()) || counts.integer(1)!=integer(snapshot_count) || counts.integer(2)!=counts.integer(3))fail(SQLITE_CORRUPT);
+    Statement counts(impl_->db,"SELECT (SELECT count(*) FROM entry_heads),(SELECT count(*) FROM entry_values),(SELECT count(*) FROM operations),(SELECT count(*) FROM ledger_operations WHERE kind=0)");if(!counts.row() || counts.integer(0)!=integer(heads.size()) || counts.integer(1)!=integer(snapshot_count) || counts.integer(2)!=counts.integer(3))fail(SQLITE_CORRUPT);
     for(const auto& [identity,revision]:heads){if(context)context->checkpoint();Statement head(impl_->db,"SELECT revision FROM entry_heads WHERE batch=? AND ordinal=?");head.text(1,identity.batch);head.integer(2,integer(identity.ordinal));if(!head.row() || head.integer(0)!=revision)fail(SQLITE_CORRUPT);}
+    Statement acceptance(impl_->db,"SELECT d.id,d.transactions,coalesce((SELECT sum(o.included) FROM acceptance_operations m JOIN operations o ON o.id=m.operation WHERE m.parent=d.id),0)+(SELECT count(*) FROM acceptance_operations m JOIN transfer_events t ON t.operation=m.operation JOIN ledger_operations l ON l.id=m.operation WHERE m.parent=d.id AND l.kind=4 AND t.did_commit=1) FROM dataset_acceptances d");
+    while(acceptance.row())if(acceptance.integer(1)!=acceptance.integer(2))fail(SQLITE_CORRUPT,"Dataset acceptance count does not reconcile");
+    Statement accepted(impl_->db,"SELECT 1 FROM accepted_transactions a LEFT JOIN acceptance_members m ON m.operation=a.operation AND m.ordinal=a.ordinal LEFT JOIN operations o ON o.id=a.operation LEFT JOIN entry_revisions e ON e.batch=a.batch AND e.ordinal=a.ordinal AND e.revision=0 WHERE m.decision!=1 OR m.draft_revision!=e.draft_revision OR o.batch!=a.batch OR e.batch IS NULL OR m.operation IS NULL UNION ALL SELECT 1 FROM entry_heads h WHERE NOT EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=h.batch AND a.ordinal=h.ordinal)");
+    if(accepted.row())fail(SQLITE_CORRUPT,"Transaction acceptance does not match its financial reference");
     Statement extra_dependencies(impl_->db,"SELECT 1 FROM change_dependencies d JOIN ledger_operations o ON o.id=d.operation WHERE o.kind=0");if(extra_dependencies.row())fail(SQLITE_CORRUPT);
     for(const auto& [account,balance]:balances)apply_openings(account,INT64_MAX);
     Statement end_accounts(impl_->db,"SELECT singleton FROM account WHERE NOT EXISTS(SELECT 1 FROM account_retirements d WHERE d.account_id=account.singleton)");
     while(end_accounts.row()){
         const auto acct=account_by_id(end_accounts.integer(0));
         std::vector<Money> values{acct.opening,local_transfer_total(acct.identity,false)};
-        Statement totals(impl_->db,"SELECT h.batch,h.ordinal,h.revision,e.total FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) JOIN batches b ON b.id=h.batch WHERE b.account_id=? AND e.active=1");totals.integer(1,acct.identity);
+        Statement totals(impl_->db,"SELECT h.batch,h.ordinal,h.revision,e.total FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) JOIN batches b ON b.id=h.batch WHERE b.account_id=? AND e.active=1");totals.integer(1,acct.identity);
         while(totals.row())values.emplace_back(totals.integer(3),entry_currency(impl_->db,totals.bytes(0),totals.integer(1),totals.integer(2)));
         if(imports::sum(acct.currency,values)!=balances.at(acct.identity))fail(SQLITE_CORRUPT,"Current heads do not reconcile");
     }

@@ -339,7 +339,7 @@ void group_duplicates_and_protection(){
         Directory d;auto s=create(d.path/"duplicates");s.opening(0,"2026-01-01",Money(0,cad));
         const std::string bytes="!Account\nNRepeated source\nTBank\n^\n!Type:Bank\nD1/1/2026\nT10\n^\nD1/1/2026\nT10\n^\n";
         const std::vector<app::ImportAccountMapping> mapping{{0,1,{}}};app::OperationContext capture;s.prepare_import_group("first",bytes,qif::DateOrder::dmy,mapping,capture);app::OperationContext resume;s.resume_import_group("first",resume);check(s.commit("first-account-0",1,"first-commit").included==2);
-        app::OperationContext again;s.prepare_import_group("second",bytes,qif::DateOrder::dmy,mapping,again);app::OperationContext retry;check(s.prepare_import_group("retry-pending",bytes,qif::DateOrder::dmy,mapping,retry).id=="second");app::OperationContext process;s.resume_import_group("second",process);
+        app::OperationContext again;s.prepare_import_group("second",bytes,qif::DateOrder::dmy,mapping,again);app::OperationContext retry;check(s.prepare_import_group("second",bytes,qif::DateOrder::dmy,mapping,retry).id=="second");app::OperationContext process;s.resume_import_group("second",process);
         check(s.row({"second-account-0",0}).decision.duplicate_of==imports::Occurrence{"first-account-0",0});check(s.row({"second-account-0",1}).decision.duplicate_of==imports::Occurrence{"first-account-0",1});
         s.decide({"second-account-0",1},1,{imports::Disposition::include,{}});const auto receipt=s.commit("second-account-0",2,"repeat-commit");check(receipt.included==1 && receipt.excluded==1 && receipt.after==Money(3000,cad));s.verify();
     }
@@ -410,7 +410,7 @@ void association_validation() {
         Directory d;const auto path=d.path/"association-corruption";
         {auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));s.ingest("evidence",input+input,qif::DateOrder::dmy);s.commit("evidence",0,"publish");s.verify();}
         sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
-        check(sqlite3_exec(db,"DROP TRIGGER source_associations_immutable;DROP TRIGGER source_associations_keep",nullptr,nullptr,nullptr)==SQLITE_OK);
+        check(sqlite3_exec(db,"DROP TRIGGER source_associations_immutable;DROP TRIGGER source_associations_keep;DROP INDEX source_membership",nullptr,nullptr,nullptr)==SQLITE_OK);
         check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
         rejected([&]{ImportStore::open(path,password);});no_leaks(d.path);
     }

@@ -13,9 +13,9 @@ constexpr const char* reapply_missing="Rule reapply was not found";
 constexpr const char* reapply_limit="Too many records in one rule preview";
 constexpr const char* reapply_membership="Invalid rule reapply Undo membership";
 constexpr const char* head_where=
-    "FROM entry_heads h JOIN entry_revisions e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision "
+    "FROM entry_heads h JOIN entry_values e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision "
     "JOIN batches b ON b.id=h.batch WHERE e.active=1 AND b.account_id=spentit_account() AND b.state=1 AND substr(h.batch,1,10)<>'~transfer-'";
-bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="30";}
+bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="32";}
 std::string protection_stamp(const std::vector<app::TransferView>& links,std::int64_t account){
     std::set<std::pair<imports::Occurrence,std::string>> keys;
     for(const auto& value:links){
@@ -53,7 +53,7 @@ std::string ImportStore::rule_reapply_group(std::string_view operation) const {
 }
 std::optional<app::RuleReapplyReceipt> ImportStore::rule_reapply_outcome(std::string_view operation) const {
     if(!rules_supported())fail(SQLITE_SCHEMA,rules_dataset);
-    if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement group(impl_->db,"SELECT account,ruleset_revision,catalog_revision,replace_manual,evaluated,changed_count,preview_sequence,undo_of FROM rule_reapplications WHERE id=?");group.text(1,operation);
     if(!group.row()){if(command_taken(impl_->db,operation))fail(SQLITE_CONSTRAINT,other_command);return {};}
     const auto account_id=group.integer(0);const auto ruleset=group.integer(1);const auto catalog=group.integer(2);const auto replace=group.integer(3)!=0;const auto evaluated=group.integer(4);const auto changed=group.integer(5);const auto sequence=group.integer(6);const auto undo=group.null(7)?std::string{}:group.bytes(7);

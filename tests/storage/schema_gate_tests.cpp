@@ -24,8 +24,8 @@ std::string query(const fs::path& p,const char* sql){sqlite3* db=nullptr;check(s
 void gate(){
     Directory dir;const auto path=dir.path/"doc";
     {auto s=ImportStore::create(path,password,"Synthetic account",Currency("CAD"),"2026-08-01");check(!s.rules_supported());app::OperationContext context;rejects_text([&]{s.save_rules("rules",{},0,context);},"Rules are not enabled for this dataset");rejects_text([&]{s.preview_rule_reapply(false,"",context);},"Rules are not enabled for this dataset");rejects_text([&]{s.apply_rule_reapply("reapply",{},context);},"Rules are not enabled for this dataset");check(s.rule_reapply_group("reapply").empty());}
-    check(query(path,"PRAGMA user_version")=="29");
-    for(const char* version:{"6","16","17","18","19","20","21","22","23","24","25","26","27","28","30"}) {
+    check(query(path,"PRAGMA user_version")=="31");
+    for(const char* version:{"6","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","32"}) {
         sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,(std::string("PRAGMA user_version=")+version).c_str(),nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
         const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==before);check(query(path,"PRAGMA user_version")==version);
     }

@@ -62,6 +62,7 @@ struct BatchInfo {
     std::size_t count;
     bool blocked;
     bool processing_incomplete=false;
+    bool completed=false;
 };
 struct ImportAccountMapping {
     std::size_t source_account;
@@ -94,6 +95,7 @@ struct ImportBlocker {
     std::string allocation, reason;
     std::vector<ImportCounterpart> candidates={};
     std::size_t candidate_count=0;
+    bool overridable=false;
 };
 struct ImportGroup {
     std::string id;
@@ -113,12 +115,29 @@ struct RowView {
     std::vector<imports::Occurrence> candidates;
     bool review_stale=false;
     bool excluded_by_clear=false;
+    bool matched_generated=false;
 };
 struct Receipt {
     std::string operation, batch;
     std::int64_t revision;
     std::size_t included, excluded;
     Money before, change, after;
+};
+struct ImportResult {std::size_t added=0,already_present=0,unresolved=0,failed=0;};
+struct RollbackReview {
+    std::int64_t token=0;
+    std::size_t transactions=0,failures=0;
+    std::vector<std::int64_t> affected_accounts;
+};
+struct RollbackReceipt {std::string operation;std::int64_t account=0;std::size_t transactions=0,failures=0;};
+struct AcceptanceReview {
+    std::size_t transactions=0,failed_records=0;
+    std::vector<ImportBlocker> warnings;
+};
+struct AcceptanceReceipt {
+    std::string operation;
+    std::size_t transactions=0,failed_records=0;
+    bool ignored_warnings=false;
 };
 struct LedgerRow {
     imports::Occurrence identity;
@@ -224,6 +243,15 @@ public:
     // together. operation+batch+revision identifies content frozen at that revision.
     virtual Receipt commit(std::string_view batch, std::int64_t expected_revision, std::string_view operation) = 0;
     virtual std::optional<Receipt> outcome(std::string_view operation) const = 0;
+    virtual bool transaction_accepted(const imports::Occurrence&) const {return false;}
+    virtual ImportResult import_result(std::string_view) const {return {};}
+    virtual RollbackReview rollback_review() const {return {};}
+    virtual RollbackReceipt rollback_account(std::string_view,std::int64_t) {throw std::logic_error("Rollback unavailable");}
+    virtual std::optional<RollbackReceipt> rollback_outcome(std::string_view) const {return {};}
+    virtual AcceptanceReview acceptance_review() const {return {};}
+    virtual AcceptanceReceipt accept_all(std::string_view,bool=false) {throw std::logic_error("Dataset acceptance unavailable");}
+    virtual std::optional<AcceptanceReceipt> acceptance_outcome(std::string_view) const {return {};}
+
     // Only a durable, transaction-free read may resolve an uncertain acknowledgement.
     // Storage overrides this to reject an unclosed/failed rollback transaction.
     virtual std::optional<Receipt> durable_outcome(std::string_view operation) const { return outcome(operation); }

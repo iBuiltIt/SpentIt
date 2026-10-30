@@ -76,6 +76,17 @@ public:
     void save(const imports::Occurrence& o,std::int64_t r,const imports::DraftRow& d) override {repo().save(o,r,d);}
     void decide(const imports::Occurrence& o,std::int64_t r,const imports::Decision& d) override {repo().decide(o,r,d);}
     void discard(std::string_view b,std::int64_t r) override {repo().discard(b,r);}
+    bool transaction_accepted(const imports::Occurrence& id) const override{return repo().transaction_accepted(id);}
+    app::AcceptanceReview acceptance_review() const override{return repo().acceptance_review();}
+    app::AcceptanceReceipt accept_all(std::string_view op,bool ignore=false) override {
+        attempted=true;if(fault==before)throw std::runtime_error("Injected failure before commit");
+        auto receipt=repo().accept_all(op,ignore);if(fault==after || fault==unknown)throw std::runtime_error("Injected lost commit acknowledgement");return receipt;
+    }
+    std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view op) const override {if(attempted && fault==unknown)throw std::runtime_error("Injected outcome lookup failure");return repo().acceptance_outcome(op);}
+    app::ImportResult import_result(std::string_view id) const override{return repo().import_result(id);}
+    app::RollbackReview rollback_review() const override{return repo().rollback_review();}
+    app::RollbackReceipt rollback_account(std::string_view op,std::int64_t token) override{return repo().rollback_account(op,token);}
+    std::optional<app::RollbackReceipt> rollback_outcome(std::string_view op) const override{return repo().rollback_outcome(op);}
     app::Receipt commit(std::string_view b,std::int64_t r,std::string_view op) override {
         attempted=true;
         if(fault==before) throw std::runtime_error("Injected failure before commit");
@@ -115,6 +126,39 @@ class ImportUiTests : public QObject {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
     }
 private slots:
+    void datasetAcceptanceAndRollback() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        const auto path=dir.path()+"/doc";create(m,path);run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT1\nPFirst\n^\nD2026-02-02\nTbad\nPFailure\n^\n")}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-03\nT2\nPSecond\n^\n")}});
+        QCOMPARE(m.state().value("newTransactions").toInt(),2);QCOMPARE(m.state().value("importFailures").toInt(),1);
+        run(m,"create_account",{{"id","2"},{"name","Other"},{"currency","USD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-04\nT3\nPThird\n^\n")}});
+        auto* commit=visualItem(window->contentItem(),"commitImport");QVERIFY(commit && commit->property("enabled").toBool());QVERIFY(QMetaObject::invokeMethod(commit,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("newTransactions").toInt(),0);QCOMPARE(m.state().value("importFailures").toInt(),1);QCOMPARE(m.state().value("balance").toString(),"3.00");
+        run(m,"select_account",{{"id","1"}});QCOMPARE(m.state().value("balance").toString(),"3.00");
+        run(m,"discard",{{"token",m.state().value("rollback").toMap().value("token")}});QCOMPARE(m.state().value("balance").toString(),"3.00");QCOMPARE(m.state().value("importFailures").toInt(),0);
+        run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("newTransactions").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"3.00");
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-05\nT4\nPNew\n^\n")}});QCOMPARE(m.state().value("newTransactions").toInt(),1);
+        window->close();QTRY_VERIFY(window->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());
+        auto* cancel=visualItem(window->contentItem(),"quitCommitCancel");QVERIFY(cancel);QVERIFY(QMetaObject::invokeMethod(cancel,"clicked"));QVERIFY(m.state().value("active").toBool());
+        window->close();QTRY_VERIFY(window->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());auto* no=visualItem(window->contentItem(),"quitCommitNo");QVERIFY(no);QVERIFY(QMetaObject::invokeMethod(no,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy() && !m.state().value("active").toBool(),30000);
+        ImportModel reopened(storage::document_gateway());run(reopened,"open",{{"path",path}});QCOMPARE(reopened.state().value("newTransactions").toInt(),1);QCOMPARE(reopened.state().value("balance").toString(),"7.00");
+    }
+    void warningAndQuitAcceptance() {
+        QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* injected=gateway.get();ImportModel m(std::move(gateway));
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nTbad\nPRepair\n^\n")}});
+        auto edit=selected(m).value("draft").toMap();edit["total"]="1.00";auto splits=edit.value("splits").toList();auto split=splits[0].toMap();split["amount"]="1.00";splits[0]=split;edit["splits"]=splits;run(m,"save",edit);
+        QVERIFY(m.state().value("canIgnoreWarnings").toBool());QVERIFY(!m.state().value("acceptanceWarnings").toList().isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"commitImport"),"clicked"));QTRY_VERIFY(window->findChild<QObject*>("commitReviewDialog")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"ignoreAndCommit"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("newTransactions").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"1.00");
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-02\nT2\nPNext\n^\n")}});injected->fault=OutcomeGateway::before;
+        window->close();QTRY_VERIFY(window->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"quitCommitYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(!m.error().isEmpty());QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("newTransactions").toInt(),1);QVERIFY(window->isVisible());
+        injected->fault=OutcomeGateway::none;window->close();QTRY_VERIFY(window->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"quitCommitYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy() && !m.state().value("active").toBool(),30000);
+        ImportModel reopened(storage::document_gateway());run(reopened,"open",{{"path",dir.path()+"/doc"}});QCOMPARE(reopened.state().value("newTransactions").toInt(),0);QCOMPARE(reopened.state().value("balance").toString(),"3.00");
+    }
     void automaticImportDates() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
@@ -183,9 +227,9 @@ private slots:
         QCOMPARE(root->findChild<QObject*>("transferDestination")->property("currentIndex").toInt(),0);
         QVERIFY(!root->findChild<QObject*>("assignTransfer")->property("enabled").toBool());
         run(m,"transfer_from_draft",{{"operation","resolve-qif"},{"sequence",m.state().value("transferSequence")},{"link","qif-link"},{"destination","2"},{"allocation","source-1"}});
-        run(m,"commit");QCOMPARE(m.state().value("committed").toString(),QString("-101.00"));
+        run(m,"select_account",{{"id","2"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});run(m,"commit",{{"ignoreWarnings",true}});QCOMPARE(m.state().value("committed").toString(),QString("-101.00"));
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("transfers").toList().size(),1);
-        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("projected").toString(),QString("100.00"));QCOMPARE(m.state().value("committed").toString(),QString("0.00"));
+        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("projected").toString(),QString("100.00"));QCOMPARE(m.state().value("committed").toString(),QString("100.00"));
     }
     void transferWorkflow() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
@@ -209,11 +253,11 @@ private slots:
         run(m,"import",{{"path",source},{"profile","DMY"}});const auto batch=selected(m).value("batch");
         run(m,"transfer_candidates",{{"link","test-link"}});QCOMPARE(m.state().value("transferCandidates").toList().size(),1);
         transfer("transfer_match",{{"batch",batch},{"ordinal",0},{"allocation","source-0"}});
-        QCOMPARE(m.state().value("projected").toString(),QString("100.00"));
-        run(m,"discard");QVERIFY(!m.state().value("transfers").toList().first().toMap().value("proposed").toBool());
+        QCOMPARE(m.state().value("projected").toString(),QString("100.00"));QVERIFY(m.state().value("transfers").toList().first().toMap().value("evidenced").toBool());
+        run(m,"discard",{{"token",m.state().value("rollback").toMap().value("token")}});QVERIFY(!m.state().value("transfers").toList().first().toMap().value("proposed").toBool());
         run(m,"import",{{"path",source},{"profile","DMY"}});
         transfer("transfer_match",{{"allocation","source-0"}});run(m,"commit");
-        QCOMPARE(m.state().value("committed").toString(),QString("100.00"));QCOMPARE(m.state().value("receipt").toMap().value("change").toString(),QString("0.00"));
+        QCOMPARE(m.state().value("committed").toString(),QString("100.00"));QCOMPARE(m.state().value("newTransactions").toInt(),0);
         run(m,"select_account",{{"id","1"}});QCOMPARE(m.state().value("filter").toString(),QString("Payment"));
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("openTransfers"),"clicked"));QTest::qWait(100);
         QVERIFY(root->findChild<QObject*>("transferDialog")->property("visible").toBool());
@@ -384,7 +428,7 @@ private slots:
         QCOMPARE(m.state().value("pending").toMap().value("id").toString(),original);QCOMPARE(selected(m).value("batch").toString(),original);
         QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,-1)));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("accountId").toString(),QString("2"));
         QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,1)));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("accountId").toString(),QString("1"));
-        run(m,"commit");run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),QString("500"));run(m,"commit");
+        run(m,"commit");run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),QString("490"));QCOMPARE(m.state().value("newTransactions").toInt(),0);
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("committed").toString(),QString("90.00"));
         run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),QString("490"));
         if(qEnvironmentVariableIsSet("SPENTIT_ACCOUNTS_SCREENSHOT")){QTest::qWait(150);auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_ACCOUNTS_SCREENSHOT")));}
@@ -670,14 +714,14 @@ private slots:
             run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
             injected->fault=fault;run(m,"commit",{},fault==OutcomeGateway::after);
             if(fault==OutcomeGateway::before) {QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("committed").toString(),"0.00");QVERIFY(!m.state().value("pending").toMap().isEmpty());}
-            if(fault==OutcomeGateway::after) {QCOMPARE(m.state().value("receipt").toMap().value("change").toString(),"1.00");QCOMPARE(m.state().value("committed").toString(),"1.00");}
+            if(fault==OutcomeGateway::after) {QCOMPARE(m.state().value("newTransactions").toInt(),0);QCOMPARE(m.state().value("committed").toString(),"1.00");}
             if(fault==OutcomeGateway::unknown) {QVERIFY(!m.state().value("active").toBool());QVERIFY(m.error().contains("uncertain"));}
             injected->fault=OutcomeGateway::none;
             if(m.state().value("active").toBool())run(m,"close");
             run(m,"open",{{"path",path}});
             if(fault==OutcomeGateway::before) run(m,"commit");
             QCOMPARE(m.state().value("committed").toString(),"1.00");QCOMPARE(m.rowCount(),2);
-            QCOMPARE(m.state().value("receipt").toMap().value("included").toInt(),1);
+            QCOMPARE(m.state().value("newTransactions").toInt(),0);
         }
     }
     void groupOutcomeRecovery() {
@@ -732,7 +776,7 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),input)},{"profile","DMY"}});
         QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"currency","CAD"},{"date","2026-01-01"}}};run(m,"map_import",{{"mappings",mappings}});
         QCOMPARE(m.state().value("importGroup").toMap().value("unresolvedTransfers").toInt(),74);
-        QVERIFY(!visualItem(window->contentItem(),"commitImport")->isEnabled());
+        QVERIFY(visualItem(window->contentItem(),"commitImport")->isEnabled());QVERIFY(!m.state().value("acceptanceWarnings").toList().isEmpty());
         run(m,"select_account",{{"id","3"}});
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"showImportBlockers"),"clicked"));
         QTRY_VERIFY(visualItem(window->contentItem(),"importCounterpart_0_0"));
@@ -771,7 +815,7 @@ private slots:
         run(m,"group_resolve_transfers",{{"group",group.value("id")}});QCOMPARE(m.state().value("transfers").toList().size(),2);
         for(int i=0;i<2;++i){run(m,"select_account",{{"id",QString::number(i+2)}});run(m,"group_balance",{{"group",group.value("id")},{"source",i},{"revision",1},{"choice",4},{"date","2026-01-01"}});}
         QVERIFY(m.state().value("importGroup").toMap().value("ready").toBool());run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"20.00");
-        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),"0.00");run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"-20.50");
+        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),"-20.50");QCOMPARE(m.state().value("newTransactions").toInt(),0);
     }
     void multiAccountImport() {
         QTemporaryDir dir;const auto path=dir.path()+"/document";ImportModel m(storage::document_gateway());
@@ -800,10 +844,10 @@ private slots:
         auto* meaning=visualItem(window->contentItem(),"groupBalanceMeaning");QVERIFY(meaning);QVERIFY(meaning->setProperty("currentIndex",3));QVERIFY(visualItem(window->contentItem(),"groupOpeningDate")->setProperty("text","2026-01-01"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"confirmGroupOpening"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("groupProposedOpening").toString(),"40.00");QCOMPARE(m.state().value("committed").toString(),"0.00");run(m,"commit",{},false);
         run(m,"select_account",{{"id","3"}});run(m,"group_balance",{{"group",group.value("id")},{"source",1},{"revision",m.state().value("pending").toMap().value("revision")},{"choice",1},{"date","2026-01-01"}});
-        run(m,"commit");QCOMPARE(m.state().value("categories").toList().size(),2);QCOMPARE(m.state().value("committed").toString(),"-10.00");run(m,"select_account",{{"id","2"}});QVERIFY(m.state().value("groupOpeningReady").toBool());run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"50.00");
+        run(m,"commit");QCOMPARE(m.state().value("categories").toList().size(),2);QCOMPARE(m.state().value("committed").toString(),"-10.00");run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("newTransactions").toInt(),0);QCOMPARE(m.state().value("committed").toString(),"50.00");
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("categories").toList().size(),2);run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),"50.00");
         run(m,"select_account",{{"id","1"}});QFile duplicateFile(file);QVERIFY(duplicateFile.open(QIODevice::ReadOnly));auto duplicateBytes=duplicateFile.readAll();duplicateFile.close();duplicateBytes.replace("Synthetic wallet","Abort wallet");duplicateBytes.replace("Synthetic card","Abort card");run(m,"import",{{"path",fixture(dir.path(),duplicateBytes)},{"profile","DMY"}});run(m,"map_import",{{"mappings",mappings}});group=m.state().value("importGroup").toMap();
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"discardImport"),"clicked"));auto* discard=root->findChild<QObject*>("discardImportDialog");QVERIFY(discard);QTRY_VERIFY(discard->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(discard,"accepted"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("accountId").toString(),"1");QCOMPARE(m.state().value("accounts").toList().size(),3);QCOMPARE(m.state().value("nextAccountId").toString(),"6");
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"discardImport"),"clicked"));auto* discard=root->findChild<QObject*>("discardImportDialog");QVERIFY(discard);QTRY_VERIFY(discard->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(discard,"accepted"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("accountId").toString(),"4");QCOMPARE(m.state().value("accounts").toList().size(),5);QCOMPARE(m.state().value("nextAccountId").toString(),"6");
     }
     void unknownAmountRepair() {
         QTemporaryDir dir;const auto path=dir.path()+"/document";ImportModel m(storage::document_gateway());create(m,path);
@@ -839,18 +883,18 @@ private slots:
         run(m,"close");QCOMPARE(m.rowCount(),0);QVERIFY(selected(m).isEmpty());
         run(m,"open",{{"path",path}});QCOMPARE(m.state().value("projected").toString(),"120.00");
         run(m,"inspect",{{"batch",batch},{"ordinal",0}});QCOMPARE(selected(m).value("original").toString(),"-29.31");
-        run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"120.00");QCOMPARE(m.state().value("receipt").toMap().value("change").toString(),"20.00");
-        QCOMPARE(m.state().value("receipt").toMap().value("included").toInt(),2);
-        QCOMPARE(m.state().value("receipt").toMap().value("excluded").toInt(),0);
+        run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"120.00");QCOMPARE(m.state().value("newTransactions").toInt(),0);
+        QVERIFY(m.state().value("receipt").toMap().value("summary").toString().contains("2 new transactions"));
+
         QVERIFY(m.state().value("frozen").toBool());
         run(m,"opening",{{"date","2026-08-01"},{"amount","200.00"}},false);
         QCOMPARE(m.state().value("committed").toString(),"120.00");
         run(m,"close");run(m,"open",{{"path",path}});
-        QCOMPARE(m.state().value("receipt").toMap().value("change").toString(),"20.00");
+        QCOMPARE(m.state().value("newTransactions").toInt(),0);
         run(m,"import",{{"path",source},{"profile","DMY"}});QCOMPARE(selected(m).value("decision").toInt(),2);
         run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"120.00");
-        QCOMPARE(m.state().value("receipt").toMap().value("included").toInt(),0);
-        QCOMPARE(m.state().value("receipt").toMap().value("excluded").toInt(),2);
+        QCOMPARE(m.state().value("newTransactions").toInt(),0);
+        QVERIFY(m.state().value("importOutcome").toString().contains("2 already present"));
         run(m,"query",{{"filter","Synthetic transit"},{"sort",1},{"descending",true},{"projected",false}});
         QCOMPARE(m.rowCount(),1);QCOMPARE(m.state().value("withdrawals").toString(),"-30.00");
         QCOMPARE(m.state().value("deposits").toString(),"0.00");
@@ -879,8 +923,8 @@ private slots:
         QVERIFY(diagnostic.contains("error at line 6"));
         QVERIFY(diagnostic.contains("missing its $ amount"));
         QVERIFY(!diagnostic.contains("Secret") && !diagnostic.contains("999"));
-        run(m,"commit",{},false);QCOMPARE(m.state().value("committed").toString(),"0.00");
-        run(m,"discard");
+        run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"0.00");QVERIFY(m.state().value("importFailures").toInt()>0);
+        run(m,"discard",{{"token",m.state().value("rollback").toMap().value("token")}});
     }
     void recordRepair() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
@@ -924,10 +968,10 @@ private slots:
         const auto invalid=fixture(dir.path(),"D1/1/2026\nT1\nL[Other\n^\n");run(m,"import",{{"path",invalid},{"profile","DMY"}});
         QVERIFY(!m.state().value("projectionAvailable").toBool());
         QCOMPARE(m.rowCount(),1);QCOMPARE(m.rowRecord(0).value("payee").toString(),QString("Opening Balance"));
-        QCOMPARE(m.state().value("balance").toString(),QString("0.00"));run(m,"commit",{},false);
-        QVERIFY(!selected(m).value("diagnostic").toString().isEmpty());run(m,"discard");QCOMPARE(m.state().value("committed").toString(),"0.00");
+        QCOMPARE(m.state().value("balance").toString(),QString("0.00"));run(m,"commit");QVERIFY(m.state().value("importFailures").toInt()>0);
+        QVERIFY(!selected(m).value("diagnostic").toString().isEmpty());run(m,"discard",{{"token",m.state().value("rollback").toMap().value("token")}});QCOMPARE(m.state().value("committed").toString(),"0.00");
         run(m,"import",{{"path",fixture(dir.path(),QByteArray(1,static_cast<char>(0xff)))},{"profile","DMY"}});
-        QVERIFY(selected(m).value("source").toString().contains("hex"));QVERIFY(!selected(m).contains("draft"));run(m,"discard");
+        QVERIFY(selected(m).value("source").toString().contains("hex"));QVERIFY(!selected(m).contains("draft"));run(m,"discard",{{"token",m.state().value("rollback").toMap().value("token")}});
         QFile oversized(dir.path()+"/oversized.qif");QVERIFY(oversized.open(QIODevice::WriteOnly));QVERIFY(oversized.resize(static_cast<qint64>(qif::max_file)+1));oversized.close();
         run(m,"import",{{"path",oversized.fileName()},{"profile","DMY"}},false);QVERIFY(!m.state().contains("pending"));
     }
@@ -983,7 +1027,7 @@ private slots:
         run(m,"query",{{"projected",true},{"filter","First"}});QCOMPARE(m.rowCount(),2);
         run(m,"decide",{{"duplicate",true},{"batch",batch},{"ordinal",0}});
         QCOMPARE(m.rowCount(),1);QCOMPARE(m.state().value("projected").toString(),"209.00");
-        run(m,"discard");QCOMPARE(m.state().value("projected").toString(),"209.00");
+        run(m,"discard",{{"token",m.state().value("rollback").toMap().value("token")}});QCOMPARE(m.state().value("projected").toString(),"209.00");
         run(m,"close");create(m,dir.path()+"/two");
         QCOMPARE(m.rowCount(),1);QVERIFY(selected(m).isEmpty());QCOMPARE(m.state().value("committed").toString(),"0.00");
         run(m,"close");run(m,"open",{{"path",dir.path()+"/one"}});
@@ -1265,7 +1309,7 @@ private slots:
         if(qEnvironmentVariableIsSet("SPENTIT_TEST_SCREENSHOT")) QVERIFY(image.save(qEnvironmentVariable("SPENTIT_TEST_SCREENSHOT")));
         payee->setProperty("text","Discard me");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
         QVERIFY(!window->close());auto* discard=root->findChild<QObject*>("guardDiscard");QVERIFY(discard);QVERIFY(QMetaObject::invokeMethod(discard,"clicked"));
-        QTRY_VERIFY(!m.busy());QTRY_VERIFY(!window->isVisible());QVERIFY(!m.state().value("active").toBool());
+        QTRY_VERIFY(!m.busy());QTRY_VERIFY(root->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"quitCommitNo"),"clicked"));QTRY_VERIFY(!window->isVisible());QVERIFY(!m.state().value("active").toBool());
         run(m,"open",{{"path",dir.path()+"/doc"}});
         const auto batch=m.state().value("pending").toMap().value("id");run(m,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Edited through QML");

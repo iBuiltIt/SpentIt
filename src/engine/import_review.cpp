@@ -54,6 +54,15 @@ std::optional<MatchBasis> candidate_basis(const qif::Record& a,const qif::Record
     if(x.date!=y.date) return (ofx_family(a) || ofx_family(b)) ? std::optional(MatchBasis::uncertain_date) : std::nullopt;
     return x==y ? MatchBasis::same_source_fields : MatchBasis::same_date_amount;
 }
+bool same_bank_transaction(const qif::Record& a,const qif::Record& b) {
+    // A manually associated ID alone cannot supply the original date/type of
+    // its bank occurrence. Compare that occurrence itself, not the QIF row.
+    return ofx_family(a) && ofx_family(b) && !a.diagnostic && !b.diagnostic &&
+        !a.fitid.empty() && a.fitid==b.fitid &&
+        a.source_currency && b.source_currency && *a.source_currency==*b.source_currency &&
+        a.original_amount && b.original_amount && *a.original_amount==*b.original_amount &&
+        !a.date.empty() && a.date==b.date && !a.trntype.empty() && a.trntype==b.trntype;
+}
 void validate_draft(const qif::Record& source,const DraftRow& edit,bool reassigned) {
     if ((!source.transaction && !source.repairable) || !source.source_currency) invalid();
     if (edit.transaction.original_imported_amount()!=source.original_amount) invalid();

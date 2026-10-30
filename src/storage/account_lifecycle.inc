@@ -23,7 +23,7 @@ std::vector<app::Account> ImportStore::archived_accounts() const {
     std::vector<app::Account> result;while(ids.row()) result.push_back(account_by_id(ids.integer(0)));return result;
 }
 std::optional<app::AccountCommandReceipt> ImportStore::account_command_outcome(std::string_view operation) const {
-    if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     if(auto found=account_command_row(impl_->db,operation)) return found;
     Statement reg(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");reg.text(1,operation);
     if(reg.row()) fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
@@ -112,7 +112,7 @@ app::AccountCommandReceipt ImportStore::correct_opening(std::string_view operati
     amount.require_compatible(acct.opening);
     std::optional<std::string> earliest;
     auto consider=[&](const std::string& value){if(!earliest || value<*earliest) earliest=value;};
-    Statement dates(impl_->db,"SELECT e.date FROM entry_heads h JOIN entry_revisions e USING(batch,ordinal,revision) JOIN batches b ON b.id=h.batch WHERE b.account_id=?");dates.integer(1,acct.identity);
+    Statement dates(impl_->db,"SELECT e.date FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) JOIN batches b ON b.id=h.batch WHERE b.account_id=?");dates.integer(1,acct.identity);
     while(dates.row()) consider(dates.bytes(0));
     for(const auto& value:all_transfers()) for(const auto* side:{&value.link.origin,&value.link.destination}) if(side->endpoint.account==acct.identity && side->state==transfers::State::committed) consider(side->date);
     if(earliest && date>*earliest) fail(SQLITE_CONSTRAINT,"Opening date is later than a committed transaction");

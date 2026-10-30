@@ -143,6 +143,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         std::vector<Money> amounts;
         for(std::size_t i=0;i<parsed.records.size();++i) {
             if(b.state==app::BatchState::protected_drafts && !retained_member(impl_->db,batch_id,i))continue;
+            Statement retained(impl_->db,"SELECT 1 FROM source_occurrences WHERE batch=? AND ordinal=?");retained.text(1,batch_id);retained.integer(2,integer(i));if(b.state!=app::BatchState::captured && !retained.row())continue;
             const auto& record=parsed.records[i];
             if(record.diagnostic && record.repairable) {
                 ++result.repairs_total;if(record.amount_repair)++result.amount_repairs;
@@ -150,7 +151,8 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
             Statement stored(impl_->db,"SELECT 1 FROM records WHERE batch=? AND ordinal=?");stored.text(1,batch_id);stored.integer(2,integer(i));
             if(!stored.row()){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"",record.diagnostic?std::string(qif::message(*record.diagnostic)):"Import processing incomplete");}ready=false;continue;}
             const auto row=load_row({batch_id,i},false);
-            if(row.draft && b.state!=app::BatchState::committed && b.state!=app::BatchState::discarded)for(const auto& allocation:row.draft->transaction.allocations())if(const auto destination=transfer_name(allocation.category)) {
+            if(row.matched_generated){if(record.diagnostic && record.repairable)++result.repairs_done;continue;}
+            if(row.draft && !transaction_accepted(row.identity) && b.state!=app::BatchState::committed && b.state!=app::BatchState::discarded)for(const auto& allocation:row.draft->transaction.allocations())if(const auto destination=transfer_name(allocation.category)) {
                 const bool linked=resolved.contains({batch_id,i,allocation.identity});
                 const bool eligible=!linked && !row.excluded_by_clear && !row.review_stale && row.decision.disposition==imports::Disposition::include && !account.archived;
                 const std::string status=linked?"Already linked":row.excluded_by_clear?"Excluded by discard":row.review_stale?"Review is stale":row.decision.disposition==imports::Disposition::duplicate?"Excluded as duplicate":row.decision.disposition!=imports::Disposition::include?"Inclusion needs review":account.archived?"Account archived":"Available draft";
@@ -158,7 +160,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
             }
             if(record.diagnostic && record.repairable)++result.repairs_done;
             if(!row.draft || row.decision.disposition==imports::Disposition::unresolved || (row.review_stale && b.state!=app::BatchState::committed)){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"","Review transaction inclusion or duplicate decision");}ready=false;continue;}
-            if(active_review && b.state!=app::BatchState::committed && row.decision.disposition==imports::Disposition::include)for(const auto& allocation:row.draft->transaction.allocations())if(transfer_name(allocation.category) && !resolved.contains({batch_id,i,allocation.identity})){++result.unresolved;++result.unresolved_transfers;blocker(account.identity,batch_id,i,allocation.identity,"Transfer counterpart is not linked: resolve mapped transfers, then review missing, repeated, or different-date counterparts");}
+            if(active_review && !transaction_accepted(row.identity) && b.state!=app::BatchState::committed && row.decision.disposition==imports::Disposition::include)for(const auto& allocation:row.draft->transaction.allocations())if(transfer_name(allocation.category) && !resolved.contains({batch_id,i,allocation.identity})){++result.unresolved;++result.unresolved_transfers;blocker(account.identity,batch_id,i,allocation.identity,"Transfer counterpart is not linked: resolve mapped transfers, then review missing, repeated, or different-date counterparts");}
             if(row.decision.disposition==imports::Disposition::include)amounts.push_back(row.draft->transaction.effective_total());
         }
         if(parsed.diagnostic){if(active_review)++result.unresolved;++result.blocked_records;}
@@ -171,7 +173,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         }
         result.accounts.push_back(std::move(member));
     }
-    if(result.accounts.size()!=document.accounts.size())fail(SQLITE_CORRUPT,"Incomplete source account mapping");
+    Statement retained_count(impl_->db,"SELECT count FROM retained_group_counts WHERE group_id=?");retained_count.text(1,id);if(!retained_count.row() || result.accounts.size()!=static_cast<std::size_t>(retained_count.integer(0)) || result.accounts.size()>document.accounts.size())fail(SQLITE_CORRUPT,"Incomplete source account mapping");
     std::map<std::string,std::int64_t,std::less<>> mapped;
     std::map<std::int64_t,app::Account> mapped_accounts;
     for(const auto& member:result.accounts){mapped.emplace(document.accounts[member.source_account].name,member.account);mapped_accounts.emplace(member.account,account_by_id(member.account));}
@@ -220,11 +222,11 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
     return result;
 }
 std::optional<app::ImportGroup> ImportStore::import_group_outcome(std::string_view id) const {
-    if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement found(impl_->db,"SELECT 1 FROM import_groups WHERE id=?");found.text(1,id);if(!found.row())return {};return import_group(id);
 }
 std::vector<app::ImportGroup> ImportStore::import_groups() const {
-    if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement ids(impl_->db,"SELECT id FROM import_groups ORDER BY rowid");std::vector<app::ImportGroup> result;
     while(ids.row())result.push_back(import_group(ids.bytes(0)));return result;
 }
@@ -259,14 +261,6 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         }
         context.seal();transaction.commit();return saved;
     }
-    if(std::none_of(mappings.begin(),mappings.end(),[](const auto& m){return m.creation.has_value();})) {
-        Statement pending(impl_->db,"SELECT g.id FROM import_groups g JOIN sources s ON s.id=g.id JOIN source_headers h ON h.source_id=g.id WHERE g.profile=? AND s.bytes=? AND h.format=? AND g.state!=3 AND EXISTS(SELECT 1 FROM import_group_accounts m JOIN batches b ON b.id=m.batch WHERE m.group_id=g.id AND b.state IN(0,3)) ORDER BY g.rowid");pending.integer(1,static_cast<int>(profile));pending.blob(2,bytes);pending.text(3,document.format);
-        while(pending.row()) {
-            const auto existing=import_group(pending.bytes(0));if(existing.accounts.size()!=mappings.size())continue;
-            bool matches=true;for(const auto& mapping:mappings)if(std::none_of(existing.accounts.begin(),existing.accounts.end(),[&](const auto& m){return m.source_account==mapping.source_account && m.account==mapping.account;})){matches=false;break;}
-            if(matches){context.seal();transaction.commit();return existing;}
-        }
-    }
     if(document.format!="qif")for(const auto& mapping:mappings) {
         const auto& code=document.accounts[mapping.source_account].currency_code;
         const auto& target=mapping.creation?mapping.creation->currency:account_by_id(mapping.account).currency;
@@ -298,6 +292,7 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         Statement member(impl_->db,"INSERT INTO import_group_accounts(group_id,source_account,account_id,batch,created) VALUES(?,?,?,?,?)");member.text(1,id);member.integer(2,integer(mapping.source_account));member.integer(3,account.identity);member.text(4,batch_id);member.integer(5,mapping.creation?1:0);member.done();
         Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'capture')");event.text(1,batch_id);event.done();
     }
+    Statement count(impl_->db,"INSERT INTO retained_group_counts VALUES(?,?)");count.text(1,id);count.integer(2,integer(mappings.size()));count.done();
     context.seal();finish([&]{transaction.commit();});return import_group(id);
 }
 app::ImportGroup ImportStore::resume_import_group(std::string_view id,app::OperationContext& context) {
@@ -382,6 +377,7 @@ void ImportStore::abort_import_group(std::string_view id) {
     Statement retired(impl_->db,"SELECT 1 FROM retired_import_accounts WHERE account_id=?");retired.integer(1,selection.prior);if(retired.row())selection.prior=smallest_active_account(impl_->db);
 }
 void ImportStore::require_group_ready(std::string_view batch_id) const {
+    if(impl_->accepting_dataset)return;
     Statement member(impl_->db,"SELECT group_id FROM import_group_accounts WHERE batch=?");member.text(1,batch_id);if(!member.row()) {
         Statement source(impl_->db,"SELECT state,blocked FROM batches WHERE id=?");source.text(1,batch_id);if(!source.row() || source.integer(0)==1 || source.integer(0)==2)return;
         if(source.integer(0)==3 || source.integer(1)!=0)fail(SQLITE_CONSTRAINT,"Finish all repairs in the source import before committing or protecting any of its records");
@@ -403,7 +399,11 @@ void ImportStore::start_import_groups(const std::set<std::string>& batches,std::
 }
 void ImportStore::publish_group_opening(std::int64_t account_id) {
     const auto a=account_by_id(account_id);if(a.frozen || explicit_account_money(impl_->db,account_id))return;
-    Statement staged(impl_->db,"SELECT m.batch,m.balance_revision,m.opening,m.opening_date FROM import_group_accounts m JOIN import_groups g ON g.id=m.group_id WHERE m.account_id=? AND m.created=1 AND g.state IN(1,2)");staged.integer(1,account_id);if(!staged.row())return;
+    Statement staged(impl_->db,"SELECT m.batch,m.balance_revision,m.opening,m.opening_date FROM import_group_accounts m JOIN import_groups g ON g.id=m.group_id WHERE m.account_id=? AND m.created=1 AND g.state IN(1,2)");staged.integer(1,account_id);if(!staged.row()){
+        Statement retained(impl_->db,"SELECT opening,opening_date FROM retained_opening_reviews WHERE account=?");retained.integer(1,account_id);if(!retained.row())return;
+        Statement update(impl_->db,"UPDATE account SET opening=?,opening_date=?,revision=revision+1,confirmed=1 WHERE singleton=?");update.integer(1,retained.integer(0));update.text(2,retained.bytes(1));update.integer(3,account_id);update.done();
+        Statement clear(impl_->db,"DELETE FROM retained_opening_reviews WHERE account=?");clear.integer(1,account_id);clear.done();return;
+    }
     require_group_ready(staged.bytes(0));
     if(staged.null(1) || staged.null(2) || a.revision==INT64_MAX)fail(SQLITE_CONSTRAINT,"Confirm the current opening balance proposal");
     Statement update(impl_->db,"UPDATE account SET opening=?,opening_date=?,revision=revision+1,confirmed=1 WHERE singleton=?");update.integer(1,staged.integer(2));update.text(2,staged.bytes(3));update.integer(3,account_id);update.done();

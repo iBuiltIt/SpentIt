@@ -86,7 +86,7 @@ void basics(){
     Directory d;const auto p=d.path/"doc";prepare(p);
     {
         auto s=ImportStore::open(p,password);check(s.committed_balance().units()==10000 && s.projected_balance()->units()==12069);
-        check(s.ingest("first",source,qif::DateOrder::dmy).id=="first");check(s.ingest("retry",source,qif::DateOrder::dmy).id=="first");
+        check(s.ingest("first",source,qif::DateOrder::dmy).id=="first");check(s.ingest("retry",source,qif::DateOrder::dmy).id=="retry");check(s.row({"retry",0}).decision.disposition==imports::Disposition::duplicate);s.discard("retry",0);
         fails([&]{s.ingest("first",source+"\n",qif::DateOrder::dmy);});
         auto row=s.row({"first",0});auto edit=*row.draft;
         edit.transaction=edit.transaction.corrected(Money(-3000,cad),{{"Fees","fee",Money(-14,cad)},{"Transport","trip",Money(-2986,cad)}});
@@ -139,7 +139,7 @@ void errors(){
     fails([&]{s.save({"good",0},0,edit);});
     edit=*s.row({"good",0}).draft;edit.transaction=edit.transaction.corrected(Money(-2931,cad),{{"[Other]","",Money(-2931,cad)}});
     fails([&]{s.save({"good",0},0,edit);});
-    fails([&]{s.ingest("another","D1/1/2026\nT1\n^",qif::DateOrder::dmy);});s.verify();
+    check(s.ingest("another","D1/1/2026\nT1\n^",qif::DateOrder::dmy).state==app::BatchState::pending);s.verify();
     fails([&]{ImportStore::open(d.path/"missing",password);});check(!fs::exists(d.path/"missing"));
     fails([&]{create(d.path/"doc");});
     no_leaks(d.path);
@@ -261,8 +261,8 @@ void cancellation(){
         check(cancelled && s.batches()[0].state==app::BatchState::captured && s.batches()[0].count==2 && s.batches()[0].processing_incomplete);
         check(s.evidence("new")==source && !s.projected_balance() && s.ledger(false).empty());s.verify();
         fails([&]{s.commit("new",0,"op");});
-        app::OperationContext other;fails([&]{s.ingest_controlled("other","D1/1/2026\nT1\n^\n",qif::DateOrder::dmy,other);});
-        app::OperationContext same;check(s.ingest_controlled("same",source,qif::DateOrder::dmy,same).state==app::BatchState::captured);
+        app::OperationContext other;check(s.ingest_controlled("other","D1/1/2026\nT1\n^\n",qif::DateOrder::dmy,other).state==app::BatchState::pending);s.discard("other",1);
+        app::OperationContext same;same.progress=[&](std::string_view phase){if(phase=="Source evidence retained")same.request();};try{s.ingest_controlled("same",source,qif::DateOrder::dmy,same);}catch(const app::OperationCancelled&){}s.discard("same",0);
         s.backup_to(d.path/"retained",password);
         s.opening(0,"2026-08-01",Money(0,cad));check(s.batches()[0].revision==1);
         app::OperationContext stale;fails([&]{s.resume("new",0,stale);});

@@ -60,7 +60,7 @@ Currency entry_currency(sqlite3* db,std::string_view batch,std::int64_t ordinal,
     Statement mark(db,"SELECT o.definition FROM account_amount_revisions a JOIN account_operations o ON o.id=a.operation WHERE a.kind=2 AND a.batch=? AND a.ordinal=? AND a.revision=? AND a.position=0 LIMIT 1");
     mark.text(1,batch);mark.integer(2,ordinal);mark.integer(3,revision);
     if(mark.row()) return Currency::from_definition(mark.bytes(0));
-    Statement seq(db,"SELECT h.sequence,b.account_id FROM ledger_operations o JOIN history_order h ON h.operation=o.id JOIN batches b ON b.id=o.batch WHERE o.batch=? AND ((?=0 AND o.kind=0) OR (o.ordinal=? AND o.result_revision=? AND o.kind!=0))");
+    Statement seq(db,"SELECT h.sequence,b.account_id FROM ledger_operations o JOIN history_order h ON h.operation=o.id JOIN batches b ON b.id=o.batch WHERE o.batch=?1 AND ((?2=0 AND o.kind=0 AND EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=o.batch AND a.ordinal=?3 AND a.operation=o.id)) OR (o.ordinal=?3 AND o.result_revision=?4 AND o.kind!=0))");
     seq.text(1,batch);seq.integer(2,revision);seq.integer(3,ordinal);seq.integer(4,revision);if(!seq.row()) fail(SQLITE_CORRUPT);
     return currency_as_of(db,seq.integer(1),seq.integer(0));
 }

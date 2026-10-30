@@ -129,7 +129,17 @@ public:
     void backup_to(const std::filesystem::path&,std::string_view password,
                    const BackupObserver& observer = {}, const app::OperationContext* context = nullptr) const;
     void observer(ImportObserver);
+    bool transaction_accepted(const imports::Occurrence&) const override;
+    app::ImportResult import_result(std::string_view) const override;
+    app::RollbackReview rollback_review() const override;
+    app::RollbackReceipt rollback_account(std::string_view,std::int64_t) override;
+    std::optional<app::RollbackReceipt> rollback_outcome(std::string_view) const override;
+    app::AcceptanceReview acceptance_review() const override;
+    app::AcceptanceReceipt accept_all(std::string_view,bool=false) override;
+    std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
 private:
+    app::Receipt publish_review(std::string_view,std::int64_t,std::string_view);
+    void accept_local(std::string_view,const app::TransferRequest&);
     void prepare_review();
     void finish(const std::function<void()>&);
     void require_account_name(std::string_view,std::int64_t) const;

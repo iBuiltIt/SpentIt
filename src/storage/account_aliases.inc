@@ -7,7 +7,7 @@ std::vector<app::AccountAlias> ImportStore::account_aliases() const {
     auto* scope=ScopedStatements::current(impl_->db);
     std::string signature;
     if(scope){
-        signature=scalar(impl_->db,"SELECT (SELECT count(*) FROM account)||':'||(SELECT count(*) FROM account_operations)||':'||(SELECT count(*) FROM import_group_accounts)||':'||(SELECT count(*) FROM retired_import_accounts)||':'||(SELECT count(*) FROM account_retirements)||':'||(SELECT revision FROM category_state WHERE singleton=1)");
+        signature=scalar(impl_->db,"SELECT (SELECT count(*) FROM retained_account_aliases)||':'||(SELECT count(*) FROM account)||':'||(SELECT count(*) FROM account_operations)||':'||(SELECT count(*) FROM import_group_accounts)||':'||(SELECT count(*) FROM retired_import_accounts)||':'||(SELECT count(*) FROM account_retirements)||':'||(SELECT revision FROM category_state WHERE singleton=1)");
         if(scope->aliases && scope->alias_signature==signature)return *scope->aliases;
         scope->aliases.reset();scope->alias_resolutions.clear();scope->alias_signature=signature;
     }
@@ -18,7 +18,7 @@ std::vector<app::AccountAlias> ImportStore::account_aliases() const {
     std::vector<app::AccountAlias> result;
     std::set<std::pair<std::int64_t,std::string>> unique;std::size_t bytes=0;
     const auto add=[&](std::int64_t id,std::string name){if(live.contains(id) && !name.empty() && unique.emplace(id,name).second){if(result.size()>=100000 || name.size()>64*1024*1024-bytes)fail(SQLITE_TOOBIG,"Account alias limit exceeded");bytes+=name.size();result.push_back({id,std::move(name)});}};
-    Statement names(impl_->db,"SELECT singleton,name FROM account UNION SELECT identity,name FROM account_creations UNION SELECT account,name FROM account_operations WHERE kind=0 UNION SELECT account,prior_name FROM account_operations WHERE kind=0");
+    Statement names(impl_->db,"SELECT singleton,name FROM account UNION SELECT identity,name FROM account_creations UNION SELECT account,name FROM account_operations WHERE kind=0 UNION SELECT account,prior_name FROM account_operations WHERE kind=0 UNION SELECT account,name FROM retained_account_aliases");
     while(names.row())add(names.integer(0),names.bytes(1));
     Statement sources(impl_->db,"SELECT DISTINCT s.id,s.bytes FROM sources s JOIN source_headers h ON h.source_id=s.id JOIN import_group_accounts m ON m.group_id=s.id WHERE h.format='qif'");
     while(sources.row()) {

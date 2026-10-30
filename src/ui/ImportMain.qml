@@ -46,8 +46,6 @@ ApplicationWindow {
     Connections {target:diagnosticFileMenu;function onVisibleChanged(){window.diagnosticModalChanged(0,diagnosticFileMenu.visible)}}
     Connections {target:importBlockersDialog;function onVisibleChanged(){window.diagnosticModalChanged(1,importBlockersDialog.visible)}}
     Connections {target:transferDialog;function onVisibleChanged(){window.diagnosticModalChanged(2,transferDialog.visible)}}
-    Connections {target:transferCommit;function onVisibleChanged(){window.diagnosticModalChanged(3,transferCommit.visible)}}
-    Connections {target:protectedCommit;function onVisibleChanged(){window.diagnosticModalChanged(4,protectedCommit.visible)}}
     Connections {target:ledgerContext;function onVisibleChanged(){window.diagnosticModalChanged(5,ledgerContext.visible)}}
     Connections {target:accountContext;function onVisibleChanged(){window.diagnosticModalChanged(6,accountContext.visible)}}
     Connections {target:overwriteDialog;function onVisibleChanged(){window.diagnosticModalChanged(7,overwriteDialog.visible)}}
@@ -81,8 +79,6 @@ ApplicationWindow {
         if(diagnosticFileMenu.visible) modals+=Math.pow(2,0)
         if(importBlockersDialog.visible) modals+=Math.pow(2,1)
         if(transferDialog.visible) modals+=Math.pow(2,2)
-        if(transferCommit.visible) modals+=Math.pow(2,3)
-        if(protectedCommit.visible) modals+=Math.pow(2,4)
         if(ledgerContext.visible) modals+=Math.pow(2,5)
         if(accountContext.visible) modals+=Math.pow(2,6)
         if(overwriteDialog.visible) modals+=Math.pow(2,7)
@@ -282,7 +278,7 @@ ApplicationWindow {
                             Label {text:(modelData.committed?"Committed":"Draft")+(modelData.protected?" · Protected by the other account":"")+(modelData.provisional?" · Provisional date":"")+(modelData.evidenced?" · Bank evidence retained":modelData.accepted?" · Accepted without bank match":" · Needs review")+(modelData.proposed?" · Match proposed; commit its import to attach":"");wrapMode:Text.Wrap;Layout.fillWidth:true}
                             RowLayout {
                                 Button {text:"Accept without bank match";visible:!modelData.evidenced && !modelData.accepted;enabled:!s.readOnly && !modelData.proposed;onClicked:transferCommand("transfer_accept",{link:modelData.id})}
-                                Button {text:"Commit this account";visible:modelData.local && !modelData.committed;enabled:!s.readOnly && modelData.accepted && !modelData.proposed && !!s.confirmed;onClicked:{transferCommit.item=modelData;transferCommit.open()} }
+                                Button {text:"Commit";visible:modelData.local && !modelData.committed;enabled:!s.readOnly;onClicked:guard(requestCommit) }
                                 Button {text:"Discard manual origin";visible:modelData.isOrigin && modelData.local && !modelData.committed && !modelData.protected;enabled:!s.readOnly;onClicked:transferCommand("transfer_clear",{link:modelData.id})}
                                 Button {text:"Show counterpart ↗";onClicked:showCounterpart(modelData)}
                             }
@@ -309,16 +305,6 @@ ApplicationWindow {
                 }
             }
         }
-    }
-    Dialog {
-        id:transferCommit;width:520;property var item:({});title:"Commit transfer in this account?";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
-        onAccepted:transferCommand("transfer_commit",{link:item.id})
-        Label {text:(transferCommit.item.label||"")+"\nOnly "+(s.name||"")+" commits. The opposite draft stays uncommitted and protected."+(s.importGroup && !s.importGroup.started?"\nThis ends whole-import Abort and publishes the complete imported category catalog.":"");wrapMode:Text.Wrap;width:480}
-    }
-    Dialog {
-        id:protectedCommit;width:520;property var item:({});title:"Commit protected drafts?";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
-        onAccepted:guard(function(){workflow.command("commit",{batch:protectedCommit.item.id})})
-        Label {text:"Commit retained drafts from "+(protectedCommit.item.id||"")+" in "+(s.name||"")+"?\nChange: "+(protectedCommit.item.change||"")+" · resulting balance: "+(protectedCommit.item.after||"")+"\nOther accounts and other pending imports remain uncommitted.";wrapMode:Text.Wrap;width:480}
     }
     Menu {
         id:ledgerContext
@@ -638,6 +624,15 @@ ApplicationWindow {
     property var pendingAction: null
     property bool allowClose: false
     property bool closingRequested: false
+    property bool commitBeforeQuit: false
+    function requestCommit() {
+        if((s.acceptanceWarnings||[]).length>0)commitDialog.open()
+        else workflow.command("commit")
+    }
+    function requestQuit() {
+        if((s.newTransactions||0)>0)quitCommit.open()
+        else {closingRequested=true;workflow.command("close")}
+    }
     property bool settingUp: false
     function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;rulesUnsaved.open()} else action() }
     function dismiss(dialog) { guardHandoff=true; dialog.close(); Qt.callLater(function(){guardHandoff=false}) }
@@ -832,7 +827,7 @@ ApplicationWindow {
         if(allowClose) return
         close.accepted=false
         if(workflow.busy) return
-        guard(function(){closingRequested=true;workflow.command("close")})
+        guard(requestQuit)
     }
     Connections {
         target: workflow
@@ -840,6 +835,10 @@ ApplicationWindow {
         // The occurrence selection remains in the workflow and is restored below.
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onCompleted(action,success) {
+            if(action==="commit" && commitBeforeQuit) {
+                commitBeforeQuit=false
+                if(success){closingRequested=true;Qt.callLater(function(){workflow.command("close")})}
+            }
             if(["open","unlock","create","close","prepare_create"].indexOf(action)>=0) startupPending=false
             if(action==="select_account" && pendingAccountMenu) {
                 const request=pendingAccountMenu;pendingAccountMenu=null
@@ -1240,16 +1239,38 @@ ApplicationWindow {
         }
     }
     Dialog {
-        id:discardDialog;objectName:"discardImportDialog";width:Math.min(window.width-48,640);title:s.importGroup && !s.importGroup.started?"Abort the entire import?":"Discard pending import?";modal:true;anchors.centerIn:parent
+        id:discardDialog;objectName:"discardImportDialog";width:Math.min(window.width-48,640);title:"Discard uncommitted work in this account?";modal:true;anchors.centerIn:parent
+        property string previewToken:""
+        onOpened:previewToken=(s.rollback||{}).token||""
         standardButtons:Dialog.Ok|Dialog.Cancel
-        Label {width:discardDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.importGroup && !s.importGroup.started?"Discard every account draft, every staged imported category (including those used by drafts), and all earlier saved repairs from this source. Unused accounts created by this import are removed from the account list. Encrypted source evidence and history are retained.":processingIncomplete?"Discard this incomplete import. Encrypted source evidence and history are retained.":"Remove the draft projection. Encrypted source evidence and history are retained."}
-        onAccepted:s.importGroup && !s.importGroup.started?workflow.command("group_abort",{group:s.importGroup.id}):workflow.command("discard")
+        Label {width:discardDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Remove "+((s.rollback||{}).transactions||0)+" uncommitted transactions and "+((s.rollback||{}).failures||0)+" import failures belonging to "+(s.name||"")+". Exclusively generated counterparts are removed too. Transactions supported by another account's import and all accepted transactions remain.\nAffected accounts: "+(((s.rollback||{}).accounts)||[]).map(function(id){let match=(s.accounts||[]).find(function(a){return a.id===id});return match?match.name:id}).join(", ")+".\nExclusively owned source material is removed from this dataset. Existing backups are unchanged."}
+        onAccepted:workflow.command("discard",{token:previewToken})
     }
     Dialog {
-        id:commitDialog;width:Math.min(window.width-48,640);title:"Commit this account’s reviewed import?";modal:true;anchors.centerIn:parent
-        standardButtons:Dialog.Ok|Dialog.Cancel
-        Label {width:commitDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Publish all included records atomically and freeze the opening balance.\nExcluded duplicate occurrences remain in history."+(s.importGroup && !s.importGroup.started?"\nThis first commit also publishes the complete imported category catalog, including unused categories, and ends whole-import Abort. Other accounts remain drafts and must be committed separately.":"")}
-        onAccepted:workflow.command("commit")
+        id:quitCommit;objectName:"quitCommitDialog";title:"Commit new transactions before quitting?";modal:true;anchors.centerIn:parent;width:520
+        Label {width:480;wrapMode:Text.Wrap;text:"New transactions are already saved. Commit accepts them across all accounts. Choosing No keeps them uncommitted for next time."}
+        footer:DialogButtonBox {
+            Button {objectName:"quitCommitYes";text:"Yes";onClicked:{quitCommit.close();commitBeforeQuit=true;requestCommit()}}
+            Button {objectName:"quitCommitNo";text:"No";onClicked:{quitCommit.close();closingRequested=true;workflow.command("close")}}
+            Button {objectName:"quitCommitCancel";text:"Cancel";onClicked:quitCommit.close()}
+        }
+    }
+    Dialog {
+        id:commitDialog;objectName:"commitReviewDialog";width:Math.min(window.width-48,760);height:Math.min(window.height-48,560);title:"Review before Commit";modal:true;anchors.centerIn:parent
+        onRejected:commitBeforeQuit=false
+        contentItem:ListView {
+            clip:true;spacing:8;model:s.acceptanceWarnings||[]
+            ScrollBar.vertical:UsableScrollBar {}
+            delegate:Button {
+                required property var modelData;width:ListView.view.width-20
+                text:modelData.reason;contentItem:Label {text:parent.text;wrapMode:Text.Wrap;textFormat:Text.PlainText}
+                onClicked:{commitDialog.close();commitBeforeQuit=false;openImportReview({account:modelData.account,batch:modelData.batch,record:modelData.ordinal===undefined || modelData.ordinal===null?-1:modelData.ordinal})}
+            }
+        }
+        footer:DialogButtonBox {
+            Button {objectName:"ignoreAndCommit";text:"Ignore and commit";enabled:!!s.canIgnoreWarnings && !workflow.busy;onClicked:{commitDialog.close();workflow.command("commit",{ignoreWarnings:true})}}
+            Button {text:"Cancel";onClicked:{commitBeforeQuit=false;commitDialog.close()}}
+        }
     }
     ColumnLayout {
         anchors.fill:parent;anchors.margins:12;spacing:8
@@ -1643,7 +1664,7 @@ ApplicationWindow {
             Label {textFormat:Text.PlainText;text:s.path || "";elide:Text.ElideMiddle;Layout.fillWidth:true}
             RowLayout {
                 Label {textFormat:Text.PlainText;text:"Balance: "+(s.balance||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
-                Button {objectName:"importStatement";text:"Import statement…";enabled:!s.readOnly && !s.pending;onClicked:guard(function(){importDialog.open()})}
+                Button {objectName:"importStatement";text:"Import statement…";enabled:!s.readOnly;onClicked:guard(function(){importDialog.open()})}
                 Button {objectName:"openTransfers";text:"Transfers…";visible:!!s.transfersSupported;onClicked:guard(function(){transferDialog.open()})}
                 Label {objectName:"mergeShortcutHint";visible:!!s.transfersSupported;text:"Merge: Ctrl+M (Command+M on macOS)";Layout.maximumWidth:220;wrapMode:Text.Wrap}
                 Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
@@ -1686,10 +1707,12 @@ ApplicationWindow {
                 Label {visible:!processingIncomplete;textFormat:Text.PlainText;text:batchPicker.currentIndex>=0?batchPicker.model[batchPicker.currentIndex].status:"No imports";Layout.minimumWidth:0;elide:Text.ElideRight}
                 Item {Layout.fillWidth:true}
                 Button {objectName:"resumeImport";text:"Resume import";visible:processingIncomplete;enabled:!s.readOnly;onClicked:guard(function(){workflow.command("resume",{batch:s.pending.id,revision:s.pending.revision})})}
-                Button {objectName:"discardImport";text:(s.importGroup && !s.importGroup.started) || (!s.importGroup && !s.pendingProtected)?"Abort entire import…":"Discard batch…";enabled:!!s.pending && !s.readOnly;onClicked:guard(function(){discardDialog.open()})}
-                Button {objectName:"commitImport";text:"Commit batch…";enabled:!s.readOnly && !!s.pending && !processingIncomplete && !!s.projectionAvailable && (!!s.confirmed || !!s.groupOpeningReady) && (!s.importGroup || s.importGroup.ready);onClicked:guard(function(){commitDialog.open()})}
+                Button {objectName:"discardImport";text:"Discard uncommitted work…";enabled:!s.readOnly && (!!s.pending || ((s.rollback||{}).transactions||0)>0 || ((s.rollback||{}).failures||0)>0);onClicked:guard(function(){discardDialog.open()})}
+                Button {objectName:"commitImport";text:"Commit";enabled:!s.readOnly && (s.newTransactions||0)>0;onClicked:guard(requestCommit)}
             }
-            Repeater {model:s.protectedImports||[];delegate:RowLayout {required property var modelData;Layout.fillWidth:true;Label {text:"Protected drafts · "+modelData.id+" · "+modelData.change;Layout.fillWidth:true;textFormat:Text.PlainText} Button {text:"Commit protected drafts…";enabled:!!s.confirmed && !s.readOnly;onClicked:{protectedCommit.item=modelData;protectedCommit.open()}}}}
+            Label {text:s.importOutcome||"";visible:!!s.importOutcome;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:(s.importFailures||0)+" import failure(s) remain. Review the affected source records or explicitly discard the uncommitted work.";visible:(s.importFailures||0)>0;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Repeater {model:s.protectedImports||[];delegate:RowLayout {required property var modelData;Layout.fillWidth:true;Label {text:"Protected drafts · "+modelData.id+" · "+modelData.change;Layout.fillWidth:true;textFormat:Text.PlainText} Button {text:"Commit protected drafts…";enabled:!!s.confirmed && !s.readOnly;onClicked:guard(requestCommit)}}}
             Label {
                 objectName:"incompleteImportNotice";visible:processingIncomplete;Layout.fillWidth:true;wrapMode:Text.Wrap
                 textFormat:Text.PlainText;color:"#855100"
@@ -1697,7 +1720,7 @@ ApplicationWindow {
             }
             Label {textFormat:Text.PlainText;visible:!!s.pending && !!s.pending.blocked && !processingIncomplete;text:s.pending && s.pending.blocked ? "BLOCKED — no partial commit. Inspect each record. Date and exact-amount repairs are available when record structure is intact; unsupported structures require discard/reimport.\n"+(s.pending.diagnostics||""):"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;maximumLineCount:5;elide:Text.ElideRight}
             Label {objectName:"committedChangeReceipt";textFormat:Text.PlainText;text:(s.changeReceipt||{}).summary||"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? "Committed "+s.receipt.operation+" · included "+s.receipt.included+", excluded "+s.receipt.excluded+" · "+s.receipt.before+" + ("+s.receipt.change+") = "+s.receipt.after:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? (s.receipt.summary||("Committed "+s.receipt.included+" transactions")):"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply filter";onClicked:guard(query)}

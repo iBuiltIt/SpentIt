@@ -34,6 +34,8 @@ struct TransferView {
     transfers::Link link;
     std::string payee,memo;
     std::int64_t created_sequence;
+    // Derived source ownership for the selected account; not part of link history.
+    bool source_matched=false;
 };
 struct TransferReceipt {
     std::string operation;

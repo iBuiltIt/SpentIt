@@ -64,20 +64,22 @@ private slots:
         QVERIFY(!selected.value("editable").toBool());QVERIFY(!selected.contains("draft"));
         QTest::qWait(100);
         if(qEnvironmentVariableIsSet("SPENTIT_RECOVERY_SCREENSHOT")) QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_RECOVERY_SCREENSHOT")));
-        // A second selection of the same file finds retained evidence; only Resume processes it.
+        // A second import is independent; the earlier interrupted source remains resumable.
+        const auto originalBatch=pending.value("id");
         QFile source(dir.path()+"/synthetic.qif");QVERIFY(source.open(QIODevice::WriteOnly));QCOMPARE(source.write(bytes),bytes.size());source.close();
         run(model,"import",{{"path",source.fileName()},{"profile","DMY"}});
-        QCOMPARE(model.state().value("batches").toList().size(),1);
+        QCOMPARE(model.state().value("batches").toList().size(),2);
+        run(model,"inspect",{{"batch",originalBatch},{"ordinal",0}});
         QVERIFY(model.state().value("pending").toMap().value("processingIncomplete").toBool());QVERIFY(source.remove());
         const auto copy=dir.path()+"/backup";run(model,"backup",{{"path",copy}});run(model,"close");run(model,"open",{{"path",copy}});
-        pending=model.state().value("pending").toMap();QVERIFY(pending.value("processingIncomplete").toBool());
+        run(model,"inspect",{{"batch",originalBatch},{"ordinal",0}});pending=model.state().value("pending").toMap();QVERIFY(pending.value("processingIncomplete").toBool());
         run(model,"resume",{{"batch",pending.value("id")},{"revision",pending.value("revision").toLongLong()-1}},false);
         QVERIFY(model.state().value("pending").toMap().value("processingIncomplete").toBool());
         QVERIFY(click(root,"resumeImport"));QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         QVERIFY(!model.state().value("pending").toMap().value("processingIncomplete").toBool());
         QVERIFY(!root->findChild<QObject*>("resumeImport")->property("visible").toBool());
         QCOMPARE(model.state().value("projected").toString(),"-7.00");QCOMPARE(model.state().value("committed").toString(),"0.00");
-        run(model,"close");run(model,"open",{{"path",path}});
+        run(model,"close");run(model,"open",{{"path",path}});run(model,"inspect",{{"batch",originalBatch},{"ordinal",0}});
         QVERIFY(model.state().value("pending").toMap().value("processingIncomplete").toBool());
         QCOMPARE(model.state().value("committed").toString(),"0.00");
     }
@@ -96,10 +98,9 @@ private slots:
         QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         QVERIFY(model.state().value("pending").toMap().isEmpty());
         run(model,"close");run(model,"open",{{"path",path}});
-        const auto batches=model.state().value("batches").toList();QCOMPARE(batches.size(),1);QCOMPARE(batches.front().toMap().value("status").toString(),"Discarded");
+        QVERIFY(model.state().value("batches").toList().isEmpty());
+        QVERIFY(model.state().value("selected").toMap().isEmpty());
         QVERIFY(!root->findChild<QObject*>("resumeImport")->property("visible").toBool());
-        QVERIFY(click(root,"viewSourceFile"));QTRY_VERIFY(!model.busy());QVERIFY(model.error().isEmpty());
-        QCOMPARE(model.state().value("selected").toMap().value("source").toString(),QString::fromStdString(bytes));
         QCOMPARE(model.state().value("committed").toString(),"0.00");
     }
 };

@@ -34,6 +34,12 @@ public:
     void save(const imports::Occurrence& o,std::int64_t r,const imports::DraftRow& d) override {repo().save(o,r,d);}
     void decide(const imports::Occurrence& o,std::int64_t r,const imports::Decision& d) override {repo().decide(o,r,d);}
     void discard(std::string_view b,std::int64_t r) override {repo().discard(b,r);}
+    app::AcceptanceReview acceptance_review() const override {return repo().acceptance_review();}
+    app::AcceptanceReceipt accept_all(std::string_view op,bool ignore=false) override {return repo().accept_all(op,ignore);}
+    std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view op) const override {return repo().acceptance_outcome(op);}
+    bool transaction_accepted(const imports::Occurrence& id) const override {return repo().transaction_accepted(id);}
+    app::RollbackReview rollback_review() const override {return repo().rollback_review();}
+    app::ImportResult import_result(std::string_view id) const override {return repo().import_result(id);}
     app::Receipt commit(std::string_view b,std::int64_t r,std::string_view op) override {return repo().commit(b,r,op);}
     std::optional<app::Receipt> outcome(std::string_view op) const override {return repo().outcome(op);}
     std::optional<app::Receipt> durable_outcome(std::string_view op) const override {return repo().durable_outcome(op);}

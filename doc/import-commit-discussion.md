@@ -1,4 +1,4 @@
-# Next work: dataset-wide acceptance of new transactions
+# Dataset-wide acceptance of new transactions
 
 Last updated: 2026-10-29
 
@@ -7,6 +7,16 @@ Last updated: 2026-10-29
 The owner settled the four transaction decisions below and gave **Go for implementation on 2026-10-29**. That authorization remains in effect for this model; it does not authorize reports or unrelated changes. The owner subsequently confirmed: preserve existing account/category creation and opening-review behavior while making account rollback remove transaction work only. Do not invent a new creation or opening-cleanup policy.
 
 This direction supersedes earlier requirements for per-account import commit, separate draft-to-committed publication, and compulsory permanent original-import evidence retention. Older feature and implementation documents describe the existing system where they conflict with this handoff; they must not silently reintroduce those requirements. Exact arithmetic, encryption, atomic durable writes, occurrence multiplicity and correction of accepted transactions remain required.
+
+## Current implementation checkpoint
+
+The accepted model is implemented: independent acceptance references, multiple pending imports, strict matching against pending/accepted targets, duplicate-only completion, partial-error acceptance, dataset-wide Commit, source-owned account rollback and physical cleanup. The UI offers warning navigation/Ignore and quit-time Yes/No/Cancel. See [current verification](status.md#dataset-acceptance-storage-refactor--2026-10-29). The gap descriptions below are the historical pre-refactor baseline, not remaining implementation requirements.
+
+Initial accepted revisions reference persisted draft revisions and allocation metadata; they do not copy monetary values and splits into a second baseline. Later corrections retain their ordinary immutable history. Rollback removes transient source memberships and collects unowned records, source files and relationship/review history in one transaction. Existing accounts, confirmed aliases, reviewed opening proposals and staged category names survive transaction rollback. A retained source can keep the matching facts it depends on even after the original import relinquishes ownership.
+
+Explicitly confirming a whole-record bank match to an already accepted generated transfer records source ownership immediately. It adds no financial transaction or acceptance obligation, preserves the accepted transaction's date/payee/amount, and supplies original bank facts for later overlap matching. Forgetting that source leaves the accepted generated transaction. Split records with other allocations continue through their existing review/acceptance path. The transfer sheet shows the retained bank match; the journal presents one match action.
+
+Rollback previews use a persistent mutation generation so a stale preview cannot become valid again after reopening. The latest rollback receipt resolves a lost acknowledgement; older receipts are not retained as a forgotten-import archive. Reusing a stale preview after later operations is refused. Current-format atomicity and verification remain required; previous experimental formats are rejected without migration.
 
 ## Immediate next priority: repeated imports and format-independent matching — 2026-10-29
 
@@ -23,21 +33,36 @@ These are the next implementation priorities within the accepted transaction mod
 - **Preserve multiplicity and ownership.** Two legitimate identical-looking payments remain two transactions. Associate source occurrences one-to-one with existing occurrences; do not collapse rows by date/amount alone. Reimports must respect retained-source ownership and account rollback, and must not resurrect a deliberately removed transaction without the existing explicit review policy.
 - **Keep failures separate.** “Nothing added” is not success if some input records failed or remain unresolved. Report added, already-present, unresolved and failed outcomes distinctly; do not hide errors or silently skip records. Import completion and transaction acceptance are separate states.
 
-### Verified implementation gaps
+### Historical implementation gaps — resolved by this refactor
 
 Inspection of [the UI](../src/ui/ImportMain.qml) found Import statement gated by `!s.pending` and Commit gated by pending-batch readiness rather than outstanding transaction acceptance. [Storage](../src/storage/import_store.cpp) also enforces `single_pending` per account and rejects another pending import. Removing the QML condition alone cannot satisfy the requirement.
 
 The parsers already share internal transaction fields. However, `candidate_where` searches committed included rows in the selected account only. `populate` automatically excludes a byte-identical previously committed source, but otherwise marks candidates unresolved, including candidates with a matching bank transaction ID (`FITID`). [The engine matcher](../src/engine/import_review.cpp) compares currency, original amount, date, payee/reference and available IDs; it treats different nonempty IDs as different transactions and allows differing-date candidates when an OFX-family source is involved. This confirms an incomplete decision policy above the shared representation, not independent per-extension transaction stores. It does not establish which condition caused every warning in the owner's private exports.
 
-### Matching decisions to resolve before implementing uncertain cases
+### Accepted strict bank-ID matching — 2026-10-29
 
-The product direction above is settled and needs no further clarification to document. The following identity rules still need explicit examples and agreement before adding automatic behavior; do not invent financial matching semantics:
+The owner approved strict overlap recognition and gave Go. Match within the resolved destination account using a unique bank transaction ID and agreeing original currency, exact amount, posted calendar date and transaction type. OFX, QFX, QBO and ASO labels, export timestamps, request identifiers, selected ranges and statement balances do not establish transaction identity. Payee/memo presentation (including character escaping) is not a condition of this ID-based rule. Match original source facts, preserving later ledger corrections and categorization. No private sample paths, contents or identifying details are retained here; regression examples must be independently synthetic.
 
-1. **Bank-ID reliability across export options:** when the same account supplies the same ID and exact currency/amount, define the accepted automatic-match rule and handling of conflicting dates or other identity facts. If export options generate different IDs for the same payment, decide what evidence can override the current “different IDs means different transactions” rule. IDs are account-scoped, not globally unique.
-2. **Missing IDs and exporter text differences:** specify which normalized fields establish identity, which text differences are irrelevant (for example spacing or differing payee/memo placement), and whether any date difference may be auto-matched. No date tolerance, fuzzy text threshold or date/amount-only automatic collapse is approved by this handoff.
-3. **Repeated indistinguishable occurrences and overlapping exports:** specify one-to-one matching and treatment of unequal occurrence counts or several equally plausible prior transactions. Equal-looking rows alone do not prove the same historical occurrence; extra legitimate occurrences must survive. Reuse established transfer multiplicity rules where applicable, without assuming they automatically settle ordinary bank-transaction identity.
+The target behavior applies to accepted and uncommitted transactions. Associations from several exports to one transaction count as one target. Matching must be one-to-one within an import. Repeated incoming IDs, conflicting facts, several target identities, or removed targets remain reviewable. Importing a shorter range must not remove transactions outside that range.
 
-Prepare a concrete matching decision table with synthetic examples from each supported parser, including conflicts and repeated occurrences, before implementing those uncertain cases. If necessary, request owner-authorized private comparison to establish exporter differences; private files remain outside routine tests and repository documentation. These questions do not reopen dataset-wide Commit, repeated importing, source ownership or the requirement for format-independent matching.
+Synthetic decision table (all amounts below are illustrative CAD values):
+
+| Existing source facts | Incoming source facts | Decision |
+|---|---|---|
+| Account A, ID BANK-A, 2026-02-01, -1.00, DEBIT | Same facts, different export label/request and escaped payee text | Already present when the target is unique and active |
+| Same source facts, ledger payee/date/amount subsequently corrected | Original bank facts unchanged | Already present; keep the correction |
+| Account A, IDs BANK-A and BANK-B, both -1.00 on the same date | Same two IDs in reverse order | Two one-to-one matches; retain both payments |
+| Account A, BANK-A | Same ID in resolved account B | Independent account; no cross-account match |
+| BANK-A, -1.00 | BANK-A, -1.01, or changed date/type/currency | Review; no automatic exclusion |
+| Two ledger transactions carrying BANK-A | One incoming BANK-A | Review ambiguous identity |
+| One BANK-A | Incoming source repeats BANK-A | Review every repeated-ID occurrence |
+| Removed BANK-A | Incoming BANK-A | Existing removed-record review policy |
+| IDs absent, including ordinary QIF | Same date/amount/text | Existing candidate review; no new fuzzy/date-amount auto-match |
+| Different nonempty IDs | Same date/amount | Existing distinct-ID policy; no automatic merge |
+
+Missing IDs, export options that change IDs, uncertain date/text differences and indistinguishable repeated occurrences are not approved for new automatic matching. They do not block implementing the strict rule. A future proposal to loosen matching needs evidence and explicit agreement. Existing byte-identical, ID-less source matching remains a separate previously implemented path.
+
+Implemented slice: automatic strict matches against committed ledger identities, using retained bank source associations and preserving existing review stamps/history. Every repeated incoming bank ID now requires review, including the first occurrence. The bank-ID path also checks byte-identical imports rather than letting file identity bypass conflicting-ID checks. This does **not** complete pending-target matching or the storage work below. One-pending-import restrictions, empty-batch Commit and legacy per-account publication remain until the transaction-state/source-membership refactor. Do not describe this slice as completing repeated imports or dataset-wide acceptance.
 
 ### Implementation order and acceptance evidence
 
@@ -88,7 +113,7 @@ Before dataset-wide commit was selected, the owner preferred keeping an independ
 
 - **Account-wide rollback:** the action previously called Forget rolls back all uncommitted work belonging to the selected account, including its effects in other accounts. It preserves committed transactions. Selected-row removal remains Delete; this is not a selected-import or selected-row command. “Discard uncommitted changes” is suggested wording, not a finalized UI label.
 - **Created versus linked counterparts:** remove an exclusively generated uncommitted counterpart when its originating work is discarded. When the work only linked to an existing transaction, remove the association in both directions and preserve the existing transaction.
-- **Shared ownership:** checking creates an uncommitted Visa entry (one source); Visa independently imports and matches it (two sources); checking rolls back (one source remains). Remove checking's contribution and transfer link, but retain Visa's transaction as uncommitted. Rollback removes only its own sources, never another retained source. The owner describes this as garbage collection/reference counting. Tracking source identities rather than only a count is a proposed implementation detail; the physical representation still needs design. Committed transactions remain protected. Matching must preserve legitimate repeated-payment multiplicity.
+- **Shared ownership:** checking creates an uncommitted Visa entry (one source); Visa independently imports and matches it (two sources); checking rolls back (one source remains). Remove checking's contribution and transfer link, but retain Visa's transaction as uncommitted. Rollback removes only its own sources, never another retained source. The owner describes this as garbage collection/reference counting. The implementation tracks source identities and preserves facts needed by retained owners. Committed transactions remain protected. Matching must preserve legitimate repeated-payment multiplicity.
 - **One balance:** include all active committed and uncommitted transactions. Remove the actual/projected distinction; Commit changes acceptance status, not the balance. Future reports use the same default inclusion policy, with report implementation still deferred.
 - **Import errors:** successful rows remain usable and can be committed; failed records remain visibly flagged until repaired or explicitly discarded. Commit must never silently dismiss failures or invent missing values. Unrepresentable amounts and failed writes cannot be overridden into valid transactions.
 
@@ -96,7 +121,7 @@ Before dataset-wide commit was selected, the owner preferred keeping an independ
 
 The four transaction policy questions are settled; do not reopen them as undecided on the next handoff.
 
-Changing account/category creation, opening-balance handling and their cleanup is deferred. Preserve their existing behavior during the transaction-model change, as explicitly confirmed by the owner after Go. Physical schema, history representation, duplicate-recognition inputs after removing the original-evidence requirement, retry handling and efficient status updates need a reviewable implementation proposal. The subsequent owner decision below supersedes the earlier undecided validation-cache suggestion.
+Changing account/category creation, opening-balance handling and their cleanup is deferred. Preserve their existing behavior during the transaction-model change, as explicitly confirmed by the owner after Go. The current implementation checkpoint above records the adopted storage and retry representation. The subsequent owner decision below supersedes the earlier undecided validation-cache suggestion.
 
 ## Performance context
 
@@ -104,7 +129,7 @@ The owner reports that a fresh QIF import improved substantially after matching/
 
 The owner objects to repeating expensive readiness checks after readiness has already been established. Financial correctness is not a blanket justification for repeated scans or copying transactions. The simpler acceptance model is a product decision independent of any unproven performance claim. Measure relevant phases on synthetic workloads when performance implementation is authorized; private data requires separate authorization.
 
-## Existing implementation — not the accepted target
+## Historical implementation — before this refactor
 
 
 Read-only inspection found that `ImportStore::commit` checks group readiness and opening confirmation, loads rows to validate decisions/transfer resolution and retain source associations, updates transfer relationships, and then loads included rows again to write their initial committed revisions, splits and metadata. It also records history and freezes the opening. These changes share one atomic database transaction. The UI subsequently refreshes the ledger and balances. Drafts and immutable evidence are already persisted before commit; commit publishes a separate authoritative interpretation. This explains the operations, not why they should take 18 seconds.
@@ -112,7 +137,7 @@ Read-only inspection found that `ImportStore::commit` checks group readiness and
 Relevant implementation: [commit](../src/storage/import_store.cpp), [group readiness and opening publication](../src/storage/import_group_store.inc), [committed revisions](../src/storage/committed_store.inc), and [UI command/refresh](../src/ui/import_model.cpp).
 
 
-The current application still uses per-account publication, separate committed revisions, retained source evidence and protected drafts. Its Abort retains discarded state rather than implementing the newly requested Forget semantics. The redundant account-commit confirmation is still present. The one-balance/normal-ledger read path is implemented in the current working tree; the dataset-wide acceptance and account rollback storage changes remain incomplete.
+Before this refactor, the application used per-account publication, copied committed revisions and protected drafts. Abort retained discarded material, and the UI had a redundant account-commit confirmation. Those were the gaps this implementation replaced.
 
 ## Next work and verification
 
@@ -122,9 +147,11 @@ The original handoff was documentation-only. The current implementation slice an
 
 ## Storage implementation proposal — not yet implemented
 
+Historical proposal, now implemented by the checkpoint above. The original heading is retained for incoming links.
+
 Inspection confirms that batch state currently controls transaction acceptance, duplicate lookup, transfer protection, editing, and history replay. `commit` copies drafts and allocations into initial committed revisions; blocked batches cannot publish any rows. `discard` and grouped Abort retain immutable source/history material. Wrapping those account commits in an outer transaction would not implement the accepted model.
 
-The remaining storage work must proceed together:
+The proposal required these changes to proceed together:
 
 1. Give each ledger transaction independent acceptance state and a stable identity, separate from import/error completion. Commit records references to existing financial revisions, not copies of their amounts and splits. Corrections of accepted transactions retain persistent revisions and strict Undo dependencies.
 2. Represent ownership with identifiable source memberships. A source contribution has an account owner; a transfer relationship is not itself another ownership root. Account rollback removes that account's uncommitted contributions, then removes only uncommitted transactions with no retained owner. This avoids reference cycles between reciprocal transfer links. Preserve independently supported and committed transactions, and remove both directions of a discarded link.
@@ -142,6 +169,6 @@ The owner observed another approximately 13-second commit and gave Go for this r
 
 Implemented a connection-owned prepared row review, refreshed before mutation durability and reconstructed after verified opening. Row/version and duplicate-target/source-association stamps retain unaffected reviews; transfer warnings follow current account names and resolved allocation endpoints. All mutation families route through review refresh. Rollback drops speculative results, including source/transfer caches. Commit consumes prepared inclusion, duplicate and transfer-warning results and the reviewed drafts, replacing its two source-row parsing/validation loops. Group readiness consumers reuse the current review snapshot; immutable mapped-source parsing and unchanged transfer graphs are reused. The ordinary bounded validated-row cache now follows row revisions rather than discarding every row after every write; live duplicate/association/retention fields refresh separately.
 
-This is an incremental change to the existing publication implementation, **not completion of dataset-wide status-only acceptance**. It still writes initial committed entry revisions, allocations, associations, category publication, transfer transitions and history. Group aggregate review and dependency enumeration still scan affected/current collections; this is not a claim that every edit is constant-time. Full verification still runs at open and explicit verification. Existing blocking versus overridable-warning UI policy is unchanged. Dataset-wide acceptance, shared-source rollback, partial-error acceptance and quit prompting remain unfinished. No private workload timing improvement is claimed.
+At that earlier checkpoint this was an incremental change to publication, **not completion of dataset-wide acceptance**. It still writes initial committed entry revisions, allocations, associations, category publication, transfer transitions and history. Group aggregate review and dependency enumeration still scan affected/current collections; this is not a claim that every edit is constant-time. Full verification still runs at open and explicit verification. Existing blocking versus overridable-warning UI policy is unchanged. Those remaining acceptance, rollback, partial-error and quit workflows are implemented by the current checkpoint above. No private workload timing improvement is claimed.
 
 Verification and remaining limits are recorded in [project status](status.md).

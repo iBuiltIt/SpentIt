@@ -1,6 +1,6 @@
 # Project layout and dependency boundaries
 
-Last updated: 2026-10-27
+Last updated: 2026-10-29
 
 State: selected organizational direction; the standalone `spentit_engine` library, optional `spentit_storage_prototype`, optional synthetic app/UI libraries and sheet executable, the headless durable-import experiment, and their tests now exist. The user prefers `src/`. The structure below reserves responsibilities, not a requirement to create empty directories or speculative abstractions.
 
@@ -50,7 +50,7 @@ Group related functionality into subdirectories such as `money/`, `import/`, `ru
 
 Own SQLCipher connections, SQL, schema/migrations, source/draft/history persistence, transactional write primitives, backup/restore, and storage-specific failure handling. Map stored values to engine types without leaking database handles into the UI.
 
-Database constraints complement engine validation. Storage performs the physical atomic transaction; application use cases define the complete logical operation that must be atomic. For example, committing an import must not become separate UI-triggered saves for transaction rows, transfer counterpart state, and history. [Transfer commits are explicit per account](../features/008-transfer-matching-and-lifecycle.md): atomically protecting a generated destination draft does not commit that destination account.
+Database constraints complement engine validation. Storage performs the physical atomic transaction; application use cases define the complete logical operation that must be atomic. For example, committing an import must not become separate UI-triggered saves for transaction rows, transfer counterpart state, and history. [Dataset-wide acceptance](import-commit-discussion.md) accepts imported transactions and generated counterparts together; legacy per-account transfer events remain an internal history representation.
 
 Reporting may use SQL aggregation for efficiency. Its filters, currency rules, allocation semantics, and drill-down contract remain defined outside ad hoc SQL/UI code, and integration tests must prove equivalence to those semantics.
 

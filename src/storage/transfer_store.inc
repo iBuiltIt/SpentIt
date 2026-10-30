@@ -185,7 +185,9 @@ std::vector<app::TransferView> ImportStore::all_transfers() const {
     return out;
 }
 std::vector<app::TransferView> ImportStore::transfers() const {
-    auto out=all_transfers();std::erase_if(out,[&](const auto& value){return value.link.origin.endpoint.account!=impl_->selected_account && value.link.destination.endpoint.account!=impl_->selected_account;});return out;
+    auto out=all_transfers();std::erase_if(out,[&](const auto& value){return value.link.origin.endpoint.account!=impl_->selected_account && value.link.destination.endpoint.account!=impl_->selected_account;});
+    for(auto& value:out){Statement match(impl_->db,"SELECT 1 FROM generated_source_matches WHERE link=? AND account=? AND active=1");match.text(1,value.link.identity);match.integer(2,impl_->selected_account);value.source_matched=match.row();}
+    return out;
 }
 Money ImportStore::local_transfer_total(std::int64_t account,bool projected) const {return local_total(all_transfers(),account,account_by_id(account).currency,projected);}
 std::vector<app::LedgerRow> ImportStore::local_transfer_ledger(bool projected) const {
@@ -199,6 +201,7 @@ std::vector<app::LedgerRow> ImportStore::local_transfer_ledger(bool projected) c
     return out;
 }
 bool ImportStore::transfer_linked(const imports::Occurrence& id) const {
+    if(generated_match(impl_->db,id))return true;
     for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
         if(side->state==transfers::State::removed)continue;
         const bool reserve=!value.link.unresolved || local_side(*side);
@@ -211,7 +214,7 @@ void ImportStore::require_unlinked(const imports::Occurrence& id) const {
     if(transfer_linked(id))fail(SQLITE_CONSTRAINT,"Transfer-linked entries require transfer-aware editing; this command is unavailable");
 }
 std::optional<app::TransferReceipt> ImportStore::transfer_outcome(std::string_view operation) const {
-    if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement row(impl_->db,"SELECT t.account,o.sequence,o.before,o.change,o.after FROM transfer_events t JOIN ledger_operations o ON o.id=t.operation WHERE t.operation=?");row.text(1,operation);
     if(!row.row())return {};
     if(!impl_->verifying && row.integer(0)!=impl_->selected_account)fail(SQLITE_CONSTRAINT,"Transfer operation belongs to another account");
@@ -220,13 +223,14 @@ std::optional<app::TransferReceipt> ImportStore::transfer_outcome(std::string_vi
     return app::TransferReceipt{std::string(operation),row.integer(0),row.integer(1),Money(row.integer(2),currency),Money(row.integer(3),currency),Money(row.integer(4),currency)};
 }
 std::vector<app::TransferJournalEntry> ImportStore::transfer_journal() const {
-    Statement rows(impl_->db,"SELECT e.operation,e.request,o.sequence,v.payload FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN transfer_versions v ON v.sequence=o.sequence ORDER BY o.sequence,v.identity");
+    Statement rows(impl_->db,"SELECT e.operation,e.request,o.sequence,v.payload,g.sequence,completed.sequence FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN transfer_versions v ON v.sequence=o.sequence LEFT JOIN generated_source_matches g ON g.sequence=o.sequence LEFT JOIN generated_source_matches completed ON completed.sequence+1=o.sequence ORDER BY o.sequence,v.identity");
     std::vector<app::TransferJournalEntry> out;
     while(rows.row()) {
         if(out.size()>=qif::max_records) fail(SQLITE_TOOBIG);
         const auto request=transfer_codec::request(rows.bytes(1));
         const auto value=transfer_codec::view(rows.bytes(3));
-        out.push_back({rows.bytes(0),transfer_action_name(request),value.link.identity,rows.integer(2),value.link.origin.endpoint.account,value.link.destination.endpoint.account,value.link.origin.amount,value.link.destination.amount,value.link.origin.date,value.link.destination.date,value.link.unresolved});
+        if(!rows.null(5) && request.action==app::TransferAction::discard_match)continue;
+        out.push_back({rows.bytes(0),rows.null(4)?transfer_action_name(request):"Match bank source",value.link.identity,rows.integer(2),value.link.origin.endpoint.account,value.link.destination.endpoint.account,value.link.origin.amount,value.link.destination.amount,value.link.origin.date,value.link.destination.date,value.link.unresolved});
     }
     return out;
 }
@@ -259,8 +263,9 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             if(account_for_batch(fact.endpoint.entry.batch).identity!=fact.endpoint.account)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
             const auto info=batch(impl_->db,fact.endpoint.entry.batch);
             if(info.revision!=revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
-            const bool committed=info.state==app::BatchState::committed;
-            const bool editable=info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts;
+            if(generated_match(impl_->db,fact.endpoint.entry))fail(SQLITE_CONSTRAINT,"Use the existing transfer rather than its matched source");
+            const bool committed=transaction_accepted(fact.endpoint.entry);
+            const bool editable=!committed && (info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts);
             if(fact.state==transfers::State::committed){if(!committed)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");}
             else if(fact.state!=transfers::State::draft || !editable)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
             std::optional<imports::DraftRow> row;
@@ -336,7 +341,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
         }else{
             if(!request.origin || request.amount || request.evidence)fail(SQLITE_CONSTRAINT,"Choose a draft allocation");
             require_account(request.origin->batch);expect(impl_->db,request.origin->batch,request.batch_revision);const auto row=load_row(*request.origin,false);
-            if(row.excluded_by_clear || !row.draft || row.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");
+            if(transaction_accepted(*request.origin) || row.excluded_by_clear || row.matched_generated || !row.draft || row.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");
             draft=*row.draft;origin.entry=*request.origin;origin.allocation=request.allocation;
         }
         auto link=transfers::generate(request.link,origin,*draft,{destination.identity,{"~transfer-"+request.link+"-destination",0},"generated"},destination.currency);
@@ -347,7 +352,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             if(!request.evidence)fail(SQLITE_CONSTRAINT,"Choose bank evidence");
             require_account(request.evidence->endpoint.entry.batch);if(batch(impl_->db,request.evidence->endpoint.entry.batch).state!=app::BatchState::pending)fail(SQLITE_CONSTRAINT,"Match evidence must belong to a pending import");expect(impl_->db,request.evidence->endpoint.entry.batch,request.batch_revision);
             const auto row=load_row(request.evidence->endpoint.entry,false);
-            if(!row.draft || row.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the bank entry before matching");
+            if(transaction_accepted(row.identity) || !row.draft || row.matched_generated || row.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the bank entry before matching");
             const auto& allocations=row.draft->transaction.allocations();const auto allocation=std::find_if(allocations.begin(),allocations.end(),[&](const auto& a){return a.identity==request.evidence->endpoint.allocation;});
             if(allocation==allocations.end() || allocation->amount!=request.evidence->amount || row.draft->date!=request.evidence->posting_date || request.evidence->endpoint.account!=account.identity)fail(SQLITE_CONSTRAINT,"Bank evidence changed; refresh the proposal");
         }
@@ -361,6 +366,17 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     store_transfer(impl_->db,*found,sequence,create);
     append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,after,"",request.expected_sequence,catalog_sequence(impl_->db));
     if(did_commit)exec(impl_->db,"UPDATE account SET frozen=1 WHERE singleton=spentit_account()");
+    if(request.action==app::TransferAction::propose_match && request.evidence){
+        const auto& side=found->link.origin.endpoint.account==account.identity?found->link.origin:found->link.destination;
+        const auto row=load_row(request.evidence->endpoint.entry,false);
+        if(side.state==transfers::State::committed && local_side(side) && row.draft && row.draft->transaction.allocations().size()==1){
+            Statement match(impl_->db,"INSERT INTO generated_source_matches VALUES(?,?,?,?,?,1)");match.text(1,row.identity.batch);match.integer(2,integer(row.identity.ordinal));match.text(3,request.link);match.integer(4,account.identity);match.integer(5,sequence);match.done();
+            app::TransferRequest complete=request;complete.action=app::TransferAction::discard_match;complete.expected_sequence=sequence;
+            const auto restored=transition_transfer(*found,complete,account.identity);const auto completed=std::string(operation)+"-matched";identifier(completed);
+            Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,0,0)");event.text(1,completed);event.integer(2,account.identity);event.blob(3,transfer_codec::encode(complete));event.done();store_transfer(impl_->db,restored,sequence+1,false);
+            append_financial(impl_->db,completed,app::ChangeKind::transfer,{"",0},-1,0,after,Money(0,account.currency),after,"",sequence,catalog_sequence(impl_->db));
+        }
+    }
     finish([&]{transaction.commit();});return {std::string(operation),account.identity,sequence,before,change,after};
 }
 std::set<std::size_t> ImportStore::protected_import_rows(std::string_view batch) const {
@@ -584,7 +600,7 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
         const auto source=load_row(endpoint.entry,false);
         if(source.excluded_by_clear || source.decision.disposition!=imports::Disposition::include || !source.draft || account_for_batch(endpoint.entry.batch).identity!=endpoint.account)fail(SQLITE_CORRUPT);
         auto draft=*source.draft;
-        if(batch(impl_->db,endpoint.entry.batch).state==app::BatchState::committed){
+        if(transaction_accepted(endpoint.entry)){
             Statement head(impl_->db,"SELECT revision FROM entry_heads WHERE batch=? AND ordinal=?");head.text(1,endpoint.entry.batch);head.integer(2,integer(endpoint.entry.ordinal));if(!head.row())fail(SQLITE_CORRUPT);
             const auto snapshot=entry_snapshot(endpoint.entry,head.integer(0));if(!snapshot.active)fail(SQLITE_CORRUPT);draft=snapshot.draft;
         }
@@ -594,15 +610,30 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
     for(const auto& value:current){
         const auto& origin=value.link.origin;
         if(!origin.manually_entered && origin.state!=transfers::State::removed)check_evidence(origin.endpoint,origin.amount,origin.date);
-        if(!origin.manually_entered && origin.state!=transfers::State::removed){const auto source=batch(impl_->db,origin.endpoint.entry.batch);if((source.state==app::BatchState::committed)!=(origin.state==transfers::State::committed) || (source.state!=app::BatchState::committed && source.state!=app::BatchState::pending && source.state!=app::BatchState::protected_drafts))fail(SQLITE_CORRUPT);}
+        if(!origin.manually_entered && origin.state!=transfers::State::removed){const auto source=batch(impl_->db,origin.endpoint.entry.batch);if(transaction_accepted(origin.endpoint.entry)!=(origin.state==transfers::State::committed) || (source.state!=app::BatchState::committed && source.state!=app::BatchState::pending && source.state!=app::BatchState::protected_drafts))fail(SQLITE_CORRUPT);}
         for(const auto* side:{&value.link.origin,&value.link.destination}){
             for(const auto* evidence:{&side->attached_evidence,&side->proposed_evidence})if(*evidence)check_evidence((*evidence)->endpoint,(*evidence)->amount,(*evidence)->posting_date);
-            if(side->attached_evidence && batch(impl_->db,side->attached_evidence->endpoint.entry.batch).state!=app::BatchState::committed)fail(SQLITE_CORRUPT);
+            if(side->attached_evidence && !transaction_accepted(side->attached_evidence->endpoint.entry))fail(SQLITE_CORRUPT);
             if(side->proposed_evidence && batch(impl_->db,side->proposed_evidence->endpoint.entry.batch).state!=app::BatchState::pending)fail(SQLITE_CORRUPT);
         }
     }
+    std::size_t matched_count=0;
+    Statement matches(impl_->db,"SELECT g.batch,g.ordinal,g.link,g.account,g.sequence,g.active,v.payload,e.request FROM generated_source_matches g JOIN transfer_versions v ON v.identity=g.link AND v.sequence=g.sequence JOIN ledger_operations l ON l.sequence=g.sequence JOIN transfer_events e ON e.operation=l.id");
+    while(matches.row()) {
+        ++matched_count;
+        const imports::Occurrence id{matches.bytes(0),static_cast<std::size_t>(matches.integer(1))};
+        const auto request=transfer_codec::request(matches.bytes(7));const auto saved=transfer_codec::view(matches.bytes(6));
+        const auto owner=matches.integer(3);const auto& side=saved.link.origin.endpoint.account==owner?saved.link.origin:saved.link.destination;
+        const auto source=load_row(id,false);
+        if(request.action!=app::TransferAction::propose_match || !request.evidence || request.evidence->endpoint.entry!=id || request.evidence->endpoint.account!=owner || request.link!=matches.bytes(2) || side.state!=transfers::State::committed || !local_side(side) || !side.proposed_evidence || !source.draft || source.decision.disposition!=imports::Disposition::include || source.draft->transaction.allocations().size()!=1 || source.draft->transaction.effective_total()!=request.evidence->amount || source.draft->date!=request.evidence->posting_date || transaction_accepted(id))fail(SQLITE_CORRUPT,"Invalid generated transfer source ownership");
+        const auto live=std::find_if(current.begin(),current.end(),[&](const auto& value){return value.link.identity==matches.bytes(2);});
+        if(live==current.end())fail(SQLITE_CORRUPT,"Missing matched transfer");
+        const auto& live_side=live->link.origin.endpoint.account==owner?live->link.origin:live->link.destination;
+        if((live_side.state!=transfers::State::removed)!=(matches.integer(5)!=0))fail(SQLITE_CORRUPT,"Stale matched transfer state");
+    }
+    Statement match_count(impl_->db,"SELECT count(*) FROM generated_source_matches");if(!match_count.row() || match_count.integer(0)!=integer(matched_count))fail(SQLITE_CORRUPT,"Missing matched source history");
     const auto resolved=resolved_transfers(current);
-    Statement committed(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.state=1 AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
+    Statement committed(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=v.batch AND a.ordinal=v.ordinal) AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     while(committed.row()) {
         const imports::Occurrence id{committed.bytes(0),static_cast<std::size_t>(committed.integer(1))};
         if(retained_member(impl_->db,id.batch,id.ordinal)) {
@@ -797,8 +828,9 @@ app::TransferPreview ImportStore::preview_transfer(const app::TransferRequest& r
         if(account_for_batch(fact.endpoint.entry.batch).identity!=fact.endpoint.account)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
         const auto info=batch(impl_->db,fact.endpoint.entry.batch);
         if(info.revision!=revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
-        const bool committed=info.state==app::BatchState::committed;
-        const bool editable=info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts;
+        if(generated_match(impl_->db,fact.endpoint.entry))fail(SQLITE_CONSTRAINT,"Use the existing transfer rather than its matched source");
+            const bool committed=transaction_accepted(fact.endpoint.entry);
+        const bool editable=!committed && (info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts);
         if(fact.state==transfers::State::committed){if(!committed)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");}
         else if(fact.state!=transfers::State::draft || !editable)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
         std::optional<imports::DraftRow> row;

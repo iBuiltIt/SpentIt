@@ -277,7 +277,7 @@ void validation() {
         "DROP TRIGGER review_stamps_immutable;UPDATE review_stamps SET target_revision=1,review_revision=1 WHERE batch='reference' AND ordinal=0 AND revision=1",
         "DROP TRIGGER review_stamps_keep;DELETE FROM review_stamps WHERE batch='reference' AND ordinal=0 AND revision=1",
         // An internally valid orphan interpretation must not become invisible history.
-        ("INSERT INTO entry_revisions SELECT batch,ordinal,99,active,date,payee,memo,total FROM entry_revisions WHERE batch='first' AND ordinal=0 AND revision=1;"
+        ("INSERT INTO entry_revisions(batch,ordinal,revision,active,date,payee,memo,total) SELECT batch,ordinal,99,active,date,payee,memo,total FROM entry_revisions WHERE batch='first' AND ordinal=0 AND revision=1;"
         "INSERT INTO entry_allocations SELECT batch,ordinal,99,position,category,memo,units FROM entry_allocations WHERE batch='first' AND ordinal=0 AND revision=1"),
         "DROP TRIGGER operation_immutable;UPDATE operations SET before=before+1,after=after+1 WHERE id='publication-first'",
         ("DROP TRIGGER history_order_immutable;UPDATE history_order SET operation='temporary' WHERE operation='order-second';"

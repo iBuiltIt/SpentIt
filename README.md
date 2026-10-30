@@ -16,7 +16,7 @@ This is an unreleased application. Format compatibility remains governed by the 
 - [Account-scoped workflow and current experimental formats](doc/accounts.md)
 - [QIF transfer destinations and explicit resolution](doc/qif-transfers.md)
 - [Search and bulk ledger contract](doc/search-ledger.md)
-- [Current handoff](doc/roadmap.md#performance-handoff--2026-10-29)
+- [Current import/commit handoff](doc/import-commit-discussion.md)
 - [Feature requirements and open decisions](features/README.md)
 - [Contributor instructions](AGENTS.md) and [dependency boundaries](doc/project-layout.md)
 
@@ -29,6 +29,8 @@ cmake -S . -B build/import-ui-rules-release -DSPENTIT_APPLICATION_OUTPUT_DIRECTO
 cmake --build build/import-ui-rules-release --target spentit_import_experiment -j 2
 ./build/SpentIt
 ```
+
+The current build uses experimental schema **32 with rules / 31 without**. Create a new dataset for this version; older experimental datasets are rejected unchanged, without migration. Imports can accumulate before Commit. Commit accepts new transactions across all accounts; Discard uncommitted work removes the selected account's contributions while preserving accepted and independently owned transactions. See [verified scope](doc/status.md#dataset-acceptance-storage-refactor--2026-10-29).
 
 The output location is saved in that build's CMake cache; subsequent rebuilds update `./build/SpentIt`. For dependency setup on a fresh checkout, see [building](doc/building.md) and [the UI setup](doc/import-ui.md). Other build trees default to producing `SpentIt` inside their own build directory.
 

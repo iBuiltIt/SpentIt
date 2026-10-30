@@ -1,4 +1,4 @@
-bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="30";}
+bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="32";}
 std::string ImportStore::bulk_group(std::string_view operation) const {if(!bulk_supported())return {};Statement group(impl_->db,"SELECT operation FROM bulk_members WHERE entry_operation=?");group.text(1,operation);return group.row()?group.bytes(0):std::string{};}
 namespace {
 constexpr const char* bulk_refresh="Bulk preview changed; refresh before applying";
@@ -16,7 +16,7 @@ bool same_preview(const app::BulkPreview& a,const app::BulkPreview& b){
 }
 std::optional<app::BulkReceipt> ImportStore::bulk_outcome(std::string_view operation) const {
     if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes are not supported by this dataset");
-    if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement group(impl_->db,"SELECT kind,category,undo_of,preview_sequence,catalog_revision,count FROM bulk_operations WHERE id=?");group.text(1,operation);
     if(!group.row()){Statement used(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");used.text(1,operation);if(used.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
     Statement owner(impl_->db,"SELECT o.batch FROM bulk_members m JOIN ledger_operations o ON o.id=m.entry_operation WHERE m.operation=? ORDER BY m.position LIMIT 1");owner.text(1,operation);if(!owner.row())fail(SQLITE_CORRUPT);require_account(owner.bytes(0));

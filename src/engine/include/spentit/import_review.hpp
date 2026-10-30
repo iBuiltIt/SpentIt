@@ -21,6 +21,10 @@ enum class MatchBasis { same_source_fields, same_date_amount, same_amount_unknow
     same_fitid, uncertain_fitid, uncertain_date };
 // A candidate is evidence for review, never permission for automatic exclusion.
 std::optional<MatchBasis> candidate_basis(const qif::Record&,const qif::Record&);
+// Strict bank-ID evidence agreement. The caller must additionally establish
+// the same resolved account, a unique live target and one-to-one occurrences.
+// Never pass edited ledger fields in place of the original source records.
+bool same_bank_transaction(const qif::Record&,const qif::Record&);
 std::string basis_label(MatchBasis basis);
 enum class Disposition { unresolved, include, duplicate };
 struct Decision {
