@@ -38,9 +38,9 @@ Use relative links between repository documents. Do not rely on chat history, pr
 - Use exact monetary arithmetic with explicit currency and scale. Never use binary floating point for authoritative money values; detect overflow and invalid precision.
 - Splits sum exactly to their effective transaction total. Mixed signs are supported. Original imported amounts remain available when a user corrects a total.
 - Never combine different currencies without an explicit conversion policy and recorded conversion inputs.
-- Preserve immutable import evidence separately from editable transaction interpretations and rule results.
-- Draft imports persist across restarts but do not alter committed balances or ordinary reports.
-- Commit the entire chosen operation atomically, including linked transfers, draft-state transitions, and history. Commit is explicit per account: protecting a linked destination draft does not commit it (see [transfer lifecycle](features/008-transfer-matching-and-lifecycle.md)). Never report success before durable completion.
+- Follow the [accepted import/commit direction](doc/import-commit-discussion.md): a separate permanent original-import evidence archive is no longer required. Forget removes exclusively owned import material; retain only ownership relationships needed to avoid deleting retained transactions. Existing code still uses the older evidence model.
+- New/uncommitted transactions persist across restarts. Their inclusion in default balances/reports is an open decision in the [handoff](doc/import-commit-discussion.md); the existing application excludes drafts from committed balances and ordinary reports.
+- Commit the entire chosen operation atomically, including linked transfers, status transitions, and history. The accepted next model commits all new transactions dataset-wide; per-account commit/protection is existing behavior being superseded. Committed means accepted, not uneditable. Never report success before durable completion.
 - Preserve persistent history for committed changes. Reversal must respect later changes and financial relationships; it must not silently overwrite newer work.
 - Duplicate recognition must preserve evidence and legitimate repeated occurrences. An uncertain match is not permission to drop a transaction silently.
 - Reporting totals must reconcile to the exact allocations and filters shown by drill-down.
@@ -77,7 +77,7 @@ Pre-release format policy (owner decision, 2026-10-26): no datasets have been re
 
 ## Scope and licensing
 
-Next-session priority (owner direction, 2026-10-29): discuss the whole import/commit approach before further implementation. Read the [discussion handoff](doc/import-commit-discussion.md), which records the objection to repeated readiness checks, the reported 18-second commit and the unimplemented request to remove the commit confirmation dialog. Validation caching is a proposal, not an adopted design.
+Next-session priority (owner direction, 2026-10-29): prepare the accepted dataset-wide commit/new-transaction model recorded in the [handoff](doc/import-commit-discussion.md). It supersedes per-account commit and compulsory permanent import evidence retention. Settle the listed transaction decisions before implementation; account/category creation is deliberately deferred. Documentation is authorized; runtime implementation still requires explicit Go. Validation caching is not an adopted design.
 
 Current owner direction (2026-10-28): SpentIt is the application being used and improved piecemeal. Discuss each new change and wait for explicit **Go** before implementation. Launch the local rules-enabled Release application with `./build/SpentIt`; see the README for rebuilding. The welcome/defaults/explicit creation-time overwrite and usable-scrollbar work is complete; see the [current handoff](doc/roadmap.md#application-usability-handoff--2026-10-28). Reports, expanded lifecycle/recovery and distribution remain deferred. The owner's explicit creation-time Overwrite policy supersedes the earlier exclusive-only creation UI; it does not change backup preservation or document locking. Supplied light/dark icon artwork is integrated; local packaging and its platform limits are described in [packaging instructions](packaging/README.md).
 

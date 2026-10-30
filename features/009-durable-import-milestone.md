@@ -1,6 +1,7 @@
 # 009 — First durable import workflow
 
-Current next-session priority (2026-10-29): [discuss the whole import/commit approach](../doc/import-commit-discussion.md), including redundant readiness checks and the owner-reported 18-second commit. The confirmation-dialog removal and any redesign remain unimplemented pending discussion and explicit Go. Historical implementation notes below do not authorize that work.
+Current next-work direction (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. Existing implementation is unchanged. Remaining transaction decisions are listed in the handoff; account/category creation is deferred. Implementation requires explicit Go.
+
 
 Status: **active**  
 Last updated: 2026-10-29  

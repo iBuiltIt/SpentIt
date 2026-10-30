@@ -1,7 +1,9 @@
 # 011 — Committed editing, removal, and undo
 
+Current next-work direction (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. Existing implementation is unchanged. Remaining transaction decisions are listed in the handoff; account/category creation is deferred. Implementation requires explicit Go.
+
 Status: **active**  
-Last updated: 2026-10-27  
+Last updated: 2026-10-29  
 Implementation: ordinary committed storage/UI operations are implemented per account in the [current multi-account experiment](../doc/accounts.md); schema 4 was the original one-account checkpoint. **The owner accepted the ordinary correction/removal/strict-undo policy on 2026-10-25.** Bounded verification is recorded in the [implementation report](../doc/committed-changes.md) and [project status](../doc/status.md), including configuration-specific results and limits. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27). The [2026-10-27 committed transfer edits](#accepted-committed-transfer-editing--2026-10-27) are implemented for the locked cases. Moving a committed row and rewriting source links remain open, so this feature remains active.
 
 Accepted and implemented follow-up, 2026-10-26: committed-only bulk category/removal operations exclude Opening Balance and reject draft/mixed selections. Category changes affect every allocation while retaining amounts and memos. Exact previews, durable group receipts, atomic Apply and strict group Undo are documented in [search and ledger](../doc/search-ledger.md).

@@ -2,9 +2,13 @@
 
 Last updated: 2026-10-29
 
-## Next session: import and commit approach — 2026-10-29
+## Next work: dataset-wide commit and new transactions — 2026-10-29
 
-The owner reports a substantially improved fresh QIF import after the alias/matching changes, with six opening-balance confirmations remaining, but an account commit still took approximately 18 seconds. They object to repeating expensive checks after the blocker stage has established readiness. The next task is a discussion of the whole import/commit model, not an automatically authorized optimization. [The discussion handoff](import-commit-discussion.md) distinguishes the objection, inspected implementation, unmeasured performance, provisional validation-reuse idea and open decisions. The requested commit-confirmation removal remains unimplemented and awaits Go. No runtime code changed during this documentation handoff; earlier verification below belongs to the implemented matching/alias work. Documentation verification: all 381 relative links/anchors across 14 changed Markdown files and `git diff --check` passed; runtime tests were not repeated for this documentation-only follow-up.
+The owner accepted normal saved ledger transactions marked new/uncommitted, dataset-wide Commit as acceptance, continued editing after acceptance, and a quit-time commit prompt whose No preserves uncommitted work. Forget removes exclusively owned import material rather than archiving discarded imports; a separate permanent original-import evidence archive is no longer required. Transfer rollback distinguishes creating a counterpart from linking to an existing transaction. This supersedes earlier per-account commit and evidence-retention requirements; none of the new runtime behavior is implemented.
+
+The [handoff](import-commit-discussion.md) records accepted decisions, the still-open overlapping-import ownership case, Forget scope, balance/report inclusion and error completion. Account/category creation is explicitly deferred. Runtime implementation still requires explicit Go. The reported 18-second commit remains unprofiled; validation caching is not adopted. This update changed documentation only. The application was not launched, private data was not accessed, and runtime tests were not repeated. Earlier verification below belongs to the existing implementation.
+
+Documentation verification: all 251 relative links/anchors across eight changed Markdown files and `git diff --check` passed.
 
 ## Account aliases and transfer categories — 2026-10-29
 

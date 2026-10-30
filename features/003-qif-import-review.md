@@ -1,7 +1,9 @@
 # 003 — QIF import and review
 
+Current next-work direction (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. Existing implementation is unchanged. Remaining transaction decisions are listed in the handoff; account/category creation is deferred. Implementation requires explicit Go.
+
 Status: **active**  
-Last updated: 2026-10-28  
+Last updated: 2026-10-29  
 Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 30 with rules and schema 29 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
 
 ## Accepted requirements

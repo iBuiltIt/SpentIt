@@ -14,7 +14,7 @@ Every feature document carries a status, last-updated date, and implementation s
 
 Acceptance criteria are verification obligations, not by themselves reports of passing tests. Feature 002 records the implemented engine subset; feature 001 records the optional storage prototype; feature 005 records the optional synthetic sheet experiment. Both link actual verification. When implementation starts, add evidence of actual checks and identify unverified criteria. Keep this index and `doc/status.md` aligned with lifecycle changes.
 
-Next session: [owner-requested discussion of the whole import/commit approach](../doc/import-commit-discussion.md). Repeated readiness checks and commit UX are open design issues; no redesign is authorized yet.
+Next work: [accepted dataset-wide commit/new-transaction model](../doc/import-commit-discussion.md). New rows live in the normal ledger; Commit accepts them across all accounts; accepted rows remain editable; Forget removes exclusively owned import material. This supersedes earlier per-account commit and compulsory permanent evidence retention. Remaining decisions and deferred account/category creation are in the handoff. Not implemented; explicit Go is still required.
 
 ## Initial features
 
@@ -50,7 +50,7 @@ The owner also authorized verified historical-currency definitions followed by t
 
 The owner approved documenting the main UI layout and follow-up decisions on 2026-10-25. Feature 005 records the accepted shell, sidebar, ledger, search direction, and edit-navigation behavior; feature 002 records opening balances, account archiving, and intentional currency reassignment. Search grammar and bounded bulk behavior were subsequently accepted and implemented on 2026-10-26; broader editor/layout contents remain open. The original approval concerned documentation; subsequent bounded implementations do not establish final adoption of Qt.
 
-The owner also accepted the [transfer lifecycle](008-transfer-matching-and-lifecycle.md): commits are explicit per account; committing an origin protects its generated destination draft without committing it. Matching, Merge, provenance-dependent removal, and counterpart navigation are documented there. Feature 005 also records selection/view restoration when search clears. The bounded transfer workflow, allocation-level Merge and unlink, and search selection/view restoration are implemented. Committed transfer reversal remains outstanding.
+Historically, the owner accepted the [transfer lifecycle](008-transfer-matching-and-lifecycle.md): commits are explicit per account; committing an origin protects its generated destination draft without committing it. Matching, Merge, provenance-dependent removal, and counterpart navigation are documented there. Feature 005 also records selection/view restoration when search clears. The bounded transfer workflow, allocation-level Merge and unlink, and search selection/view restoration are implemented. Committed transfer reversal remains outstanding.
 
 The owner subsequently authorized the [synthetic sheet prototype](../doc/sheet-prototype.md). Its bounded scope is implemented and verified on macOS, with 100,000/200,000-row workload measurements. Production UI behavior, persistence integration and final Qt adoption remain open; feature 005 stays active.
 
