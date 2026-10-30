@@ -17,6 +17,15 @@ struct EvidenceKey {
     auto operator<=>(const EvidenceKey&) const = default;
 };
 EvidenceKey evidence_key(const qif::Record&);
+// Exact original facts for ID-less re-import recognition. Account scoping,
+// uniqueness on both sides, retained bank IDs and target liveness are caller obligations.
+struct ReimportKey {
+    std::string date, definition;
+    std::int64_t units;
+    std::string payee;
+    auto operator<=>(const ReimportKey&) const = default;
+};
+std::optional<ReimportKey> reimport_key(const qif::Record&);
 enum class MatchBasis { same_source_fields, same_date_amount, same_amount_unknown_date, unknown_original_amount,
     same_fitid, uncertain_fitid, uncertain_date };
 // A candidate is evidence for review, never permission for automatic exclusion.

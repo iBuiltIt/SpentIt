@@ -1,7 +1,7 @@
 # Application diagnostics and observable UI state
 
 Status: **active**  
-Last updated: 2026-10-29  
+Last updated: 2026-10-30  
 Implementation state: local diagnostics implemented across the seven stages below, with verification evidence and explicit remaining coverage/overhead limitations. MCP and screenshots are excluded. See [runtime contract and evidence](../doc/application-diagnostics.md).
 
 ## Authorization and accepted requirements
@@ -9,6 +9,8 @@ Implementation state: local diagnostics implemented across the seven stages belo
 The owner authorized investigation and documentation (Steps 1 and 2) on 2026-10-29. The owner subsequently gave explicit Go on 2026-10-29 to implement all seven stages below, excluding screenshots and MCP, preserving the planning edits, and stopping before performance optimization or repeated-transfer matching. A possible MCP adapter (Step 4) is future scope, not authorized implementation. This work precedes the remaining [performance and transfer-matching handoff](../doc/import-performance-handoff.md). Reports remain deferred.
 
 Owner clarification (2026-10-29): the existing `SPENTIT_DIAGNOSTICS` build-time separation is sufficient for now. OFF excludes usable hooks but retains inert code; ON still requires runtime opt-in. Two distributed editions and fully stripping inert code are not implemented. See the [agent guide](../doc/agent-diagnostics-guide.md) for the accepted distinction and operational instructions.
+
+Owner clarification (2026-10-30): requests to use hooks pre-authorize external native macOS PID-targeted window capture and Accessibility inspection when UI attachment is unavailable or unclear. This is an agent operating procedure, not a screenshot feature or financial-data expansion of the diagnostics endpoint. Follow the [standing authorization and exact-process attachment procedure](../doc/agent-diagnostics-guide.md#standing-owner-authorization-and-attachment-discipline--2026-10-30), including preservation of the owner's selection and no redundant method-specific Go request.
 
 Accepted requirements:
 

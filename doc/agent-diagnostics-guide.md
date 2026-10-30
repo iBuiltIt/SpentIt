@@ -1,8 +1,16 @@
 # Agent guide: using SpentIt diagnostics hooks for profiling
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 Read this when the owner mentions **hooks**, **diagnostics**, **introspection**, **observing the app**, or **profiling with an agent**. This is the operational entry point; [the runtime contract](application-diagnostics.md) defines the schema, masks, limits and verification evidence. [Feature 012](../features/012-application-diagnostics.md) preserves the requirements and design. No chat history is required.
+
+## Standing owner authorization and attachment discipline — 2026-10-30
+
+When the owner asks an agent to use hooks to observe or investigate SpentIt, the owner authorizes the necessary launch, process discovery, connection and read-only inspection within that requested scope. **The owner explicitly requests and pre-authorizes native macOS PID-targeted APIs as an alternative when the computer-use tool cannot attach, its behavior is unclear, or app-name resolution risks launching another instance.** This includes Core Graphics window discovery/capture and Accessibility inspection against the verified SpentIt process. Do not ask the owner to repeat a special “Go” sentence or re-authorize this method. The authorization is recorded here so a new agent does not depend on chat history.
+
+This authorization covers the inspection method, not unrelated data or financial actions. A request to inspect an owner-selected pair includes reading that pair's retained source facts; a generic timing/profile request does not authorize browsing private records. Preserve unsaved work and selections. Do not modify transactions, merge records, commit, discard, import, restart an active working instance, or implement matching changes without authorization for those actions. Keep private paths, identifiers, screenshots and financial contents out of repository documentation and fixtures.
+
+Owner authorization, tool restrictions, sandbox approvals and macOS permissions are separate. Use normal narrowly scoped escalation when the sandbox blocks native window/socket access; existing owner authorization is the justification, not a reason to ask again. This document does not override higher-priority tool restrictions or OS access controls. If a non-waivable restriction or missing OS permission actually blocks the remaining route, state the precise restriction and the minimum user action needed. Do not weaken protections. Do not treat one tool's attachment failure as proof that the process is missing or inspection is impossible.
 
 ## Scope and build variants
 
@@ -21,7 +29,7 @@ Both builds use the same financial logic and document format. Switching editions
 ## Start or attach to the intended instance
 
 1. Read [current status](status.md), this guide and the runtime contract. Determine the operation the owner wants measured and whether the target is synthetic or an explicitly authorized existing dataset. Preserve any unsaved work in an already running app; diagnostics cannot attach retroactively to a process launched without it.
-2. For the existing configured rules-on Release tree, enable and rebuild before measuring:
+2. First check whether the intended hooks instance is already running. Attach to it when available. Only when a launch is needed, use the existing configured rules-on Release tree and enable/rebuild before measuring:
 
    ```sh
    cmake -S . -B build/import-ui-rules-release -DSPENTIT_DIAGNOSTICS=ON
@@ -30,7 +38,7 @@ Both builds use the same financial logic and document format. Switching editions
    ```
 
    These commands assume the established dependency configuration and `build/SpentIt` output location. For a fresh checkout, first follow [building](building.md), [UI setup](import-ui.md), and [the README launch instructions](../README.md). The diagnostics option alone does not enable the UI/storage/rules targets. Do not rebuild during timed comparisons.
-3. Read the exact `Diagnostics endpoint: ...` line from that application's stderr. Keep its terminal/process available. Each launch has a new endpoint; do not guess its name or choose another instance's socket. If attaching to an existing enabled app, obtain that instance's startup endpoint. Do not relaunch merely to discover it without accounting for the owner's current work.
+3. Read the exact `Diagnostics endpoint: ...` line from that application's stderr. Retain the **PID, exact executable path, managed terminal/process handle, endpoint and returned diagnostics session together** in the working session. Keep its terminal/process available. Each launch has a new endpoint; do not guess its name or choose another instance's socket. If attaching to an existing enabled app, obtain that instance's startup endpoint. Do not relaunch merely to discover it without accounting for the owner's current work.
 4. In another terminal/tool invocation, set these shell variables, replacing the placeholder with the observed path:
 
    ```sh
@@ -41,7 +49,31 @@ Both builds use the same financial logic and document format. Switching editions
 
    Check `schema == 1`, `enabled == 1`, `session`, `ui_known`, and `ui_age_us`. Record the session with all later observations. Numeric flags are 0/1. A new session invalidates all previous IDs, generations and event cursors. An unknown schema requires inspecting its contract before interpreting values.
 
-The endpoint is same-user local IPC, not TCP. Native app/window/socket access may require the tool environment's normal approval. If the sandbox refuses access, report that limitation or obtain the required access; do not weaken permissions or invent a replacement network endpoint. Startup failure exits 2 without opening a dataset or relaxing permissions.
+The endpoint is same-user local IPC, not TCP. Native app/window/socket access may require the tool environment's normal approval. If the sandbox refuses access, use the normal approval/escalation mechanism under the standing authorization above; report a blocker only if it remains unresolved; do not weaken permissions or invent a replacement network endpoint. Startup failure exits 2 without opening a dataset or relaxing permissions.
+
+## Inspect the existing macOS window without launching another app
+
+**Do not call an app-name resolver such as `getApp("SpentIt")` to attach to the standalone `./build/SpentIt --diagnostics` process.** That operation can launch the installed `.app` instead. A running-app inventory may omit the standalone executable, and an exact executable path may be rejected by a tool that expects an application bundle. Neither result means the original process has exited. Do not retry by name, create a second instance, switch datasets or ask the owner to repeat their selection.
+
+Before asking the owner to select transactions and say Ready:
+
+1. Establish the instance identity from the launch handle and endpoint. If necessary, use process metadata (`ps -p "$diag_pid" -o pid=,comm=,args=`) and socket ownership (`lsof -a -p "$diag_pid" -U -Fn`) to verify the process. Never reuse a previous session's PID or window ID without rechecking its identity.
+2. Check the exact endpoint with the diagnostics reader. A live endpoint establishes that process's diagnostics connection, not that the UI tool can read its window or selected records. `ui_known == 0` is an observation limitation, not proof of a closed app or no selection.
+3. Establish a working window-inspection route for that same PID. Use a tool's documented attach-only capability if available. Otherwise proceed directly with the **pre-authorized native macOS route**: enumerate windows using `CGWindowListCopyWindowInfo`, filter by `kCGWindowOwnerPID`, and retain the intended window's `kCGWindowNumber`. Verify the process/window identity before capture. Use `screencapture -x -o -l "$diag_window" "$diag_capture"` or the supported Core Graphics capture API for that window only. Do not capture the whole desktop or other apps.
+4. Native Accessibility inspection can use `AXUIElementCreateApplication(diag_pid)`. Check access and actual returned controls; Qt may expose only a limited tree. Accessibility denial does not establish that window capture is unavailable: test the independent capture route. Do not claim click/navigation capability from a successful screenshot alone.
+5. Verify that the captured window belongs to the intended process and shows the expected working screen. Then ask the owner to prepare their selection if it is not already ready. Preserve an existing selection and compare the selected records read-only.
+
+Use a private temporary location outside the repository for any necessary capture, with restrictive file permissions, and delete it after inspection. Do not persist private screenshots or source excerpts in test fixtures, logs or handoffs. Do not relaunch/rebuild the active process just to make a particular UI tool recognize it.
+
+### Hooks, window inspection and source evidence are separate
+
+The hooks endpoint deliberately excludes transaction contents and persistent record IDs. A screenshot can identify the owner-selected pair, but displayed fields are not proof of original imported facts. For a request to investigate that pair, inspect its source views or use a narrowly scoped read-only storage query if UI access is insufficient. Use supported decryption credentials already authorized for that document; the documented public format key applies only to explicit no-password documents. Never retrieve a password from process memory or bypass document protection.
+
+A storage inspection must open read-only, enforce query-only access, preserve normal database locking, and constrain the query to the selected records and necessary comparison checks. Do not copy the live database, use an unsafe immutable/no-lock mode, expose full records or scan unrelated private data. Prefer comparison results and counts over printing identifying text. No financial mutation is authorized by an inspection request.
+
+### Observed attachment failure and successful route — 2026-10-30
+
+During owner-authorized inspection, app-name resolution launched the installed application while the standalone hooks process remained alive. The exact executable path was not accepted by that UI tool, and its app inventory did not show the standalone process. PID/socket verification identified the original instance. Native Accessibility inspection was denied, but PID-filtered window capture succeeded; a narrowly scoped read-only source comparison then completed the investigation. No financial changes were made, and temporary inspection files were removed. This establishes the observed fallback on this macOS setup, not universal Accessibility access or portability. No private record contents or dataset paths are retained here.
 
 ## Observe one operation without confusing its completion
 

@@ -3,8 +3,14 @@
 Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
 
 Status: **active**  
-Last updated: 2026-10-29  
+Last updated: 2026-10-30  
 Implementation: the [multi-account workflow](../doc/accounts.md) and [bounded durable transfer integration](../doc/transfer-engine.md) implement manual/imported-allocation creation, generated counterparts, acceptance, provisional bank matching, per-account commit, draft protection, counterpart navigation, allocation-level Merge, unlink and replacement, and a read-only transfer journal. [Bounded QIF transfer admission and explicit resolution](../doc/qif-transfers.md) and account entries in the category selector are implemented. The [2026-10-27 committed-editing decisions](#accepted-committed-transfer-editing--2026-10-27) cover retiring a purely generated committed duplicate, ending a link when one committed side's amount, category, or removal changes, and keeping a date-only link. Moving a committed row to another account and rewriting source-occurrence links remain open. Verified scope and remaining decisions are distinguished below.
+
+## Link terminology follow-up — accepted 2026-10-30
+
+The owner selected **Link** (preferred **Alt+L**) for connecting transfer postings and **Merge** (preferred **Alt+M**) for consolidating same-account duplicate postings with a chosen survivor. See the [accepted interaction](005-transaction-sheet-navigation.md#accepted-merge-and-link-interaction--2026-10-30). Both independent transfer postings remain; Link has no master. Explicit split-endpoint selection and the existing generated-placeholder retirement protections remain required, with removal/balance effects visible in the repair preview. Context may suggest switching commands, but must not silently do so.
+
+This is documentation only. The current UI and historical sections below still call the implemented transfer command Merge and use Ctrl+M/Command+M. The new terminology/shortcut preference supersedes that future presentation, not financial behavior, and platform shortcuts still need verification. Broader automatic cross-account matching and date tolerance are not authorized by this decision.
 
 ## Accepted requirements
 

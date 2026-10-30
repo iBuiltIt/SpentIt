@@ -15,6 +15,13 @@ EvidenceKey evidence_key(const qif::Record& source) {
     if ((!source.transaction && !source.repairable) || !source.source_currency) invalid();
     return {source.date,source.source_currency->definition_id(),source.original_amount?std::optional(source.original_amount->units()):std::nullopt,source.payee,source.reference};
 }
+std::optional<ReimportKey> reimport_key(const qif::Record& source) {
+    if(source.diagnostic || !source.source_currency || !source.original_amount ||
+       source.date.empty() || source.payee.empty())return {};
+    if(source.original_amount->currency()!=*source.source_currency)return {};
+    return ReimportKey{source.date,source.source_currency->definition_id(),
+        source.original_amount->units(),source.payee};
+}
 namespace {
 bool ofx_family(const qif::Record& record) {
     return record.format=="ofx" || record.format=="qfx" || record.format=="qbo" || record.format=="aso";

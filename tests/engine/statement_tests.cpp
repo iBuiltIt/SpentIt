@@ -180,6 +180,14 @@ void parser() {
     const auto other_id = basis_row("2026-02-01", amount, "FIT-2", "ofx");
     const auto qif_other_day = basis_row("2026-02-02", amount, "", "qif");
     const auto missing = basis_row("2026-02-01", std::nullopt, "FIT-1", "ofx");
+    check(imports::reimport_key(qif_row)==imports::reimport_key(same));
+    check(imports::reimport_key(qif_row)!=imports::reimport_key(later));
+    check(imports::reimport_key(qif_row)!=imports::reimport_key(other_amount));
+    check(!imports::reimport_key(missing));
+    auto exact=qif_row;exact.payee.clear();check(!imports::reimport_key(exact));
+    exact=qif_row;exact.source_currency=Currency("USD");
+    check(imports::reimport_key(exact)!=imports::reimport_key(qif_row));
+    exact=qif_row;exact.payee+=" ";check(imports::reimport_key(exact)!=imports::reimport_key(qif_row));
     check(imports::candidate_basis(qif_row, same) == imports::MatchBasis::same_source_fields);
     check(imports::candidate_basis(same, later) == imports::MatchBasis::same_fitid);
     check(imports::candidate_basis(same, other_amount) == imports::MatchBasis::uncertain_fitid);

@@ -102,18 +102,17 @@ void review() {
         materialize(s, "overlap");
         s.select_account(1);
         const auto row = s.row({"overlap-account-0", 0});
-        check(row.decision.disposition == imports::Disposition::unresolved);
+        check(row.decision.disposition == imports::Disposition::duplicate);
         check(row.candidates.size() == 1 && row.candidates[0] == imports::Occurrence{"qif", 0});
-        check(imports::candidate_basis(row.source, s.row({"qif", 0}).source) == imports::MatchBasis::same_source_fields);
+        // Automatic attachment has already supplied the QIF target with this bank ID.
+        check(imports::candidate_basis(row.source, s.row({"qif", 0}).source) == imports::MatchBasis::same_fitid);
         check(row.source.format == "ofx" && row.source.fitid == "FIT-1" && row.source.time_evidence == "120000.000[-5:EST]");
         check(row.source.date == "2026-02-01" && row.source.original_amount && row.source.original_amount->units() == -1234);
         const auto rev = revision(s, "overlap-account-0");
-        rejected([&] { s.commit("overlap-account-0", rev, "overlap-commit"); });
         check(s.committed_balance() == Money(-1234, cad) && s.ledger(false).size() == 1);
-        s.decide({"overlap-account-0", 0}, rev, {imports::Disposition::duplicate, imports::Occurrence{"qif", 0}});
-        const auto receipt = s.commit("overlap-account-0", rev + 1, "overlap-commit");
+        const auto receipt = s.commit("overlap-account-0", rev, "overlap-commit");
         check(receipt.included == 0 && receipt.excluded == 1 && receipt.after == Money(-1234, cad));
-        check(s.commit("overlap-account-0", rev + 1, "overlap-commit").after == receipt.after);
+        check(s.commit("overlap-account-0", rev, "overlap-commit").after == receipt.after);
         check(s.ledger(false).size() == 1 && s.evidence("overlap-account-0") == overlap && s.evidence("qif") == qif);
         check(read_file(external) == overlap);
         s.backup_to(d.path / "backup", password);
@@ -448,6 +447,118 @@ void strict_overlap() {
     check(s.row({"other-account-account-0",0}).decision.disposition==imports::Disposition::include);
     s.verify();
 }
+// All fixtures here are independently synthetic. Changed memo/order/range
+// prevents whole-file equality from supplying the expected decisions.
+void exact_reimport() {
+    const std::string coffee="D01/02/2026\nT-1\nPCoffee\n^\n";
+    const std::string changed="D01/02/2026\nT-1.00\nPCoffee\nMAnother export\n^\n";
+    for(bool accepted:{false,true}) {
+        Directory d;
+        {
+            auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
+            s.ingest("base",coffee,qif::DateOrder::dmy);
+            if(accepted) {
+                s.accept_all("accept");
+                auto edit=s.committed_entry({"base",0}).current.draft;
+                edit.date="2026-02-09";edit.payee="Corrected";
+                edit.transaction=Transaction::repaired_import(Money(-100,cad),Money(-150,cad),{{"","",Money(-150,cad)}});
+                app::ChangeRequest request{app::ChangeKind::correct,{"base",0},edit,{}};
+                const auto preview=s.preview_committed_change(request);
+                s.apply_committed_change("correct",request,preview.expected,preview.preview_sequence);
+            }
+            s.ingest("again",changed,qif::DateOrder::dmy);
+            check(s.row({"again",0}).decision.duplicate_of==imports::Occurrence{"base",0});
+            check(s.import_result("again").already_present==1 && s.batches().back().completed);
+            check(s.acceptance_review().transactions==(accepted?0:1));
+            check(s.balance()==Money(accepted?-150:-100,cad) && s.current_ledger().size()==1);
+            // Repeated exports attach to the original identity, not the previous association.
+            s.ingest("third",changed+"\n",qif::DateOrder::dmy);
+            check(s.row({"third",0}).decision.duplicate_of==imports::Occurrence{"base",0});
+            s.backup_to(d.path/"backup",password);s.verify();
+        }
+        for(const auto name:{"doc","backup"}) {
+            auto s=ImportStore::open(d.path/name,password);
+            check(s.current_ledger().size()==1 && s.balance()==Money(accepted?-150:-100,cad));
+            check(s.row({"again",0}).decision.duplicate_of==imports::Occurrence{"base",0});s.verify();
+        }
+    }
+    {
+        Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
+        const std::string split="D01/02/2026\nT-1\nPCoffee\nSFood\n$-2\nSRefund\n$1\n^\n";
+        const std::string other="D02/02/2026\nT-2\nPOther\n^\n";
+        s.ingest("base",split+other,qif::DateOrder::dmy);s.accept_all("accept");
+        s.ingest("reverse",other+changed,qif::DateOrder::dmy);
+        check(s.row({"reverse",0}).decision.duplicate_of==imports::Occurrence{"base",1});
+        check(s.row({"reverse",1}).decision.duplicate_of==imports::Occurrence{"base",0});
+        s.ingest("shorter",changed,qif::DateOrder::dmy);
+        check(s.import_result("shorter").already_present==1);
+        check(s.current_ledger().size()==2 && s.balance()==Money(-300,cad));
+        check(s.committed_entry({"base",0}).current.draft.transaction.allocations().size()==2);s.verify();
+    }
+    // Cross-format recognition works in either order and retains bank-ID protection.
+    for(bool qif_first:{false,true}) {
+        Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
+        if(qif_first)s.ingest("qif",coffee,qif::DateOrder::dmy);
+        capture(s,"bank",sgml(bank(txn("ID-A","20260201","-1.00"))),{{0,1,{}}});materialize(s,"bank");
+        if(!qif_first)s.ingest("qif",coffee,qif::DateOrder::dmy);
+        check(s.current_ledger().size()==1 && s.balance()==Money(-100,cad));
+        capture(s,"different-id",sgml(bank(txn("ID-B","20260201","-1.00"))),{{0,1,{}}});materialize(s,"different-id");
+        check(s.row({"different-id-account-0",0}).decision.disposition==imports::Disposition::include);
+        check(s.current_ledger().size()==2 && s.balance()==Money(-200,cad));s.verify();
+    }
+    // Ambiguity on either side must not be resolved by iteration order.
+    for(bool repeated_target:{false,true}) {
+        Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("base",repeated_target?coffee+coffee:coffee,qif::DateOrder::dmy);
+        s.ingest("repeat",repeated_target?changed:changed+changed,qif::DateOrder::dmy);
+        check(s.row({"repeat",0}).decision.disposition==imports::Disposition::unresolved);
+        if(!repeated_target)check(s.row({"repeat",1}).decision.disposition==imports::Disposition::unresolved);
+        check(s.current_ledger().size()==3 && s.balance()==Money(-300,cad));s.verify();
+    }
+    {
+        Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("base",coffee,qif::DateOrder::dmy);
+        s.ingest("longer",changed+"D02/02/2026\nT-2\nPNew\n^\n",qif::DateOrder::dmy);
+        check(s.import_result("longer").already_present==1 && s.import_result("longer").added==1);
+        check(s.current_ledger().size()==2 && s.balance()==Money(-300,cad));
+        // Existing explicit Include can reverse a pending automatic decision.
+        s.decide({"longer",0},revision(s,"longer"),{imports::Disposition::include,{}});
+        check(s.current_ledger().size()==3 && s.balance()==Money(-400,cad));s.verify();
+    }
+    {
+        Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("base",coffee,qif::DateOrder::dmy);s.accept_all("accept");
+        app::ChangeRequest remove{app::ChangeKind::remove,{"base",0},{},{}};
+        const auto preview=s.preview_committed_change(remove);
+        s.apply_committed_change("remove",remove,preview.expected,preview.preview_sequence);
+        s.ingest("repeat",changed,qif::DateOrder::dmy);
+        check(s.row({"repeat",0}).decision.disposition==imports::Disposition::unresolved);
+        check(s.current_ledger().size()==1 && s.balance()==Money(-100,cad));s.verify();
+        s.create_account(2,"Other",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("other",changed,qif::DateOrder::dmy);
+        check(s.row({"other",0}).decision.disposition==imports::Disposition::include);s.verify();
+    }
+    for(bool accepted:{false,true}) {
+        Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("base",coffee,qif::DateOrder::dmy);
+        if(accepted)s.accept_all("accept");
+        s.ingest("repeat",changed+"D02/02/2026\nT-2\nPNew\n^\n",qif::DateOrder::dmy);
+        s.rollback_account("rollback",s.rollback_review().token);
+        check(s.current_ledger().size()==(accepted?1:0) && s.balance()==Money(accepted?-100:0,cad));
+        s.verify();s.backup_to(d.path/"backup",password);
+        auto restored=ImportStore::open(d.path/"backup",password);restored.verify();
+        check(restored.current_ledger().size()==(accepted?1:0));
+        check(query(d.path/"doc","SELECT count(*) FROM source_occurrences WHERE payee='New'")=="0");
+    }
+    // Exact means exact: changed dates, payee case, absent payees or malformed
+    // source facts do not qualify, even if the amount agrees.
+    for(const auto source:{"D02/02/2026\nT-1\nPCoffee\n^\n", "D01/02/2026\nT-1\nPcoffee\n^\n",
+                          "D01/02/2026\nT-1\n^\n", "D01/02/2026\nTbad\nPCoffee\n^\n"}) {
+        Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("base",coffee,qif::DateOrder::dmy);s.ingest("changed",source,qif::DateOrder::dmy);
+        check(s.row({"changed",0}).decision.disposition!=imports::Disposition::duplicate);s.verify();
+    }
+}
 void rollback() {
     {
         Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
@@ -603,12 +714,14 @@ void acceptance_faults() {
     }
     std::cout<<"Dataset acceptance fault positions: "<<count<<'\n';
 }
-void overlap_faults() {
+void overlap_faults(bool exact=false) {
     fault_vfs::install();
     const auto text=sgml(bank(txn("FAULT-A","20260201","-1.00","SYNTHETIC-STATEMENT-MARKER")));
     auto setup=[&](const fs::path& path) {
         auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));
-        capture(s,"base",text,{{0,1,{}}},"aso");materialize(s,"base");
+        if(exact) {
+            s.ingest("base-account-0","D01/02/2026\nT-1\nPSYNTHETIC-STATEMENT-MARKER\n^\n",qif::DateOrder::dmy);
+        } else { capture(s,"base",text,{{0,1,{}}},"aso");materialize(s,"base"); }
         s.commit("base-account-0",revision(s,"base-account-0"),"base-commit");
         capture(s,"overlap",text,{{0,1,{}}},"qfx");
     };
@@ -773,6 +886,8 @@ int main(int argc, char** argv) {
     try {
         const std::string name = argc > 1 ? argv[1] : "";
         if(name == "review") review();
+        else if(name == "reimport") exact_reimport();
+        else if(name == "reimport_faults") overlap_faults(true);
         else if(name == "overlap") strict_overlap();
         else if(name == "rollback_faults") rollback_faults();
         else if(name == "generated_faults") generated_faults();

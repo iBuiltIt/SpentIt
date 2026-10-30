@@ -1380,6 +1380,54 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
         }
     }
     std::set<imports::Occurrence> automatic_targets;
+    struct ExactMatch {
+        std::size_t incoming=0;
+        std::optional<imports::Occurrence> target;
+        bool ambiguous=false,has_bank_id=false,conflicting_ids=false;
+    };
+    std::map<imports::ReimportKey,ExactMatch> exact_matches;
+    for(const auto& record:parsed.records)
+        if(const auto key=imports::reimport_key(record))++exact_matches[*key].incoming;
+    // Scan original ledger source facts once. Several attached exports still
+    // represent one target; their IDs must not be bypassed by the ID-less rule.
+    Statement exact(impl_->db,R"SQL(SELECT r.batch,r.ordinal,o.original_date,o.currency,o.original_units,o.payee,
+        (SELECT count(DISTINCT s.fitid) FROM source_associations a JOIN source_occurrences s
+          ON s.batch=a.source_batch AND s.ordinal=a.source_ordinal
+          WHERE a.ledger_batch=r.batch AND a.ledger_ordinal=r.ordinal AND s.fitid<>'')
+      FROM batches b JOIN records r ON r.batch=b.id
+      JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal
+      JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal
+      WHERE b.account_id=spentit_account() AND b.state IN(0,1,4) AND b.id<>?
+        AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)
+        AND v.decision=1 AND o.diagnostic IS NULL AND o.original_units IS NOT NULL
+        AND o.original_date<>'' AND o.payee<>'')SQL");
+    exact.text(1,id);
+    while(exact.row()) {
+        if(context)context->checkpoint();
+        const auto found=exact_matches.find({exact.bytes(2),exact.bytes(3),exact.integer(4),exact.bytes(5)});
+        if(found==exact_matches.end())continue;
+        auto& match=found->second;
+        const imports::Occurrence target{exact.bytes(0),static_cast<std::size_t>(exact.integer(1))};
+        if(match.target && *match.target!=target)match.ambiguous=true;
+        match.target=target;
+        match.has_bank_id=match.has_bank_id || exact.integer(6)!=0;
+        match.conflicting_ids=match.conflicting_ids || exact.integer(6)>1;
+    }
+    const auto exact_target=[&](const qif::Record& source)->std::optional<imports::Occurrence> {
+        const auto key=imports::reimport_key(source);
+        if(!key)return {};
+        const auto& match=exact_matches.at(*key);
+        if(match.incoming!=1 || match.ambiguous || match.conflicting_ids || !match.target)return {};
+        if(!source.fitid.empty()) {
+            // Both sides have IDs: only the strict bank-ID path may decide.
+            // A conflicting occurrence elsewhere with this ID also blocks fallback.
+            const auto bank=bank_matches.find(source.fitid);
+            if(match.has_bank_id || (bank!=bank_matches.end() &&
+               (bank->second.target || bank->second.conflict)))return {};
+        }
+        if(automatic_targets.contains(*match.target) || !review_target_active(impl_->db,*match.target))return {};
+        return match.target;
+    };
     const auto automatic_target=[&](const qif::Record& source)->std::optional<imports::Occurrence> {
         const auto found=bank_matches.find(source.fitid);
         if(found==bank_matches.end() || found->second.conflict)return {};
@@ -1413,7 +1461,11 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
         } else if(!r.fitid.empty()) {
             if(const auto target=automatic_target(r)) {
                 decision={imports::Disposition::duplicate,target};
+            } else if(const auto target=exact_target(r)) {
+                decision={imports::Disposition::duplicate,target};
             } else { Statement candidate(impl_->db,probe_sql.c_str()); bind_candidate(candidate,r);candidate.text(6,id); if(candidate.row()) decision.disposition=imports::Disposition::unresolved; }
+        } else if(const auto target=exact_target(r)) {
+            decision={imports::Disposition::duplicate,target};
         } else {
             const auto key=std::pair{r.date,r.transaction->original_imported_amount()->units()};
             const auto found=candidate_groups.find(key);

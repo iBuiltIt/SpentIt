@@ -1,10 +1,10 @@
 # Local application diagnostics
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 Diagnostics is opt-in, read-only, process-local observation. It does not change the document format, validation, commands, matching policy, encryption or durable boundaries. It contains workload metadata and should be treated as local sensitive information. There is no telemetry, automatic export, screenshot, MCP server or action interface.
 
-For agent operation and profiling, start with the [agent diagnostics guide](agent-diagnostics-guide.md). It documents endpoint discovery, exact-operation waits, outcome decoding and the accepted build-variant distinction.
+For agent operation and profiling, start with the [agent diagnostics guide](agent-diagnostics-guide.md). It documents endpoint discovery, exact-operation waits, outcome decoding and the accepted build-variant distinction. Its [standing owner authorization and attachment procedure](agent-diagnostics-guide.md#standing-owner-authorization-and-attachment-discipline--2026-10-30) covers PID-targeted native macOS inspection when UI tools cannot attach to the standalone build. That external inspection route does not expand this diagnostics endpoint or add financial data to its payload.
 
 ## Build and launch
 

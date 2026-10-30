@@ -34,7 +34,7 @@ void run() {
         store.ingest("first","D1/1/2026\nT-10\nPSynthetic\nSFood\n$-6\nSFee\n$-5\nSRefund\n$1\n^\n",qif::DateOrder::dmy);
         reconcile(store,9000);check(!store.current_ledger().front().committed);
         store.commit("first",0,"accept-first");reconcile(store,9000);check(store.current_ledger().front().committed);
-        store.ingest("review","D1/1/2026\nT-10\nPSynthetic\n^\nD2/1/2026\nTbad\nPRepair\n^\nD3/1/2026\nT-2\nPValid\n^\n",qif::DateOrder::dmy);
+        store.ingest("review","D1/1/2026\nT-10\nPSynthetic changed payee\n^\nD2/1/2026\nTbad\nPRepair\n^\nD3/1/2026\nT-2\nPValid\n^\n",qif::DateOrder::dmy);
         check(store.row({"review",0}).decision.disposition==imports::Disposition::unresolved);
         check(!store.projected_balance()); // Readiness is separate from ledger totals.
         reconcile(store,7800);check(store.current_ledger().size()==3);

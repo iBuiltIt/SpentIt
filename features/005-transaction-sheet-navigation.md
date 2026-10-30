@@ -26,11 +26,73 @@ The current duplicate editor mixes split editing, rule creation, internal identi
 
 ### Design details still to settle
 
-The owner has settled the unified sheet and account grouping, not its detailed layout. A focused incoming/existing comparison, plain-language duplicate choices, optional expanded source/split detail, and next/previous navigation are design candidates. Decide whether counts mean transactions or individual issues, how multiple issues on one transaction appear, and how file-level failures without a usable transaction fit into the same sheet. Keep the user's ability to work systematically through many items central; do not substitute a clickable count that returns to the same dense editor.
+The owner has settled the unified sheet and account grouping, not its detailed layout. The [Merge and Link decision](#accepted-merge-and-link-interaction--2026-10-30) now settles separate command meanings, explicit survivor choice and the paired duplicate-review direction. Detailed comparison layout, optional expanded source/split detail, and next/previous navigation remain design work. Decide whether counts mean transactions or individual issues, how multiple issues on one transaction appear, and how file-level failures without a usable transaction fit into the same sheet. Keep the user's ability to work systematically through many items central; do not substitute a clickable count that returns to the same dense editor.
 
 ### Required verification
 
 Use synthetic fixtures with at least 51 outstanding review items across multiple accounts/imports, including multiple issues on a transaction and a failure without a usable row. Verify account grouping, reachability from both Review and Commit, systematic progression, saved resolutions and reopen, and consistent counts during inspection and navigation. Reproduce the reported count flip before claiming it fixed. Verify that non-overridable errors cannot be accepted through the override action. Record actual results and limits in [status](../doc/status.md); no runtime verification is claimed for this documentation-only handoff.
+
+## Accepted Merge and Link interaction — 2026-10-30
+
+State: **accepted product decision; documentation only, not implemented**. The owner's Go here authorizes recording the decision, not implementing the commands, changing shortcuts or broadening automatic matching. The unified Review sheet remains the next UI work awaiting implementation Go.
+
+### Separate intentions and commands
+
+| Command | User intention | Financial result | Preferred shortcut |
+|---|---|---|---|
+| **Merge** | These same-account rows represent the same transaction | One active ledger posting, a survivor determined by the committed-count rule, retained source evidence and merge history | **Alt+M** |
+| **Link** | These are the two account postings of a transfer | Both independent postings remain, connected as a transfer; each keeps its posting date | **Alt+L** |
+
+Use these names in the ledger context menu and relevant Review actions. Alt shortcuts are the accepted preference, subject to platform conflict and keyboard-layout verification (including macOS Option); no platform mapping is claimed implemented. The current application still uses its older transfer **Merge**, Ctrl+M/Command+M behavior. This decision supersedes that terminology for the future UI, not the existing transfer safety rules.
+
+The owner considered one context-sensitive Merge command, then selected separate **Merge** and **Link** because reducing duplicate postings differs from connecting two retained postings. The earlier Join/Alt+J idea and automatic Merge-to-Link dispatch are not the chosen direction. Context should guide suggestions and command availability, not silently change the operation. Selecting another account while using Merge should offer Link explicitly instead of performing it automatically. Account location alone is not enough to classify every case: generated transfer placeholders have special lifecycle rules.
+
+### Merge selection and survivor
+
+1. Select two or more same-account transactions. Support groups larger than two, such as three imports of the same activity; do not assume all selected rows come from one import.
+2. Invoke **Merge selected** through the context menu or shortcut.
+3. Count the committed transactions in the selected group. **If exactly one is committed, keep it automatically and skip the survivor-choice step.** The user's earlier commitment already determines the survivor; do not ask them to confirm that choice again. Show which row is kept and which postings are consolidated as part of the operation's normal presentation.
+4. **If none or more than one is committed**, keep the group highlighted and prompt **“Choose the transaction to keep.”** Click a transaction within that group to choose the survivor, clearly marked **“Keep this transaction.”** Selection order does not choose the survivor. Escape cancels the selection workflow without a financial write.
+
+| Committed transactions in the selected group | Survivor behavior |
+|---|---|
+| Exactly one | Keep that committed transaction automatically; no survivor prompt/click |
+| None | Ask the user to choose the survivor |
+| More than one | Ask the user to choose the survivor |
+
+This rule applies to groups of two and larger groups. Commitment is determined per transaction, not from the source import's completion state. The owner wants minimal obstacles: use an established decision when it determines the outcome, and ask only where a real choice remains. The stated aspiration to do the right or acceptable thing in nearly every case is product intent, not a measured accuracy claim or permission to silently resolve financial conflicts.
+
+The survivor preserves its identity, current fields, categories, splits and relationships by default. No silent field blending, amount change, transfer breakage or loss of later corrections. The automatic survivor rule settles who is kept, not whether a conflicting merge is financially valid. Conflicting amounts or relationships still require explicit resolution; exact eligible cases and any conflict-specific preview remain design work. Do not add a routine survivor confirmation to the exactly-one-committed case. This supersedes the earlier suggestion that an accepted existing row would merely be suggested and always require a survivor click.
+
+The Review sheet should present unresolved candidate rows together, show why they may match, and allow the user to confirm they are the same through this Merge workflow. A missed automatic match does not itself require looser automatic criteria. In particular, a proposed exact-memo fallback for differing payees has **not** been approved for implementation; manual review remains appropriate.
+
+Start with selection-based Merge. Invoking Merge with no selection may guide the user to select the first and subsequent rows, but group completion for two or more rows and the detailed empty-selection flow remain to be specified. Ordinary clicks must not accidentally complete a merge outside the explicitly entered mode.
+
+### Link selection and transfer repair
+
+Select the first transaction, invoke **Link**, navigate to the other account and select the counterpart. Neither independent posting is a master or survivor. Preserve each account's amount and posting date. If more than one split allocation could be an endpoint, require explicit allocation selection. Existing currency, sign, identity, relationship and validation constraints continue to apply; selection is not proof of a valid transfer.
+
+Support a guided first/second selection flow when Link is invoked with nothing selected. Preserve the chosen first endpoint across account navigation, and honor Save / Discard / Stay and cancellation. Detailed handling of preselected pairs, busy operations and unsupported selections remains design work.
+
+Link/repair can retire a purely generated placeholder when attaching the real imported counterpart under the existing [transfer lifecycle](008-transfer-matching-and-lifecycle.md). Its preview must explicitly identify that removal and any balance effect. Never silently retire an independently supported posting. This exception remains a transfer Link/repair operation, not a reason to decide between Merge and Link solely from the selected accounts.
+
+### Retained representations and repeat imports
+
+The non-surviving rows cease contributing monetary postings; their original source facts remain attached to the survivor. Record the explicit decision and preserve the history needed to inspect and safely reverse it. Merge is not destruction of import evidence. Subsequent imports should recognize **any retained original representation**, including a non-survivor's different payee, and resolve it to the survivor without asking the same duplicate question again when identity remains sufficiently certain.
+
+This is a requirement to extend matching, not a claim that it already works for every format. Current source associations retain duplicate evidence. Identical-file matching can follow an earlier duplicate decision, and strict bank-ID matching examines attached occurrences. The implemented ID-less exact-key path currently compares the included target's original source fields; it does not search every attached alternative representation. See [the import handoff](../doc/import-commit-discussion.md#merge-evidence-and-repeat-import-follow-up--2026-10-30).
+
+Deduplicate candidate identities after following associations: several representations of one survivor are one target. Preserve legitimate repeated occurrences, account/currency boundaries, conflicting IDs, removed-target policy and per-import occurrence consumption. “An attached source matches” is not permission to collapse arbitrarily many incoming identical purchases. Retention must follow the accepted ownership/Forget model; this does not reinstate a compulsory permanent archive of every original file.
+
+### Remaining design and verification obligations
+
+- Define eligible combinations of accepted/uncommitted transactions, amount/split differences, linked transfers and groups larger than two. Define how survivor selection interacts with conflicts and the final preview/apply boundary; do not invent financial resolutions during implementation.
+- Specify atomic source reassociation, retirement, saved acceptance state and merge-history receipts. A merge must not implicitly accept unrelated pending work. Define safe Undo after later edits, links, source attachments or subsequent merges; it must not overwrite newer work or resurrect postings silently.
+- Specify occurrence consumption when an import contains multiple retained representations or repeated identical purchases, and behavior when a retained source is explicitly forgotten.
+- Verify context-menu/keyboard parity, shortcut conflicts, automatic survivor selection with no prompt for exactly one committed row, explicit choice for zero or multiple committed rows independent of selection order, Escape/cancel, guided Link across accounts, split selection, generated-placeholder previews and explicit suggestions rather than silent command switching.
+- Synthetic financial regressions must cover two and three-plus inputs with zero, exactly one and multiple committed rows, exact before/after ledger and sidebar balances, preserved survivor splits/edits/transfer relationships, both original representations reimported in changed files, ambiguity/repeated occurrences, conflicting IDs, removed targets, reopen, restored backups, ownership cleanup, atomic failure/retry and interruptions on both sides of durable commit. Verify persistent history and safe Undo, and that only a saved resolution changes Review counts.
+
+No runtime verification is claimed for these new commands or evidence-matching extensions.
 
 ## One inclusive balance — 2026-10-29
 
