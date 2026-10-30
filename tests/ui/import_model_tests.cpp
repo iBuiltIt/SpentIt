@@ -115,6 +115,46 @@ class ImportUiTests : public QObject {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
     }
 private slots:
+    void automaticImportDates() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        create(m,dir.path()+"/doc");
+        auto* button=engine.rootObjects().first()->findChild<QObject*>("importStatement");
+        QVERIFY(button);QVERIFY(button->property("enabled").toBool());
+        const auto source=fixture(dir.path(),"D08/10/2026\nT1\n^\n");
+        run(m,"import",{{"path",source}});
+        QCOMPARE(m.state().value("importDateQuestion").toMap().value("example").toString(),QString("08/10/2026"));
+        auto* dialog=engine.rootObjects().first()->findChild<QObject*>("importDateOrderDialog");
+        QVERIFY(dialog);QVERIFY(dialog->property("visible").toBool());
+        auto* confirm=engine.rootObjects().first()->findChild<QObject*>("confirmImportDate");
+        QVERIFY(confirm);QVERIFY(!confirm->property("enabled").toBool());
+        run(m,"cancel_import_date");
+        QVERIFY(m.state().value("importDateQuestion").toMap().isEmpty());
+        run(m,"import",{{"path",source}});
+        fixture(dir.path(),"D12/31/2026\nT99\n^\n");
+        run(m,"confirm_import_date",{{"profile","DMY"}});
+        QVERIFY(m.state().value("importDateQuestion").toMap().isEmpty());
+        QVERIFY(selected(m).value("source").toString().contains("08/10/2026"));
+        QCOMPARE(selected(m).value("draft").toMap().value("date").toString(),QString("2026-10-08"));
+        run(m,"close");create(m,dir.path()+"/other");
+        run(m,"import",{{"path",source}});
+        QVERIFY(m.state().value("importDateQuestion").toMap().isEmpty());
+        QCOMPARE(selected(m).value("draft").toMap().value("date").toString(),QString("2026-12-31"));
+        run(m,"close");create(m,dir.path()+"/iso");
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-10-08\nT1\n^\n")}});
+        QVERIFY(m.state().value("importDateQuestion").toMap().isEmpty());
+        QCOMPARE(selected(m).value("draft").toMap().value("date").toString(),QString("2026-10-08"));
+        run(m,"close");create(m,dir.path()+"/ofx");
+        const auto ofx=QFileInfo(QString::fromUtf8(SPENTIT_REVIEW_FIXTURE)).absoluteDir().filePath("../statements/bank-sgml.ofx");
+        run(m,"import",{{"path",ofx}});
+        QVERIFY(m.state().value("importDateQuestion").toMap().isEmpty());
+        QVERIFY(!m.state().value("importPlan").toList().isEmpty());
+        run(m,"cancel_import_mapping");
+        run(m,"close");create(m,dir.path()+"/conflict");
+        run(m,"import",{{"path",fixture(dir.path(),"D20/10/2026\nT1\n^\nD10/20/2026\nT1\n^\n")}},false);
+        QVERIFY(m.error().contains("conflicting date orders"));
+    }
     void transferOutcomeRecovery() {
         for(const auto fault:{OutcomeGateway::before,OutcomeGateway::after,OutcomeGateway::unknown}) {
             QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));

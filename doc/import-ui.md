@@ -37,7 +37,7 @@ New Dataset defaults to Documents/`spentit.spentit`, account SpentIt, CAD and pa
 ## Owner walkthrough
 
 1. Choose **New dataset**, a new file outside the checkout, an account name and CAD. The suggested location is `spentit.spentit` in the platform Documents folder. Password protection starts checked and requires matching entries. Unchecking it displays the explicit confidentiality waiver. Existing files are replaced only after the creation-time Overwrite confirmation.
-2. Set Opening Balance to `100.00`, date `2026-08-01`, and confirm it. Choose **DMY** and import the [authored synthetic fixture](../tests/fixtures/qif/durable-review-synthetic.qif).
+2. Set Opening Balance to `100.00`, date `2026-08-01`, and confirm it. Import the [authored synthetic fixture](../tests/fixtures/qif/durable-review-synthetic.qif).
 3. Committed balance should remain `100.00`, with projected balance `120.69`. The first source date is 10 August. Inspect record 1, including the original `-29.31` and its two allocations.
 4. Change the total to `-30.00` and the second allocation to `-29.86`. Save draft. The projection becomes `120.00`; original evidence remains unchanged. Trying only the total change fails the exact split-sum validation.
 5. Close through **Settings / close dataset**, then reopen. Accepted draft edits remain. Leaving an unsaved edit offers Save / Discard / Stay; Discard here affects only the editor buffer.
@@ -115,7 +115,7 @@ After saving, explicitly select **Include as new** or a candidate to exclude. Sa
 
 Older schema-1 datasets remain readable but cannot store repairs; the diagnostic explains that a new experimental dataset is needed. Missing/invalid amounts and unsupported constructs remain read-only and block commit. See the [storage contract](durable-import.md#bounded-record-repair).
 
-For synthetic owner review, create a new CAD dataset with confirmed opening `100.00` dated `2026-01-01`, then import the [repair fixture](../tests/fixtures/qif/durable-repair-synthetic.qif) using DMY. Record 1 has an impossible date; explicitly enter `2026-02-28`, Save repair, then Include as new. Record 2 has total `-20.00` and split `-19.00`; explicitly change the split to `-20.00`, Save repair, then Include as new. Projection becomes `70.00`; committed balance remains `100.00` until explicit commit. Reopen before committing to inspect the retained repairs, diagnostics and source bytes.
+For synthetic owner review, create a new CAD dataset with confirmed opening `100.00` dated `2026-01-01`, then import the [repair fixture](../tests/fixtures/qif/durable-repair-synthetic.qif) (choose DMY if prompted). Record 1 has an impossible date; explicitly enter `2026-02-28`, Save repair, then Include as new. Record 2 has total `-20.00` and split `-19.00`; explicitly change the split to `-20.00`, Save repair, then Include as new. Projection becomes `70.00`; committed balance remains `100.00` until explicit commit. Reopen before committing to inspect the retained repairs, diagnostics and source bytes.
 
 Verification: the repair model/QML flow passed within the 36-entry Debug, Release and ASan/UBSan suites and was rerun after final refinements. The repair screen was rendered and inspected offscreen. The [headless report](durable-import.md#bounded-record-repair) records failure/recovery coverage and limits.
 

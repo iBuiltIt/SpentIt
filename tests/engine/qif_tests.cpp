@@ -14,6 +14,23 @@ void invalid(std::string_view s,Issue issue) {
         (!result.records.empty() && result.records.back().diagnostic && result.records.back().diagnostic->issue==issue));
 }
 const std::string wise="D10/08/2026\nNCARD-SYNTHETIC-001\nT-29.31\nPSynthetic Transit\nMExample Person\nEWise Charges for: CARD-SYNTHETIC-001\n$-0.14\nECARD-SYNTHETIC-001\n$-29.17\n^\n";
+void date_inference() {
+    const auto infer=[](std::string_view dates){return infer_date_order(dates);};
+    check(infer("D08/10/2026\nT1\n^\n").ambiguous);
+    check(infer("D08/10/2026\n^\nD20/10/2026\n^\n").order==DateOrder::dmy);
+    check(!infer("D08/10/2026\n^\nD20/10/2026\n^\n").ambiguous);
+    check(infer("D10/20/2026\n^\n").order==DateOrder::mdy);
+    check(infer("D20/10/2026\n^\nD10/20/2026\n^\n").conflicting);
+    check(!infer("D2026-10-08\n^\nD02/02/2026\n^\n").ambiguous);
+    check(!infer("D31/02/2026\n^\n").ambiguous);
+    check(infer("D29/02/2024\n^\n").order==DateOrder::dmy);
+    const auto catalog=infer("!Type:Cat\nNExample\nD10/20/2026\n^\n!Type:Bank\nD08/10/2026\nT1\n^\n");
+    check(catalog.ambiguous && catalog.example=="08/10/2026");
+    const auto accounts=infer("!Account\nNA\nTBank\nD10/20/2026\n^\n!Type:Bank\nD08/10/2026\nT1\n^\n!Account\nNB\nTBank\n^\n!Type:Bank\nD20/10/2026\nT1\n^\n");
+    check(!accounts.ambiguous && !accounts.conflicting && accounts.order==DateOrder::dmy);
+    check(infer("\xef\xbb\xbf" "D10/20/2026\r\nT1\r\n^\r\n").order==DateOrder::mdy);
+    bool cancelled=false;try {infer_date_order("D1/2/2026\n^\n",[]{throw std::runtime_error("cancel");});}catch(const std::runtime_error&){cancelled=true;}check(cancelled);
+}
 void diagnostics() {
     const std::string prefix="!Account\nNPrivateSyntheticName\nTBank\n^\n!Type:Bank\n";
     const std::pair<std::string,SplitProblem> cases[]={
@@ -215,7 +232,7 @@ void mutations() {
 int main(int argc,char** argv) {
     try {
         const std::string name=argc>1 ? argv[1] : "";
-        if (name=="basics") {basics();diagnostics();split_field_order();account_sections();catalogs();embedded_returns();} else if (name=="malformed") malformed();
+        if (name=="basics") {basics();date_inference();diagnostics();split_field_order();account_sections();catalogs();embedded_returns();} else if (name=="malformed") malformed();
         else if (name=="limits") limits(); else if (name=="mutations") mutations(); else return 2;
         std::cout<<"QIF "<<name<<" passed\n";
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }

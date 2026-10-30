@@ -1006,7 +1006,26 @@ ApplicationWindow {
             Label {text:workflow.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
         }
     }
-    FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),profile:profile.currentText}) }
+    Dialog {
+        id:importDateOrder;objectName:"importDateOrderDialog";title:"Which date order does this file use?"
+        modal:true;closePolicy:Popup.NoAutoClose;anchors.centerIn:parent
+        width:Math.min(window.width-48,560)
+        visible:!!(s.importDateQuestion||{}).example
+        property string choice:""
+        onVisibleChanged:if(visible)choice=""
+        ColumnLayout {
+            anchors.fill:parent
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                text:"We couldn’t determine the date order from this file. For example, " + ((s.importDateQuestion||{}).example||"") + " could mean either:"}
+            RadioButton {objectName:"importDateDMY";text:"Day / Month / Year — "+((s.importDateQuestion||{}).dmy||"");checked:importDateOrder.choice==="DMY";onClicked:importDateOrder.choice="DMY"}
+            RadioButton {objectName:"importDateMDY";text:"Month / Day / Year — "+((s.importDateQuestion||{}).mdy||"");checked:importDateOrder.choice==="MDY";onClicked:importDateOrder.choice="MDY"}
+            RowLayout {
+                Button {objectName:"confirmImportDate";text:"Continue";enabled:!workflow.busy && importDateOrder.choice!=="";onClicked:workflow.command("confirm_import_date",{profile:importDateOrder.choice})}
+                Button {text:"Cancel import";enabled:!workflow.busy;onClicked:workflow.command("cancel_import_date")}
+            }
+        }
+    }
+    FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile)}) }
     FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save backup / restored copy to a NEW file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
     Dialog {
         id:unsaved;objectName:"unsavedDialog"; title:committedEditing?"Unsaved committed correction":"Unsaved draft edit"; modal:true; anchors.centerIn:parent
@@ -1624,9 +1643,7 @@ ApplicationWindow {
             Label {textFormat:Text.PlainText;text:s.path || "";elide:Text.ElideMiddle;Layout.fillWidth:true}
             RowLayout {
                 Label {textFormat:Text.PlainText;text:"Balance: "+(s.balance||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
-                UsableComboBox {id:profile;Layout.preferredWidth:200;model:["Choose date order","DMY","MDY"];Accessible.name:"QIF date order"}
-                Label {text:"Date order applies to QIF only";Layout.maximumWidth:160;wrapMode:Text.Wrap}
-                Button {text:"Import statement…";enabled:!s.readOnly && profile.currentIndex>0 && !s.pending;onClicked:guard(function(){importDialog.open()})}
+                Button {objectName:"importStatement";text:"Import statement…";enabled:!s.readOnly && !s.pending;onClicked:guard(function(){importDialog.open()})}
                 Button {objectName:"openTransfers";text:"Transfers…";visible:!!s.transfersSupported;onClicked:guard(function(){transferDialog.open()})}
                 Label {objectName:"mergeShortcutHint";visible:!!s.transfersSupported;text:"Merge: Ctrl+M (Command+M on macOS)";Layout.maximumWidth:220;wrapMode:Text.Wrap}
                 Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}

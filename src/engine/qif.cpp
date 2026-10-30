@@ -401,6 +401,35 @@ Document index_document(std::string_view bytes,const std::function<void()>& chec
     if(out.accounts.empty() && !out.diagnostic)fail(Issue::empty_file,bytes.size());
     return out;
 }
+DateOrderInference infer_date_order(std::string_view bytes, const std::function<void()>& checkpoint) {
+    const auto document=index_document(bytes,checkpoint);
+    DateOrderInference result;
+    bool dmy=false,mdy=false;
+    for(const auto& section:document.sections) {
+        for(auto pos=section.begin;pos<section.end;) {
+            if(checkpoint)checkpoint();
+            const auto end=bytes.find('\n',pos);
+            const auto next=end==bytes.npos?bytes.size():end+1;
+            auto line=bytes.substr(pos,(end==bytes.npos?bytes.size():end)-pos);
+            pos=next;
+            if(line.ends_with('\r'))line.remove_suffix(1);
+            if(line.starts_with("\xef\xbb\xbf"))line.remove_prefix(3);
+            if(!line.starts_with('D'))continue;
+            const auto value=line.substr(1);
+            if(value.find('/')==value.npos)continue;
+            std::optional<std::string> a,b;
+            try {a=date(value,DateOrder::dmy);}catch(const std::invalid_argument&){}
+            try {b=date(value,DateOrder::mdy);}catch(const std::invalid_argument&){}
+            if(a && !b)dmy=true;
+            if(b && !a)mdy=true;
+            if(a && b && a!=b && result.example.empty())result.example=value;
+        }
+    }
+    result.conflicting=dmy && mdy;
+    result.ambiguous=!dmy && !mdy && !result.example.empty();
+    result.order=mdy?DateOrder::mdy:DateOrder::dmy;
+    return result;
+}
 Result parse_account(std::string_view bytes,const Document& document,std::size_t account,
                      DateOrder order,const Currency& currency,const std::function<void()>& checkpoint) {
     Result result;

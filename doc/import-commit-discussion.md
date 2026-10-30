@@ -8,6 +8,50 @@ The owner settled the four transaction decisions below and gave **Go for impleme
 
 This direction supersedes earlier requirements for per-account import commit, separate draft-to-committed publication, and compulsory permanent original-import evidence retention. Older feature and implementation documents describe the existing system where they conflict with this handoff; they must not silently reintroduce those requirements. Exact arithmetic, encryption, atomic durable writes, occurrence multiplicity and correction of accepted transactions remain required.
 
+## Immediate next priority: repeated imports and format-independent matching — 2026-10-29
+
+The owner rejected three observed behaviors: a duplicate-only reimport still requiring Commit, Import statement being disabled while an import is uncommitted, and approximately 141 duplicate warnings after exporting the same transactions in another format (ASO followed by what the owner believes was OFX). The reported count and second format are owner observations, not a verified inspection of private files. No private source was accessed for this investigation.
+
+These are the next implementation priorities within the accepted transaction model, ahead of reports or unrelated work. Do not fix only button enablement or turn every candidate into an automatic exclusion. The owner requested this handoff and a commit; this documentation update itself does not implement the remaining storage changes.
+
+### Settled requirements
+
+- **Keep importing before Commit.** Existing uncommitted transactions are not a reason to disable Import statement or reject another source for the same account. Multiple imports accumulate saved work. Normal protection against concurrent operations and writes to read-only documents remains distinct from this obsolete pending-batch restriction.
+- **Commit accepts transactions, not import bookkeeping.** A successful reimport that adds no transactions and changes no transactions creates no new acceptance obligation. Complete any necessary source associations durably during import. Show a plain outcome such as “141 already present; 0 added” rather than making the user commit an empty batch. If earlier imports left genuinely new transactions, Commit remains available for those transactions; a duplicate-only import must neither accept nor discard that earlier work.
+- **Match in the common internal representation.** Choosing Microsoft Money, Quicken or another supported bank export option must not itself trigger warnings or change transaction identity. All supported parsers feed common date, exact money/currency, account and identifying fields. Match within the resolved destination account against both accepted and uncommitted transactions, including eligible generated transfer counterparts through the transfer workflow. Preserve original matching facts when the user changes display fields or categorization.
+- **Recognize sufficiently certain matches automatically.** A byte-identical source may be an optimization, but must not be the only automatic-match path. A different file/export label containing the same identifiable transactions should produce an ordinary already-present result, not one blocking warning per row. Actual conflicts and ambiguous identity remain reviewable.
+- **Preserve multiplicity and ownership.** Two legitimate identical-looking payments remain two transactions. Associate source occurrences one-to-one with existing occurrences; do not collapse rows by date/amount alone. Reimports must respect retained-source ownership and account rollback, and must not resurrect a deliberately removed transaction without the existing explicit review policy.
+- **Keep failures separate.** “Nothing added” is not success if some input records failed or remain unresolved. Report added, already-present, unresolved and failed outcomes distinctly; do not hide errors or silently skip records. Import completion and transaction acceptance are separate states.
+
+### Verified implementation gaps
+
+Inspection of [the UI](../src/ui/ImportMain.qml) found Import statement gated by `!s.pending` and Commit gated by pending-batch readiness rather than outstanding transaction acceptance. [Storage](../src/storage/import_store.cpp) also enforces `single_pending` per account and rejects another pending import. Removing the QML condition alone cannot satisfy the requirement.
+
+The parsers already share internal transaction fields. However, `candidate_where` searches committed included rows in the selected account only. `populate` automatically excludes a byte-identical previously committed source, but otherwise marks candidates unresolved, including candidates with a matching bank transaction ID (`FITID`). [The engine matcher](../src/engine/import_review.cpp) compares currency, original amount, date, payee/reference and available IDs; it treats different nonempty IDs as different transactions and allows differing-date candidates when an OFX-family source is involved. This confirms an incomplete decision policy above the shared representation, not independent per-extension transaction stores. It does not establish which condition caused every warning in the owner's private exports.
+
+### Matching decisions to resolve before implementing uncertain cases
+
+The product direction above is settled and needs no further clarification to document. The following identity rules still need explicit examples and agreement before adding automatic behavior; do not invent financial matching semantics:
+
+1. **Bank-ID reliability across export options:** when the same account supplies the same ID and exact currency/amount, define the accepted automatic-match rule and handling of conflicting dates or other identity facts. If export options generate different IDs for the same payment, decide what evidence can override the current “different IDs means different transactions” rule. IDs are account-scoped, not globally unique.
+2. **Missing IDs and exporter text differences:** specify which normalized fields establish identity, which text differences are irrelevant (for example spacing or differing payee/memo placement), and whether any date difference may be auto-matched. No date tolerance, fuzzy text threshold or date/amount-only automatic collapse is approved by this handoff.
+3. **Repeated indistinguishable occurrences and overlapping exports:** specify one-to-one matching and treatment of unequal occurrence counts or several equally plausible prior transactions. Equal-looking rows alone do not prove the same historical occurrence; extra legitimate occurrences must survive. Reuse established transfer multiplicity rules where applicable, without assuming they automatically settle ordinary bank-transaction identity.
+
+Prepare a concrete matching decision table with synthetic examples from each supported parser, including conflicts and repeated occurrences, before implementing those uncertain cases. If necessary, request owner-authorized private comparison to establish exporter differences; private files remain outside routine tests and repository documentation. These questions do not reopen dataset-wide Commit, repeated importing, source ownership or the requirement for format-independent matching.
+
+### Implementation order and acceptance evidence
+
+1. Complete the transaction-state/source-membership storage design below, removing the one-pending-import assumption throughout queries, commands, UI selection and history verification. Keep failures independent of acceptance.
+2. Specify and test the common matching decision table; wire automatic matches and genuine review concerns into that model. Match uncommitted as well as committed rows and preserve multiplicity.
+3. Finish duplicate-only imports without an empty Commit obligation; expose useful outcome counts. Wire Import and dataset-wide Commit to the accepted model, not legacy batch state. Remove remaining actual/projected presentation and obsolete batch-specific acceptance wording as part of that wiring.
+4. Verify: repeated identical ASO; equivalent ASO/OFX/QFX/QBO and QIF where identity fields support it; changed export text/IDs; partial overlaps; multiple imports before Commit; duplicate-only import while older new transactions remain; same-day/same-amount legitimate repeats; repeated IDs and contradictory fields; removed/corrected targets; generated transfer matches; exact balances and counts; reopen; account rollback with shared ownership; restored backups; and I/O failure, interruption and retry on both sides of each durable boundary. Never use a net-zero amount as proof that there is nothing to accept.
+
+### Date-order control: completed slice, not next implementation
+
+The owner separately gave Go to removing the ledger date-order selector. That slice is implemented and verified: QIF order is inferred across transaction sections; only ambiguous dates prompt, with a real example and both interpretations, no preselection, Continue and Cancel import. OFX-family imports never ask. Conflicting valid orders are refused explicitly. See [the current contract](../features/009-qif-profile.md#conditional-date-order-prompt--accepted-and-implemented-2026-10-29) and [verification](status.md#automatic-import-date-order--2026-10-29).
+
+That change removed only the date-choice prerequisite and mistakenly retained the old pending-import gate as a “safeguard.” The owner explicitly rejected that gate. It is an implementation limitation to remove, not an accepted product rule. The date-order slice does not complete any of the matching/acceptance work above.
+
 ## Accepted transaction and commit model
 
 - Imported transactions live in the normal ledger with a **new/uncommitted** status. They are saved as work proceeds and survive quitting/reopening. Uncommitted does not mean unsaved.

@@ -324,7 +324,8 @@ struct ImportModel::Worker {
     QVariantList transferCandidates;QString candidateLink;
     QVariantMap bulkPreview,bulkReceipt;
     struct PreparedImport {std::string id,bytes,label;statements::Index document;qif::DateOrder profile;};
-    std::optional<PreparedImport> preparedImport;
+    std::optional<PreparedImport> preparedImport, dateImport;
+    QVariantMap importDateQuestion;
     QVariantList importPlan,importMappingArgs;
     std::optional<std::vector<app::ImportAccountMapping>> preparedMappings;
 
@@ -722,7 +723,7 @@ struct ImportModel::Worker {
             metadata=state;
             }
         } else state=metadata;
-        state["importPlan"]=importPlan;
+        state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
         QVariantList aliasList;for(const auto& alias:repo.account_aliases())aliasList.push_back(QVariantMap{{"name",text(alias.name)},{"accountId",QString::number(alias.account)}});
         state["accountAliases"]=aliasList;
         state["accountCategories"]=categoryById.value("@accounts");
@@ -856,7 +857,7 @@ struct ImportModel::Worker {
             return;
         }
         if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -1221,30 +1222,53 @@ struct ImportModel::Worker {
                 const auto savedOperation=saved.value("operation").toString();
                 throw std::runtime_error(savedOperation.isEmpty()?"Unable to refresh verified dataset state. Close and reopen before continuing.":ruleReapplyRefreshFailure(savedOperation).toStdString());
             }
-        } else if(action=="import") {
-            QFile file(a.value("path").toString()); const QFileInfo info(file);
-            if(!info.isFile() || !file.open(QIODevice::ReadOnly)) throw std::runtime_error("Cannot read statement file");
-            if(file.size()>static_cast<qint64>(qif::max_file)) throw std::invalid_argument("Statement exceeds 64 MiB limit");
-            QByteArray bytes;
-            while(!file.atEnd()) {
-                context.checkpoint("Reading statement file");
-                auto chunk=file.read(64*1024);
-                if(chunk.isEmpty() && !file.atEnd()) throw std::runtime_error("Statement read failed");
-                bytes.append(chunk);
+        } else if(action=="cancel_import_date") {dateImport.reset();importDateQuestion.clear();
+        } else if(action=="import" || action=="confirm_import_date") {
+            std::string owned;
+            statements::Index document;
+            if(action=="import") {
+                dateImport.reset();importDateQuestion.clear();
+                QFile file(a.value("path").toString()); const QFileInfo info(file);
+                if(!info.isFile() || !file.open(QIODevice::ReadOnly)) throw std::runtime_error("Cannot read statement file");
+                if(file.size()>static_cast<qint64>(qif::max_file)) throw std::invalid_argument("Statement exceeds 64 MiB limit");
+                QByteArray bytes;
+                while(!file.atEnd()) {
+                    context.checkpoint("Reading statement file");
+                    auto chunk=file.read(64*1024);
+                    if(chunk.isEmpty() && !file.atEnd()) throw std::runtime_error("Statement read failed");
+                    bytes.append(chunk);
+                    if(bytes.size()>static_cast<qsizetype>(qif::max_file)) throw std::invalid_argument("Statement exceeds 64 MiB limit");
+                }
+                if(file.error()!=QFileDevice::NoError || !file.atEnd()) throw std::runtime_error("Statement read failed or exceeded limit");
                 if(bytes.size()>static_cast<qsizetype>(qif::max_file)) throw std::invalid_argument("Statement exceeds 64 MiB limit");
+                const auto suffix=info.suffix().toLower().toStdString();
+                const std::string requested=suffix=="qif"||suffix=="ofx"||suffix=="qfx"||suffix=="qbo"||suffix=="aso"?suffix:"";
+                owned=bytes.toStdString();
+                document=statements::inspect(owned,requested,[&]{context.checkpoint();});
+                if(document.format=="qif" && (document.explicit_accounts || !document.categories.empty()) && (document.diagnostic || !document.admissible)) throw std::invalid_argument("Unsupported account section structure; no import was saved. The original file is unchanged.");
+                if(!document.admissible) throw std::invalid_argument(document.refusal.empty()?"Statement exceeds a resource limit. The original file is unchanged.":document.refusal);
+                if(!document.refusal.empty() || (document.format!="qif" && document.diagnostic)) throw std::invalid_argument(document.refusal.empty()?"Unsupported account section structure; no import was saved. The original file is unchanged.":document.refusal);
+            } else {
+                if(!dateImport)throw std::logic_error("Choose a source file first");
+                owned=dateImport->bytes;document=dateImport->document;
             }
-            if(file.error()!=QFileDevice::NoError || !file.atEnd()) throw std::runtime_error("Statement read failed or exceeded limit");
-            if(bytes.size()>static_cast<qsizetype>(qif::max_file)) throw std::invalid_argument("Statement exceeds 64 MiB limit");
-            const auto profile=a.value("profile").toString();
-            if(profile!="DMY" && profile!="MDY") throw std::invalid_argument("Select DMY or MDY before importing");
-            const auto suffix=info.suffix().toLower().toStdString();
-            const std::string requested=suffix=="qif"||suffix=="ofx"||suffix=="qfx"||suffix=="qbo"||suffix=="aso"?suffix:"";
-            const auto owned=bytes.toStdString();
-            const auto document=statements::inspect(owned,requested,[&]{context.checkpoint();});
-            if(document.format=="qif" && (document.explicit_accounts || !document.categories.empty()) && (document.diagnostic || !document.admissible)) throw std::invalid_argument("Unsupported account section structure; no import was saved. The original file is unchanged.");
-            if(!document.admissible) throw std::invalid_argument(document.refusal.empty()?"Statement exceeds a resource limit. The original file is unchanged.":document.refusal);
-            if(!document.refusal.empty() || (document.format!="qif" && document.diagnostic)) throw std::invalid_argument(document.refusal.empty()?"Unsupported account section structure; no import was saved. The original file is unchanged.":document.refusal);
-            const auto order=document.format=="qif"?(profile=="DMY"?qif::DateOrder::dmy:qif::DateOrder::mdy):qif::DateOrder::dmy;
+            auto order=qif::DateOrder::dmy;
+            if(document.format=="qif") {
+                const auto inference=qif::infer_date_order(owned,[&]{context.checkpoint();});
+                if(inference.conflicting)throw std::invalid_argument("This QIF file contains conflicting date orders. Correct the source dates and import again; no import was saved.");
+                order=inference.order;
+                if(inference.ambiguous) {
+                    const auto profile=a.value("profile").toString();
+                    if(profile!="DMY" && profile!="MDY") {
+                        dateImport=PreparedImport{identity(),owned,document.format,document,order};
+                        const auto example=text(inference.example);
+                        importDateQuestion={{"example",example},{"dmy",QDate::fromString(text(qif::date(inference.example,qif::DateOrder::dmy)),Qt::ISODate).toString("d MMMM yyyy")},{"mdy",QDate::fromString(text(qif::date(inference.example,qif::DateOrder::mdy)),Qt::ISODate).toString("MMMM d, yyyy")}};
+                        return;
+                    }
+                    order=profile=="DMY"?qif::DateOrder::dmy:qif::DateOrder::mdy;
+                }
+            }
+            dateImport.reset();importDateQuestion.clear();
             if(document.format!="qif" || document.explicit_accounts || !document.categories.empty()) {
                 preparedImport=PreparedImport{identity(),owned,document.format,document,order};preparedMappings.reset();importMappingArgs.clear();importPlan.clear();
                 const auto home=repo.accounts().empty()?std::string{}:repo.accounts().front().currency.code();
@@ -1562,7 +1586,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates") operation->seal();
+    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();

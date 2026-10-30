@@ -93,6 +93,13 @@ struct Document {
     bool admissible=true;
     bool explicit_accounts=false;
 };
+struct DateOrderInference {
+    DateOrder order = DateOrder::dmy;
+    bool ambiguous = false, conflicting = false;
+    std::string example;
+};
+// Scans transaction sections only. Invalid dates remain parser diagnostics.
+DateOrderInference infer_date_order(std::string_view bytes, const std::function<void()>& checkpoint = {});
 Document index_document(std::string_view bytes,const std::function<void()>& checkpoint = {});
 Result parse_account(std::string_view bytes,const Document&,std::size_t account,
                      DateOrder,const Currency&,const std::function<void()>& checkpoint = {});

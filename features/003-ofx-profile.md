@@ -116,7 +116,7 @@ File size 64 MiB, 200,000 records, 64 KiB per field, 64 KiB header, depth 32, an
 
 ## Review surface
 
-The durable UI file dialog accepts `qif`, `ofx`, `qfx`, `qbo`, and `aso`, including an `ASO files (*.aso)` filter. The action label is `Import statement…`. The dialog and QML do not run SQL or money arithmetic. Date order applies to QIF only; the control stays disabled until a date order is chosen, and OFX-family prepare, including `aso`, stores DMY and ignores MDY. The source panel shows format, grammar, `FITID` when present, and the calendar date. A duplicate candidate label shows the prior format and the match basis. The ledger search token remains `QIF:` and matches retained occurrence bytes, so an OFX slice can match. The token was not renamed.
+The durable UI file dialog accepts `qif`, `ofx`, `qfx`, `qbo`, and `aso`, including an `ASO files (*.aso)` filter. The action label is `Import statement…`. The dialog and QML do not run SQL or money arithmetic. Import statement requires no date-order choice. QIF preparation infers date order and asks only for genuinely ambiguous dates; OFX-family preparation, including `aso`, never asks and stores the internal DMY placeholder. The source panel shows format, grammar, `FITID` when present, and the calendar date. A duplicate candidate label shows the prior format and the match basis. The ledger search token remains `QIF:` and matches retained occurrence bytes, so an OFX slice can match. The token was not renamed.
 
 ## Decision gates left visible
 
