@@ -15,7 +15,7 @@ constexpr const char* reapply_membership="Invalid rule reapply Undo membership";
 constexpr const char* head_where=
     "FROM entry_heads h JOIN entry_values e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision "
     "JOIN batches b ON b.id=h.batch WHERE e.active=1 AND b.account_id=spentit_account() AND b.state=1 AND substr(h.batch,1,10)<>'~transfer-'";
-bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="38";}
+bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="40";}
 std::string protection_stamp(const std::vector<app::TransferView>& links,std::int64_t account){
     std::set<std::pair<imports::Occurrence,std::string>> keys;
     for(const auto& value:links){

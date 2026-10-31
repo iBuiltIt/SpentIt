@@ -258,32 +258,22 @@ void cancellation(){
         fails([&]{s.ingest_controlled("too-big",oversized,qif::DateOrder::dmy,limited);});check(s.batches().empty());
         app::OperationContext context;context.progress=[&](std::string_view phase){if(phase=="Source evidence retained")context.request();};
         cancelled=false;try{s.ingest_controlled("new",source,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){cancelled=true;}
-        check(cancelled && s.batches()[0].state==app::BatchState::captured && s.batches()[0].count==2 && s.batches()[0].processing_incomplete);
-        check(s.evidence("new")==source && !s.projected_balance() && s.ledger(false).empty());s.verify();
+        check(cancelled && s.batches().empty());s.verify();
         fails([&]{s.commit("new",0,"op");});
-        app::OperationContext other;check(s.ingest_controlled("other","D1/1/2026\nT1\n^\n",qif::DateOrder::dmy,other).state==app::BatchState::pending);s.discard("other",1);
-        app::OperationContext same;same.progress=[&](std::string_view phase){if(phase=="Source evidence retained")same.request();};try{s.ingest_controlled("same",source,qif::DateOrder::dmy,same);}catch(const app::OperationCancelled&){}s.discard("same",0);
-        s.backup_to(d.path/"retained",password);
-        s.opening(0,"2026-08-01",Money(0,cad));check(s.batches()[0].revision==1);
-        app::OperationContext stale;fails([&]{s.resume("new",0,stale);});
-        app::OperationContext negative;fails([&]{s.resume("new",-1,negative);});
     }
-    {auto s=ImportStore::open(d.path/"retained",password);check(s.batches()[0].processing_incomplete && s.evidence("new")==source);
-        s.discard("new",0);check(s.batches()[0].state==app::BatchState::discarded && s.batches()[0].processing_incomplete);s.verify();}
     for(int cancel_row:{1,2}) {
         auto s=ImportStore::open(path,password);app::OperationContext context;int rows=0;
         s.observer([&](ImportPhase phase){if(phase==ImportPhase::materialize_row && ++rows==cancel_row)context.request();});
-        bool cancelled=false;try{s.resume("new",1,context);}catch(const app::OperationCancelled&){cancelled=true;}
-        check(cancelled && rows==cancel_row && s.batches()[0].revision==1 && !s.row({"new",0}).draft);s.verify();
+        bool cancelled=false;try{s.ingest_controlled("new",source,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){cancelled=true;}
+        check(cancelled && rows==cancel_row && s.batches().empty());s.observer({});s.verify();
     }
     {auto s=ImportStore::open(path,password);app::OperationContext context;
-        const auto resumed=s.resume("new",1,context);check(resumed.revision==2 && !resumed.processing_incomplete);
-        auto row=*s.row({"new",0}).draft;row.payee="Saved later";s.save({"new",0},2,row);
-        app::OperationContext retry;check(s.resume("new",1,retry).revision==3 && s.row({"new",0}).draft->payee=="Saved later");
+        const auto prepared=s.ingest_controlled("new",source,qif::DateOrder::dmy,context);check(!prepared.processing_incomplete);
+        auto row=*s.row({"new",0}).draft;row.payee="Saved later";s.save({"new",0},1,row);
+        s.opening(0,"2026-08-01",Money(0,cad));
         const auto receipt=s.commit("new",3,"op");check(receipt.change.units()==2069);s.verify();
-        app::OperationContext duplicates;const auto again=s.ingest_controlled("again",source,qif::DateOrder::dmy,duplicates);
-        check(again.revision==1 && s.row({"again",0}).decision.disposition==imports::Disposition::duplicate);
-        check(s.commit("again",1,"again-op").change.units()==0);s.verify();
+        app::OperationContext duplicates;s.ingest_controlled("again",source,qif::DateOrder::dmy,duplicates);
+        check(s.row({"again",0}).decision.disposition==imports::Disposition::duplicate);s.verify();
     }
     // Both durable boundaries reject late cancellation and resolve lost acknowledgement.
     for(int boundary:{1,2}) for(bool after:{false,true}) {
@@ -308,8 +298,8 @@ void cancellation(){
             s.ingest_controlled("new",source,qif::DateOrder::dmy,context);_exit(0);}
         int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
         auto s=ImportStore::open(one.path/"doc",password);s.verify();
-        if(boundary==1 && !after)check(s.batches().empty());
-        else check(s.batches()[0].state==(boundary==2 && after?app::BatchState::pending:app::BatchState::captured));
+        if(boundary==2 && after)check(s.batches()[0].state==app::BatchState::pending);
+        else check(s.batches().empty());
         app::OperationContext retry;
         if(s.batches().empty())s.ingest_controlled("new",source,qif::DateOrder::dmy,retry);
         else if(s.batches()[0].state==app::BatchState::captured)s.resume("new",0,retry);
@@ -320,8 +310,8 @@ void cancellation(){
     for(int damage=0;damage<5;++damage) {
         Directory one;
         {auto s=create(one.path/"doc");app::OperationContext context;
-            if(damage==0 || damage>=3)context.progress=[&](std::string_view phase){if(phase=="Source evidence retained")context.request();};
-            try{s.ingest_controlled("new",source,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){}
+            if(damage==0 || damage>=3)context.progress=[&](std::string_view phase){if(phase=="Source evidence retained")throw std::runtime_error("Interrupted preparation");};
+            try{s.ingest_controlled("new",source,qif::DateOrder::dmy,context);}catch(const std::runtime_error&){}
         }
         sqlite3* db=nullptr;check(sqlite3_open((one.path/"doc").c_str(),&db)==SQLITE_OK);
         check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
@@ -336,8 +326,8 @@ void cancellation(){
     {Directory zero;auto s=create(zero.path/"doc");app::OperationContext context;
         context.progress=[&](std::string_view phase){if(phase=="Source evidence retained")context.request();};
         const std::string invalid="\xff";try{s.ingest_controlled("invalid",invalid,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){}
-        check(s.batches()[0].count==0 && s.evidence("invalid")==invalid && !s.projected_balance());
-        app::OperationContext retry;const auto resumed=s.resume("invalid",0,retry);check(resumed.blocked && resumed.count==0);
+        check(s.batches().empty());
+        app::OperationContext retry;const auto resumed=s.ingest_controlled("invalid",invalid,qif::DateOrder::dmy,retry);check(resumed.blocked && resumed.count==0);
         fails([&]{s.commit("invalid",1,"invalid-op");});s.discard("invalid",1);s.verify();
     }
     for(int version:{1,2}) {Directory old;legacy_create(old.path/"doc",version);const auto before=bytes(old.path/"doc");fails([&]{ImportStore::open(old.path/"doc",password);});check(bytes(old.path/"doc")==before);}

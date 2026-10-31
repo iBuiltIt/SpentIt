@@ -34,7 +34,7 @@ ApplicationWindow {
         }
     }
     width: 1440; height: 850; minimumWidth:720; minimumHeight:560; visible: false
-    title: "SpentIt"
+    title: s.active ? "SpentIt — "+s.displayPath : "SpentIt"
 
     property var diagnosticModalStack: []
     function diagnosticModalChanged(code,opened) {
@@ -175,12 +175,14 @@ ApplicationWindow {
             workflow.command("select_account",{id:item.counterpartAccount,reveal:true,batch:item.counterpartBatch,ordinal:item.counterpartOrdinal})
         })
     }
+    property var pendingImportIssue: null
     function openImportReview(item) {
         importBlockersDialog.close()
         guard(function(){
             rememberAccountViewport()
+            pendingImportIssue=item.record<0?item:null
             pendingCounterpart=item.record>=0?{batch:item.batch,ordinal:item.record}:null
-            workflow.command("select_account",{id:item.account,reveal:item.record>=0,batch:item.batch,ordinal:item.record})
+            workflow.command("select_account",{id:item.account,reveal:item.record>=0,reviewBatch:item.batch,batch:item.batch,ordinal:item.record})
         })
     }
     Dialog {
@@ -222,12 +224,18 @@ ApplicationWindow {
         }
     }
 
+    Dialog {id:bulkCategoryDialog;title:"Change category";modal:true;anchors.centerIn:parent;width:Math.min(600,window.width-40);standardButtons:Dialog.Cancel
+        contentItem:ColumnLayout {
+                UsableComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,path:c.path+" [Account — use transfer workflow]",account:true}:c}));textRole:"path";Layout.preferredWidth:220;Accessible.name:"Category for selected transactions"}
+                Button {objectName:"bulkCategorize";text:"Change category…";enabled:!s.readOnly && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0 && !bulkCategory.model[bulkCategory.currentIndex].account;onClicked:{bulkCategoryDialog.close();guardedPreview("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})}}
+        }
+    }
     Menu {
         id:ledgerContext
         MenuItem {objectName:"duplicateMergeSelection";text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
         MenuItem {objectName:"mergeSelection";text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
-        MenuItem {text:"Delete selected…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
-        MenuItem {text:"Change category…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:{bulkCategory.forceActiveFocus();bulkCategory.popup.open()}}
+        MenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
+        MenuItem {text:"Change category…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:{bulkCategoryDialog.open()}}
     }
     function restoreViewport(saved) {
         let index=workflow.occurrenceIndex(saved.anchor.batch || "",saved.anchor.ordinal===undefined?-1:saved.anchor.ordinal)
@@ -326,6 +334,8 @@ ApplicationWindow {
     }
     Menu {
         id:accountContext;objectName:"accountContextMenu"
+        MenuItem {objectName:"accountImport";text:"Import…";enabled:!s.readOnly && !workflow.busy;onTriggered:{importTarget=s.accountId;importDialog.open()}}
+        MenuItem {objectName:"discardImport";text:"Discard uncommitted work…";enabled:!s.readOnly && !workflow.busy;onTriggered:guard(function(){discardDialog.open()})}
         parent:window.contentItem
         MenuItem {height:visible?implicitHeight:0;objectName:"renameAccount";text:"Rename…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){renameField.text=s.name||"";renameDialog.open()})}
         MenuItem {height:visible?implicitHeight:0;objectName:"archiveAccount";text:"Archive";visible:!!s.accountSelected && !s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("archive_account",{operation:workflow.newIdentity()})})}
@@ -767,6 +777,10 @@ ApplicationWindow {
 
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
 
+            if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
+            if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
+            if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Commit completed."
+            if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
             if(action==="link_exclusion_save" && success)linkExclusionDialog.close()
             if(action==="link_exclusion_preview" && !success)exclusionPreviewed=false
             if(action==="commit" && commitBeforeQuit) {
@@ -778,6 +792,7 @@ ApplicationWindow {
                 const request=pendingAccountMenu;pendingAccountMenu=null
                 if(success && s.accountId===request.id) accountContext.popup(request.x,request.y)
             }
+            if(action==="select_account" && pendingImportIssue){if(success)navigate("review");pendingImportIssue=null}
             if(!s.active) {pendingAccountMenu=null;accountContext.close()}
             if(action==="create" && s.overwriteRequired)overwriteDialog.open()
             ledger.currentIndex=workflow.selectedRowIndex()
@@ -969,7 +984,15 @@ ApplicationWindow {
             }
         }
     }
-    FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile)}) }
+    Dialog {id:importDestinationDialog;objectName:"importDestinationDialog";title:"Choose import destination";modal:true;closePolicy:Popup.NoAutoClose;anchors.centerIn:parent
+        visible:!!s.importDestination
+        standardButtons:Dialog.Ok|Dialog.Cancel
+        contentItem:UsableComboBox {id:importDestinationAccount;objectName:"importDestinationAccount";model:s.accounts||[];textRole:"name";Accessible.name:"Import destination account"}
+        onAccepted:workflow.command("confirm_import_destination",{account:importDestinationAccount.currentIndex>=0?importDestinationAccount.model[importDestinationAccount.currentIndex].id:""})
+        onRejected:workflow.command("cancel_import_destination")
+    }
+    property string importTarget: ""
+    FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),account:importTarget}) }
     FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save backup / restored copy to a NEW file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
     Dialog {
         id:unsaved;objectName:"unsavedDialog"; title:committedEditing?"Unsaved committed correction":"Unsaved draft edit"; modal:true; anchors.centerIn:parent
@@ -1353,13 +1376,16 @@ ApplicationWindow {
             BusyIndicator {running:workflow.busy;visible:running;implicitHeight:30}
             Button {objectName:"settingsNavigation";text:"Settings";visible:!!s.active;enabled:!workflow.busy;onClicked:navigate("settings")}
         }
-        RowLayout {
-            visible:workflow.busy && !s.active && startupPending;Layout.fillWidth:true
-            Label {text:workflow.phase;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
-            Button {objectName:"startupCancelOperation";text:"Cancel";visible:workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
+        Item {visible:!s.active && (startupPending || workflow.openingDocument);Layout.fillWidth:true;Layout.fillHeight:true
+            ColumnLayout {anchors.centerIn:parent;spacing:24
+                Image {source:"qrc:/spentit/images/SpentIt_light_1024.png";Layout.preferredWidth:256;Layout.preferredHeight:256;Layout.alignment:Qt.AlignHCenter;fillMode:Image.PreserveAspectFit}
+                Label {text:"Where did my money go?";font.pixelSize:24;Layout.alignment:Qt.AlignHCenter}
+                Button {objectName:"startupCancelOperation";text:"Cancel";Layout.alignment:Qt.AlignHCenter;visible:workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
+            }
+            Label {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:40;verticalAlignment:Text.AlignVCenter;text:workflow.cancellationRequested?"Cancellation requested…":workflow.phase;textFormat:Text.PlainText;elide:Text.ElideRight}
         }
         UsableScrollView {
-            id:welcomeScroll;objectName:"welcomeScreen";visible:!s.active && !startupPending;Layout.fillWidth:true;Layout.fillHeight:true;clip:true
+            id:welcomeScroll;objectName:"welcomeScreen";visible:!s.active && !startupPending && !workflow.openingDocument;Layout.fillWidth:true;Layout.fillHeight:true;clip:true
             contentWidth:availableWidth
             ColumnLayout {
                 width:Math.min(welcomeScroll.availableWidth-48,660);x:(welcomeScroll.availableWidth-width)/2
@@ -1506,6 +1532,7 @@ ApplicationWindow {
                         }
 
                     }
+                    Button {objectName:"importStatement";text:"Import…";Layout.fillWidth:true;enabled:!workflow.busy;onClicked:guard(function(){importTarget="";importDialog.open()})}
                     Button {objectName:"reviewNavigation";text:s.reviewReady===false?"Review":"Review ("+(s.reviewCount||0)+")";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
                     Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.active;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(s.rulesSupported && !rulesDirty)workflow.command("rules_load")})}
@@ -1544,12 +1571,45 @@ ApplicationWindow {
             Layout.fillWidth:true
             RowLayout {Layout.fillWidth:true;Layout.margins:12
                 Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true}
+                Button {objectName:"commitImport";text:"Commit";enabled:!workflow.busy && (s.newTransactions||0)>0;onClicked:guard(requestCommit)}
                 Button {objectName:"mergeSelectedMatches";text:"Merge "+Object.keys(reviewBatch).length+" selected matches";enabled:!workflow.busy && Object.keys(reviewBatch).length>0
                     onClicked:{captureReviewView();workflow.command("review_batch",{groups:Object.keys(reviewBatch).map(key=>reviewBatch[key])})}}
                 Button {text:"Clear selection";enabled:!workflow.busy && Object.keys(reviewBatch).length>0;onClicked:reviewBatch=({})}
             }
         }
 
+        UsableScrollView {id:repairScroll;Layout.fillWidth:true;Layout.preferredHeight:Math.min(150,repairControls.implicitHeight);visible:repairControls.implicitHeight>0;enabled:!workflow.busy;contentWidth:availableWidth
+            ColumnLayout {id:repairControls;width:repairScroll.availableWidth
+                Label {visible:!!s.pending && !!s.pending.diagnostics;text:s.pending?s.pending.diagnostics||"":"";Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText}
+            RowLayout {
+                objectName:"openingSetup";visible:!s.frozen && !s.groupCreated && !s.groupOpeningFixed && !s.readOnly
+                Label {textFormat:Text.PlainText;text:"Opening balance (confirm before commit)"}
+                TextField {id:openingDate;text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date"}
+                TextField {id:openingAmount;text:s.opening||"";placeholderText:"Exact amount";Accessible.name:"Opening amount"}
+                Button {text:s.confirmed?"Update opening":"Confirm opening";onClicked:guard(function(){workflow.command("opening",{date:openingDate.text,amount:openingAmount.text})})}
+            }
+            Label {objectName:"singleRepairProgress";visible:!!s.pending && !s.importGroup && (s.pending.repairs>0 || s.pending.unsupported>0);Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                text:s.pending?"Repairs: "+s.pending.repairsDone+" / "+s.pending.repairs+" records ("+s.pending.amountRepairs+" need amount repair). Unsupported records/sections: "+s.pending.unsupported+". "+(s.pendingProtected?"Protected transfer drafts survive discard; accepted relationships are preserved.":"Discard uncommitted work is available in the account menu."):""}
+            Label {objectName:"groupRepairProgress";visible:!!s.importGroup && (s.importGroup.repairs>0 || s.importGroup.unresolved>0);Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                text:s.importGroup?"Whole import repairs: "+s.importGroup.done+" / "+s.importGroup.repairs+" records ("+s.importGroup.amountRepairs+" need amount repair). Unsupported records/sections: "+s.importGroup.blocked+". Outstanding review items: "+s.importGroup.unresolved+". Review each mapped account before committing.":""}
+            RowLayout {
+                visible:!!s.importGroup;Layout.fillWidth:true
+                Button {objectName:"resolveMappedTransfers";text:"Resolve mapped transfers";enabled:!s.readOnly && !processingIncomplete && !!s.importGroup && s.importGroup.unresolvedTransfers>0;onClicked:guard(function(){workflow.command("group_resolve_transfers",{group:s.importGroup.id})})}
+                Button {objectName:"showImportBlockers";text:"What’s blocking commit? ("+(s.importGroup?s.importGroup.unresolved:0)+")";enabled:!!s.importGroup && s.importGroup.unresolved>0;onClicked:importBlockersDialog.open()}
+            }
+            Button {objectName:"reviewImportedCategories";visible:!!s.importGroup && s.importGroup.categories.length>0;text:"Review imported categories ("+(s.importGroup?s.importGroup.categories.length:0)+")…";onClicked:importCategoriesDialog.open()}
+            ColumnLayout {
+                visible:!!s.groupCreated;Layout.fillWidth:true
+                Label {text:"Reported balance: "+(s.groupReportedBalance||"")+" · Reviewed change: "+(s.groupReviewedChange||"")+" "+(s.currency||"")+" · Proposed opening: "+(s.groupProposedOpening||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                RowLayout {
+                    UsableComboBox {id:balanceMeaning;objectName:"groupBalanceMeaning";Layout.preferredWidth:330;model:["Choose balance meaning","Zero opening (balance agrees)","Treat as opening balance","Treat as closing balance","Ignore reported balance"] ;Accessible.name:"Reported balance meaning"}
+                    TextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
+                    Button {objectName:"confirmGroupOpening";text:"Calculate and stage opening";enabled:!s.readOnly && !!s.groupCanReviewBalance && balanceMeaning.currentIndex>0;onClicked:guard(function(){workflow.command("group_balance",{group:s.importGroup.id,source:s.importGroup.sourceAccount,revision:s.pending.revision,choice:balanceMeaning.currentIndex,date:groupOpeningDate.text})})}
+                }
+                Label {text:"The opening stays staged until this account first commits. Existing mapped account openings are never replaced.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            }
+            }
+        }
         Item {Layout.fillWidth:true;Layout.preferredHeight:30;clip:true
             RowLayout {x:-reviewQuestions.contentX;
                 width:reviewQuestions.contentWidth-24;height:30
@@ -1613,7 +1673,7 @@ ApplicationWindow {
                     Button {text:"No";objectName:"reviewNo";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,questionCard.modelData.kind==="same"?"separate":"not_linked",[])}
                     Button {text:"Selected yes";objectName:"reviewSelectedYes";visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;enabled:!workflow.busy && questionCard.chosen.length>=2;onClicked:answerReview(questionCard.modelData,"merge",questionCard.chosen)}
                     Button {text:"Accept without bank match";objectName:"acceptMissingMatch";visible:!!questionCard.modelData.waitingLink;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,"accept_missing",[])}
-                    Button {text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:{reviewSheet.close();openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}}
+                    Button {text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:{if(questionCard.modelData.ordinal>=0)reviewSheet.close();openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}}
                 }
                 Repeater {model:questionCard.modelData.rows;delegate:ColumnLayout {
                     id:reviewRow;required property var modelData;required property int index;Layout.fillWidth:true
@@ -1975,80 +2035,10 @@ ApplicationWindow {
                     ColumnLayout {
             id:ledgerPage;objectName:"ledgerPage"
             width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight;enabled:!workflow.busy || workflow.selecting
-            Label {textFormat:Text.PlainText;text:s.path || "";elide:Text.ElideMiddle;Layout.fillWidth:true}
-            RowLayout {
-                Label {textFormat:Text.PlainText;text:"Balance: "+(s.balance||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
-                Button {objectName:"importStatement";text:"Import statement…";enabled:!s.readOnly;onClicked:guard(function(){importDialog.open()})}
-                Label {objectName:"mergeShortcutHint";visible:!!s.transfersSupported;text:"Merge: Alt+M · Link: Alt+L";Layout.maximumWidth:220;wrapMode:Text.Wrap}
-                Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
-            }
-            Label {objectName:"mergeHint";visible:mergeHint.length>0;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:mergeHint}
-            Label {objectName:"emptyActiveAccount";visible:!!s.emptyActive;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.emptyActive||""}
-            Label {objectName:"archivedAccountNotice";visible:!!s.archived;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"This archived account is read only. Its history, evidence, balances, and transfer links remain available."}
-            RowLayout {
-                objectName:"openingSetup";visible:!s.frozen && !s.groupCreated && !s.groupOpeningFixed && !s.readOnly
-                Label {textFormat:Text.PlainText;text:"Opening balance (confirm before commit)"}
-                TextField {id:openingDate;text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date"}
-                TextField {id:openingAmount;text:s.opening||"";placeholderText:"Exact amount";Accessible.name:"Opening amount"}
-                Button {text:s.confirmed?"Update opening":"Confirm opening";onClicked:guard(function(){workflow.command("opening",{date:openingDate.text,amount:openingAmount.text})})}
-            }
-            Label {objectName:"singleRepairProgress";visible:!!s.pending && !s.importGroup;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
-                text:s.pending?"Repairs: "+s.pending.repairsDone+" / "+s.pending.repairs+" records ("+s.pending.amountRepairs+" need amount repair). Unsupported records/sections: "+s.pending.unsupported+". "+(s.pendingProtected?"Protected transfer drafts survive discard; whole-import Abort is no longer available.":"Abort discards this entire import, including earlier saved repairs."):""}
-            Label {objectName:"groupRepairProgress";visible:!!s.importGroup;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
-                text:s.importGroup?"Whole import repairs: "+s.importGroup.done+" / "+s.importGroup.repairs+" records ("+s.importGroup.amountRepairs+" need amount repair). Unsupported records/sections: "+s.importGroup.blocked+". Outstanding review items: "+s.importGroup.unresolved+". Review each mapped account before committing.":""}
-            RowLayout {
-                visible:!!s.importGroup;Layout.fillWidth:true
-                Button {objectName:"resolveMappedTransfers";text:"Resolve mapped transfers";enabled:!s.readOnly && !processingIncomplete && !!s.importGroup && s.importGroup.unresolvedTransfers>0;onClicked:guard(function(){workflow.command("group_resolve_transfers",{group:s.importGroup.id})})}
-                Button {objectName:"showImportBlockers";text:"What’s blocking commit? ("+(s.importGroup?s.importGroup.unresolved:0)+")";enabled:!!s.importGroup && s.importGroup.unresolved>0;onClicked:importBlockersDialog.open()}
-            }
-            Button {objectName:"reviewImportedCategories";visible:!!s.importGroup && s.importGroup.categories.length>0;text:"Review imported categories ("+(s.importGroup?s.importGroup.categories.length:0)+")…";onClicked:importCategoriesDialog.open()}
-            ColumnLayout {
-                visible:!!s.groupCreated;Layout.fillWidth:true
-                Label {text:"Reported balance: "+(s.groupReportedBalance||"")+" · Reviewed change: "+(s.groupReviewedChange||"")+" "+(s.currency||"")+" · Proposed opening: "+(s.groupProposedOpening||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                RowLayout {
-                    UsableComboBox {id:balanceMeaning;objectName:"groupBalanceMeaning";Layout.preferredWidth:330;model:["Choose balance meaning","Zero opening (balance agrees)","Treat as opening balance","Treat as closing balance","Ignore reported balance"] ;Accessible.name:"Reported balance meaning"}
-                    TextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
-                    Button {objectName:"confirmGroupOpening";text:"Calculate and stage opening";enabled:!s.readOnly && !!s.groupCanReviewBalance && balanceMeaning.currentIndex>0;onClicked:guard(function(){workflow.command("group_balance",{group:s.importGroup.id,source:s.importGroup.sourceAccount,revision:s.pending.revision,choice:balanceMeaning.currentIndex,date:groupOpeningDate.text})})}
-                }
-                Label {text:"The opening stays staged until this account first commits. Existing mapped account openings are never replaced.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            }
-            RowLayout {
-                UsableComboBox {id:batchPicker;model:s.batches||[];textRole:"id";Layout.preferredWidth:240;Accessible.name:"Import batch"}
-                SpinBox {id:recordNumber;from:1;to:batchPicker.currentIndex>=0?Math.max(1,batchPicker.model[batchPicker.currentIndex].count):1;editable:true;Accessible.name:"Source record number"}
-                Button {objectName:"reviewRecord";text:"Review record";enabled:batchPicker.currentIndex>=0 && batchPicker.model[batchPicker.currentIndex].count>0 && !batchPicker.model[batchPicker.currentIndex].processingIncomplete;onClicked:inspectRecord(batchPicker.model[batchPicker.currentIndex].id,recordNumber.value-1)}
-                Button {objectName:"viewSourceFile";text:"Source file";enabled:batchPicker.currentIndex>=0;onClicked:guard(function(){workflow.command("evidence",{batch:batchPicker.model[batchPicker.currentIndex].id});sourceToggle.checked=true})}
-                Label {visible:!processingIncomplete;textFormat:Text.PlainText;text:batchPicker.currentIndex>=0?batchPicker.model[batchPicker.currentIndex].status:"No imports";Layout.minimumWidth:0;elide:Text.ElideRight}
-                Item {Layout.fillWidth:true}
-                Button {objectName:"resumeImport";text:"Resume import";visible:processingIncomplete;enabled:!s.readOnly;onClicked:guard(function(){workflow.command("resume",{batch:s.pending.id,revision:s.pending.revision})})}
-                Button {objectName:"discardImport";text:"Discard uncommitted work…";enabled:!s.readOnly && (!!s.pending || ((s.rollback||{}).transactions||0)>0 || ((s.rollback||{}).failures||0)>0);onClicked:guard(function(){discardDialog.open()})}
-                Button {objectName:"openReviewSheet";text:s.reviewReady===false?"Review":"Review ("+(s.reviewCount||0)+")";visible:(s.reviewCount||0)>0 || !!s.canUndoReview;enabled:!workflow.busy;onClicked:guard(function(){reviewSheet.open()})}
-                Button {objectName:"commitImport";text:"Commit";enabled:!s.readOnly && (s.newTransactions||0)>0;onClicked:guard(requestCommit)}
-            }
-            Label {text:s.importOutcome||"";visible:!!s.importOutcome;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {text:(s.importFailures||0)+" import failure(s) remain. Review the affected source records or explicitly discard the uncommitted work.";visible:(s.importFailures||0)>0;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Repeater {model:s.protectedImports||[];delegate:RowLayout {required property var modelData;Layout.fillWidth:true;Label {text:"Protected drafts · "+modelData.id+" · "+modelData.change;Layout.fillWidth:true;textFormat:Text.PlainText} Button {text:"Commit protected drafts…";enabled:!!s.confirmed && !s.readOnly;onClicked:guard(requestCommit)}}}
-            Label {
-                objectName:"incompleteImportNotice";visible:processingIncomplete;Layout.fillWidth:true;wrapMode:Text.Wrap
-                textFormat:Text.PlainText;color:"#855100"
-                text:processingIncomplete?"Import processing is incomplete. Original source evidence is saved ("+s.pending.count+" parsed records). Successfully prepared transactions count in the balance; unprocessed records do not yet have ledger amounts. Resume to prepare the draft for review, inspect the source file, or discard this import while retaining its evidence.":""
-            }
-            Label {textFormat:Text.PlainText;visible:!!s.pending && !!s.pending.blocked && !processingIncomplete;text:s.pending && s.pending.blocked ? "BLOCKED — no partial commit. Inspect each record. Date and exact-amount repairs are available when record structure is intact; unsupported structures require discard/reimport.\n"+(s.pending.diagnostics||""):"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;maximumLineCount:5;elide:Text.ElideRight}
-            Label {objectName:"committedChangeReceipt";textFormat:Text.PlainText;text:(s.changeReceipt||{}).summary||"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {textFormat:Text.PlainText;visible:!!s.receipt && !!s.receipt.operation;text:s.receipt && s.receipt.operation ? (s.receipt.summary||("Committed "+s.receipt.included+" transactions")):"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
-                Button {objectName:"applyFilter";text:"Apply filter";onClicked:guard(query)}
+                Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
-                Label {text:(s.selectionCount||0)+" selected";textFormat:Text.PlainText}
-                Label {textFormat:Text.PlainText;text:"Mode: "+(s.mode||"");Layout.minimumWidth:0;elide:Text.ElideRight}
-            }
-            RowLayout {
-                Layout.fillWidth:true;visible:!!s.bulkSupported
-                Button {objectName:"bulkRemove";text:"Delete selected…";enabled:!s.readOnly && (s.selectionCount||0)>0;onClicked:guardedPreview("preview_bulk",{kind:"remove"})}
-                UsableComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,path:c.path+" [Account — use transfer workflow]",account:true}:c}));textRole:"path";Layout.preferredWidth:220;Accessible.name:"Category for selected transactions"}
-                Button {objectName:"bulkCategorize";text:"Change category…";enabled:!s.readOnly && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0 && !bulkCategory.model[bulkCategory.currentIndex].account;onClicked:guardedPreview("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})}
-                Label {textFormat:Text.PlainText;text:(s.bulkReceipt||{}).summary||"Committed rows only · every allocation";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                Button {objectName:"undoBulk";text:"Undo group…";visible:!!(s.bulkReceipt||{}).operation;onClicked:guardedPreview("preview_bulk",{kind:"undo",operation:s.bulkReceipt.operation})}
             }
             Row {
                 Layout.fillWidth:true;spacing:0

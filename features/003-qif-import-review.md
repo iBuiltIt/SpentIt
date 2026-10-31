@@ -1,11 +1,11 @@
 # 003 — QIF import and review
 
-Next work (accepted 2026-10-31; **not implemented**):
-[opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md) takes priority
-over the older handoff sequence. It specifies import routing, Review repair/Commit,
-account-context Discard and automatic import-specific cleanup instead of Resume.
-Completed uncommitted imports remain durable. Existing implementation and historical
-verification below do not establish this new behavior. Implementation awaits Go.
+The [opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md)
+is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
+It adds import routing, Review repair/Commit, account-context Discard and automatic
+cleanup of incomplete preparation. Completed uncommitted imports remain durable.
+See [current verification and limits](../doc/status.md); older Resume and toolbar
+descriptions below are historical.
 
 Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
 

@@ -2,21 +2,58 @@
 
 Last updated: 2026-10-31
 
-## Next work: opening, ledger and interrupted imports — 2026-10-31
+## Opening, ledger and interrupted imports — 2026-10-31
 
-The owner accepted the [next-work contract](ui-import-cleanup.md) and placed it
-before the previous handoff work. Opening branding, a search-only ledger toolbar,
-sidebar/account-context import routing, Review-based repair/Commit, account-context
-rollback and automatic import-specific cleanup after cancellation/interruption
-are **not implemented**. Completed imports, including uncommitted rows and
-completed imports with record failures, remain distinct from incomplete preparation.
-The owner requested documentation and a commit, not implementation in this session.
+Implemented under the owner's subsequent Go; see the [contract](ui-import-cleanup.md).
+Current experimental schemas are **40 with rules / 39 without**. Earlier schema
+references below are historical; older experimental files are rejected unchanged.
 
-Read-only code inspection confirmed bundled 1024px artwork, full-file plus
-per-record source storage, captured/prepared import stages, Review correction
-entries and the account-owned scope of current Discard. Current Resume and old
-ledger controls remain until implementation. No runtime tests were run for this
-documentation-only checkpoint; Markdown links and diff consistency were checked.
+Opening uses the bundled light logo, centered tagline and truthful Cancel with
+bottom progress. The ledger toolbar contains Search/Apply/Clear. Import lives
+above Review and in account context menus; routing distinguishes unnamed,
+identified, mismatched and multi-account sources. The title uses a home-relative
+or absolute dataset path. Review contains Commit, repair progress and mapped
+transfer resolution; failed records remain reachable through correction entries.
+Category changes use a separate dialog, Discard remains account-owned in its
+context menu, and backup/restore remains in Settings. Post-import status totals
+all mapped source accounts. Full source bytes and inline original records remain.
+
+Durably captured preparation is removed after opening verification, including
+when startup approval is reused. Capture roots, history and exclusively created
+accounts are removed atomically; retained account changes, prior pending work,
+accepted history and completed imports are preserved. Preparation already saves
+rows, associations, categories and generated counterparts atomically with its
+completion marker, so no partially published financial rows survive that boundary.
+Cancel removes incomplete capture; uncertain/failed cleanup closes the desktop
+connection or prevents activation. Cleanup retries after interruption, and durable
+absence resolves a lost acknowledgement. Original external files are untouched.
+
+Verification on macOS: the selected rules-enabled Release run completed 105 tests
+in 361.10 s, with 101 passing. Three obsolete expectations for retained interrupted
+captures were corrected; rebuilt account-group, mapping-opening and rule-application
+reruns passed. A final rebuilt selection of those three tests plus recovery UI
+passed 4/4 in 17.27 s. The remaining diagnostics QML test could not create its endpoint
+under the sandbox (permissions were not relaxed). Full import UI, recovery UI,
+committed/category/rules UI, QML, navigation and benchmark smoke tests passed.
+Long existing fault/crash sweeps and diagnostics transport were excluded; this is
+selected coverage, not a full-suite claim.
+
+The new cleanup suite passed in Release and ASan/UBSan and covers preserved prior
+pending and accepted linked work, capture-only account removal, completed malformed
+imports, cached startup, cancellation, retries, lost acknowledgements and process
+exit on both sides of preparation/cleanup commit. Its measured write/sync fault
+sweep exercised 133 positions with rules, and 125 without, alternating disk-full
+and I/O errors. ASan/UBSan cleanup plus cancellation passed 2/2 in 115.69 s;
+rules-disabled cleanup plus schema gates passed 2/2 in 41.69 s. Sanitizers used
+`detect_leaks=0`; no leak-check claim. Six focused import/routing/cancellation UI
+functions passed in both configurations (eight Qt cases including init/cleanup).
+Extended confirmed-bank routing and home-relative title checks also passed in
+Release, ASan/UBSan and rules-disabled Release. All three configurations built
+without compiler warnings/errors. The local rules-enabled Release launcher was
+rebuilt.
+
+Native OS interaction and Linux/Windows remain unverified. Synthetic offscreen
+ledger and Review renders were inspected; no private dataset was used.
 
 ## Shorter closing verification — 2026-10-31
 

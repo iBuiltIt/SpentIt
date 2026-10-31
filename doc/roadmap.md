@@ -1,11 +1,9 @@
 # Coordinated implementation roadmap
 
-Current handoff (2026-10-31): **opening/ledger cleanup and interrupted-import
-rollback come first**, ahead of previously listed work. Read the
-[accepted next-work contract](ui-import-cleanup.md). Requirements are settled;
-this checkpoint is documentation only and implementation awaits explicit Go.
-The prior shorter-closing work is implemented, with evidence below. Reports and
-unrelated follow-ups remain deferred.
+Current handoff (2026-10-31): the [opening/ledger cleanup and interrupted-import
+rollback](ui-import-cleanup.md) is implemented under the owner's subsequent Go.
+See [status](status.md) for verification and limits. Further changes require their
+own Go; reports and unrelated follow-ups remain deferred.
 
 ## Shorter closing verification — owner Go 2026-10-31
 

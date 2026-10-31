@@ -1,11 +1,11 @@
 # QIF account sections and whole-source review
 
-Next work (accepted 2026-10-31; **not implemented**):
-[opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md) takes priority
-over the older handoff sequence. It specifies import routing, Review repair/Commit,
-account-context Discard and automatic import-specific cleanup instead of Resume.
-Completed uncommitted imports remain durable. Existing implementation and historical
-verification below do not establish this new behavior. Implementation awaits Go.
+The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
+is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
+It adds import routing, Review repair/Commit, account-context Discard and automatic
+cleanup of incomplete preparation. Completed uncommitted imports remain durable.
+See [current verification and limits](status.md); older Resume and toolbar
+descriptions below are historical.
 
 Last updated: 2026-10-31
 

@@ -183,7 +183,7 @@ ResolvedTransfers resolved_transfers(const std::vector<app::TransferView>& value
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=37;
+PRAGMA user_version=39;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -213,7 +213,7 @@ CREATE TRIGGER group_member_keep BEFORE DELETE ON import_group_accounts WHEN spe
 CREATE TRIGGER group_mapping_immutable BEFORE UPDATE ON import_group_accounts WHEN NEW.group_id!=OLD.group_id OR NEW.source_account!=OLD.source_account OR NEW.account_id!=OLD.account_id OR NEW.batch!=OLD.batch OR NEW.created!=OLD.created BEGIN SELECT RAISE(ABORT,'Import mapping is immutable'); END;
 CREATE TRIGGER batch_account_immutable BEFORE UPDATE OF account_id ON batches WHEN OLD.account_id!=NEW.account_id BEGIN SELECT RAISE(ABORT,'Account ownership is immutable'); END;
 CREATE TRIGGER account_creation_immutable BEFORE UPDATE ON account_creations BEGIN SELECT RAISE(ABORT,'Account creation is immutable'); END;
-CREATE TRIGGER account_creation_retained BEFORE DELETE ON account_creations BEGIN SELECT RAISE(ABORT,'Account creation is retained'); END;
+CREATE TRIGGER account_creation_retained BEFORE DELETE ON account_creations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Account creation is retained'); END;
 CREATE INDEX pending_accounts ON batches(account_id,state);
 CREATE TABLE records(batch TEXT NOT NULL REFERENCES batches(id),ordinal INTEGER NOT NULL,sequence INTEGER NOT NULL UNIQUE CHECK(sequence>0),
  raw BLOB NOT NULL,source_date TEXT NOT NULL,original INTEGER,payee TEXT NOT NULL,reference TEXT NOT NULL,
@@ -317,7 +317,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=38;
+PRAGMA user_version=40;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -347,7 +347,7 @@ CREATE TRIGGER group_member_keep BEFORE DELETE ON import_group_accounts WHEN spe
 CREATE TRIGGER group_mapping_immutable BEFORE UPDATE ON import_group_accounts WHEN NEW.group_id!=OLD.group_id OR NEW.source_account!=OLD.source_account OR NEW.account_id!=OLD.account_id OR NEW.batch!=OLD.batch OR NEW.created!=OLD.created BEGIN SELECT RAISE(ABORT,'Import mapping is immutable'); END;
 CREATE TRIGGER batch_account_immutable BEFORE UPDATE OF account_id ON batches WHEN OLD.account_id!=NEW.account_id BEGIN SELECT RAISE(ABORT,'Account ownership is immutable'); END;
 CREATE TRIGGER account_creation_immutable BEFORE UPDATE ON account_creations BEGIN SELECT RAISE(ABORT,'Account creation is immutable'); END;
-CREATE TRIGGER account_creation_retained BEFORE DELETE ON account_creations BEGIN SELECT RAISE(ABORT,'Account creation is retained'); END;
+CREATE TRIGGER account_creation_retained BEFORE DELETE ON account_creations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Account creation is retained'); END;
 CREATE INDEX pending_accounts ON batches(account_id,state);
 CREATE TABLE records(batch TEXT NOT NULL REFERENCES batches(id),ordinal INTEGER NOT NULL,sequence INTEGER NOT NULL UNIQUE CHECK(sequence>0),
  raw BLOB NOT NULL,source_date TEXT NOT NULL,original INTEGER,payee TEXT NOT NULL,reference TEXT NOT NULL,
@@ -586,17 +586,17 @@ CREATE TRIGGER order_account AFTER INSERT ON account_operations BEGIN INSERT INT
 )SQL";
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="17" || version=="19" || version=="37"
+    return version=="3" || version=="4" || version=="17" || version=="19" || version=="39"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="38"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="40"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="17" || version=="19" || version=="37"
+    return version=="4" || version=="17" || version=="19" || version=="39"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="38"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="40"
 #endif
         ;
 }
@@ -660,14 +660,14 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="37"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="39"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16" || version=="18" || version=="20" || version=="38"
+    || version=="6" || version=="16" || version=="18" || version=="20" || version=="40"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="38";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="40";
 #else
     (void)db;return false;
 #endif
@@ -877,6 +877,7 @@ struct ImportStore::Impl {
     std::int64_t selected_account=1;
     int account_command=0;
     bool verifying=false;
+    bool startup_cleanup=false;
     // An opening audit is reusable only in this process, with no intervening
     // writes/rollback and an identical full-file fingerprint under a read lock.
     mutable std::string opening_audit;
@@ -998,9 +999,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="38";
+        constexpr const char* expected_format="40";
 #else
-        constexpr const char* expected_format="37";
+        constexpr const char* expected_format="39";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"This dataset format is not supported by this version of SpentIt; the file has not been changed");
@@ -1087,6 +1088,8 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
                 } catch(...) {sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
             }
         }
+        if(context)context->checkpoint("Removing interrupted import preparation");
+        store.impl_->startup_cleanup=store.cleanup_incomplete_imports();
         store.prepare_review();}
     return store;
 }
@@ -1412,7 +1415,8 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
         context.checkpoint("Source evidence retained");
         return resume(id,0,context);
     } catch(const app::OperationCancelled&) {
-        throw app::OperationCancelled("Processing cancelled. Source evidence is retained; resume or discard the incomplete import.");
+        cleanup_incomplete_imports(id);
+        throw app::OperationCancelled("Import cancelled. Incomplete preparation was removed; you can import the file again.");
     }
 }
 app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app::OperationContext& context) {
@@ -1450,7 +1454,8 @@ app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app
         }
         return batch(impl_->db,id);
     } catch(const app::OperationCancelled&) {
-        throw app::OperationCancelled("Processing cancelled. Source evidence is retained; resume or discard the incomplete import.");
+        cleanup_incomplete_imports(id);
+        throw app::OperationCancelled("Import cancelled. Incomplete preparation was removed; you can import the file again.");
     }
 }
 void ImportStore::populate(std::string_view id,std::string_view bytes,const qif::Result& parsed,std::int64_t revision,const app::OperationContext* context) {
@@ -2039,5 +2044,6 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
 #include "import_review.inc"
 #include "dataset_acceptance.inc"
 #include "account_rollback.inc"
+#include "incomplete_import_cleanup.inc"
 #include "review_sheet_store.inc"
 } // namespace spentit::storage

@@ -94,7 +94,7 @@ class CommittedUiTests : public QObject {
     }
     static bool edit(QObject* root,const char* name,const QString& value) {auto* item=object(root,QString::fromLatin1(name));return item && item->setProperty("text",value) && QMetaObject::invokeMethod(item,"textEdited");}
     void wait(ImportModel& model,bool success=true) {QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty()==success,qPrintable(model.error()));}
-    void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {model.command(action,args);wait(model,success);}
+    void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);wait(model,success);}
     static QVariantMap selected(const ImportModel& model){return model.state().value("selected").toMap();}
     QString prepare(ImportModel& model,const QString& dir) {
         run(model,"create",{{"path",dir+"/document"},{"protected",false},{"name","Synthetic corrections"},{"currency","CAD"}});

@@ -15,7 +15,7 @@ class NavigationTests : public QObject {
     Q_OBJECT
     QTemporaryDir settings;
     void run(ImportModel& model,const QString& action,const QVariantMap& args={}) {
-        model.command(action,args);
+        auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);
         const auto id=spentit::diagnostics::Collector::instance().snapshot().active.id;
         if(model.diagnosticsEnabled())QTRY_VERIFY_WITH_TIMEOUT(spentit::diagnostics::Collector::instance().snapshot().latest.id==id && spentit::diagnostics::Collector::instance().snapshot().latest.delivered!=0,30000);
         else QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);

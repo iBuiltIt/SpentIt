@@ -38,7 +38,7 @@ class RuleUiTests : public QObject {
     static bool choose(QObject* root,const QString& name,int index){auto* item=object(root,name);return item && item->setProperty("currentIndex",index) && QMetaObject::invokeMethod(item,"activated",Q_ARG(int,index));}
     static bool setChecked(QObject* root,const QString& name,bool on){auto* item=object(root,name);if(!item || !item->property("visible").toBool() || !item->property("enabled").toBool())return false;if(item->property("checked").toBool()==on)return true;return item->setProperty("checked",on) && QMetaObject::invokeMethod(item,"clicked");}
     void wait(ImportModel& m,bool success=true){QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty()==success,qPrintable(m.error()));}
-    void run(ImportModel& m,const QString& action,const QVariantMap& args={},bool success=true){m.command(action,args);wait(m,success);}
+    void run(ImportModel& m,const QString& action,const QVariantMap& args={},bool success=true){auto request=args;if(action=="import" && !request.contains("account"))request["account"]=m.state().value("accountId");m.command(action,request);wait(m,success);}
     static QVariantMap selected(const ImportModel& m){return m.state().value("selected").toMap();}
     static QVariantMap draftOf(const ImportModel& m){return selected(m).value("draft").toMap();}
     static QString page(QObject* root){return root->property("currentPage").toString();}

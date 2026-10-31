@@ -193,7 +193,7 @@ void review() {
     check(query(path, "SELECT format||'/'||grammar FROM source_headers WHERE source_id='overlap'") == "ofx/ofx-sgml");
     check(query(path, "SELECT ledger_batch||':'||ledger_ordinal FROM source_associations WHERE source_batch='overlap-account-0' AND source_ordinal=0") == "qif:0");
     check(query(path, "SELECT count(*) FROM source_associations WHERE source_batch='qif'") == "1");
-    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "38" : "37"));
+    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "40" : "39"));
     {
         auto restored = ImportStore::open(d.path / "backup", password);
         restored.select_account(1);
@@ -795,8 +795,9 @@ void overlap_faults(bool exact=false) {
         s.commit("base-account-0",revision(s,"base-account-0"),"base-commit");
         capture(s,"overlap",text,{{0,1,{}}},"qfx");
     };
+    auto reimport=[&](ImportStore& s){if(!s.import_group_outcome("overlap"))capture(s,"overlap",text,{{0,1,{}}},"qfx");};
     auto recovered=[&](const fs::path& path) {
-        auto s=ImportStore::open(path,password);
+        auto s=ImportStore::open(path,password);reimport(s);
         materialize(s,"overlap");
         check(s.row({"overlap-account-0",0}).decision.disposition==imports::Disposition::duplicate);
         check(s.current_ledger().size()==1 && s.balance()==Money(-100,cad));
@@ -806,7 +807,7 @@ void overlap_faults(bool exact=false) {
     for(bool publication:{false,true}) {
         int count=0;
         {
-            Directory d;setup(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);
+            Directory d;setup(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);reimport(s);
             if(publication)materialize(s,"overlap");
             fault_vfs::arm(-1);
             if(publication)s.commit("overlap-account-0",revision(s,"overlap-account-0"),"overlap-commit");
@@ -817,7 +818,7 @@ void overlap_faults(bool exact=false) {
         for(int n=1;n<=count;++n) {
             Directory d;setup(d.path/"doc");
             {
-                auto s=ImportStore::open(d.path/"doc",password);
+                auto s=ImportStore::open(d.path/"doc",password);reimport(s);
                 if(publication)materialize(s,"overlap");
                 fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
                 try {
@@ -830,10 +831,10 @@ void overlap_faults(bool exact=false) {
         }
         for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}) {
             Directory d;setup(d.path/"doc");
-            if(publication){auto s=ImportStore::open(d.path/"doc",password);materialize(s,"overlap");}
+            if(publication){auto s=ImportStore::open(d.path/"doc",password);reimport(s);materialize(s,"overlap");}
             const auto child=fork();check(child>=0);
             if(child==0) {
-                auto s=ImportStore::open(d.path/"doc",password);
+                auto s=ImportStore::open(d.path/"doc",password);reimport(s);
                 s.observer([&](ImportPhase at){if(at==phase)_exit(72);});
                 if(publication)s.commit("overlap-account-0",revision(s,"overlap-account-0"),"overlap-commit");
                 else materialize(s,"overlap");
@@ -843,7 +844,8 @@ void overlap_faults(bool exact=false) {
             {
                 auto s=ImportStore::open(d.path/"doc",password);
                 if(publication)check(s.outcome("overlap-commit").has_value()==(phase==ImportPhase::after_commit));
-                else check(s.import_group_outcome("overlap")->state==(phase==ImportPhase::after_commit?app::GroupState::reviewing:app::GroupState::captured));
+                else if(phase==ImportPhase::after_commit)check(s.import_group_outcome("overlap")->state==app::GroupState::reviewing);
+                else check(!s.import_group_outcome("overlap"));
             }
             recovered(d.path/"doc");no_leaks(d.path);
         }

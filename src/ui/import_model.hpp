@@ -13,6 +13,7 @@ class ImportModel final : public QAbstractListModel {
     Q_PROPERTY(QVariantMap state READ state NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool selecting READ selecting NOTIFY changed)
+    Q_PROPERTY(bool openingDocument READ openingDocument NOTIFY changed)
     Q_PROPERTY(QString phase READ phase NOTIFY changed)
     Q_PROPERTY(bool canCancel READ canCancel NOTIFY changed)
     Q_PROPERTY(bool cancellationRequested READ cancellationRequested NOTIFY changed)
@@ -35,6 +36,7 @@ public:
     ~ImportModel() override;
     QVariantMap state() const { return state_; }
     bool busy() const { return busy_; }
+    bool openingDocument() const {return busy_ && (activeAction_=="open" || activeAction_=="unlock" || activeAction_=="probe");}
     bool selecting() const { return busy_ && activeAction_=="select"; }
     QString phase() const { return phase_; }
     bool canCancel() const { return busy_ && operation_ && operation_->state.load()==spentit::app::OperationContext::available; }

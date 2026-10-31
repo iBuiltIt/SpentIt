@@ -1,14 +1,13 @@
 # Opening, ledger cleanup and interrupted imports
 
-Status: **accepted requirements; implementation pending**  
+Status: **implemented under owner Go; verification recorded in [status](status.md)**  
 Last updated: 2026-10-31
 
 ## Priority and authorization
 
 This is the owner's next work, ahead of the previously listed handoff work in
 [the roadmap](roadmap.md). The owner approved the decisions below and requested
-that they be documented and committed. This checkpoint changes documentation
-only; implementation still requires explicit Go. Reports and unrelated work
+that they be documented and committed. The owner subsequently gave implementation Go on 2026-10-31. Reports and unrelated work
 remain deferred. Do not resume the older sequence automatically.
 
 ## Opening presentation
@@ -100,8 +99,7 @@ Completed uncommitted imports must survive restart unchanged.
 
 The current account-wide Discard is **not** an implementation substitute: it can
 remove earlier pending imports. Implement an import-specific ownership boundary
-and cleanup command. Existing Resume/captured-source behavior remains the current
-implementation until this replacement is implemented and verified. This accepted
+and cleanup command. The desktop no longer exposes Resume; opening removes durably captured preparation before the workspace becomes writable. This accepted
 scope supersedes the older preservation of import-created accounts/categories
 only for cleanup of the interrupted import described here.
 
@@ -110,8 +108,8 @@ only for cleanup of the interrupted import described here.
 Inspect single-account and mapped multi-account capture/preparation paths, source
 ownership, generated transfers, account/category creation and durable outcomes
 before choosing the storage design. Keep worker-owned transactions and exact
-financial invariants. Experimental formats have no migration obligation; this
-checkpoint changes no schema and chooses no new schema number.
+financial invariants. Experimental formats have no migration obligation. The original requirements
+checkpoint chose no schema; the implementation below uses 40/39.
 
 Use synthetic imports covering existing and new accounts/categories, multiple
 prior pending imports, shared source ownership, existing matched postings,
@@ -127,3 +125,34 @@ category dialog, Review repair access, account-context discard scope and setting
 backup/restore access. Keep the ledger search-only and status layout stable.
 Record actual checks and platform limits in [status](status.md); documentation
 review is not runtime verification.
+
+## Implemented storage boundary — 2026-10-31
+
+Experimental formats are now **40 with rules / 39 without**. The format change
+allows deletion of account-creation receipts only inside the guarded cleanup
+command; older experimental formats are rejected unchanged, without migration.
+
+Capture saves source bytes, mappings and creation-time opening choices. Preparation
+publishes all rows, source associations, categories and generated transfer effects
+in one transaction, together with the batch materialization/group completion
+marker. A durably captured import therefore has no partially published transaction
+relationships to reverse. Cleanup rejects inconsistent stages, removes only the
+captured source roots and their capture history, and removes exclusively created
+accounts unless retained work or account changes require them. Source categories
+have not yet been published at this boundary. Completed imports, including failed
+records and duplicate-only completion, are outside cleanup.
+
+Cleanup runs after authentication and verification even when startup approval is
+reused. Its deletes and full retained-state verification share one transaction;
+failed cleanup prevents desktop activation or closes the worker connection.
+Missing source roots make retries harmless, and durable absence resolves a lost
+cleanup acknowledgement. External files are never modified. Account-context
+Discard continues to use the existing account-owned rollback command.
+
+The worker resolves sidebar/account-context routing before capture. Unnamed
+sources get an explicit destination prompt for sidebar import; known identities
+can route directly; unknown/mismatched/multiple source accounts use mapping.
+OFX-family routing also checks prior confirmed bank identity mappings without
+adding bank identifiers to transfer-name aliases. The status summary totals all
+mapped source accounts. Full-file source storage and inline record inspection
+remain unchanged.

@@ -170,7 +170,7 @@ int main(int argc,char** argv) {
                 row+="^\n";require(file.write(row)==row.size(),"Fixture write failed");
             }
         }
-        command("import","import",{{"path",dir.path()+"/synthetic.qif"},{"profile","DMY"}});
+        command("import","import",{{"path",dir.path()+"/synthetic.qif"},{"profile","DMY"},{"account",model.state().value("accountId")}});
         const Currency cad("CAD");const auto expected=app::decimal(Money(10000+static_cast<std::int64_t>(count/2)*1000,cad));
         require(model.state().value("projected").toString().toStdString()==expected,"Projected reconciliation failed");
         require(model.state().value("committed").toString()=="100.00" && model.rowCount()==count+1,"Draft isolation/count failed");

@@ -200,6 +200,9 @@ public:
         throw std::logic_error("Grouped imports unavailable");
     }
     virtual ImportGroup resume_import_group(std::string_view,OperationContext&) { throw std::logic_error("Grouped imports unavailable"); }
+    // Removes only durably captured, unprepared imports; completed imports are untouched.
+    virtual bool cleanup_incomplete_imports(std::string_view = {}) { throw std::logic_error("Incomplete import cleanup unavailable"); }
+    virtual bool startup_import_cleanup() const { return false; }
     virtual void abort_import_group(std::string_view) { throw std::logic_error("Grouped imports unavailable"); }
     virtual void resolve_import_transfers(std::string_view,app::OperationContext&) { throw std::logic_error("Mapped transfer resolution unavailable"); }
     virtual void review_import_balance(std::string_view,std::size_t,std::int64_t,ReportedBalanceChoice,std::string_view) {

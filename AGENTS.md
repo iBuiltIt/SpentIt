@@ -1,13 +1,14 @@
 # SpentIt — Where did my money go?
 
-## Next work — owner decisions 2026-10-31
+## Opening and import cleanup — owner Go 2026-10-31
 
-Prioritize [opening/ledger cleanup and interrupted-import rollback](doc/ui-import-cleanup.md)
-before the older handoff work. These are accepted requirements, not implemented
-behavior or a new implementation Go. Preserve completed uncommitted imports; the
-new automatic cleanup targets only incomplete preparation for one import across
-accounts. Account-context Discard remains account-owned. Read the contract before
-changing source retention, import cancellation, startup cleanup or the ledger UI.
+The [opening/ledger cleanup and interrupted-import rollback](doc/ui-import-cleanup.md)
+received implementation Go and is implemented. See [status](doc/status.md) for
+verification and limits before further work. Current experimental formats are
+**40 with rules / 39 without**; the 38/37 references below describe earlier work.
+Completed uncommitted imports survive restart. Automatic cleanup targets only
+incomplete preparation; account-context Discard remains account-owned. Read the
+contract before changing retention, cancellation, startup cleanup or the ledger.
 
 SpentIt is a local, single-user desktop application for understanding spending through reliable imports, reviewable categorization, and explainable reports. Data safety, security, and correctness take priority over speed of development. Losing or silently misrepresenting financial data loses the user's trust.
 

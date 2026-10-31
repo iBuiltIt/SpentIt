@@ -338,6 +338,7 @@ struct ImportModel::Worker {
     std::optional<PreparedImport> preparedImport, dateImport;
     QVariantMap importDateQuestion;
     QVariantList importPlan,importMappingArgs;
+    QString importTarget,cleanupNoticePath,importFeedback;bool importDestination=false,startupCleanupNotice=false;
     std::optional<std::vector<app::ImportAccountMapping>> preparedMappings;
 
     std::optional<app::BulkPreview> preparedBulk;
@@ -364,7 +365,7 @@ struct ImportModel::Worker {
         try{return gateway->repository().import_group_outcome(id);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();preparedImport.reset();preparedMappings.reset();importPlan.clear();throw std::runtime_error("Import operation outcome is uncertain. Reopen and inspect the retained source and account drafts before retrying.");}
     }
     app::ImportGroup resumeGroup(std::string_view id,app::OperationContext& context) {
-        try{return gateway->repository().resume_import_group(id,context);}catch(...){const auto failure=std::current_exception();const auto saved=durableGroup(id);if(saved && (saved->state==app::GroupState::reviewing || saved->state==app::GroupState::started))return *saved;try{std::rethrow_exception(failure);}catch(const app::OperationCancelled&){throw app::OperationCancelled("Processing cancelled. The whole source and account mappings are saved; resume or abort the entire import.");}}
+        try{return gateway->repository().resume_import_group(id,context);}catch(...){const auto failure=std::current_exception();const auto saved=durableGroup(id);if(saved && (saved->state==app::GroupState::reviewing || saved->state==app::GroupState::started))return *saved;try{std::rethrow_exception(failure);}catch(const app::OperationCancelled&){try{gateway->repository().cleanup_incomplete_imports(id);}catch(...){gateway->close();active=false;throw std::runtime_error("Interrupted import cleanup failed. Reopen to retry cleanup before making further changes.");}throw app::OperationCancelled("Import cancelled. Incomplete preparation was removed; you can import the file again.");}}
     }
     void catalog() {
         PresentationRead observation{diagnosticPresentationFailed};
@@ -620,9 +621,10 @@ struct ImportModel::Worker {
     }
     std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot(app::OperationContext* context=nullptr) {
         diag::Span span(diag::Code::snapshot);
-        QVariantMap state{{"active",active},{"path",path},{"canOpen",canOpen},{"unlockRequired",welcomePassword},{"overwriteRequired",overwriteRequired}};
+        const auto home=QDir::homePath()+"/";const auto full=QFileInfo(path).absoluteFilePath();
+        QVariantMap state{{"displayPath",full.startsWith(home)?"~/"+full.mid(home.size()):full},{"active",active},{"path",path},{"canOpen",canOpen},{"unlockRequired",welcomePassword},{"overwriteRequired",overwriteRequired}};
         if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
-        auto& repo=gateway->repository();catalog();state["dateFormat"]=text(dateFormat);
+        auto& repo=gateway->repository();catalog();state["dateFormat"]=text(dateFormat);state["startupImportCleanup"]=startupCleanupNotice;
         if(metadataSelection!=selected.value("batch").toString()){metadata.clear();metadataSelection=selected.value("batch").toString();}
         diag::cache(diag::Code::metadata,metadata.isEmpty()?diag::EventKind::cache_miss:diag::EventKind::cache_hit);
         if(metadata.isEmpty()) {
@@ -751,7 +753,7 @@ struct ImportModel::Worker {
             metadata=state;
             }
         } else state=metadata;
-        state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
+        state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
         QVariantList aliasList;for(const auto& alias:repo.account_aliases())aliasList.push_back(QVariantMap{{"name",text(alias.name)},{"accountId",QString::number(alias.account)}});
         state["accountAliases"]=aliasList;
         state["accountCategories"]=categoryById.value("@accounts");
@@ -880,12 +882,12 @@ struct ImportModel::Worker {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();canOpen=false;welcomePassword=false;
             if(!QFileInfo(path).isFile()) throw std::runtime_error("Dataset file not found or inaccessible");
-            try {gateway->open_controlled(path.toStdString(),std::nullopt,context);gateway->close();canOpen=true;}
+            try {gateway->open_controlled(path.toStdString(),std::nullopt,context);if(gateway->repository().startup_import_cleanup())cleanupNoticePath=path;gateway->close();canOpen=true;}
             catch(const app::UnlockRequired&) {welcomePassword=true;}
             return;
         }
         if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -903,9 +905,10 @@ struct ImportModel::Worker {
                     if(action!="open" || !a.value("startup").toBool())throw;
                     welcomePassword=true;return;
                 }
-                canOpen=true;
+                canOpen=true;if(gateway->repository().startup_import_cleanup())cleanupNoticePath=path;
                 try { context.seal(); } catch (...) { gateway->close(); throw; }
             }
+            startupCleanupNotice=action!="create" && (gateway->repository().startup_import_cleanup() || cleanupNoticePath==path);cleanupNoticePath.clear();
             deferReview=gateway->lazy_review() && action!="create";
             dateFormat=gateway->repository().date_format();active=true; selected.clear(); receipt.clear();clearChanges();
             QSettings settings; settings.setValue("datasetPath",path); settings.sync();
@@ -1150,6 +1153,7 @@ struct ImportModel::Worker {
                 const auto& view=saved->second;filter=view.filter;projected=view.projected;sort=view.sort;descending=view.descending;selection=view.selection;selectionAnchor=view.anchor;selectionFocus=view.focus;
                 if(!view.batch.empty())inspect(view.batch,view.ordinal,context);
             }
+            if(!a.value("reviewBatch").toString().isEmpty()){selectedBatch=str(a.value("reviewBatch"));selected={{"batch",a.value("reviewBatch")}};}
             if(a.value("reveal").toBool()){filter.clear();projected=true;selection.clear();selectionAnchor.reset();selectionFocus.reset();inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);selection.insert({selectedBatch,selectedOrdinal});selectionFocus=imports::Occurrence{selectedBatch,selectedOrdinal};}
         }
         else if(action=="category_list") {catalog();}
@@ -1299,11 +1303,13 @@ struct ImportModel::Worker {
                 const auto savedOperation=saved.value("operation").toString();
                 throw std::runtime_error(savedOperation.isEmpty()?"Unable to refresh verified dataset state. Close and reopen before continuing.":ruleReapplyRefreshFailure(savedOperation).toStdString());
             }
+        } else if(action=="cancel_import_destination") {preparedImport.reset();importDestination=false;
         } else if(action=="cancel_import_date") {dateImport.reset();importDateQuestion.clear();
-        } else if(action=="import" || action=="confirm_import_date") {
+        } else if(action=="import" || action=="confirm_import_date" || action=="confirm_import_destination") {
             std::string owned;
             statements::Index document;
             if(action=="import") {
+                importTarget=a.value("account").toString();importDestination=false;importFeedback.clear();
                 dateImport.reset();importDateQuestion.clear();
                 QFile file(a.value("path").toString()); const QFileInfo info(file);
                 if(!info.isFile() || !file.open(QIODevice::ReadOnly)) throw std::runtime_error("Cannot read statement file");
@@ -1325,12 +1331,18 @@ struct ImportModel::Worker {
                 if(document.format=="qif" && (document.explicit_accounts || !document.categories.empty()) && (document.diagnostic || !document.admissible)) throw std::invalid_argument("Unsupported account section structure; no import was saved. The original file is unchanged.");
                 if(!document.admissible) throw std::invalid_argument(document.refusal.empty()?"Statement exceeds a resource limit. The original file is unchanged.":document.refusal);
                 if(!document.refusal.empty() || (document.format!="qif" && document.diagnostic)) throw std::invalid_argument(document.refusal.empty()?"Unsupported account section structure; no import was saved. The original file is unchanged.":document.refusal);
+            } else if(action=="confirm_import_destination") {
+                if(!preparedImport || !importDestination)throw std::logic_error("Choose a source file first");
+                owned=preparedImport->bytes;document=preparedImport->document;importTarget=a.value("account").toString();
+                if(importTarget.isEmpty())throw std::invalid_argument("Choose a destination account");
+                importDestination=false;
             } else {
                 if(!dateImport)throw std::logic_error("Choose a source file first");
                 owned=dateImport->bytes;document=dateImport->document;
             }
             auto order=qif::DateOrder::dmy;
-            if(document.format=="qif") {
+            if(action=="confirm_import_destination")order=preparedImport->profile;
+            else if(document.format=="qif") {
                 const auto inference=qif::infer_date_order(owned,[&]{context.checkpoint();});
                 if(inference.conflicting)throw std::invalid_argument("This QIF file contains conflicting date orders. Correct the source dates and import again; no import was saved.");
                 order=inference.order;
@@ -1345,7 +1357,37 @@ struct ImportModel::Worker {
                     order=profile=="DMY"?qif::DateOrder::dmy:qif::DateOrder::mdy;
                 }
             }
-            dateImport.reset();importDateQuestion.clear();
+            dateImport.reset();importDateQuestion.clear();if(action=="confirm_import_destination")preparedImport.reset();
+            std::optional<std::int64_t> destination;
+            const bool unnamed=document.accounts.size()<=1 && !document.explicit_accounts;
+            if(document.accounts.size()==1 || unnamed) {
+                auto identified=unnamed?std::optional<std::int64_t>{}:repo.resolve_account_name(document.accounts.front().name);
+                if(document.format!="qif") {
+                    // Bank account identity is a confirmed source mapping, not
+                    // a transfer-name alias. Require one unambiguous destination.
+                    const auto& incoming=document.accounts.front();std::set<std::int64_t> matches;
+                    if(identified)matches.insert(*identified);
+                    const auto previous=repo.account_selected()?repo.account().identity:0;
+                    try {
+                        for(const auto& group:repo.import_groups())if(group.state!=app::GroupState::aborted && !group.accounts.empty()) {
+                            repo.select_account(group.accounts.front().account);
+                            const auto old=statements::inspect(repo.evidence(group.accounts.front().batch),"",[&]{context.checkpoint();});
+                            if(old.format=="qif")continue;
+                            for(const auto& member:group.accounts)if(member.source_account<old.accounts.size()) {
+                                const auto& source=old.accounts[member.source_account];
+                                if(!incoming.account_number.empty() && source.account_number==incoming.account_number && source.institution_id==incoming.institution_id && source.account_type==incoming.account_type)matches.insert(member.account);
+                            }
+                        }
+                    } catch(...) {if(previous)repo.select_account(previous);else repo.release_account_selection();throw;}
+                    if(previous)repo.select_account(previous);else repo.release_account_selection();
+                    identified=matches.size()==1?std::optional<std::int64_t>(*matches.begin()):std::nullopt;
+                }
+                if(importTarget.isEmpty())destination=identified;
+                else if(unnamed || (identified && *identified==importTarget.toLongLong()))destination=importTarget.toLongLong();
+            }
+            if(unnamed && !destination) {
+                preparedImport=PreparedImport{identity(),owned,document.format,document,order};importDestination=true;return;
+            }
             if(document.format!="qif" || document.explicit_accounts || !document.categories.empty()) {
                 QVariantList nextPlan;
                 const auto home=repo.accounts().empty()?std::string{}:repo.accounts().front().currency.code();
@@ -1358,9 +1400,16 @@ struct ImportModel::Worker {
                     nextPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",reported},{"offerReportedOpening",offer_reported},{"openingDate",dateText(oldest.empty()?"1900-01-01":oldest)},{"currency",text(currency.code())}});
                 }
                 preparedImport=PreparedImport{identity(),owned,document.format,document,order};preparedMappings.reset();importMappingArgs.clear();importPlan=std::move(nextPlan);
+                if(destination)execute("map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"account",QString::number(*destination)},{"create",false}}}}},context);
                 return;
             }
-            const auto batch=repo.ingest_controlled(identity(),owned,order,context);observedSaved(diag::Code::prepare);
+            if(!destination)throw std::logic_error("No import destination was chosen");
+            if(repo.account().identity!=*destination)execute("select_account",{{"id",QString::number(*destination)}},context);
+            auto batch=repo.ingest_controlled(identity(),owned,order,context);
+            if(batch.processing_incomplete){context.state.store(app::OperationContext::available);context.observeState();batch=repo.resume(batch.id,batch.revision,context);}
+            observedSaved(diag::Code::prepare);
+            const auto result=repo.import_result(batch.id);
+            importFeedback=QString("Import: %1 added; %2 already present; %3 failed").arg(result.added+result.unresolved).arg(result.already_present).arg(result.failed);
             projected=true; selected.clear();selectedBatch.clear();
             if(batch.count && !batch.processing_incomplete) inspect(batch.id,0,context);
             else selected={{"batch",text(batch.id)},{"editable",false},{"source",evidencePreview(owned)}};
@@ -1386,9 +1435,14 @@ struct ImportModel::Worker {
             preparedImport.reset();importPlan.clear();
             if(group.state==app::GroupState::aborted)throw std::runtime_error("This import was already aborted; choose the file again to start a new import.");
             accountViews.insert_or_assign(repo.account().identity,AccountView{filter,projected,sort,descending,selectedBatch,selectedOrdinal,selection,selectionAnchor,selectionFocus});
-            try{repo.select_account(group.accounts.front().account);}catch(...){diagnosticPresentationFailed=true;gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Import source and accounts were saved, but selection failed. Reopen and resume or abort the retained import.");}selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;
+            try{repo.select_account(group.accounts.front().account);}catch(...){diagnosticPresentationFailed=true;gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Import source and accounts were saved, but selection failed. Reopen to remove incomplete preparation and import the file again.");}selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;
             if(group.state==app::GroupState::captured){auto sealed=app::OperationContext::sealed;if(!context.state.compare_exchange_strong(sealed,app::OperationContext::available))throw std::logic_error("Invalid import cancellation gate");context.observeState();group=resumeGroup(group.id,context);}
 
+            std::size_t added=0,present=0,failed=0;const auto selectedAccount=repo.account().identity;
+            try {for(const auto& member:group.accounts){repo.select_account(member.account);const auto result=repo.import_result(member.batch);added+=result.added+result.unresolved;present+=result.already_present;failed+=result.failed;}}
+            catch(...){repo.select_account(selectedAccount);throw;}
+            repo.select_account(selectedAccount);
+            importFeedback=QString("Import: %1 added; %2 already present; %3 failed").arg(added).arg(present).arg(failed);
             if(!group.accounts.empty()){const auto batches=repo.batches();const auto b=std::find_if(batches.begin(),batches.end(),[&](const auto& b){return b.id==group.accounts.front().batch;});if(b!=batches.end() && b->count)inspect(b->id,0,context);}
         } else if(action=="group_resolve_transfers") {
             try{repo.resolve_import_transfers(str(a.value("group")),context);}catch(...){const auto failure=std::current_exception();(void)durableGroup(str(a.value("group")));std::rethrow_exception(failure);}
@@ -1736,7 +1790,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch") operation->seal();
+    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
@@ -1829,6 +1883,11 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         catch(const app::OperationCancelled& e){outcome=diag::Result::cancelled;if(action!="query")worker->invalidate();result.error=action=="backup"?"Backup cancelled before publication. The source dataset is unchanged. An encrypted .partial candidate may remain; retry to a new destination.":QString::fromUtf8(e.what());}
         catch(const app::UnlockRequired& e){worker->invalidate();result.error=QString::fromUtf8(e.what());unlock=true;}
         catch(const std::exception& e){if(action!="query")worker->invalidate();result.error=QString::fromUtf8(e.what());}
+        if(!result.success && worker->active && (action=="import" || action=="confirm_import_date" || action=="confirm_import_destination" || action=="map_import")) {
+            try {if(worker->gateway->repository().cleanup_incomplete_imports())result.error+=" Incomplete import preparation was removed; you can import the file again.";}
+            catch(...) {worker->gateway->close();worker->active=false;worker->selected.clear();worker->selectedBatch.clear();result.error="Interrupted import cleanup failed. Reopen to retry cleanup before making further changes.";}
+            worker->invalidate();
+        }
         if(worker->diagnosticUnchanged)persistence=diag::Persistence::confirmed_unchanged;
         if(worker->diagnosticSaved || diag::context().saved)persistence=diag::Persistence::confirmed_saved;
         if(worker->diagnosticPresentationFailed && outcome!=diag::Result::cancelled)presentation=diag::Presentation::failed;
