@@ -2,6 +2,84 @@
 
 Last updated: 2026-10-31
 
+## Verified fast startup — 2026-10-31
+
+Owner Go implemented: the desktop app reuses a full audit only when the complete
+file SHA-256 and verifier fingerprint match an owner-private approval in the
+platform cache. Authentication, format checks, document locking, required storage
+settings and journal/recovery gates remain. Missing/stale approval falls back to
+full verification; corruption is never repaired automatically. Graceful quit hides
+the window while the serial worker audits and atomically publishes approval. A
+failed audit/cache write restores the window with the error and an explicit option
+to quit without approval. Emergency close never audits. Schemas remain 38/37.
+See [the contract](fast-startup.md).
+
+Initial account loading now defers the full Review suggestion sheet until Review
+or Commit is requested. An unloaded count is not displayed as zero. Existing
+mutation refreshes and saved Review decisions are unchanged. First use of this
+build (or a changed verifier/file) still requires verification; a successful
+close establishes approval for subsequent unchanged opens. The current API for
+ordinary headless opens and backup validation continues to audit fully.
+
+Before implementation, one authorized native Release opening of the owner's
+default dataset measured 19.791 s worker time: 13.582 s verification, 5.202 s Review
+construction and 0.621 s acceptance-review preparation. There was one Open and
+one verification, with no dropped/stale diagnostic events. GUI model application
+was 0.248 s. This was a single observation, not a controlled comparison or a
+financial-content audit. The owner's running instance/data were not changed by
+the implementation tests.
+
+Verification: the selected rules-enabled Release regression ran 104 checks.
+102 passed in the sandbox; `diagnostics.transport` and `diagnostics.qml` could not
+create their observation endpoints there and both passed with native/socket
+permissions. The selection included the full import UI executable, storage/domain
+validation, backup publication/cancellation/restoration, Review and lifecycle
+coverage, while excluding the long fault sweeps. An initial selection accidentally
+included two long fault sweeps and was stopped; those interrupted runs are not
+claimed as passing.
+
+Focused storage tests cover approved/unchecked/changed inputs, wrong passwords,
+exclusive locking, truncated/stale approval, journal presence, encrypted-page
+corruption, cancellation, interruption during audit, process exit after approval
+publication, failed cache publication/retry, restored backup opening, and graceful
+versus emergency gateway close. A warm-connection corruption check confirms the
+cipher integrity audit reads actual stored pages. Focused UI cases cover deferred
+Review, Commit routing, immediate window hiding, and window restoration on failed
+approval. Native Cocoa execution of the latter behavior passed 4 Qt cases including
+init/cleanup. Final ASan/UBSan and rules-disabled Release builds each passed the
+expanded storage approval test and all 10 focused Qt cases (including init/cleanup).
+No sanitizer diagnostic was reported (`detect_leaks=0`; no leak-check claim).
+Final build logs were free of compiler warnings/errors; whitespace checks and 215
+relative file links in the changed documentation passed. Linux/Windows and physical
+power loss remain unverified; no performance guarantee is made for arbitrary disks
+or datasets.
+
+Three serial macOS arm64 Release/offscreen runs used fresh synthetic one-account
+fixtures with 10,000 accepted transactions, distinct posting dates, a zero opening,
+and a 21,577,728-byte dataset. Each checked the exact balance (-10,000.00 CAD),
+10,001 displayed rows including the opening, and no outstanding Review questions.
+The files were warm from fixture creation; no builds or other tests competed with
+the timed runs. Durations include worker/model snapshot delivery and the test's
+50-ms polling granularity, not native-frame presentation or QML construction:
+
+| Operation | Median seconds | Minimum–maximum seconds |
+|---|---:|---:|
+| Open without approval, full audit, Review deferred | 5.982 | 5.834–6.042 |
+| Graceful close, audit and approval publication | 5.033 | 4.896–5.206 |
+| Open with matching approval, Review deferred | 1.861 | 1.812–1.867 |
+| Explicit Review preparation after opening | 1.811 | 1.762–1.858 |
+
+Reproduce with `SPENTIT_STARTUP_ROWS=10000 QT_QPA_PLATFORM=offscreen
+build/import-ui-rules-release/src/ui/spentit_import_ui_tests cachedStartupTiming`
+(on one shell line). The test binary SHA-256 remained
+`9705ae31d093743dd46f7114d636066e7ddefaa7977ff6f265af777c54f6490f`.
+A preliminary fixture placed every equal-value transaction on the same date and
+was stopped because it stressed duplicate matching rather than a spread-out
+transaction history; it is not a reported startup measurement. The earlier small
+fixture initially omitted the displayed opening row from its expected row count;
+that test expectation was corrected. The owner's private workload has not been
+retimed on the new implementation; its existing process was preserved.
+
 ## Review responsiveness and batch Merge — 2026-10-31
 
 Owner Go implemented: every right-pane workspace has a permanent bottom status

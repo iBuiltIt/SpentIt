@@ -32,6 +32,9 @@ public:
         try { context.checkpoint(); } catch (...) { close(); throw; }
     }
     virtual void close() = 0;
+    // Graceful close may audit while retaining the document lock. Emergency close never does.
+    virtual void close_verified(const OperationContext&) { close(); }
+    virtual bool lazy_review() const { return false; }
     virtual ImportRepository& repository() = 0;
     // Backup/restore publishes a new document with the current protection mode.
     virtual void backup(const std::filesystem::path&) = 0;

@@ -22,6 +22,11 @@ The [dataset-wide commit/new-transaction model](../doc/import-commit-discussion.
 
 The [Review workspace and link learning](005-transaction-sheet-navigation.md#next-session-handoff-review-workspace-and-link-learning--2026-10-30) revision is implemented under its subsequent Go and settled matching policy. The owner also authorized [Review responsiveness and batch decisions](005-transaction-sheet-navigation.md#next-tasks-review-responsiveness-and-batch-decisions--2026-10-31): permanent status in every right pane, stable viewport, profiled candidate rebuilding and atomic batch duplicate Merge with group selection and one Undo. See [the contract](../doc/review-sheet.md) and [status](../doc/status.md) for implementation, measurements and verification limits.
 
+The [verified fast-startup contract](../doc/fast-startup.md) implements the owner's
+2026-10-31 Go: full-file audit approval in the platform cache, graceful close-time
+auditing, and deferred Review suggestions. See status for timings and recovery
+verification; this does not change financial acceptance or authorize automatic repair.
+
 ## Initial features
 
 | Document | Status | Scope |

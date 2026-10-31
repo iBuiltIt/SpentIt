@@ -540,3 +540,13 @@ Bulk removal, bulk category, rule reapply, and history undo go through Save / Di
 Reports are a note: "Reports stay outside this work. Nothing is created here." There is no add button and no report dialog. On 2026-10-28 the owner said the eight-point sequence was the work before reports. Building a report waits for an explicit Go and the open questions in [feature 006](006-reporting-drill-down.md).
 
 This slice does not add a separate note field, a multiline Enter exception, a date-format preference, same-date ordering, persisted column or sidebar sizes, or a new money formula. Feature 005 stays active. Verification is in [status](../doc/status.md#point-8-sheet-and-sidebar-interactions--2026-10-27).
+
+## Verified fast startup — owner Go 2026-10-31
+
+Normal startup reuses a prior full audit only for an identical full-file SHA-256
+and verifier version, with authentication, locking, format and journal gates
+retained. Graceful quit hides the window while the worker audits and atomically
+publishes owner-private approval in the platform cache. Missing/stale approval
+falls back to verification; failures never trigger automatic repair. Initial
+Review suggestions load on demand, including before Commit. See
+[the implementation contract](../doc/fast-startup.md) and [status](../doc/status.md) for verification and limits.

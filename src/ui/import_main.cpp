@@ -13,6 +13,7 @@
 #include <QTimer>
 #include <QFont>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QIcon>
 #include <QStyleHints>
@@ -50,7 +51,7 @@ int main(int argc,char** argv) {
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,smokeSettings->path());
         QSettings().setValue("datasetPath",smokeSettings->path()+"/missing.spentit");
     }
-    ImportModel model(spentit::storage::document_gateway());
+    ImportModel model(spentit::storage::document_gateway((QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/verification").toStdString()));
     QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);
     {spentit::diagnostics::Span qmlSpan(spentit::diagnostics::Code::qml_creation);
     engine.load(QUrl("qrc:/spentit/ImportMain.qml"));if(engine.rootObjects().isEmpty())return 1;}

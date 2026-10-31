@@ -543,13 +543,20 @@ ApplicationWindow {
     property bool allowClose: false
     property bool closingRequested: false
     property bool commitBeforeQuit: false
+    property bool commitAfterReview: false
     function requestCommit() {
+        if(s.reviewReady===false){commitAfterReview=true;workflow.command("review_load");return}
         if((s.reviewCount||0)>0)reviewSheet.open()
         else workflow.command("commit")
     }
+    function beginQuit() {
+        closingRequested=true
+        window.hide()
+        workflow.command("close")
+    }
     function requestQuit() {
         if((s.newTransactions||0)>0)quitCommit.open()
-        else {closingRequested=true;workflow.command("close")}
+        else {beginQuit()}
     }
     property bool settingUp: false
     function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;rulesUnsaved.open()} else action() }
@@ -754,13 +761,16 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onChanged() {if(workflow.busy)captureReviewView()}
         function onCompleted(action,success) {
+            if(action==="close" && !success && closingRequested){closingRequested=false;window.show();closeAuditFailure.open()}
+            if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
+
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
 
             if(action==="link_exclusion_save" && success)linkExclusionDialog.close()
             if(action==="link_exclusion_preview" && !success)exclusionPreviewed=false
             if(action==="commit" && commitBeforeQuit) {
                 commitBeforeQuit=false
-                if(success){closingRequested=true;Qt.callLater(function(){workflow.command("close")})}
+                if(success){Qt.callLater(beginQuit)}
             }
             if(["open","unlock","create","close","prepare_create"].indexOf(action)>=0) startupPending=false
             if(action==="select_account" && pendingAccountMenu) {
@@ -838,7 +848,7 @@ ApplicationWindow {
                 if(action==="rules_prefill") acceptPrefill()
                 if((action==="create" || action==="open" || action==="unlock") && !rulesDirty) loadRulesForm()
                 if(action==="create" || action==="unlock") {password.text="";confirmation.text="";unlockPassword.text=""}
-                if(action==="close") {settingUp=false;probeTimer.restart();if(closingRequested){allowClose=true;Qt.callLater(function(){window.close()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
+                if(action==="close") {settingUp=false;probeTimer.restart();if(closingRequested){allowClose=true;Qt.callLater(function(){window.close();Qt.quit()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
             settleLedgerView(action,success)
         }
@@ -1180,11 +1190,22 @@ ApplicationWindow {
         onAccepted:workflow.command("discard",{token:previewToken})
     }
     Dialog {
+        id:closeAuditFailure;title:"Closing verification did not complete";modal:true;anchors.centerIn:parent;width:540
+        ColumnLayout {anchors.fill:parent
+            Label {Layout.fillWidth:true;text:workflow.error;wrapMode:Text.Wrap;textFormat:Text.PlainText}
+            Label {Layout.fillWidth:true;text:"Your saved dataset is preserved. You can return to it, or quit without a new startup approval. The next opening will check it again.";wrapMode:Text.Wrap}
+            RowLayout {
+                Button {text:"Return";onClicked:closeAuditFailure.close()}
+                Button {text:"Quit without approval";onClicked:{closeAuditFailure.close();closingRequested=true;window.hide();workflow.command("close",{skipAudit:true})}}
+            }
+        }
+    }
+    Dialog {
         id:quitCommit;objectName:"quitCommitDialog";title:"Commit new transactions before quitting?";modal:true;anchors.centerIn:parent;width:520
         Label {width:480;wrapMode:Text.Wrap;text:"New transactions are already saved. Commit accepts them across all accounts. Choosing No keeps them uncommitted for next time."}
         footer:DialogButtonBox {
             Button {objectName:"quitCommitYes";text:"Yes";onClicked:{quitCommit.close();commitBeforeQuit=true;requestCommit()}}
-            Button {objectName:"quitCommitNo";text:"No";onClicked:{quitCommit.close();closingRequested=true;workflow.command("close")}}
+            Button {objectName:"quitCommitNo";text:"No";onClicked:{quitCommit.close();beginQuit()}}
             Button {objectName:"quitCommitCancel";text:"Cancel";onClicked:quitCommit.close()}
         }
     }
@@ -1240,7 +1261,10 @@ ApplicationWindow {
     property var reviewRowChoices: ({})
     property string reviewSelectionGeneration: String(s.reviewGeneration||"")
     onReviewSelectionGenerationChanged: {reviewBatch=({});reviewRowChoices=({});reviewSurvivor.close()}
-    onCurrentPageChanged: if(currentPage!=="review") {reviewBatch=({});reviewRowChoices=({});if(reviewPending.batchIntent)reviewSurvivor.close()}
+    onCurrentPageChanged: {
+        if(currentPage!=="review") {reviewBatch=({});reviewRowChoices=({});if(reviewPending.batchIntent)reviewSurvivor.close()}
+        else if(s.reviewReady===false && !workflow.busy)workflow.command("review_load")
+    }
     property var reviewViewport: ({})
     property bool reviewViewRestoring: false
     function reviewVisibleIndex() {
@@ -1480,7 +1504,7 @@ ApplicationWindow {
                         }
 
                     }
-                    Button {objectName:"reviewNavigation";text:"Review ("+(s.reviewCount||0)+")";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
+                    Button {objectName:"reviewNavigation";text:s.reviewReady===false?"Review":"Review ("+(s.reviewCount||0)+")";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
                     Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.active;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(s.rulesSupported && !rulesDirty)workflow.command("rules_load")})}
                     Button {objectName:"historyNavigation";text:"Committed changes";Layout.fillWidth:true;visible:!!s.committedChangesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("history");workflow.command("history")})}
@@ -1510,8 +1534,8 @@ ApplicationWindow {
                     anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.bottom:workspaceStatus.top;anchors.bottomMargin:4
                 Item {
         id:reviewSheet;objectName:"reviewSheet";anchors.fill:parent;visible:currentPage==="review"
-        property string title:"Review · "+(s.reviewCount||0)+" remaining"
-        function open(){navigate("review");reviewQuestions.forceActiveFocus()}
+        property string title:s.reviewReady===false?"Review":"Review · "+(s.reviewCount||0)+" remaining"
+        function open(){navigate("review");if(currentPage==="review" && s.reviewReady===false && !workflow.busy)workflow.command("review_load");reviewQuestions.forceActiveFocus()}
         function close(){reviewBatch=({});reviewRowChoices=({});navigate("ledger")}
         ColumnLayout {anchors.fill:parent;spacing:4
         ColumnLayout {
@@ -1557,7 +1581,7 @@ ApplicationWindow {
     }
             ScrollBar.vertical:UsableScrollBar {}
             ScrollBar.horizontal:UsableScrollBar {}
-            Label {anchors.centerIn:parent;visible:reviewQuestions.count===0;text:"Nothing left to review."}
+            Label {anchors.centerIn:parent;visible:reviewQuestions.count===0;text:s.reviewReady===false?"Review has not loaded yet.":"Nothing left to review."}
             delegate:ColumnLayout {
                 id:questionCard;required property var modelData;required property int index;width:reviewQuestions.contentWidth-24;spacing:4
                 property var chosen: reviewRowChoices[modelData.key]||[]
@@ -1991,7 +2015,7 @@ ApplicationWindow {
                 Item {Layout.fillWidth:true}
                 Button {objectName:"resumeImport";text:"Resume import";visible:processingIncomplete;enabled:!s.readOnly;onClicked:guard(function(){workflow.command("resume",{batch:s.pending.id,revision:s.pending.revision})})}
                 Button {objectName:"discardImport";text:"Discard uncommitted work…";enabled:!s.readOnly && (!!s.pending || ((s.rollback||{}).transactions||0)>0 || ((s.rollback||{}).failures||0)>0);onClicked:guard(function(){discardDialog.open()})}
-                Button {objectName:"openReviewSheet";text:"Review ("+(s.reviewCount||0)+")";visible:(s.reviewCount||0)>0 || !!s.canUndoReview;enabled:!workflow.busy;onClicked:guard(function(){reviewSheet.open()})}
+                Button {objectName:"openReviewSheet";text:s.reviewReady===false?"Review":"Review ("+(s.reviewCount||0)+")";visible:(s.reviewCount||0)>0 || !!s.canUndoReview;enabled:!workflow.busy;onClicked:guard(function(){reviewSheet.open()})}
                 Button {objectName:"commitImport";text:"Commit";enabled:!s.readOnly && (s.newTransactions||0)>0;onClicked:guard(requestCommit)}
             }
             Label {text:s.importOutcome||"";visible:!!s.importOutcome;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}

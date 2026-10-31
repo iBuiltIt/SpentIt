@@ -21,7 +21,14 @@ std::filesystem::path document_path(const std::filesystem::path& path) {
 class Gateway final : public app::DocumentGateway {
     std::unique_ptr<ImportStore> store_;
     std::string key_;
+    std::filesystem::path cache_;
 public:
+    explicit Gateway(std::filesystem::path cache):cache_(std::move(cache)) {}
+    bool lazy_review() const override {return !cache_.empty();}
+    void close_verified(const app::OperationContext& context) override {
+        if(store_)store_->certify(cache_,&context);
+        close();
+    }
     ~Gateway() override { close(); }
     void close() override { store_.reset(); std::fill(key_.begin(),key_.end(),'\0'); key_.clear(); }
     void create(const std::filesystem::path& p,bool protected_mode,std::string_view password,
@@ -48,7 +55,7 @@ public:
         if(store_) throw std::logic_error("Close the current dataset first");
         auto key=password?password_key(*password):std::string(public_document_key);
         try {
-            auto opened=ImportStore::open(document_path(p),key,&context);
+            auto opened=ImportStore::open_cached(document_path(p),key,cache_,&context);
             context.checkpoint();
             store_=std::make_unique<ImportStore>(std::move(opened)); key_=std::move(key);
         } catch(const ImportAuthenticationError&) {
@@ -71,5 +78,5 @@ public:
     }
 };
 }
-std::unique_ptr<app::DocumentGateway> document_gateway() { return std::make_unique<Gateway>(); }
+std::unique_ptr<app::DocumentGateway> document_gateway(const std::filesystem::path& cache) { return std::make_unique<Gateway>(cache); }
 }

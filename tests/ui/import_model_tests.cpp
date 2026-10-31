@@ -1,3 +1,4 @@
+#include <QElapsedTimer>
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QTest>
@@ -605,6 +606,44 @@ private slots:
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
     void init() {QSettings().clear();QSettings().setValue("datasetPath",settings.path()+"/missing.spentit");QTest::failOnWarning(QRegularExpression(".*DelegateModel::cancel.*"));}
+    void cachedStartupTiming() {
+        QTemporaryDir dir;const auto path=dir.path()+"/doc";int count=qEnvironmentVariableIntValue("SPENTIT_STARTUP_ROWS");if(count<=0)count=120;
+        {ImportModel seed(storage::document_gateway());create(seed,path);run(seed,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        QByteArray records;for(int i=0;i<count;++i)records+="D"+QDate(2026,2,1).addDays(i).toString(Qt::ISODate).toUtf8()+"\nT-1.00\nPSynthetic "+QByteArray::number(i)+"\n^\n";
+        run(seed,"import",{{"path",fixture(dir.path(),records)}});run(seed,"commit");run(seed,"close");}
+        ImportModel m(storage::document_gateway((dir.path()+"/approval").toStdString()));QElapsedTimer timer;timer.start();
+        run(m,"open",{{"path",path}});const auto first=timer.elapsed();QCOMPARE(m.rowCount(),count+1);QCOMPARE(m.state().value("balance").toString(),QString::number(-count)+".00");
+        timer.restart();run(m,"close");const auto closing=timer.elapsed();timer.restart();run(m,"open",{{"path",path}});const auto cached=timer.elapsed();
+        QCOMPARE(m.rowCount(),count+1);QCOMPARE(m.state().value("balance").toString(),QString::number(-count)+".00");QVERIFY(!m.state().value("reviewReady").toBool());
+        timer.restart();run(m,"review_load");const auto review=timer.elapsed();QVERIFY(m.state().value("reviewReady").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        qInfo()<<"Startup synthetic rows"<<count<<"bytes"<<QFileInfo(path).size()<<"full-open-ms"<<first<<"audit-close-ms"<<closing<<"approved-open-ms"<<cached<<"deferred-review-ms"<<review;
+        run(m,"close");
+    }
+    void cachedStartupReviewAndQuit() {
+        QTemporaryDir dir;const auto path=dir.path()+"/doc";
+        ImportModel m(storage::document_gateway((dir.path()+"/approval").toStdString()));
+        create(m,path);run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPA\n^\n")}});run(m,"commit");
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPB\n^\n")}});
+        QCOMPARE(m.state().value("reviewCount").toInt(),1);run(m,"close");run(m,"open",{{"path",path}});
+        QVERIFY(!m.state().value("reviewReady").toBool());QCOMPARE(m.state().value("balance").toString(),"-20.00");
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        QVERIFY(QMetaObject::invokeMethod(window,"requestCommit"));QTRY_VERIFY(!m.busy() && m.state().value("reviewReady").toBool());
+        QTRY_COMPARE(window->property("currentPage").toString(),QString("review"));QCOMPARE(m.state().value("reviewCount").toInt(),1);QCOMPARE(m.state().value("newTransactions").toInt(),1);
+        run(m,"close");run(m,"open",{{"path",path}});QVERIFY(!m.state().value("reviewReady").toBool());
+        auto* review=visualItem(window->contentItem(),"reviewNavigation");QVERIFY(review);QVERIFY(QMetaObject::invokeMethod(review,"clicked"));QTRY_VERIFY(!m.busy() && m.state().value("reviewReady").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit"));QVERIFY(!window->isVisible());
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy() && !m.state().value("active").toBool(),30000);
+        QVERIFY(QDir(dir.path()+"/approval").entryList({"*.verified"},QDir::Files).size()==1);
+    }
+    void closingApprovalFailure() {
+        QTemporaryDir dir;const auto cache=dir.path()+"/blocked";QFile file(cache);QVERIFY(file.open(QIODevice::WriteOnly));file.write("occupied");file.close();
+        ImportModel m(storage::document_gateway(cache.toStdString()));create(m,dir.path()+"/doc");
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit"));QVERIFY(!window->isVisible());
+        QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QVERIFY(m.state().value("active").toBool());QVERIFY(window->isVisible());
+        run(m,"close",{{"skipAudit",true}});QVERIFY(!m.state().value("active").toBool());
+    }
     void startupDataset_data() {
         QTest::addColumn<QString>("kind");
         for(const auto* kind:{"public","protected","missing","invalid","locked"})QTest::newRow(kind)<<QString(kind);
@@ -1423,7 +1462,7 @@ private slots:
         if(qEnvironmentVariableIsSet("SPENTIT_TEST_SCREENSHOT")) QVERIFY(image.save(qEnvironmentVariable("SPENTIT_TEST_SCREENSHOT")));
         payee->setProperty("text","Discard me");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
         QVERIFY(!window->close());auto* discard=root->findChild<QObject*>("guardDiscard");QVERIFY(discard);QVERIFY(QMetaObject::invokeMethod(discard,"clicked"));
-        QTRY_VERIFY(!m.busy());QTRY_VERIFY(root->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"quitCommitNo"),"clicked"));QTRY_VERIFY(!window->isVisible());QVERIFY(!m.state().value("active").toBool());
+        QTRY_VERIFY(!m.busy());QTRY_VERIFY(root->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"quitCommitNo"),"clicked"));QTRY_VERIFY(!window->isVisible());QTRY_VERIFY(!m.busy() && !m.state().value("active").toBool());
         run(m,"open",{{"path",dir.path()+"/doc"}});
         const auto batch=m.state().value("pending").toMap().value("id");run(m,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Edited through QML");

@@ -104,3 +104,13 @@ Selected prototype settings: SQLCipher 4.19.0 with OpenSSL, SQLCipher 4 compatib
 ## Accepted durable-import experiment — 2026-10-25
 
 The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The headless subset and bounded setup/review UI are implemented; full lifecycle and milestone scope remain incomplete.
+
+## Verified fast startup — owner Go 2026-10-31
+
+Normal startup reuses a prior full audit only for an identical full-file SHA-256
+and verifier version, with authentication, locking, format and journal gates
+retained. Graceful quit hides the window while the worker audits and atomically
+publishes owner-private approval in the platform cache. Missing/stale approval
+falls back to verification; failures never trigger automatic repair. Initial
+Review suggestions load on demand, including before Commit. See
+[the implementation contract](../doc/fast-startup.md) and [status](../doc/status.md) for verification and limits.

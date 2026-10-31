@@ -19,6 +19,7 @@ namespace diag = spentit::diagnostics;
 #include <limits>
 #include <optional>
 #include <unistd.h>
+#include "verification_cache.hpp"
 #ifdef SPENTIT_RULES_STORAGE
 #include <spentit/rule_preview.hpp>
 #endif
@@ -872,6 +873,7 @@ struct PreparedImport {
 struct ImportStore::Impl {
     sqlite3* db=nullptr;
     int lock=-1;
+    std::filesystem::path path;
     std::int64_t selected_account=1;
     int account_command=0;
     bool verifying=false;
@@ -917,7 +919,7 @@ ImportStore::~ImportStore()=default;
 ImportStore::ImportStore(ImportStore&&) noexcept=default;
 ImportStore& ImportStore::operator=(ImportStore&&) noexcept=default;
 void ImportStore::observer(ImportObserver f) { impl_->observer=std::move(f); }
-ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_view password, bool create, const app::OperationContext* context,bool overwrite) {
+ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_view password, bool create, const app::OperationContext* context,bool overwrite,const std::filesystem::path& cache) {
     if(context) context->checkpoint("Opening dataset");
     if (password.empty() || password.size() > 1024) fail(SQLITE_MISUSE, "Password length is invalid");
     if (!create) {
@@ -926,6 +928,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
             fail(SQLITE_CANTOPEN, "Dataset file not found, inaccessible, or not a supported regular file");
     }
     auto impl = std::make_unique<Impl>();
+    impl->path=path;
     // Use a separate lock inode: on some macOS filesystems SQLite itself uses
     // flock on the database. Never delete the lock file or steal a live lock.
     // An empty leftover file is harmless; kernel ownership ends on process exit.
@@ -958,6 +961,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     if (::stat(path.c_str(),&st)!=0 || !S_ISREG(st.st_mode) || st.st_nlink!=1 ||
         ::fstat(impl->lock,&lock_st)!=0 || !S_ISREG(lock_st.st_mode) || lock_st.st_nlink!=1 || lock_st.st_uid!=::geteuid())
         fail(SQLITE_CANTOPEN,"Document or lock is not a supported regular file");
+    const bool clean_input=verification_cache::no_journals(path);
     ok(sqlite3_open_v2(path.c_str(), &impl->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW, nullptr));
     sqlite3* db = impl->db;
     ok(sqlite3_create_function_v2(db,"spentit_account",0,SQLITE_UTF8,impl.get(),
@@ -1045,7 +1049,19 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
         state.read_rows=VerificationRows{};state.read_stamps.clear();
         state.reviewed_transfers.reset();state.reviewed_transfer_stamp.clear();
     },store.impl_.get());
-    if (!create) {store.impl_->selected_account=smallest_active_account(store.impl_->db);store.verify(context);store.prepare_review();}
+    if (!create) {store.impl_->selected_account=smallest_active_account(store.impl_->db);
+        bool approved=false;
+        if(clean_input && !cache.empty()) {
+            if(context)context->checkpoint("Checking saved verification");
+            exec(db,"BEGIN");
+            try {
+                (void)scalar(db,"SELECT count(*) FROM account"); // retain SQLite read lock during fingerprinting
+                approved=verification_cache::matches(path,cache,context);
+                exec(db,"COMMIT");
+            } catch(...) {sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
+        }
+        if(!approved)store.verify(context);
+        store.prepare_review();}
     return store;
 }
 ImportStore ImportStore::create(const std::filesystem::path& path,std::string_view password,std::string_view name,const Currency& currency,std::string_view today,bool overwrite,const app::DatasetOptions& options) {
@@ -1119,6 +1135,24 @@ app::Account ImportStore::create_account(std::int64_t id,std::string_view name,c
     Statement receipt(impl_->db,"INSERT INTO account_creations VALUES(?,?,?,?)");
     receipt.integer(1,id);receipt.text(2,name);receipt.text(3,currency.definition_id());receipt.text(4,today);receipt.done();
     finish([&]{transaction.commit();});return account_by_id(id);
+}
+ImportStore ImportStore::open_cached(const std::filesystem::path& path,std::string_view password,const std::filesystem::path& cache,const app::OperationContext* context) {
+    return connect(path,password,false,context,false,cache);
+}
+void ImportStore::certify(const std::filesystem::path& cache,const app::OperationContext* context) {
+    if(cache.empty())return;
+    // Keep the document and SQLite read locks until audit and publication finish.
+    exec(impl_->db,"BEGIN");
+    try {
+        (void)scalar(impl_->db,"SELECT count(*) FROM account");
+        // If no bytes changed since a previous successful audit, it remains valid.
+        if(!verification_cache::matches(impl_->path,cache,context)) {
+            const auto audited=verification_cache::fingerprint(impl_->path,context);
+            verify(context);
+            verification_cache::publish(impl_->path,cache,audited,context);
+        }
+        exec(impl_->db,"COMMIT");
+    } catch(...) {sqlite3_exec(impl_->db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
 }
 void ImportStore::opening(std::int64_t expected,std::string_view date,const Money& amount) {
     Statement grouped(impl_->db,"SELECT 1 FROM import_group_accounts m JOIN import_groups g ON g.id=m.group_id WHERE m.account_id=spentit_account() AND m.created=1 AND g.state IN(0,1,2)");if(grouped.row())fail(SQLITE_CONSTRAINT,"Use the import account balance review for this account");

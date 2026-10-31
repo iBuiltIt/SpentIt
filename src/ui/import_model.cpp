@@ -443,6 +443,7 @@ struct ImportModel::Worker {
     std::optional<app::Account> cachedAccount;
     std::shared_ptr<std::vector<app::LedgerRow>> cachedLedger;
     std::shared_ptr<const app::LedgerView> cachedView;
+    bool deferReview=false;
     void invalidate() {diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
     std::size_t selectedOrdinal=0;
@@ -631,7 +632,7 @@ struct ImportModel::Worker {
             state["archivedAccounts"]=archivedList;
             const auto acceptance=repo.acceptance_review();QVariantList acceptanceWarnings;bool canOverride=true;
             for(const auto& warning:acceptance.warnings){acceptanceWarnings.push_back(QVariantMap{{"account",QString::number(warning.account)},{"batch",text(warning.batch)},{"ordinal",warning.ordinal?QVariant(static_cast<int>(*warning.ordinal)):QVariant()},{"reason",text(warning.reason)},{"overridable",warning.overridable}});canOverride &= warning.overridable;}
-            const auto review=repo.review_sheet();QVariantList questions;std::int64_t priorAccount=-1;
+            const auto review=deferReview?app::ReviewSheet{}:repo.review_sheet();state["reviewReady"]=!deferReview;QVariantList questions;std::int64_t priorAccount=-1;
             for(const auto& q:review.questions){
                 QVariantList rows;
                 for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total()):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total()):QString();value["note"]=text(row.note);value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
@@ -878,7 +879,7 @@ struct ImportModel::Worker {
             catch(const app::UnlockRequired&) {welcomePassword=true;}
             return;
         }
-        if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") invalidate();
+        if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
         if(action=="close" || action=="open" || action=="unlock" || action=="create"){dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
@@ -900,16 +901,18 @@ struct ImportModel::Worker {
                 canOpen=true;
                 try { context.seal(); } catch (...) { gateway->close(); throw; }
             }
+            deferReview=gateway->lazy_review() && action!="create";
             dateFormat=gateway->repository().date_format();active=true; selected.clear(); receipt.clear();clearChanges();
             QSettings settings; settings.setValue("datasetPath",path); settings.sync();
             if(settings.status()!=QSettings::NoError) throw std::runtime_error("Dataset is open, but the startup path could not be saved in Settings");
             return;
         }
-        if(action=="close") {gateway->close();clearChanges();active=false;selected.clear();receipt.clear();selectedBatch.clear();filter.clear();projected=true;sort=0;descending=false;return;}
+        if(action=="close") {if(a.value("skipAudit").toBool())gateway->close();else gateway->close_verified(context);clearChanges();active=false;selected.clear();receipt.clear();selectedBatch.clear();filter.clear();projected=true;sort=0;descending=false;return;}
         if(action=="cancel_merge") {preparedMerge.reset();mergeOperation.clear();transferMergePreview.clear();return;}
         if(action=="cancel_reapply") {preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
         auto& repo=gateway->repository();
+        if(action=="review_load") {context.checkpoint("Preparing Review");return;}
         if(action=="link_exclusion_cancel"){preparedLinkExclusion.reset();linkExclusionPreview.clear();return;}
         if(action=="link_exclusion_preview"){
             preparedLinkExclusion.reset();linkExclusionPreview.clear();
