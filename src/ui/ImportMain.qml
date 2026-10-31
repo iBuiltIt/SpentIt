@@ -33,7 +33,7 @@ ApplicationWindow {
             }
         }
     }
-    width: 1440; height: 850; minimumWidth:720; minimumHeight:560; visible: true
+    width: 1440; height: 850; minimumWidth:720; minimumHeight:560; visible: false
     title: "SpentIt"
 
     property var diagnosticModalStack: []
@@ -550,6 +550,7 @@ ApplicationWindow {
         else workflow.command("commit")
     }
     function beginQuit() {
+        if(!workflow.saveWindowPosition(window))return
         closingRequested=true
         window.hide()
         workflow.command("close")
@@ -854,6 +855,8 @@ ApplicationWindow {
         }
     }
     Component.onCompleted: {
+        workflow.restoreWindowPosition(window)
+        window.show()
         startupPending=!!s.startup
         probeTimer.start()
     }
@@ -1196,7 +1199,7 @@ ApplicationWindow {
             Label {Layout.fillWidth:true;text:"Your saved dataset is preserved. You can return to it, or quit without a new startup approval. The next opening will check it again.";wrapMode:Text.Wrap}
             RowLayout {
                 Button {text:"Return";onClicked:closeAuditFailure.close()}
-                Button {text:"Quit without approval";onClicked:{closeAuditFailure.close();closingRequested=true;window.hide();workflow.command("close",{skipAudit:true})}}
+                Button {text:"Quit without approval";onClicked:{if(!workflow.saveWindowPosition(window))return;closeAuditFailure.close();closingRequested=true;window.hide();workflow.command("close",{skipAudit:true})}}
             }
         }
     }
@@ -1950,7 +1953,11 @@ ApplicationWindow {
                     id:activeSettings;objectName:"activeSettings";anchors.fill:parent;visible:currentPage==="settings";enabled:!workflow.busy;contentWidth:availableWidth
                     ColumnLayout {
                         width:activeSettings.availableWidth;spacing:12
-                        Label {text:"Dataset settings";font.pixelSize:20}
+                        Label {text:"Settings";font.pixelSize:20}
+                        Label {text:"Window";font.bold:true}
+                        CheckBox {objectName:"rememberWindowPosition";text:"Remember window position";checked:workflow.rememberWindowPosition;onToggled:workflow.rememberWindowPosition=checked}
+                        Label {text:"Restore this window’s position next time. Its position is saved when you quit.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        Label {text:"Dataset settings";font.bold:true}
                         Label {text:"Active dataset";font.bold:true}
                         Label {text:"Date format: "+(s.dateFormat||"YYYY-MM-DD")}
                         Label {textFormat:Text.PlainText;text:s.path||"";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere}

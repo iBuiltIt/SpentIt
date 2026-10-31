@@ -13,6 +13,9 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QSettings>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QWindow>
 #include <QStandardPaths>
 #include <QUuid>
 #include <QUrl>
@@ -1585,10 +1588,51 @@ struct ImportModel::Worker {
 ImportModel::ImportModel(std::unique_ptr<app::DocumentGateway> gateway,QObject* parent):QAbstractListModel(parent),worker_(std::make_shared<Worker>(std::move(gateway))) {
     // SQLCipher verification under ASan exceeds macOS's small default worker stack.
     // Reserve a bounded stack for the single document worker in every build.
+    rememberWindowPosition_=QSettings().value("Window/rememberPosition",false).toBool();
     pool_.setStackSize(4 * 1024 * 1024);
     pool_.setMaxThreadCount(1); state_={{"active",false},{"path",QSettings().value("datasetPath",suggestedPath())},{"startup",QSettings().contains("datasetPath")}};
 }
 ImportModel::~ImportModel() {pool_.waitForDone();worker_->gateway->close();}
+void ImportModel::setRememberWindowPosition(bool enabled) {
+    if(rememberWindowPosition_==enabled)return;
+    rememberWindowPosition_=enabled;
+    QSettings settings;settings.setValue("Window/rememberPosition",enabled);settings.sync();
+    if(settings.status()!=QSettings::NoError){error_="The window-position preference could not be saved.";emit changed();}
+    emit windowPreferencesChanged();
+}
+void ImportModel::restoreWindowPosition(QObject* object) {
+    auto* window=qobject_cast<QWindow*>(object);
+    if(!window || !rememberWindowPosition_)return;
+    const auto saved=QSettings().value("Window/position");
+    if(!saved.canConvert<QPoint>())return;
+    const QPoint position=saved.toPoint();
+    QScreen* target=QGuiApplication::primaryScreen();qint64 largest=0;
+    const QRect bounds(position,window->size());
+    for(auto* screen:QGuiApplication::screens()){
+        const auto overlap=bounds.intersected(screen->availableGeometry());
+        const qint64 area=qint64(overlap.width())*overlap.height();
+        if(area>largest){largest=area;target=screen;}
+    }
+    if(!target)return;
+    const auto available=target->availableGeometry();
+    const auto margins=window->frameMargins();
+    const int frameWidth=window->width()+margins.left()+margins.right();
+    const int frameHeight=window->height()+margins.top()+margins.bottom();
+    window->setScreen(target);
+    window->setFramePosition({std::clamp(position.x(),available.left(),available.left()+std::max(0,available.width()-frameWidth)),
+                              std::clamp(position.y(),available.top(),available.top()+std::max(0,available.height()-frameHeight))});
+}
+bool ImportModel::saveWindowPosition(QObject* object) {
+    auto* window=qobject_cast<QWindow*>(object);
+    // Save before hiding; minimized/maximized/full-screen coordinates are not normal placement.
+    if(!rememberWindowPosition_ || !window || window->visibility()!=QWindow::Windowed)return true;
+    QSettings settings;const QPoint position=window->framePosition();
+    const auto previous=settings.value("Window/position");
+    if(previous.canConvert<QPoint>() && previous.toPoint()==position)return true;
+    settings.setValue("Window/position",position);settings.sync();
+    if(settings.status()==QSettings::NoError)return true;
+    error_="The window position could not be saved. Disable Remember window position to quit without saving it.";emit changed();return false;
+}
 QStringList ImportModel::currencies() const {QStringList out;for(const auto& c:supported_currencies())out<<text(c.code);return out;}
 QString ImportModel::suggestedPath() const {return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/spentit.spentit";}
 QUrl ImportModel::documentsFolder() const {return QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));}

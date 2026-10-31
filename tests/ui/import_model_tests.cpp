@@ -1,4 +1,5 @@
 #include <QElapsedTimer>
+#include <QScreen>
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QTest>
@@ -606,6 +607,32 @@ private slots:
         QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
     void init() {QSettings().clear();QSettings().setValue("datasetPath",settings.path()+"/missing.spentit");QTest::failOnWarning(QRegularExpression(".*DelegateModel::cancel.*"));}
+    void windowPositionPreference() {
+        ImportModel m(storage::document_gateway());QQuickWindow window;window.resize(400,300);window.show();QTRY_VERIFY(window.isVisible());
+        const auto area=window.screen()->availableGeometry();const QPoint first=area.topLeft()+QPoint(40,50);
+        window.setFramePosition(first);QTRY_COMPARE(window.framePosition(),first);
+        QVERIFY(!m.rememberWindowPosition());QVERIFY(m.saveWindowPosition(&window));QVERIFY(!QSettings().contains("Window/position"));
+        m.setRememberWindowPosition(true);QVERIFY(m.saveWindowPosition(&window));QCOMPARE(QSettings().value("Window/position").toPoint(),first);
+        // No-op saves must leave the preferences file untouched.
+        QSettings settings;settings.sync();const auto modified=QFileInfo(settings.fileName()).lastModified();
+        QVERIFY(m.saveWindowPosition(&window));QCOMPARE(QFileInfo(settings.fileName()).lastModified(),modified);
+        const QPoint second=first+QPoint(20,20);window.setFramePosition(second);QTRY_COMPARE(window.framePosition(),second);
+        QVERIFY(m.saveWindowPosition(&window));QCOMPARE(QSettings().value("Window/position").toPoint(),second);
+        ImportModel reopened(storage::document_gateway());QVERIFY(reopened.rememberWindowPosition());QQuickWindow restored;restored.resize(400,300);reopened.restoreWindowPosition(&restored);restored.show();QTRY_COMPARE(restored.framePosition(),second);
+        reopened.setRememberWindowPosition(false);restored.setFramePosition(first);QVERIFY(reopened.saveWindowPosition(&restored));QCOMPARE(QSettings().value("Window/position").toPoint(),second);
+        restored.setFramePosition(first);reopened.restoreWindowPosition(&restored);QCOMPARE(restored.framePosition(),first);
+        reopened.setRememberWindowPosition(true);QSettings().setValue("Window/position",QPoint(100000,100000));reopened.restoreWindowPosition(&restored);
+        QVERIFY(restored.screen()->availableGeometry().contains(restored.framePosition()));
+        QSettings().remove("Window");
+    }
+    void windowPositionSettingsAndQuit() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/doc");
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        window->setProperty("currentPage","settings");auto* option=visualItem(window->contentItem(),"rememberWindowPosition");QVERIFY(option);QVERIFY(!option->property("checked").toBool());
+        option->setProperty("checked",true);QVERIFY(QMetaObject::invokeMethod(option,"toggled"));QVERIFY(m.rememberWindowPosition());
+        const QPoint position=window->screen()->availableGeometry().topLeft()+QPoint(15,20);window->setFramePosition(position);QTRY_COMPARE(window->framePosition(),position);
+        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit"));QCOMPARE(QSettings().value("Window/position").toPoint(),position);QVERIFY(!window->isVisible());QTRY_VERIFY(!m.busy() && !m.state().value("active").toBool());
+    }
     void cachedStartupTiming() {
         QTemporaryDir dir;const auto path=dir.path()+"/doc";int count=qEnvironmentVariableIntValue("SPENTIT_STARTUP_ROWS");if(count<=0)count=120;
         {ImportModel seed(storage::document_gateway());create(seed,path);run(seed,"opening",{{"date","2026-01-01"},{"amount","0.00"}});

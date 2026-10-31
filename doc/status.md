@@ -2,7 +2,33 @@
 
 Last updated: 2026-10-31
 
+## Remember window position — 2026-10-31
+
+Owner Go implemented: Settings now has an opt-in “Remember window position”.
+It uses the existing native preferences store, independently of dataset state and
+verification receipts. Enabled windows restore their saved frame coordinates
+before showing, with an available-screen fallback/clamp. Graceful quit saves before
+hiding only when enabled and coordinates changed. Disabling retains but ignores
+old coordinates. Normal window position is saved; window size, maximized/full-screen
+state and other layout are not added. Preference-write errors are surfaced.
+See [feature 005](../features/005-transaction-sheet-navigation.md#remember-window-position--implemented-2026-10-31).
+
+The rules-enabled Release build passed. Focused offscreen startup/window/close
+checks passed 11 Qt cases, and native Cocoa placement and Settings/quit checks
+passed 4 cases (both counts include init/cleanup). The tests use isolated settings
+and synthetic datasets. The complete rules-enabled Release UI executable passed
+62 Qt cases (63.271 s); final build logs and whitespace checks were clean, and
+220 relative documentation file links resolved. Other platforms and physical
+monitor removal remain unverified.
+The [closing-audit optimization](roadmap.md#next-task-shorten-closing-verification--2026-10-31)
+is preserved as next-session work, not implemented in this change.
+
 ## Verified fast startup — 2026-10-31
+
+Committed as `76af3d1`. The owner requested [shortening closing verification as the
+next handoff task](roadmap.md#next-task-shorten-closing-verification--2026-10-31),
+starting with reusing a successful opening audit during an unchanged session.
+That follow-up is recorded, not implemented or separately authorized yet.
 
 Owner Go implemented: the desktop app reuses a full audit only when the complete
 file SHA-256 and verifier fingerprint match an owner-private approval in the

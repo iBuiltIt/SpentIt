@@ -1,6 +1,45 @@
 # Coordinated implementation roadmap
 
-Current handoff (2026-10-31): the owner gave Go for [Review responsiveness and batch decisions](../features/005-transaction-sheet-navigation.md#next-tasks-review-responsiveness-and-batch-decisions--2026-10-31). The permanent right-pane status line, viewport anchoring, measured Review rebuild optimization, group-level batch Merge, all-or-none cancellation and one-batch Undo are implemented. See [status](status.md) for verification and measurements. Preserve common same-day matching and explicit survivor/relationship protections. The next step is owner use of the updated `./build/SpentIt`; further changes require their own discussion and Go. Reports remain deferred.
+Current handoff (2026-10-31): [verified fast startup](fast-startup.md) is implemented and committed as `76af3d1`. The owner requested that shortening the closing audit be recorded as the next task; implementation of that follow-up has not received its own Go. See [status](status.md#verified-fast-startup--2026-10-31) for measurements and verification. Review responsiveness and batch Merge remain implemented; preserve their matching, survivor and atomicity protections. Reports remain deferred.
+
+## Next task: shorten closing verification — 2026-10-31
+
+Owner concern: the window disappears but the Dock icon remains while the audit
+runs, making shutdown look stuck. The startup change moves this work; it does not
+make the full historical audit cheaper. The synthetic 10,000-row closing audit
+measured a median 5.033 seconds; this is not a timing of the owner's current close.
+
+1. Retain successful opening verification within the session. When opening had
+   to perform a full audit, an unchanged session should not repeat that audit on
+   close merely because no persistent approval existed yet. Bind reuse to the
+   exact verified file state and invalidate it reliably after mutations, recovery,
+   failed/unknown outcomes or externally changed bytes. Preserve the existing
+   authentication, journal, full-hash and verifier-version gates.
+2. Profile and reduce repeated SQL reads and historical reconstruction inside the
+   full audit after edits. Preserve every financial/history validation invariant;
+   do not simply omit checks to improve a timing.
+3. Measure the already-approved, unchanged close separately. That path already
+   skips full verification; any remaining delay needs its own attribution rather
+   than assuming the audit ran.
+
+Use synthetic unchanged, edited, interrupted and failed-operation sessions; verify
+approval invalidation, exact balances/history, cancellation and safe retry. Record
+close-to-process-exit latency as well as worker audit time. Preserve any active
+owner instance when using [diagnostics](agent-diagnostics-guide.md).
+
+Idle-time auditing is a longer-term possibility, not the first implementation:
+it must avoid UI interference and invalidate/restart safely when edits arrive.
+Moving the audit to an unobserved helper merely to hide the Dock icon is not the
+selected solution.
+
+## Window-position preference — implemented 2026-10-31
+
+The owner separately gave Go for “Remember window position”; it is implemented
+using existing native application preferences. It defaults off, restores an
+on-screen position when enabled, and saves changed coordinates before quit hides
+the window. See [the implemented behavior](../features/005-transaction-sheet-navigation.md#remember-window-position--implemented-2026-10-31)
+and [status](status.md). The closing-audit optimization above remains the next
+session's handoff work; this Go did not implement that follow-up.
 
 Previous implementation checkpoint: the [diagnostics-guided performance follow-up](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) is implemented and accepted for now. On 2026-10-29 the owner measured startup at about seven seconds and judged the application usable. Further performance work is not the automatic next task. A [startup/loading-screen redesign](../features/001-documents-storage-security.md#startup-presentation-follow-up--deferred-2026-10-29) is deferred, as are reports. The subsequently authorized [repeated-transfer matching](status.md#repeated-transfer-matching--2026-10-29) is implemented. The subsequent [account alias/category policy](status.md#account-aliases-and-transfer-categories--2026-10-29) is implemented under its own owner authorization. Discuss the next change and wait for explicit Go. Diagnostics remain available through [the agent guide](agent-diagnostics-guide.md).
 

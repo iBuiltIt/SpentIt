@@ -9,6 +9,7 @@
 #include <spentit/diagnostics.hpp>
 class ImportModel final : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(bool rememberWindowPosition READ rememberWindowPosition WRITE setRememberWindowPosition NOTIFY windowPreferencesChanged)
     Q_PROPERTY(QVariantMap state READ state NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool selecting READ selecting NOTIFY changed)
@@ -23,6 +24,10 @@ class ImportModel final : public QAbstractListModel {
     Q_PROPERTY(bool diagnosticsEnabled READ diagnosticsEnabled CONSTANT)
     Q_PROPERTY(qulonglong diagnosticGeneration READ diagnosticGeneration NOTIFY changed)
 public:
+    bool rememberWindowPosition() const {return rememberWindowPosition_;}
+    void setRememberWindowPosition(bool);
+    Q_INVOKABLE void restoreWindowPosition(QObject*);
+    Q_INVOKABLE bool saveWindowPosition(QObject*);
     bool diagnosticsEnabled() const { return spentit::diagnostics::Collector::instance().enabled(); }
     qulonglong diagnosticGeneration() const { return spentit::diagnostics::Collector::instance().generation(); }
     Q_INVOKABLE void observeUi(const QVariantMap&);
@@ -56,7 +61,7 @@ public:
     Q_INVOKABLE QVariantMap rowIdentity(int row) const;
     Q_INVOKABLE int occurrenceIndex(const QString& batch, int ordinal) const;
     Q_INVOKABLE QVariantMap rowRecord(int row) const;
-signals: void changed(); void completed(QString action,bool success);
+signals: void windowPreferencesChanged(); void changed(); void completed(QString action,bool success);
 private:
     struct Worker;
     std::shared_ptr<Worker> worker_;
@@ -64,6 +69,7 @@ private:
     QVariantMap state_;
     std::shared_ptr<const spentit::app::LedgerView> rows_;
     spentit::diagnostics::Id diagnosticOperation_=0, deferredDiagnostic_=0, resumedDiagnostic_=0, diagnosticFrameRequested_=UINT64_MAX;
+    bool rememberWindowPosition_=false;
     bool busy_=false;
     QString error_,phase_;
     QString activeAction_;

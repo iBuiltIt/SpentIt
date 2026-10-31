@@ -550,3 +550,40 @@ publishes owner-private approval in the platform cache. Missing/stale approval
 falls back to verification; failures never trigger automatic repair. Initial
 Review suggestions load on demand, including before Commit. See
 [the implementation contract](../doc/fast-startup.md) and [status](../doc/status.md) for verification and limits.
+
+## Remember window position — implemented 2026-10-31
+
+Owner Go implemented: Settings includes “Remember window position”, off by default.
+When enabled, the normal window's frame position is restored before showing the
+window. At graceful quit, coordinates are saved before the audit-time hide, only
+if they differ from the previous saved position (or none has been saved yet).
+Disabling the option retains the old coordinates but stops both restoration and
+position writes. The flag itself persists immediately when changed.
+
+This is an application preference, independent of the selected dataset. Existing
+`QSettings` stores the flag at `Window/rememberPosition` and a point at
+`Window/position`, using the existing organization `SpentIt` and application
+`Durable import experiment` identity. On macOS this resolves to
+`~/Library/Preferences/com.spentit.Durable import experiment.plist`. Category sort
+and dataset-path preferences retain their existing keys. Disposable verification
+receipts remain separate under the application cache directory.
+
+Restoration chooses the available display with the largest overlap, or the primary
+display when none overlaps, and clamps the position into its available area.
+Oversized windows are anchored at the available area's origin without changing
+size. Minimized, maximized and full-screen coordinates are not saved as normal
+window positions. Window size/state and other layout persistence are outside this
+change. Forced termination cannot save a new position.
+
+Preference-write failures are surfaced. If the quit-time position write fails,
+the window remains visible; the user can disable the option and quit without
+saving position. Both ordinary quit and quitting after an audit failure capture
+position before hiding. Closing just the dataset does not save window placement.
+
+Focused offscreen checks passed 11 Qt cases including the existing startup and
+close-audit cases and init/cleanup. Native Cocoa placement and Settings/quit checks
+passed 4 cases including init/cleanup. The full Release UI executable passed all
+62 cases. Tests cover default-off behavior, saved
+coordinates, unchanged-position no-op, reopening/restoration, disabling/retaining
+coordinates, off-screen fallback, and saving before hide. See [status](../doc/status.md)
+for broader verification; Linux/Windows and actual monitor unplugging remain unverified.
