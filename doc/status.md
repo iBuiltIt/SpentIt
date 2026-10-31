@@ -2,6 +2,25 @@
 
 Last updated: 2026-10-31
 
+## Whole-window geometry correction — 2026-10-31
+
+Owner correction implemented: “Remember window geometry” restores size and
+position plus maximized/full-screen state. The existing enabled flag is preserved.
+Normal geometry is retained while maximized/full-screen so restoring down recovers
+the chosen dimensions; minimized windows reopen visibly. Saved size and position
+are fitted to an available display, respecting application minimum dimensions.
+Only changed values are persisted before quit hides the window. See
+[the feature contract](../features/005-transaction-sheet-navigation.md#remember-window-geometry--owner-correction-2026-10-31).
+
+The rules-enabled Release build and focused offscreen startup/geometry checks
+passed (10 Qt cases). Native Cocoa checks passed 5 cases, including tall-window
+restoration and maximized-to-normal geometry. Counts include init/cleanup.
+The full Release UI executable passed all 63 cases (70.484 s). An additional
+offscreen full-screen save/restore-and-restore-down check passed (3 cases including
+init/cleanup). Final build/whitespace checks were clean. Native full-screen Spaces, actual monitor removal and
+other platforms remain unverified. Closing-audit optimization remains deferred to
+the next session as requested.
+
 ## Remember window position — 2026-10-31
 
 Owner Go implemented: Settings now has an opt-in “Remember window position”.

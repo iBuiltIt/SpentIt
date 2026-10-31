@@ -32,14 +32,14 @@ it must avoid UI interference and invalidate/restart safely when edits arrive.
 Moving the audit to an unobserved helper merely to hide the Dock icon is not the
 selected solution.
 
-## Window-position preference — implemented 2026-10-31
+## Window geometry preference — implemented 2026-10-31
 
-The owner separately gave Go for “Remember window position”; it is implemented
-using existing native application preferences. It defaults off, restores an
-on-screen position when enabled, and saves changed coordinates before quit hides
-the window. See [the implemented behavior](../features/005-transaction-sheet-navigation.md#remember-window-position--implemented-2026-10-31)
-and [status](status.md). The closing-audit optimization above remains the next
-session's handoff work; this Go did not implement that follow-up.
+The owner clarified that the whole window must be restored. “Remember window
+geometry” now persists size, position and normal/maximized/full-screen state using
+native preferences, with display-availability safeguards. It retains the existing
+opt-in flag and saves changed values before quit hides the window. See
+[the implemented correction](../features/005-transaction-sheet-navigation.md#remember-window-geometry--owner-correction-2026-10-31)
+and [status](status.md). Closing-audit optimization remains next-session work.
 
 Previous implementation checkpoint: the [diagnostics-guided performance follow-up](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) is implemented and accepted for now. On 2026-10-29 the owner measured startup at about seven seconds and judged the application usable. Further performance work is not the automatic next task. A [startup/loading-screen redesign](../features/001-documents-storage-security.md#startup-presentation-follow-up--deferred-2026-10-29) is deferred, as are reports. The subsequently authorized [repeated-transfer matching](status.md#repeated-transfer-matching--2026-10-29) is implemented. The subsequent [account alias/category policy](status.md#account-aliases-and-transfer-categories--2026-10-29) is implemented under its own owner authorization. Discuss the next change and wait for explicit Go. Diagnostics remain available through [the agent guide](agent-diagnostics-guide.md).
 

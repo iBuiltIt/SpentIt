@@ -1,6 +1,7 @@
 #include <exception>
 #include <QGuiApplication>
 #include <QWindow>
+#include <QTimer>
 #include <spentit/diagnostics.hpp>
 #include "import_model.hpp"
 #include <spentit/import_view.hpp>
@@ -16,6 +17,7 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QWindow>
+#include <QTimer>
 #include <QStandardPaths>
 #include <QUuid>
 #include <QUrl>
@@ -1597,41 +1599,71 @@ void ImportModel::setRememberWindowPosition(bool enabled) {
     if(rememberWindowPosition_==enabled)return;
     rememberWindowPosition_=enabled;
     QSettings settings;settings.setValue("Window/rememberPosition",enabled);settings.sync();
-    if(settings.status()!=QSettings::NoError){error_="The window-position preference could not be saved.";emit changed();}
+    if(settings.status()!=QSettings::NoError){error_="The window-geometry preference could not be saved.";emit changed();}
     emit windowPreferencesChanged();
 }
 void ImportModel::restoreWindowPosition(QObject* object) {
     auto* window=qobject_cast<QWindow*>(object);
-    if(!window || !rememberWindowPosition_)return;
-    const auto saved=QSettings().value("Window/position");
-    if(!saved.canConvert<QPoint>())return;
-    const QPoint position=saved.toPoint();
-    QScreen* target=QGuiApplication::primaryScreen();qint64 largest=0;
-    const QRect bounds(position,window->size());
-    for(auto* screen:QGuiApplication::screens()){
-        const auto overlap=bounds.intersected(screen->availableGeometry());
-        const qint64 area=qint64(overlap.width())*overlap.height();
-        if(area>largest){largest=area;target=screen;}
+    if(!window)return;
+    // Track normal placement in memory, including while the preference is off.
+    // Deferred sampling avoids recording maximized/full-screen transition geometry.
+    if(!window->property("spentitGeometryObserved").toBool()) {
+        window->setProperty("spentitGeometryObserved",true);
+        const auto sample=[window]{
+            if(!window->isVisible() || window->windowState()==Qt::WindowMinimized)return;
+            window->setProperty("spentitLastWindowState",int(window->windowState()));
+            if(window->windowState()==Qt::WindowNoState){
+                window->setProperty("spentitNormalPosition",window->framePosition());
+                window->setProperty("spentitNormalSize",window->size());
+            }
+        };
+        const auto schedule=[window,sample]{QTimer::singleShot(0,window,sample);};
+        connect(window,&QWindow::xChanged,window,schedule);connect(window,&QWindow::yChanged,window,schedule);
+        connect(window,&QWindow::widthChanged,window,schedule);connect(window,&QWindow::heightChanged,window,schedule);
+        connect(window,&QWindow::windowStateChanged,window,schedule);
+        connect(window,&QWindow::visibleChanged,window,schedule);
     }
-    if(!target)return;
-    const auto available=target->availableGeometry();
-    const auto margins=window->frameMargins();
-    const int frameWidth=window->width()+margins.left()+margins.right();
-    const int frameHeight=window->height()+margins.top()+margins.bottom();
-    window->setScreen(target);
-    window->setFramePosition({std::clamp(position.x(),available.left(),available.left()+std::max(0,available.width()-frameWidth)),
-                              std::clamp(position.y(),available.top(),available.top()+std::max(0,available.height()-frameHeight))});
+    QSettings settings;const auto saved=settings.value("Window/position");
+    int state=int(Qt::WindowNoState);
+    if(rememberWindowPosition_ && saved.canConvert<QPoint>()) {
+        const QPoint position=saved.toPoint();
+        QSize size=settings.value("Window/size",window->size()).toSize();if(!size.isValid() || size.isEmpty())size=window->size();
+        QScreen* target=QGuiApplication::primaryScreen();qreal largest=0;
+        const QRectF bounds{QPointF(position),QSizeF(size)};
+        for(auto* screen:QGuiApplication::screens()){
+            const auto overlap=bounds.intersected(QRectF(screen->availableGeometry()));
+            const qreal area=overlap.width()*overlap.height();
+            if(area>largest){largest=area;target=screen;}
+        }
+        if(target){
+            window->setScreen(target);window->create();
+            const auto available=target->availableGeometry();const auto margins=window->frameMargins();
+            size.setWidth(std::clamp(size.width(),std::max(1,window->minimumWidth()),std::max(window->minimumWidth(),available.width()-margins.left()-margins.right())));
+            size.setHeight(std::clamp(size.height(),std::max(1,window->minimumHeight()),std::max(window->minimumHeight(),available.height()-margins.top()-margins.bottom())));
+            window->resize(size);
+            window->setFramePosition({std::clamp(position.x(),available.left(),available.left()+std::max(0,available.width()-size.width()-margins.left()-margins.right())),
+                                      std::clamp(position.y(),available.top(),available.top()+std::max(0,available.height()-size.height()-margins.top()-margins.bottom()))});
+        }
+        state=settings.value("Window/state",int(Qt::WindowNoState)).toInt();
+    }
+    window->setProperty("spentitNormalPosition",window->framePosition());window->setProperty("spentitNormalSize",window->size());
+    if(state==int(Qt::WindowMaximized))window->showMaximized();
+    else if(state==int(Qt::WindowFullScreen))window->showFullScreen();
+    else window->showNormal(); // A minimized application must reopen visibly.
 }
 bool ImportModel::saveWindowPosition(QObject* object) {
     auto* window=qobject_cast<QWindow*>(object);
-    // Save before hiding; minimized/maximized/full-screen coordinates are not normal placement.
-    if(!rememberWindowPosition_ || !window || window->visibility()!=QWindow::Windowed)return true;
-    QSettings settings;const QPoint position=window->framePosition();
-    const auto previous=settings.value("Window/position");
-    if(previous.canConvert<QPoint>() && previous.toPoint()==position)return true;
-    settings.setValue("Window/position",position);settings.sync();
-    if(settings.status()==QSettings::NoError)return true;
-    error_="The window position could not be saved. Disable Remember window position to quit without saving it.";emit changed();return false;
+    if(!rememberWindowPosition_ || !window)return true;
+    const bool normal=window->windowState()==Qt::WindowNoState;
+    const auto position=normal?QVariant(window->framePosition()):window->property("spentitNormalPosition");
+    const auto size=normal?QVariant(window->size()):window->property("spentitNormalSize");
+    const int state=window->windowState()==Qt::WindowMinimized?window->property("spentitLastWindowState").toInt():int(window->windowState());
+    QSettings settings;bool preferencesChanged=false;
+    const auto store=[&](const char* key,const QVariant& value){if(value.isValid() && settings.value(key)!=value){settings.setValue(key,value);preferencesChanged=true;}};
+    store("Window/position",position);store("Window/size",size);store("Window/state",state);
+    if(!preferencesChanged)return true;
+    settings.sync();if(settings.status()==QSettings::NoError)return true;
+    error_="The window geometry could not be saved. Disable Remember window geometry to quit without saving it.";emit changed();return false;
 }
 QStringList ImportModel::currencies() const {QStringList out;for(const auto& c:supported_currencies())out<<text(c.code);return out;}
 QString ImportModel::suggestedPath() const {return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/spentit.spentit";}

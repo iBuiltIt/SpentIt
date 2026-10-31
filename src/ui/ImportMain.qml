@@ -856,7 +856,6 @@ ApplicationWindow {
     }
     Component.onCompleted: {
         workflow.restoreWindowPosition(window)
-        window.show()
         startupPending=!!s.startup
         probeTimer.start()
     }
@@ -1955,8 +1954,8 @@ ApplicationWindow {
                         width:activeSettings.availableWidth;spacing:12
                         Label {text:"Settings";font.pixelSize:20}
                         Label {text:"Window";font.bold:true}
-                        CheckBox {objectName:"rememberWindowPosition";text:"Remember window position";checked:workflow.rememberWindowPosition;onToggled:workflow.rememberWindowPosition=checked}
-                        Label {text:"Restore this window’s position next time. Its position is saved when you quit.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        CheckBox {objectName:"rememberWindowPosition";text:"Remember window geometry";checked:workflow.rememberWindowPosition;onToggled:workflow.rememberWindowPosition=checked}
+                        Label {text:"Restore this window’s size, position and maximized or full-screen state next time. Changes are saved when you quit.";Layout.fillWidth:true;wrapMode:Text.Wrap}
                         Label {text:"Dataset settings";font.bold:true}
                         Label {text:"Active dataset";font.bold:true}
                         Label {text:"Date format: "+(s.dateFormat||"YYYY-MM-DD")}

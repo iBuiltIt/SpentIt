@@ -625,6 +625,27 @@ private slots:
         QVERIFY(restored.screen()->availableGeometry().contains(restored.framePosition()));
         QSettings().remove("Window");
     }
+    void windowGeometryRestoration() {
+        ImportModel m(storage::document_gateway());m.setRememberWindowPosition(true);
+        QQuickWindow window;window.resize(400,300);m.restoreWindowPosition(&window);QTRY_VERIFY(window.isVisible());
+        const auto area=window.screen()->availableGeometry();const QSize tall(420,std::min(600,area.height()-80));
+        window.resize(tall);window.setFramePosition(area.topLeft()+QPoint(20,30));QTest::qWait(50);
+        QVERIFY(m.saveWindowPosition(&window));QCOMPARE(QSettings().value("Window/size").toSize(),tall);
+        QQuickWindow restored;restored.resize(200,200);m.restoreWindowPosition(&restored);QTRY_COMPARE(restored.size(),tall);
+        QTRY_COMPARE(restored.framePosition(),window.framePosition());
+        restored.showMaximized();QTRY_COMPARE(restored.windowState(),Qt::WindowMaximized);QTest::qWait(50);
+        QVERIFY(m.saveWindowPosition(&restored));QCOMPARE(QSettings().value("Window/size").toSize(),tall);
+        QQuickWindow maximized;m.restoreWindowPosition(&maximized);QTRY_COMPARE(maximized.windowState(),Qt::WindowMaximized);
+        maximized.showNormal();QTRY_COMPARE(maximized.windowState(),Qt::WindowNoState);QTRY_COMPARE(maximized.size(),tall);
+        QTest::qWait(50);maximized.showMinimized();QTest::qWait(50);QVERIFY(m.saveWindowPosition(&maximized));
+        QQuickWindow visible;m.restoreWindowPosition(&visible);QVERIFY(visible.windowState()!=Qt::WindowMinimized);
+        if(QGuiApplication::platformName()=="offscreen") {
+            visible.showFullScreen();QTRY_COMPARE(visible.windowState(),Qt::WindowFullScreen);QTest::qWait(50);QVERIFY(m.saveWindowPosition(&visible));
+            QQuickWindow fullScreen;m.restoreWindowPosition(&fullScreen);QTRY_COMPARE(fullScreen.windowState(),Qt::WindowFullScreen);
+            fullScreen.showNormal();QTRY_COMPARE(fullScreen.size(),tall);
+        }
+        m.setRememberWindowPosition(false);const auto previous=QSettings().value("Window/size");visible.resize(250,250);QVERIFY(m.saveWindowPosition(&visible));QCOMPARE(QSettings().value("Window/size"),previous);
+    }
     void windowPositionSettingsAndQuit() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/doc");
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);

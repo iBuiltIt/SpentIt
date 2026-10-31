@@ -553,6 +553,8 @@ Review suggestions load on demand, including before Commit. See
 
 ## Remember window position — implemented 2026-10-31
 
+Historical position-only slice, superseded by the whole-window correction below.
+
 Owner Go implemented: Settings includes “Remember window position”, off by default.
 When enabled, the normal window's frame position is restored before showing the
 window. At graceful quit, coordinates are saved before the audit-time hide, only
@@ -587,3 +589,32 @@ passed 4 cases including init/cleanup. The full Release UI executable passed all
 coordinates, unchanged-position no-op, reopening/restoration, disabling/retaining
 coordinates, off-screen fallback, and saving before hide. See [status](../doc/status.md)
 for broader verification; Linux/Windows and actual monitor unplugging remain unverified.
+
+## Remember window geometry — owner correction 2026-10-31
+
+The owner clarified that the entire window should return as left, including size.
+The setting is now labelled “Remember window geometry” and retains the existing
+opt-in flag so an enabled preference stays enabled. Position, client size and
+normal/maximized/full-screen state are saved in native preferences using
+`Window/position`, `Window/size` and `Window/state`. Only changed values are written.
+A previous position-only record remains usable; size is learned on the next quit.
+
+Normal geometry is tracked in memory through moves/resizes. Maximized and
+full-screen windows retain that geometry for restoring down. Sampling is deferred
+until the window-state transition settles, avoiding overwriting normal dimensions
+with maximized/full-screen dimensions. Minimized windows reopen visibly in their
+previous non-minimized state. Disabling the preference leaves all saved geometry
+untouched and ignores it on opening.
+
+Restoration occurs before showing, chooses the display with greatest overlap (or
+primary as fallback), and fits size/position into its available area subject to
+application minimum dimensions. The existing quit-time save-before-hide behavior
+and error handling remain. The closing-audit handoff is unchanged.
+
+Focused Release offscreen geometry/startup checks passed 10 Qt cases including
+init/cleanup. Native Cocoa tests passed 5 cases, including a taller resized window,
+maximized reopening, restoring normal size, disabling persistence, off-screen
+position recovery and quit capture. Native full-screen Spaces transitions, actual
+monitor removal and other OSes remain unverified. See [status](../doc/status.md)
+for full regression (63 cases passed) and additional offscreen full-screen-state
+verification (3 cases passed including init/cleanup).
