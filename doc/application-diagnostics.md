@@ -59,11 +59,26 @@ Cancellation is reported as available/requested/sealed from the existing gate. A
 
 Spans carry IDs, parent IDs, inclusive/exclusive microseconds and an unwind flag. Verification spans indicate only work actually entered and finished; exception unwinding is not proof of corruption (cancellation can unwind). Cumulative calls/failures support identifying executed checks. Never sum overlapping inclusive spans. Statement prepare/reuse use atomic cumulative counters and currently report counts, with duration zero indicating unavailable timing; high-detail SQL timing is not enabled. No SQL text is collected. Cache events come from actual worker catalog/metadata/ledger/search and group-snapshot branches, including bypass/invalidation. Existing caches and retention policies are unchanged.
 
+## Import phase timings — 2026-10-30
+
+The fixed vocabulary now appends `import_capture` (source/mapping capture),
+`import_prepare` (whole grouped resume), `import_populate` (one account's draft
+materialization), `import_resolve_transfers` (mapped reciprocal matching), and
+`import_generate_transfers` (unresolved explicit counterpart generation).
+These are function-scoped observations of existing work, including exceptional
+exits; they add no queries or per-record events. Existing enum indices remain
+unchanged. The prepare span includes its child spans: use exclusive time or
+compare children, never add their inclusive durations to the parent.
+
+The UI publisher preserves the removed projected-toggle index as an empty slot.
+It no longer references the removed QML object, which previously prevented all
+semantic UI snapshots with a `ReferenceError`.
+
 ## Semantic UI and readiness
 
 QML publishes an explicit allowlist at up to 10 Hz. It includes the current page, modal/menu/chooser presence, pending work, registered control visibility/enabled masks, focus role, sidebar/editor dirtiness, selection, search presence/validity, sort, projected mode, viewport/selected visibility, current delegates and loaded/filtered row counts. No QObject tree, accessibility text, dialog titles or native chooser contents are exported. A zero focus role means unknown/unregistered, not “nothing focused”.
 
-Control/focus indices (mask bit 0 / focus role 1 first): search, projected toggle, transaction date, payee, memo, total, category search, rule label, rule expression, document location, unlock password. The last two expose only state, never text. Other controls are not yet individually registered. Enabled states reflect bindings; unregistered control reasons are unknown.
+Control/focus indices (mask bit 0 / focus role 1 first): search, reserved removed projected-toggle slot, transaction date, payee, memo, total, category search, rule label, rule expression, document location, unlock password. The last two expose only state, never text. Other controls are not yet individually registered. Enabled states reflect bindings; unregistered control reasons are unknown.
 
 Pending bits: 0 startup, 1 guard decision, 2 search, 3 account navigation, 4 counterpart reveal, 5 viewport restore, 6 close intent, 7 guard handoff, 8 worker busy, 9 startup probe timer. Modal mask bits:
 

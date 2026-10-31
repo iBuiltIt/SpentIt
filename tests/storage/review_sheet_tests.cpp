@@ -1,4 +1,5 @@
 #include <spentit/import_store.hpp>
+#include <spentit/diagnostics.hpp>
 #include <filesystem>
 #include <iostream>
 #include <unistd.h>
@@ -137,6 +138,33 @@ void policy_tests(const std::filesystem::path& dir) {
     std::cout<<"Review matching policy passed\n";
 }
 
+void generation_workload(const std::filesystem::path& dir,int count) {
+    const Currency cad("CAD");const auto path=dir/"generation";
+    std::string bytes="!Type:Bank\n";
+    for(int i=0;i<count;++i)bytes+="D01/01/2026\nT-1.00\nPSynthetic "+std::to_string(i)+"\nS[Visa]\n$-2.00\nS[Visa]\n$1.00\n^\n";
+    diagnostics::Collector::instance().enable();
+    {
+        auto s=ImportStore::create(path,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
+        s.ingest("accepted",source("Prior balance","25.00"),qif::DateOrder::dmy);s.accept_all("accept-prior",true);
+        const auto start=std::chrono::steady_clock::now();s.ingest("payments",bytes,qif::DateOrder::dmy);
+        const auto end=std::chrono::steady_clock::now();
+        const auto metric=diagnostics::Collector::instance().snapshot().metrics[static_cast<unsigned>(diagnostics::Code::import_generate_transfers)];
+        std::cout<<"Generation workload rows="<<count<<" links="<<count*2<<" import_ms="<<std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count()<<" generation_us="<<metric.inclusive<<std::endl;
+        check(s.transfers().size()==static_cast<std::size_t>(count*2),"Both signed allocations generate distinct counterparts");
+        check(s.committed_balance()==Money(2500,cad),"Generation preserves accepted balance");
+        check(s.balance()==Money(2500-count*100,cad),"Source split totals reconcile");
+        s.ingest("payments",bytes,qif::DateOrder::dmy);check(s.transfers().size()==static_cast<std::size_t>(count*2),"Retry creates no extra counterparts");
+        s.select_account(2);check(s.balance()==Money(count*100,cad),"Signed generated totals reconcile");check(s.committed_balance()==Money(0,cad),"Destination remains unaccepted");s.verify();
+    }
+    {
+        auto s=ImportStore::open(path,"test");s.select_account(1);check(s.transfers().size()==static_cast<std::size_t>(count*2),"All generated history reopens");
+        s.accept_all("accept-payments",true);check(s.committed_balance()==Money(2500-count*100,cad),"Source acceptance reconciles");s.select_account(2);check(s.committed_balance()==Money(count*100,cad),"Generated acceptance reconciles");s.verify();
+        s.backup_to(dir/"restored","test");
+    }
+    {auto s=ImportStore::open(dir/"restored","test");s.verify();s.select_account(2);check(s.balance()==Money(count*100,cad),"Restored generated balance reconciles");}
+}
+
 void review_benchmark(const std::filesystem::path& dir) {
     const Currency cad("CAD");const auto path=dir/"benchmark";
     const auto start=std::chrono::steady_clock::now();
@@ -179,7 +207,7 @@ void policy_faults(const std::filesystem::path& dir) {
         }
         const auto apply=[&](ImportStore& s){
             if(mode==0)s.save_link_exclusion("operation",exclusion,generation);
-            else if(mode==1){s.select_account(1);s.ingest("operation",payment,qif::DateOrder::dmy);}
+            else if(mode==1){s.select_account(1);s.ingest("operation",payment+"D02/01/2026\nT-1.00\nPSYNTHETIC-LINK-LEARNING-MARKER\nS[Visa]\n$-2.00\nS[Visa]\n$1.00\n^\n",qif::DateOrder::dmy);check(s.transfers().size()==3,"Recovery preserves all generated allocations");}
             else if(mode==3 || mode==5)s.undo_review("operation");
             else s.answer_review("operation",request);
         };
@@ -207,6 +235,7 @@ void policy_faults(const std::filesystem::path& dir) {
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
+        if(argc>1 && std::string(argv[1])=="generation"){generation_workload(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):120);std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="policy_faults"){policy_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="benchmark"){review_benchmark(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="policy"){policy_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

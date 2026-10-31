@@ -105,9 +105,11 @@ ApplicationWindow {
         let last=ledger.indexAt(1,ledger.contentY+ledger.height-1)
         let count=0
         for(let i=0;i<ledger.contentItem.children.length;i++)if(ledger.contentItem.children[i].hasOwnProperty("record"))count++
-        let controls=[search,projected,editDate,editPayee,editMemo,editTotal,catalogSearch,ruleLabel,ruleExpression,location,unlockPassword]
+        // Keep the removed projected-toggle slot reserved for stable diagnostic bit indices.
+        let controls=[search,null,editDate,editPayee,editMemo,editTotal,catalogSearch,ruleLabel,ruleExpression,location,unlockPassword]
         let visibleControls=0,enabledControls=0,focusRole=0
         for(let i=0;i<controls.length;i++){
+            if(!controls[i])continue
             if(controls[i].visible)visibleControls+=Math.pow(2,i)
             if(controls[i].enabled)enabledControls+=Math.pow(2,i)
             if(controls[i].activeFocus)focusRole=i+1

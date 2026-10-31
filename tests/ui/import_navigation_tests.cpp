@@ -37,6 +37,7 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());QSettings().clear();
     }
+    void init() { QSettings().clear(); } // Never reopen a previous test's removed temporary dataset.
     void diagnosticSemanticPrivacy() {
         if(!spentit::diagnostics::Collector::instance().enabled())QSKIP("Opt-in diagnostics test");
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
@@ -46,6 +47,9 @@ private slots:
         run(model,"create",{{"path",dir.path()+"/CANARY-path"},{"protected",true},{"password","CANARY-password"},{"confirmation","CANARY-password"},{"name","CANARY-account"},{"currency","CAD"}});
         root->setProperty("currentPage","settings");QVERIFY(QMetaObject::invokeMethod(root,"publishDiagnostics"));
         auto observation=spentit::diagnostics::Collector::instance().snapshot();QCOMPARE(observation.ui.surface,spentit::diagnostics::Surface::settings);
+        QVERIFY(observation.ui.time!=0);
+        QVERIFY((observation.ui.control_visible & (1ULL<<1))==0);
+        QVERIFY((observation.ui.control_enabled & (1ULL<<1))==0);
         root->setProperty("dirty",true);QVERIFY(QMetaObject::invokeMethod(root,"publishDiagnostics"));QVERIFY(spentit::diagnostics::Collector::instance().snapshot().ui.dirty);
         window->hide();QVERIFY(QMetaObject::invokeMethod(root,"publishDiagnostics"));QVERIFY(!spentit::diagnostics::Collector::instance().snapshot().ui.native_exposed);
         QVERIFY(spentit::diagnostics::Collector::instance().json().find("CANARY")==std::string::npos);

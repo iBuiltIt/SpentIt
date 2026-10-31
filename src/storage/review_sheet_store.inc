@@ -44,9 +44,16 @@ bool ImportStore::review_link_category(std::string_view category,std::int64_t co
     return category.empty() || app::account_name_matches(category,"Uncategorized") || app::account_name_matches(category,"Uncategorised");
 }
 void ImportStore::generate_explicit_transfers(app::OperationContext* context) {
-    struct Guard {Impl& state;std::int64_t account;bool composing;~Guard(){state.selected_account=account;state.composing_review=composing;}} guard{*impl_,impl_->selected_account,impl_->composing_review};
-    impl_->composing_review=true;
-    auto resolved=resolved_transfers(all_transfers());
+    diag::Span phaseSpan(diag::Code::import_generate_transfers);
+    // This helper only appends draft links inside its caller's atomic operation.
+    // Reuse the working set and accepted balances; no appended draft can change
+    // those balances. Full relationship validation still precedes durable commit.
+    if(sqlite3_get_autocommit(impl_->db))fail(SQLITE_MISUSE,"Transfer generation requires an atomic import");
+    ScopedStatements plans(impl_->db);
+    GroupSelection selection(impl_->selected_account);
+    auto values=all_transfers();
+    auto resolved=resolved_transfers(values);
+    std::map<std::int64_t,Money> starting_balances;
     Statement pending(impl_->db,"SELECT id,account_id FROM batches WHERE state=0 ORDER BY rowid");
     while(pending.row()){
         const auto batch_id=pending.bytes(0);impl_->selected_account=pending.integer(1);
@@ -68,10 +75,26 @@ void ImportStore::generate_explicit_transfers(app::OperationContext* context) {
                 const auto sequence=transfer_sequence();if(sequence==INT64_MAX)fail(SQLITE_FULL);
                 const auto operation="explicit-transfer-"+std::to_string(sequence+1);
                 app::TransferRequest request{};request.action=app::TransferAction::from_draft;request.link=operation;request.origin=id;request.allocation=part.identity;request.destination=*target;request.batch_revision=info.revision;request.expected_sequence=sequence;
-                apply_transfer(operation,request);resolved.insert({batch_id,ordinal,part.identity});
+                identifier(operation);
+                require_writable_account(impl_->db,impl_->selected_account);
+                require_writable_account(impl_->db,*target);
+                Statement collision(impl_->db,"SELECT 1 FROM operation_registry WHERE id=? UNION ALL SELECT 1 FROM transfer_heads WHERE identity=?");collision.text(1,operation);collision.text(2,operation);if(collision.row())fail(SQLITE_CONSTRAINT,"Transfer operation identity collision");
+                auto balance=starting_balances.find(impl_->selected_account);
+                if(balance==starting_balances.end())balance=starting_balances.emplace(impl_->selected_account,committed_balance()).first;
+                const auto before=balance->second;const Money zero(0,before.currency());
+                const auto link=transfers::generate(operation,{impl_->selected_account,id,part.identity},*row.draft,
+                    {*target,{"~transfer-"+operation+"-destination",0},"generated"},destination.currency,true);
+                if(link.origin.state!=transfers::State::draft || link.destination.state!=transfers::State::draft)fail(SQLITE_CONSTRAINT,"Generated transfer must remain unaccepted");
+                const app::TransferView generated{link,row.draft->payee,row.draft->memo,sequence+1};
+                Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,operation);event.integer(2,impl_->selected_account);event.blob(3,transfer_codec::encode(request));event.integer(4,0);event.integer(5,0);event.done();
+                store_transfer(impl_->db,generated,sequence+1,true);
+                append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,zero,before,"",sequence,catalog_sequence(impl_->db));
+                values.push_back(generated);resolved.insert({batch_id,ordinal,part.identity});
+                if(context)context->checkpoint("Generated transfer staged");
             }
         }
     }
+    validate_transfer_set(values);
 }
 std::vector<app::LinkExclusion> ImportStore::link_exclusions() const {
     std::vector<app::LinkExclusion> result;

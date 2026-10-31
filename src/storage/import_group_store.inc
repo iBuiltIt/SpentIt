@@ -13,6 +13,7 @@ struct GroupSelection {
 // Only reciprocal imported allocations are linked: no generated money, no date
 // rewriting, and no partial pairing of unequal repeated groups.
 void ImportStore::resolve_group_transfers(std::string_view id,const app::OperationContext& context) {
+    diag::Span phaseSpan(diag::Code::import_resolve_transfers);
     ScopedStatements plans(impl_->db);
     GroupSelection selection(impl_->selected_account);
     Statement source(impl_->db,"SELECT s.bytes,h.format,g.state FROM sources s JOIN source_headers h ON h.source_id=s.id JOIN import_groups g ON g.id=s.id WHERE s.id=?");source.text(1,id);
@@ -232,6 +233,7 @@ std::vector<app::ImportGroup> ImportStore::import_groups() const {
 }
 app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::string_view bytes,qif::DateOrder profile,
     const std::vector<app::ImportAccountMapping>& mappings,app::OperationContext& context,std::string_view label) {
+    diag::Span phaseSpan(diag::Code::import_capture);
     identifier(id);if(id.size()>108)fail(SQLITE_MISUSE,"Import group identity is too long");context.checkpoint("Indexing source account sections");
     const auto document=statements::inspect(bytes,label,[&]{context.checkpoint();});
     if(!document.admissible)fail(SQLITE_TOOBIG,"Import exceeds resource limits");
@@ -305,6 +307,7 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
     context.seal();finish([&]{transaction.commit();});return import_group(id);
 }
 app::ImportGroup ImportStore::resume_import_group(std::string_view id,app::OperationContext& context) {
+    diag::Span phaseSpan(diag::Code::import_prepare);
     auto group=import_group(id);if(group.state!=app::GroupState::captured){context.seal();return group;}
     GroupSelection selection(impl_->selected_account);Atomic transaction(impl_->db);
     for(const auto& member:group.accounts) {

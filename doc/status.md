@@ -2,6 +2,88 @@
 
 Last updated: 2026-10-30
 
+## Batched counterpart generation — 2026-10-30
+
+Owner Go implemented: unresolved explicit counterparts now use a local batch
+working set instead of calling the general transfer command for every link.
+The helper requires the caller's open transaction, reuses prepared statements
+and accepted starting balances, keeps individual request/version/history rows,
+and validates the complete resulting transfer set before durable completion.
+Currency, writable-account, collision and sequence checks remain. It preserves
+the accepted generation policy, including ambiguous imported counterparts.
+No schema change or migration is introduced. See [the implementation contract](review-sheet.md#batched-counterpart-generation--2026-10-30).
+
+Verification: selected Release storage checks passed 17/17; the
+complete import UI, navigation and diagnostic workload selection passed 3/3.
+ASan/UBSan generated-batch, Review and grouped-import checks passed 4/4 with no
+sanitizer diagnostic; the same rules-disabled selection passed 4/4. The new
+synthetic case checks signed splits, exact accepted/inclusive balances, retry,
+acceptance, reopen and restored backup. Grouped cancellation after staging a
+generated child verifies rollback and retry; the recovery suite now generates
+three counterparts, including mixed-sign splits, in its import failure scenario.
+The Review-policy recovery sweep and account I/O/crash selection passed 3/3;
+grouped-import I/O/crash checks passed 2/2, each sweeping 1,186 write/sync
+positions across ten scenarios, with durable-boundary interruption/retry checks.
+
+One serial synthetic before/after comparison (rules-enabled macOS Release,
+1,000 rows / 2,000 signed-split counterparts) measured generation at 13.843 s
+before and 0.530 s after; whole import was 14.282 s before and 0.980 s after.
+No build or other test competed during either timed import. These are single-run
+observations, not a timing distribution or a claim about the owner's workload.
+Both the pre-change and optimized large workloads passed their independent
+balance, retry, acceptance, reopen, history and restored-backup assertions. The smaller 120-row
+case passed in Release, ASan/UBSan and rules-disabled builds. The local application
+is rebuilt. The owner repeated the same file into a fresh dataset and measured
+23 seconds. Diagnostics measured 22.179 s of mapped-import worker execution,
+versus 157.366 s before optimization (about 7.1× faster). Counterpart generation
+fell from 136.920 s to 1.549 s. Draft population was 10.824 s, reciprocal matching
+3.049 s, and final snapshot 3.481 s. The import succeeded with confirmed saved
+persistence; the resulting generation reached interaction readiness and native
+presentation observation. The trace reported no dropped events or health failures.
+These are single native before/after observations, not a distribution or independent
+verification of private financial contents. Other platforms remain unverified.
+
+## Import regression instrumentation — 2026-10-30
+
+Owner-authorized profiling reproduced a fresh-dataset mapped import at 149.66 s
+of worker execution. Approximately 143.14 s elapsed between captured-source
+selection and sealing preparation, with 3.35 s in the final snapshot. The trace
+reported no dropped events or collector health failures. Those original spans
+cannot distinguish draft materialization, reciprocal matching and generated
+counterparts; at that checkpoint, counterpart generation was only a hypothesis.
+No private source contents or dataset paths are retained here.
+
+Following explicit Go, five function-scoped import timings were added using the
+existing bounded collector. No financial queries, policies or transaction boundaries
+changed. The semantic UI publisher now reserves the removed projected-toggle slot
+instead of referencing the missing object. See [the timing contract](application-diagnostics.md#import-phase-timings--2026-10-30).
+
+Verification: rules-enabled Release build passed without compiler warnings/errors;
+collector, 120-row grouped diagnostic workload and account-group tests passed.
+The workload emitted all five completed spans and retained its independent financial
+assertions. The diagnostics-enabled navigation suite initially failed because one
+test inherited the previous test's deleted temporary dataset in Settings; clearing
+test Settings between cases fixed isolation, and the complete navigation suite
+passed on rerun (2.12 s). Native isolated smoke collected 79 samples and observed
+an exposed window and matching presentation readiness. `git diff --check` passed.
+The owner repeated the same fresh-dataset workload with the new spans. Worker
+execution was 157.366 s: capture 0.294 s, draft population 10.544 s across six
+accounts, reciprocal matching 2.895 s, explicit counterpart generation 136.920 s,
+and final snapshot 3.572 s. The grouped preparation parent was 153.489 s and
+includes those child phases; do not add it to them. Generation accounts for 87%
+of worker execution. Execution succeeded with confirmed saved persistence, and
+the resulting generation reached native presentation observation.
+
+The bounded polling window expired before this repeat, but all 109 events were
+retrieved afterward from the same process/session's ring, sequences 1–109 with no
+stale cursor, truncation, dropped events or health failures. No exact native
+readiness elapsed time is claimed from this post-run observation. Source inspection
+shows generation calls the general transfer command for each counterpart; that
+command reloads the growing transfer set, computes balances and validates the full
+set repeatedly. This identified the optimization candidate, without measuring a breakdown
+of the 136.920 s within that function. The subsequent Go, implementation and
+verification are recorded in the batched-generation entry above.
+
 ## Opening setup during import mapping — 2026-10-30
 
 Owner Go implemented in the working tree: concise mapping text, new-account

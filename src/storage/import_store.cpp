@@ -1368,6 +1368,7 @@ app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app
     }
 }
 void ImportStore::populate(std::string_view id,std::string_view bytes,const qif::Result& parsed,std::int64_t revision,const app::OperationContext* context) {
+    diag::Span phaseSpan(diag::Code::import_populate);
     ScopedStatements plans(impl_->db);
     const auto profile=batch(impl_->db,id).profile;
     Statement retained_count(impl_->db,"INSERT INTO retained_source_counts VALUES(?,?)");retained_count.text(1,id);retained_count.integer(2,integer(parsed.records.size()));retained_count.done();

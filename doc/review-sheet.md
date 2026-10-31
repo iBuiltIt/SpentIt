@@ -98,6 +98,21 @@ as explicitly chosen by the owner. Temporary duplicate balances remain visible
 until matching or linking removes the generated duplicates. Linking two independent postings safely
 retires generated duplicates, and Review Undo restores each account's exact balance.
 
+### Batched counterpart generation — 2026-10-30
+
+The owner authorized optimizing the measured generation bottleneck while preserving
+this policy. Generation requires an existing atomic import operation. It retains the
+current transfer set across appends, reuses SQL statements and each origin account's accepted
+starting balance, and appends draft links to a local working set. Each link still
+uses the engine's generation validation and writes its own request, transfer version
+and financial-history entry. Draft-only generation cannot change accepted balances.
+Account writability, currency, operation collisions and sequence limits remain
+checked. The complete resulting relationship set is validated before the caller can
+commit; cancellation or failure discards all staged children through the existing
+transaction. The working set and balance reuse are local to this invocation, so
+rollback cannot leave them available to a later attempt. See [status](status.md)
+for actual verification and timing evidence.
+
 Review construction runs on the existing import worker. Cached raw candidate edges
 are updated for old and new date/amount neighborhoods when rows or occupied
 allocations change; alias changes invalidate all edges. Exclusion and saved-answer

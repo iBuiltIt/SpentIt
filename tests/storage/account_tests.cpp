@@ -168,6 +168,14 @@ void mapped_transfers() {
          s.verify();s.backup_to(d.path/"backup",password);}
         for(const auto& file:{path,d.path/"backup"}){auto s=ImportStore::open(file,password);s.select_account(2);check(s.committed_balance()==Money(-1200*count,cad) && s.ledger(false).size()==static_cast<std::size_t>(count));s.select_account(3);check(s.committed_balance()==Money(1000*count,cad) && s.ledger(false).size()==static_cast<std::size_t>(count));s.verify();}
     }
+    // Cancelling after a generated link was staged rolls back every generated
+    // child/history row, retaining only the earlier durable capture for retry.
+    {Directory d;auto s=create(d.path/"cancel-generated");app::OperationContext capture;
+     s.prepare_import_group("cancel-generated",source(left+left,right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"}}},capture);
+     app::OperationContext cancel;cancel.progress=[&](std::string_view phase){if(phase=="Generated transfer staged")cancel.request();};bool stopped=false;
+     try{s.resume_import_group("cancel-generated",cancel);}catch(const app::OperationCancelled&){stopped=true;}
+     s.select_account(2);check(stopped && s.transfers().empty() && s.import_groups()[0].state==app::GroupState::captured);s.verify();
+     app::OperationContext retry;s.resume_import_group("cancel-generated",retry);check(s.transfers().size()==3);s.verify();s.abort_import_group("cancel-generated");s.verify();}
     // Ambiguous groups retain every imported occurrence and generate every explicit counterpart.
     {Directory d;auto s=create(d.path/"ambiguous");app::OperationContext capture;s.prepare_import_group("ambiguous",source(left+left,right+right+right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"}}},capture);app::OperationContext resume;auto group=s.resume_import_group("ambiguous",resume);s.select_account(2);check(s.transfers().size()==5 && group.unresolved_transfers==0);const auto sheet=s.review_sheet();check(std::count_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& q){return !q.waiting_link.empty();})==5);s.select_account(2);check(s.balance()==Money(-5400,cad));s.select_account(3);check(s.balance()==Money(5000,cad));const auto sequence=s.transfer_sequence();app::OperationContext retry;s.resolve_import_transfers("ambiguous",retry);check(s.transfer_sequence()==sequence);s.abort_import_group("ambiguous");s.verify();}
     {Directory d;auto s=create(d.path/"linked-candidate");app::OperationContext capture;s.prepare_import_group("linked",source(left+left,right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"}}},capture);app::OperationContext resume;s.resume_import_group("linked",resume);s.select_account(2);

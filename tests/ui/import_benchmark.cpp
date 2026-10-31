@@ -88,6 +88,13 @@ int main(int argc,char** argv) {
             if(model.diagnosticsEnabled()) {
                 const auto observation=diagnostics::Collector::instance().snapshot();
                 require(observation.latest.id==expectedOperation && observation.latest.delivered!=0,"Wrong diagnostic operation completed");
+                if(action=="map_import") {
+                    for(const auto code:{diagnostics::Code::import_capture,diagnostics::Code::import_prepare,diagnostics::Code::import_populate,diagnostics::Code::import_resolve_transfers,diagnostics::Code::import_generate_transfers}) {
+                        const auto& metric=observation.metrics[static_cast<unsigned>(code)];
+                        require(metric.calls>0 && metric.running==0 && metric.failed==0,"Import phase timing missing or unfinished");
+                        std::cout<<"import_span="<<diagnostics::name(code)<<" calls="<<metric.calls<<" inclusive_us="<<metric.inclusive<<" exclusive_us="<<metric.exclusive<<std::endl;
+                    }
+                }
                 QCoreApplication::processEvents();QMetaObject::invokeMethod(window,"publishDiagnostics");
                 if(!diagnostics::Collector::instance().snapshot().ui.interaction_ready){
                     QEventLoop readyLoop;QTimer poll,deadline;poll.setInterval(100);deadline.setSingleShot(true);
