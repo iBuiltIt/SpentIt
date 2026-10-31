@@ -1,6 +1,26 @@
 # Project status
 
-Last updated: 2026-10-30
+Last updated: 2026-10-31
+
+## Adjacent-day duplicate experiment withdrawn — 2026-10-31
+
+An owner-authorized experiment broadened same-account possible-duplicate review
+to equal signed original amounts/currencies on adjacent calendar days, including
+already imported rows and same-import peers. Automatic recognition remained
+strict. The owner rejected the result after the base-file import produced 155
+review issues where the previous same-day policy produced none. The broad
+amount/date rule creates too much review noise for legitimate repeated postings.
+
+The implementation and its test changes have been reverted to the prior matching
+behavior; the import-performance fix is retained. Do not restore this global
+window based on the earlier Go. Any narrower date-tolerance policy requires
+further discussion and authorization. Recognizing the same transaction across
+exports with differing dates remains an unresolved need; no narrower policy has
+been selected. Timezone inference and per-account settings remain unimplemented. No dataset edits or Review decisions were made by the agent.
+The experiment's focused checks passed, but they did not establish useful matching
+precision; its broader recovery/regression runs were stopped after owner rejection.
+The restored rules-enabled Release build completed, and statement parser, Review
+sheet and Review policy checks passed 3/3.
 
 ## Batched counterpart generation — 2026-10-30
 
