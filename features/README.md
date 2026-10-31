@@ -25,7 +25,9 @@ The [Review workspace and link learning](005-transaction-sheet-navigation.md#nex
 The [verified fast-startup contract](../doc/fast-startup.md) implements the owner's
 2026-10-31 Go: full-file audit approval in the platform cache, graceful close-time
 auditing, and deferred Review suggestions. See status for timings and recovery
-verification; this does not change financial acceptance or authorize automatic repair.
+verification; the subsequent closing-optimization Go adds safe opening-audit reuse
+and bounded reconstruction caches within full audits. This does not change
+financial acceptance or authorize automatic repair.
 
 ## Initial features
 

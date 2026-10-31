@@ -27,6 +27,7 @@ compile_commands.json
 *.profdata
 
 # Local editor settings and caches
+TODO.txt
 /.idea/
 /.vscode/
 /.vs/

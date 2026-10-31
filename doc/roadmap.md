@@ -1,13 +1,19 @@
 # Coordinated implementation roadmap
 
-Current handoff (2026-10-31): [verified fast startup](fast-startup.md) is implemented and committed as `76af3d1`. The owner requested that shortening the closing audit be recorded as the next task; implementation of that follow-up has not received its own Go. See [status](status.md#verified-fast-startup--2026-10-31) for measurements and verification. Review responsiveness and batch Merge remain implemented; preserve their matching, survivor and atomicity protections. Reports remain deferred.
+Current handoff (2026-10-31): the owner gave Go for shorter closing verification.
+The opening-audit reuse and bounded full-audit reconstruction changes are
+implemented; see [status](status.md) for measured results and verification limits.
+Window geometry, verified startup, Review responsiveness and batch Merge remain
+implemented. Reports remain deferred; further product changes need their own Go.
 
-## Next task: shorten closing verification — 2026-10-31
+## Shorter closing verification — owner Go 2026-10-31
 
 Owner concern: the window disappears but the Dock icon remains while the audit
 runs, making shutdown look stuck. The startup change moves this work; it does not
 make the full historical audit cheaper. The synthetic 10,000-row closing audit
 measured a median 5.033 seconds; this is not a timing of the owner's current close.
+
+Delivered scope (the original acceptance checklist):
 
 1. Retain successful opening verification within the session. When opening had
    to perform a full audit, an unchanged session should not repeat that audit on
@@ -39,7 +45,7 @@ geometry” now persists size, position and normal/maximized/full-screen state u
 native preferences, with display-availability safeguards. It retains the existing
 opt-in flag and saves changed values before quit hides the window. See
 [the implemented correction](../features/005-transaction-sheet-navigation.md#remember-window-geometry--owner-correction-2026-10-31)
-and [status](status.md). Closing-audit optimization remains next-session work.
+and [status](status.md). Closing-audit optimization is now implemented under the subsequent Go; see the handoff above.
 
 Previous implementation checkpoint: the [diagnostics-guided performance follow-up](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) is implemented and accepted for now. On 2026-10-29 the owner measured startup at about seven seconds and judged the application usable. Further performance work is not the automatic next task. A [startup/loading-screen redesign](../features/001-documents-storage-security.md#startup-presentation-follow-up--deferred-2026-10-29) is deferred, as are reports. The subsequently authorized [repeated-transfer matching](status.md#repeated-transfer-matching--2026-10-29) is implemented. The subsequent [account alias/category policy](status.md#account-aliases-and-transfer-categories--2026-10-29) is implemented under its own owner authorization. Discuss the next change and wait for explicit Go. Diagnostics remain available through [the agent guide](agent-diagnostics-guide.md).
 

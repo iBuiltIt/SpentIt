@@ -1,7 +1,7 @@
 # 001 — Documents, storage, and security
 
 Status: **active**  
-Last updated: 2026-10-29  
+Last updated: 2026-10-31  
 Implementation: partial; optional SQLCipher synthetic-data storage/recovery prototype and [headless durable-import experiment](../doc/durable-import.md). Bounded document switching, backup/restore, ordinary strict Undo and atomic group Undo are implemented; full application lifecycle and password changes remain incomplete.
 
 Accepted format policy, 2026-10-26: no datasets exist in the wild. Experimental formats need no migration, upgrade or backward-compatibility work until the owner explicitly announces a release. Migration requirements below apply only once that gate makes them relevant; encryption, current-format atomicity and recovery remain required. Current group-history behavior is described in [search and ledger](../doc/search-ledger.md).
@@ -17,6 +17,17 @@ Accepted format policy, 2026-10-26: no datasets exist in the wild. Experimental 
 - Draft work, committed-change history, and recovery information survive normal restarts.
 - Edits and deletions of committed data retain recoverable history. Transfers must remain consistent during changes and reversal.
 - Password-protected backups require the password applicable when created; changing the current document's password does not rewrite old backups. No-password datasets/backups use the documented public unlock mechanism and provide no confidentiality.
+
+## Verified startup and shorter closing — accepted 2026-10-31
+
+Normal desktop startup may reuse a full audit only for an identical complete-file
+SHA-256 and verifier version, retaining authentication, locking and journal gates.
+Graceful close publishes approval atomically. The subsequent closing optimization
+Go permits reuse of a successful opening audit during an unchanged session and
+bounded reuse of historical reconstruction inside a full audit. Writes, rollback,
+failed verification and changed bytes must not inherit session approval. Financial
+and history checks are preserved; background/helper auditing is not part of this
+scope. See [implementation and verification](../doc/fast-startup.md).
 
 ## Welcome and creation — accepted 2026-10-28
 

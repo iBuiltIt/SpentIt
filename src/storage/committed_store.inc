@@ -54,12 +54,28 @@ std::int64_t financial_sequence(sqlite3* db){Statement s(db,"SELECT coalesce(max
 }
 bool ImportStore::committed_changes_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="4" || categories_supported();}
 app::EntrySnapshot ImportStore::entry_snapshot(const imports::Occurrence& id,std::int64_t revision) const {
+    // Only a single read-only verification owns this bounded cache. History
+    // reconciliation still checks every reference, ordering and balance below.
+    const auto key=std::make_pair(id,revision);
+    auto* cache=impl_->audit_entries;
+    if(cache){const auto found=cache->values.find(key);if(found!=cache->values.end())return found->second;}
     Statement row(impl_->db,"SELECT active,date,payee,memo,total FROM entry_values WHERE batch=? AND ordinal=? AND revision=?");row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,revision);if(!row.row())fail(SQLITE_NOTFOUND,"Committed revision does not exist");
     const auto original=load_row(id,false).source;const auto currency=entry_currency(impl_->db,id.batch,integer(id.ordinal),revision);const bool reassigned=original.source_currency && *original.source_currency!=currency;std::vector<Allocation> allocations;
     Statement aa(impl_->db,"SELECT position,category,memo,units FROM entry_allocation_values WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");aa.text(1,id.batch);aa.integer(2,integer(id.ordinal));aa.integer(3,revision);
     while(aa.row()){if(aa.integer(0)!=integer(allocations.size()) || allocations.size()>=qif::max_allocations)fail(SQLITE_CORRUPT);allocations.push_back({aa.bytes(1),aa.bytes(2),Money(aa.integer(3),currency)});}
     imports::DraftRow draft{row.bytes(1),row.bytes(2),row.bytes(3),Transaction::repaired_import(original.original_amount,Money(row.integer(4),currency),std::move(allocations),reassigned)};load_metadata(impl_->db,id,revision,draft,true);imports::validate_draft(original,draft,reassigned);
-    return {revision,row.integer(0)!=0,std::move(draft)};
+    app::EntrySnapshot result{revision,row.integer(0)!=0,std::move(draft)};
+    if(cache && cache->values.size()<65536) {
+        constexpr std::size_t limit=64*1024*1024;
+        const auto& d=result.draft;
+        const auto size=sizeof(result)+sizeof(key)+128+VerificationRows::text_size(id.batch)+
+            VerificationRows::text_size(d.date)+VerificationRows::text_size(d.payee)+VerificationRows::text_size(d.memo)+
+            VerificationRows::transaction_size(d.transaction)+
+            (d.payee_rule?VerificationRows::text_size(d.payee_rule->identity):0)+
+            (d.memo_rule?VerificationRows::text_size(d.memo_rule->identity):0);
+        if(size<=limit-cache->bytes){cache->values.emplace(key,result);cache->bytes+=size;}
+    }
+    return result;
 }
 std::vector<app::DependencyStamp> ImportStore::dependencies(const imports::Occurrence& id,std::int64_t before) const {
     std::vector<app::DependencyStamp> result;

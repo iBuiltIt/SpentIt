@@ -2,6 +2,90 @@
 
 Last updated: 2026-10-31
 
+## Shorter closing verification — 2026-10-31
+
+Owner Go implemented. A desktop full opening audit now retains an in-memory
+approval only when full hashes before/after the read-locked audit agree. Closing
+requires a fresh identical hash and unchanged connection write count before
+reusing it; rollback and a verification attempt clear it. Cancellation and failed
+publication invalidate the session approval through rollback. Existing persistent
+approval, authentication, locking, verifier-version and journal gates remain.
+Headless opens and backup validation still perform full audits. Schemas stay 38/37.
+
+The full audit now directly reuses its already-loaded immutable rows and keeps a
+bounded cache of reconstructed committed snapshots (65,536 entries / 64 MiB
+accounted allocation budget). Each historical reference, ordering, ownership,
+allocation, currency and reconciliation check still runs. Both caches are scoped
+to one audit; no new persistent financial cache is written. See
+[the contract](fast-startup.md#closing-verification-follow-up--owner-go-2026-10-31).
+
+Verification on macOS: the selected Release regression passed 102/103 tests in
+167.76 s. The sole failure was an obsolete benchmark assertion expecting the old
+per-account receipt's `included` field. The current dataset-wide UI returns an
+operation and summary. The benchmark now checks the exact pending count before
+Commit, zero pending transactions afterward and a nonempty operation, retaining
+its exact money/source/reopen assertions; its rebuilt rerun passed in 9.86 s.
+The selection included full import UI, corruption/history validation, lifecycle,
+Review, backup/restore and approval tests; long fault sweeps and IPC tests were
+excluded. This is selected coverage, not a complete suite claim.
+
+Expanded approval tests passed: unchanged read-only sessions skip a second audit;
+successful edits, rejected/rolled-back commands and injected failures immediately
+before/after durable commit require another audit. Cancellation, external encrypted
+page damage, wrong passwords, stale receipts, journal presence, process interruption,
+backup reopening, failed publication/retry and emergency close are covered.
+The ASan/UBSan selection passed 4/4 (approval plus committed validation/history/exact
+money) in 20.79 s. Rules-disabled Release approval passed 1/1 in 3.37 s. Focused
+startup/close/failure/timing UI checks passed 5 Qt cases each under ASan/UBSan and
+rules-disabled Release (5.550 / 2.491 s, including init/cleanup). Sanitizers used
+`detect_leaks=0`; no leak-check claim. Builds reported no compiler warnings/errors.
+
+Timing evidence and reproduction are recorded below. The owner's running instance
+and private dataset were not accessed or changed. Native Dock/window teardown,
+Linux/Windows, physical power loss and a full fault sweep remain unverified.
+
+### Closing measurements
+
+Serial macOS arm64 rules-enabled Release runs used a fresh synthetic account with
+10,000 accepted transactions, distinct dates and a zero CAD opening. The edited
+case adds one -2.00 pending transaction; a final full reopen asserts -10,002.00 CAD.
+The baseline is one pre-change run; the final values are medians (minimum–maximum)
+of three runs. Files were warm from fixture creation/opening. No builds or other
+tests competed with timed runs; unrelated OS activity was not controlled.
+
+| Close path | Baseline certify seconds | Final certify seconds | Final close-to-process-exit seconds |
+|---|---:|---:|---:|
+| Full opening audit, unchanged session, no saved approval | 4.851 | 0.0092 (0.0089–0.0094) | 0.0212 (0.0210–0.0215) |
+| Already-approved unchanged session | 0.0043 | 0.0044 (0.0044–0.0046) | 0.0078 (0.0078–0.0080) |
+| Written session requiring full audit | 4.994 | 4.045 (4.028–4.196) | 4.057 (4.040–4.208) |
+
+The written-session audit dropped from 1,140,218 SQL executions to 920,214;
+committed-history verification dropped from 1.041 s to a 0.335 s median. These
+observations support an approximately 19% reduction in full-close time for this
+fixture, not a guarantee for arbitrary histories or disks. The unchanged paths
+recorded no full-audit span. Process-exit measurements use an isolated headless
+child, from the parent's receipt of its pre-close signal through `waitpid`, including
+store destruction and test output. They do not measure native Qt/Dock teardown.
+
+Reproduce each serial trial with:
+
+```sh
+SPENTIT_CLOSE_ROWS=10000 build/import-ui-rules-release/tests/storage/spentit_verification_cache_tests
+```
+
+The final 10,000-row Qt offscreen timing case passed all 3 cases including
+init/cleanup: full open 5.931 s, first unchanged close 0.051 s, approved open
+1.826 s and deferred Review 1.822 s. It asserted 10,001 displayed rows and the
+exact -10,000.00 CAD balance. Its 50-ms polling granularity limits interpretation
+of the close measurement; the legacy output field is still named `audit-close-ms`
+even though the unchanged close now reuses the opening audit.
+
+The measured final executable SHA-256 was
+`289189177a9c51762912c77d74811132bddea6d68b42c3afaa4cd5cdbd9833ac`.
+Diagnostics are read in process and print only phase/counter information; fixtures
+are synthetic temporary files removed after the run. The existing UI timing case
+is also available with `SPENTIT_STARTUP_ROWS=10000` as documented below.
+
 ## Whole-window geometry correction — 2026-10-31
 
 Owner correction implemented: “Remember window geometry” restores size and

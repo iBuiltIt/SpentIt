@@ -877,7 +877,16 @@ struct ImportStore::Impl {
     std::int64_t selected_account=1;
     int account_command=0;
     bool verifying=false;
+    // An opening audit is reusable only in this process, with no intervening
+    // writes/rollback and an identical full-file fingerprint under a read lock.
+    mutable std::string opening_audit;
+    sqlite3_int64 opening_audit_changes=-1;
     mutable VerificationRows* verification_rows=nullptr;
+    struct AuditEntries {
+        std::map<std::pair<imports::Occurrence,std::int64_t>,app::EntrySnapshot> values;
+        std::size_t bytes=0;
+    };
+    mutable AuditEntries* audit_entries=nullptr;
     mutable VerificationRows read_rows;
     mutable sqlite3_int64 read_rows_changes=-1;
     mutable std::map<imports::Occurrence,std::string> read_stamps;
@@ -1045,6 +1054,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     sqlite3_rollback_hook(db,[](void* pointer){
         auto& state=*static_cast<Impl*>(pointer);
+        state.opening_audit.clear();
         state.reviews.clear();state.reviewed_groups.clear();state.reviewed_sources.clear();state.review_changes=-1;
         state.read_rows=VerificationRows{};state.read_stamps.clear();
         state.reviewed_transfers.reset();state.reviewed_transfer_stamp.clear();
@@ -1060,7 +1070,23 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
                 exec(db,"COMMIT");
             } catch(...) {sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
         }
-        if(!approved)store.verify(context);
+        if(!approved) {
+            if(cache.empty())store.verify(context);
+            else {
+                exec(db,"BEGIN");
+                try {
+                    (void)scalar(db,"SELECT count(*) FROM account");
+                    const auto before=verification_cache::fingerprint(path,context);
+                    store.verify(context);
+                    const auto after=verification_cache::fingerprint(path,context);
+                    if(!before.empty() && before==after) {
+                        store.impl_->opening_audit=after;
+                        store.impl_->opening_audit_changes=sqlite3_total_changes64(db);
+                    }
+                    exec(db,"COMMIT");
+                } catch(...) {sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
+            }
+        }
         store.prepare_review();}
     return store;
 }
@@ -1148,7 +1174,10 @@ void ImportStore::certify(const std::filesystem::path& cache,const app::Operatio
         // If no bytes changed since a previous successful audit, it remains valid.
         if(!verification_cache::matches(impl_->path,cache,context)) {
             const auto audited=verification_cache::fingerprint(impl_->path,context);
-            verify(context);
+            const bool reuse=!audited.empty() && audited==impl_->opening_audit &&
+                impl_->opening_audit_changes==sqlite3_total_changes64(impl_->db);
+            impl_->opening_audit.clear();
+            if(!reuse)verify(context);
             verification_cache::publish(impl_->path,cache,audited,context);
         }
         exec(impl_->db,"COMMIT");
@@ -1202,6 +1231,10 @@ std::string ImportStore::record_evidence(const imports::Occurrence& id) const {
 }
 app::RowView ImportStore::row(const imports::Occurrence& id) const { return load_row(id,true); }
 app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates) const {
+    if(!candidates && impl_->verification_rows) {
+        const auto found=impl_->verification_rows->rows.find(id);
+        if(found!=impl_->verification_rows->rows.end())return found->second;
+    }
     require_account(id.batch);
     if(!candidates && !impl_->verifying && (impl_->preparing_review || impl_->publishing_review || impl_->review_changes==sqlite3_total_changes64(impl_->db))) {
         const auto batch=impl_->reviews.find(id.batch);
@@ -1803,6 +1836,7 @@ std::vector<app::AccountBalance> ImportStore::account_balances() const {
     return result;
 }
 void ImportStore::verify(const app::OperationContext* context) const {
+    impl_->opening_audit.clear();
     diag::Span verificationSpan(diag::Code::verify);
     (void)date_format();
     ScopedStatements read_plans(impl_->db);
@@ -1810,6 +1844,12 @@ void ImportStore::verify(const app::OperationContext* context) const {
     impl_->verifying=true;
     impl_->read_rows=VerificationRows{};impl_->read_rows_changes=-1;impl_->read_stamps.clear();
     VerificationRows verified_rows;
+    Impl::AuditEntries entries;
+    struct EntriesGuard {
+        Impl& state;Impl::AuditEntries* prior;
+        ~EntriesGuard(){state.audit_entries=prior;}
+    } entries_guard{*impl_,impl_->audit_entries};
+    impl_->audit_entries=&entries;
     struct RowsGuard {
         Impl& state;VerificationRows& rows;VerificationRows* prior;
         int exceptions=std::uncaught_exceptions();

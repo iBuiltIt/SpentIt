@@ -106,3 +106,12 @@ publishes owner-private approval in the platform cache. Missing/stale approval
 falls back to verification; failures never trigger automatic repair. Initial
 Review suggestions load on demand, including before Commit. See
 [the implementation contract](doc/fast-startup.md) and [status](doc/status.md) for verification and limits.
+
+## Shorter closing verification — owner Go 2026-10-31
+
+The closing follow-up is implemented: desktop full opening audits retain a
+hash-bound session approval, invalidated by writes, rollback or failed verification.
+Unchanged close can publish it without repeating the audit. Full audits use bounded
+per-audit row and committed-snapshot reuse without omitting history/financial checks.
+See [the contract](doc/fast-startup.md) and [status](doc/status.md) for synthetic
+close/process-exit measurements and verification limits. Further work needs its own Go.

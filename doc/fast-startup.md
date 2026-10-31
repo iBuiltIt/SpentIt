@@ -36,9 +36,29 @@ change journaling mode, HMAC checks, synchronization or backup behavior. Invalid
 missing, unreadable, oversized or unsafe approval files fall back to full verification.
 The ordinary headless `ImportStore::open` API always verifies.
 
+## Closing verification follow-up — owner Go 2026-10-31
+
+A desktop opening that performs a full audit now retains an in-memory approval.
+The audit runs under a SQLite read transaction with matching full-file hashes
+before and after it. An unchanged close can publish that approval without repeating
+the audit. Reuse requires an identical fresh full-file hash and the same connection
+write count; rollback and any subsequent verification attempt clear the approval.
+Cancellation or publication failure rolls back the closing read transaction and
+invalidates it. A process interruption cannot persist an unpublished session
+approval. Headless opens and backup validation continue to audit fully.
+
+Full audits reuse already loaded rows and reconstructed committed snapshots only
+within that audit. The snapshot cache is capped at 65,536 entries and a 64 MiB
+accounted allocation budget, in addition to the existing bounded row cache;
+uncached entries follow the original read path. The cache is destroyed on success
+or failure. Financial/history ordering, source ownership, references, currency,
+allocation and balance checks remain in place. No schema or durability setting
+changes are involved. Missing approvals still require a full opening audit.
+
 Graceful Close calls the storage audit on the serial worker, retaining the document
 lock and a SQLite read lock. An unchanged approved file can reuse its approval.
-Otherwise the complete audit runs; full hashes before and after must agree before
+Otherwise a matching session approval is reused or the complete audit runs; full
+hashes before and after must agree before
 publishing approval. Publication uses an owner-only temporary file, file sync,
 atomic rename and directory sync. The window hides before quit-time work begins,
 and the process exits after successful close. A second process cannot open the
@@ -61,6 +81,12 @@ existing Review-refresh behavior. Suggestions remain session caches, not plainte
 persistent caches; saved Review decisions/history remain in the encrypted dataset.
 
 ## Verification
+
+The closing follow-up adds `SPENTIT_CLOSE_ROWS=10000` to the approval test executable
+for serial synthetic profiling of first unchanged, already-approved unchanged and
+written-session closes, including isolated process exit. See the
+[measurement record](status.md#closing-measurements) for results and limits.
+
 
 See [current status](status.md) for commands, measured results and platform limits.
 The focused storage test is `import.verification_cache`; focused UI cases are

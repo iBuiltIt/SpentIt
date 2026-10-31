@@ -220,8 +220,9 @@ int main(int argc,char** argv) {
         command("inspect_saved","inspect",{{"batch",batch},{"ordinal",0}});
         require(model.state().value("selected").toMap().value("draft").toMap().value("payee").toString()=="Edited target","Saved edit lost");
         require(model.state().value("selected").toMap().value("source")==original,"Reopen evidence changed");
+        require(model.state().value("newTransactions").toInt()==count,"Pending acceptance count failed");
         command("commit","commit");require(model.state().value("committed").toString().toStdString()==corrected,"Commit reconciliation failed");
-        require(model.state().value("receipt").toMap().value("included").toInt()==count,"Receipt count failed");
+        require(model.state().value("newTransactions").toInt()==0 && !model.state().value("receipt").toMap().value("operation").toString().isEmpty(),"Dataset acceptance failed");
         command("close_committed","close");command("reopen_committed","unlock",{{"path",path},{"password","synthetic-benchmark-password"}});
         require(model.state().value("committed").toString().toStdString()==corrected,"Reopen commit mismatch");
         command("final_close","close");std::cout<<"correctness=passed"<<std::endl;
