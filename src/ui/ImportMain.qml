@@ -1374,7 +1374,6 @@ ApplicationWindow {
             Button {objectName:"navigationForward";text:"Forward";visible:!!s.active;enabled:!workflow.busy && navigationIndex+1<navigation.length;onClicked:traverseNavigation(1)}
             Label {textFormat:Text.PlainText;text:s.active ? s.name+" · "+s.currency : "Dataset setup and unlocking";font.pixelSize:20;elide:Text.ElideRight;Layout.fillWidth:true}
             BusyIndicator {running:workflow.busy;visible:running;implicitHeight:30}
-            Button {objectName:"settingsNavigation";text:"Settings";visible:!!s.active;enabled:!workflow.busy;onClicked:navigate("settings")}
         }
         Item {visible:!s.active && (startupPending || workflow.openingDocument);Layout.fillWidth:true;Layout.fillHeight:true
             ColumnLayout {anchors.centerIn:parent;spacing:24

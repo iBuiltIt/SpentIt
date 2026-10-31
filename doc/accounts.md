@@ -1,12 +1,12 @@
 # Account-scoped durable QIF workflow
 
-Last updated: 2026-10-29
+Last updated: 2026-10-31
 
-This implements the multi-account prerequisite for [transfer lifecycle work](../features/008-transfer-matching-and-lifecycle.md). Accounts can be created and selected in the durable UI, with independent ordinary QIF imports, opening balances, drafts, committed balances, corrections and history. The subsequent [bounded transfer integration](transfer-engine.md) adds links, generated counterparts, protected drafts and provisional evidence matching. [QIF transfer destinations](qif-transfers.md) now require explicit resolution through those commands. This remains a synthetic-data experiment.
+This implements the multi-account prerequisite for [transfer lifecycle work](../features/008-transfer-matching-and-lifecycle.md). Accounts can be created and selected in the durable UI, with independent ordinary QIF imports, opening balances, drafts, committed balances, corrections and history. The subsequent [bounded transfer integration](transfer-engine.md) adds links, generated counterparts, protected drafts and provisional evidence matching. [QIF transfer destinations](qif-transfers.md) now require explicit resolution through those commands. Verification uses synthetic fixtures; SpentIt is the application being used and improved piecemeal.
 
 ## Current acceptance and rollback model — 2026-10-29
 
-The [dataset-wide acceptance model](import-commit-discussion.md) supersedes older per-account Commit, projected-balance and permanent-evidence descriptions in this document. New documents use schema 38 with rules / 37 without; previous experimental formats are rejected unchanged. Multiple imports can remain pending in one account. The ordinary balance includes all active transactions, and Commit accepts new transactions across accounts in one durable operation while failed records remain visible. Account-wide Discard removes uncommitted ownership and exclusively owned material, preserving accepted transactions and other retained sources. Account/category creation and opening-review behavior remain. See [verification](status.md#dataset-acceptance-storage-refactor--2026-10-29).
+The [dataset-wide acceptance model](import-commit-discussion.md) supersedes older per-account Commit, projected-balance and permanent-evidence descriptions in this document. New documents use schema 40 with rules / 39 without; previous experimental formats are rejected unchanged. Multiple imports can remain pending in one account. The ordinary balance includes all active transactions, and Commit accepts new transactions across accounts in one durable operation while failed records remain visible. Account-wide Discard removes uncommitted ownership and exclusively owned material, preserving accepted transactions and other retained sources. Account/category creation and opening-review behavior remain. See [verification](status.md#dataset-acceptance-storage-refactor--2026-10-29).
 
 ## Display names and aliases — 2026-10-29
 

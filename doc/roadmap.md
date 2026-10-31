@@ -3,7 +3,9 @@
 Current handoff (2026-10-31): the [opening/ledger cleanup and interrupted-import
 rollback](ui-import-cleanup.md) is implemented under the owner's subsequent Go.
 See [status](status.md) for verification and limits. Further changes require their
-own Go; reports and unrelated follow-ups remain deferred.
+own Go; reports and unrelated follow-ups remain deferred. Settings is now available
+only in the lower-left sidebar. Current formats are 40/39 (rules on/off); dated
+checkpoints below retain their original format and verification details.
 
 ## Shorter closing verification — owner Go 2026-10-31
 

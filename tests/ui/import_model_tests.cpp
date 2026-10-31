@@ -1316,7 +1316,7 @@ private slots:
         QTest::keyClick(window,Qt::Key_Backtab);QTRY_VERIFY(payee->hasActiveFocus());
         for(char c:QByteArray(" changed"))QTest::keyClick(window,c);QVERIFY(root->property("dirty").toBool());
         // Escape from a modal guard must retain the edit and return focus.
-        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("settingsNavigation"),"clicked"));
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("sidebarSettings"),"clicked"));
         auto* dialog=root->findChild<QObject*>("unsavedDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
         auto* guardSave=root->findChild<QQuickItem*>("guardSave");QVERIFY(guardSave);
         auto* guardAccessible=QAccessible::queryAccessibleInterface(guardSave);QVERIFY(guardAccessible);

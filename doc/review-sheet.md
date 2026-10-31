@@ -1,11 +1,11 @@
 # Unified Review sheet
 
-Next work (accepted 2026-10-31; **not implemented**):
-[opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md) takes priority
-over the older handoff sequence. It specifies import routing, Review repair/Commit,
-account-context Discard and automatic import-specific cleanup instead of Resume.
-Completed uncommitted imports remain durable. Existing implementation and historical
-verification below do not establish this new behavior. Implementation awaits Go.
+The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
+is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
+It includes import routing, Review repair/Commit, account-context Discard and
+atomic cleanup of incomplete preparation. Completed uncommitted imports remain
+durable. See [current verification and limits](status.md); earlier Resume,
+source-retention and toolbar descriptions below are historical.
 
 The owner authorized the [workspace and link-learning revision](../features/005-transaction-sheet-navigation.md#accepted-matching-policy-and-implementation-go--2026-10-30)
 on 2026-10-30. The revision is implemented in the working tree; the interaction
@@ -82,7 +82,7 @@ staged work; a sealed commit completes and is reversed through Undo instead.
 One parent Review receipt owns the batch's Undo stack entry. Each group has its own
 child answer, choices, source associations and financial-history members, so answering
 one group never records an answer between unrelated groups. Existing encrypted
-schema 38/37 tables encode parent/child relationships in reserved answer question
+schema 40/39 tables encode parent/child relationships in reserved answer question
 values (`batch`, `batch-child:<operation>`); no schema change is needed. Child IDs
 are derived from the parent's operation identity. Exact request receipts reject
 changed retries. Undo restores children in reverse order in one transaction and
@@ -127,7 +127,7 @@ per-account date setting or schema change is introduced.
 
 ## Persistence and Undo
 
-New datasets use experimental schema **38 with rules / 37 without**. Older
+New datasets use experimental schema **40 with rules / 39 without**. Older
 experimental datasets are rejected unchanged, without migration under the
 [pre-release policy](../AGENTS.md#security-and-recovery-discipline).
 

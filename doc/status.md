@@ -2,6 +2,25 @@
 
 Last updated: 2026-10-31
 
+## Documentation reconciliation — 2026-10-31
+
+Reconciled current format references to 40/39, removed superseded cleanup Go
+placeholders, documented sidebar-only Settings and updated recovery, Review and
+build guidance. Historical schemas and measurements remain explicitly dated;
+feature lifecycle and deferred reports/licensing/platform scope are unchanged.
+Documentation validation passed: 789 repository-relative links and heading
+anchors across 47 Markdown files, plus `git diff --check`. Two stale roadmap
+anchors were corrected. Runtime evidence for the Settings change is below.
+
+## Settings navigation follow-up — 2026-10-31
+
+Removed the duplicate upper-right Settings button at the owner's request; Settings
+remains in the lower-left sidebar. Existing navigation, unsaved-change guard and
+keyboard/accessibility tests now use that sidebar entry. Rebuilt the local
+rules-enabled Release application. Offscreen navigation and committed UI tests
+passed 2/2 (10.71 s); the focused accessibility/keyboard check passed all three
+Qt cases including init/cleanup (0.787 s). Native interaction remains unverified.
+
 ## Opening, ledger and interrupted imports — 2026-10-31
 
 Implemented under the owner's subsequent Go; see the [contract](ui-import-cleanup.md).
@@ -176,13 +195,13 @@ and synthetic datasets. The complete rules-enabled Release UI executable passed
 62 Qt cases (63.271 s); final build logs and whitespace checks were clean, and
 220 relative documentation file links resolved. Other platforms and physical
 monitor removal remain unverified.
-The [closing-audit optimization](roadmap.md#next-task-shorten-closing-verification--2026-10-31)
+The [closing-audit optimization](roadmap.md#shorter-closing-verification--owner-go-2026-10-31)
 is preserved as next-session work, not implemented in this change.
 
 ## Verified fast startup — 2026-10-31
 
 Committed as `76af3d1`. The owner requested [shortening closing verification as the
-next handoff task](roadmap.md#next-task-shorten-closing-verification--2026-10-31),
+next handoff task](roadmap.md#shorter-closing-verification--owner-go-2026-10-31),
 starting with reusing a successful opening audit during an unchanged session.
 That follow-up is recorded, not implemented or separately authorized yet.
 

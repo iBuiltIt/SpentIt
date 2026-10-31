@@ -1,5 +1,9 @@
 # 005 — Transaction sheet and navigation
 
+Settings is available only in the lower-left sidebar; the duplicate upper-right
+button was removed at the owner's request on 2026-10-31. Backup/restore remains in
+Settings. Show the sidebar first if it is hidden.
+
 The [opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md)
 is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
 It adds import routing, Review repair/Commit, account-context Discard and automatic

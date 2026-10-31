@@ -1,6 +1,6 @@
 # Ordinary committed changes
 
-Last updated: 2026-10-27
+Last updated: 2026-10-31
 
 State: bounded experimental implementation verified on available macOS configurations. The owner accepted [feature 011](../features/011-committed-editing-and-reversal.md). This implements ordinary per-account corrections, removal and strict Undo. Opening-balance correction and currency reassignment are the point-4 account commands. The [2026-10-27 transfer edits](../features/011-committed-editing-and-reversal.md#accepted-committed-transfer-editing--2026-10-27) add transfer-aware correction, removal, and Undo for the locked cases. Moving a committed row, rewriting source-occurrence links, and migrations are not part of this workflow.
 
@@ -8,7 +8,7 @@ The current follow-up supports committed bulk category changes/removal and stric
 
 ## Current interpretation and retained history
 
-Schema 4 introduced this workflow. Current [account-scoped formats](accounts.md) retain it in schema 12 with rules/bulk receipts and schema 13 without rules. Earlier experimental layouts are rejected without migration. Version/shape checks run before storage-setting changes. Historical compatibility fixtures now verify rejection and preservation of their contents.
+Schema 4 introduced this workflow. Current [account-scoped formats](accounts.md) retain it in schema 40 with rules/bulk receipts and schema 39 without rules. Earlier experimental layouts are rejected without migration. Version/shape checks run before storage-setting changes. Historical compatibility fixtures now verify rejection and preservation of their contents.
 
 Original source evidence, original import versions and import receipts remain immutable. Schema 4 stores complete committed entry revisions and a current head for each included occurrence. Revision zero is its original included publication. A correction appends a current interpretation; removal appends an inactive interpretation; eligible Undo appends the earlier state as a new revision. Removed entries remain available through history and source inspection. Actual bank refunds remain separate imported transactions.
 

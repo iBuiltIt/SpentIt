@@ -1,8 +1,8 @@
 # Category catalog and assignments
 
-Last updated: 2026-10-28
+Last updated: 2026-10-31
 
-State: independent assignable categories are implemented in experimental schema 30 with rules and 29 without. Earlier experimental schemas, including 24/23 and 22/21, are rejected without migration. The owner-approved [category model and exact starter list](../features/010-categories-and-selection.md#independent-categories--accepted-2026-10-28) supersede the earlier group/leaf hierarchy. Verification is recorded in [project status](status.md).
+State: independent assignable categories are implemented in experimental schema 40 with rules and 39 without. Earlier experimental schemas, including 24/23 and 22/21, are rejected without migration. The owner-approved [category model and exact starter list](../features/010-categories-and-selection.md#independent-categories--accepted-2026-10-28) supersede the earlier group/leaf hierarchy. Verification is recorded in [project status](status.md).
 
 ## Identity, organization and history
 
@@ -28,7 +28,7 @@ Schema 5 also retains stable allocation identities, explicit original source-all
 
 Category preview is read-only. Apply writes its definition revision, head, catalog revision, operation receipt and shared history order atomically. A repeated operation identity with identical content returns its durable result; conflicting reuse fails. Failed or uncertain acknowledgements use the same durable outcome identity. The UI preserves failed form edits; an unreadable outcome requires explicit reopen rather than assuming success or rollback.
 
-Current builds use schema 29 without rules and schema 30 with rules and bulk receipts. The category catalog remains document-wide. Earlier experimental layouts are rejected without migration. Authenticated version/shape mismatches are rejected. Backups retain all accounts and category/assignment history; original import evidence and financial receipts remain immutable.
+Current builds use schema 39 without rules and schema 40 with rules and bulk receipts. The category catalog remains document-wide. Earlier experimental layouts are rejected without migration. Authenticated version/shape mismatches are rejected. Backups retain all accounts and category/assignment history; original import evidence and financial receipts remain immutable.
 
 ## UI and verification boundary
 

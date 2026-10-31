@@ -1,11 +1,11 @@
 # 010 — Categories and selection
 
-Next work (accepted 2026-10-31; **not implemented**):
-[opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md) takes priority
-over the older handoff sequence. It specifies import routing, Review repair/Commit,
-account-context Discard and automatic import-specific cleanup instead of Resume.
-Completed uncommitted imports remain durable. Existing implementation and historical
-verification below do not establish this new behavior. Implementation awaits Go.
+The [opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md)
+is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
+It includes import routing, Review repair/Commit, account-context Discard and
+atomic cleanup of incomplete preparation. Completed uncommitted imports remain
+durable. See [current verification and limits](../doc/status.md); earlier Resume,
+source-retention and toolbar descriptions below are historical.
 
 Status: **active**  
 Last updated: 2026-10-31  

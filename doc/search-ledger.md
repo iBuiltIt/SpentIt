@@ -1,6 +1,6 @@
 # Search, selection, and bulk ledger changes
 
-Last updated: 2026-10-28
+Last updated: 2026-10-31
 
 This is the bounded durable QIF experiment; search and bulk actions operate within the selected [account workspace](accounts.md). Requirements and owner decisions are in [feature 005](../features/005-transaction-sheet-navigation.md). The owner confirmed that experimental formats are disposable until an explicitly announced release; migration and backward-compatibility work are not required during this phase. This work introduces no migration.
 
@@ -22,11 +22,11 @@ The reusable PCRE2 adapter now has its own `spentit_regex` target. Import-workfl
 
 Click selects a row; Shift selects a displayed range; Cmd/Ctrl toggles individual rows. Arrow/Home/End keys move selection, and Enter opens the focused record. Double-click still opens the inline editor. Identity-based selection survives sorting and delegate recycling. Searches remember pre-search multiselection; clearing without an explicit result choice restores it, while choosing results retains those choices. Removed identities drop from selection. Dataset changes clear it. Selection is bounded at 4,096 rows with an explicit error, not silent truncation.
 
-Delete and Change category are available from ledger controls and the context menu; Delete also has a keyboard action. Opening Balance and draft/mixed selections are refused by the repository, regardless of UI selection. Dirty-editor navigation retains Save / Discard / Stay guards.
+Delete and Change category are available from the ledger context menu; Change category opens a separate category-list dialog; Delete also has a keyboard action. Opening Balance and draft/mixed selections are refused by the repository, regardless of UI selection. Dirty-editor navigation retains Save / Discard / Stay guards.
 
 ## Atomic bulk operations
 
-Schema 7 introduced immutable `bulk_operations` and `bulk_members`; current schema 10 retains them with account-scoped behavior. The group receipt references the existing financial operation history; member revisions, financial history, dependency stamps, and group membership are written inside one SQLCipher transaction. A group is never implemented by invoking separately committing single-row commands.
+Schema 7 introduced immutable `bulk_operations` and `bulk_members`; current schema 40/39 retains them with account-scoped behavior. The group receipt references the existing financial operation history; member revisions, financial history, dependency stamps, and group membership are written inside one SQLCipher transaction. A group is never implemented by invoking separately committing single-row commands.
 
 A category command explicitly assigns the chosen category, including Uncategorized, to every allocation in every selected committed row. Amounts, split structure, memos, dates, payees, source associations, and original evidence remain unchanged. Category ownership becomes manual and its previous rule mark is cleared. Other field marks remain intact. Removal changes active balance effects while preserving evidence and history. The preview lists every affected allocation and exact before/change/after account totals. Previews are bounded at 4,096 rows, 16,384 allocations, and 16 MiB of text.
 

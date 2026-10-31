@@ -1,6 +1,6 @@
 # Durable UI workload measurements
 
-Last updated: 2026-10-29
+Last updated: 2026-10-31
 
 This is a bounded synthetic benchmark of the experimental durable UI, not a production readiness or portability claim. The owner selected 100,000 transactions as representative and 200,000 as the stress case. These are workload sizes, not new record limits.
 
@@ -99,7 +99,7 @@ ctest --test-dir build/import-ui-debug --output-on-failure -R '^(accounts.(group
 
 ## Current-format point-2 observations — 2026-10-26
 
-The current production-gateway benchmark uses bank-v3/schema 16 with rules. Run `build/import-ui-rules-release/src/ui/spentit_import_benchmark 100000 --interactions` (or 200000) serially from a desktop session. This mode covers import, verified pending reopen, queries, inspection, unsaved scrolling and save/source/exact-balance assertions; default mode additionally covers saved/committed reopening and commit. See [full evidence, diagnostics and limitations](hardening.md).
+The production-gateway benchmark now uses bank-v6/schema 40 with rules; the measurements in this section used bank-v3/schema 16. Run `build/import-ui-rules-release/src/ui/spentit_import_benchmark 100000 --interactions` (or 200000) serially from a desktop session. This mode covers import, verified pending reopen, queries, inspection, unsaved scrolling and save/source/exact-balance assertions; default mode additionally covers saved/committed reopening and commit. See [full evidence, diagnostics and limitations](hardening.md).
 
 Final individual native Release command times in milliseconds:
 

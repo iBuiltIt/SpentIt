@@ -1,5 +1,9 @@
 # Opening, ledger cleanup and interrupted imports
 
+Settings is available only in the lower-left sidebar; the duplicate upper-right
+button was removed at the owner's request on 2026-10-31. Backup/restore remains in
+Settings. Show the sidebar first if it is hidden.
+
 Status: **implemented under owner Go; verification recorded in [status](status.md)**  
 Last updated: 2026-10-31
 

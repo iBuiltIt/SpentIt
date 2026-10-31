@@ -11,7 +11,7 @@ Current implementation (2026-10-29): the [accepted import/commit handoff](../doc
 
 Status: **active**  
 Last updated: 2026-10-31  
-Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 38 with rules and schema 37 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
+Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 40 with rules and schema 39 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
 
 ## Opening setup during account mapping — owner Go, 2026-10-30
 

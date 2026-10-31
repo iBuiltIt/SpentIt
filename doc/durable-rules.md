@@ -4,13 +4,13 @@
 |---|---|
 | Author | SpentIt contributor (placeholder) |
 | Date | 2026-10-25 |
-| Status | Schema-6/rules-sheet baseline verified in Release and ASan/UBSan on 2026-10-26; current schema 10 retains bulk receipts and scopes Apply to an account. |
+| Status | Schema-6/rules-sheet baseline verified in Release and ASan/UBSan on 2026-10-26; current schema 40 retains bulk receipts and scopes Apply to an account. |
 | Package | Roadmap package 5, rules half only |
-| Schema | Current rules-enabled documents **8**; the historical schema-6 design below is retained as implementation rationale. No pre-release migration obligation. |
+| Schema | Current rules-enabled documents **40**; the historical schema-6 design below is retained as implementation rationale. No pre-release migration obligation. |
 
 ## Current follow-up — 2026-10-26
 
-[Account-scoped workspaces](accounts.md) retain document-wide saved rules and limit Apply to the selected account. Earlier experimental layouts are rejected without migration. Current documents are schema 22 with rules and 21 without. Schema 20 is rejected without migration. Selected-account committed reapplication is in [feature 004](../features/004-rules-and-explanations.md#accepted-committed-reapplication--2026-10-27). The table above and the schema-6 design below are earlier contracts.
+[Account-scoped workspaces](accounts.md) retain document-wide saved rules and limit Apply to the selected account. Earlier experimental layouts are rejected without migration. Current documents are schema 40 with rules and 39 without. Schema 20 is rejected without migration. Selected-account committed reapplication is in [feature 004](../features/004-rules-and-explanations.md#accepted-committed-reapplication--2026-10-27). The schema-6 design below is an earlier contract; the table above identifies the current format.
 
 The earlier verification gap is closed: the rules-enabled `3f94fe6` baseline passed all 72 tests in Release and ASan/UBSan. [Search/ledger work](search-ledger.md) now adds combined search, multiselection, and schema-7 bulk receipts. The owner clarified that pre-release formats need no migration or compatibility commitment until an announced release. The historical design and checkpoint below are retained; their Debug-only and search-not-done statements do not describe current status. See [project status](status.md) for evidence and limitations.
 

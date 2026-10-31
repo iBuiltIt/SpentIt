@@ -1,11 +1,11 @@
 # Verified fast startup
 
-Next work (accepted 2026-10-31; **not implemented**):
-[opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md) takes priority
-over the older handoff sequence. It specifies import routing, Review repair/Commit,
-account-context Discard and automatic import-specific cleanup instead of Resume.
-Completed uncommitted imports remain durable. Existing implementation and historical
-verification below do not establish this new behavior. Implementation awaits Go.
+The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
+is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
+It includes import routing, Review repair/Commit, account-context Discard and
+atomic cleanup of incomplete preparation. Completed uncommitted imports remain
+durable. See [current verification and limits](status.md); earlier Resume,
+source-retention and toolbar descriptions below are historical.
 
 Last updated: 2026-10-31
 
@@ -30,8 +30,8 @@ performance only; it is not required to open or recover documents.
 The verifier fingerprint includes storage, engine and application C++ sources and
 headers, storage include fragments, the rules build option and pinned SQLCipher
 source hashes. CMake reconfigures when those inputs change. A verifier change
-invalidates old approval even without a schema change. Experimental schemas stay
-38/37. The cache is a same-user optimization, not a defense against a compromised
+invalidates old approval even without a schema change. Current experimental schemas are
+40/39; the startup-cache change itself originally retained 38/37. The cache is a same-user optimization, not a defense against a compromised
 user account that can rewrite both the application and its cache.
 
 Opening retains document locking, authentication, format/schema gates and required
@@ -41,7 +41,11 @@ WAL or SHM file present before SQLite opens disables this shortcut, even if reco
 later removes it. Current storage uses DELETE rollback journaling; this does not
 change journaling mode, HMAC checks, synchronization or backup behavior. Invalid,
 missing, unreadable, oversized or unsafe approval files fall back to full verification.
-The ordinary headless `ImportStore::open` API always verifies.
+The ordinary headless `ImportStore::open` API always verifies. After either full
+verification or cache approval, opening atomically cleans incomplete captured
+imports before activation. This invalidates prior file approval through normal
+mutation tracking. Completed uncommitted imports are retained; cleanup failure
+prevents activation. See the [cleanup contract](ui-import-cleanup.md).
 
 ## Closing verification follow-up — owner Go 2026-10-31
 

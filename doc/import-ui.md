@@ -1,5 +1,9 @@
 # SpentIt application UI
 
+Settings is available only in the lower-left sidebar; the duplicate upper-right
+button was removed at the owner's request on 2026-10-31. Backup/restore remains in
+Settings. Show the sidebar first if it is hidden.
+
 The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
 is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
 It adds import routing, Review repair/Commit, account-context Discard and automatic
@@ -7,13 +11,13 @@ cleanup of incomplete preparation. Completed uncommitted imports remain durable.
 See [current verification and limits](status.md); older Resume and toolbar
 descriptions below are historical.
 
-Historical next-session priority (2026-10-29; superseded by the accepted next work above and subsequent implementation in status): [discuss the whole import/commit approach](import-commit-discussion.md), including redundant readiness checks and the owner-reported 18-second commit. The confirmation-dialog removal and any redesign remain unimplemented pending discussion and explicit Go. Historical implementation notes below do not authorize that work.
+The [dataset-wide acceptance model](import-commit-discussion.md) is implemented. Earlier per-account Commit and permanent-evidence descriptions are historical. Further implementation requires its own owner Go; reports remain deferred.
 
 Last updated: 2026-10-31
 
 The `SpentIt` executable (internal CMake target `spentit_import_experiment`) is the application used for document setup, imports, account management, transaction editing, categories and rules. Feature 009 remains **active** because its wider scope is incomplete. The historical verification sections below use synthetic fixtures; that describes the tests, not a restriction on application use.
 
-Current follow-up: [account creation and guarded switching](accounts.md) now provide independent account workspaces. [Combined search, stable multiselection and atomic committed bulk actions](search-ledger.md) now run on the import worker, alongside categories and the rules sheet. Enable `SPENTIT_RULES=ON` for current schema-12 creation and bulk actions; [current build and verification instructions](building.md#search-and-bulk-follow-up--2026-10-26) include the pinned PCRE2 dependency, also required for rules-off search. No pre-release migration/upgrade work is required. Historical test counts and walkthroughs below describe earlier checkpoints; [status](status.md) records current verification and native-window limits.
+Current follow-up: [account creation and guarded switching](accounts.md) now provide independent account workspaces. [Combined search, stable multiselection and atomic committed bulk actions](search-ledger.md) now run on the import worker, alongside categories and the rules sheet. Enable `SPENTIT_RULES=ON` for current schema-40 creation and bulk actions (schema 39 without rules); [current build and verification instructions](building.md#search-and-bulk-follow-up--2026-10-26) include the pinned PCRE2 dependency, also required for rules-off search. No pre-release migration/upgrade work is required. Historical test counts and walkthroughs below describe earlier checkpoints; [status](status.md) records current verification and native-window limits.
 
 ## Build and run
 
@@ -94,7 +98,7 @@ PRAGMA integrity_check;
 PRAGMA foreign_key_check;
 ```
 
-Expect application ID `1397770577`, schema `7` for a current rules-enabled dataset or `5` for a current rules-off dataset (earlier experimental schemas may still be recognized), no cipher/foreign-key error rows, and `ok` from SQLite integrity checking. These SQL checks alone do not establish all financial invariants: use a compatible SpentIt build's full verification before editing, and retain the original backup. A protected document instead needs the password with the exact v1 prefix through the supported key API; do not put private passwords in shell history. This procedure cannot repair damaged/missing files or recover a forgotten password. Do not copy only the main file of a live database; use the application's validated backup operation.
+Expect application ID `1397770577`, schema `40` for a current rules-enabled dataset or `39` for a current rules-off dataset (earlier experimental schemas are rejected unchanged), no cipher/foreign-key error rows, and `ok` from SQLite integrity checking. These SQL checks alone do not establish all financial invariants: use a compatible SpentIt build's full verification before editing, and retain the original backup. A protected document instead needs the password with the exact v1 prefix through the supported key API; do not put private passwords in shell history. This procedure cannot repair damaged/missing files or recover a forgotten password. Do not copy only the main file of a live database; use the application's validated backup operation.
 
 ## Verification and remaining work
 
@@ -187,7 +191,7 @@ A rare Qt `DelegateModel::cancel: index out range` warning was observed during t
 
 ## Rules sheet — 2026-10-25
 
-When built with `SPENTIT_RULES=ON`, current schema-12 documents show the rules page. The page lists, reorders, enables and edits rules; Save/Discard cover the whole image and Preview is separate from Apply. Saved rules are document-wide, while Apply targets only the selected account's pending batch. Rules-off builds use schema 13 and do not register `import.rules_ui`. Earlier experimental layouts are rejected without migration. The UI does not construct a ruleset or execute SQL. See [current verification](status.md#account-scoped-durable-workflow--2026-10-26) and the [rules contract](durable-rules.md). The schema-6 baseline and schema-7 search checkpoint remain historical verification evidence.
+When built with `SPENTIT_RULES=ON`, current schema-40 documents show the rules page. The page lists, reorders, enables and edits rules; Save/Discard cover the whole image and Preview is separate from Apply. Saved rules are document-wide, while Apply targets only the selected account's pending batch. Rules-off builds use schema 13 and do not register `import.rules_ui`. Earlier experimental layouts are rejected without migration. The UI does not construct a ruleset or execute SQL. See [current verification](status.md#account-scoped-durable-workflow--2026-10-26) and the [rules contract](durable-rules.md). The schema-6 baseline and schema-7 search checkpoint remain historical verification evidence.
 
 
 ## Backup cancellation and progress — 2026-10-26
@@ -199,14 +203,14 @@ Cancellation is sealed immediately before exclusive publication. A request accep
 
 ## Ordinary QIF and unavailable amount review — 2026-10-26
 
-Current schema-14/15 review accepts the [v3 ordinary-money profile](../features/009-qif-profile.md). Source classes are displayed read-only and remain separate from categories. For structurally intact records with missing/invalid total or split amounts, the editor starts unknown amount fields blank and labels the original total Unavailable; it never inserts zero. Enter exact effective amounts and balanced allocations, Save repair, then explicitly review Include or a duplicate candidate. Original unavailable amounts stay unavailable through commit and reopening. Invalid transfer split amounts retain their destination and source position, requiring the existing explicit transfer resolution.
+The historical schema-14/15 review added the [v3 ordinary-money profile](../features/009-qif-profile.md). Source classes are displayed read-only and remain separate from categories. For structurally intact records with missing/invalid total or split amounts, the editor starts unknown amount fields blank and labels the original total Unavailable; it never inserts zero. Enter exact effective amounts and balanced allocations, Save repair, then explicitly review Include or a duplicate candidate. Original unavailable amounts stay unavailable through commit and reopening. Invalid transfer split amounts retain their destination and source position, requiring the existing explicit transfer resolution.
 
 Whole-source repair totals/progress and multi-account Abort were not implemented at that schema-14/15 checkpoint. The accepted owner requirement and remaining implementation is in [feature 009](../features/009-durable-import-milestone.md#accepted-ordinary-qif-and-amount-repair-follow-up--2026-10-26); do not describe the partial editor extension as complete QIF workflow delivery. [Project status](status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26) records actual verification.
 
 
 ## Whole-source account review — 2026-10-26
 
-Current schemas 16/17 expose [explicit mapping, whole-source repair progress, reported-balance staging and Abort](qif-account-imports.md). The virtualized mapping dialog preserves selections/currency through delegate recreation and defaults to the setup currency. It prompts creation separately for each source account; metadata names remain unchanged. Cancellation after durable capture reports saved source/mappings with Resume or Abort guidance. Unknown outcomes close the session; a known saved operation whose refresh fails is labeled saved.
+The historical schemas 16/17 introduced [explicit mapping, whole-source repair progress, reported-balance staging and Abort](qif-account-imports.md). The virtualized mapping dialog preserves selections/currency through delegate recreation and defaults to the setup currency. It prompts creation separately for each source account; metadata names remain unchanged. Cancellation after durable capture reports saved source/mappings with Resume or Abort guidance. Unknown outcomes close the session; a known saved operation whose refresh fails is labeled saved.
 
 The review screen separates repairable counts from unsupported structures and shows amount-repair counts before edits. Unknown values remain blank. Source categories/classes and source allocation identities remain visible even before a missing amount is repaired; raw-source rule prefilling does not require inventing money. Staged openings show their exact calculated amount and explicit date before commit. The first account/related transfer commit ends whole-import Abort, with the confirmation stating that remaining accounts still need separate commits. Ordinary source repairs also block external protection until review is complete. Final verification is recorded in [status](status.md#whole-source-qif-account-review--2026-10-26).
 

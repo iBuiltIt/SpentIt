@@ -1,19 +1,19 @@
 # Durable QIF workflow — headless implementation
 
-Next work (accepted 2026-10-31; **not implemented**):
-[opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md) takes priority
-over the older handoff sequence. It specifies import routing, Review repair/Commit,
-account-context Discard and automatic import-specific cleanup instead of Resume.
-Completed uncommitted imports remain durable. Existing implementation and historical
-verification below do not establish this new behavior. Implementation awaits Go.
+The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
+is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
+It includes import routing, Review repair/Commit, account-context Discard and
+atomic cleanup of incomplete preparation. Completed uncommitted imports remain
+durable. See [current verification and limits](status.md); earlier Resume,
+source-retention and toolbar descriptions below are historical.
 
-Current next-session priority (2026-10-29): [discuss the whole import/commit approach](import-commit-discussion.md), including redundant readiness checks and the owner-reported 18-second commit. The confirmation-dialog removal and any redesign remain unimplemented pending discussion and explicit Go. Historical implementation notes below do not authorize that work.
+The [dataset-wide acceptance model](import-commit-discussion.md) is implemented. Earlier per-account Commit and permanent-evidence descriptions are historical. Further implementation requires its own owner Go; reports remain deferred.
 
 Last updated: 2026-10-31
 
-This is a partial implementation of [feature 009](../features/009-durable-import-milestone.md), authorized by the owner's Go. It is an optional synthetic-data experiment, not a production financial-document application. The existing sheet is still session-only. No private exports were opened or copied.
+This is a partial implementation of [feature 009](../features/009-durable-import-milestone.md), authorized by the owner's Go. SpentIt is the application being used and improved piecemeal. The separate synthetic sheet experiment remains session-only; the application workflow is durable. No private exports were opened or copied.
 
-Correction 2026-10-27: new import documents use schema 22 with rules or schema 21 without rules. The schema sentences below that name versions 5, 7, 16, 17, 18, 19, or 20 describe the document at those earlier checkpoints. Current writers reject schema 20 and schemas 18 and 19 without migration. OFX, QFX, QBO, and ASO bank and credit-card statements use the same command and evidence path as QIF; the dialect is [003-ofx-profile.md](../features/003-ofx-profile.md). ASO is OFX 1.0.2 SGML credit-card statement syntax identified by in-place structural inspection, with no path or contents recorded.
+Current format (2026-10-31): new import documents use schema 40 with rules or schema 39 without rules. The schema sentences below that name versions 5, 7, 16, 17, 18, 19, or 20 describe the document at those earlier checkpoints. Current writers reject schema 20 and schemas 18 and 19 without migration. OFX, QFX, QBO, and ASO bank and credit-card statements use the same command and evidence path as QIF; the dialect is [003-ofx-profile.md](../features/003-ofx-profile.md). ASO is OFX 1.0.2 SGML credit-card statement syntax identified by in-place structural inspection, with no path or contents recorded.
 
 Current extensions include [QIF transfer destination resolution](qif-transfers.md), [multiple account workspaces](accounts.md), [ordinary committed changes](committed-changes.md), [categories](categories.md), [durable rules](durable-rules.md), and [search/atomic bulk operations](search-ledger.md). The earlier milestone boundaries and dated results below are historical, not a statement that these extensions are absent. Experimental formats are disposable until an owner-announced release; no migration or upgrade infrastructure is required.
 

@@ -151,9 +151,9 @@ private slots:
         const auto correction=model.state().value("changeReceipt").toMap().value("operation").toString();QVERIFY(!correction.isEmpty());
         QCOMPARE(selected(model).value("original").toString(),"-29.31");QVERIFY(!root->property("dirty").toBool());
         QVERIFY(click(root,"editCommitted"));QVERIFY(edit(root,"durablePayee","Corrected merchant"));
-        QVERIFY(click(root,"settingsNavigation"));QVERIFY(click(root,"guardSave"));wait(model);QVERIFY(preview->property("visible").toBool());
+        QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardSave"));wait(model);QVERIFY(preview->property("visible").toBool());
         QVERIFY(click(root,"cancelCommittedChange"));wait(model);QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(root->property("dirty").toBool());
-        QVERIFY(click(root,"settingsNavigation"));QVERIFY(click(root,"guardSave"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
+        QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardSave"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
         QCOMPARE(root->property("currentPage").toString(),"settings");QVERIFY(!root->property("dirty").toBool());
         QVERIFY(click(root,"navigationBack"));QVERIFY(click(root,"showEntryHistory"));wait(model);
         bool blocked=false;for(const auto& value:model.state().value("entryHistory").toList()) {const auto h=value.toMap();if(h.value("operation").toString()==correction)blocked=!h.value("undoEligible").toBool() && !h.value("undoReason").toString().isEmpty();}QVERIFY(blocked);

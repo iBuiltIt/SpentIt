@@ -1,6 +1,6 @@
 # Experimental QIF profile v6
 
-Last updated: 2026-10-29
+Last updated: 2026-10-31
 
 Implementation contract for the accepted [durable import milestone](009-durable-import-milestone.md). This deliberately bounded profile is not general QIF compatibility. The field identifiers and transfer notation were checked against [GnuCash's QIF notes](https://raw.githubusercontent.com/Gnucash/gnucash/stable/gnucash/import-export/qif-imp/file-format.txt); restrictions below are SpentIt choices. No private export file was opened; the owner supplied a byte-level screenshot for the embedded-CR follow-up.
 
@@ -32,7 +32,7 @@ A literal slash is allowed in editable category names. In QIF references the usu
 
 Catalog-only sources and catalogs followed by unnamed ordinary sections use one explicitly mapped target account. Named definitions and repeated account selections share the existing account workflow. Complete category staging, first-publication semantics, rollback and identity preservation are described in [the account-import contract](../doc/qif-account-imports.md#staged-category-catalog--2026-10-28).
 
-The parser identity is `bank-v6`. Current datasets use experimental schemas 30/29 (rules on/off). Schemas 28/27, 26/25, 24/23 and other earlier formats are rejected unchanged, without migration. The format gate protects changed source interpretation and source-owned category bindings; no compatibility layer is added.
+The parser identity is `bank-v6`. Current datasets use experimental schemas 40/39 (rules on/off). Schemas 28/27, 26/25, 24/23 and other earlier formats are rejected unchanged, without migration. The format gate protects changed source interpretation and source-owned category bindings; no compatibility layer is added.
 
 ## Embedded carriage returns — accepted 2026-10-28
 

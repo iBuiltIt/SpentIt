@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-31
 
-Implementation contract for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). Feature 003 stays **active**. This profile does not finish QIF product scope or transfer repair. New documents use experimental schema 24 with rules and schema 23 without rules. Schemas 22/21, schema 20 and schemas 18 and 19 are rejected with `Unsupported experimental format; no migration was attempted`. No migration was added. `aso` remains a legal file label in those format checks. Account commands are recorded in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).
+Implementation contract for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). Feature 003 stays **active**. This profile does not finish QIF product scope or transfer repair. New documents use experimental schema 40 with rules and schema 39 without rules. Schemas 22/21, schema 20 and schemas 18 and 19 are rejected with `Unsupported experimental format; no migration was attempted`. No migration was added. `aso` remains a legal file label in those format checks. Account commands are recorded in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).
 
 ## Specification used
 
