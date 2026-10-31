@@ -18,26 +18,88 @@ void answer(ImportStore& store,std::string op,ReviewAction action,std::vector<im
     ReviewAnswer a;a.generation=sheet.generation;a.question=it->key;a.action=action;a.selected=std::move(selected);a.survivor=keep;
     store.answer_review(op,a);
 }
+std::vector<ReviewAnswer> batch_answers(ImportStore& store) {
+    const auto sheet=store.review_sheet();std::vector<ReviewAnswer> answers;
+    for(const auto& q:sheet.questions)if(q.kind==ReviewKind::same){ReviewAnswer a;a.generation=sheet.generation;a.question=q.key;a.action=ReviewAction::merge;for(const auto& row:q.rows)a.selected.push_back(row.identity);a.survivor=q.rows.front().identity;answers.push_back(std::move(a));}
+    return answers;
+}
+void batch_tests(const std::filesystem::path& dir) {
+    const Currency cad("CAD");const auto path=dir/"batch";
+    {
+        auto s=ImportStore::create(path,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("a",source("A")+source("A","-20.00").substr(11),qif::DateOrder::dmy);s.accept_all("accepted");
+        s.ingest("b",source("B")+source("B","-20.00").substr(11),qif::DateOrder::dmy);
+        auto answers=batch_answers(s);check(answers.size()==2,"Two independent groups");
+        for(int mode=0;mode<6;++mode){auto bad=answers;OperationContext c;
+            if(mode==0)bad[1].generation--;
+            if(mode==1)bad[1].selected={{"absent",0},{"absent",1}};
+            if(mode==2)bad.push_back(bad[0]);
+            if(mode==3)bad[1].action=ReviewAction::link;
+            if(mode==4)c.request();
+            if(mode==5){int count=0;c.progress=[&,count](std::string_view phase) mutable {if(phase=="Merging selected matches" && ++count==2)c.request();};}
+            bool refused=false;try{s.merge_review_batch("bad-"+std::to_string(mode),bad,c);}catch(const std::exception&){refused=true;}
+            check(refused,"Invalid or cancelled batch refused");check(s.current_ledger().size()==4 && s.balance().units()==-6000,"No partial batch write");check(!s.review_outcome("bad-"+std::to_string(mode)),"No failed batch receipt");s.verify();
+        }
+        OperationContext cancelled;s.observer([&](auto phase){if(phase==storage::ImportPhase::before_commit)cancelled.request();});bool stopped=false;try{s.merge_review_batch("cancel-boundary",answers,cancelled);}catch(const OperationCancelled&){stopped=true;}s.observer({});check(stopped && !s.review_outcome("cancel-boundary"),"Cancellation at final boundary rolls back");s.verify();
+        OperationContext c;s.merge_review_batch("batch",answers,c);s.merge_review_batch("batch",answers,c);check(s.current_ledger().size()==2 && s.balance().units()==-3000,"Atomic batch and retry exact balance");
+        auto different=answers;different[0].survivor=imports::Occurrence{"b",0};bool refused=false;try{s.merge_review_batch("batch",different,c);}catch(const std::exception&){refused=true;}check(refused,"Changed retry refused");s.verify();s.backup_to(dir/"batch-backup","test");
+    }
+    {auto s=ImportStore::open(dir/"batch-backup","test");s.verify();check(s.review_sheet().can_undo,"Batch Undo retained in backup");s.undo_review("restored-undo");check(s.balance().units()==-6000,"Backup Undo restores exact balance");s.verify();OperationContext c;s.merge_review_batch("again",batch_answers(s),c);s.ingest("alternative",source("B")+source("B","-20.00").substr(11),qif::DateOrder::dmy);check(s.current_ledger().size()==2,"Batch retains alternative-source recognition");s.verify();}
+    {auto s=ImportStore::open(path,"test");check(s.review_sheet().questions.empty(),"Batch survives reopen");s.undo_review("undo-batch");s.undo_review("undo-batch");check(s.review_sheet().questions.size()==2 && s.balance().units()==-6000,"One Undo restores whole batch");s.verify();
+        // Both committed losers and pending rows are restored together.
+        s.accept_all("accept-more",true);s.ingest("c",source("C")+source("C","-20.00").substr(11),qif::DateOrder::dmy);
+        auto answers=batch_answers(s);OperationContext context;s.merge_review_batch("committed-batch",answers,context);check(s.balance().units()==-3000,"Multiple accepted survivor choices");s.verify();s.undo_review("undo-committed-batch");check(s.balance().units()==-9000,"Accepted and pending rows restored");s.verify();
+        s.ingest("barrier",source("Unrelated","-99.00"),qif::DateOrder::dmy);answers=batch_answers(s);OperationContext next;s.merge_review_batch("after-barrier",answers,next);s.undo_review("undo-after-barrier");check(!s.review_sheet().can_undo,"Batch Undo preserves earlier mutation barrier");s.verify();
+    }
+    {
+        auto s=ImportStore::create(dir/"multi-account-batch","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Savings",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));
+        for(int account=1;account<=2;++account){s.select_account(account);s.ingest("a"+std::to_string(account),source("A")+source("A").substr(11),qif::DateOrder::dmy);s.ingest("b"+std::to_string(account),source("B")+source("B").substr(11),qif::DateOrder::dmy);}
+        auto answers=batch_answers(s);check(answers.size()==2,"Two account groups");for(auto& a:answers)a.selected.resize(2);
+        OperationContext c;s.merge_review_batch("partial",answers,c);check(s.account().identity==2,"Account selection preserved");for(int account=1;account<=2;++account){s.select_account(account);check(s.balance().units()==-3000,"Partial group preserves unmatched postings");}check(s.review_sheet().questions.size()==2,"Two remainder pairs");s.verify();s.undo_review("undo-partial");for(int account=1;account<=2;++account){s.select_account(account);check(s.balance().units()==-4000,"Cross-account Undo");}s.verify();
+    }
+    {
+        auto s=ImportStore::create(dir/"protected-batch","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("a",source("A")+source("A","-20.00").substr(11),qif::DateOrder::dmy);s.ingest("b",source("B")+source("B","-20.00").substr(11),qif::DateOrder::dmy);
+        auto edit=*s.row({"b",1}).draft;auto parts=edit.transaction.allocations();parts[0].amount=Money(-2100,cad);edit.transaction=edit.transaction.corrected(parts[0].amount,parts);s.save({"b",1},0,edit);
+        bool refused=false;try{OperationContext c;s.merge_review_batch("different",batch_answers(s),c);}catch(const storage::ImportError&){refused=true;}check(refused && s.current_ledger().size()==4 && s.balance().units()==-6100,"Different effective totals roll back all groups");s.verify();
+        s.create_account(2,"Savings",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
+        parts[0].amount=Money(-2000,cad);edit.transaction=edit.transaction.corrected(parts[0].amount,parts);s.save({"b",1},1,edit);
+        s.decide({"b",1},2,{imports::Disposition::include,{}});
+        TransferRequest transfer{};transfer.action=TransferAction::from_draft;transfer.link="linked";transfer.origin=imports::Occurrence{"b",1};transfer.batch_revision=3;transfer.allocation="source-0";transfer.destination=2;transfer.expected_sequence=s.transfer_sequence();s.apply_transfer("generate",transfer);s.ingest("c",source("C","-20.00"),qif::DateOrder::dmy);
+        refused=false;try{OperationContext c;s.merge_review_batch("linked-loser",batch_answers(s),c);}catch(const storage::ImportError&){refused=true;}check(refused && !s.review_outcome("linked-loser") && s.balance().units()==-8000,"Linked loser refuses whole batch");s.verify();
+    }
+    {
+        const auto path=dir/"clean-remainder";
+        {auto s=ImportStore::create(path,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("a",source("Original")+source("Original").substr(11),qif::DateOrder::dmy);s.ingest("b",source("New")+source("New").substr(11),qif::DateOrder::dmy);
+        auto answers=batch_answers(s);answers.at(0).selected={{"b",0},{"b",1}};answers.at(0).survivor=imports::Occurrence{"b",0};OperationContext c;s.merge_review_batch("partial-new",answers,c);
+        auto sheet=s.review_sheet();check(sheet.questions.size()==1 && sheet.questions.front().kind==ReviewKind::same && sheet.questions.front().rows.size()==2,"Clean original remainder remains unanswered");s.verify();s.backup_to(dir/"remainder-backup","test");}
+        {auto s=ImportStore::open(path,"test");check(s.review_sheet().questions.size()==1,"Remainder survives reopening");answer(s,"separate-remainder",ReviewAction::separate);check(s.review_sheet().questions.empty(),"Later answer retires pending remainder");s.undo_review("undo-separate-remainder");check(s.review_sheet().questions.size()==1,"Undo restores unanswered remainder");s.undo_review("undo-partial-new");check(s.review_sheet().questions.at(0).rows.size()==4 && s.balance().units()==-4000,"Undo restores original group");s.verify();}
+        {auto s=ImportStore::open(dir/"remainder-backup","test");check(s.review_sheet().questions.size()==1,"Backup retains unanswered remainder");s.verify();}
+    }
+    std::cout<<"Batch Review tests passed\n";
+}
 void fault_tests(const std::filesystem::path& dir,int first_mode=0) {
     const Currency cad("CAD");fault_vfs::install();
-    for(int mode=first_mode;mode<6;++mode){
+    for(int mode=first_mode;mode<8;++mode){
         const auto base=dir/("base-"+std::to_string(mode));
-        ReviewAnswer request;
+        ReviewAnswer request;std::vector<ReviewAnswer> batch_request;
         {
             auto store=ImportStore::create(base,"test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
             if(mode<2 || mode>=4){store.ingest("a",source("SYNTHETIC-REVIEW-MARKER"),qif::DateOrder::dmy);store.accept_all("accept");store.ingest("b",source("Other"),qif::DateOrder::dmy);}
             else{store.create_account(2,"Wise",cad,"2026-01-01");store.select_account(2);store.opening(0,"2026-01-01",Money(0,cad));store.ingest("in",source("SYNTHETIC-REVIEW-MARKER","10.00"),qif::DateOrder::dmy);store.select_account(1);store.ingest("out",std::string("!Type:Bank\nD01/01/2026\nT-10.40\nPTransfer\nL[Wise]\n^\n"),qif::DateOrder::dmy);}
             if(mode>=4){store.accept_all("accept-b",true);store.ingest("c",source("Third"),qif::DateOrder::dmy);}
+            if(mode>=6){store.ingest("extra-a",source("SYNTHETIC-REVIEW-MARKER","-20.00"),qif::DateOrder::dmy);store.ingest("extra-b",source("Other","-20.00"),qif::DateOrder::dmy);batch_request=batch_answers(store);}
             const auto sheet=store.review_sheet();request.generation=sheet.generation;request.question=sheet.questions.at(0).key;request.action=(mode<2 || mode>=4)?ReviewAction::merge:ReviewAction::link;request.selected=(mode<2 || mode>=4)?std::vector<imports::Occurrence>{{"a",0},{"b",0}}:std::vector<imports::Occurrence>{{"out",0},{"in",0}};request.split_difference=true;if(mode>=4){request.selected.push_back({"c",0});request.survivor=imports::Occurrence{"a",0};}
-            if(mode%2)store.answer_review("answer",request);
+            if(mode%2){if(mode>=6){OperationContext context;store.merge_review_batch("answer",batch_request,context);}else store.answer_review("answer",request);}
         }
-        const auto apply=[&](ImportStore& s){if(mode%2)s.undo_review("operation");else s.answer_review("operation",request);};
+        const auto apply=[&](ImportStore& s){if(mode%2)s.undo_review("operation");else if(mode>=6){OperationContext context;s.merge_review_batch("operation",batch_request,context);}else s.answer_review("operation",request);};
         int positions=0;
         for(int nth=1;nth<2000;++nth){
             const auto trial=dir/"trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
             {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
-            {auto s=ImportStore::open(trial,"test");s.verify();if(!s.review_outcome("operation"))apply(s);check(s.review_outcome("operation").has_value(),"Retry completed");s.verify();s.backup_to(dir/"restored","test");}
-            {auto s=ImportStore::open(dir/"restored","test");s.verify();}
+            {auto s=ImportStore::open(trial,"test");s.verify();if(mode>=6){const bool complete=s.review_outcome("operation").has_value();const bool merged=mode==6?complete:!complete;check(s.current_ledger().size()==(merged?2:5) && s.balance().units()==(merged?-3000:-7000),"Fault leaves all or none of batch");}if(!s.review_outcome("operation"))apply(s);check(s.review_outcome("operation").has_value(),"Retry completed");if(mode>=6)check(s.current_ledger().size()==(mode==6?2:5) && s.balance().units()==(mode==6?-3000:-7000),"Retry exact batch result");s.verify();s.backup_to(dir/"restored","test");}
+            {auto s=ImportStore::open(dir/"restored","test");s.verify();if(mode>=6)check(s.current_ledger().size()==(mode==6?2:5) && s.balance().units()==(mode==6?-3000:-7000),"Restored exact batch result");}
             std::filesystem::remove(dir/"restored");
             std::ifstream bytes(trial,std::ios::binary);const std::string raw{std::istreambuf_iterator<char>(bytes),{}};check(raw.find("SYNTHETIC-REVIEW-MARKER")==std::string::npos,"Encrypted Review storage");
             if(!fired){positions=nth-1;break;}
@@ -47,7 +109,7 @@ void fault_tests(const std::filesystem::path& dir,int first_mode=0) {
             const auto trial=dir/"crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
             const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto p){if(p==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}
             int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Crash boundary reached");
-            auto s=ImportStore::open(trial,"test");check(s.review_outcome("operation").has_value()==(phase==spentit::storage::ImportPhase::after_commit),"Durable boundary");if(!s.review_outcome("operation"))apply(s);s.verify();
+            auto s=ImportStore::open(trial,"test");check(s.review_outcome("operation").has_value()==(phase==spentit::storage::ImportPhase::after_commit),"Durable boundary");if(mode>=6){const bool merged=mode==6?(phase==spentit::storage::ImportPhase::after_commit):(phase==spentit::storage::ImportPhase::before_commit);check(s.balance().units()==(merged?-3000:-7000),"Interrupted batch exact balance");}if(!s.review_outcome("operation"))apply(s);s.verify();
         }
     }
 }
@@ -165,6 +227,30 @@ void generation_workload(const std::filesystem::path& dir,int count) {
     {auto s=ImportStore::open(dir/"restored","test");s.verify();s.select_account(2);check(s.balance()==Money(count*100,cad),"Restored generated balance reconciles");}
 }
 
+void decision_workload(const std::filesystem::path& dir,int count) {
+    diagnostics::Collector::instance().enable();
+    const Currency cad("CAD");auto s=ImportStore::create(dir/"decisions","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+    for(int pass=0;pass<2;++pass){std::string bytes="!Type:Bank\n";for(int i=0;i<count;++i)bytes+="D01/01/2026\nT-"+std::to_string(i+1)+".00\nP"+std::to_string(pass)+" synthetic\n^\n";s.ingest(pass?"b":"a",bytes,qif::DateOrder::dmy);}
+    auto sheet=s.review_sheet();check(sheet.questions.size()==static_cast<std::size_t>(count),"Expected duplicate groups");
+    auto before=diagnostics::Collector::instance().snapshot();const auto start=std::chrono::steady_clock::now();
+    answer(s,"measured",ReviewAction::merge,{{"a",0},{"b",0}},imports::Occurrence{"a",0});
+    check(s.review_sheet().questions.size()==static_cast<std::size_t>(count-1),"One question resolved");
+    const auto after=diagnostics::Collector::instance().snapshot();
+    std::cout<<"Single Review rows="<<count*2<<" elapsed_us="<<std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-start).count()<<"\n";
+    for(unsigned i=0;i<static_cast<unsigned>(diagnostics::Code::count);++i){const auto& a=after.metrics[i];const auto& b=before.metrics[i];if(a.calls>b.calls)std::cout<<diagnostics::name(static_cast<diagnostics::Code>(i))<<" calls="<<a.calls-b.calls<<" inclusive_us="<<a.inclusive-b.inclusive<<" exclusive_us="<<a.exclusive-b.exclusive<<"\n";}
+    check(s.current_ledger().size()==static_cast<std::size_t>(count*2-1),"One posting removed");s.verify();s.undo_review("undo");check(s.current_ledger().size()==static_cast<std::size_t>(count*2),"Undo restores postings");s.verify();
+    for(const bool batch:{false,true}){
+        const auto path=dir/(batch?"timed-batch":"timed-single");s.backup_to(path,"test");auto trial=ImportStore::open(path,"test");auto answers=batch_answers(trial);answers.resize(std::min<std::size_t>(34,answers.size()));
+        auto expected=trial.balance();const auto questions=trial.review_sheet();for(const auto& a:answers){const auto q=std::find_if(questions.questions.begin(),questions.questions.end(),[&](const auto& q){return q.key==a.question;});expected=expected-q->rows.front().draft.transaction.effective_total();}
+        const auto start=std::chrono::steady_clock::now();
+        if(batch){OperationContext c;trial.merge_review_batch("timed",answers,c);trial.review_sheet();}
+        else for(std::size_t i=0;i<answers.size();++i){answers[i].generation=trial.review_sheet().generation;trial.answer_review("timed-"+std::to_string(i),answers[i]);trial.review_sheet();}
+        const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-start).count();
+        check(trial.balance()==expected,"Timed decisions reconcile exact balance");check(trial.current_ledger().size()==static_cast<std::size_t>(count*2)-answers.size(),"Timed decisions remove only selected postings");trial.verify();
+        std::cout<<(batch?"Batch":"One-by-one")<<" groups="<<answers.size()<<" elapsed_us="<<elapsed<<std::endl;
+    }
+
+}
 void review_benchmark(const std::filesystem::path& dir) {
     const Currency cad("CAD");const auto path=dir/"benchmark";
     const auto start=std::chrono::steady_clock::now();
@@ -235,6 +321,8 @@ void policy_faults(const std::filesystem::path& dir) {
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
+        if(argc>1 && std::string(argv[1])=="batch"){batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="decisions"){decision_workload(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):1000);std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="generation"){generation_workload(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):120);std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="policy_faults"){policy_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="benchmark"){review_benchmark(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

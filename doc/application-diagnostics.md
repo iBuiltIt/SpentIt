@@ -1,6 +1,6 @@
 # Local application diagnostics
 
-Last updated: 2026-10-30
+Last updated: 2026-10-31
 
 Diagnostics is opt-in, read-only, process-local observation. It does not change the document format, validation, commands, matching policy, encryption or durable boundaries. It contains workload metadata and should be treated as local sensitive information. There is no telemetry, automatic export, screenshot, MCP server or action interface.
 
@@ -73,6 +73,21 @@ compare children, never add their inclusive durations to the parent.
 The UI publisher preserves the removed projected-toggle index as an empty slot.
 It no longer references the removed QML object, which previously prevented all
 semantic UI snapshots with a `ReferenceError`.
+
+### Review operation timings — 2026-10-31
+
+The fixed action vocabulary now includes `review_answer`, `review_undo` and
+`review_batch`; successful receipts mark confirmed saved before refresh. The
+`review` workspace has its own surface value, visible-group indices and delegate
+readiness; deferred viewport restoration participates in pending bit 5. Review
+survivor/difference and status Details dialogs share modal bit 28. Existing enum
+indices are unchanged.
+`review_build` times Review construction (including cached reads), `review_write`
+times answer/batch command execution, and `review_refresh` times mutation-maintained
+acceptance review. Nested span durations must not be added together. These hooks
+add no financial queries or record payloads. The synthetic storage runner's
+`decisions 1000` mode prints phase deltas and compares 34 individual decisions
+with one batch, retaining exact-balance, row-count, verification and Undo assertions.
 
 ## Semantic UI and readiness
 

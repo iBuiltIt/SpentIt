@@ -45,6 +45,49 @@ The ledger has separate **Merge** (Alt+M) and **Link** (Alt+L) commands. Merge u
 the same survivor and persistence rules. Link retains the existing allocation
 selection and cross-account navigation workflow.
 
+## Batch Merge and stable status — owner Go, 2026-10-31
+
+Every right-pane workspace has a permanent bottom status line. Progress, success
+and errors occupy that reserved space; long messages expose Details. Review keeps
+its visible group anchor (or the next surviving group) when resolved groups leave.
+
+**Include match** selects a duplicate group as pending UI intent. Groups larger
+than two require transaction-row selection first. Changing those rows clears that
+group's inclusion. Zero/multiple committed selections require choosing a survivor;
+one committed selection keeps that row automatically. The fixed **Merge N selected
+matches** action submits only those groups. Numbered selected-group labels correspond
+to validation errors. Leaving Review or a changed dataset generation clears selections;
+read-only inspection retains them. No selections persist across restarts. Link is
+not batched and matching eligibility is unchanged.
+
+A partial Merge keeps an unanswered remainder of at least two rows visible even
+when those rows were clean in their original import. Existing encrypted unresolved
+choices seed that remainder; the same engine comparison still decides its edges.
+A later explicit answer retires the remainder, and Undo restores it. This does
+not seed suggestions in a fresh clean base import without a prior partial decision.
+
+The repository command accepts at most 2048 distinct groups / 4096 selected rows,
+rechecks their generation, membership, amounts, survivor and relationship protections,
+and saves all or none. Cancellation is available while staging, with a final atomic
+seal immediately before COMMIT. Cancellation that wins that race rolls back all
+staged work; a sealed commit completes and is reversed through Undo instead.
+
+One parent Review receipt owns the batch's Undo stack entry. Each group has its own
+child answer, choices, source associations and financial-history members, so answering
+one group never records an answer between unrelated groups. Existing encrypted
+schema 38/37 tables encode parent/child relationships in reserved answer question
+values (`batch`, `batch-child:<operation>`); no schema change is needed. Child IDs
+are derived from the parent's operation identity. Exact request receipts reject
+changed retries. Undo restores children in reverse order in one transaction and
+preserves earlier mutation barriers. The caller refreshes its snapshot once.
+
+Profiling found repeated source loads and saved-choice queries in the same-account
+peer comparison loop. Review now loads comparison facts once per build and evaluates
+the unchanged engine predicate before querying saved choices. This eliminates
+irrelevant database work; it does not change duplicate or transfer matching policy.
+The loop can still compare many pairs; this is not a constant-time performance claim.
+See [status](status.md) for measured workloads and verification limits.
+
 ## Common duplicate policy — owner Go, 2026-10-31
 
 All supported parsers produce common original facts. Same-account ordinary

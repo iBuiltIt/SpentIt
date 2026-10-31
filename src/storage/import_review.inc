@@ -19,6 +19,7 @@ void ImportStore::finish(const std::function<void()>& commit) {
     if(impl_->observer)impl_->observer(ImportPhase::after_commit);
 }
 void ImportStore::prepare_review() {
+    diag::Span span(diag::Code::review_refresh);
     ScopedStatements plans(impl_->db);
     struct Guard {
         Impl& state;std::int64_t account;bool prior;

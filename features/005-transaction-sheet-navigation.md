@@ -6,7 +6,7 @@ Implementation: partial. The durable QIF UI now has combined text/date/source/re
 
 ## Next tasks: Review responsiveness and batch decisions — 2026-10-31
 
-State: **discussion handoff only; implementation awaits explicit Go**. The owner
+State: **owner Go, 2026-10-31; implementation and verification recorded in [status](../doc/status.md)**. The owner
 requested this next-session record after reporting that the common same-day
 matching correction is much better. Preserve that working-tree correction and
 its verification; do not restore the withdrawn adjacent-day experiment. See
@@ -57,16 +57,26 @@ its verification; do not restore the withdrawn adjacent-day experiment. See
   and refresh once, avoiding repeated work where the measurements support it.
   Do not promise constant batch time; necessary per-merge work still scales.
 
-### Decisions to settle before implementation
+### Accepted decisions — owner Go, 2026-10-31
 
-Specify selection behavior when edits or other mutations change a group, how
-ambiguous groups and partial row selections join a batch, and whether pending
-selections survive closing Review or restarting. Choose the batch Undo unit,
-error presentation, cancellation boundary and behavior if one selected group
-becomes stale. Recommended starting point is to revalidate every selected group
-and apply all or none, with no silent skipping; this is a proposal, not a settled
-financial behavior. Keep the scope to duplicate Merge unless Link batching is
-separately requested.
+- A permanent status line occupies the bottom of the right pane in every workspace,
+  including accounts, Review, Categories and Rules. Progress, feedback and errors
+  use its reserved space. Long errors remain readable through Details; errors
+  requiring a decision retain explicit controls.
+- Match-group selection is separate from transaction-row selection. Ambiguous
+  groups need at least two explicitly chosen rows and any required survivor choice.
+  The sole committed selected row remains the automatic survivor.
+- Selections are UI intent only. They remain while navigating within Review and
+  inspecting without mutation, but clear on leaving Review or dataset mutation.
+  They are not saved across restarts.
+- Revalidate every selected group and apply all or none. No silent skipping. A
+  stale/invalid group identifies the affected selection and leaves all financial
+  records unchanged. A failed unchanged attempt may retain UI selections so the
+  numbered selection can be inspected; a changed generation clears them.
+- One Undo reverses the whole batch, retaining existing later-mutation barriers.
+- Cancellation before the final durable commit gate rolls back the whole batch.
+  Once the commit gate is sealed, the operation completes and Undo is available.
+- Scope is duplicate Merge only; Link remains an individual decision.
 
 ### Verification expectations
 

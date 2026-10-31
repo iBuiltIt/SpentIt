@@ -2,7 +2,114 @@
 
 Last updated: 2026-10-31
 
+## Review responsiveness and batch Merge — 2026-10-31
+
+Owner Go implemented: every right-pane workspace has a permanent bottom status
+line for progress, feedback and errors, with Details for long errors. Review
+preserves its visible group anchor when resolved groups leave. Group selection
+is separate from transaction selection; ambiguous groups require chosen rows and
+any required survivor. Leaving Review or a dataset mutation clears pending intent;
+read-only inspection retains it. No selections persist across restarts.
+
+Batch Merge revalidates selected duplicate groups and stages them in one atomic
+transaction. Stale/invalid selections reject the whole batch; cancellation before
+the final durable commit gate rolls back all children. One Undo reverses the entire
+batch, including accepted/pending rows and source associations, while preserving
+later-mutation barriers. Each group retains independent choices/history beneath
+one parent receipt. Undo checks the parent request against the complete ordered
+child receipts before restoring them. Link remains individual. Schema 38/37 and
+matching eligibility are unchanged. See [the contract](review-sheet.md#batch-merge-and-stable-status--owner-go-2026-10-31).
+
+Profiling a synthetic 2,000-row / 1,000-group fixture found repeated source loads
+and saved-choice SQL in the same-account peer loop: the initial single decision
+plus Review reads took 11.586 s, including 11.552 s in Review construction and
+15.151 ms in durable COMMIT. Reusing comparison facts and running the unchanged
+engine predicate before saved-choice queries reduced that observation to 0.780 s
+(0.746 s Review construction, 14.245 ms COMMIT). Statement reuse calls fell from
+4,033,028 to 51,017. Those are single before/after storage observations, not native
+UI timings or a claim about the owner's private workload. The runner retains
+exact-balance, row-count, verify and Undo assertions.
+
+Three serial repetitions before the final partial-selection follow-up, on fresh
+synthetic fixtures (warm restored copies,
+macOS arm64, rules-enabled Release, diagnostics enabled) passed all independent
+financial assertions. No build or other test competed with these timed runs.
+Times include the storage commands and their Review reads, not GUI presentation:
+
+| Workload | Median seconds | Minimum–maximum seconds |
+|---|---:|---:|
+| One Merge plus Review reads, 2,000 rows | 0.774 | 0.773–0.778 |
+| 34 selected groups applied individually | 26.314 | 26.261–26.362 |
+| The same 34 groups in one batch | 0.866 | 0.864–0.871 |
+
+The measured test binary SHA-256 stayed
+`c80ff7dfbf065da240de3906735d456b97426736b3d3a7078550d9162f4b3358`
+through all three runs. Reproduce with
+`build/import-ui-rules-release/tests/storage/spentit_review_sheet_tests decisions 1000`.
+Other OS activity and thermal/cache conditions were not controlled; these timings
+do not promise constant batch cost or the same latency on the owner's dataset.
+
+A final serial run after the unanswered-remainder correction also passed: single
+decision 0.791 s, 34 individual decisions 26.449 s, and the 34-group batch 0.874 s.
+No other build/test competed. Its unchanged test-binary SHA-256 was
+`402ac155e8096d0a57bb48b6de9e01a601e57f3b731b38c5bb7fdb5a013a96ad`.
+This final run is one observation, not an additional three-run distribution.
+
+Verification uses synthetic fixtures only. The broad macOS rules-enabled Release
+selection passed 97/97 checks; the complete UI executable passed 55 Qt cases before
+the additional batch-outcome case. Focused UI checks also cover lost acknowledgement,
+unknown outcome, saved-but-failed refresh, group selection lifetime, fixed status
+geometry and viewport identity after removing earlier groups. Native Cocoa Review,
+Undo and Link-difference interaction checks passed. The sandbox's initial Cocoa
+attempt could not access screens; the same checks passed with normal macOS access.
+A rendered synthetic Review workspace was inspected. No owner dataset was modified.
+
+The batch Merge/Undo recovery sweep passed 446 injected write/sync positions
+(237 Merge, 209 Undo), alternating disk-full and I/O errors, plus four process
+interruptions before/after durable commit. Each trial checked all-or-none exact
+balances/row counts, reopened and retried from the receipt, verified history, and
+restored an encrypted backup. The same sweep had also passed before those stronger
+assertions were added. After the final Undo receipt-consistency safeguard, its
+209-position sweep and both interruption boundaries passed again. Pending and accepted rows, cross-account/partial groups,
+retained-source reimport, stale/duplicate selections, changed retry, effective-total
+mismatch, linked-loser refusal, and cancellation including the final boundary are
+covered by the focused storage case. New tests initially exposed fixture mistakes
+(stale transfer revision/unresolved transfer setup and a missing committed-entry
+forwarder in the outcome test double); those were corrected, not production policy.
+
+Final ASan/UBSan and rules-disabled Release selections each passed all three
+Review storage checks and four focused Qt Review cases; after the final Undo
+receipt-consistency check, each passed those three storage checks again and both
+batch UI cases. No sanitizer diagnostic was reported (`detect_leaks=0`; no leak
+check claim). The final Release collector/navigation/Review selection passed 5/5,
+and the four focused Review UI cases plus the three existing commit/group/transfer
+outcome cases passed. All 278 relative links/anchors in the seven changed guidance
+and feature documents resolved, and whitespace checks passed. Final build logs
+were free of compiler warnings/errors.
+
+A final real-click ambiguous-group test caught a visual-only checkbox problem:
+cancelling the survivor chooser left a tick despite an empty pending selection.
+The binding now follows staged group intent, and leaving Review closes an unfinished
+batch survivor choice. The final five-case Release Review UI selection passed,
+including cancellation, explicit survivor choice, partial-group Merge and Undo.
+The subsequent native run exposed a second partial-selection edge: merging only
+the uncertain import's rows could hide an unanswered clean-original remainder.
+Review now seeds that remainder from the saved unresolved choices, without
+changing engine eligibility. Deterministic storage tests verify the remainder,
+reopen/backup persistence, a later No, and both Undo steps. Final Release,
+ASan/UBSan and rules-disabled Review storage selections each passed 3/3; both
+partial-selection/workspace Qt cases passed in all three configurations and native
+Cocoa. The additional statement review/reimport/overlap, Review-state, navigation
+and collector Release selection passed 6/6.
+
+Other platforms, a repeat of the owner's private 3–5-second observation, physical
+power loss and complete accessibility behavior remain unverified. The peer loop
+still has pairwise comparison cost in dense ambiguous datasets. Reports remain
+deferred. The rules-enabled Release executable is rebuilt at `./build/SpentIt`.
+
 ## Next-session Review tasks — 2026-10-31
+
+Historical handoff; the implemented result is recorded above.
 
 The owner reports that the common matching correction is much better. Next,
 address the reported 3–5-second wait per Review Yes and layout jumps caused by
@@ -10,8 +117,10 @@ transient status text below Hide sidebar. The proposed sequence is stable layout
 diagnostics of one decision, then group-level selection and batch Merge. See
 [the handoff](../features/005-transaction-sheet-navigation.md#next-tasks-review-responsiveness-and-batch-decisions--2026-10-31)
 for interaction proposals, unresolved financial/selection behavior and validation.
-This is documentation only; no new implementation Go was given. The common
-matching correction and this handoff are included in the owner-requested commit.
+This was the documentation-only handoff. The owner subsequently agreed the behavior
+and gave Go; the implementation and evidence above supersede that pending state.
+The common matching correction and original handoff were included in the earlier
+owner-requested commit.
 
 ## Common duplicate matching policy — 2026-10-31
 

@@ -254,6 +254,7 @@ public:
     virtual LinkExclusionPreview preview_link_exclusion(const LinkExclusion&) const {throw std::logic_error("Link exclusions unavailable");}
     virtual ReviewReceipt save_link_exclusion(std::string_view,const LinkExclusion&,std::int64_t) {throw std::logic_error("Link exclusions unavailable");}
     virtual ReviewSheet review_sheet() const {return {};}
+    virtual ReviewReceipt merge_review_batch(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Batch Review unavailable");}
     virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}
     virtual ReviewReceipt undo_review(std::string_view) {throw std::logic_error("Review Undo unavailable");}
     virtual std::optional<ReviewReceipt> review_outcome(std::string_view) const {return {};}

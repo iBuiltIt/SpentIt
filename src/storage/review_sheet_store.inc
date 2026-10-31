@@ -142,6 +142,7 @@ app::ReviewReceipt ImportStore::save_link_exclusion(std::string_view operation,c
     finish([&]{transaction.commit();});return {std::string(operation)};
 }
 app::ReviewSheet ImportStore::review_sheet() const {
+    diag::Span span(diag::Code::review_build);
     if(impl_->sheet_cache && impl_->sheet_changes==sqlite3_total_changes64(impl_->db))return *impl_->sheet_cache;
     auto result=build_review_sheet(link_exclusions());
     impl_->sheet_cache=result;impl_->sheet_changes=sqlite3_total_changes64(impl_->db);return result;
@@ -173,9 +174,29 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
             }
         }
     }
+    // A partial decision leaves the unselected comparison outstanding even if
+    // those rows were clean in their original import. A later explicit answer
+    // retires that pending intent; undoing it exposes the remainder again.
+    std::map<std::string,std::vector<imports::Occurrence>> remainders;
+    Statement pending_choices(impl_->db,R"SQL(SELECT p.answer,p.batch,p.ordinal
+      FROM review_choices p JOIN review_answers a ON a.id=p.answer
+      WHERE p.kind=0 AND p.resolved=0
+      AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=p.answer)
+      AND NOT EXISTS(SELECT 1 FROM review_choices n JOIN review_answers na ON na.id=n.answer
+        WHERE n.kind=0 AND n.resolved=1 AND n.batch=p.batch AND n.ordinal=p.ordinal
+        AND na.sequence>a.sequence AND NOT EXISTS(SELECT 1 FROM review_undos nu WHERE nu.answer=n.answer)))SQL");
+    while(pending_choices.row()){
+        imports::Occurrence id{pending_choices.bytes(1),static_cast<std::size_t>(pending_choices.integer(2))};
+        if(rows.contains(id))remainders[pending_choices.bytes(0)].push_back(std::move(id));
+    }
+    for(const auto& [answer,remaining]:remainders)if(remaining.size()>1)unresolved.insert(remaining.begin(),remaining.end());
     // Candidate edges use the existing source comparison rule. Connected groups
     // expose ambiguity without claiming that transitive candidates are identical.
     std::map<imports::Occurrence,std::set<imports::Occurrence>> graph;
+    // Load immutable comparison facts once, not once per possible pair. Check
+    // the engine predicate before querying persisted human decisions.
+    std::map<imports::Occurrence,qif::Record> comparison_sources;
+    if(!unresolved.empty())for(const auto& [id,view]:rows){impl_->selected_account=view.account;comparison_sources.emplace(id,load_row(id,false).source);}
     for(const auto& id:unresolved){
         const auto it=rows.find(id);if(it==rows.end())continue;
         impl_->selected_account=it->second.account;
@@ -185,9 +206,8 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         }
         // Candidate lookup historically omits same-import peers. Include them
         // only for a record already flagged as uncertain by the importer.
-        for(const auto& [other,view]:rows)if(other!=id && (other.batch==id.batch || unresolved.contains(other)) && view.account==it->second.account && !review_pair(impl_->db,0,id,other)){
-            const auto candidate=load_row(other,false);
-            if(imports::candidate_basis(row.source,candidate.source)){graph[id].insert(other);graph[other].insert(id);}
+        for(const auto& [other,view]:rows)if(other!=id && (other.batch==id.batch || unresolved.contains(other)) && view.account==it->second.account){
+            if(imports::candidate_basis(row.source,comparison_sources.at(other)) && !review_pair(impl_->db,0,id,other)){graph[id].insert(other);graph[other].insert(id);}
         }
     }
     std::set<imports::Occurrence> visited,duplicate_rows;
@@ -358,9 +378,21 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
     if(!undoing){Statement member(impl_->db,"INSERT INTO review_members VALUES(?,?,?,?,?,?,?)");member.text(1,answer);member.text(2,id.batch);member.integer(3,integer(id.ordinal));member.integer(4,committed?1:0);member.integer(5,prior);member.integer(6,result);member.text(7,child);member.done();}
 }
 app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const app::ReviewAnswer& answer) {
+    diag::Span span(diag::Code::review_write);
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE);const auto encoded=review_request(answer);
     if(const auto prior=review_outcome(operation)){Statement s(impl_->db,"SELECT request FROM review_answers WHERE id=?");s.text(1,operation);if(!s.row() || s.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Review retry changed its answer");return *prior;}
     auto sheet=review_sheet();if(sheet.generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");if(sheet.generation!=answer.generation)fail(SQLITE_CONSTRAINT,"The transactions changed. Review the current question again.");
+    if(answer.question=="selected" && answer.action==app::ReviewAction::merge){
+        const auto owner=account();app::ReviewQuestion manual{"selected",app::ReviewKind::same,owner.identity,owner.name,"Are these the same?","",{}, {}};
+        const std::set<imports::Occurrence> wanted(answer.selected.begin(),answer.selected.end());
+        for(const auto& row:current_ledger())if(wanted.contains(row.identity) && !row.identity.batch.starts_with("~transfer-"))manual.rows.push_back({row.identity,owner.identity,owner.name,row.draft,row.committed,{}});
+        sheet.questions.push_back(std::move(manual));
+    }
+    return write_review_answer(operation,answer,sheet);
+}
+app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,const app::ReviewAnswer& answer,const app::ReviewSheet& sheet,std::string_view parent) {
+    if(!parent.empty() && (sqlite3_get_autocommit(impl_->db) || answer.action!=app::ReviewAction::merge))fail(SQLITE_MISUSE,"A batch child requires its enclosing Merge transaction");
+    const auto encoded=review_request(answer);
     if(answer.action==app::ReviewAction::accept_missing){
         const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){return q.key==answer.question && !q.waiting_link.empty();});
         if(question==sheet.questions.end())fail(SQLITE_CONSTRAINT,"This waiting transfer has changed");
@@ -375,12 +407,6 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
         Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,request.link);history.blob(3,transfer_codec::encode(*old));history.blob(4,transfer_codec::encode(*next));history.text(5,child);history.done();
         Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();
         finish([&]{transaction.commit();});return {std::string(operation)};
-    }
-    if(answer.question=="selected" && answer.action==app::ReviewAction::merge){
-        const auto owner=account();app::ReviewQuestion manual{"selected",app::ReviewKind::same,owner.identity,owner.name,"Are these the same?","",{}, {}};
-        const std::set<imports::Occurrence> wanted(answer.selected.begin(),answer.selected.end());
-        for(const auto& row:current_ledger())if(wanted.contains(row.identity) && !row.identity.batch.starts_with("~transfer-"))manual.rows.push_back({row.identity,owner.identity,owner.name,row.draft,row.committed,{}});
-        sheet.questions.push_back(std::move(manual));
     }
     const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){return q.key==answer.question;});if(question==sheet.questions.end())fail(SQLITE_CONSTRAINT,"This question has already changed");
     if(question->kind==app::ReviewKind::correction)fail(SQLITE_CONSTRAINT,"Correct the record before resolving it");
@@ -401,8 +427,8 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
         for(const auto& r:chosen){if(r.account!=chosen.front().account)fail(SQLITE_CONSTRAINT,"Merge transactions within the same account");if(r.draft.transaction.effective_total()!=chosen.front().draft.transaction.effective_total())fail(SQLITE_CONSTRAINT,"Amounts differ. Edit the transactions before merging.");if(r.identity!=*survivor && transfer_linked(r.identity))fail(SQLITE_CONSTRAINT,"Resolve the existing links before merging this transaction");}
     }
     struct Scope{Impl& state;std::int64_t selected;bool cleaning;~Scope(){state.selected_account=selected;state.cleaning=cleaning;state.composing_review=false;}} scope{*impl_,impl_->selected_account,impl_->cleaning};
-    Atomic transaction(impl_->db);
-    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),?,?,?,?)");receipt.text(1,operation);receipt.integer(2,static_cast<int>(answer.action));receipt.text(3,answer.question);receipt.text(4,encoded);receipt.integer(5,answer.generation);receipt.done();
+    std::unique_ptr<Atomic> transaction;if(parent.empty())transaction=std::make_unique<Atomic>(impl_->db);
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),?,?,?,?)");receipt.text(1,operation);receipt.integer(2,static_cast<int>(answer.action));receipt.text(3,parent.empty()?answer.question:"batch-child:"+std::string(parent));receipt.text(4,encoded);receipt.integer(5,answer.generation);receipt.done();
     const auto choice=[&](int kind,const imports::Occurrence& id,bool resolved){Statement p(impl_->db,"INSERT INTO review_choices VALUES(?,?,?,?,?)");p.text(1,operation);p.integer(2,kind);p.text(3,id.batch);p.integer(4,integer(id.ordinal));p.integer(5,resolved?1:0);p.done();};
     std::size_t child=0;const auto next=[&]{return std::string(operation)+"-"+std::to_string(++child);};
     if(same){
@@ -485,8 +511,8 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
             }
         }
     }
-    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();
-    finish([&]{transaction.commit();});return {std::string(operation)};
+    if(parent.empty()){Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();finish([&]{transaction->commit();});}
+    return {std::string(operation)};
 }
 app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE);if(const auto prior=review_outcome(operation)){Statement saved(impl_->db,"SELECT 1 FROM review_undos WHERE id=?");saved.text(1,operation);if(!saved.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another Review command");return *prior;}
@@ -496,6 +522,25 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     if(generation!=review_generation(impl_->db))fail(SQLITE_CONSTRAINT,"Later changes prevent Review Undo");
     struct Scope{Impl& state;std::int64_t selected;bool cleaning;~Scope(){state.selected_account=selected;state.cleaning=cleaning;}} scope{*impl_,impl_->selected_account,impl_->cleaning};
     Atomic transaction(impl_->db);
+    Statement parent(impl_->db,"SELECT question,request FROM review_answers WHERE id=?");parent.text(1,answer);if(!parent.row())fail(SQLITE_CORRUPT);
+    Statement children(impl_->db,"SELECT id,request FROM review_answers WHERE question=? ORDER BY sequence");children.text(1,"batch-child:"+answer);
+    std::vector<std::string> ids;std::string encoded="batch:";
+    while(children.row()){
+        ids.push_back(children.bytes(0));const auto request=children.bytes(1);encoded+=std::to_string(request.size())+":"+request;
+        if(ids.size()>2048 || ids.back()!=answer+"-group-"+std::to_string(ids.size()))fail(SQLITE_CORRUPT,"Batch Review history is inconsistent");
+    }
+    if(parent.bytes(0)=="batch"?(ids.empty() || encoded!=parent.bytes(1)):!ids.empty())fail(SQLITE_CORRUPT,"Batch Review history is incomplete");
+    std::reverse(ids.begin(),ids.end());
+    restore_review_answer(operation,answer);
+    std::size_t child=0;for(const auto& id:ids)restore_review_answer(std::string(operation)+"-group-"+std::to_string(++child),id);
+    Statement pop(impl_->db,"DELETE FROM review_stack WHERE answer=?");pop.text(1,answer);pop.done();
+    // Reversing the top decision makes the preceding stack entry current again.
+    Statement prior(impl_->db,"UPDATE review_stack SET generation=? WHERE answer=(SELECT answer FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1) AND generation=(SELECT generation FROM review_answers WHERE id=?2)");prior.integer(1,generation+1);prior.text(2,answer);prior.done();
+    finish([&]{transaction.commit();});return {std::string(operation)};
+}
+
+void ImportStore::restore_review_answer(std::string_view operation,std::string_view answer) {
+    const auto prior_cleaning=impl_->cleaning;
     Statement receipt(impl_->db,"INSERT INTO review_undos VALUES(?,?)");receipt.text(1,operation);receipt.text(2,answer);receipt.done();
     // Restore transfer relationships first, then allocation snapshots. All writes
     // remain inside this single transaction, so no intermediate state is visible.
@@ -545,10 +590,36 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
         Statement del(impl_->db,"DELETE FROM source_associations WHERE source_batch=? AND source_ordinal=?");del.text(1,sources.bytes(0));del.integer(2,sources.integer(1));del.done();
         Statement add(impl_->db,"INSERT INTO source_associations VALUES(?,?,?,?)");add.text(1,sources.bytes(2));add.integer(2,sources.integer(3));add.text(3,sources.bytes(0));add.integer(4,sources.integer(1));add.done();
     }
-    impl_->cleaning=scope.cleaning;
+    impl_->cleaning=prior_cleaning;
     Statement merged(impl_->db,"DELETE FROM review_merges WHERE answer=?");merged.text(1,answer);merged.done();
-    Statement pop(impl_->db,"DELETE FROM review_stack WHERE answer=?");pop.text(1,answer);pop.done();
-    // Reversing the top decision makes the preceding stack entry current again.
-    Statement prior(impl_->db,"UPDATE review_stack SET generation=? WHERE answer=(SELECT answer FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1) AND generation=(SELECT generation FROM review_answers WHERE id=?2)");prior.integer(1,generation+1);prior.text(2,answer);prior.done();
-    finish([&]{transaction.commit();});return {std::string(operation)};
+}
+
+app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) {
+    diag::Span span(diag::Code::review_write);
+    identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
+    if(answers.empty() || answers.size()>2048)fail(SQLITE_CONSTRAINT,"Select between 1 and 2048 match groups");
+    std::string encoded="batch:";
+    std::set<std::string> questions;std::set<imports::Occurrence> selected;
+    for(const auto& answer:answers){
+        if(answer.action!=app::ReviewAction::merge || answer.question=="selected")fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
+        if(!questions.insert(answer.question).second)fail(SQLITE_CONSTRAINT,"Select each match group only once");
+        for(const auto& id:answer.selected)if(!selected.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once in a batch");
+        const auto request=review_request(answer);encoded+=std::to_string(request.size())+":"+request;
+    }
+    if(selected.size()>4096)fail(SQLITE_TOOBIG,"Merge at most 4096 transactions in one batch");
+    if(const auto prior=review_outcome(operation)){Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=?");saved.text(1,operation);if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Batch retry changed its selections");return *prior;}
+    context.checkpoint("Checking selected matches");
+    const auto sheet=review_sheet();if(sheet.generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
+    for(std::size_t i=0;i<answers.size();++i)if(answers[i].generation!=sheet.generation)fail(SQLITE_CONSTRAINT,("Selected match "+std::to_string(i+1)+" is stale. Review the current groups again.").c_str());
+    Atomic transaction(impl_->db);
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),1,'batch',?,?)");receipt.text(1,operation);receipt.text(2,encoded);receipt.integer(3,sheet.generation);receipt.done();
+    for(std::size_t i=0;i<answers.size();++i){
+        context.checkpoint("Merging selected matches");
+        try{write_review_answer(std::string(operation)+"-group-"+std::to_string(i+1),answers[i],sheet,operation);}
+        catch(const storage::ImportError& error){fail(error.code(),("Selected match "+std::to_string(i+1)+": "+error.what()).c_str());}
+    }
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,sheet.generation+1);stack.done();
+    context.checkpoint("Validating merged matches");
+    finish([&]{context.seal();transaction.commit();});
+    return {std::string(operation)};
 }

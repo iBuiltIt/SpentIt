@@ -138,6 +138,7 @@ public:
     app::LinkExclusionPreview preview_link_exclusion(const app::LinkExclusion&) const override;
     app::ReviewReceipt save_link_exclusion(std::string_view,const app::LinkExclusion&,std::int64_t) override;
     app::ReviewSheet review_sheet() const override;
+    app::ReviewReceipt merge_review_batch(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&) override;
     app::ReviewReceipt answer_review(std::string_view,const app::ReviewAnswer&) override;
     app::ReviewReceipt undo_review(std::string_view) override;
     std::optional<app::ReviewReceipt> review_outcome(std::string_view) const override;
@@ -191,6 +192,8 @@ private:
     std::optional<Money> projected_for(std::int64_t) const;
     app::Account account_for_batch(std::string_view) const;
     void require_account(std::string_view) const;
+    app::ReviewReceipt write_review_answer(std::string_view,const app::ReviewAnswer&,const app::ReviewSheet&,std::string_view parent={});
+    void restore_review_answer(std::string_view operation,std::string_view answer);
     void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false);
     imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t) const;
     void generate_explicit_transfers(app::OperationContext* context=nullptr);

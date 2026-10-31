@@ -99,12 +99,13 @@ ApplicationWindow {
         if(currencyDialog.visible) modals+=Math.pow(2,25)
         if(importCategoriesDialog.visible) modals+=Math.pow(2,26)
         if(discardDialog.visible) modals+=Math.pow(2,27)
-        if(reviewDifference.visible || reviewSurvivor.visible) modals+=Math.pow(2,28)
-        let pending=(startupPending?1:0)+(pendingAction?2:0)+(pendingSearch?4:0)+(pendingAccountNavigation?8:0)+(pendingCounterpart?16:0)+(ledgerViewRestore?32:0)+(closingRequested?64:0)+(guardHandoff?128:0)+(workflow.busy?256:0)+(probeTimer.running?512:0)
-        let first=ledger.indexAt(1,ledger.contentY+1)
-        let last=ledger.indexAt(1,ledger.contentY+ledger.height-1)
+        if(reviewDifference.visible || reviewSurvivor.visible || statusDetails.visible) modals+=Math.pow(2,28)
+        let pending=(startupPending?1:0)+(pendingAction?2:0)+(pendingSearch?4:0)+(pendingAccountNavigation?8:0)+(pendingCounterpart?16:0)+((ledgerViewRestore || reviewViewRestoring)?32:0)+(closingRequested?64:0)+(guardHandoff?128:0)+(workflow.busy?256:0)+(probeTimer.running?512:0)
+        let observedList=currentPage==="review"?reviewQuestions:ledger
+        let first=currentPage==="review"?reviewVisibleIndex():observedList.indexAt(1,observedList.contentY+1)
+        let last=observedList.indexAt(1,observedList.contentY+observedList.height-1)
         let count=0
-        for(let i=0;i<ledger.contentItem.children.length;i++)if(ledger.contentItem.children[i].hasOwnProperty("record"))count++
+        for(let i=0;i<observedList.contentItem.children.length;i++)if(observedList.contentItem.children[i].hasOwnProperty(currentPage==="review"?"modelData":"record"))count++
         // Keep the removed projected-toggle slot reserved for stable diagnostic bit indices.
         let controls=[search,null,editDate,editPayee,editMemo,editTotal,catalogSearch,ruleLabel,ruleExpression,location,unlockPassword]
         let visibleControls=0,enabledControls=0,focusRole=0
@@ -117,7 +118,7 @@ ApplicationWindow {
         workflow.observeUi({modalStack:diagnosticModalStack,editorKind:currentPage==="rules"?3:currentPage==="categories"?2:editEnabled?1:0,focusRole:focusRole,visibleControls:visibleControls,enabledControls:enabledControls,generation:workflow.diagnosticGeneration,surface:s.active?currentPage:settingUp?"setup":s.unlockRequired?"unlock":"welcome",modals:modals,pending:pending,
           sidebar:sidebarVisible,dirty:dirty||categoryDirty||rulesDirty,search:search.text.length>0,searchValid:diagnosticSearchValid,
           first:first,last:last,delegates:count,selectedVisible:!!ledger.currentItem && ledger.currentItem.y>=ledger.contentY && ledger.currentItem.y<ledger.contentY+ledger.height,
-          ready:modals!==0 || (pending===0 && (!s.active || currentPage!=="ledger" || ledger.count===0 || first>=0)),nativeExposed:false,
+          ready:modals!==0 || (pending===0 && (!s.active || (currentPage!=="ledger" && currentPage!=="review") || observedList.count===0 || first>=0)),nativeExposed:false,
           blockers:(s.importBlockers||[]).length,blockersTotal:s.importBlockerCount||0})
     }
     Timer {interval:100;repeat:true;running:workflow.diagnosticsEnabled;onTriggered:window.publishDiagnostics()}
@@ -751,7 +752,10 @@ ApplicationWindow {
         // Drop the old delegate index before a smaller filtered model replaces it.
         // The occurrence selection remains in the workflow and is restored below.
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
+        function onChanged() {if(workflow.busy)captureReviewView()}
         function onCompleted(action,success) {
+            if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
+
             if(action==="link_exclusion_save" && success)linkExclusionDialog.close()
             if(action==="link_exclusion_preview" && !success)exclusionPreviewed=false
             if(action==="commit" && commitBeforeQuit) {
@@ -1232,7 +1236,50 @@ ApplicationWindow {
     property real reviewScrollPosition: 0
     property var reviewPending: ({})
     property var reviewSurvivors: []
+    property var reviewBatch: ({})
+    property var reviewRowChoices: ({})
+    property string reviewSelectionGeneration: String(s.reviewGeneration||"")
+    onReviewSelectionGenerationChanged: {reviewBatch=({});reviewRowChoices=({});reviewSurvivor.close()}
+    onCurrentPageChanged: if(currentPage!=="review") {reviewBatch=({});reviewRowChoices=({});if(reviewPending.batchIntent)reviewSurvivor.close()}
+    property var reviewViewport: ({})
+    property bool reviewViewRestoring: false
+    function reviewVisibleIndex() {
+        let index=reviewQuestions.indexAt(1,reviewQuestions.contentY+1)
+        return index>=0?index:reviewQuestions.indexAt(1,reviewQuestions.contentY+reviewQuestions.spacing+1)
+    }
+    function captureReviewView() {
+        if(currentPage!=="review")return
+        let index=reviewVisibleIndex()
+        if(index<0)index=0
+        let item=reviewQuestions.itemAtIndex(index)
+        reviewViewport={keys:(s.reviewQuestions||[]).map(q=>q.key),index:index,offset:item?reviewQuestions.contentY-item.y:0}
+    }
+    function restoreReviewView() {
+        let keys=reviewViewport.keys||[], rows=s.reviewQuestions||[], index=-1
+        for(let i=reviewViewport.index||0;i<keys.length && index<0;i++)index=rows.findIndex(q=>q.key===keys[i])
+        if(index<0)for(let i=(reviewViewport.index||0)-1;i>=0 && index<0;i--)index=rows.findIndex(q=>q.key===keys[i])
+        reviewQuestions.forceLayout()
+        if(index>=0){reviewQuestions.positionViewAtIndex(index,ListView.Begin);reviewQuestions.contentY+=reviewViewport.offset||0}
+        else reviewQuestions.contentY=0
+        reviewQuestions.contentY=Math.max(reviewQuestions.originY,Math.min(reviewQuestions.contentY,reviewQuestions.originY+Math.max(0,reviewQuestions.contentHeight-reviewQuestions.height)))
+    }
+    function setReviewBatch(args) {
+        let values=Object.assign({},reviewBatch);values[args.question]=args;reviewBatch=values
+    }
+    function selectReviewGroup(question, chosen) {
+        if(reviewBatch[question.key]){let values=Object.assign({},reviewBatch);delete values[question.key];reviewBatch=values;return}
+        let args={question:question.key,generation:s.reviewGeneration,answer:"merge",selected:chosen,batchIntent:true}
+        let accepted=chosen.filter(row=>row.committed)
+        if(accepted.length===1){args.survivor=accepted[0];setReviewBatch(args)}
+        else {reviewPending=args;reviewSurvivors=chosen;reviewSurvivor.open()}
+    }
+    property string workspaceFeedback: "Ready"
+    Dialog {id:statusDetails;title:"Status details";modal:true;anchors.centerIn:parent;width:Math.min(720,window.width-40)
+        contentItem:Label {text:workflow.error;textFormat:Text.PlainText;wrapMode:Text.Wrap}
+        standardButtons:Dialog.Close
+    }
     function answerReview(question, answer, chosen) {
+        captureReviewView()
         reviewScrollPosition=reviewQuestions.contentY
         let args={question:question.key,generation:s.reviewGeneration,answer:answer,selected:chosen||[]}
         if(answer==="merge") {
@@ -1246,9 +1293,9 @@ ApplicationWindow {
         id:reviewSurvivor;objectName:"reviewSurvivor";title:"Choose the transaction to keep";modal:true;anchors.centerIn:parent;width:Math.min(window.width-64,720)
         contentItem:ColumnLayout {
             Repeater {model:reviewSurvivors;delegate:Button {
-                required property var modelData;Layout.fillWidth:true
+                required property var modelData;required property int index;objectName:"reviewKeep_"+index;Layout.fillWidth:true
                 text:modelData.date+" · "+modelData.payee+" · "+modelData.total+(modelData.committed?" · Committed":"")+" — Keep this transaction"
-                onClicked:{let args=Object.assign({},reviewPending,{survivor:modelData});reviewSurvivor.close();workflow.command("review_answer",args)}
+                onClicked:{let args=Object.assign({},reviewPending,{survivor:modelData});reviewSurvivor.close();if(args.batchIntent)setReviewBatch(args);else workflow.command("review_answer",args)}
             }}
         }
         standardButtons:Dialog.Cancel
@@ -1281,12 +1328,10 @@ ApplicationWindow {
             Button {objectName:"settingsNavigation";text:"Settings";visible:!!s.active;enabled:!workflow.busy;onClicked:navigate("settings")}
         }
         RowLayout {
-            visible:workflow.busy && (!!s.active || startupPending);Layout.fillWidth:true
-            Label {objectName:"operationPhase";textFormat:Text.PlainText;text:workflow.phase;Layout.fillWidth:true;wrapMode:Text.Wrap;Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}}
-            Label {text:"Cancellation requested…";visible:workflow.cancellationRequested}
-            Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
+            visible:workflow.busy && !s.active && startupPending;Layout.fillWidth:true
+            Label {text:workflow.phase;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
+            Button {objectName:"startupCancelOperation";text:"Cancel";visible:workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
         }
-        Label {objectName:"workflowError";textFormat:Text.PlainText;text:workflow.error;visible:!!s.active && text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}}
         UsableScrollView {
             id:welcomeScroll;objectName:"welcomeScreen";visible:!s.active && !startupPending;Layout.fillWidth:true;Layout.fillHeight:true;clip:true
             contentWidth:availableWidth
@@ -1444,16 +1489,39 @@ ApplicationWindow {
             }
             Item {
                 SplitView.fillWidth:true
+                Rectangle {
+                    id:workspaceStatus;objectName:"workspaceStatus";anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:40
+                    color:palette.window
+                    Rectangle {anchors.top:parent.top;width:parent.width;height:1;color:palette.mid}
+                    RowLayout {anchors.fill:parent;anchors.margins:4
+                        Label {id:workspaceStatusText;objectName:"operationPhase";Layout.fillWidth:true;Layout.minimumWidth:0
+                            textFormat:Text.PlainText;elide:Text.ElideRight
+                            text:workflow.busy?(workflow.cancellationRequested?"Cancellation requested…":workflow.phase):(workflow.error||workspaceFeedback)
+                            color:!workflow.busy && workflow.error?"#a02020":palette.windowText
+                            Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}
+                            ToolTip.visible:statusHover.hovered && truncated;ToolTip.text:text
+                            HoverHandler {id:statusHover}
+                        }
+                        Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.busy && workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
+                        Button {text:"Details";visible:!workflow.busy && !!workflow.error;onClicked:statusDetails.open()}
+                    }
+                }
+                Item {
+                    anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.bottom:workspaceStatus.top;anchors.bottomMargin:4
                 Item {
         id:reviewSheet;objectName:"reviewSheet";anchors.fill:parent;visible:currentPage==="review"
         property string title:"Review · "+(s.reviewCount||0)+" remaining"
         function open(){navigate("review");reviewQuestions.forceActiveFocus()}
-        function close(){navigate("ledger")}
+        function close(){reviewBatch=({});reviewRowChoices=({});navigate("ledger")}
         ColumnLayout {anchors.fill:parent;spacing:4
         ColumnLayout {
             Layout.fillWidth:true
-            Label {text:reviewSheet.title;font.pixelSize:20;Layout.margins:12}
-            Label {text:workflow.error;visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true;Layout.leftMargin:12;Layout.rightMargin:12}
+            RowLayout {Layout.fillWidth:true;Layout.margins:12
+                Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true}
+                Button {objectName:"mergeSelectedMatches";text:"Merge "+Object.keys(reviewBatch).length+" selected matches";enabled:!workflow.busy && Object.keys(reviewBatch).length>0
+                    onClicked:{captureReviewView();workflow.command("review_batch",{groups:Object.keys(reviewBatch).map(key=>reviewBatch[key])})}}
+                Button {text:"Clear selection";enabled:!workflow.busy && Object.keys(reviewBatch).length>0;onClicked:reviewBatch=({})}
+            }
         }
 
         Item {Layout.fillWidth:true;Layout.preferredHeight:30;clip:true
@@ -1480,7 +1548,8 @@ ApplicationWindow {
                 else if((event.key===Qt.Key_Return || event.key===Qt.Key_Enter) && currentItem && currentItem.modelData.rows.length){inspectReviewTransaction(currentItem.modelData.rows[0]);event.accepted=true}
             }
             clip:true;spacing:4;contentWidth:Math.max(width,1000);model:s.reviewQuestions||[]
-            onModelChanged:Qt.callLater(function(){reviewQuestions.contentY=Math.max(0,Math.min(reviewScrollPosition,reviewQuestions.contentHeight-reviewQuestions.height))})
+            onModelChanged:{reviewViewRestoring=true;Qt.callLater(function(){restoreReviewView();reviewViewRestoring=false})}
+            onMovementEnded:captureReviewView()
     Shortcut {objectName:"reviewUndoShortcut";
         sequences:[StandardKey.Undo]
         enabled:reviewSheet.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoReview && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
@@ -1491,15 +1560,25 @@ ApplicationWindow {
             Label {anchors.centerIn:parent;visible:reviewQuestions.count===0;text:"Nothing left to review."}
             delegate:ColumnLayout {
                 id:questionCard;required property var modelData;required property int index;width:reviewQuestions.contentWidth-24;spacing:4
-                property var chosen: []
+                property var chosen: reviewRowChoices[modelData.key]||[]
                 property int counterpart: -1
                 property string leftAllocation: ""
                 property string rightAllocation: ""
-                onModelDataChanged:{chosen=[];counterpart=-1;leftAllocation="";rightAllocation=""}
-                function toggle(row, checked){let values=chosen.slice();if(checked)values.push(row);else values=values.filter(function(v){return v.key!==row.key});chosen=values}
+                onModelDataChanged:{counterpart=-1;leftAllocation="";rightAllocation=""}
+                function toggle(row, checked){let values=chosen.slice();if(checked)values.push(row);else values=values.filter(function(v){return v.key!==row.key});let choices=Object.assign({},reviewRowChoices);choices[modelData.key]=values;reviewRowChoices=choices;let groups=Object.assign({},reviewBatch);delete groups[modelData.key];reviewBatch=groups}
                 Label {text:questionCard.modelData.accountName||"Import problems";visible:!!questionCard.modelData.separator;font.bold:true;font.pixelSize:16;Layout.fillWidth:true}
                 RowLayout {
                     Layout.fillWidth:true
+                    CheckBox {objectName:"reviewGroupSelect_"+questionCard.index;text:reviewBatch[questionCard.modelData.key]?"Selected match "+(Object.keys(reviewBatch).indexOf(questionCard.modelData.key)+1):"Include match";visible:questionCard.modelData.kind==="same"
+                        checked:!!reviewBatch[questionCard.modelData.key]
+                        enabled:!workflow.busy && (questionCard.modelData.rows.length===2 || questionCard.chosen.length>=2)
+                        onClicked:{
+                            selectReviewGroup(questionCard.modelData,questionCard.modelData.rows.length===2?questionCard.modelData.rows:questionCard.chosen)
+                            // A click can open a survivor choice without staging a group.
+                            checked=Qt.binding(function(){return !!reviewBatch[questionCard.modelData.key]})
+                        }
+                        ToolTip.visible:hovered;ToolTip.text:"Choose at least two transaction rows in an ambiguous group before including the match."
+                    }
                     Label {text:questionCard.modelData.reason;wrapMode:Text.Wrap;Layout.fillWidth:true}
                     Button {text:"Yes";objectName:"reviewYes";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy && (questionCard.modelData.kind==="same" || questionCard.counterpart>=1);onClicked:{
                         if(questionCard.modelData.kind==="same")answerReview(questionCard.modelData,"merge",questionCard.modelData.rows)
@@ -1516,7 +1595,7 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth:true
                         Item {Layout.preferredWidth:32;Layout.preferredHeight:36
-                        CheckBox {anchors.centerIn:parent;visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;onToggled:questionCard.toggle(reviewRow.modelData,checked);Accessible.name:"Select transaction "+reviewRow.modelData.payee}
+                        CheckBox {objectName:"reviewRowSelect_"+reviewRow.index;anchors.centerIn:parent;enabled:!workflow.busy;checked:questionCard.chosen.some(row=>row.key===reviewRow.modelData.key);visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;onClicked:questionCard.toggle(reviewRow.modelData,checked);Accessible.name:"Select transaction "+reviewRow.modelData.payee}
                         RadioButton {anchors.centerIn:parent;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;onClicked:{questionCard.counterpart=reviewRow.index;questionCard.rightAllocation=""} Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee}
                         }
                         Label {text:reviewRow.modelData.date;Layout.preferredWidth:95;textFormat:Text.PlainText}
@@ -2051,6 +2130,7 @@ ApplicationWindow {
                 }
             }
         }
+    }
     }
     Frame {
         id:editor;objectName:"transactionEditor"

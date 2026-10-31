@@ -209,6 +209,9 @@ QString phaseFor(const QString& action){
     if(action=="resume")return "Preparing draft interpretations";
     if(action=="commit")return "Committing import";
     if(action=="backup")return "Creating verified backup";
+    if(action=="review_answer")return "Saving Review decision";
+    if(action=="review_batch")return "Checking selected matches";
+    if(action=="review_undo")return "Undoing Review decision";
     if(action=="create")return "Creating dataset";
     if(action=="save")return "Saving draft";
     if(action=="preview_change")return "Preparing committed-change preview";
@@ -919,6 +922,17 @@ struct ImportModel::Worker {
             const auto op=identity();try{repo.save_link_exclusion(op,*preparedLinkExclusion,linkExclusionGeneration);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
             preparedLinkExclusion.reset();linkExclusionPreview.clear();return;
         }
+        if(action=="review_batch") {
+            std::vector<app::ReviewAnswer> answers;
+            for(const auto& item:a.value("groups").toList()){
+                const auto group=item.toMap();app::ReviewAnswer answer;answer.action=app::ReviewAction::merge;answer.generation=group.value("generation").toString().toLongLong();answer.question=str(group.value("question"));
+                for(const auto& value:group.value("selected").toList()){const auto row=value.toMap();answer.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
+                if(group.contains("survivor")){const auto row=group.value("survivor").toMap();answer.survivor=imports::Occurrence{str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())};}
+                answers.push_back(std::move(answer));
+            }
+            const auto op=identity();try{repo.merge_review_batch(op,answers,context);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            diagnosticSaved=true;selected.clear();return;
+        }
         if(action=="review_answer" || action=="review_link_preview") {
             app::ReviewAnswer answer;answer.generation=a.value("generation").toString().toLongLong();answer.question=str(a.value("question"));
             const auto kind=a.value("answer").toString();answer.action=kind=="accept_missing"?app::ReviewAction::accept_missing:kind=="merge"?app::ReviewAction::merge:kind=="link"?app::ReviewAction::link:kind=="not_linked"?app::ReviewAction::not_linked:app::ReviewAction::separate;
@@ -939,10 +953,10 @@ struct ImportModel::Worker {
                 }
             }
             const auto op=identity();try{repo.answer_review(op,answer);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
-            reviewLinkPreview.clear();selected.clear();return;
+            diagnosticSaved=true;reviewLinkPreview.clear();selected.clear();return;
         }
         if(action=="review_cancel_link"){reviewLinkPreview.clear();return;}
-        if(action=="review_undo") {const auto op=identity();try{repo.undo_review(op);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}reviewLinkPreview.clear();selected.clear();return;}
+        if(action=="review_undo") {const auto op=identity();try{repo.undo_review(op);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}diagnosticSaved=true;reviewLinkPreview.clear();selected.clear();return;}
         if(action=="transfer_candidates"){
             transferCandidates.clear();candidateLink=a.value("link").toString();
             const auto links=repo.transfers();const auto found=std::find_if(links.begin(),links.end(),[&](const auto& value){return value.link.identity==str(a.value("link"));});
@@ -1643,7 +1657,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates") operation->seal();
+    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
@@ -1750,6 +1764,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
             result.error=(action=="create_account" && result.success)?"Account was created durably, but its view could not be refreshed. Reopen and inspect the account list before retrying."
                 :((action=="map_import" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved durably, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
+                :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved durably, but its view could not be refreshed. Reopen and inspect Review before retrying."
                 :(action.startsWith("transfer_") && result.success)?"Transfer operation was saved durably, but its view could not be refreshed. Reopen and inspect transfers before retrying."
                 :(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved durably, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."
                 :(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Committed change "+worker->changeReceipt.value("operation").toString()+" was saved durably, but the refreshed ledger could not be loaded. Reopen and inspect committed history; do not apply the change again."

@@ -14,6 +14,7 @@
 #include <QFont>
 #include <QRegularExpression>
 #include <QAccessible>
+#include <QJSValue>
 #include <QStyleHints>
 #include <sqlite3.h>
 using namespace spentit;
@@ -26,6 +27,11 @@ public:
     bool attempted=false,cancelAfterOpen=false,failAccountRefresh=false,failAccountSelection=false;
     QString groupFaultAction;bool groupInjected=false,cancelGroupResume=false;
     app::ImportRepository& repo() const { return inner->repository(); }
+    bool failReviewRefresh=false;
+    app::ReviewSheet review_sheet() const override {if(failReviewRefresh && attempted)throw std::runtime_error("Injected Review refresh failure");return repo().review_sheet();}
+    app::ReviewReceipt merge_review_batch(std::string_view id,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) override {const bool lose=groupBefore("review_batch");auto result=repo().merge_review_batch(id,answers,context);if(lose)throw std::runtime_error("Injected lost batch acknowledgement");return result;}
+    std::optional<app::ReviewReceipt> review_outcome(std::string_view id) const override {if(attempted && fault==unknown && groupFaultAction=="review_batch")throw app::OperationOutcomeUnknown();return repo().review_outcome(id);}
+
     void create(const std::filesystem::path& p,bool mode,std::string_view pw,std::string_view name,const Currency& c,std::string_view day) override {inner->create(p,mode,pw,name,c,day);}
     void open(const std::filesystem::path& p,std::optional<std::string> pw) override {inner->open(p,std::move(pw));}
     void open_controlled(const std::filesystem::path& p,std::optional<std::string> pw,const app::OperationContext& c) override {inner->open_controlled(p,std::move(pw),c);if(cancelAfterOpen)c.request();}
@@ -77,10 +83,9 @@ public:
     void decide(const imports::Occurrence& o,std::int64_t r,const imports::Decision& d) override {repo().decide(o,r,d);}
     void discard(std::string_view b,std::int64_t r) override {repo().discard(b,r);}
     bool transaction_accepted(const imports::Occurrence& id) const override{return repo().transaction_accepted(id);}
-    app::ReviewSheet review_sheet() const override{return repo().review_sheet();}
+    app::CommittedEntry committed_entry(const imports::Occurrence& id) const override{return repo().committed_entry(id);}
     app::ReviewReceipt answer_review(std::string_view op,const app::ReviewAnswer& a) override{return repo().answer_review(op,a);}
     app::ReviewReceipt undo_review(std::string_view op) override{return repo().undo_review(op);}
-    std::optional<app::ReviewReceipt> review_outcome(std::string_view op) const override{return repo().review_outcome(op);}
     app::AcceptanceReview acceptance_review() const override{return repo().acceptance_review();}
     app::AcceptanceReceipt accept_all(std::string_view op,bool ignore=false) override {
         attempted=true;if(fault==before)throw std::runtime_error("Injected failure before commit");
@@ -130,6 +135,59 @@ class ImportUiTests : public QObject {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
     }
 private slots:
+    void batchReviewOutcomes() {
+        for(int mode=0;mode<4;++mode){
+            QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* fault=gateway.get();ImportModel m(std::move(gateway));create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+            run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPA\n^\nD2026-02-01\nT-20\nPA\n^\n")}});run(m,"commit");run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPB\n^\nD2026-02-01\nT-20\nPB\n^\n")}});
+            QVariantList groups;for(const auto& value:m.state().value("reviewQuestions").toList()){const auto q=value.toMap();groups.push_back(QVariantMap{{"question",q.value("key")},{"generation",m.state().value("reviewGeneration")},{"selected",q.value("rows")}});}QCOMPARE(groups.size(),2);
+            fault->groupFaultAction="review_batch";fault->fault=mode==0?OutcomeGateway::before:mode==2?OutcomeGateway::unknown:OutcomeGateway::after;fault->failReviewRefresh=mode==3;
+            run(m,"review_batch",{{"groups",groups}},mode==1);
+            if(mode==0){QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("balance").toString(),"-60.00");}
+            if(mode==1){QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"-30.00");}
+            if(mode>=2)QVERIFY(!m.state().value("active").toBool());
+            if(mode==3)QVERIFY(m.error().contains("saved durably"));
+            fault->fault=OutcomeGateway::none;fault->failReviewRefresh=false;fault->groupFaultAction.clear();if(m.state().value("active").toBool())run(m,"close");run(m,"open",{{"path",dir.path()+"/doc"}});QCOMPARE(m.state().value("balance").toString(),mode==0?"-60.00":"-30.00");run(m,"close");
+        }
+    }
+    void batchReviewSurvivorSelection() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        for(int pass=0;pass<2;++pass){const QByteArray record="D2026-02-01\nT-10\nP"+QByteArray::number(pass)+" synthetic\n^\n";run(m,"import",{{"path",fixture(dir.path(),record+record)}});}
+        QCOMPARE(m.state().value("reviewCount").toInt(),1);QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"openReviewSheet"),"clicked"));QTest::qWait(100);
+        auto* group=visualItem(window->contentItem(),"reviewGroupSelect_0");QVERIFY(group);QVERIFY(!group->isEnabled());
+        for(int i=0;i<2;++i){auto* row=visualItem(window->contentItem(),"reviewRowSelect_"+QString::number(i));QVERIFY(row);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene(QPointF(row->width()/2,row->height()/2)).toPoint());}
+        QTRY_VERIFY(group->isEnabled());const auto clickGroup=[&]{QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,group->mapToScene(QPointF(group->width()/2,group->height()/2)).toPoint());};
+        clickGroup();auto* survivor=window->findChild<QObject*>("reviewSurvivor");QVERIFY(survivor);QTRY_VERIFY(survivor->property("visible").toBool());QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
+        QVERIFY(QMetaObject::invokeMethod(survivor,"reject"));QTRY_VERIFY(!survivor->property("visible").toBool());QTRY_VERIFY(!group->property("checked").toBool());
+        clickGroup();QTRY_VERIFY(survivor->property("visible").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewKeep_0"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewKeep_0"),"clicked"));QTRY_VERIFY(group->property("checked").toBool());QCOMPARE(m.state().value("balance").toString(),"-40.00");
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"mergeSelectedMatches"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),"-30.00");QCOMPARE(m.state().value("reviewCount").toInt(),1);run(m,"review_undo");QCOMPARE(m.state().value("balance").toString(),"-40.00");run(m,"close");
+    }
+    void batchReviewWorkspace() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        for(int pass=0;pass<2;++pass){QString bytes="!Type:Bank\n";for(int i=1;i<=40;++i)bytes+="D2026-02-01\nT-"+QString::number(i)+"\nP"+QString::number(pass)+" synthetic\n^\n";run(m,"import",{{"path",fixture(dir.path(),bytes.toUtf8())}});if(!pass)run(m,"commit");}
+        QCOMPARE(m.state().value("reviewCount").toInt(),40);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"openReviewSheet"),"clicked"));
+        auto* status=visualItem(window->contentItem(),"workspaceStatus");auto* list=visualItem(window->contentItem(),"reviewQuestions");QVERIFY(status && list);QTest::qWait(30);const auto statusPosition=status->mapToScene(QPointF());const auto listPosition=list->mapToScene(QPointF());const auto listHeight=list->height();
+        const auto select=[&](int index){const auto q=m.state().value("reviewQuestions").toList().at(index).toMap();QVERIFY(QMetaObject::invokeMethod(window,"selectReviewGroup",Q_ARG(QVariant,QVariant(q)),Q_ARG(QVariant,q.value("rows"))));};
+        if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_SCREENSHOT")));}
+        select(0);select(1);QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),2);
+        // A read-only inspection refresh must retain group intent.
+        const auto row=m.state().value("reviewQuestions").toList().at(0).toMap().value("rows").toList().at(0).toMap();run(m,"inspect",{{"batch",row.value("batch")},{"ordinal",row.value("ordinal")}});
+        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),2);
+        QVERIFY(QMetaObject::invokeMethod(list,"positionViewAtIndex",Q_ARG(int,10),Q_ARG(int,0)));QTest::qWait(50);
+        int anchorIndex=-1;QVERIFY(QMetaObject::invokeMethod(list,"indexAt",Q_RETURN_ARG(int,anchorIndex),Q_ARG(qreal,1),Q_ARG(qreal,list->property("contentY").toDouble()+1)));QVERIFY(anchorIndex>=2);const auto anchorKey=m.state().value("reviewQuestions").toList().at(anchorIndex).toMap().value("key");
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"mergeSelectedMatches"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),38);QCOMPARE(m.state().value("balance").toString(),"-1637.00");
+        QTest::qWait(50);int restoredIndex=-1;QVERIFY(QMetaObject::invokeMethod(list,"indexAt",Q_RETURN_ARG(int,restoredIndex),Q_ARG(qreal,1),Q_ARG(qreal,list->property("contentY").toDouble()+1)));QVERIFY(restoredIndex>=0);QCOMPARE(m.state().value("reviewQuestions").toList().at(restoredIndex).toMap().value("key"),anchorKey);
+        QTRY_COMPARE(status->mapToScene(QPointF()),statusPosition);QCOMPARE(list->mapToScene(QPointF()),listPosition);QCOMPARE(list->height(),listHeight);
+        if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS")){const auto observed=diagnostics::Collector::instance().snapshot();QCOMPARE(observed.latest.action,diagnostics::Action::review_batch);QCOMPARE(observed.latest.persistence,diagnostics::Persistence::confirmed_saved);qInfo()<<"Batch UI worker_us"<<observed.latest.ended-observed.latest.started<<"delivery_us"<<observed.latest.delivered-observed.latest.ended;}
+        run(m,"review_undo");QCOMPARE(m.state().value("reviewCount").toInt(),40);QCOMPARE(m.state().value("balance").toString(),"-1640.00");
+        select(0);QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("reviewSheet"),"close"));QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
+        run(m,"review_batch",{{"groups",QVariantList{}}},false);QVERIFY(!m.error().isEmpty());QCOMPARE(status->mapToScene(QPointF()),statusPosition);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"rulesNavigation"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(status->isVisible());QCOMPARE(status->mapToScene(QPointF()),statusPosition);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"openReviewSheet"),"clicked"));select(0);run(m,"commit",{{"ignoreWarnings",true}});QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
+        run(m,"close");
+    }
     void unifiedReviewSheet() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});

@@ -1,6 +1,6 @@
 # Feature discovery
 
-These documents describe SpentIt — Where did my money go? They capture the initial discussion and accepted follow-ups through 2026-10-30 without requiring access to private notes or chat history.
+These documents describe SpentIt — Where did my money go? They capture the initial discussion and accepted follow-ups through 2026-10-31 without requiring access to private notes or chat history.
 
 ## Status legend
 
@@ -20,7 +20,7 @@ The [2026-10-30 Merge/Link decision](005-transaction-sheet-navigation.md#accepte
 
 The [dataset-wide commit/new-transaction model](../doc/import-commit-discussion.md) is implemented. Multiple imports accumulate saved transactions; strict bank-ID overlap recognizes accepted and uncommitted targets; duplicate-only sources complete without accepting older work. Commit accepts new transactions across accounts while import failures remain visible. Account-wide rollback removes exclusively owned uncommitted material and preserves accepted transactions and other retained sources. Existing creation/opening-review behavior remains. See [current status and verification](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). This supersedes older per-account commit and compulsory permanent-evidence requirements, not the deferred scope of the broader features below.
 
-Next accepted revision: [Review workspace and link learning](005-transaction-sheet-navigation.md#next-session-handoff-review-workspace-and-link-learning--2026-10-30). Owner testing rejected the initial modal/card layout and excessive false link suggestions. Replace these with a compact account-level ledger and stronger suggestions refined by explicit Payee/Memo exclusions under Rules. Duplicate detection is unaffected. Matching thresholds remain open; implementation awaits Go.
+The [Review workspace and link learning](005-transaction-sheet-navigation.md#next-session-handoff-review-workspace-and-link-learning--2026-10-30) revision is implemented under its subsequent Go and settled matching policy. The owner also authorized [Review responsiveness and batch decisions](005-transaction-sheet-navigation.md#next-tasks-review-responsiveness-and-batch-decisions--2026-10-31): permanent status in every right pane, stable viewport, profiled candidate rebuilding and atomic batch duplicate Merge with group selection and one Undo. See [the contract](../doc/review-sheet.md) and [status](../doc/status.md) for implementation, measurements and verification limits.
 
 ## Initial features
 
