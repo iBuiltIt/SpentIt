@@ -28,8 +28,13 @@ struct ReimportKey {
 std::optional<ReimportKey> reimport_key(const qif::Record&);
 enum class MatchBasis { same_source_fields, same_date_amount, same_amount_unknown_date, unknown_original_amount,
     same_fitid, uncertain_fitid, uncertain_date };
-// A candidate is evidence for review, never permission for automatic exclusion.
-std::optional<MatchBasis> candidate_basis(const qif::Record&,const qif::Record&);
+// One format-independent policy on original facts. Ordinary amount candidates
+// require the same known date; unknown facts remain reviewable. Shared original
+// or retained bank IDs can flag contradictory facts for review, never exclusion.
+enum class MatchContext { suggestion, confirmed_decision };
+// confirmed_decision is only for validating an already recorded explicit choice.
+std::optional<MatchBasis> candidate_basis(const qif::Record&,const qif::Record&,
+                                        MatchContext = MatchContext::suggestion);
 // Strict bank-ID evidence agreement. The caller must additionally establish
 // the same resolved account, a unique live target and one-to-one occurrences.
 // Never pass edited ledger fields in place of the original source records.

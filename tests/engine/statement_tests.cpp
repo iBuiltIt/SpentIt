@@ -193,13 +193,28 @@ void parser() {
     check(imports::candidate_basis(same, other_amount) == imports::MatchBasis::uncertain_fitid);
     check(imports::candidate_basis(same, missing) == imports::MatchBasis::uncertain_fitid);
     check(!imports::candidate_basis(same, other_id));
-    check(imports::candidate_basis(qif_row, later) == imports::MatchBasis::uncertain_date);
+    check(!imports::candidate_basis(qif_row, later));
     check(!imports::candidate_basis(qif_row, qif_other_day));
     const auto aso_other_day = basis_row("2026-02-02", amount, "", "aso");
     const auto aso_fit = basis_row("2026-02-02", amount, "FIT-1", "aso");
-    check(imports::candidate_basis(qif_row, aso_other_day) == imports::MatchBasis::uncertain_date);
+    check(!imports::candidate_basis(qif_row, aso_other_day));
     check(imports::candidate_basis(same, aso_fit) == imports::MatchBasis::same_fitid);
     check(imports::basis_label(imports::MatchBasis::same_fitid).find("FITID") != std::string::npos);
+    // Holding internal facts constant, every format pairing has identical policy.
+    for(const auto left:{"qif","ofx","qfx","qbo","aso"})for(const auto right:{"qif","ofx","qfx","qbo","aso"}) {
+        auto a=basis_row("2026-02-01",amount,"",left);
+        auto b=basis_row("2026-02-01",amount,"",right);
+        check(imports::candidate_basis(a,b)==imports::MatchBasis::same_source_fields);
+        b.payee="Different export description";check(imports::candidate_basis(a,b)==imports::MatchBasis::same_date_amount);
+        for(const auto date:{"2026-01-31","2026-02-02","2010-01-01"}){b.date=date;check(!imports::candidate_basis(a,b));check(imports::candidate_basis(a,b,imports::MatchContext::confirmed_decision)==imports::MatchBasis::uncertain_date);}
+        a.fitid=b.fitid="BANK-1";a.trntype=b.trntype="DEBIT";
+        check(imports::candidate_basis(a,b)==imports::MatchBasis::same_fitid);check(!imports::same_bank_transaction(a,b));
+        b.date=a.date;check(imports::same_bank_transaction(a,b));
+        b.fitid="BANK-2";check(!imports::candidate_basis(a,b));check(!imports::same_bank_transaction(a,b));
+        b.fitid.clear();b.associated_fitids={"BANK-2","BANK-3"};check(!imports::candidate_basis(a,b));
+        b.associated_fitids.push_back("BANK-1");check(imports::candidate_basis(a,b)==imports::MatchBasis::same_fitid);
+        check(!imports::same_bank_transaction(a,b));
+    }
     // Synthetic decision table: format and text do not change bank identity;
     // contradictory financial facts and unavailable identities never auto-match.
     for(const auto label:{"ofx","qfx","qbo","aso"}) {

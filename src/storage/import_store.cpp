@@ -674,20 +674,29 @@ bool rules_format(sqlite3* db){
 void retain_source_header(sqlite3* db,std::string_view id,std::string_view format,std::string_view grammar,std::string_view header) {
     Statement row(db,"INSERT INTO source_headers VALUES(?,?,?,?)");row.text(1,id);row.text(2,format);row.text(3,grammar);row.text(4,header);row.done();
 }
+// SQL retrieves a conservative superset. Only the engine decides whether the
+// original facts make a duplicate candidate; format labels never enter policy.
 void bind_candidate(Statement& statement,const qif::Record& record) {
     statement.text(1,record.date);
-    if(record.original_amount) statement.integer(3,record.original_amount->units());
-    statement.text(4,record.fitid);
-    statement.text(5,record.format.empty()?"qif":record.format);
+    if(record.original_amount)statement.integer(2,record.original_amount->units());
+    const auto& primary=record.fitid.empty()?record.associated_fitid:record.fitid;
+    statement.text(3,primary);
+    statement.integer(5,std::any_of(record.associated_fitids.begin(),record.associated_fitids.end(),[&](const auto& id){return id!=primary;}));
 }
-// Candidate queries drive from committed batches in the selected account. The
-// explicit join order prevents scanning every pending record for each new amount.
 constexpr const char* candidate_where =
-    "b.account_id=spentit_account() AND b.state IN(0,1,4) AND r.batch<>?6 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1 "
-    "AND ((?4<>'' AND EXISTS(SELECT 1 FROM source_associations fa JOIN source_occurrences fo ON fo.batch=fa.source_batch AND fo.ordinal=fa.source_ordinal WHERE fa.ledger_batch=r.batch AND fa.ledger_ordinal=r.ordinal AND ifnull(fo.fitid,'')=?4)) "
-    "OR (NOT (?4<>'' AND EXISTS(SELECT 1 FROM source_associations fa JOIN source_occurrences fo ON fo.batch=fa.source_batch AND fo.ordinal=fa.source_ordinal WHERE fa.ledger_batch=r.batch AND fa.ledger_ordinal=r.ordinal AND ifnull(fo.fitid,'')<>'' AND ifnull(fo.fitid,'')<>?4)) "
-    "AND (r.original=?3 OR r.original IS NULL OR ?3 IS NULL) AND ((r.source_date=?1 OR r.source_date='' OR ?1='') "
-    "OR (?3 IS NOT NULL AND r.original=?3 AND r.source_date<>'' AND ?1<>'' AND r.source_date<>?1 AND (?5<>'qif' OR ifnull(o.format,'qif')<>'qif')))))";
+    "b.account_id=spentit_account() AND b.state IN(0,1,4) AND r.batch<>?4 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1 "
+    "AND (?5=1 OR (?3<>'' AND EXISTS(SELECT 1 FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=r.batch AND a.ledger_ordinal=r.ordinal AND o.fitid=?3)) "
+    "OR ((r.original=?2 OR r.original IS NULL OR ?2 IS NULL) AND (r.source_date=?1 OR r.source_date='' OR ?1='')))";
+void load_associated_ids(sqlite3* db,const imports::Occurrence& id,qif::Record& source) {
+    source.associated_fitid.clear();source.associated_fitids.clear();
+    Statement fits(db,"SELECT DISTINCT fitid FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=? AND a.ledger_ordinal=? AND fitid<>'' ORDER BY fitid");
+    fits.text(1,id.batch);fits.integer(2,integer(id.ordinal));
+    while(fits.row()) {
+        if(source.associated_fitids.size()==4096)fail(SQLITE_TOOBIG,"More than 4096 retained bank IDs on one transaction");
+        source.associated_fitids.push_back(fits.bytes(0));
+    }
+    if(source.fitid.empty() && source.associated_fitids.size()==1)source.associated_fitid=source.associated_fitids.front();
+}
 void write_occurrence(sqlite3* db,std::string_view batch,std::size_t ordinal,const qif::Record& record) {
     if(!record.source_currency) fail(SQLITE_CORRUPT,"Source currency is missing");
     Statement row(db,"INSERT INTO source_occurrences VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -730,6 +739,13 @@ bool review_merged_source(sqlite3* db,const imports::Occurrence& id) {
     Statement s(db,"SELECT 1 FROM review_merges WHERE batch=?1 AND ordinal=?2 UNION ALL SELECT 1 FROM review_sources s WHERE source_batch=?1 AND source_ordinal=?2 AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=s.answer)");s.text(1,id.batch);s.integer(2,integer(id.ordinal));return s.row();
 }
 std::optional<imports::Occurrence> review_association(sqlite3* db,const imports::Occurrence& id){Statement s(db,"SELECT ledger_batch,ledger_ordinal FROM source_associations WHERE source_batch=? AND source_ordinal=?");s.text(1,id.batch);s.integer(2,integer(id.ordinal));if(!s.row())return {};return imports::Occurrence{s.bytes(0),static_cast<std::size_t>(s.integer(1))};}
+bool confirmed_duplicate(sqlite3* db,const imports::Occurrence& id,const imports::Occurrence& target,std::int64_t revision) {
+    // Suggestion policy may tighten; a recorded human decision is not thereby
+    // corrupt. Use the most recent explicit decision for this exact occurrence.
+    Statement s(db,"SELECT v.decision,v.duplicate_batch,v.duplicate_ordinal FROM versions v JOIN events e ON e.batch=v.batch AND e.revision=v.revision WHERE v.batch=? AND v.ordinal=? AND v.revision<=? AND e.kind='decide' ORDER BY v.revision DESC LIMIT 1");
+    s.text(1,id.batch);s.integer(2,integer(id.ordinal));s.integer(3,revision);
+    return s.row() && s.integer(0)==2 && s.bytes(1)==target.batch && s.integer(2)==integer(target.ordinal);
+}
 bool explicit_review_merge(sqlite3* db,const imports::Occurrence& id,std::int64_t revision) {
     Statement m(db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.ordinal=? AND m.result=? AND m.committed=0 AND a.action=1");m.text(1,id.batch);m.integer(2,integer(id.ordinal));m.integer(3,revision);return m.row();
 }
@@ -818,6 +834,7 @@ struct VerificationRows {
         const auto& s=row.source;
         for(const auto* value:{&s.date,&s.payee,&s.memo,&s.reference,&s.cleared,&s.source_category,&s.source_class,
             &s.format,&s.grammar,&s.fitid,&s.source_account_key,&s.time_evidence,&s.trntype,&s.uninterpreted,&s.associated_fitid})size+=text_size(*value);
+        for(const auto& id:s.associated_fitids)size+=sizeof(std::string)+text_size(id);
         size+=s.source_allocation_classes.capacity()*sizeof(std::string);
         for(const auto& value:s.source_allocation_classes)size+=text_size(value);
         size+=s.source_allocation_fields.capacity()*sizeof(qif::SourceAllocation);
@@ -1181,12 +1198,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
             const auto prior_size=VerificationRows::row_size(cached);
             if(!impl_->verification_rows) {
                 cached.excluded_by_clear=!retained_member(impl_->db,id.batch,id.ordinal);
-                if(cached.source.fitid.empty()) {
-                    cached.source.associated_fitid.clear();
-                    Statement fits(impl_->db,"SELECT DISTINCT fitid FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=? AND a.ledger_ordinal=? AND ifnull(fitid,'')<>''");
-                    fits.text(1,id.batch);fits.integer(2,integer(id.ordinal));
-                    if(fits.row()){cached.source.associated_fitid=fits.bytes(0);if(fits.row())cached.source.associated_fitid.clear();}
-                }
+                load_associated_ids(impl_->db,id,cached.source);
                 if(cached.decision.duplicate_of && review_merged_source(impl_->db,id)){cached.decision.duplicate_of=review_association(impl_->db,id);cached.review_stale=false;}
                 else if(cached.decision.duplicate_of) {
                     const auto& target=*cached.decision.duplicate_of;
@@ -1214,11 +1226,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
     const auto parsed=parser.bytes(0)==qif::parser_version ? qif::parse(src.bytes(0),b.profile,source_currency,{},source_categories(id.batch)) : statements::parse_occurrence(src.bytes(0),parser.bytes(0),source_currency,b.profile);
     if(parsed.diagnostic || parsed.records.size()!=1 || (!parsed.records[0].transaction && !parsed.records[0].repairable)) fail(SQLITE_CORRUPT);
     auto source=parsed.records[0]; overlay_occurrence(impl_->db,id,source);
-    if(source.fitid.empty()) {
-        Statement fits(impl_->db,"SELECT DISTINCT fitid FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=? AND a.ledger_ordinal=? AND ifnull(fitid,'')<>''");
-        fits.text(1,id.batch);fits.integer(2,integer(id.ordinal));
-        if(fits.row()) { source.associated_fitid=fits.bytes(0); if(fits.row()) source.associated_fitid.clear(); }
-    }
+    load_associated_ids(impl_->db,id,source);
     app::RowView out{id,std::move(source),{}, {},{}};out.matched_generated=generated_match(impl_->db,id);
     out.excluded_by_clear=!retained_member(impl_->db,id.batch,id.ordinal);
     Statement v(impl_->db,"SELECT revision,date,payee,memo,total,decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? ORDER BY revision DESC LIMIT 1");
@@ -1246,10 +1254,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         if(!target.row())fail(SQLITE_CORRUPT);out.review_stale=target.integer(0)!=target.integer(2) || target.integer(1)!=target.integer(3);
     }
     if (!candidates) {if(rows){rows->remember(out);if(rows->rows.contains(id))impl_->read_stamps[id]=std::move(stamp);}return out;}
-    const auto candidate_sql=std::string("SELECT r.batch,r.ordinal FROM batches b CROSS JOIN records r ON r.batch=b.id CROSS JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" ORDER BY r.batch,r.ordinal LIMIT 4097";
-    Statement c(impl_->db,candidate_sql.c_str());
-    bind_candidate(c,out.source);c.text(6,id.batch);
-    while(c.row()) {if(out.candidates.size()==4096)fail(SQLITE_TOOBIG,"More than 4096 possible duplicate occurrences; review requires a narrower source import");out.candidates.push_back({c.bytes(0),static_cast<std::size_t>(c.integer(1))});}
+    out.candidates=duplicate_candidates(out.source,id.batch,false);
     if(!impl_->verifying && impl_->review_changes==sqlite3_total_changes64(impl_->db)) {
         const auto reviewed=impl_->reviews.find(id.batch);
         if(reviewed!=impl_->reviews.end()) {
@@ -1258,6 +1263,20 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         }
     }
     return out;
+}
+std::vector<imports::Occurrence> ImportStore::duplicate_candidates(const qif::Record& source,std::string_view batch_id,bool first_only) const {
+    const auto sql=std::string("SELECT r.batch,r.ordinal FROM batches b CROSS JOIN records r ON r.batch=b.id CROSS JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE ")+candidate_where+" ORDER BY r.batch,r.ordinal";
+    Statement candidates(impl_->db,sql.c_str());bind_candidate(candidates,source);candidates.text(4,batch_id);
+    std::vector<imports::Occurrence> result;
+    std::size_t scanned=0;
+    while(candidates.row()) {
+        if(++scanned>1000000)fail(SQLITE_TOOBIG,"Duplicate review exceeds one million candidate comparisons");
+        const imports::Occurrence target{candidates.bytes(0),static_cast<std::size_t>(candidates.integer(1))};
+        if(!imports::candidate_basis(source,load_row(target,false).source))continue;
+        if(result.size()==4096)fail(SQLITE_TOOBIG,"More than 4096 possible duplicate occurrences; review requires a narrower source import");
+        result.push_back(target);if(first_only)break;
+    }
+    return result;
 }
 app::BatchInfo ImportStore::ingest(std::string_view id,std::string_view bytes,qif::DateOrder profile) {
     identifier(id); const auto acct=account(); require_writable_account(impl_->db,acct.identity); auto parsed=qif::parse(bytes,profile,acct.currency);
@@ -1464,7 +1483,6 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
            !review_target_active(impl_->db,*target)))return {};
         return target;
     };
-    const auto probe_sql=std::string("SELECT 1 FROM batches b CROSS JOIN records r ON r.batch=b.id CROSS JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal LEFT JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal WHERE ")+candidate_where+" LIMIT 1";
     for(std::size_t i=0;i<parsed.records.size();++i) {
         if(context) context->checkpoint();
         const auto& r=parsed.records[i];
@@ -1491,7 +1509,7 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
                 decision={imports::Disposition::duplicate,target};
             } else if(const auto target=exact_target(r)) {
                 decision={imports::Disposition::duplicate,target};
-            } else { Statement candidate(impl_->db,probe_sql.c_str()); bind_candidate(candidate,r);candidate.text(6,id); if(candidate.row()) decision.disposition=imports::Disposition::unresolved; }
+            } else { if(!duplicate_candidates(r,id,true).empty()) decision.disposition=imports::Disposition::unresolved; }
         } else if(const auto target=exact_target(r)) {
             decision={imports::Disposition::duplicate,target};
         } else {
@@ -1500,8 +1518,7 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
             if(found!=candidate_groups.end()) {
                 if(found->second) decision.disposition=imports::Disposition::unresolved;
             } else {
-            Statement candidate(impl_->db,probe_sql.c_str()); bind_candidate(candidate,r);candidate.text(6,id);
-            const bool has_candidate=candidate.row();
+            const bool has_candidate=!duplicate_candidates(r,id,true).empty();
             candidate_groups.emplace(key,has_candidate);
             if(has_candidate) decision.disposition=imports::Disposition::unresolved;
             }
@@ -1871,7 +1888,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
                     const bool reviewed=explicit_review_merge(impl_->db,{b.id,i},vv.integer(0));
                     if(account_for_batch(target.batch).identity!=acct.identity || (target.batch==b.id && !reviewed)) fail(SQLITE_CORRUPT);
                     const auto other=load_row(target,false);
-                    if(!reviewed && !review_merged_source(impl_->db,{b.id,i}) && ((other.decision.disposition!=imports::Disposition::include && review_survivor(impl_->db,target)==target) || !imports::candidate_basis(source,other.source))) fail(SQLITE_CORRUPT);
+                    if(!reviewed && !review_merged_source(impl_->db,{b.id,i}) && ((other.decision.disposition!=imports::Disposition::include && review_survivor(impl_->db,target)==target) || !imports::candidate_basis(source,other.source,confirmed_duplicate(impl_->db,{b.id,i},target,vv.integer(0))?imports::MatchContext::confirmed_decision:imports::MatchContext::suggestion))) fail(SQLITE_CORRUPT);
                 }
             }
         }

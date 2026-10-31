@@ -116,3 +116,7 @@ spentit_compiler_options(spentit_schema_gate_tests)
 add_test(NAME import.schema_gate COMMAND spentit_schema_gate_tests)
 endif()
 endif()
+
+if(SPENTIT_IMPORT_WORKFLOW)
+  add_test(NAME statement.common_matching COMMAND spentit_statement_store_tests common_matching)
+endif()

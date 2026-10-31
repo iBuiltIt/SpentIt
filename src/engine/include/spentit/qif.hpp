@@ -60,6 +60,9 @@ struct Record {
     // Not a parsed file field. A confirmed association may carry a FITID that this
     // occurrence's own file did not. Match classification reads it; storage does not write it.
     std::string associated_fitid;
+    // All retained IDs on this ledger identity, including ambiguous associations.
+    // Review uses this evidence; automatic recognition requires original FITID facts.
+    std::vector<std::string> associated_fitids;
 };
 // Value-free diagnostics; LF counts lines, embedded CR does not. Ordinal is account-local.
 std::string describe_record(std::string_view bytes, const Record&, std::size_t ordinal, bool fields = false);

@@ -1,8 +1,82 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**  
-Last updated: 2026-10-30  
+Last updated: 2026-10-31  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
+
+## Next tasks: Review responsiveness and batch decisions — 2026-10-31
+
+State: **discussion handoff only; implementation awaits explicit Go**. The owner
+requested this next-session record after reporting that the common same-day
+matching correction is much better. Preserve that working-tree correction and
+its verification; do not restore the withdrawn adjacent-day experiment. See
+[current status](../doc/status.md#common-duplicate-matching-policy--2026-10-31).
+
+### Reported problems
+
+- Each Review **Yes** takes roughly 3–5 seconds. With 34 match groups, repeated
+  waits add substantial overhead to the time spent inspecting transactions.
+  These are owner observations, not instrumented timings.
+- A transient status line below **Hide sidebar** pushes the entire view down.
+  Its removal and the disappearing resolved group then produce another jump.
+- The owner proposed marking reviewed matches and applying them together rather
+  than waiting after every decision. A single batch taking 3–5 seconds is a hope,
+  not an established performance result.
+
+### Proposed order of work
+
+1. **Stabilize the Review layout.** Put status/progress in reserved space, such as
+   a fixed Review toolbar. Showing, changing or clearing status must not shift
+   the ledger. Preserve a meaningful viewport anchor when resolved groups leave
+   the list, so the next group stays in a predictable position.
+2. **Measure one Yes operation before choosing an optimization.** Follow the
+   [diagnostics guide](../doc/agent-diagnostics-guide.md). Correlate the owner's
+   click with worker execution, validation, durable save, snapshot refresh,
+   model update and presentation. Determine which costs are per decision,
+   per transaction or dataset-wide; do not assume the durable commit is the
+   source of the whole delay. Use synthetic fixtures for repeatable mutations
+   and owner-driven actions for a representative native observation.
+3. **Design and then implement batch application of reviewed match groups.**
+   Keep this useful workflow even if individual decisions become faster, but
+   let profiling determine which repeated work the batch can avoid.
+
+### Proposed batch interaction
+
+- Add selection at the **match-group level**, visually distinct from the existing
+  transaction checkboxes. Existing row selection means which transactions within
+  one ambiguous group to merge; it must not acquire a second meaning.
+- Checking a group records pending UI intent only. It does not merge, accept,
+  discard or otherwise change financial records.
+- A fixed action such as **Merge 12 selected matches** applies only groups the
+  user inspected and selected. Do not interpret this as auto-selecting all
+  suggestions or broadening matching eligibility.
+- Any required survivor choice must be settled before applying that group.
+  Preserve the sole-committed-survivor rule, effective-total checks, relationship
+  protections, retained evidence and history.
+- Proposed storage direction: save the selected decisions as one atomic operation
+  and refresh once, avoiding repeated work where the measurements support it.
+  Do not promise constant batch time; necessary per-merge work still scales.
+
+### Decisions to settle before implementation
+
+Specify selection behavior when edits or other mutations change a group, how
+ambiguous groups and partial row selections join a batch, and whether pending
+selections survive closing Review or restarting. Choose the batch Undo unit,
+error presentation, cancellation boundary and behavior if one selected group
+becomes stale. Recommended starting point is to revalidate every selected group
+and apply all or none, with no silent skipping; this is a proposal, not a settled
+financial behavior. Keep the scope to duplicate Merge unless Link batching is
+separately requested.
+
+### Verification expectations
+
+Use synthetic groups containing accepted and uncommitted rows, repeated amounts,
+ambiguous candidates, mixed survivor choices, retained source identities and
+linked-row restrictions. Verify exact balances, no unintended merges, stale-group
+handling, durable outcome/retry, chosen Undo behavior and failure rollback. Check
+that progress and group removal do not move unrelated content unexpectedly, and
+that work stays off the UI thread. Compare one-by-one and batch timings using
+consistent workloads; record actual results and unavailable native/platform checks.
 
 ## Next-session handoff: Review workspace and link learning — 2026-10-30
 

@@ -84,6 +84,76 @@ app::ImportGroup materialize(ImportStore& store, std::string_view id) {
     app::OperationContext context;
     return store.resume_import_group(id, context);
 }
+void common_matching() {
+    for(const auto prior:{"qif","ofx","qfx","qbo","aso"})for(const auto incoming:{"qif","ofx","qfx","qbo","aso"}) {
+        Directory d;const auto path=d.path/"doc";
+        auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));
+        const auto ingest=[&](std::string id,std::string format,bool base){
+            std::string qif,ofx;
+            const auto add=[&](std::string date,std::string name){
+                qif+="D"+date+"\nT-12.34\nP"+name+"\n^\n";
+                std::erase(date,'-');ofx+=txn("",date,"-12.34",name);
+            };
+            if(base){add("2010-01-01","Old purchase");add("2026-02-01","Original merchant");add("2026-02-02","Next day purchase");}
+            else {add("2026-02-01","Different export description");add("2026-02-03","Independent purchase");}
+            if(format=="qif"){s.ingest(id,qif,qif::DateOrder::dmy);return id;}
+            capture(s,id,sgml(bank(ofx)),{{0,1,{}}},format);materialize(s,id);return id+"-account-0";
+        };
+        const auto base=ingest("base",prior,true);check(s.review_sheet().questions.empty());s.accept_all("accept-base");
+        const auto added=ingest("new",incoming,false);const auto row=s.row({added,0});
+        check(row.decision.disposition==imports::Disposition::unresolved);
+        check(row.candidates==std::vector<imports::Occurrence>{{base,1}});
+        const auto separate=s.row({added,1});check(separate.decision.disposition==imports::Disposition::include && separate.candidates.empty());
+        const auto sheet=s.review_sheet();check(sheet.questions.size()==1 && sheet.questions[0].kind==app::ReviewKind::same && sheet.questions[0].rows.size()==2);
+        for(const auto& member:sheet.questions[0].rows)check(member.identity==imports::Occurrence{base,1} || member.identity==imports::Occurrence{added,0});
+        s.verify();s.backup_to(d.path/"backup",password);
+        auto restored=ImportStore::open(d.path/"backup",password);restored.verify();check(restored.row({added,0}).candidates==row.candidates);
+    }
+    // Explicit merges retain all bank identities; disagreement must not turn
+    // into an ID-less amount match merely because more than one ID is attached.
+    {
+        Directory d;auto s=create(d.path/"ids");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("base","D01/02/2026\nT-12.34\nPOriginal\n^\n",qif::DateOrder::dmy);s.accept_all("accept");
+        const auto add=[&](std::string id,std::string fit,std::string date){capture(s,id,sgml(bank(txn(fit,date,"-12.34"))),{{0,1,{}}});materialize(s,id);};
+        const auto merge=[&](std::string operation,std::string batch){app::ReviewAnswer answer;answer.generation=s.review_sheet().generation;answer.question="selected";answer.action=app::ReviewAction::merge;answer.selected={{"base",0},{batch,0}};answer.survivor=imports::Occurrence{"base",0};s.answer_review(operation,answer);};
+        add("a","ID-A","20260201");merge("merge-a","a-account-0");
+        add("b","ID-B","20260202");check(s.row({"b-account-0",0}).candidates.empty());merge("merge-b","b-account-0");
+        add("c","ID-C","20260201");check(s.row({"c-account-0",0}).candidates.empty());
+        add("conflict","ID-A","20260203");const auto conflict=s.row({"conflict-account-0",0});
+        check(conflict.decision.disposition==imports::Disposition::unresolved && conflict.candidates==std::vector<imports::Occurrence>{{"base",0}});
+        s.verify();s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.verify();
+        check(restored.row({"conflict-account-0",0}).candidates==conflict.candidates);
+    }
+
+    // Construct the saved state of an earlier explicit off-date decision using
+    // synthetic storage only. The production APIs no longer offer that candidate.
+    // A save event without a human duplicate decision must NOT get the allowance.
+    for(const bool confirmed:{false,true}) {
+        Directory d;const auto path=d.path/"historical";
+        {
+            auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));
+            s.ingest("base","D01/02/2026\nT-12.34\nPOriginal\n^\n",qif::DateOrder::dmy);s.accept_all("accept");
+            capture(s,"dated",sgml(bank(txn("","20260202","-12.34"))),{{0,1,{}}});materialize(s,"dated");
+            if(confirmed)s.decide({"dated-account-0",0},revision(s,"dated-account-0"),{imports::Disposition::include,{}});
+            else s.save({"dated-account-0",0},revision(s,"dated-account-0"),*s.row({"dated-account-0",0}).draft);
+        }
+        sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
+        check(sqlite3_exec(db,R"SQL(BEGIN;
+          DROP TRIGGER version_immutable;
+          UPDATE versions SET decision=2,duplicate_batch='base',duplicate_ordinal=0 WHERE batch='dated-account-0' AND revision=(SELECT max(revision) FROM versions WHERE batch='dated-account-0');
+          CREATE TRIGGER version_immutable BEFORE UPDATE ON versions BEGIN SELECT RAISE(ABORT,'immutable'); END;
+          DROP TRIGGER source_associations_immutable;
+          UPDATE source_associations SET ledger_batch='base',ledger_ordinal=0 WHERE source_batch='dated-account-0';
+          CREATE TRIGGER source_associations_immutable BEFORE UPDATE ON source_associations BEGIN SELECT RAISE(ABORT,'immutable'); END;
+          INSERT INTO review_stamps SELECT v.batch,v.ordinal,v.revision,t.revision,t.active,v.revision FROM versions v JOIN review_targets t ON t.batch='base' AND t.ordinal=0 WHERE v.batch='dated-account-0' AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch);
+          COMMIT;)SQL",nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
+        if(!confirmed){rejected([&]{auto invalid=ImportStore::open(path,password);});continue;}
+        auto s=ImportStore::open(path,password);s.verify();check(s.row({"dated-account-0",0}).candidates.empty());
+        check(s.commit("dated-account-0",revision(s,"dated-account-0"),"accept-dated").excluded==1);
+        s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.verify();check(restored.current_ledger().size()==1);
+    }
+
+}
 void aso_review();
 void review() {
     const auto qif = std::string("D01/02/2026\nT-12.34\nPCoffee\n^\n");
@@ -156,12 +226,12 @@ void review() {
         capture(s, "dated", dated, {{0, 1, {}}});
         materialize(s, "dated");
         const auto uncertain = s.row({"dated-account-0", 0});
-        check(uncertain.decision.disposition == imports::Disposition::unresolved);
-        check(imports::candidate_basis(uncertain.source, s.row({"qif", 0}).source) == imports::MatchBasis::uncertain_date);
+        check(uncertain.decision.disposition == imports::Disposition::include && uncertain.candidates.empty());
+        check(!imports::candidate_basis(uncertain.source, s.row({"qif", 0}).source));
         const auto date_rev = revision(s, "dated-account-0");
-        s.decide({"dated-account-0", 0}, date_rev, {imports::Disposition::duplicate, imports::Occurrence{"qif", 0}});
-        check(s.commit("dated-account-0", date_rev + 1, "dated-commit").excluded == 1);
-        check(s.committed_balance() == Money(-3703, cad) && s.ledger(false).size() == 3);
+        bool refused=false;try{s.decide({"dated-account-0", 0}, date_rev, {imports::Disposition::duplicate, imports::Occurrence{"qif", 0}});}catch(const std::invalid_argument&){refused=true;}check(refused);
+        check(s.commit("dated-account-0", date_rev, "dated-commit").included == 1);
+        check(s.committed_balance() == Money(-4937, cad) && s.ledger(false).size() == 4);
         s.verify();
     }
     {
@@ -894,6 +964,7 @@ int main(int argc, char** argv) {
         else if(name == "rollback") {rollback();partial_transfer_guards();rollback_stale_reopen();generated_ownership();}
         else if(name == "acceptance_faults") acceptance_faults();
         else if(name == "overlap_faults") overlap_faults();
+        else if(name == "common_matching") common_matching();
         else if(name == "faults") faults();
         else return 2;
         std::cout << "Statement store " << name << " passed\n";

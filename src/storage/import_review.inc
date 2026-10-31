@@ -64,7 +64,7 @@ void ImportStore::prepare_review() {
                     else {
                         const auto& target=*row.decision.duplicate_of;
                         const auto other=load_row(target,false);
-                        if(!review_merged_source(impl_->db,identity) && (other.decision.disposition!=imports::Disposition::include || !imports::candidate_basis(row.source,other.source)))
+                        if(!review_merged_source(impl_->db,identity) && (other.decision.disposition!=imports::Disposition::include || !imports::candidate_basis(row.source,other.source,confirmed_duplicate(impl_->db,identity,target,rows.integer(1))?imports::MatchContext::confirmed_decision:imports::MatchContext::suggestion)))
                             warning="Invalid duplicate relationship";
                     }
                 }

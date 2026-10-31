@@ -2,6 +2,61 @@
 
 Last updated: 2026-10-31
 
+## Next-session Review tasks — 2026-10-31
+
+The owner reports that the common matching correction is much better. Next,
+address the reported 3–5-second wait per Review Yes and layout jumps caused by
+transient status text below Hide sidebar. The proposed sequence is stable layout,
+diagnostics of one decision, then group-level selection and batch Merge. See
+[the handoff](../features/005-transaction-sheet-navigation.md#next-tasks-review-responsiveness-and-batch-decisions--2026-10-31)
+for interaction proposals, unresolved financial/selection behavior and validation.
+This is documentation only; no new implementation Go was given. The common
+matching correction and this handoff are included in the owner-requested commit.
+
+## Common duplicate matching policy — 2026-10-31
+
+Owner Go implemented: all formats now use same-day ordinary amount-based
+possible-duplicate matching. The old unlimited-date OFX-family exception is
+removed, including its storage SQL branch. Both import classification and row
+candidate lookup now filter through the engine matcher; Review uses the same
+policy. Strict automatic recognition tests original evidence rather than format
+labels, while preserving account, uniqueness, liveness and occurrence guards.
+Retained bank-ID sets remain visible to candidate matching after Merge, avoiding
+an accidental ID-less fallback when multiple IDs have been attached.
+
+The shared internal record remains named `qif::Record`; renaming it is not needed
+for policy parity. Transfer matching, schema, timezone handling and account
+settings are unchanged. The [contract](review-sheet.md#common-duplicate-policy--owner-go-2026-10-31)
+supersedes earlier format-specific date guidance. Previously recorded explicit
+duplicate choices retain their date allowance during history validation; new
+suggestions never receive it. Saved relationships still require compatible
+original evidence, target/account validation and stale-target checks.
+
+Verification: final selected Release parser/matching/Review checks passed 7/7;
+ASan/UBSan and rules-disabled selections passed 5/5 each. The new synthetic matrix
+covers all 25 format pairings, same-day versus adjacent/years-apart amounts,
+clean initial imports, exact candidate membership, Review grouping and restored
+backups. Additional cases cover retained multiple bank IDs after explicit Merge
+and a synthetic historical off-date decision: a recorded human choice survives
+reopen/acceptance/backup, while a relationship without that decision is rejected.
+Existing strict overlap/re-import, Review-state, transfer management, amount
+repair and candidate-limit regressions passed. Selected UI/navigation/diagnostic
+workload checks passed 3/3. Both bank-ID and original-field re-import failure
+sweeps passed, each covering 165 preparation and 105 association write/sync
+positions plus durable-boundary interruptions/retry; the original-field sweep
+was repeated successfully after the saved-decision safeguard. Documentation
+relative links and whitespace checks passed. The rules-enabled Release application
+was rebuilt and launched; diagnostics confirmed successful dataset opening with
+no health failures. The owner reports that matching is much better; systematic native interaction
+coverage and other platforms remain unverified.
+
+The 1,000-row / 2,000-counterpart synthetic workload completed with retry,
+balance, acceptance, reopen and restored-backup assertions passing. Its timed
+import was 0.962 s and counterpart generation 0.525 s, consistent with the prior
+0.980 s / 0.530 s observation. No build or other synthetic test ran concurrently
+with this timed import. This is one synthetic observation, not a new measurement
+of the owner's import or a timing distribution.
+
 ## Adjacent-day duplicate experiment withdrawn — 2026-10-31
 
 An owner-authorized experiment broadened same-account possible-duplicate review

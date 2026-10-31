@@ -1,6 +1,6 @@
 # OFX, QFX, QBO, and ASO statement profile
 
-Last updated: 2026-10-29
+Last updated: 2026-10-31
 
 Implementation contract for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). Feature 003 stays **active**. This profile does not finish QIF product scope or transfer repair. New documents use experimental schema 24 with rules and schema 23 without rules. Schemas 22/21, schema 20 and schemas 18 and 19 are rejected with `Unsupported experimental format; no migration was attempted`. No migration was added. `aso` remains a legal file label in those format checks. Account commands are recorded in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).
 
@@ -91,7 +91,7 @@ Dispositions remain unresolved, include, and duplicate. Commit rejects unresolve
 
 When both sides have the same non-empty `FITID` (including a `FITID` already associated with a QIF-originated ledger row), the same target account, compatible currency, and equal available original amounts, the basis is `same_fitid` even if the dates differ. When original date and type also agree and the target is unique and active, the strict follow-up assigns a duplicate disposition automatically. Otherwise the candidate still needs explicit review. A duplicate disposition adds no second posting. The same `FITID` with a different amount, a different currency, or an unavailable amount is `uncertain_fitid`. It is still an explicit-disposition candidate. It is not auto-excluded.
 
-Absent `FITID` uses the QIF candidate comparison of source account, currency, original amount, and original date. The source account is the user-mapped SpentIt account. Institution id strings are not match keys. Two different non-empty `FITID`s are legitimate repeats, including the same amount and date, and are not candidates. Differing dates on otherwise compatible evidence are `uncertain_date` when at least one side is `ofx`, `qfx`, `qbo`, or `aso`. QIF-compared-with-QIF rows whose dates differ stay non-candidates. An uncertain match is never a silent drop. Counts and totals alone do not prove identity.
+Absent `FITID` uses the QIF candidate comparison of source account, currency, original amount, and original date. The source account is the user-mapped SpentIt account. Institution id strings are not match keys. Two different non-empty `FITID`s are legitimate repeats, including the same amount and date, and are not candidates. Owner correction (2026-10-31): ordinary amount-based candidates require the same known original calendar date for every format. The earlier OFX-family differing-date exception is removed. Shared bank IDs can still identify contradictory facts for explicit review, regardless of format label. An uncertain match is never a silent drop. Counts and totals alone do not prove identity.
 
 For records without a bank ID, byte-identical reimport of the same account, profile, bytes, and source-account index still follows the existing QIF rule: the new rows take a duplicate disposition aimed at the prior committed occurrences. That disposition remains reviewable and overrideable. Evidence for both imports is retained.
 

@@ -63,6 +63,22 @@ Explicitly confirming a whole-record bank match to an already accepted generated
 
 Rollback previews use a persistent mutation generation so a stale preview cannot become valid again after reopening. The latest rollback receipt resolves a lost acknowledgement; older receipts are not retained as a forgotten-import archive. Reusing a stale preview after later operations is refused. Current-format atomicity and verification remain required; previous experimental formats are rejected without migration.
 
+## Common matching correction — owner Go, 2026-10-31
+
+The owner reaffirmed: every format parses into common internal facts, then the
+same matching policy applies. An audit found that the earlier exact re-import
+correction left a legacy format-dependent possible-duplicate date exception in
+both engine code and storage SQL. Tests explicitly preserved that inconsistency.
+This was incomplete policy consolidation above a shared record representation.
+
+The authorized correction makes ordinary amount-based suggestions same-day for
+all formats, makes the engine authoritative for import and Review candidates,
+and tests cross-format parity. Bank-ID evidence can still expose contradictory
+facts for review, but format labels do not establish identity or eligibility.
+See the [current contract](review-sheet.md#common-duplicate-policy--owner-go-2026-10-31)
+and [verification](status.md#common-duplicate-matching-policy--2026-10-31).
+Transfer matching is explicitly outside this change.
+
 ## Immediate next priority: repeated imports and format-independent matching — 2026-10-29
 
 The owner rejected three observed behaviors: a duplicate-only reimport still requiring Commit, Import statement being disabled while an import is uncommitted, and approximately 141 duplicate warnings after exporting the same transactions in another format (ASO followed by what the owner believes was OFX). The reported count and second format are owner observations, not a verified inspection of private files. No private source was accessed for this investigation.

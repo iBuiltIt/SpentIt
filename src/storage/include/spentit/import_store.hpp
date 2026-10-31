@@ -145,6 +145,7 @@ public:
     app::AcceptanceReceipt accept_all(std::string_view,bool=false) override;
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
 private:
+    std::vector<imports::Occurrence> duplicate_candidates(const qif::Record&,std::string_view,bool first_only) const;
     app::Receipt publish_review(std::string_view,std::int64_t,std::string_view);
     void accept_local(std::string_view,const app::TransferRequest&);
     void prepare_review();

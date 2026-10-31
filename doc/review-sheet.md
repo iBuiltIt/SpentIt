@@ -45,6 +45,36 @@ The ledger has separate **Merge** (Alt+M) and **Link** (Alt+L) commands. Merge u
 the same survivor and persistence rules. Link retains the existing allocation
 selection and cross-account navigation workflow.
 
+## Common duplicate policy — owner Go, 2026-10-31
+
+All supported parsers produce common original facts. Same-account ordinary
+amount-based duplicate suggestions require equal original currency, exact signed
+original amount and the same known calendar date, independent of QIF/OFX/QFX/QBO/ASO
+labels. Payee/category differences do not disqualify a review candidate. Unknown
+original amounts/dates retain their explicit uncertainty paths; no date or amount
+is fabricated. Different known dates alone never qualify ordinary candidates.
+
+Shared original or retained bank IDs remain a separate evidence-based reason to
+review conflicting facts. Disjoint nonempty bank-ID sets disqualify candidates.
+Multiple retained IDs remain available to the matcher after Merge; they must not
+be erased into an apparently ID-less record. Automatic recognition still requires
+strict original ID/currency/amount/date/type agreement or the existing unique
+exact original date/currency/amount/payee key. Retained IDs alone cannot authorize
+automatic bank recognition. Original evidence, target liveness, account scope and
+one-to-one occurrence guards remain authoritative.
+
+The engine owns these decisions. Storage candidate queries retrieve a conservative
+superset from eligible account rows; both import classification and row candidate
+lists filter through the engine matcher. Review uses the same matcher for additional
+same-import/unresolved peers. SQL contains no format-based matching exception.
+The common policy does not widen discovery within an otherwise clean base import.
+The separate transfer Link and grouped reciprocal-transfer policies are unchanged.
+A recorded explicit duplicate decision retains its date override during history
+validation; it is not reclassified as corruption just because suggestions tighten.
+New import/review candidates never receive that override. Existing stale-target,
+account, amount/currency and bank-ID checks remain. No timezone inference,
+per-account date setting or schema change is introduced.
+
 ## Persistence and Undo
 
 New datasets use experimental schema **38 with rules / 37 without**. Older
