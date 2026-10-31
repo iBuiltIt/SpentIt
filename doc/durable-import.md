@@ -1,8 +1,15 @@
 # Durable QIF workflow — headless implementation
 
+Next work (accepted 2026-10-31; **not implemented**):
+[opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md) takes priority
+over the older handoff sequence. It specifies import routing, Review repair/Commit,
+account-context Discard and automatic import-specific cleanup instead of Resume.
+Completed uncommitted imports remain durable. Existing implementation and historical
+verification below do not establish this new behavior. Implementation awaits Go.
+
 Current next-session priority (2026-10-29): [discuss the whole import/commit approach](import-commit-discussion.md), including redundant readiness checks and the owner-reported 18-second commit. The confirmation-dialog removal and any redesign remain unimplemented pending discussion and explicit Go. Historical implementation notes below do not authorize that work.
 
-Last updated: 2026-10-29
+Last updated: 2026-10-31
 
 This is a partial implementation of [feature 009](../features/009-durable-import-milestone.md), authorized by the owner's Go. It is an optional synthetic-data experiment, not a production financial-document application. The existing sheet is still session-only. No private exports were opened or copied.
 

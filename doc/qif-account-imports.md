@@ -1,6 +1,13 @@
 # QIF account sections and whole-source review
 
-Last updated: 2026-10-30
+Next work (accepted 2026-10-31; **not implemented**):
+[opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md) takes priority
+over the older handoff sequence. It specifies import routing, Review repair/Commit,
+account-context Discard and automatic import-specific cleanup instead of Resume.
+Completed uncommitted imports remain durable. Existing implementation and historical
+verification below do not establish this new behavior. Implementation awaits Go.
+
+Last updated: 2026-10-31
 
 Implemented and verified within the accepted roadmap point-1 scope; exact selected checks and limitations are recorded in status. This extends the [ordinary QIF profile](../features/009-qif-profile.md), [account workspaces](accounts.md), and [transfer lifecycle](qif-transfers.md). It does not implement general account deletion, account currency reassignment, transfer repair, or new import formats.
 

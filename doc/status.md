@@ -2,6 +2,22 @@
 
 Last updated: 2026-10-31
 
+## Next work: opening, ledger and interrupted imports — 2026-10-31
+
+The owner accepted the [next-work contract](ui-import-cleanup.md) and placed it
+before the previous handoff work. Opening branding, a search-only ledger toolbar,
+sidebar/account-context import routing, Review-based repair/Commit, account-context
+rollback and automatic import-specific cleanup after cancellation/interruption
+are **not implemented**. Completed imports, including uncommitted rows and
+completed imports with record failures, remain distinct from incomplete preparation.
+The owner requested documentation and a commit, not implementation in this session.
+
+Read-only code inspection confirmed bundled 1024px artwork, full-file plus
+per-record source storage, captured/prepared import stages, Review correction
+entries and the account-owned scope of current Discard. Current Resume and old
+ledger controls remain until implementation. No runtime tests were run for this
+documentation-only checkpoint; Markdown links and diff consistency were checked.
+
 ## Shorter closing verification — 2026-10-31
 
 Owner Go implemented. A desktop full opening audit now retains an in-memory

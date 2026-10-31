@@ -1,7 +1,14 @@
 # 010 — Categories and selection
 
+Next work (accepted 2026-10-31; **not implemented**):
+[opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md) takes priority
+over the older handoff sequence. It specifies import routing, Review repair/Commit,
+account-context Discard and automatic import-specific cleanup instead of Resume.
+Completed uncommitted imports remain durable. Existing implementation and historical
+verification below do not establish this new behavior. Implementation awaits Go.
+
 Status: **active**  
-Last updated: 2026-10-29  
+Last updated: 2026-10-31  
 Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 30/29. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.

@@ -1,5 +1,12 @@
 # 001 — Documents, storage, and security
 
+Next work (accepted 2026-10-31; **not implemented**):
+[opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md) takes priority
+over the older handoff sequence. It specifies import routing, Review repair/Commit,
+account-context Discard and automatic import-specific cleanup instead of Resume.
+Completed uncommitted imports remain durable. Existing implementation and historical
+verification below do not establish this new behavior. Implementation awaits Go.
+
 Status: **active**  
 Last updated: 2026-10-31  
 Implementation: partial; optional SQLCipher synthetic-data storage/recovery prototype and [headless durable-import experiment](../doc/durable-import.md). Bounded document switching, backup/restore, ordinary strict Undo and atomic group Undo are implemented; full application lifecycle and password changes remain incomplete.
@@ -40,6 +47,10 @@ Creation defaults to account name SpentIt, CAD, and password protection on. Miss
 If the creation destination exists, show its path with Cancel and Overwrite. Cancel does not modify it. Overwrite explicitly authorizes destructive replacement at creation time: no mandatory backup, staged replacement, or second confirmation. This is not an atomic preservation/recovery operation for the discarded dataset. A failure or interruption can leave an incomplete replacement; report failure and permit another explicit overwrite attempt. Validate creation inputs before destruction and retain exclusive document locking, regular-file restrictions and encryption. Do not replace a dataset held open by another process or follow a symlink. Backup and restore-to-new-file behavior is unchanged.
 
 ## Startup presentation follow-up — deferred 2026-10-29
+
+Update 2026-10-31: the [accepted next-work contract](../doc/ui-import-cleanup.md)
+now settles the centered logo/tagline/Cancel layout and bottom status line. The
+following paragraph records the earlier deferral; implementation is still pending.
 
 The owner measured the optimized startup at about seven seconds and accepts that delay for now. A proper startup/loading screen should replace the current loading presentation in a later change. This is a deferred product direction, not an approved visual design or authorization to implement it. Layout, artwork and progress wording remain undecided; the verified-open and error-handling requirements above continue to apply.
 

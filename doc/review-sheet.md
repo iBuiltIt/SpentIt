@@ -1,5 +1,12 @@
 # Unified Review sheet
 
+Next work (accepted 2026-10-31; **not implemented**):
+[opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md) takes priority
+over the older handoff sequence. It specifies import routing, Review repair/Commit,
+account-context Discard and automatic import-specific cleanup instead of Resume.
+Completed uncommitted imports remain durable. Existing implementation and historical
+verification below do not establish this new behavior. Implementation awaits Go.
+
 The owner authorized the [workspace and link-learning revision](../features/005-transaction-sheet-navigation.md#accepted-matching-policy-and-implementation-go--2026-10-30)
 on 2026-10-30. The revision is implemented in the working tree; the interaction
 and persistence contract below includes it. The owner settled grouped imports with ambiguous plausible

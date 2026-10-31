@@ -1,10 +1,17 @@
 # 009 — First durable import workflow
 
+Next work (accepted 2026-10-31; **not implemented**):
+[opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md) takes priority
+over the older handoff sequence. It specifies import routing, Review repair/Commit,
+account-context Discard and automatic import-specific cleanup instead of Resume.
+Completed uncommitted imports remain durable. Existing implementation and historical
+verification below do not establish this new behavior. Implementation awaits Go.
+
 Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
 
 
 Status: **active**  
-Last updated: 2026-10-29  
+Last updated: 2026-10-31  
 Implementation: partial, headless foundation plus optional durable UI experiment. The owner accepted the five policy groups and explicitly authorized implementation on 2026-10-25. The bounded parser, encrypted draft/review/commit commands and ledger reconciliation now exist; a bounded [setup/review UI](../doc/import-ui.md) connects them and schemas 2 and 3 support date/split-total repair. The review UI now includes inline editing, parsed source-field copying, simultaneous read-only split previews and combined-search return navigation; see the [bounded scope and verification](../doc/import-ui.md#inline-editing-and-source-copying). Remaining scope is incomplete. See [implementation and verification](../doc/durable-import.md).
 
 Subsequent bounded extensions now include committed changes, categories/rules, combined search, multiselection and atomic committed bulk/group Undo. See [current status](../doc/status.md) and [search/ledger scope](../doc/search-ledger.md). Historical deferrals in the original milestone below describe its first slice, not current absence. OFX, QFX, QBO, and ASO bank and credit-card statements are implemented. New documents use schema 24 with rules and schema 23 without. Schemas 22/21, schema 20 is rejected without migration. Remaining QIF dialects and the full product remain incomplete. On 2026-10-28 the owner said the finished eight-point sequence was the work before reports. Feature 006 holds the open questions. Committed transfer edits and selected-account rule reapplication are implemented. Allocation-level Merge and unlink are in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27). Experimental formats need no migration or upgrade work until the owner announces a release. The first import commit still freezes a newly confirmed opening. A later explicit opening correction is the separate account command in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).

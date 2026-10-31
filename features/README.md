@@ -1,5 +1,12 @@
 # Feature discovery
 
+Next work (accepted 2026-10-31; **not implemented**):
+[opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md) takes priority
+over the older handoff sequence. It specifies import routing, Review repair/Commit,
+account-context Discard and automatic import-specific cleanup instead of Resume.
+Completed uncommitted imports remain durable. Existing implementation and historical
+verification below do not establish this new behavior. Implementation awaits Go.
+
 These documents describe SpentIt — Where did my money go? They capture the initial discussion and accepted follow-ups through 2026-10-31 without requiring access to private notes or chat history.
 
 ## Status legend
