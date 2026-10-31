@@ -100,7 +100,7 @@ void ImportStore::resolve_group_transfers(std::string_view id,const app::Operati
     validate_transfer_set(values);
 }
 void ImportStore::resolve_import_transfers(std::string_view id,app::OperationContext& context) {
-    Atomic transaction(impl_->db);resolve_group_transfers(id,context);context.seal();finish([&]{transaction.commit();});
+    Atomic transaction(impl_->db);resolve_group_transfers(id,context);generate_explicit_transfers(&context);context.seal();finish([&]{transaction.commit();});
 }
 app::ImportGroup ImportStore::import_group(std::string_view id) const {
     if(!impl_->verifying && !impl_->preparing_review && (impl_->publishing_review || impl_->review_changes==sqlite3_total_changes64(impl_->db))) {
@@ -167,7 +167,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         append_group_local_amounts(amounts,transfers,account.identity);
         if(ready)member.reviewed_change=imports::sum(account.currency,amounts);
         if(member.created && !account.frozen && !explicit_account_money(impl_->db,account.identity) && b.state!=app::BatchState::discarded) {
-            if(members.null(5) || members.null(9) || !member.reviewed_change || members.integer(9)!=member.reviewed_change->units())member.balance_choice=app::ReportedBalanceChoice::unreviewed;
+            if(members.integer(4)<5 && (members.null(5) || members.null(9) || !member.reviewed_change || members.integer(9)!=member.reviewed_change->units()))member.balance_choice=app::ReportedBalanceChoice::unreviewed;
             else if(!members.null(6))member.proposed_opening=Money(members.integer(6),account.currency);
             if(member.balance_choice==app::ReportedBalanceChoice::unreviewed){++result.unresolved;blocker(account.identity,batch_id,{},"","Calculate and stage this account’s opening balance");}
         }
@@ -242,6 +242,7 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
     for(const auto& mapping:mappings) {
         if(mapping.source_account>=document.accounts.size() || !source_ids.insert(mapping.source_account).second || mapping.account<=0 || !target_ids.insert(mapping.account).second)
             fail(SQLITE_CONSTRAINT,"Map each source account once to a distinct account");
+        if(mapping.use_reported_opening && !mapping.creation)fail(SQLITE_CONSTRAINT,"Opening choices apply only to new accounts");
         if(mapping.creation) {
             const auto& c=*mapping.creation;
             safe_text(c.name);iso_date(c.date);
@@ -258,6 +259,8 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
             const auto found=std::find_if(saved.accounts.begin(),saved.accounts.end(),[&](const auto& a){return a.source_account==mapping.source_account;});
             if(found==saved.accounts.end() || found->account!=mapping.account || found->created!=mapping.creation.has_value())fail(SQLITE_CONSTRAINT,"Import mapping changed on retry");
             if(mapping.creation) {Statement creation(impl_->db,"SELECT name,definition,opening_date FROM account_creations WHERE identity=?");creation.integer(1,mapping.account);if(!creation.row() || creation.bytes(0)!=mapping.creation->name || creation.bytes(1)!=mapping.creation->currency.definition_id() || creation.bytes(2)!=mapping.creation->date)fail(SQLITE_CONSTRAINT,"Import account changed on retry");}
+            Statement opening_choice(impl_->db,"SELECT balance_choice,opening FROM import_balance_events WHERE group_id=? AND source_account=? ORDER BY sequence LIMIT 1");opening_choice.text(1,id);opening_choice.integer(2,integer(mapping.source_account));const bool has_choice=opening_choice.row() && opening_choice.integer(0)>=5;
+            if(has_choice!=mapping.use_reported_opening.has_value() || (has_choice && opening_choice.integer(0)!=(*mapping.use_reported_opening?6:5)))fail(SQLITE_CONSTRAINT,"Opening choice changed on retry");
         }
         context.seal();transaction.commit();return saved;
     }
@@ -290,6 +293,12 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         Statement b(impl_->db,"INSERT INTO batches VALUES(?,?,?,3,0,?,1,NULL,?,?,?)");b.text(1,batch_id);b.integer(2,static_cast<int>(profile));b.text(3,document.parser);b.integer(4,integer(parsed.records.size()));b.integer(5,account.identity);b.text(6,id);b.integer(7,integer(mapping.source_account));b.done();
         pin_source_currency(impl_->db,batch_id,account.currency);
         Statement member(impl_->db,"INSERT INTO import_group_accounts(group_id,source_account,account_id,batch,created) VALUES(?,?,?,?,?)");member.text(1,id);member.integer(2,integer(mapping.source_account));member.integer(3,account.identity);member.text(4,batch_id);member.integer(5,mapping.creation?1:0);member.done();
+        if(mapping.use_reported_opening){
+            Money opening(0,account.currency);const auto& reported=document.accounts[mapping.source_account].reported_balance;
+            if(*mapping.use_reported_opening){if(!reported)fail(SQLITE_CONSTRAINT,"No reported balance is present");opening=qif::amount(*reported,account.currency);}
+            Statement fixed(impl_->db,"UPDATE import_group_accounts SET balance_choice=?,balance_revision=0,opening=?,opening_date=?,balance_sequence=?,reviewed_change=0 WHERE group_id=? AND source_account=?");fixed.integer(1,*mapping.use_reported_opening?6:5);fixed.integer(2,opening.units());fixed.text(3,mapping.creation->date);fixed.integer(4,transfer_sequence());fixed.text(5,id);fixed.integer(6,integer(mapping.source_account));fixed.done();
+            Statement confirm(impl_->db,"UPDATE account SET opening=?,confirmed=1,revision=1 WHERE singleton=?");confirm.integer(1,opening.units());confirm.integer(2,account.identity);confirm.done();
+        }
         Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'capture')");event.text(1,batch_id);event.done();
     }
     Statement count(impl_->db,"INSERT INTO retained_group_counts VALUES(?,?)");count.text(1,id);count.integer(2,integer(mappings.size()));count.done();
@@ -310,6 +319,7 @@ app::ImportGroup ImportStore::resume_import_group(std::string_view id,app::Opera
     }
     Statement update(impl_->db,"UPDATE import_groups SET state=1 WHERE id=? AND state=0");update.text(1,id);update.done();
     resolve_group_transfers(id,context);
+    generate_explicit_transfers(&context);
     context.seal();finish([&]{transaction.commit();});return import_group(id);
 }
 void ImportStore::review_import_balance(std::string_view id,std::size_t source_account,std::int64_t expected,app::ReportedBalanceChoice choice,std::string_view date) {
@@ -317,6 +327,7 @@ void ImportStore::review_import_balance(std::string_view id,std::size_t source_a
     if(group.state!=app::GroupState::reviewing && group.state!=app::GroupState::started)fail(SQLITE_CONSTRAINT,"Balance review requires an uncommitted group");
     const auto found=std::find_if(group.accounts.begin(),group.accounts.end(),[&](const auto& a){return a.source_account==source_account;});
     if(found==group.accounts.end() || !found->created || !found->reviewed_change)fail(SQLITE_CONSTRAINT,"Finish this new account's repairs and duplicate review first");
+    if(static_cast<int>(found->balance_choice)>=5)fail(SQLITE_CONSTRAINT,"Opening was chosen during account creation; use Correct opening to change it");
     GroupSelection selection(impl_->selected_account);impl_->selected_account=found->account;
     const auto a=account();const auto b=batch(impl_->db,found->batch);if(b.revision!=expected || a.frozen)fail(SQLITE_CONSTRAINT,"Balance preview changed");
     const auto doc=indexed_source(impl_->db,id,evidence(found->batch));if(source_account>=doc.accounts.size())fail(SQLITE_CORRUPT,"Incomplete source account mapping");const auto& reported=doc.accounts[source_account].reported_balance;
@@ -399,11 +410,12 @@ void ImportStore::start_import_groups(const std::set<std::string>& batches,std::
 }
 void ImportStore::publish_group_opening(std::int64_t account_id) {
     const auto a=account_by_id(account_id);if(a.frozen || explicit_account_money(impl_->db,account_id))return;
-    Statement staged(impl_->db,"SELECT m.batch,m.balance_revision,m.opening,m.opening_date FROM import_group_accounts m JOIN import_groups g ON g.id=m.group_id WHERE m.account_id=? AND m.created=1 AND g.state IN(1,2)");staged.integer(1,account_id);if(!staged.row()){
+    Statement staged(impl_->db,"SELECT m.batch,m.balance_revision,m.opening,m.opening_date,m.balance_choice FROM import_group_accounts m JOIN import_groups g ON g.id=m.group_id WHERE m.account_id=? AND m.created=1 AND g.state IN(1,2)");staged.integer(1,account_id);if(!staged.row()){
         Statement retained(impl_->db,"SELECT opening,opening_date FROM retained_opening_reviews WHERE account=?");retained.integer(1,account_id);if(!retained.row())return;
         Statement update(impl_->db,"UPDATE account SET opening=?,opening_date=?,revision=revision+1,confirmed=1 WHERE singleton=?");update.integer(1,retained.integer(0));update.text(2,retained.bytes(1));update.integer(3,account_id);update.done();
         Statement clear(impl_->db,"DELETE FROM retained_opening_reviews WHERE account=?");clear.integer(1,account_id);clear.done();return;
     }
+    if(staged.integer(4)>=5)return; // Fixed creation-time opening is already published.
     require_group_ready(staged.bytes(0));
     if(staged.null(1) || staged.null(2) || a.revision==INT64_MAX)fail(SQLITE_CONSTRAINT,"Confirm the current opening balance proposal");
     Statement update(impl_->db,"UPDATE account SET opening=?,opening_date=?,revision=revision+1,confirmed=1 WHERE singleton=?");update.integer(1,staged.integer(2));update.text(2,staged.bytes(3));update.integer(3,account_id);update.done();
@@ -431,7 +443,15 @@ void ImportStore::verify_import_groups(const app::OperationContext* context) con
             std::int64_t last_revision=-1,last_choice=0,last_opening=0,last_sequence=-1,last_change=0;std::string last_date;
             while(decisions.row()) {
                 if(!member.created || decisions.integer(1)>b.revision || decisions.integer(1)<0)fail(SQLITE_CORRUPT,"Invalid reported balance decision");
-                iso_date(decisions.bytes(3));std::vector<Money> amounts;std::size_t count=0;
+                iso_date(decisions.bytes(3));
+                if(decisions.integer(0)>=5){
+                    if(last_revision>=0 || decisions.integer(1)!=0 || decisions.integer(5)!=0 || decisions.integer(4)<0 || decisions.integer(4)>transfer_sequence())fail(SQLITE_CORRUPT,"Invalid creation-time opening choice");
+                    Statement creation(impl_->db,"SELECT opening_date FROM account_creations WHERE identity=?");creation.integer(1,member.account);if(!creation.row() || creation.bytes(0)!=decisions.bytes(3))fail(SQLITE_CORRUPT,"Opening choice date differs from creation");
+                    Money expected(0,pinned_currency(impl_->db,member.batch));if(decisions.integer(0)==6){if(!reported)fail(SQLITE_CORRUPT);expected=qif::amount(*reported,expected.currency());}
+                    if(expected.units()!=decisions.integer(2))fail(SQLITE_CORRUPT,"Creation-time opening does not replay");
+                    last_choice=decisions.integer(0);last_revision=0;last_opening=expected.units();last_date=decisions.bytes(3);last_sequence=decisions.integer(4);last_change=0;continue;
+                }
+                std::vector<Money> amounts;std::size_t count=0;
                 Statement rows(impl_->db,"SELECT v.ordinal,v.revision,v.total,v.decision FROM versions v WHERE v.batch=? AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal AND revision<=?)");rows.text(1,member.batch);rows.integer(2,decisions.integer(1));
                 while(rows.row()){++count;if(rows.integer(3)==0)fail(SQLITE_CORRUPT,"Unreviewed balance history");if(rows.integer(3)==1)amounts.emplace_back(rows.integer(2),version_currency(impl_->db,member.batch,rows.integer(0),rows.integer(1)));}
                 if(count!=b.count)fail(SQLITE_CORRUPT,"Incomplete balance history");
@@ -453,7 +473,7 @@ void ImportStore::verify_import_groups(const app::OperationContext* context) con
             Statement chosen(impl_->db,"SELECT balance_choice,balance_revision,opening,opening_date,balance_sequence,reviewed_change FROM import_group_accounts WHERE batch=?");chosen.text(1,member.batch);if(!chosen.row())fail(SQLITE_CORRUPT);
             if(last_revision<0){if(chosen.integer(0)!=0 || !chosen.null(1) || !chosen.null(2) || !chosen.null(3) || !chosen.null(4) || !chosen.null(5))fail(SQLITE_CORRUPT);}
             else if(chosen.integer(0)!=last_choice || chosen.integer(1)!=last_revision || chosen.integer(2)!=last_opening || chosen.bytes(3)!=last_date || chosen.integer(4)!=last_sequence || chosen.integer(5)!=last_change)fail(SQLITE_CORRUPT,"Balance choice history differs from current proposal");
-            if(member.created && account.frozen && !explicit_account_money(impl_->db,account.identity) && (account.opening.units()!=last_opening || account.opening_date!=last_date))fail(SQLITE_CORRUPT,"Published opening differs from reviewed proposal");
+            if(member.created && (account.frozen || last_choice>=5) && !explicit_account_money(impl_->db,account.identity) && (account.opening.units()!=last_opening || account.opening_date!=last_date))fail(SQLITE_CORRUPT,"Published opening differs from reviewed proposal");
             if((group.state==app::GroupState::captured && b.state!=app::BatchState::captured) ||
                (group.state==app::GroupState::aborted && b.state!=app::BatchState::discarded) ||
                (group.state==app::GroupState::reviewing && b.state!=app::BatchState::pending))fail(SQLITE_CORRUPT,"Invalid grouped import state");

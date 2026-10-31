@@ -45,7 +45,6 @@ ApplicationWindow {
     }
     Connections {target:diagnosticFileMenu;function onVisibleChanged(){window.diagnosticModalChanged(0,diagnosticFileMenu.visible)}}
     Connections {target:importBlockersDialog;function onVisibleChanged(){window.diagnosticModalChanged(1,importBlockersDialog.visible)}}
-    Connections {target:transferDialog;function onVisibleChanged(){window.diagnosticModalChanged(2,transferDialog.visible)}}
     Connections {target:ledgerContext;function onVisibleChanged(){window.diagnosticModalChanged(5,ledgerContext.visible)}}
     Connections {target:accountContext;function onVisibleChanged(){window.diagnosticModalChanged(6,accountContext.visible)}}
     Connections {target:overwriteDialog;function onVisibleChanged(){window.diagnosticModalChanged(7,overwriteDialog.visible)}}
@@ -69,7 +68,6 @@ ApplicationWindow {
     Connections {target:currencyDialog;function onVisibleChanged(){window.diagnosticModalChanged(25,currencyDialog.visible)}}
     Connections {target:importCategoriesDialog;function onVisibleChanged(){window.diagnosticModalChanged(26,importCategoriesDialog.visible)}}
     Connections {target:discardDialog;function onVisibleChanged(){window.diagnosticModalChanged(27,discardDialog.visible)}}
-    Connections {target:commitDialog;function onVisibleChanged(){window.diagnosticModalChanged(28,commitDialog.visible)}}
     // Diagnostics publishes only this explicit semantic allowlist, at <=10 Hz.
     Label {z:1000;anchors.right:parent.right;anchors.top:parent.top;text:"Diagnostics enabled";visible:workflow.diagnosticsEnabled;color:"#9b5a00"}
     property bool diagnosticSearchValid: true
@@ -78,7 +76,6 @@ ApplicationWindow {
         let modals=0
         if(diagnosticFileMenu.visible) modals+=Math.pow(2,0)
         if(importBlockersDialog.visible) modals+=Math.pow(2,1)
-        if(transferDialog.visible) modals+=Math.pow(2,2)
         if(ledgerContext.visible) modals+=Math.pow(2,5)
         if(accountContext.visible) modals+=Math.pow(2,6)
         if(overwriteDialog.visible) modals+=Math.pow(2,7)
@@ -102,7 +99,7 @@ ApplicationWindow {
         if(currencyDialog.visible) modals+=Math.pow(2,25)
         if(importCategoriesDialog.visible) modals+=Math.pow(2,26)
         if(discardDialog.visible) modals+=Math.pow(2,27)
-        if(commitDialog.visible) modals+=Math.pow(2,28)
+        if(reviewDifference.visible || reviewSurvivor.visible) modals+=Math.pow(2,28)
         let pending=(startupPending?1:0)+(pendingAction?2:0)+(pendingSearch?4:0)+(pendingAccountNavigation?8:0)+(pendingCounterpart?16:0)+(ledgerViewRestore?32:0)+(closingRequested?64:0)+(guardHandoff?128:0)+(workflow.busy?256:0)+(probeTimer.running?512:0)
         let first=ledger.indexAt(1,ledger.contentY+1)
         let last=ledger.indexAt(1,ledger.contentY+ledger.height-1)
@@ -221,94 +218,11 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
-        id:transferDialog;objectName:"transferDialog";title:"Transfers · "+(s.name||"")
-        anchors.centerIn:parent;width:Math.min(window.width-60,1000);height:Math.min(window.height-60,680);modal:true;standardButtons:Dialog.Close
-        contentItem:UsableScrollView {
-            clip:true
-            ColumnLayout {
-                width:transferDialog.availableWidth;spacing:12;enabled:!workflow.busy
-                Label {text:"Each account commits separately. Acceptance without a bank match preserves provenance and permits a later match.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                GroupBox {
-                    title:"Resolve an imported destination or create a transfer";Layout.fillWidth:true
-                    ColumnLayout {
-                        anchors.fill:parent
-                        RowLayout {
-                            Label {text:"Destination"}
-                            UsableComboBox {id:transferDestination;objectName:"transferDestination";model:transferDestinations();textRole:"name";currentIndex:0;onModelChanged:currentIndex=0;Layout.fillWidth:true;Accessible.name:"Transfer destination account"}
-                        }
-                        RowLayout {
-                            TextField {id:transferDate;objectName:"transferDate";text:workflow.todayDisplay();placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
-                            TextField {id:transferAmount;objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
-                            TextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
-                            Button {objectName:"createManualTransfer";text:"Create manual draft";enabled:!s.readOnly && transferDestination.currentIndex>0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
-                        }
-                        Label {text:"QIF [Account] names are source evidence. Choose the actual destination explicitly, even when names match. If a transfer already exists below, match its bank allocation instead of creating another movement. Create missing accounts from Accounts first.";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        TextField {id:transferMemo;placeholderText:"Memo (optional)";Layout.fillWidth:true;Accessible.name:"Manual transfer memo"}
-                        RowLayout {
-                            Label {text:"Selected record allocation"}
-                            UsableComboBox {id:transferAllocation;objectName:"transferAllocation";model:(selected.draft||{}).splits||[];textRole:"transferLabel";Layout.fillWidth:true;Accessible.name:"Selected transfer allocation"}
-                            Button {objectName:"assignTransfer";text:"Use as transfer";enabled:!s.readOnly && !!selected.transferEligible && transferAllocation.currentIndex>=0 && transferDestination.currentIndex>0;onClicked:transferCommand("transfer_from_draft",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
-                        }
-                    }
-                }
-                Label {text:(s.transferReceipt||{}).summary||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                Label {text:"Transfer journal";font.bold:true}
-                Label {text:"Read only. Each line is a saved transfer operation: link, accounts, amounts, dates, action, and sequence.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                Repeater {
-                    objectName:"transferJournalRepeater"
-                    model:s.transferJournal||[]
-                    delegate:Label {
-                        required property var modelData
-                        required property int index
-                        objectName:"transferJournal_"+index
-                        text:modelData.text
-                        textFormat:Text.PlainText
-                        wrapMode:Text.Wrap
-                        Layout.fillWidth:true
-                    }
-                }
-                Repeater {
-                    model:s.transfers||[]
-                    delegate:GroupBox {
-                        required property var modelData
-                        Layout.fillWidth:true;title:modelData.label
-                        ColumnLayout {
-                            anchors.fill:parent
-                            Label {text:(modelData.committed?"Committed":"Draft")+(modelData.protected?" · Protected by the other account":"")+(modelData.provisional?" · Provisional date":"")+(modelData.evidenced?" · Bank evidence retained":modelData.accepted?" · Accepted without bank match":" · Needs review")+(modelData.proposed?" · Match proposed; commit its import to attach":"");wrapMode:Text.Wrap;Layout.fillWidth:true}
-                            RowLayout {
-                                Button {text:"Accept without bank match";visible:!modelData.evidenced && !modelData.accepted;enabled:!s.readOnly && !modelData.proposed;onClicked:transferCommand("transfer_accept",{link:modelData.id})}
-                                Button {text:"Commit";visible:modelData.local && !modelData.committed;enabled:!s.readOnly;onClicked:guard(requestCommit) }
-                                Button {text:"Discard manual origin";visible:modelData.isOrigin && modelData.local && !modelData.committed && !modelData.protected;enabled:!s.readOnly;onClicked:transferCommand("transfer_clear",{link:modelData.id})}
-                                Button {text:"Show counterpart ↗";onClicked:showCounterpart(modelData)}
-                            }
-                            RowLayout {
-                                Button {text:"Find bank candidates";visible:!modelData.evidenced && !modelData.proposed;enabled:!s.readOnly;onClicked:workflow.command("transfer_candidates",{link:modelData.id})}
-                                Button {text:"Match selected allocation";visible:!modelData.evidenced && !modelData.proposed;enabled:!s.readOnly && !!selected.transferEligible && transferAllocation.currentIndex>=0;onClicked:transferCommand("transfer_match",{link:modelData.id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
-                                Button {text:"Drop match proposal";visible:modelData.proposed;enabled:!s.readOnly;onClicked:transferCommand("transfer_unmatch",{link:modelData.id})}
-                            }
-                            ColumnLayout {
-                                visible:s.candidateLink===modelData.id
-                                Layout.fillWidth:true
-                                Repeater {
-                                    model:s.candidateLink===modelData.id?(s.transferCandidates||[]):[]
-                                    delegate:RowLayout {
-                                        required property var modelData
-                                        Layout.fillWidth:true
-                                        Label {text:modelData.label;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
-                                        Button {text:"Confirm match proposal";onClicked:transferCommand("transfer_match",{link:s.candidateLink,batch:modelData.batch,ordinal:modelData.ordinal,allocation:modelData.allocation})}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+
     Menu {
         id:ledgerContext
-        MenuItem {objectName:"mergeSelection";text:"Merge";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
+        MenuItem {objectName:"duplicateMergeSelection";text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
+        MenuItem {objectName:"mergeSelection";text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
         MenuItem {text:"Delete selected…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
         MenuItem {text:"Change category…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:{bulkCategory.forceActiveFocus();bulkCategory.popup.open()}}
     }
@@ -436,7 +350,8 @@ ApplicationWindow {
         })
     }
     Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
-    Shortcut {objectName:"mergeShortcut";sequence:"Ctrl+M";enabled:!!s.active && !workflow.busy && !s.readOnly && !!s.transfersSupported;onActivated:mergeSelected()}
+    Shortcut {objectName:"duplicateMergeShortcut";sequence:"Alt+M";enabled:!!s.active && !workflow.busy && !s.readOnly && (s.selectionCount||0)>=2;onActivated:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
+    Shortcut {objectName:"mergeShortcut";sequence:"Alt+L";enabled:!!s.active && !workflow.busy && !s.readOnly && !!s.transfersSupported;onActivated:mergeSelected()}
     Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
     Shortcut {sequences:[StandardKey.Forward];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(1)}
     property bool payeeTouched: false
@@ -570,10 +485,10 @@ ApplicationWindow {
         }
         if(rows.length===1) {
             pendingMerge=allocationChoice(rows[0].batch,rows[0].ordinal)
-            mergeHint="Choose the other allocation and invoke Merge again"
+            mergeHint="Choose the other allocation and invoke Link again"
             return
         }
-        mergeHint="Select one or two allocations, then Merge"
+        mergeHint="Select one or two allocations, then Link"
     }
     function removeSelected() {
         let rows=s.selection||[]
@@ -626,7 +541,7 @@ ApplicationWindow {
     property bool closingRequested: false
     property bool commitBeforeQuit: false
     function requestCommit() {
-        if((s.acceptanceWarnings||[]).length>0)commitDialog.open()
+        if((s.reviewCount||0)>0)reviewSheet.open()
         else workflow.command("commit")
     }
     function requestQuit() {
@@ -835,6 +750,8 @@ ApplicationWindow {
         // The occurrence selection remains in the workflow and is restored below.
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onCompleted(action,success) {
+            if(action==="link_exclusion_save" && success)linkExclusionDialog.close()
+            if(action==="link_exclusion_preview" && !success)exclusionPreviewed=false
             if(action==="commit" && commitBeforeQuit) {
                 commitBeforeQuit=false
                 if(success){closingRequested=true;Qt.callLater(function(){workflow.command("close")})}
@@ -852,7 +769,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -880,7 +797,7 @@ ApplicationWindow {
                 categorySaving=false;categoryError=workflow.error
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
-            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null}
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false}
             if(success) {
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
@@ -888,6 +805,7 @@ ApplicationWindow {
                     else if(accountViewports[s.accountId])Qt.callLater(function(){restoreViewport(accountViewports[s.accountId])})
                     if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
+                    if(pendingReviewInspection){currentPage="review";pendingReviewInspection=false}
                     loadEditor();loadRulesForm();loadCategoryForm()
                     if(currentPage==="history")Qt.callLater(function(){workflow.command("history")})
                 }
@@ -975,11 +893,11 @@ ApplicationWindow {
             let options=[{id:"",label:"Choose an account"},{id:"new",label:"Create a new account"}]
             for(let a of (s.accounts||[])) options.push({id:a.id,label:a.name+" · "+a.currency+" · #"+a.id})
             choices=options
-            mappings=(s.importPlan||[]).map(function(a){return {source:a.source,account:"",create:false,currency:a.currency,date:workflow.todayDisplay()}})
+            mappings=(s.importPlan||[]).map(function(a){return {source:a.source,account:"",create:false,currency:a.currency,date:a.openingDate,useReportedOpening:false}})
         }
         function update(index,key,value){let rows=mappings.slice();let row=Object.assign({},rows[index]);row[key]=value;rows[index]=row;mappings=rows}
         contentItem:ColumnLayout {
-            Label {text:"Choose an existing account or explicitly create one for every source account. Original names and reported balances are retained. New openings are reviewed after repairs; saved uncommitted transactions count in the balance.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:"Choose an existing account or create one for each account found in the import data.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             ListView {
                 id:mappingList;objectName:"sourceAccountMappingList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:12;model:s.importPlan||[]
                 delegate:ColumnLayout {
@@ -993,7 +911,16 @@ ApplicationWindow {
                         Label {text:"Currency"}
                         UsableComboBox {objectName:"sourceCurrency_"+index;model:workflow.currencies;currentIndex:workflow.currencies.indexOf((importMapping.mappings[mappingDelegate.index]||{}).currency);Accessible.name:"Currency for "+modelData.name;onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"currency",currentText)}}
                         Label {text:"Opening date"}
-                        TextField {text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
+                        TextField {objectName:"sourceOpeningDate_"+index;Layout.fillWidth:true;text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
+                    }
+                    RowLayout {
+                        visible:!!importMapping.mappings[index] && importMapping.mappings[index].create
+                        Label {text:"Opening balance"}
+                        UsableComboBox {objectName:"sourceOpeningBalance_"+index;Layout.fillWidth:true;Accessible.name:"Opening balance for "+modelData.name
+                            model:modelData.offerReportedOpening?["0.00","Use reported balance as opening: "+modelData.reported]:["0.00"]
+                            currentIndex:(importMapping.mappings[mappingDelegate.index]||{}).useReportedOpening?1:0
+                            onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"useReportedOpening",choiceIndex===1)}
+                        }
                     }
                 }
             }
@@ -1087,7 +1014,7 @@ ApplicationWindow {
             Label {textFormat:Text.PlainText;text:"The generated duplicate leaves the committed ledger. Evidence and history stay. The other account is unchanged.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
-                Button {objectName:"confirmMerge";text:"Merge";enabled:!workflow.busy && !!(s.transferMergePreview||{}).id;onClicked:workflow.command("transfer_merge_apply",{preview:s.transferMergePreview.id})}
+                Button {objectName:"confirmMerge";text:"Link";enabled:!workflow.busy && !!(s.transferMergePreview||{}).id;onClicked:workflow.command("transfer_merge_apply",{preview:s.transferMergePreview.id})}
                 Button {objectName:"cancelMerge";text:"Cancel";enabled:!workflow.busy;onClicked:{mergePreview.close();workflow.command("cancel_merge")}}
             }
         }
@@ -1255,21 +1182,89 @@ ApplicationWindow {
             Button {objectName:"quitCommitCancel";text:"Cancel";onClicked:quitCommit.close()}
         }
     }
+    Shortcut {
+        sequences:[StandardKey.Undo]
+        enabled:!reviewSheet.visible && !!s.canUndoReview && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        onActivated:workflow.command("review_undo")
+    }
+    property var exclusionEndpoint: ({})
+    property var exclusionEditing: ({})
+    property bool exclusionPreviewed: false
+    function openLinkExclusion(row, rule) {
+        exclusionEndpoint=row||({})
+        exclusionEditing=rule||{identity:"",field:"payee",expression:row.payee||"",account:"0",regex:false,endpointAccount:row.account}
+        exclusionPreviewed=false
+        exclusionField.currentIndex=exclusionEditing.field==="memo"?1:0
+        exclusionText.text=exclusionEditing.expression||""
+        exclusionRegex.checked=!!exclusionEditing.regex
+        exclusionAccount.checked=exclusionEditing.account!=="0"
+        linkExclusionDialog.open()
+    }
     Dialog {
-        id:commitDialog;objectName:"commitReviewDialog";width:Math.min(window.width-48,760);height:Math.min(window.height-48,560);title:"Review before Commit";modal:true;anchors.centerIn:parent
-        onRejected:commitBeforeQuit=false
-        contentItem:ListView {
-            clip:true;spacing:8;model:s.acceptanceWarnings||[]
-            ScrollBar.vertical:UsableScrollBar {}
-            delegate:Button {
-                required property var modelData;width:ListView.view.width-20
-                text:modelData.reason;contentItem:Label {text:parent.text;wrapMode:Text.Wrap;textFormat:Text.PlainText}
-                onClicked:{commitDialog.close();commitBeforeQuit=false;openImportReview({account:modelData.account,batch:modelData.batch,record:modelData.ordinal===undefined || modelData.ordinal===null?-1:modelData.ordinal})}
+        id:linkExclusionDialog;objectName:"linkExclusionDialog";title:"Don't suggest links";modal:true;anchors.centerIn:parent;width:Math.min(window.width-40,760);height:Math.min(window.height-40,620)
+        onRejected:workflow.command("link_exclusion_cancel")
+        contentItem:ColumnLayout {
+            Label {text:"Suppress suggestions when either transaction matches. Financial records and explicit transfers awaiting bank evidence stay unchanged.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            UsableComboBox {id:exclusionField;objectName:"exclusionField";model:["Payee","Memo (including split memos)"];onActivated:{exclusionPreviewed=false;if(!exclusionEditing.identity)exclusionText.text=currentIndex===0?(exclusionEndpoint.payee||""):(exclusionEndpoint.memo||((exclusionEndpoint.splits||[]).find(function(part){return !!part.memo})||{}).memo||"")}}
+            TextField {id:exclusionText;objectName:"exclusionText";Layout.fillWidth:true;placeholderText:"Matching condition";onTextEdited:exclusionPreviewed=false;Accessible.name:"Link exclusion condition"}
+            CheckBox {id:exclusionRegex;objectName:"exclusionRegex";text:"Regular expression";onToggled:exclusionPreviewed=false}
+            CheckBox {id:exclusionAccount;objectName:"exclusionAccount";text:"Only in this account";onToggled:exclusionPreviewed=false}
+            Label {text:"Default: all accounts. Exact text matches the whole field, ignoring case; spaces and punctuation remain significant.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Button {text:"Preview";objectName:"previewLinkExclusion";enabled:!workflow.busy;onClicked:{exclusionPreviewed=true;workflow.command("link_exclusion_preview",{identity:exclusionEditing.identity,field:exclusionField.currentIndex===0?"payee":"memo",expression:exclusionText.text,regex:exclusionRegex.checked,account:exclusionAccount.checked?(exclusionEditing.endpointAccount||exclusionEditing.account!=="0" && exclusionEditing.account||s.accountId):"0",removed:!!exclusionEditing.removed})}}
+                Label {text:exclusionPreviewed && (s.linkExclusionPreview||{}).ready?((s.linkExclusionPreview.comparisons||[]).length+" affected comparisons"):"Preview before saving"}
             }
+            ListView {Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:exclusionPreviewed?((s.linkExclusionPreview||{}).comparisons||[]):[];ScrollBar.vertical:UsableScrollBar {} delegate:Label {required property string modelData;width:ListView.view.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}}
+            Label {text:workflow.error;visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true}
         }
         footer:DialogButtonBox {
-            Button {objectName:"ignoreAndCommit";text:"Ignore and commit";enabled:!!s.canIgnoreWarnings && !workflow.busy;onClicked:{commitDialog.close();workflow.command("commit",{ignoreWarnings:true})}}
-            Button {text:"Cancel";onClicked:{commitBeforeQuit=false;commitDialog.close()}}
+            Button {text:exclusionEditing.removed?"Remove exclusion":"Save";objectName:"saveLinkExclusion";enabled:!workflow.busy && exclusionPreviewed && !!(s.linkExclusionPreview||{}).ready;onClicked:workflow.command("link_exclusion_save")}
+            Button {text:"Cancel";onClicked:{workflow.command("link_exclusion_cancel");linkExclusionDialog.close()}}
+        }
+    }
+    property bool reviewInspecting: false
+    property bool pendingReviewInspection: false
+    function inspectReviewTransaction(row) {
+        guard(function(){pendingReviewInspection=true;reviewInspecting=true;workflow.command("select_account",{id:row.account,reveal:true,batch:row.batch,ordinal:row.ordinal})})
+    }
+    property real reviewScrollPosition: 0
+    property var reviewPending: ({})
+    property var reviewSurvivors: []
+    function answerReview(question, answer, chosen) {
+        reviewScrollPosition=reviewQuestions.contentY
+        let args={question:question.key,generation:s.reviewGeneration,answer:answer,selected:chosen||[]}
+        if(answer==="merge") {
+            let accepted=(chosen||[]).filter(function(row){return row.committed})
+            if(accepted.length!==1){reviewPending=args;reviewSurvivors=chosen;reviewSurvivor.open();return}
+        }
+        workflow.command("review_answer",args)
+    }
+
+    Dialog {
+        id:reviewSurvivor;objectName:"reviewSurvivor";title:"Choose the transaction to keep";modal:true;anchors.centerIn:parent;width:Math.min(window.width-64,720)
+        contentItem:ColumnLayout {
+            Repeater {model:reviewSurvivors;delegate:Button {
+                required property var modelData;Layout.fillWidth:true
+                text:modelData.date+" · "+modelData.payee+" · "+modelData.total+(modelData.committed?" · Committed":"")+" — Keep this transaction"
+                onClicked:{let args=Object.assign({},reviewPending,{survivor:modelData});reviewSurvivor.close();workflow.command("review_answer",args)}
+            }}
+        }
+        standardButtons:Dialog.Cancel
+    }
+    Dialog {
+        id:reviewDifference;objectName:"reviewDifference";title:"Link the matching amount";modal:true;anchors.centerIn:parent;width:Math.min(window.width-64,620)
+        onOpened:reviewRemainderCategory.currentIndex=0
+        property var preview:s.reviewLinkPreview||({})
+        onPreviewChanged: {if(preview.common)open();else close()}
+        onRejected:workflow.command("review_cancel_link")
+        contentItem:ColumnLayout {
+            Label {text:"Link "+(reviewDifference.preview.common||"")+" and categorise "+(reviewDifference.preview.remainder||"")+" as";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            UsableComboBox {id:reviewRemainderCategory;objectName:"reviewRemainderCategory";Layout.fillWidth:true;textRole:"path";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).filter(function(c){return c.assignable}));Accessible.name:"Category for difference"}
+            Label {text:workflow.error;visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true}
+        }
+        footer:DialogButtonBox {
+            Button {text:"Yes";objectName:"reviewDifferenceYes";enabled:!workflow.busy;onClicked:{let args=Object.assign({},reviewDifference.preview.args,{splitDifference:true,category:reviewRemainderCategory.model[reviewRemainderCategory.currentIndex].id});workflow.command("review_answer",args)}}
+            Button {text:"No";objectName:"reviewDifferenceNo";enabled:!workflow.busy;onClicked:workflow.command("review_cancel_link")}
         }
     }
     ColumnLayout {
@@ -1438,14 +1433,209 @@ ApplicationWindow {
                         }
 
                     }
+                    Button {objectName:"reviewNavigation";text:"Review ("+(s.reviewCount||0)+")";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
-                    Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.rulesSupported;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(!rulesDirty)workflow.command("rules_load")})}
+                    Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.active;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(s.rulesSupported && !rulesDirty)workflow.command("rules_load")})}
                     Button {objectName:"historyNavigation";text:"Committed changes";Layout.fillWidth:true;visible:!!s.committedChangesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("history");workflow.command("history")})}
                     Button {objectName:"sidebarSettings";text:"Settings";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="settings";onClicked:navigate("settings")}
                 }
             }
             Item {
                 SplitView.fillWidth:true
+                Item {
+        id:reviewSheet;objectName:"reviewSheet";anchors.fill:parent;visible:currentPage==="review"
+        property string title:"Review · "+(s.reviewCount||0)+" remaining"
+        function open(){navigate("review");reviewQuestions.forceActiveFocus()}
+        function close(){navigate("ledger")}
+        ColumnLayout {anchors.fill:parent;spacing:4
+        ColumnLayout {
+            Layout.fillWidth:true
+            Label {text:reviewSheet.title;font.pixelSize:20;Layout.margins:12}
+            Label {text:workflow.error;visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true;Layout.leftMargin:12;Layout.rightMargin:12}
+        }
+
+        Item {Layout.fillWidth:true;Layout.preferredHeight:30;clip:true
+            RowLayout {x:-reviewQuestions.contentX;
+                width:reviewQuestions.contentWidth-24;height:30
+                Item {Layout.preferredWidth:32}
+                Label {text:"Date";font.bold:true;Layout.preferredWidth:95}
+                Label {text:"Account";font.bold:true;Layout.preferredWidth:105}
+                Label {text:"Payee";font.bold:true;Layout.fillWidth:true;Layout.minimumWidth:100}
+                Label {text:"Category / splits";font.bold:true;Layout.preferredWidth:145}
+                Label {text:"Withdrawal";font.bold:true;Layout.preferredWidth:100;horizontalAlignment:Text.AlignRight}
+                Label {text:"Deposit";font.bold:true;Layout.preferredWidth:100;horizontalAlignment:Text.AlignRight}
+                Label {text:"";Layout.preferredWidth:40}
+                Item {Layout.preferredWidth:100}
+                Item {Layout.preferredWidth:100}
+            }
+        }
+        ListView {
+            Layout.fillWidth:true;Layout.fillHeight:true
+            id:reviewQuestions;objectName:"reviewQuestions";
+            activeFocusOnTab:true;Accessible.role:Accessible.List;Accessible.name:"Review questions"
+            Keys.onPressed:function(event){
+                if(event.key===Qt.Key_Up || event.key===Qt.Key_Down){currentIndex=Math.max(0,Math.min(count-1,currentIndex+(event.key===Qt.Key_Down?1:-1)));positionViewAtIndex(currentIndex,ListView.Contain);event.accepted=true}
+                else if((event.key===Qt.Key_Return || event.key===Qt.Key_Enter) && currentItem && currentItem.modelData.rows.length){inspectReviewTransaction(currentItem.modelData.rows[0]);event.accepted=true}
+            }
+            clip:true;spacing:4;contentWidth:Math.max(width,1000);model:s.reviewQuestions||[]
+            onModelChanged:Qt.callLater(function(){reviewQuestions.contentY=Math.max(0,Math.min(reviewScrollPosition,reviewQuestions.contentHeight-reviewQuestions.height))})
+    Shortcut {objectName:"reviewUndoShortcut";
+        sequences:[StandardKey.Undo]
+        enabled:reviewSheet.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoReview && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        onActivated:workflow.command("review_undo")
+    }
+            ScrollBar.vertical:UsableScrollBar {}
+            ScrollBar.horizontal:UsableScrollBar {}
+            Label {anchors.centerIn:parent;visible:reviewQuestions.count===0;text:"Nothing left to review."}
+            delegate:ColumnLayout {
+                id:questionCard;required property var modelData;required property int index;width:reviewQuestions.contentWidth-24;spacing:4
+                property var chosen: []
+                property int counterpart: -1
+                property string leftAllocation: ""
+                property string rightAllocation: ""
+                onModelDataChanged:{chosen=[];counterpart=-1;leftAllocation="";rightAllocation=""}
+                function toggle(row, checked){let values=chosen.slice();if(checked)values.push(row);else values=values.filter(function(v){return v.key!==row.key});chosen=values}
+                Label {text:questionCard.modelData.accountName||"Import problems";visible:!!questionCard.modelData.separator;font.bold:true;font.pixelSize:16;Layout.fillWidth:true}
+                RowLayout {
+                    Layout.fillWidth:true
+                    Label {text:questionCard.modelData.reason;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                    Button {text:"Yes";objectName:"reviewYes";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy && (questionCard.modelData.kind==="same" || questionCard.counterpart>=1);onClicked:{
+                        if(questionCard.modelData.kind==="same")answerReview(questionCard.modelData,"merge",questionCard.modelData.rows)
+                        else {reviewScrollPosition=reviewQuestions.contentY;workflow.command("review_link_preview",{question:questionCard.modelData.key,generation:s.reviewGeneration,answer:"link",selected:[questionCard.modelData.rows[0],questionCard.modelData.rows[questionCard.counterpart]],leftAllocation:questionCard.leftAllocation,rightAllocation:questionCard.rightAllocation})}
+                    }}
+                    Button {text:"No";objectName:"reviewNo";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,questionCard.modelData.kind==="same"?"separate":"not_linked",[])}
+                    Button {text:"Selected yes";objectName:"reviewSelectedYes";visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;enabled:!workflow.busy && questionCard.chosen.length>=2;onClicked:answerReview(questionCard.modelData,"merge",questionCard.chosen)}
+                    Button {text:"Accept without bank match";objectName:"acceptMissingMatch";visible:!!questionCard.modelData.waitingLink;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,"accept_missing",[])}
+                    Button {text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:{reviewSheet.close();openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}}
+                }
+                Repeater {model:questionCard.modelData.rows;delegate:ColumnLayout {
+                    id:reviewRow;required property var modelData;required property int index;Layout.fillWidth:true
+                    property bool showSplits:false
+                    RowLayout {
+                        Layout.fillWidth:true
+                        Item {Layout.preferredWidth:32;Layout.preferredHeight:36
+                        CheckBox {anchors.centerIn:parent;visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;onToggled:questionCard.toggle(reviewRow.modelData,checked);Accessible.name:"Select transaction "+reviewRow.modelData.payee}
+                        RadioButton {anchors.centerIn:parent;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;onClicked:{questionCard.counterpart=reviewRow.index;questionCard.rightAllocation=""} Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee}
+                        }
+                        Label {text:reviewRow.modelData.date;Layout.preferredWidth:95;textFormat:Text.PlainText}
+                        Label {text:reviewRow.modelData.accountName;Layout.preferredWidth:105;elide:Text.ElideRight;textFormat:Text.PlainText}
+                        Label {text:reviewRow.modelData.payee;Layout.fillWidth:true;Layout.minimumWidth:100;elide:Text.ElideRight;textFormat:Text.PlainText;MouseArea {anchors.fill:parent;onDoubleClicked:inspectReviewTransaction(reviewRow.modelData)}}
+                        Button {flat:true;text:reviewRow.modelData.splits.length>1?(reviewRow.showSplits?"▾ ":"▸ ")+reviewRow.modelData.splits.length+" splits":(reviewRow.modelData.splits[0]||{}).categoryDisplay||"Uncategorized";Layout.preferredWidth:145;onClicked:reviewRow.showSplits=!reviewRow.showSplits}
+                        Label {text:reviewRow.modelData.withdrawal;Layout.preferredWidth:100;horizontalAlignment:Text.AlignRight;textFormat:Text.PlainText}
+                        Label {text:reviewRow.modelData.deposit;Layout.preferredWidth:100;horizontalAlignment:Text.AlignRight;textFormat:Text.PlainText}
+                        Label {text:reviewRow.modelData.currency;Layout.preferredWidth:40;textFormat:Text.PlainText}
+                        Item {Layout.preferredWidth:100;Layout.preferredHeight:40
+                        Button {anchors.fill:parent;text:"Exclude…";ToolTip.text:"Don't suggest links…";ToolTip.visible:hovered;visible:questionCard.modelData.kind==="link";enabled:!workflow.busy;onClicked:openLinkExclusion(reviewRow.modelData,null)}
+                        }
+                        Button {Layout.preferredWidth:100;text:"Inspect";enabled:!workflow.busy;onClicked:inspectReviewTransaction(reviewRow.modelData)}
+                    }
+                    Repeater {model:reviewRow.showSplits?reviewRow.modelData.splits:[];delegate:Label {required property var modelData;Layout.fillWidth:true;leftPadding:24;text:modelData.amount+" · "+modelData.categoryDisplay+" · "+modelData.memo;textFormat:Text.PlainText;wrapMode:Text.Wrap}}
+                    Label {text:reviewRow.modelData.note||"";visible:text.length>0;wrapMode:Text.Wrap;textFormat:Text.PlainText;Layout.fillWidth:true;font.italic:true}
+                    Label {text:reviewRow.modelData.memo||"";visible:reviewRow.showSplits && text.length>0;wrapMode:Text.Wrap;textFormat:Text.PlainText;Layout.fillWidth:true}
+                    UsableComboBox {visible:questionCard.modelData.kind==="link" && reviewRow.modelData.splits.length>1 && (reviewRow.index===0 || reviewRow.index===questionCard.counterpart);Layout.fillWidth:true;model:reviewRow.modelData.splits;textRole:"reviewLabel";currentIndex:-1;displayText:currentIndex<0?"Choose allocation to link":currentText;onActivated:{if(reviewRow.index===0)questionCard.leftAllocation=model[currentIndex].allocationId;else questionCard.rightAllocation=model[currentIndex].allocationId}}
+                }}
+            }
+        }
+        Frame {
+        id:transferDialog;objectName:"transferDialog";Layout.fillWidth:true;Layout.preferredHeight:Math.min(400,reviewSheet.height*0.6)
+        property bool expanded:false
+        visible:expanded && currentPage==="review"
+        function open(){navigate("review");expanded=true}
+        function close(){expanded=false}
+        contentItem:UsableScrollView {
+            clip:true
+            ColumnLayout {
+                width:transferDialog.availableWidth;spacing:8;enabled:!workflow.busy
+                RowLayout {Layout.fillWidth:true;Label {text:"Transfer details · "+(s.name||"");font.bold:true;Layout.fillWidth:true} Button {text:"Close details";onClicked:transferDialog.close()}}
+                Label {text:"Commit accepts new transactions across all accounts. Accepting without a bank match keeps the transfer available for later matching.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                GroupBox {
+                    title:"Resolve an imported destination or create a transfer";Layout.fillWidth:true
+                    ColumnLayout {
+                        anchors.fill:parent
+                        RowLayout {
+                            Label {text:"Destination"}
+                            UsableComboBox {id:transferDestination;objectName:"transferDestination";model:transferDestinations();textRole:"name";currentIndex:0;onModelChanged:currentIndex=0;Layout.fillWidth:true;Accessible.name:"Transfer destination account"}
+                        }
+                        RowLayout {
+                            TextField {id:transferDate;objectName:"transferDate";text:workflow.todayDisplay();placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
+                            TextField {id:transferAmount;objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
+                            TextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
+                            Button {objectName:"createManualTransfer";text:"Create manual draft";enabled:!s.readOnly && transferDestination.currentIndex>0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
+                        }
+                        Label {text:"Recognized QIF account references retain their destination. Resolve unknown export names here. If a transfer already exists, match its bank allocation instead of creating another movement.";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        TextField {id:transferMemo;placeholderText:"Memo (optional)";Layout.fillWidth:true;Accessible.name:"Manual transfer memo"}
+                        RowLayout {
+                            Label {text:"Selected record allocation"}
+                            UsableComboBox {id:transferAllocation;objectName:"transferAllocation";model:(selected.draft||{}).splits||[];textRole:"transferLabel";Layout.fillWidth:true;Accessible.name:"Selected transfer allocation"}
+                            Button {objectName:"assignTransfer";text:"Use as transfer";enabled:!s.readOnly && !!selected.transferEligible && transferAllocation.currentIndex>=0 && transferDestination.currentIndex>0;onClicked:transferCommand("transfer_from_draft",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
+                        }
+                    }
+                }
+                Label {text:(s.transferReceipt||{}).summary||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {text:"Transfer journal";font.bold:true}
+                Label {text:"Read only. Each line is a saved transfer operation: link, accounts, amounts, dates, action, and sequence.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Repeater {
+                    objectName:"transferJournalRepeater"
+                    model:s.transferJournal||[]
+                    delegate:Label {
+                        required property var modelData
+                        required property int index
+                        objectName:"transferJournal_"+index
+                        text:modelData.text
+                        textFormat:Text.PlainText
+                        wrapMode:Text.Wrap
+                        Layout.fillWidth:true
+                    }
+                }
+                Repeater {
+                    model:s.transfers||[]
+                    delegate:GroupBox {
+                        required property var modelData
+                        Layout.fillWidth:true;title:modelData.label
+                        ColumnLayout {
+                            anchors.fill:parent
+                            Label {text:(modelData.committed?"Committed":"Draft")+(modelData.protected?" · Protected by the other account":"")+(modelData.provisional?" · Provisional date":"")+(modelData.evidenced?" · Bank evidence retained":modelData.accepted?" · Accepted without bank match":" · Needs review")+(modelData.proposed?" · Match proposed; commit its import to attach":"");wrapMode:Text.Wrap;Layout.fillWidth:true}
+                            RowLayout {
+                                Button {text:"Accept without bank match";visible:!modelData.evidenced && !modelData.accepted;enabled:!s.readOnly && !modelData.proposed;onClicked:{const task=(s.reviewQuestions||[]).find(q=>q.waitingLink===modelData.id);if(task)answerReview(task,"accept_missing",[]);else transferCommand("transfer_accept",{link:modelData.id})}}
+                                Button {text:"Commit";visible:modelData.local && !modelData.committed;enabled:!s.readOnly;onClicked:guard(requestCommit) }
+                                Button {text:"Discard manual origin";visible:modelData.isOrigin && modelData.local && !modelData.committed && !modelData.protected;enabled:!s.readOnly;onClicked:transferCommand("transfer_clear",{link:modelData.id})}
+                                Button {text:"Show counterpart ↗";onClicked:showCounterpart(modelData)}
+                            }
+                            RowLayout {
+                                Button {text:"Find bank candidates";visible:!modelData.evidenced && !modelData.proposed;enabled:!s.readOnly;onClicked:workflow.command("transfer_candidates",{link:modelData.id})}
+                                Button {text:"Match selected allocation";visible:!modelData.evidenced && !modelData.proposed;enabled:!s.readOnly && !!selected.transferEligible && transferAllocation.currentIndex>=0;onClicked:transferCommand("transfer_match",{link:modelData.id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
+                                Button {text:"Drop match proposal";visible:modelData.proposed;enabled:!s.readOnly;onClicked:transferCommand("transfer_unmatch",{link:modelData.id})}
+                            }
+                            ColumnLayout {
+                                visible:s.candidateLink===modelData.id
+                                Layout.fillWidth:true
+                                Repeater {
+                                    model:s.candidateLink===modelData.id?(s.transferCandidates||[]):[]
+                                    delegate:RowLayout {
+                                        required property var modelData
+                                        Layout.fillWidth:true
+                                        Label {text:modelData.label;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                                        Button {text:"Confirm match proposal";onClicked:transferCommand("transfer_match",{link:s.candidateLink,batch:modelData.batch,ordinal:modelData.ordinal,allocation:modelData.allocation})}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+        Item {id:reviewInspector;Layout.fillWidth:true;Layout.preferredHeight:reviewInspecting && !!selected.batch?330:0;visible:reviewInspecting && !!selected.batch;clip:true}
+        RowLayout {
+            Layout.fillWidth:true
+            Button {text:"Transfer details…";visible:!!s.transfersSupported;onClicked:guard(function(){transferDialog.open()})}
+            Button {text:"Close inspection";visible:reviewInspecting;onClicked:guard(function(){reviewInspecting=false})}
+            Button {text:"Undo";objectName:"reviewUndo";enabled:!!s.canUndoReview && !workflow.busy;onClicked:workflow.command("review_undo");ToolTip.text:Qt.platform.os==="osx"?"Cmd+Z":"Ctrl+Z";ToolTip.visible:hovered}
+            Button {text:(s.acceptanceWarnings||[]).length>0?"Ignore and commit":"Commit valid transactions";objectName:"reviewIgnoreCommit";visible:(s.newTransactions||0)>0;enabled:!!s.canIgnoreWarnings && !workflow.busy;onClicked:{reviewSheet.close();workflow.command("commit",{ignoreWarnings:true})}}
+            Button {text:"Close";onClicked:{commitBeforeQuit=false;reviewSheet.close()}}
+        }
+    }
+        }
                 Item {
                     id:categoryPage;objectName:"categoryPage";anchors.fill:parent;visible:currentPage==="categories"
                     ColumnLayout {
@@ -1504,6 +1694,18 @@ ApplicationWindow {
                     ColumnLayout {
                         width:rulesPage.availableWidth;spacing:8
                         Label {text:"Rules";font.pixelSize:20}
+                        Label {text:"Link suggestions";font.pixelSize:18}
+                        Label {text:"Explicit exclusions suppress suggestions, not transactions or duplicate recognition.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Button {text:"New link exclusion";onClicked:openLinkExclusion({payee:"",account:s.accountId},null)}
+                        Repeater {model:s.linkExclusions||[];delegate:RowLayout {
+                            required property var modelData;Layout.fillWidth:true
+                            Label {text:(modelData.account==="0"?"All accounts":"Account "+modelData.account)+" · "+modelData.field+" · "+(modelData.regex?"Regex: ":"Exact: ")+modelData.expression;textFormat:Text.PlainText;elide:Text.ElideRight;Layout.fillWidth:true}
+                            Button {text:"Edit";onClicked:openLinkExclusion({},modelData)}
+                            Button {text:"Remove…";onClicked:openLinkExclusion({},Object.assign({},modelData,{removed:true}))}
+                        }}
+                        ColumnLayout {Layout.fillWidth:true;visible:!!s.rulesSupported
+                        Label {text:"Categorisation";font.pixelSize:18}
+
                         Label {text:"Edit the whole list, then Save or Discard. Preview can use unsaved rules. Apply uses only the saved ruleset.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         RowLayout {
                             Button {objectName:"newRule";text:"New rule";onClicked:newRule()}
@@ -1593,6 +1795,7 @@ ApplicationWindow {
                         Label {textFormat:Text.PlainText;text:(s.ruleReceipt||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         Label {objectName:"ruleLimits";text:s.ruleLimits||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                     }
+                    }
                 }
                 UsableScrollView {
                     id:historyPage;objectName:"committedHistoryPage";anchors.fill:parent;visible:currentPage==="history";contentWidth:availableWidth;enabled:!workflow.busy
@@ -1665,15 +1868,14 @@ ApplicationWindow {
             RowLayout {
                 Label {textFormat:Text.PlainText;text:"Balance: "+(s.balance||"");Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
                 Button {objectName:"importStatement";text:"Import statement…";enabled:!s.readOnly;onClicked:guard(function(){importDialog.open()})}
-                Button {objectName:"openTransfers";text:"Transfers…";visible:!!s.transfersSupported;onClicked:guard(function(){transferDialog.open()})}
-                Label {objectName:"mergeShortcutHint";visible:!!s.transfersSupported;text:"Merge: Ctrl+M (Command+M on macOS)";Layout.maximumWidth:220;wrapMode:Text.Wrap}
+                Label {objectName:"mergeShortcutHint";visible:!!s.transfersSupported;text:"Merge: Alt+M · Link: Alt+L";Layout.maximumWidth:220;wrapMode:Text.Wrap}
                 Button {text:"Backup / restore copy…";onClicked:guard(function(){backupDialog.open()})}
             }
             Label {objectName:"mergeHint";visible:mergeHint.length>0;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:mergeHint}
             Label {objectName:"emptyActiveAccount";visible:!!s.emptyActive;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.emptyActive||""}
             Label {objectName:"archivedAccountNotice";visible:!!s.archived;Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"This archived account is read only. Its history, evidence, balances, and transfer links remain available."}
             RowLayout {
-                visible:!s.frozen && !s.groupCreated && !s.readOnly
+                objectName:"openingSetup";visible:!s.frozen && !s.groupCreated && !s.groupOpeningFixed && !s.readOnly
                 Label {textFormat:Text.PlainText;text:"Opening balance (confirm before commit)"}
                 TextField {id:openingDate;text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date"}
                 TextField {id:openingAmount;text:s.opening||"";placeholderText:"Exact amount";Accessible.name:"Opening amount"}
@@ -1708,6 +1910,7 @@ ApplicationWindow {
                 Item {Layout.fillWidth:true}
                 Button {objectName:"resumeImport";text:"Resume import";visible:processingIncomplete;enabled:!s.readOnly;onClicked:guard(function(){workflow.command("resume",{batch:s.pending.id,revision:s.pending.revision})})}
                 Button {objectName:"discardImport";text:"Discard uncommitted work…";enabled:!s.readOnly && (!!s.pending || ((s.rollback||{}).transactions||0)>0 || ((s.rollback||{}).failures||0)>0);onClicked:guard(function(){discardDialog.open()})}
+                Button {objectName:"openReviewSheet";text:"Review ("+(s.reviewCount||0)+")";visible:(s.reviewCount||0)>0 || !!s.canUndoReview;enabled:!workflow.busy;onClicked:guard(function(){reviewSheet.open()})}
                 Button {objectName:"commitImport";text:"Commit";enabled:!s.readOnly && (s.newTransactions||0)>0;onClicked:guard(requestCommit)}
             }
             Label {text:s.importOutcome||"";visible:!!s.importOutcome;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -1852,8 +2055,8 @@ ApplicationWindow {
         // One persistent editor, visually reparented into the current row.
         // Its fields and split buffer never belong to a recycled delegate.
         property bool inlineRow: !!ledger.currentItem && ledger.currentItem.expanded
-        parent:inlineRow?ledger.currentItem.editorSlot:reviewPanel
-        visible:!!s.active && !!selected.batch
+        parent:currentPage==="review"?reviewInspector:(inlineRow?ledger.currentItem.editorSlot:reviewPanel)
+        visible:!!s.active && !!selected.batch && (currentPage!=="review" || reviewInspecting)
         enabled:!workflow.busy
         width:parent.width;height:330
         UsableScrollView {

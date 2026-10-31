@@ -80,11 +80,15 @@ private:
 // These pure transitions return a complete proposal. Persistence must validate
 // current revisions and write both sides and history in one storage transaction.
 void validate(const Link&);
+// Source provenance is explicit: a repaired import can lack an original amount.
 Link generate(std::string identity,const Endpoint& origin,const imports::DraftRow&,
-              const Endpoint& destination,const Currency& destination_currency);
+              const Endpoint& destination,const Currency& destination_currency,bool imported_origin=true);
 bool protected_draft(const Link&,std::int64_t account);
 Link commit(const Link&,std::int64_t account);
 // Acceptance is a review decision, never a commit or a bank match.
+// Adjust only a purely generated counterpart after an explicit allocation split.
+Link release_generated(const Link&);
+Link resize_generated(const Link&,const Money& origin_amount);
 Link accept_unmatched(const Link&,std::int64_t account);
 // A proposed attachment does not alter posting date, provenance, or commit
 // state. Only commit_import_match publishes it; discard retains the old side.

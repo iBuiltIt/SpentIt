@@ -123,7 +123,7 @@ void review() {
     check(query(path, "SELECT format||'/'||grammar FROM source_headers WHERE source_id='overlap'") == "ofx/ofx-sgml");
     check(query(path, "SELECT ledger_batch||':'||ledger_ordinal FROM source_associations WHERE source_batch='overlap-account-0' AND source_ordinal=0") == "qif:0");
     check(query(path, "SELECT count(*) FROM source_associations WHERE source_batch='qif'") == "1");
-    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "32" : "31"));
+    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "38" : "37"));
     {
         auto restored = ImportStore::open(d.path / "backup", password);
         restored.select_account(1);
@@ -348,7 +348,7 @@ void strict_overlap() {
     {
         Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
         s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
-        s.ingest("origin","D01/02/2026\nT-10\nL[Visa]\n^\n",qif::DateOrder::dmy);
+        s.ingest("origin","D01/02/2026\nT-10\nL[Old Visa export]\n^\n",qif::DateOrder::dmy);
         app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="payment";r.expected_sequence=s.transfer_sequence();r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;
         s.apply_transfer("make-transfer",r);
         check(s.acceptance_review().transactions==2);rejected([&]{s.accept_all("accept-transfer");});
@@ -587,7 +587,7 @@ void rollback() {
     }
     {
         Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
-        s.ingest("origin","D01/02/2026\nT-10\nL[Visa]\n^\n",qif::DateOrder::dmy);
+        s.ingest("origin","D01/02/2026\nT-10\nL[Old Visa export]\n^\n",qif::DateOrder::dmy);
         app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="payment";r.expected_sequence=s.transfer_sequence();r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;s.apply_transfer("make",r);s.accept_all("accept",true);
         s.select_account(2);s.ingest("bank","D01/02/2026\nT10\nPBank payment\n^\n",qif::DateOrder::dmy);r={};r.action=app::TransferAction::propose_match;r.link="payment";r.expected_sequence=s.transfer_sequence();r.evidence=transfers::BankEvidence{{2,{"bank",0},"source-0"},Money(1000,cad),"2026-02-01"};s.apply_transfer("match",r);
         s.rollback_account("remove-bank-source",s.rollback_review().token);check(s.balance()==Money(1000,cad) && s.current_ledger().size()==1);check(!s.transfers().front().link.destination.proposed_evidence);s.verify();
@@ -613,7 +613,7 @@ void rollback() {
     }
     for(bool independent:{false,true}) {
         Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
-        s.ingest("origin","D01/02/2026\nT-10\nL[Visa]\n^\n",qif::DateOrder::dmy);
+        s.ingest("origin","D01/02/2026\nT-10\nL[Old Visa export]\n^\n",qif::DateOrder::dmy);
         app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="payment";r.expected_sequence=s.transfer_sequence();r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;s.apply_transfer("make",r);
         if(independent){s.select_account(2);s.ingest("bank","D01/02/2026\nT10\nPBank payment\n^\n",qif::DateOrder::dmy);r={};r.action=app::TransferAction::propose_match;r.link="payment";r.expected_sequence=s.transfer_sequence();r.evidence=transfers::BankEvidence{{2,{"bank",0},"source-0"},Money(1000,cad),"2026-02-01"};s.apply_transfer("match",r);s.select_account(1);}
         s.rollback_account("clear",s.rollback_review().token);check(s.current_ledger().empty());s.select_account(2);check(s.balance()==Money(independent?1000:0,cad));check(s.transfers().empty());s.verify();
@@ -635,7 +635,7 @@ void rollback_stale_reopen() {
 void generated_ownership() {
     for(bool retain:{false,true}) {
         Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
-        s.ingest("origin","D01/02/2026\nT-10\nL[Visa]\n^\n",qif::DateOrder::dmy);
+        s.ingest("origin","D01/02/2026\nT-10\nL[Old Visa export]\n^\n",qif::DateOrder::dmy);
         app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="payment";r.expected_sequence=s.transfer_sequence();r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;s.apply_transfer("make",r);s.accept_all("accept",true);
         s.select_account(2);const auto payment=txn("PAYMENT","20260201","10.00");capture(s,"bank",sgml(bank(payment)),{{0,2,{}}});materialize(s,"bank");
         r={};r.action=app::TransferAction::propose_match;r.link="payment";r.expected_sequence=s.transfer_sequence();r.batch_revision=revision(s,"bank-account-0");r.evidence=transfers::BankEvidence{{2,{"bank-account-0",0},"source-0"},Money(1000,cad),"2026-02-01"};s.apply_transfer("match",r);
@@ -656,7 +656,7 @@ void generated_faults() {
     for(int mode:{0,1,2}) {
         const auto setup=[&](const fs::path& path) {
             auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
-            s.ingest("origin","D01/02/2026\nT-10\nL[Visa]\n^\n",qif::DateOrder::dmy);
+            s.ingest("origin","D01/02/2026\nT-10\nL[Old Visa export]\n^\n",qif::DateOrder::dmy);
             app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="payment";r.expected_sequence=s.transfer_sequence();r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;s.apply_transfer("make",r);s.accept_all("accept",true);s.select_account(2);
             const auto payment=txn("PAYMENT","20260201","10.00");capture(s,"bank",sgml(bank(payment)),{{0,2,{}}});materialize(s,"bank");
             if(mode>0)match(s);

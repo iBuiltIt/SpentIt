@@ -4,11 +4,192 @@ Status: **active**
 Last updated: 2026-10-30  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
+## Next-session handoff: Review workspace and link learning — 2026-10-30
+
+State: **implemented in the working tree following owner Go, 2026-10-30**. The owner requested this
+handoff after trying the initial implementation and subsequently settled the
+matching policy below and authorized the complete revision. This section supersedes
+the earlier modal/card presentation and permissive link-suggestion direction.
+
+### Problem and evidence
+
+The owner reported thousands of outstanding questions after a single-file import,
+with the visible link suggestions overwhelmingly false. Supplied screenshots show
+same-date suggestions between wildly different amounts and an equal-amount
+suggestion years apart. Do not copy private payees, account identifiers, source
+records, screenshots or attachment paths into fixtures or repository documents.
+
+Baseline code inspection found that `ImportStore::review_sheet` admitted
+opposite-sign, same-currency candidates on **equal magnitude OR same date**. There
+is no date-distance bound on equal amounts. This explains the classes of weak
+suggestions; it does not establish the full private-workload false-positive rate.
+The owner also reports Review appearing automatically after import. Trace that
+entry path during implementation; the approved behavior is an available button,
+not an automatic popup. Prior functional/recovery tests establish mechanics, not
+useful matching quality or acceptance of the current presentation.
+
+### Accepted requirements
+
+- **Review earns the user's attention.** Same date alone must not qualify a link.
+  Equal opposite amounts also need reasonably close posting dates. Unequal amounts
+  require stronger transfer evidence; support for fee splitting is not evidence
+  that arbitrary amounts belong together. Explain why each suggestion appears.
+- Replace the modal Review with a compact **account-level workspace** in the
+  sidebar, with its outstanding count and an ordinary Review entry button. It is
+  a virtual view, not a financial account or a second set of postings. Users can
+  enter and leave freely. Commit routes to the same workspace when review is
+  needed; importing does not automatically open it.
+- Use normal ledger capabilities, not a summary of selected fields: inspect and
+  edit actual transactions, expand splits, and inspect original import evidence,
+  including QIF source data. Preserve account grouping and question grouping.
+  Question lines contain inline Yes/No/Selected yes or link controls; transaction
+  lines retain ordinary ledger interactions. Preserve the accepted survivor,
+  partial-group, saved-negative-decision, difference-category and Undo behavior.
+- Add **Don't suggest links…** on each transaction within a link question. The
+  editor defaults to Payee; support Payee or Memo, exact text or regex, and either
+  account-specific or dataset-wide scope. Editing this text edits the matching
+  condition, not the transaction itself. Preview the affected current suggestions
+  before saving. The accepted exact matching semantics are specified below.
+- Manage these explicit exclusions through the existing **Rules** button, in a
+  clearly separate **Link suggestions** section from categorisation rules.
+  Rules can be inspected, edited and removed. Apply them to either endpoint of
+  current and future link suggestions. Removing/changing a rule re-evaluates the
+  affected candidates; separately saved No decisions still retain their meaning.
+- Exclusions only suppress link suggestions. They do not delete transactions,
+  prevent manual linking, hide possible duplicates or alter automatic re-import
+  recognition. There are **no learned duplicate-exclusion rules** in this scope.
+  Ordinary No rejects the displayed comparison without silently creating a rule.
+- Learning is explicit and understandable: each saved lesson improves future
+  reviews. Do not hard-code recurring transactions or mobile deposits as universally
+  ineligible; either can be a transfer. A usable initial matcher is still required.
+- Review references the actual transactions. Changes in an account or in Review
+  update affected comparisons and the shared count, including newly eligible
+  candidates. Rule changes likewise update affected suggestions. Inspection and
+  navigation alone do not resolve work.
+
+### Proposed implementation direction and remaining decisions
+
+Prefer mutation-maintained candidate state or targeted invalidation over rebuilding
+all matches whenever Review is opened. Recheck both old and new candidate neighborhoods
+when an amount, account, date, payee, memo or relationship changes. Opening Review
+should display current state cheaply. The owner prefers this incremental direction;
+its storage/index design is not yet adopted. Persistent IDs, atomic updates, restart
+reconstruction and safe Undo must stay consistent with the financial model.
+
+### Accepted matching policy and implementation Go — 2026-10-30
+
+- Suggestions require different accounts, the same currency, opposite nonzero
+  amounts and posting dates at most seven calendar days apart (inclusive, either
+  direction). Compare eligible allocations for split transactions, not unrelated
+  whole totals. Keep all eligible alternatives; proximity never selects a winner.
+- Owner follow-up Go: an ordinary category on either allocation disqualifies
+  that allocation from link suggestions, including imported text still shown as
+  unmapped. Empty, Uncategorized/Uncategorised, or a resolved account destination
+  are eligible; an account destination must identify the other endpoint's account.
+  Evaluate splits separately and recheck the chosen allocations when accepting a
+  suggestion. Category edits refresh eligibility. Manual Link remains available.
+  Imported rows whose complete payee is Opening Balance or Starting Balance
+  (case-insensitive) do not receive link suggestions; no substring guessing.
+- Review is the first button in the sidebar's action group, above Categories.
+- Equal magnitudes need no descriptive-text agreement. Unequal magnitudes require
+  an outgoing amount larger than the incoming amount, with the difference at most
+  4% of the outgoing allocation, and an explicit resolved transfer destination to
+  the other account. Use exact integer arithmetic. Generic payee/memo words are
+  not destination evidence. Confirming a difference requires explicit remainder
+  categorisation. These are suggestion rules, not new automatic-link permission.
+- Link exclusions default to dataset-wide; “Only in this account” restricts the
+  endpoint tested, not the counterpart. Match current Payee or transaction/split
+  Memo, separately. Exact means whole-field Unicode caseless matching without
+  whitespace/punctuation normalization. Regex uses the bounded existing adapter.
+  Any matching endpoint suppresses a suggestion; exclusions have no ordering.
+  Saved pair-specific No decisions survive edits and rule removal. Link exclusions
+  are available independently of categorisation-rules support. Preview before save.
+- A valid explicit QIF destination such as `L[Visa]` (or split `S[Visa]`), resolved
+  to an account, records a transfer even when no independent counterpart is found:
+  create its generated counterpart atomically and keep one persistent Review task
+  awaiting bank evidence. Unknown accounts, invalid amounts and currency mismatches
+  remain correction tasks. No duplicate generated posting may be created on retry.
+- Owner clarification: generate a counterpart for **every unresolved explicit
+  transfer**, even when plausible independently imported postings already exist.
+  Keep those real postings and the generated counterparts visible until linked;
+  their temporary balance effects are intentional. Never choose an uncertain
+  pairing merely to avoid the generated posting. Review Link retires generated
+  duplicates atomically; Undo restores the pre-link state.
+- Generated-counterpart attention survives restart and is distinct from commitment.
+  Existing approved automatic matching may resolve it; otherwise show candidates
+  or allow manual Link. “Accept without bank match” dismisses that attention without
+  deleting money or preventing later matching. Rejecting a candidate does not dismiss
+  the waiting task. Suggestion exclusions do not hide this known transfer task.
+- Transfer attention/resolution belongs in Review, replacing the separate Transfers
+  entry workflow. Reuse existing financial commands and safe generated replacement.
+
+### Suggested work sequence and verification
+
+First inspect current candidate construction, model refresh, navigation, Rules and
+source-inspection paths. Present concrete choices for the open matching policy.
+After Go, implement conservative candidate eligibility and explicit exclusion
+persistence, then the ledger workspace and incremental updates, integrating and
+verifying the entire feature before calling it complete. This is a proposed work
+sequence, not authorization to start or to create new chats/subagents.
+
+Use independently synthetic fixtures for same-date/wildly-different amounts,
+equal amounts years apart, plausible nearby postings, fees with/without positive
+evidence, repeated legitimate transfers, ambiguous candidates, currency boundaries
+and both endpoints of an exclusion. Verify rule preview/save/edit/remove/reopen,
+manual linking despite exclusion, unchanged duplicate detection, bounded malformed
+regex handling, and updates after edits in either workspace. Include a many-row
+workload to measure candidate quality and update cost; counts alone are insufficient.
+Verify no automatic post-import popup, sidebar navigation, compact inline controls,
+full transaction/split/source inspection, shared Commit routing/counts and Undo.
+Exercise relevant atomic failure/retry/recovery paths for persisted rule/candidate
+changes. Keep private data out of automated tests.
+
+The starting baseline was the uncommitted working-tree implementation documented in
+[Review implementation and verification](../doc/review-sheet.md), schemas 34/33.
+Preserve that work. Main entry points are `src/storage/review_sheet_store.inc`,
+`src/storage/review_sheet_schema.inc`, `src/app/include/spentit/review_commands.hpp`,
+`src/ui/import_model.cpp`, and `src/ui/ImportMain.qml`; regression entry points are
+`tests/storage/review_sheet_tests.cpp` and `tests/ui/import_model_tests.cpp`.
+The owner subsequently gave Go. The revision is implemented and verified;
+see [current status](../doc/status.md#next-review-workspace-and-link-learning--2026-10-30),
+including verification of the accepted generated-counterpart policy for ambiguous imports.
+
 ## Unified Review sheet — next implementation item, 2026-10-29
 
 Priority update (2026-10-30): the [duplicate-matching correction](../doc/import-commit-discussion.md#first-priority-correct-matching-in-the-common-internal-representation--2026-10-30) comes first. This sheet follows it and must use the corrected match/review states.
 
-State: **accepted product direction; not implemented**. The owner asked to document this as the next item, explicitly for discussion rather than implementation now. Wait for a new explicit Go. Earlier authorization for the completed import/commit storage refactor does not authorize this UI follow-up.
+State: **implemented in the working tree following owner Go, 2026-10-30**. See the [implementation contract and verification](../doc/review-sheet.md). The broader transaction-sheet feature remains active.
+
+### Implementation Go and interaction decisions — 2026-10-30
+
+The owner gave Go for the complete feature, including the underlying Merge, Link,
+retained-source recognition and safe Undo work. The following settles the earlier
+layout questions; implementation and verification must be recorded separately.
+
+- Account separators contain questions, not a dense transaction editor. Same-account
+  groups ask **Are these the same?** with Yes / No, plus **Selected yes** for groups
+  larger than two (enabled with at least two selected). Resolve only the selected
+  subset; two or more remaining rows stay for another round.
+- Exactly one committed selected row survives automatically. Otherwise ask which
+  selected row to keep. Preserve its current fields and splits. Conflicting totals
+  require editing first; never silently blend values or relationships.
+- Link questions show one source and candidate counterparts with account names.
+  Select one then Yes; No needs no selection and rejects the displayed candidates.
+  Save both positive and negative decisions. Inspection never resolves work.
+- Unequal same-currency, opposite-sign allocations show a popup: **Link 10.00 and
+  categorise 0.50 as [Uncategorized]**, with an ordinary-category selector and Yes /
+  No. No only dismisses the popup. Yes atomically splits the larger absolute amount,
+  preserves both account totals and other splits, and links the common amount.
+  Ambiguous allocation endpoints require selection. Never infer currency conversion.
+- Actions save immediately, without routine confirmation. Cmd+Z / Ctrl+Z and one
+  shared Undo button reverse decisions as a stack. Text editing keeps its own Undo.
+  Undo restores questions and financial state together and refuses unsafe reversal
+  after later changes. Saved history remains available after reopening.
+- Invalid records appear under **Needs correction** in the same sheet. Failures
+  without an assigned account use an Import problems section. Review and Commit
+  share the sheet and the same dataset-wide outstanding-question count.
+- Candidate suggestions remain distinct from automatic recognition. No fuzzy
+  automatic exclusion or memo fallback is authorized.
 
 ### Accepted direction
 
@@ -24,17 +205,17 @@ The owner reported an unresolved count changing from one to zero after Review Re
 
 The current duplicate editor mixes split editing, rule creation, internal identifiers and candidate selection. The owner found it too dense to understand the decision. The existing fallback candidate rule can suggest equal amounts with different dates/payees when an OFX-family source is involved. That is separate from strict automatic bank-ID matching. This Review sheet decision does **not** authorize changing matching criteria or silently excluding transactions.
 
-### Design details still to settle
+### Layout and count decisions
 
-The owner has settled the unified sheet and account grouping, not its detailed layout. The [Merge and Link decision](#accepted-merge-and-link-interaction--2026-10-30) now settles separate command meanings, explicit survivor choice and the paired duplicate-review direction. Detailed comparison layout, optional expanded source/split detail, and next/previous navigation remain design work. Decide whether counts mean transactions or individual issues, how multiple issues on one transaction appear, and how file-level failures without a usable transaction fit into the same sheet. Keep the user's ability to work systematically through many items central; do not substitute a clickable count that returns to the same dense editor.
+The Go decisions above settle the question-card layout. Counts mean outstanding questions across the dataset, including correction tasks; they do not count candidate rows. A record can participate in more than one question. Account changes and inspection do not write decisions. Invalid records remain correction tasks even when valid transactions are committed. Expanded editing uses the existing record editor.
 
 ### Required verification
 
-Use synthetic fixtures with at least 51 outstanding review items across multiple accounts/imports, including multiple issues on a transaction and a failure without a usable row. Verify account grouping, reachability from both Review and Commit, systematic progression, saved resolutions and reopen, and consistent counts during inspection and navigation. Reproduce the reported count flip before claiming it fixed. Verify that non-overridable errors cannot be accepted through the override action. Record actual results and limits in [status](../doc/status.md); no runtime verification is claimed for this documentation-only handoff.
+Use synthetic fixtures with at least 51 outstanding review items across multiple accounts/imports, including multiple issues on a transaction and a failure without a usable row. Verify account grouping, reachability from both Review and Commit, systematic progression, saved resolutions and reopen, and consistent counts during inspection and navigation. Reproduce the reported count flip before claiming it fixed. Verify that non-overridable errors cannot be accepted through the override action. Record actual results and limits in [status](../doc/status.md); actual results are recorded in the [Review implementation record](../doc/review-sheet.md).
 
 ## Accepted Merge and Link interaction — 2026-10-30
 
-State: **accepted product decision; documentation only, not implemented**. The owner's Go here authorizes recording the decision, not implementing the commands, changing shortcuts or broadening automatic matching. The unified Review sheet remains the next UI work awaiting implementation Go.
+State: **implemented following the subsequent Review Go, 2026-10-30**. Automatic matching remains bounded to the accepted same-account rules.
 
 ### Separate intentions and commands
 
@@ -43,7 +224,7 @@ State: **accepted product decision; documentation only, not implemented**. The o
 | **Merge** | These same-account rows represent the same transaction | One active ledger posting, a survivor determined by the committed-count rule, retained source evidence and merge history | **Alt+M** |
 | **Link** | These are the two account postings of a transfer | Both independent postings remain, connected as a transfer; each keeps its posting date | **Alt+L** |
 
-Use these names in the ledger context menu and relevant Review actions. Alt shortcuts are the accepted preference, subject to platform conflict and keyboard-layout verification (including macOS Option); no platform mapping is claimed implemented. The current application still uses its older transfer **Merge**, Ctrl+M/Command+M behavior. This decision supersedes that terminology for the future UI, not the existing transfer safety rules.
+Use these names in the ledger context menu and relevant Review actions. Alt+M and Alt+L are implemented. Native keyboard-layout and operating-system shortcut conflicts remain unverified; the offscreen Qt tests exercise Link and the standard Undo key sequence. This replaces the older transfer Merge/Ctrl+M terminology while preserving transfer safety rules.
 
 The owner considered one context-sensitive Merge command, then selected separate **Merge** and **Link** because reducing duplicate postings differs from connecting two retained postings. The earlier Join/Alt+J idea and automatic Merge-to-Link dispatch are not the chosen direction. Context should guide suggestions and command availability, not silently change the operation. Selecting another account while using Merge should offer Link explicitly instead of performing it automatically. Account location alone is not enough to classify every case: generated transfer placeholders have special lifecycle rules.
 
@@ -62,7 +243,7 @@ The owner considered one context-sensitive Merge command, then selected separate
 
 This rule applies to groups of two and larger groups. Commitment is determined per transaction, not from the source import's completion state. The owner wants minimal obstacles: use an established decision when it determines the outcome, and ask only where a real choice remains. The stated aspiration to do the right or acceptable thing in nearly every case is product intent, not a measured accuracy claim or permission to silently resolve financial conflicts.
 
-The survivor preserves its identity, current fields, categories, splits and relationships by default. No silent field blending, amount change, transfer breakage or loss of later corrections. The automatic survivor rule settles who is kept, not whether a conflicting merge is financially valid. Conflicting amounts or relationships still require explicit resolution; exact eligible cases and any conflict-specific preview remain design work. Do not add a routine survivor confirmation to the exactly-one-committed case. This supersedes the earlier suggestion that an accepted existing row would merely be suggested and always require a survivor click.
+The survivor preserves its identity, current fields, categories, splits and relationships by default. No silent field blending, amount change, transfer breakage or loss of later corrections. The automatic survivor rule settles who is kept, not whether a conflicting merge is financially valid. Conflicting amounts or relationships still require explicit resolution; the implementation requires equal effective totals for Merge and refuses a losing row with an existing link. Do not add a routine survivor confirmation to the exactly-one-committed case. This supersedes the earlier suggestion that an accepted existing row would merely be suggested and always require a survivor click.
 
 The Review sheet should present unresolved candidate rows together, show why they may match, and allow the user to confirm they are the same through this Merge workflow. A missed automatic match does not itself require looser automatic criteria. In particular, a proposed exact-memo fallback for differing payees has **not** been approved for implementation; manual review remains appropriate.
 
@@ -80,7 +261,7 @@ Link/repair can retire a purely generated placeholder when attaching the real im
 
 The non-surviving rows cease contributing monetary postings; their original source facts remain attached to the survivor. Record the explicit decision and preserve the history needed to inspect and safely reverse it. Merge is not destruction of import evidence. Subsequent imports should recognize **any retained original representation**, including a non-survivor's different payee, and resolve it to the survivor without asking the same duplicate question again when identity remains sufficiently certain.
 
-This is a requirement to extend matching, not a claim that it already works for every format. Current source associations retain duplicate evidence. Identical-file matching can follow an earlier duplicate decision, and strict bank-ID matching examines attached occurrences. The implemented ID-less exact-key path currently compares the included target's original source fields; it does not search every attached alternative representation. See [the import handoff](../doc/import-commit-discussion.md#merge-evidence-and-repeat-import-follow-up--2026-10-30).
+This is a requirement to extend matching, not a claim that it already works for every format. Current source associations retain duplicate evidence. Identical-file matching can follow an earlier duplicate decision, and strict bank-ID matching examines attached occurrences. The ID-less exact-key path now searches attached original representations and follows their survivor associations. See [the import handoff](../doc/import-commit-discussion.md#merge-evidence-and-repeat-import-follow-up--2026-10-30).
 
 Deduplicate candidate identities after following associations: several representations of one survivor are one target. Preserve legitimate repeated occurrences, account/currency boundaries, conflicting IDs, removed-target policy and per-import occurrence consumption. “An attached source matches” is not permission to collapse arbitrarily many incoming identical purchases. Retention must follow the accepted ownership/Forget model; this does not reinstate a compulsory permanent archive of every original file.
 
@@ -92,7 +273,7 @@ Deduplicate candidate identities after following associations: several represent
 - Verify context-menu/keyboard parity, shortcut conflicts, automatic survivor selection with no prompt for exactly one committed row, explicit choice for zero or multiple committed rows independent of selection order, Escape/cancel, guided Link across accounts, split selection, generated-placeholder previews and explicit suggestions rather than silent command switching.
 - Synthetic financial regressions must cover two and three-plus inputs with zero, exactly one and multiple committed rows, exact before/after ledger and sidebar balances, preserved survivor splits/edits/transfer relationships, both original representations reimported in changed files, ambiguity/repeated occurrences, conflicting IDs, removed targets, reopen, restored backups, ownership cleanup, atomic failure/retry and interruptions on both sides of durable commit. Verify persistent history and safe Undo, and that only a saved resolution changes Review counts.
 
-No runtime verification is claimed for these new commands or evidence-matching extensions.
+The [implementation record](../doc/review-sheet.md) records the implemented boundaries and actual verification. The obligations above remain the regression checklist; they are not a claim that every platform or interaction has been verified.
 
 ## One inclusive balance — 2026-10-29
 

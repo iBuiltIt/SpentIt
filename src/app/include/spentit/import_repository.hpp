@@ -1,5 +1,6 @@
 #pragma once
 #include <spentit/import_review.hpp>
+#include <spentit/review_commands.hpp>
 #include <spentit/operation_context.hpp>
 #include <spentit/committed_changes.hpp>
 #include <spentit/category_catalog.hpp>
@@ -68,9 +69,10 @@ struct ImportAccountMapping {
     std::size_t source_account;
     std::int64_t account;
     std::optional<AccountCreation> creation;
+    std::optional<bool> use_reported_opening={}; // Explicit creation-time choice; absent for legacy staged review.
 };
 enum class GroupState { captured, reviewing, started, aborted };
-enum class ReportedBalanceChoice { unreviewed, zero, opening, closing, ignore };
+enum class ReportedBalanceChoice { unreviewed, zero, opening, closing, ignore, fixed_zero, fixed_reported };
 struct ImportGroupAccount {
     std::size_t source_account;
     std::int64_t account;
@@ -248,6 +250,13 @@ public:
     virtual RollbackReview rollback_review() const {return {};}
     virtual RollbackReceipt rollback_account(std::string_view,std::int64_t) {throw std::logic_error("Rollback unavailable");}
     virtual std::optional<RollbackReceipt> rollback_outcome(std::string_view) const {return {};}
+    virtual std::vector<LinkExclusion> link_exclusions() const {return {};}
+    virtual LinkExclusionPreview preview_link_exclusion(const LinkExclusion&) const {throw std::logic_error("Link exclusions unavailable");}
+    virtual ReviewReceipt save_link_exclusion(std::string_view,const LinkExclusion&,std::int64_t) {throw std::logic_error("Link exclusions unavailable");}
+    virtual ReviewSheet review_sheet() const {return {};}
+    virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}
+    virtual ReviewReceipt undo_review(std::string_view) {throw std::logic_error("Review Undo unavailable");}
+    virtual std::optional<ReviewReceipt> review_outcome(std::string_view) const {return {};}
     virtual AcceptanceReview acceptance_review() const {return {};}
     virtual AcceptanceReceipt accept_all(std::string_view,bool=false) {throw std::logic_error("Dataset acceptance unavailable");}
     virtual std::optional<AcceptanceReceipt> acceptance_outcome(std::string_view) const {return {};}

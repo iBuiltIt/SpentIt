@@ -6,7 +6,7 @@ This implements the multi-account prerequisite for [transfer lifecycle work](../
 
 ## Current acceptance and rollback model — 2026-10-29
 
-The [dataset-wide acceptance model](import-commit-discussion.md) supersedes older per-account Commit, projected-balance and permanent-evidence descriptions in this document. New documents use schema 32 with rules / 31 without; previous experimental formats are rejected unchanged. Multiple imports can remain pending in one account. The ordinary balance includes all active transactions, and Commit accepts new transactions across accounts in one durable operation while failed records remain visible. Account-wide Discard removes uncommitted ownership and exclusively owned material, preserving accepted transactions and other retained sources. Account/category creation and opening-review behavior remain. See [verification](status.md#dataset-acceptance-storage-refactor--2026-10-29).
+The [dataset-wide acceptance model](import-commit-discussion.md) supersedes older per-account Commit, projected-balance and permanent-evidence descriptions in this document. New documents use schema 38 with rules / 37 without; previous experimental formats are rejected unchanged. Multiple imports can remain pending in one account. The ordinary balance includes all active transactions, and Commit accepts new transactions across accounts in one durable operation while failed records remain visible. Account-wide Discard removes uncommitted ownership and exclusively owned material, preserving accepted transactions and other retained sources. Account/category creation and opening-review behavior remain. See [verification](status.md#dataset-acceptance-storage-refactor--2026-10-29).
 
 ## Display names and aliases — 2026-10-29
 

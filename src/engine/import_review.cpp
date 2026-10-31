@@ -2,6 +2,8 @@
 #include "exact_sum.hpp"
 #include <algorithm>
 #include <set>
+#include <chrono>
+#include <charconv>
 
 namespace spentit::imports {
 namespace {
@@ -10,6 +12,24 @@ void text(std::string_view value,bool embedded_breaks=false) {
     if (value.size()>qif::max_field || !qif::valid_utf8(value)) invalid();
     for (const char ch:value) { const auto c=static_cast<unsigned char>(ch); if ((c<32 && c!='\t' && !(embedded_breaks && c=='\r')) || c==127) invalid(); }
 }
+}
+int posting_distance(std::string_view left,std::string_view right) {
+    const auto day=[](std::string_view text) {
+        if(text.size()!=10 || text[4]!='-' || text[7]!='-')invalid();
+        const auto number=[](std::string_view part){int n=0;const auto r=std::from_chars(part.data(),part.data()+part.size(),n);if(r.ec!=std::errc{} || r.ptr!=part.data()+part.size())invalid();return n;};
+        const std::chrono::year_month_day date{std::chrono::year(number(text.substr(0,4))),std::chrono::month(static_cast<unsigned>(number(text.substr(5,2)))),std::chrono::day(static_cast<unsigned>(number(text.substr(8,2))))};
+        if(!date.ok() || int(date.year())<1)invalid();return std::chrono::sys_days(date);
+    };
+    const auto distance=(day(left)-day(right)).count();return static_cast<int>(distance<0?-distance:distance);
+}
+bool link_amount_candidate(const Money& left,const Money& right,bool explicit_destination) {
+    if(left.currency()!=right.currency() || left.units()==0 || right.units()==0 || (left.units()<0)==(right.units()<0))return false;
+    const auto magnitude=[](std::int64_t n)->std::uint64_t{return n<0?std::uint64_t(-(n+1))+1:std::uint64_t(n);};
+    const auto outgoing=magnitude(left.units()<0?left.units():right.units());
+    const auto incoming=magnitude(left.units()>0?left.units():right.units());
+    if(outgoing==incoming)return true;
+    // floor(outgoing * 4 / 100), without overflowing or rounding money.
+    return explicit_destination && outgoing>incoming && outgoing-incoming<=outgoing/25;
 }
 EvidenceKey evidence_key(const qif::Record& source) {
     if ((!source.transaction && !source.repairable) || !source.source_currency) invalid();

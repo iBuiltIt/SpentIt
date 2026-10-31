@@ -2,6 +2,106 @@
 
 Last updated: 2026-10-30
 
+## Opening setup during import mapping — 2026-10-30
+
+Owner Go implemented in the working tree: concise mapping text, new-account
+opening choice defaulting to zero or explicitly using the reported amount literally,
+and per-source-account earliest valid dates with an editable 1900-01-01 fallback.
+Existing accounts hide these controls and retain their opening settings. Fixed
+creation-time choices persist atomically with account creation, affect the inclusive
+balance immediately and do not trigger another opening prompt after repairs or
+Commit. Invalid selected reported amounts fail visibly. Account opening corrections
+remain separate explicit commands.
+
+Current experimental schemas are **38 with rules / 37 without**; this revision
+requires a new dataset. Older formats, including 36/35, are rejected without
+migration. Four new capture/resume/Commit/Abort recovery scenarios passed 536
+injected write/sync positions, eight before/after durable-boundary interruptions,
+idempotent retries and verified backup restores. Functional storage checks passed
+for both opening choices through repairs, restart and Commit; selected UI checks
+passed in Release, ASan/UBSan and rules-disabled builds. The 95 selected Release
+regression cases passed after updating the old post-repair opening expectation and
+rerunning the complete import UI suite. Final mapping/cancellation checks passed six
+Qt cases each in Release, ASan/UBSan and an explicitly configured `SPENTIT_RULES=OFF`
+build (`build/import-ui-no-rules-release`). That rules-disabled build also passed
+account groups, mapping openings and schema rejection. The pre-existing directory
+named `import-ui-release` had rules enabled during this run; it is not the evidence
+for the rules-disabled results. The local rules-enabled `./build/SpentIt` is rebuilt.
+Screenshot inspection confirmed the new controls and their absence for an existing
+account. Native interaction, Linux and Windows remain unverified. The entries below
+describe prior checkpoints.
+
+## Category-aware link suggestions and Review placement — 2026-10-30
+
+Owner Go implemented: ordinary categories, including unmapped imported text,
+disqualify an allocation from link suggestions on either endpoint. Empty and
+Uncategorized/Uncategorised allocations remain eligible; resolved account names
+must identify the other endpoint's account. Splits are checked independently,
+including when accepting a suggestion. Category edits refresh the candidate cache.
+Exact case-insensitive Opening Balance and Starting Balance payee labels are also
+excluded. Manual Link, duplicate recognition and known-transfer waiting tasks keep
+their existing behavior. Review is now above Categories in the sidebar action group.
+
+Verification: five focused Release storage tests, two ASan/UBSan Review tests,
+and six Qt offscreen cases passed. Synthetic cases cover both endpoints, bound and
+unmapped Gifts, both Uncategorized spellings, account destinations, opening labels,
+split selection, category-edit invalidation and manual linking. Screenshot inspection
+confirmed sidebar order. The local rules-enabled `./build/SpentIt` is rebuilt.
+The schema remains 36/35; existing datasets on that format still work. Native
+interaction and other platforms were not exercised for this follow-up.
+
+## Next: Review workspace and link learning — 2026-10-30
+
+Owner testing rejected the initial Review presentation and link-suggestion quality:
+the modal/card UI is too large, and equal amount OR same date produces excessive
+false suggestions. The accepted replacement is a compact account-level Review
+ledger with full inspection/edit/source capabilities, inline decisions, stronger
+initial link heuristics, and explicit Payee/Memo exclusion learning managed through
+Rules. See the [next-session handoff](../features/005-transaction-sheet-navigation.md#next-session-handoff-review-workspace-and-link-learning--2026-10-30) for accepted scope, matching policy, incremental updates and verification obligations.
+
+Implemented following owner **Go**, on experimental schemas **36 with rules /
+35 without**. The sidebar Review workspace replaces the modal and separate
+Transfers entry. It provides compact account-grouped rows, full transaction/split/
+source inspection, inline decisions and the shared Commit count. Link suggestions
+use the inclusive seven-day window and exact amounts, or an explicitly identified
+outgoing destination with an outgoing excess of at most 4%. Explicit Payee/Memo
+exclusions default dataset-wide and support endpoint-account scope, preview,
+editing and removal in the separate Rules → Link suggestions section.
+
+The owner explicitly chose to generate a counterpart for **every unresolved explicit
+transfer**, including when plausible imported postings already exist. Imported and
+generated entries remain visible until confidently matched or explicitly linked.
+The temporary balance effects are accepted; uncertainty must not select a pairing.
+Review Link removes generated duplicates atomically and Undo restores them. A
+persistent waiting task can be explicitly accepted without bank evidence. Repaired
+imports retain imported provenance even when their original amount was invalid;
+group resolution generates the counterpart after the repaired row is included.
+
+Verification on macOS using synthetic data:
+
+- All 94 selected Release regression tests passed, including the complete import
+  UI test executable and grouped imports. This selection excludes the separate
+  long-running fault/crash and diagnostics suites.
+- Eleven focused engine/Review/grouped-import tests and six focused Qt cases passed
+  in both ASan/UBSan and rules-disabled Release builds. Earlier focused transfer
+  controls/exclusion checks also passed in all three builds.
+- Six policy recovery scenarios passed 662 injected write/sync positions; the six
+  existing Review scenarios passed another 1,122 positions. They exercise durable
+  boundary interruptions, retries, verified backup restores and encrypted markers.
+- Grouped import, repaired-transfer generation and Abort passed 387 positions each
+  for write-failure and abrupt-crash sweeps, plus before/after durable interruptions
+  and retry verification. Statement rollback and overlap recovery sweeps passed.
+- A synthetic 20,000-row workload produced 10,000 expected pairs and zero unexpected
+  pairs: first Review 974 ms, five cached opens 13 ms, and an amount save plus
+  affected Review 1,318 ms. These are storage/offscreen results, not private-data
+  matching-quality or native responsiveness claims.
+
+The local rules-enabled `./build/SpentIt` is rebuilt. Native interaction, Linux and
+Windows remain unverified. Current formats require a new dataset; older experimental
+formats are rejected without migration. See [the Review contract](review-sheet.md).
+Earlier documentation-only Merge/Link notes below are historical and superseded
+by the implemented Review baseline.
+
 ## Merge and Link decision recorded — 2026-10-30
 
 The owner approved documentation of separate **Merge** and **Link** commands: same-account duplicate Merge selects two or more rows and automatically keeps the sole committed transaction without a survivor prompt; with none or more than one committed, the user chooses the survivor; transfer Link keeps both independent postings and supports choosing endpoints across accounts. Preferred shortcuts are Alt+M and Alt+L, subject to platform verification. Context guides suggestions without silently changing operations. Generated-placeholder Link repairs must expose their removal/balance effects. See the [accepted feature decision](../features/005-transaction-sheet-navigation.md#accepted-merge-and-link-interaction--2026-10-30).
@@ -29,15 +129,15 @@ Verification on macOS arm64 with synthetic inputs:
 
 All fixtures are independently synthetic. No private dataset was accessed. Native-window testing, private-workload timing, Linux and Windows remain unverified. This is selected verification, not a run of every fault or benchmark suite.
 
-## Following item: unified Review sheet — 2026-10-29
+## Unified Review sheet — 2026-10-30
 
-Owner testing identified a discoverability and usability gap: the normal account screen does not consistently lead to all review issues, the duplicate editor is too dense, and an unresolved count reportedly changes during inspection/Commit. The exact count-flip sequence has not been reproduced; current selected-import versus dataset-wide count scopes are a suspected contributor.
+The owner gave Go for the complete Review feature. It is implemented in the working tree with account-grouped questions, one outstanding-question count, entry from Review and Commit, saved Yes/No decisions, partial duplicate-group resolution, same-account Merge with retained source representations, cross-account Link and an atomic amount-difference split/category/link dialog. Standard keyboard Undo and one sheet button reverse a saved sequence safely; intervening dataset mutations stop that sequence. New experimental formats are **34 with rules / 33 without**; older datasets are rejected unchanged.
 
-The owner selected one Review sheet covering all accounts, grouped under account-name separators, reachable from a post-import **Review** button and from Commit. It must support systematic resolution and consistent counts. See [handoff](import-commit-discussion.md#next-implementation-item-unified-review-sheet--2026-10-29) and [requirements, open design details and verification obligations](../features/005-transaction-sheet-navigation.md#unified-review-sheet--next-implementation-item-2026-10-29). This follows the duplicate-matching correction and is **not yet implemented or authorized to start**. Only documentation changed for this follow-up; existing runtime results below do not verify the proposed sheet or resolve the reported inconsistency.
+See the [implementation contract and verification](review-sheet.md) for financial boundaries, recovery behavior and test commands. The rules-enabled Release regression selection passed **93/93** in 81.75 s, including the updated UI and current-format tests. The original private-data count-flip sequence was not reproduced; synthetic 53-question tests verify stable counts across inspection, account changes, blocked Commit and reopen. The final import UI executable passed 51 Qt cases; final Review storage and focused UI checks passed in ASan/UBSan and rules-disabled Release builds. Six dedicated recovery scenarios passed 1,126 write/sync fault positions, twelve durable-boundary interruptions, retries, verified backup restores and encrypted-source marker checks. Post-Merge rollback preserved accepted survivors and removed exclusively uncommitted work. The local `./build/SpentIt` rules-enabled Release executable is rebuilt. Native interaction, Linux and Windows remain unverified.
 
 ## Dataset acceptance storage refactor — 2026-10-29
 
-The accepted model is implemented. New experimental schemas are **32 with rules / 31 without**. Previous formats are rejected without migration or modification; testing this build requires a new dataset.
+The accepted model was implemented on experimental schemas **32 with rules / 31 without** at this checkpoint. The subsequent Review workspace revision above advances the current formats to **36/35**. Previous formats are rejected without migration or modification; testing the current build requires a new dataset.
 
 - Multiple pending imports persist across restarts. Strict unique bank-ID matching uses original account/currency, exact amount, calendar date and type across OFX-family labels. Identical QIF sources preserve occurrence multiplicity. Duplicate-only sources complete without accepting older work.
 - Dataset-wide Commit references saved financial revisions, accepts generated counterparts atomically, consumes mutation-prepared review and leaves failed records visible. Later accepted corrections retain persistent history. The ordinary ledger and balance include uncommitted rows.

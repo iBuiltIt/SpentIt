@@ -134,7 +134,7 @@ QVariantMap allocationMap(const Allocation& a,const QVariantMap& labels={}) {
     }
     return {{"category",text(a.category)},{"memo",text(a.memo)},{"amount",money(a.amount)},
         {"transferDestination",qif::transfer_destination(a.category)?text(std::string(*qif::transfer_destination(a.category))):QString{}},{"transferLabel",money(a.amount)+" · "+label+" · "+text(a.identity)},{"categoryId",categoryId},{"bindingRevision",a.category_binding?QString::number(a.category_binding->catalog_revision):QString{}},
-        {"allocationId",text(a.identity)},{"categoryDisplay",label},{"categoryTouched",false},{"memoTouched",false},
+        {"allocationId",text(a.identity)},{"categoryDisplay",label},{"reviewLabel",money(a.amount)+" · "+label},{"categoryTouched",false},{"memoTouched",false},
         {"sourceOrdinal",a.source_ordinal?QVariant(static_cast<int>(*a.source_ordinal)):QVariant(-1)},
         {"categoryOwner",ownerName(a.category_owner)},{"memoOwner",ownerName(a.memo_owner)},{"categoryRule",markText(a.category_rule)},{"memoRule",markText(a.memo_rule)}};
 }
@@ -319,6 +319,9 @@ struct ImportModel::Worker {
     bool canOpen=false, welcomePassword=false, overwriteRequired=false;
     int sort=0; bool descending=false;
     QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt,transferMergePreview;
+    QVariantMap reviewLinkPreview, linkExclusionPreview;
+    std::optional<app::LinkExclusion> preparedLinkExclusion;
+    std::int64_t linkExclusionGeneration=0;
     std::optional<app::TransferRequest> preparedMerge;
     std::string mergeOperation;
     QVariantList transferCandidates;QString candidateLink;
@@ -404,7 +407,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository();
@@ -625,6 +628,16 @@ struct ImportModel::Worker {
             state["archivedAccounts"]=archivedList;
             const auto acceptance=repo.acceptance_review();QVariantList acceptanceWarnings;bool canOverride=true;
             for(const auto& warning:acceptance.warnings){acceptanceWarnings.push_back(QVariantMap{{"account",QString::number(warning.account)},{"batch",text(warning.batch)},{"ordinal",warning.ordinal?QVariant(static_cast<int>(*warning.ordinal)):QVariant()},{"reason",text(warning.reason)},{"overridable",warning.overridable}});canOverride &= warning.overridable;}
+            const auto review=repo.review_sheet();QVariantList questions;std::int64_t priorAccount=-1;
+            for(const auto& q:review.questions){
+                QVariantList rows;
+                for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total()):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total()):QString();value["note"]=text(row.note);value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
+                questions.push_back(QVariantMap{{"waitingLink",text(q.waiting_link)},{"key",text(q.key)},{"kind",q.kind==app::ReviewKind::same?"same":q.kind==app::ReviewKind::link?"link":"correction"},{"account",QString::number(q.account)},{"accountName",text(q.account_name)},{"separator",q.account!=priorAccount},{"reason",text(q.reason)},{"batch",text(q.batch)},{"ordinal",q.ordinal?static_cast<int>(*q.ordinal):-1},{"rows",rows}});priorAccount=q.account;
+            }
+            QVariantList exclusions;
+            for(const auto& rule:repo.link_exclusions())if(!rule.removed)exclusions.push_back(QVariantMap{{"identity",text(rule.identity)},{"field",text(rule.field)},{"expression",text(rule.expression)},{"account",QString::number(rule.account)},{"regex",rule.regex}});
+            state["linkExclusions"]=exclusions;state["linkExclusionPreview"]=linkExclusionPreview;
+            state["reviewQuestions"]=questions;state["reviewCount"]=questions.size();state["reviewGeneration"]=QString::number(review.generation);state["canUndoReview"]=review.can_undo;state["reviewLinkPreview"]=reviewLinkPreview;
             const auto rollback=repo.rollback_review();QVariantList affected;for(const auto id:rollback.affected_accounts)affected.push_back(QString::number(id));
             state["rollback"]=QVariantMap{{"token",QString::number(rollback.token)},{"transactions",static_cast<qlonglong>(rollback.transactions)},{"failures",static_cast<qlonglong>(rollback.failures)},{"accounts",affected}};
             state["newTransactions"]=static_cast<qlonglong>(acceptance.transactions);state["importFailures"]=static_cast<qlonglong>(acceptance.failed_records);state["acceptanceWarnings"]=acceptanceWarnings;state["canIgnoreWarnings"]=canOverride;
@@ -691,7 +704,7 @@ struct ImportModel::Worker {
                 }
                 if(b.state==app::BatchState::pending || b.state==app::BatchState::captured){const auto progress=repo.repair_progress(b.id);info["repairs"]=static_cast<int>(progress.total);info["repairsDone"]=static_cast<int>(progress.done);info["amountRepairs"]=static_cast<int>(progress.amounts);info["unsupported"]=static_cast<int>(progress.blocked);}
                 info["completed"]=b.completed;const auto result=repo.import_result(b.id);
-                info["outcome"]=QString("%1 added; %2 already present; %3 unresolved; %4 failed").arg(result.added).arg(result.already_present).arg(result.unresolved).arg(result.failed);
+                info["outcome"]=QString("Selected import: %1 added; %2 already present; %3 failed").arg(result.added).arg(result.already_present).arg(result.failed);
                 if(b.completed)info["status"]="Complete";
                 batches.push_back(info);
                 if(!state.contains("importOutcome") || state.value("importOutcomeBatch").toString()!=selected.value("batch").toString() || b.id==str(selected.value("batch"))){state["importOutcomeBatch"]=text(b.id);state["importOutcome"]=info.value("outcome");}
@@ -716,10 +729,11 @@ struct ImportModel::Worker {
                     blockers.push_back(QVariantMap{{"account",QString::number(item.account)},{"name",accountName(item.account)},{"batch",text(item.batch)},{"record",item.ordinal?static_cast<int>(*item.ordinal):-1},{"reason",text(item.reason)},{"allocation",text(item.allocation)},{"candidates",candidates},{"candidateCount",static_cast<int>(item.candidate_count)}});
                 }
                 state["importGroup"]=QVariantMap{{"id",text(group.id)},{"started",group.state==app::GroupState::started},{"blockers",blockers},{"unresolvedTransfers",static_cast<int>(group.unresolved_transfers)},{"ready",group.unresolved==0},{"repairs",static_cast<int>(group.repairs_total)},{"done",static_cast<int>(group.repairs_done)},{"amountRepairs",static_cast<int>(group.amount_repairs)},{"blocked",static_cast<int>(group.blocked_records)},{"unresolved",static_cast<int>(group.unresolved)},{"sourceAccount",static_cast<int>(member->source_account)},{"categories",importedCategories}};
-                state["groupCreated"]=member->created && !acct.frozen;
+                state["groupOpeningFixed"]=member->created && static_cast<int>(member->balance_choice)>=5;
+                state["groupCreated"]=member->created && !acct.frozen && static_cast<int>(member->balance_choice)<5;
                 state["groupOpeningReady"]=member->created && member->balance_choice!=app::ReportedBalanceChoice::unreviewed;
                 state["groupReviewedChange"]=member->reviewed_change?money(*member->reviewed_change):QString("Incomplete");
-                state["groupCanReviewBalance"]=member->created && member->reviewed_change.has_value() && !acct.frozen;
+                state["groupCanReviewBalance"]=member->created && member->reviewed_change.has_value() && !acct.frozen && static_cast<int>(member->balance_choice)<5;
                 state["groupReportedBalance"]=document.accounts[member->source_account].reported_balance?text(*document.accounts[member->source_account].reported_balance):QString("Not supplied");
                 state["groupProposedOpening"]=member->proposed_opening?money(*member->proposed_opening):QString("Not confirmed");
             }
@@ -795,7 +809,7 @@ struct ImportModel::Worker {
         for(const auto& row:cachedView->rows)if(selection.contains(row.identity))retained.insert(row.identity);
         selection=std::move(retained);
         QVariantList selectedIds;QVariantMap selectedKeys;
-        for(const auto& id:selection){selectedIds.push_back(QVariantMap{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}});selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
+        for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
         state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;state["transferMergePreview"]=transferMergePreview;
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
         int focus=-1;
@@ -893,6 +907,42 @@ struct ImportModel::Worker {
         if(action=="cancel_reapply") {preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
         auto& repo=gateway->repository();
+        if(action=="link_exclusion_cancel"){preparedLinkExclusion.reset();linkExclusionPreview.clear();return;}
+        if(action=="link_exclusion_preview"){
+            preparedLinkExclusion.reset();linkExclusionPreview.clear();
+            app::LinkExclusion rule;rule.identity=a.value("identity").toString().isEmpty()?identity():str(a.value("identity"));rule.field=str(a.value("field"));rule.expression=str(a.value("expression"));rule.account=a.value("account").toString().toLongLong();rule.regex=a.value("regex").toBool();rule.removed=a.value("removed").toBool();
+            const auto preview=repo.preview_link_exclusion(rule);QVariantList comparisons;for(const auto& value:preview.comparisons)comparisons.push_back(text(value));
+            preparedLinkExclusion=rule;linkExclusionGeneration=preview.generation;linkExclusionPreview={{"ready",true},{"comparisons",comparisons}};return;
+        }
+        if(action=="link_exclusion_save"){
+            if(!preparedLinkExclusion)throw std::invalid_argument("Preview the exclusion first");
+            const auto op=identity();try{repo.save_link_exclusion(op,*preparedLinkExclusion,linkExclusionGeneration);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            preparedLinkExclusion.reset();linkExclusionPreview.clear();return;
+        }
+        if(action=="review_answer" || action=="review_link_preview") {
+            app::ReviewAnswer answer;answer.generation=a.value("generation").toString().toLongLong();answer.question=str(a.value("question"));
+            const auto kind=a.value("answer").toString();answer.action=kind=="accept_missing"?app::ReviewAction::accept_missing:kind=="merge"?app::ReviewAction::merge:kind=="link"?app::ReviewAction::link:kind=="not_linked"?app::ReviewAction::not_linked:app::ReviewAction::separate;
+            for(const auto& item:a.value("selected").toList()){const auto row=item.toMap();answer.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
+            if(a.contains("survivor")){const auto row=a.value("survivor").toMap();answer.survivor=imports::Occurrence{str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())};}
+            answer.left_allocation=str(a.value("leftAllocation"));answer.right_allocation=str(a.value("rightAllocation"));answer.remainder_category=str(a.value("category"));answer.split_difference=a.value("splitDifference").toBool();
+            if(action=="review_link_preview"){
+                const auto sheet=repo.review_sheet();if(sheet.generation!=answer.generation)throw std::invalid_argument("The transactions changed. Review them again.");
+                const auto q=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& value){return value.key==answer.question;});if(q==sheet.questions.end() || answer.selected.size()!=2)throw std::invalid_argument("Select one counterpart");
+                const auto part=[&](const imports::Occurrence& id,const std::string& allocation){const auto row=std::find_if(q->rows.begin(),q->rows.end(),[&](const auto& r){return r.identity==id;});if(row==q->rows.end())throw std::invalid_argument("Transaction changed");const auto& aa=row->draft.transaction.allocations();if(allocation.empty() && aa.size()==1)return aa.front().amount;const auto found=std::find_if(aa.begin(),aa.end(),[&](const auto& v){return v.identity==allocation;});if(found==aa.end())throw std::invalid_argument("Choose the allocation to link");return found->amount;};
+                const auto left=part(answer.selected[0],answer.left_allocation),right=part(answer.selected[1],answer.right_allocation);
+                const auto magnitude=[](std::int64_t n)->std::uint64_t{return n<0?std::uint64_t(-(n+1))+1:std::uint64_t(n);};
+                if(left.currency()!=right.currency() || left.units()==0 || right.units()==0 || (left.units()<0)==(right.units()<0))throw std::invalid_argument("Choose opposite amounts in the same currency");
+                if(magnitude(left.units())!=magnitude(right.units())){
+                    const auto minimum=std::min(magnitude(left.units()),magnitude(right.units()));const auto difference=std::max(magnitude(left.units()),magnitude(right.units()))-minimum;
+                    if(minimum>INT64_MAX || difference>INT64_MAX)throw std::overflow_error("Amount exceeds display capacity");
+                    reviewLinkPreview={{"args",a},{"common",money(Money(static_cast<std::int64_t>(minimum),left.currency()))},{"remainder",money(Money(static_cast<std::int64_t>(difference),left.currency()))}};return;
+                }
+            }
+            const auto op=identity();try{repo.answer_review(op,answer);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            reviewLinkPreview.clear();selected.clear();return;
+        }
+        if(action=="review_cancel_link"){reviewLinkPreview.clear();return;}
+        if(action=="review_undo") {const auto op=identity();try{repo.undo_review(op);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}reviewLinkPreview.clear();selected.clear();return;}
         if(action=="transfer_candidates"){
             transferCandidates.clear();candidateLink=a.value("link").toString();
             const auto links=repo.transfers();const auto found=std::find_if(links.begin(),links.end(),[&](const auto& value){return value.link.identity==str(a.value("link"));});
@@ -1275,9 +1325,17 @@ struct ImportModel::Worker {
             }
             dateImport.reset();importDateQuestion.clear();
             if(document.format!="qif" || document.explicit_accounts || !document.categories.empty()) {
-                preparedImport=PreparedImport{identity(),owned,document.format,document,order};preparedMappings.reset();importMappingArgs.clear();importPlan.clear();
+                QVariantList nextPlan;
                 const auto home=repo.accounts().empty()?std::string{}:repo.accounts().front().currency.code();
-                for(std::size_t i=0;i<document.accounts.size();++i){const auto& source=document.accounts[i];importPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",source.reported_balance?text(*source.reported_balance):QString("Not supplied")},{"currency",text(document.format=="qif"?home:source.currency_code)}});}
+                for(std::size_t i=0;i<document.accounts.size();++i){
+                    const auto& source=document.accounts[i];const Currency currency(document.format=="qif"?home:source.currency_code);
+                    const auto parsed=statements::parse_mapped(owned,document,i,order,currency,[&]{context.checkpoint();});std::string oldest;
+                    for(const auto& record:parsed.records)if(!record.date.empty()){try{const auto date=qif::date(record.date,order);if(oldest.empty() || date<oldest)oldest=date;}catch(const std::invalid_argument&) {}}
+                    QString reported=source.reported_balance?text(*source.reported_balance):QString("Not supplied");bool offer_reported=source.reported_balance.has_value();
+                    if(source.reported_balance){try{const auto amount=qif::amount(*source.reported_balance,currency);reported=money(amount);offer_reported=amount.units()!=0;}catch(const FinancialError&) {}catch(const std::invalid_argument&) {}}
+                    nextPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",reported},{"offerReportedOpening",offer_reported},{"openingDate",dateText(oldest.empty()?"1900-01-01":oldest)},{"currency",text(currency.code())}});
+                }
+                preparedImport=PreparedImport{identity(),owned,document.format,document,order};preparedMappings.reset();importMappingArgs.clear();importPlan=std::move(nextPlan);
                 return;
             }
             const auto batch=repo.ingest_controlled(identity(),owned,order,context);observedSaved(diag::Code::prepare);
@@ -1294,7 +1352,7 @@ struct ImportModel::Worker {
                 if(index>=preparedImport->document.accounts.size())throw std::invalid_argument("Choose a valid source account");
                 if(item.value("create").toBool()) {
                     if(next==INT64_MAX)throw std::overflow_error("Account identities exhausted");
-                    mappings.push_back({index,next,app::AccountCreation{next,preparedImport->document.accounts[index].name,Currency(str(item.value("currency"))),str(item.value("date"))}});++next;
+                    mappings.push_back({index,next,app::AccountCreation{next,preparedImport->document.accounts[index].name,Currency(str(item.value("currency"))),str(item.value("date"))},item.contains("useReportedOpening")?std::optional<bool>{item.value("useReportedOpening").toBool()}:std::nullopt});++next;
                 }else mappings.push_back({index,item.value("account").toString().toLongLong(),{}});
             }
             if(!preparedMappings){preparedMappings=mappings;importMappingArgs=a.value("mappings").toList();}

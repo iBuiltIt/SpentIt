@@ -1,8 +1,28 @@
 # QIF account sections and whole-source review
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 Implemented and verified within the accepted roadmap point-1 scope; exact selected checks and limitations are recorded in status. This extends the [ordinary QIF profile](../features/009-qif-profile.md), [account workspaces](accounts.md), and [transfer lifecycle](qif-transfers.md). It does not implement general account deletion, account currency reassignment, transfer repair, or new import formats.
+
+## Current mapping opening setup — 2026-10-30
+
+The mapping screen now completes new-account opening setup. Currency and editable
+opening date appear only for creation. The date defaults to the earliest valid
+transaction date in that source account, falling back to 1900-01-01. The opening
+balance selector defaults to zero and optionally offers the reported balance as a
+literal opening amount. It never treats that amount as closing or subtracts imports.
+Missing/zero reports supply no second option. Existing mapped accounts are unchanged.
+
+The explicit zero/reported choice is saved in encrypted immutable balance history
+within account capture. It confirms the account opening immediately and does not
+become stale when transactions are repaired or linked. No later opening setup panel
+is shown for those accounts. Schema 38/37 adds these fixed choices to the existing
+balance decision representation; older experimental datasets are rejected unchanged.
+The legacy staged-review descriptions below apply only to internal calls that omit
+a creation-time choice. Capture, resume, Commit and Abort were verified with injected
+I/O failures, durable-boundary interruptions, retries and backup restores; see
+[the verification record](status.md#opening-setup-during-import-mapping--2026-10-30).
+[Requirements and rationale](../features/003-qif-import-review.md#opening-setup-during-account-mapping--owner-go-2026-10-30).
 
 ## Accepted source envelope
 

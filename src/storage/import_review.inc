@@ -2,6 +2,7 @@
 // publish it before their durable boundary; the rollback hook drops speculative
 // results. It is reconstructed after verified open, never persisted as authority.
 void ImportStore::finish(const std::function<void()>& commit) {
+    if(impl_->composing_review){commit();return;}
     exec(impl_->db,"UPDATE mutation_generation SET revision=revision+1 WHERE singleton=1");
     exec(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE state=2) OR (source_batch IN(SELECT id FROM batches WHERE state=4) AND NOT EXISTS(SELECT 1 FROM retained_transfer_rows r WHERE r.batch=source_batch AND r.ordinal=source_ordinal))");
     for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
@@ -63,7 +64,7 @@ void ImportStore::prepare_review() {
                     else {
                         const auto& target=*row.decision.duplicate_of;
                         const auto other=load_row(target,false);
-                        if(other.decision.disposition!=imports::Disposition::include || !imports::candidate_basis(row.source,other.source))
+                        if(!review_merged_source(impl_->db,identity) && (other.decision.disposition!=imports::Disposition::include || !imports::candidate_basis(row.source,other.source)))
                             warning="Invalid duplicate relationship";
                     }
                 }

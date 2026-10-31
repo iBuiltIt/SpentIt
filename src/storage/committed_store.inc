@@ -87,6 +87,7 @@ std::optional<app::ChangeReceipt> ImportStore::committed_change_outcome(std::str
     return app::ChangeReceipt{std::string(operation),static_cast<app::ChangeKind>(row.integer(0)),id,entry_snapshot(id,row.integer(3)),entry_snapshot(id,row.integer(4)),Money(row.integer(5),currency),Money(row.integer(6),currency),Money(row.integer(7),currency),row.bytes(8),{id,row.integer(4),std::move(deps)},row.integer(9)};
 }
 app::ChangePreview ImportStore::preview_change(const app::ChangeRequest& request,bool links) const {
+    if(request.kind==app::ChangeKind::undo){Statement member(impl_->db,"SELECT 1 FROM review_members WHERE child=?1 UNION ALL SELECT 1 FROM review_undo_members WHERE child=?1");member.text(1,request.undo_of);if(member.row())fail(SQLITE_CONSTRAINT,"Use Review Undo to reverse this entire decision");}
     if(!links && transfer_linked(request.identity))fail(SQLITE_CONSTRAINT,"Transfer-linked rows are corrected one at a time.");
     const auto current=committed_entry(request.identity);auto after=current.current;
     if(current.current.revision==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");after.revision++;
@@ -114,7 +115,7 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
     identifier(operation);
     if(bulk_supported()){Statement member(impl_->db,"SELECT 1 FROM bulk_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a bulk command");}
 #ifdef SPENTIT_RULES_STORAGE
-    if(scalar(impl_->db,"PRAGMA user_version")=="32"){
+    if(scalar(impl_->db,"PRAGMA user_version")=="38"){
         Statement member(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");
         if(request.kind==app::ChangeKind::undo){Statement target(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");target.text(1,request.undo_of);if(target.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");}
     }
@@ -259,7 +260,7 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
 #ifdef SPENTIT_RULES_STORAGE
                 if(rules_format(impl_->db)){
                     bool reapply=false,replace_manual=false;
-                    if(scalar(impl_->db,"PRAGMA user_version")=="32"){
+                    if(scalar(impl_->db,"PRAGMA user_version")=="38"){
                         Statement member(impl_->db,"SELECT g.replace_manual,g.undo_of IS NULL FROM rule_reapplication_members m JOIN rule_reapplications g ON g.id=m.operation WHERE m.entry_operation=?");
                         member.text(1,operation);
                         if(member.row()){if(member.integer(1)==0)fail(SQLITE_CORRUPT,"Rule reapply Undo used a correction");reapply=true;replace_manual=member.integer(0)!=0;}
@@ -269,7 +270,12 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
 #endif
             }
             else if(kind==app::ChangeKind::remove){if(!before.active || after.active || !same_draft(before.draft,after.draft) || !receipt->undo_of.empty())fail(SQLITE_CORRUPT);}
-            else if(kind==app::ChangeKind::undo){const auto original=committed_change_outcome(receipt->undo_of);if(!original || original->sequence>=sequence || original->identity!=receipt->identity || original->after_entry.revision!=before.revision || original->result_token.dependencies!=receipt->result_token.dependencies || original->before_entry.active!=after.active || !same_draft(original->before_entry.draft,after.draft))fail(SQLITE_CORRUPT,"Invalid strict Undo history");}
+            else if(kind==app::ChangeKind::undo){
+                const auto original=committed_change_outcome(receipt->undo_of);
+                Statement grouped(impl_->db,"SELECT 1 FROM review_undo_members m JOIN review_undos u ON u.id=m.undo_id JOIN review_members a ON a.answer=u.answer AND a.child=m.original_child WHERE m.child=? AND m.original_child=?");grouped.text(1,operation);grouped.text(2,receipt->undo_of);const bool review_undo=grouped.row();
+                if(!original || original->sequence>=sequence || original->identity!=receipt->identity || original->before_entry.active!=after.active || !same_draft(original->before_entry.draft,after.draft) ||
+                   (review_undo?(original->after_entry.active!=before.active || !same_draft(original->after_entry.draft,before.draft)):(original->after_entry.revision!=before.revision || original->result_token.dependencies!=receipt->result_token.dependencies)))fail(SQLITE_CORRUPT,"Invalid strict Undo history");
+            }
             else fail(SQLITE_CORRUPT);
             head->second=after.revision;++snapshot_count;
         }

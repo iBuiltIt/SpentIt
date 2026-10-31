@@ -174,7 +174,7 @@ void validate(const Link& link) {
     if(!link.destination.independent_evidence && (!link.destination.provisional_date || link.destination.date!=link.generated_date)) invalid();
 }
 Link generate(std::string id,const Endpoint& origin,const imports::DraftRow& draft,
-              const Endpoint& destination,const Currency& currency) {
+              const Endpoint& destination,const Currency& currency,bool imported) {
     endpoint(origin);endpoint(destination);date(draft.date);
     if(draft.transaction.effective_total().currency()!=currency)
         throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
@@ -187,7 +187,6 @@ Link generate(std::string id,const Endpoint& origin,const imports::DraftRow& dra
     }
     const auto found=std::find_if(allocations.begin(),allocations.end(),[&](const auto& a){return a.identity==origin.allocation;});
     if(found==allocations.end())invalid();
-    const bool imported=draft.transaction.original_imported_amount().has_value();
     Link link{std::move(id),{origin,found->amount,draft.date,State::draft,imported,false,!imported},
         {destination,-found->amount,draft.date,State::draft,false,true},draft.date,false,false,false,false,{}};
     validate(link);return link;
@@ -209,6 +208,17 @@ Link commit(const Link& link,std::int64_t account) {
     auto result=link;
     (account==result.origin.endpoint.account?result.origin:result.destination).state=State::committed;
     validate(result);return result;
+}
+Link release_generated(const Link& link) {
+    validate(link);
+    if(link.unresolved || link.destination_released || !link.origin.independent_evidence || link.origin.state==State::removed || link.destination.state==State::removed || link.destination.independent_evidence || link.destination.manually_entered || link.destination.attached_evidence || link.destination.proposed_evidence)invalid();
+    auto result=link;result.origin.state=State::removed;result.destination.state=State::removed;validate(result);return result;
+}
+Link resize_generated(const Link& link,const Money& amount) {
+    validate(link);
+    if(link.unresolved || link.destination_released || !link.origin.independent_evidence || link.origin.state==State::removed || link.destination.state==State::removed || link.destination.independent_evidence || link.destination.manually_entered || link.destination.attached_evidence || link.destination.proposed_evidence)invalid();
+    if(amount.currency()!=link.origin.amount.currency() || amount.units()==0 || amount.units()==INT64_MIN || (amount.units()<0)!=(link.origin.amount.units()<0))invalid();
+    auto result=link;result.origin.amount=amount;result.destination.amount=Money(-amount.units(),amount.currency());validate(result);return result;
 }
 Link accept_unmatched(const Link& link,std::int64_t account) {
     validate(link);if(link.unresolved)invalid();const auto& current=chosen(link,account);

@@ -4,7 +4,30 @@ Current implementation (2026-10-29): the [accepted import/commit handoff](../doc
 
 Status: **active**  
 Last updated: 2026-10-30  
-Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 30 with rules and schema 29 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
+Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 38 with rules and schema 37 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
+
+## Opening setup during account mapping — owner Go, 2026-10-30
+
+Accepted and implemented direction: use the short instruction “Choose an existing
+account or create one for each account found in the import data.” New accounts show
+Currency, editable Opening date, and an Opening balance dropdown. The first option
+is zero; the second uses the reported amount literally as the opening, with no
+closing-balance calculation. Omit the second option when no reported amount is
+supplied or it is zero. A selected malformed or incompatible amount is an error,
+not permission to round or silently use zero.
+
+Suggest the earliest valid transaction date for each source account after date-order
+resolution, or 1900-01-01 when none is available. The full file is already available
+at mapping; deriving this suggestion runs on the import worker. Existing accounts
+hide these creation controls and retain their opening settings.
+
+The choice is durable and atomic with capture/account creation. It takes effect in
+the inclusive balance immediately and survives repair, retry, restart and Commit;
+there is no later opening prompt. Ordinary invalid-row review remains separate.
+Explicit opening corrections remain available through account commands. The earlier
+staged opening/closing interpretation is retained only for existing internal command
+paths and tests, not the mapping UI. See [the account import contract](../doc/qif-account-imports.md)
+and [current verification](../doc/status.md#opening-setup-during-import-mapping--2026-10-30).
 
 ## Priority correction — 2026-10-30
 

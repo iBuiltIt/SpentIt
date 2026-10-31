@@ -35,6 +35,11 @@ std::optional<MatchBasis> candidate_basis(const qif::Record&,const qif::Record&)
 // Never pass edited ledger fields in place of the original source records.
 bool same_bank_transaction(const qif::Record&,const qif::Record&);
 std::string basis_label(MatchBasis basis);
+// Manual transfer suggestion policy; never an automatic association decision.
+// Dates must be valid ISO calendar dates. Returns their absolute calendar distance.
+int posting_distance(std::string_view left, std::string_view right);
+bool link_amount_candidate(const Money& left, const Money& right,
+                           bool explicit_outgoing_destination);
 enum class Disposition { unresolved, include, duplicate };
 struct Decision {
     Disposition disposition = Disposition::include;

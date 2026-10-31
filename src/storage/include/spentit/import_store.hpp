@@ -134,6 +134,13 @@ public:
     app::RollbackReview rollback_review() const override;
     app::RollbackReceipt rollback_account(std::string_view,std::int64_t) override;
     std::optional<app::RollbackReceipt> rollback_outcome(std::string_view) const override;
+    std::vector<app::LinkExclusion> link_exclusions() const override;
+    app::LinkExclusionPreview preview_link_exclusion(const app::LinkExclusion&) const override;
+    app::ReviewReceipt save_link_exclusion(std::string_view,const app::LinkExclusion&,std::int64_t) override;
+    app::ReviewSheet review_sheet() const override;
+    app::ReviewReceipt answer_review(std::string_view,const app::ReviewAnswer&) override;
+    app::ReviewReceipt undo_review(std::string_view) override;
+    std::optional<app::ReviewReceipt> review_outcome(std::string_view) const override;
     app::AcceptanceReview acceptance_review() const override;
     app::AcceptanceReceipt accept_all(std::string_view,bool=false) override;
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
@@ -144,6 +151,7 @@ private:
     void finish(const std::function<void()>&);
     void require_account_name(std::string_view,std::int64_t) const;
     std::optional<std::string> transfer_name(std::string_view) const;
+    bool review_link_category(std::string_view,std::int64_t counterpart_account) const;
     void require_qif_transfers(const imports::Occurrence&,const imports::DraftRow&,const std::set<std::tuple<std::string,std::size_t,std::string>>&) const;
     void resolve_group_transfers(std::string_view,const app::OperationContext&);
     app::ImportGroup import_group(std::string_view) const;
@@ -182,6 +190,11 @@ private:
     std::optional<Money> projected_for(std::int64_t) const;
     app::Account account_for_batch(std::string_view) const;
     void require_account(std::string_view) const;
+    void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false);
+    imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t) const;
+    void generate_explicit_transfers(app::OperationContext* context=nullptr);
+    app::ReviewSheet build_review_sheet(const std::vector<app::LinkExclusion>&) const;
+    void verify_link_exclusions() const;
     struct Impl;
     std::unique_ptr<Impl> impl_;
     explicit ImportStore(std::unique_ptr<Impl>);

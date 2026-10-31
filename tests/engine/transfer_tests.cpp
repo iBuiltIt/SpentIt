@@ -191,8 +191,11 @@ void proposals() {
     check(discard_import_matches(proposals,2,"unrelated")[1].destination.proposed_evidence==second);
 }
 void manual() {
+    auto repaired=source();repaired.transaction=Transaction::repaired_import({},repaired.transaction.effective_total(),repaired.transaction.allocations());
+    const auto imported=generate("repaired-import",{1,{"repaired",0},"payment-a"},repaired,{2,{"generated-repaired",0},"counterpart"},cad,true);
+    check(imported.origin.independent_evidence && !imported.origin.manually_entered && !repaired.transaction.original_imported_amount());
     auto draft=source();draft.transaction=Transaction::manual(draft.transaction.effective_total(),draft.transaction.allocations());
-    const auto link=generate("manual-link",{1,{"manual",0},"payment-a"},draft,{2,{"generated",0},"counterpart"},cad);
+    const auto link=generate("manual-link",{1,{"manual",0},"payment-a"},draft,{2,{"generated",0},"counterpart"},cad,false);
     check(link.origin.manually_entered && !link.origin.independent_evidence && !draft.transaction.original_imported_amount());
     rejected(Error::acceptance_required,[&]{commit(link,1);});
     auto accepted=accept_unmatched(accept_unmatched(link,1),2);
@@ -204,7 +207,7 @@ void manual() {
     check(matched.origin.manually_entered && matched.origin.independent_evidence);
     check(matched.origin.date=="2026-10-27" && matched.destination.date=="2026-10-26");
     check(matched.destination.provisional_date && matched.generated_date=="2026-10-26");
-    auto other=generate("manual-b",{1,{"manual",0},"payment-b"},draft,{3,{"generated-b",0},"counterpart"},cad);
+    auto other=generate("manual-b",{1,{"manual",0},"payment-b"},draft,{3,{"generated-b",0},"counterpart"},cad,false);
     validate_set(std::vector<Link>{link,other});
     rejected(Error::invalid_relationship,[&]{validate_set(std::vector<Link>{accept_unmatched(link,1),other});});
     const auto accepted_entry=accept_entry(std::vector<Link>{link,other},1,{"manual",0});
@@ -280,11 +283,11 @@ void management() {
     const auto destination_edit=edit_linked_allocation(std::vector<Link>{both.link},other,true,false,other.amount,other.date);
     check(destination_edit.fate==LinkFate::released && destination_edit.link.destination_released && destination_edit.link.destination.state==State::removed && destination_edit.link.origin.state==State::committed && destination_edit.link.origin.amount==both.link.origin.amount);
     auto manual_draft=source();manual_draft.transaction=Transaction::manual(manual_draft.transaction.effective_total(),manual_draft.transaction.allocations());
-    auto manual_link=commit(commit(accept_unmatched(accept_unmatched(generate("manual-release",{1,{"manual",1},"payment-a"},manual_draft,{2,{"generated-m",0},"counterpart"},cad),1),2),1),2);
+    auto manual_link=commit(commit(accept_unmatched(accept_unmatched(generate("manual-release",{1,{"manual",1},"payment-a"},manual_draft,{2,{"generated-m",0},"counterpart"},cad,false),1),2),1),2);
     const auto manual_origin=fact(manual_link.origin.endpoint,manual_link.origin.amount,manual_link.origin.date,State::committed,false,false,true);
     const auto manual_category=retarget(std::vector<Link>{manual_link},manual_origin,manual_link.identity,"kept",{},{},"Fees");
     check(manual_category.link.unresolved && manual_category.link.origin_category=="Fees" && manual_category.link.origin.state==State::committed && manual_category.link.destination.state==State::committed && manual_category.link.destination.amount==manual_link.destination.amount);
-    rejected(Error::invalid_relationship,[&]{retarget(std::vector<Link>{accept_unmatched(generate("manual-open",{1,{"manual",2},"payment-b"},manual_draft,{3,{"generated-n",0},"counterpart"},cad),1)},fact({1,{"manual",2},"payment-b"},Money(-600,cad),"2026-10-26",State::draft,false,false,true),"manual-open","kept",{},{},"Fees");});
+    rejected(Error::invalid_relationship,[&]{retarget(std::vector<Link>{accept_unmatched(generate("manual-open",{1,{"manual",2},"payment-b"},manual_draft,{3,{"generated-n",0},"counterpart"},cad,false),1)},fact({1,{"manual",2},"payment-b"},Money(-600,cad),"2026-10-26",State::draft,false,false,true),"manual-open","kept",{},{},"Fees");});
     const Endpoint created{3,{"~transfer-moved-destination",0},"generated"};
     const auto moved=retarget(one,origin_fact,draft.identity,"kept",created,cad);
     check(!moved.kept && moved.link.destination.endpoint==created && moved.link.destination.amount==draft.destination.amount && moved.link.origin.amount==draft.origin.amount);
