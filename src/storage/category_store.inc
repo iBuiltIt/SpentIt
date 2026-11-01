@@ -1,3 +1,4 @@
+namespace { bool same_draft(const imports::DraftRow&,const imports::DraftRow&); }
 namespace {
 std::int64_t catalog_sequence(sqlite3* db){Statement state(db,"SELECT revision FROM category_state WHERE singleton=1");if(!state.row())fail(SQLITE_CORRUPT);return state.integer(0);}
 CategoryDefinition category_at(sqlite3* db,std::string_view id,std::int64_t catalog=INT64_MAX) {
@@ -74,6 +75,17 @@ void load_metadata(sqlite3* db,const imports::Occurrence& id,std::int64_t revisi
     if(rules_format(db)){Statement marks(db,entry?"SELECT position,category_rule,category_version,memo_rule,memo_version FROM entry_rule_allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position":"SELECT position,category_rule,category_version,memo_rule,memo_version FROM draft_rule_allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");marks.text(1,id.batch);marks.integer(2,integer(id.ordinal));marks.integer(3,revision);while(marks.row()){const auto position=static_cast<std::size_t>(marks.integer(0));if(position>=allocations.size())fail(SQLITE_CORRUPT);auto& allocation=allocations[position];auto take=[&](int id_col,int ver_col)->std::optional<RuleMark>{if(marks.null(id_col)!=marks.null(ver_col))fail(SQLITE_CORRUPT,"Rule provenance does not match its ownership");if(marks.null(id_col))return {};return RuleMark{marks.bytes(id_col),marks.integer(ver_col)};};allocation.category_rule=take(1,2);allocation.memo_rule=take(3,4);}for(auto& allocation:allocations){accept_rule_owner(allocation.category_owner,allocation.category_rule,true);accept_rule_owner(allocation.memo_owner,allocation.memo_rule,true);}}
     row.transaction=row.transaction.corrected(row.transaction.effective_total(),std::move(allocations));
 }
+}
+bool ImportStore::review_draft_undo(const imports::Occurrence& id,std::int64_t revision,const imports::DraftRow& draft) const {
+    Statement predecessor(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=? AND revision<?");predecessor.text(1,id.batch);predecessor.integer(2,integer(id.ordinal));predecessor.integer(3,revision);
+    if(!predecessor.row() || predecessor.null(0))return false;
+    const auto previous=review_draft(id,predecessor.integer(0));
+    Statement restored(impl_->db,"SELECT m.prior,m.result FROM review_members m JOIN review_undos u ON u.answer=m.answer WHERE m.batch=? AND m.ordinal=? AND m.committed=0 AND m.result<?");
+    restored.text(1,id.batch);restored.integer(2,integer(id.ordinal));restored.integer(3,revision);
+    // Like committed Review Undo, compare exact snapshots: a later group Undo
+    // can restore the same result at a newer revision before this group is undone.
+    while(restored.row())if(same_draft(draft,review_draft(id,restored.integer(0))) && same_draft(previous,review_draft(id,restored.integer(1))))return true;
+    return false;
 }
 bool ImportStore::categories_supported() const{return categories_format(impl_->db);}
 app::CategoryCatalog ImportStore::category_catalog() const {
@@ -214,6 +226,10 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
             std::int64_t order=0;bool undo=false;std::optional<std::int64_t> prior_revision;
             if(entry){Statement operation(impl_->db,"SELECT h.sequence,o.kind FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE o.batch=? AND ((?=0 AND o.kind=0) OR (o.ordinal=? AND o.result_revision=? AND o.kind!=0))");operation.text(1,id.batch);operation.integer(2,revision);operation.integer(3,integer(id.ordinal));operation.integer(4,revision);if(operation.row()){order=operation.integer(0);undo=operation.integer(1)==static_cast<int>(app::ChangeKind::undo);}else{Statement mark(impl_->db,"SELECT operation FROM account_amount_revisions WHERE kind=2 AND batch=? AND ordinal=? AND revision=? AND position=0");mark.text(1,id.batch);mark.integer(2,integer(id.ordinal));mark.integer(3,revision);if(!mark.row())fail(SQLITE_CORRUPT);Statement ledger(impl_->db,"SELECT h.sequence FROM ledger_operations l JOIN history_order h ON h.operation=l.id WHERE l.kind=5 AND l.undo_of=?");ledger.text(1,mark.bytes(0));if(!ledger.row())fail(SQLITE_CORRUPT);order=ledger.integer(0);undo=false;}if(revision>0)prior_revision=revision-1;}
             else {Statement event(impl_->db,"SELECT sequence FROM history_order WHERE batch=? AND event_revision=?");event.text(1,id.batch);event.integer(2,revision);if(!event.row())fail(SQLITE_CORRUPT);order=event.integer(0);Statement prior(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=? AND revision<?");prior.text(1,id.batch);prior.integer(2,integer(id.ordinal));prior.integer(3,revision);if(!prior.row())fail(SQLITE_CORRUPT);if(!prior.null(0))prior_revision=prior.integer(0);}
+            // Pending Review Undo restores the exact saved draft, including
+            // field ownership. Require its receipt, exact predecessor snapshot and
+            // original snapshot; an ordinary edit cannot drop manual ownership.
+            if(!entry && prior_revision)undo=review_draft_undo(id,revision,draft);
             Statement epoch(impl_->db,"SELECT coalesce(max(o.catalog_after),0) FROM category_operations o JOIN history_order h ON h.category_operation=o.id WHERE h.sequence<?");epoch.integer(1,order);if(!epoch.row())fail(SQLITE_CORRUPT);const auto current_catalog=epoch.integer(0);
             if(!entry && !prior_revision && source.transaction){Statement initial(impl_->db,"SELECT materialized_revision FROM batches WHERE id=?");initial.text(1,id.batch);if(!initial.row())fail(SQLITE_CORRUPT);if(!initial.null(0) && revision==initial.integer(0)){if(draft.payee_owner!=FieldOwnership::source || draft.memo_owner!=FieldOwnership::source || draft.transaction.allocations().size()!=source.source_allocations.size())fail(SQLITE_CORRUPT,"Initial source ownership is inconsistent");for(std::size_t i=0;i<draft.transaction.allocations().size();++i){const auto& a=draft.transaction.allocations()[i];if(a.identity!=source.source_allocations[i].identity || a.source_ordinal!=source.source_allocations[i].source_ordinal || a.category_owner!=FieldOwnership::source || a.memo_owner!=FieldOwnership::source || a.category_binding)fail(SQLITE_CORRUPT,"Initial source association is inconsistent");}}}
             const bool predecessor_entry=entry && revision>0;

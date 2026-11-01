@@ -47,3 +47,38 @@ The Transfers dialog exposes manual creation, assignment of a selected valid dra
 The ledger context menu and Ctrl+M (Command+M on macOS) invoke Merge for the current multiselection. Opposite accounts can be chosen in two steps when only one account is on screen. The category selector lists other real accounts as transfer destinations, labeled with name, currency, and account identity. Choosing an account stores that identity and creates or replaces a destination through the worker in one command. It does not auto-link an existing independent row. A same-named ordinary category stays a category assignment. The Transfers dialog includes a read-only journal of persisted operations: action, link identity, accounts, amounts, dates, and sequence. Those amounts are formatted before they reach QML.
 
 A Merge that changes committed money opens a review dialog naming both accounts. Cancel writes nothing. Confirm applies the same operation id. A zero-change Merge, including two uncommitted drafts, still applies immediately. An active committed transfer-linked import row can be corrected; the ordinary editor stays closed until Edit committed record is chosen, and local `~transfer-` rows and evidence-only rows stay out of that editor. The committed preview states whether the other side's date and amount stay and whether the link remains or ends. Choosing an account destination still applies immediately. Choosing a category while the committed editor is open updates the editor buffer and waits for the correction preview. New generation, proposal, and commit still reject a cross-currency match. Unequal amounts and ambiguous endpoints refuse. Workspace clearing still does not retire a protected draft. Independently valid imported entries can still commit unmatched; acceptance does not authorize linking unequal amounts. Undo does not un-commit an import and does not create an opposite payment. No new responsiveness or native multi-platform claim is made.
+
+## Atomic category transfer assignment — 2026-10-31
+
+The owner's follow-up Go extends the right-click account category operation to
+1–4096 selected transactions. `assign_transfer_batch` validates complete allocation
+facts and revisions, then composes existing retarget commands inside one storage
+transaction. All child commands share the enclosing commit and cancellation gate.
+The receipt binds the full ordered request for idempotent retry. Relationships
+may occur only once in the batch. Invalid members, stale facts, unsupported
+currencies and pre-commit cancellation leave no partial result.
+
+The group is recorded in the existing Review history as `transfer-assignment`,
+with original/result link snapshots and one mutation-generation barrier. Undo
+reuses that stack, restores prior links and retires purely generated drafts for
+new links; independent imported postings remain. Replay applies the same rule.
+The ledger exposes the group Undo even before loading Review suggestions. No new
+schema or migration is involved. Existing matching policies are unchanged.
+See [category behavior](../features/010-categories-and-selection.md#right-click-transfer-assignment--owner-go-2026-10-31)
+and [verification](status.md).
+
+### Reverse category assignment — 2026-10-31
+
+The group command also accepts category-release requests (retarget mode 0).
+All caller facts are validated before any sibling advances a source batch's
+revision. Child writes then use the current internal revision inside the same
+transaction. Mixed ordinary rows are validated and recorded as Review row
+snapshots; linked rows use the existing release command. The group records both
+row and relationship before/after snapshots for one Undo. Counterpart retention
+continues to follow the engine's disposable-draft policy.
+
+Pending Undo restores the exact original metadata and ruleset provenance.
+Category and rule audits recognize such a reversal only with a durable Review
+Undo receipt and matching original/result snapshots, including the immediately
+preceding draft state. Snapshot comparison permits stacked Undo without dropping
+ownership checks on ordinary edits. Existing source history stays encrypted.

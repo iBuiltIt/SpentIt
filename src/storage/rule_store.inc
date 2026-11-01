@@ -409,7 +409,7 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
                 if(draft.payee_owner==FieldOwnership::rule || draft.memo_owner==FieldOwnership::rule || marked) fail(SQLITE_CORRUPT);
                 if((kind=="ingest" || kind=="materialize") && (draft.payee_owner!=FieldOwnership::source || draft.memo_owner!=FieldOwnership::source)) fail(SQLITE_CORRUPT);
                 for(const auto& allocation:stored_allocations) if(allocation.category_owner==FieldOwnership::rule || allocation.memo_owner==FieldOwnership::rule || ((kind=="ingest" || kind=="materialize") && (allocation.category_owner!=FieldOwnership::source || allocation.memo_owner!=FieldOwnership::source))) fail(SQLITE_CORRUPT);
-            } else if(kind=="save") check_rule_transition(*previous,draft,false,false);
+            } else if(kind=="save") {if(!review_draft_undo(id,revision_at,draft))check_rule_transition(*previous,draft,false,false);}
             else if(kind=="apply_rules"){
                 if(versions.integer(5)!=previous_decision || versions.bytes(6)!=previous_duplicate || versions.integer(7)!=previous_ordinal) fail(SQLITE_CORRUPT);
                 Statement applied(impl_->db,"SELECT replace_manual FROM rule_applications WHERE batch=? AND batch_after=?");applied.text(1,id.batch);applied.integer(2,revision_at);if(!applied.row())fail(SQLITE_CORRUPT);

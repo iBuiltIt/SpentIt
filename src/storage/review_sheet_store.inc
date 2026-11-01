@@ -361,7 +361,9 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
         const auto delta=(active?draft.transaction.effective_total():zero)-(current.current.active?current.current.draft.transaction.effective_total():zero);
         std::optional<std::int64_t> ruleset;
 #ifdef SPENTIT_RULES_STORAGE
-        Statement mark(impl_->db,"SELECT ruleset_revision FROM entry_rule_fields WHERE batch=? AND ordinal=? AND revision=?");mark.text(1,id.batch);mark.integer(2,integer(id.ordinal));mark.integer(3,prior);if(mark.row())ruleset=mark.integer(0);
+        std::int64_t rule_revision=prior;
+        if(undoing){Statement original(impl_->db,"SELECT prior FROM review_members WHERE answer=? AND batch=? AND ordinal=?");original.text(1,answer);original.text(2,id.batch);original.integer(3,integer(id.ordinal));if(!original.row())fail(SQLITE_CORRUPT);rule_revision=original.integer(0);}
+        Statement mark(impl_->db,"SELECT ruleset_revision FROM entry_rule_fields WHERE batch=? AND ordinal=? AND revision=?");mark.text(1,id.batch);mark.integer(2,integer(id.ordinal));mark.integer(3,rule_revision);if(mark.row())ruleset=mark.integer(0);
 #endif
         store_entry(impl_->db,id,after,ruleset);
         std::string undo_of;
@@ -373,7 +375,11 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
         Statement v(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");v.text(1,id.batch);v.integer(2,integer(id.ordinal));if(!v.row() || v.null(0))fail(SQLITE_CORRUPT);prior=v.integer(0);
         const auto info=batch(impl_->db,id.batch);if(info.revision==INT64_MAX)fail(SQLITE_FULL);result=info.revision+1;
         const auto old=load_row(id,false);const auto kind=old.draft && same_draft(*old.draft,draft)?"decide":"save";
-        version(impl_->db,id,result,draft,decision,true);advance(impl_->db,id.batch,info.revision,kind,static_cast<int>(info.state));
+        std::optional<std::int64_t> ruleset;
+#ifdef SPENTIT_RULES_STORAGE
+        if(undoing){Statement original(impl_->db,"SELECT f.ruleset_revision FROM review_members m JOIN draft_rule_fields f ON f.batch=m.batch AND f.ordinal=m.ordinal AND f.revision=m.prior WHERE m.answer=? AND m.batch=? AND m.ordinal=?");original.text(1,answer);original.text(2,id.batch);original.integer(3,integer(id.ordinal));if(original.row())ruleset=original.integer(0);}
+#endif
+        version(impl_->db,id,result,draft,decision,true,ruleset);advance(impl_->db,id.batch,info.revision,kind,static_cast<int>(info.state));
     }
     if(!undoing){Statement member(impl_->db,"INSERT INTO review_members VALUES(?,?,?,?,?,?,?)");member.text(1,answer);member.text(2,id.batch);member.integer(3,integer(id.ordinal));member.integer(4,committed?1:0);member.integer(5,prior);member.integer(6,result);member.text(7,child);member.done();}
 }
@@ -549,7 +555,7 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
     while(links.row()){
         auto view=transfer_codec::view(links.bytes(2));
         if(!links.null(1))view=transfer_codec::view(links.bytes(1));
-        else {view.link.origin.state=transfers::State::removed;view.link.unresolved=true;}
+        else {undo_new_relationship(view);}
         restored.push_back(std::move(view));
     }
     if(!restored.empty()){
@@ -622,4 +628,90 @@ app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,co
     context.checkpoint("Validating merged matches");
     finish([&]{context.seal();transaction.commit();});
     return {std::string(operation)};
+}
+
+// Category assignment uses the same durable relationship snapshots and mutation
+// barrier as Review Link. Child transfers never commit outside this transaction.
+bool ImportStore::can_undo_transfer_assignment() const {
+    Statement top(impl_->db,"SELECT s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
+    return top.row() && top.bytes(1)=="transfer-assignment" && top.integer(0)==review_generation(impl_->db);
+}
+app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation,const std::vector<app::TransferRequest>& requests,const app::OperationContext& context) {
+    identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
+    if(requests.empty() || requests.size()>4096)fail(SQLITE_CONSTRAINT,"Select between 1 and 4096 transactions");
+    std::string encoded="transfer-assignment:";
+    std::set<imports::Occurrence> entries;
+    std::set<std::string> link_ids;
+    const auto sequence=requests.front().expected_sequence;
+    for(const auto& request:requests){
+        if(request.action!=app::TransferAction::retarget || (request.mode!=0 && request.mode!=1) || !request.left || (request.mode==1 && !request.generated) || request.mode!=requests.front().mode || request.left->endpoint.account!=impl_->selected_account || request.expected_sequence!=sequence)
+            fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
+        if(!entries.insert(request.left->endpoint.entry).second || !link_ids.insert(request.link).second)fail(SQLITE_CONSTRAINT,"Select each transaction and relationship only once");
+        const auto bytes=transfer_codec::encode(request);encoded+=std::to_string(bytes.size())+":"+bytes;
+    }
+    if(const auto prior=review_outcome(operation)){
+        Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='transfer-assignment'");saved.text(1,operation);
+        if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Transfer assignment retry changed its selections");return *prior;
+    }
+    const auto generation=review_generation(impl_->db);if(generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
+    Atomic transaction(impl_->db);
+    // Validate every caller snapshot before any sibling advances a batch revision.
+    const auto initial=all_transfers();
+    const auto linked=[&](const app::TransferRequest& request){return std::any_of(initial.begin(),initial.end(),[&](const auto& v){return !v.link.unresolved && v.link.origin.state!=transfers::State::removed && (v.link.origin.endpoint==request.left->endpoint || v.link.destination.endpoint==request.left->endpoint);});};
+    const auto category_draft=[&](const app::TransferRequest& request){
+        const auto& fact=*request.left;const auto id=fact.endpoint.entry;
+        if(request.expected_sequence!=sequence || sequence!=transfer_sequence() || batch(impl_->db,id.batch).revision!=request.batch_revision || account_for_batch(id.batch).identity!=impl_->selected_account)
+            fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before changing category");
+        require_writable_account(impl_->db,impl_->selected_account);require_management_shape(request);
+        const bool committed=transaction_accepted(id);
+        if(committed!=(fact.state==transfers::State::committed) || fact.generated || !fact.imported)fail(SQLITE_CONSTRAINT,"Invalid category assignment");
+        auto row=load_row(id,false);if(!row.draft || row.excluded_by_clear || row.matched_generated || row.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the transaction before changing category");
+        auto draft=committed?committed_entry(id).current.draft:*row.draft;
+        if(committed && !committed_entry(id).current.active)fail(SQLITE_CONSTRAINT,"Transaction was removed");
+        const auto previous=draft;auto aa=draft.transaction.allocations();auto a=std::find_if(aa.begin(),aa.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
+        if(a==aa.end() || a->amount!=fact.amount || draft.date!=fact.date)fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before changing category");
+        if(!request.category_id.empty()){const auto display=resolve_category(request.category_id);if(!display.assignable || display.path!=request.category_path)fail(SQLITE_CONSTRAINT,"Choose an active ordinary category");}
+        else if(!request.category_path.empty())fail(SQLITE_CONSTRAINT,"Choose an ordinary category or Uncategorized");
+        a->category=request.category_path;a->category_binding=request.category_id.empty()?std::optional<CategoryBinding>{}:CategoryBinding{request.category_id,catalog_sequence(impl_->db)};a->category_owner=FieldOwnership::manual;a->category_rule.reset();
+        draft.transaction=draft.transaction.corrected(draft.transaction.effective_total(),std::move(aa));return canonical_draft(id,draft,previous,committed?committed_entry(id).current.revision+1:request.batch_revision+1,committed);
+    };
+    std::vector<std::optional<imports::DraftRow>> ordinary;
+    for(const auto& request:requests){context.checkpoint("Checking transfer assignments");
+        if(request.mode==0 && !linked(request))ordinary.push_back(category_draft(request));
+        else {(void)preview_transfer(request);ordinary.push_back({});}
+    }
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,'transfer-assignment',?,?)");
+    receipt.text(1,operation);receipt.text(2,encoded);receipt.integer(3,generation);receipt.done();
+    struct Scope {Impl& state;~Scope(){state.composing_review=false;}} scope{*impl_};
+    std::size_t serial=0;std::set<std::string> changed;
+    for(auto request:requests){
+        context.checkpoint("Assigning transfers");
+        const auto before=all_transfers();const auto child=std::string(operation)+"-transfer-"+std::to_string(++serial);
+        const auto id=request.left->endpoint.entry;
+        const bool record_category=request.mode==0 && request.left->imported;
+        const bool committed=record_category && transaction_accepted(id);
+        std::int64_t prior=0;
+        if(record_category){if(committed)prior=committed_entry(id).current.revision;else{Statement v(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");v.text(1,id.batch);v.integer(2,integer(id.ordinal));if(!v.row() || v.null(0))fail(SQLITE_CORRUPT);prior=v.integer(0);}}
+        request.expected_sequence=transfer_sequence();
+        if(request.left->imported)request.batch_revision=batch(impl_->db,id.batch).revision;
+        impl_->composing_review=true;
+        if(ordinary[serial-1]){
+            write_review_row(operation,child,id,*ordinary[serial-1],{imports::Disposition::include,{}},true);
+        }else apply_transfer(child,request);
+        impl_->composing_review=false;
+        if(record_category && !ordinary[serial-1]){
+            std::int64_t result=0;if(committed)result=committed_entry(id).current.revision;else{Statement v(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");v.text(1,id.batch);v.integer(2,integer(id.ordinal));if(!v.row() || v.null(0))fail(SQLITE_CORRUPT);result=v.integer(0);}
+            Statement member(impl_->db,"INSERT INTO review_members VALUES(?,?,?,?,?,?,?)");member.text(1,operation);member.text(2,id.batch);member.integer(3,integer(id.ordinal));member.integer(4,committed?1:0);member.integer(5,prior);member.integer(6,result);member.text(7,child);member.done();
+        }
+        for(const auto& value:all_transfers()){
+            const auto old=std::find_if(before.begin(),before.end(),[&](const auto& v){return v.link.identity==value.link.identity;});const auto payload=transfer_codec::encode(value);
+            if(old!=before.end() && payload==transfer_codec::encode(*old))continue;
+            if(!changed.insert(value.link.identity).second)fail(SQLITE_CONSTRAINT,"Selected transfers affect the same relationship");
+            Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
+            if(old!=before.end())history.blob(3,transfer_codec::encode(*old));history.blob(4,payload);history.text(5,child);history.done();
+        }
+    }
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();
+    context.checkpoint("Validating transfer assignments");
+    finish([&]{context.seal();transaction.commit();});return {std::string(operation)};
 }

@@ -1,4 +1,5 @@
 #include <exception>
+#include <tuple>
 #include <QGuiApplication>
 #include <QWindow>
 #include <QTimer>
@@ -63,7 +64,7 @@ TransferChoice read_transfer_choice(app::ImportRepository& repo,const QVariantMa
     bool committed=false;
     if(info!=batches.end()){
         revision=info->revision;
-        committed=info->state==app::BatchState::committed;
+        committed=repo.transaction_accepted(id);
         const bool editable=info->state==app::BatchState::pending || info->state==app::BatchState::protected_drafts;
         if(!committed && !editable) throw std::invalid_argument("Resolve the draft before assigning a transfer");
         if(committed){
@@ -216,6 +217,9 @@ QString phaseFor(const QString& action){
     if(action=="backup")return "Creating verified backup";
     if(action=="review_answer")return "Saving Review decision";
     if(action=="review_batch")return "Checking selected matches";
+    if(action=="assign_transfer_batch")return "Assigning selected transfers";
+    if(action=="release_transfer_batch")return "Changing transfer categories";
+    if(action=="undo_transfer_assignment")return "Undoing transfer assignment";
     if(action=="review_undo")return "Undoing Review decision";
     if(action=="create")return "Creating dataset";
     if(action=="save")return "Saving draft";
@@ -648,7 +652,7 @@ struct ImportModel::Worker {
             QVariantList exclusions;
             for(const auto& rule:repo.link_exclusions())if(!rule.removed)exclusions.push_back(QVariantMap{{"identity",text(rule.identity)},{"field",text(rule.field)},{"expression",text(rule.expression)},{"account",QString::number(rule.account)},{"regex",rule.regex}});
             state["linkExclusions"]=exclusions;state["linkExclusionPreview"]=linkExclusionPreview;
-            state["reviewQuestions"]=questions;state["reviewCount"]=questions.size();state["reviewGeneration"]=QString::number(review.generation);state["canUndoReview"]=review.can_undo;state["reviewLinkPreview"]=reviewLinkPreview;
+            state["reviewQuestions"]=questions;state["reviewCount"]=questions.size();state["reviewGeneration"]=QString::number(review.generation);state["canUndoReview"]=review.can_undo;state["canUndoTransferAssignment"]=repo.can_undo_transfer_assignment();state["reviewLinkPreview"]=reviewLinkPreview;
             const auto rollback=repo.rollback_review();QVariantList affected;for(const auto id:rollback.affected_accounts)affected.push_back(QString::number(id));
             state["rollback"]=QVariantMap{{"token",QString::number(rollback.token)},{"transactions",static_cast<qlonglong>(rollback.transactions)},{"failures",static_cast<qlonglong>(rollback.failures)},{"accounts",affected}};
             state["newTransactions"]=static_cast<qlonglong>(acceptance.transactions);state["importFailures"]=static_cast<qlonglong>(acceptance.failed_records);state["acceptanceWarnings"]=acceptanceWarnings;state["canIgnoreWarnings"]=canOverride;
@@ -779,9 +783,21 @@ struct ImportModel::Worker {
                 cachedLedger=std::make_shared<std::vector<app::LedgerRow>>(repo.current_ledger());
                 // A presentation-only copy resolves current names for both visible
                 // rows and literal filtering. Stored interpretations remain intact.
+                std::map<std::tuple<std::int64_t,imports::Occurrence,std::string>,std::string> transferCategories;
+                const auto endpointKey=[](const transfers::Endpoint& endpoint){return std::make_tuple(endpoint.account,endpoint.entry,endpoint.allocation);};
+                if(repo.transfers_supported()){
+                    std::map<std::int64_t,std::string> names;for(const auto& account:repo.accounts())names[account.identity]=account.name;for(const auto& account:repo.archived_accounts())names[account.identity]=account.name;
+                    for(const auto& value:repo.transfers())if(!value.link.unresolved && !value.link.destination_released && value.link.origin.state!=transfers::State::removed && value.link.destination.state!=transfers::State::removed){
+                        transferCategories[endpointKey(value.link.origin.endpoint)]=names.at(value.link.destination.endpoint.account)+" [Account]";
+                        transferCategories[endpointKey(value.link.destination.endpoint)]=names.at(value.link.origin.endpoint.account)+" [Account]";
+                    }
+                }
                 if(repo.categories_supported())for(auto& row:*cachedLedger) {
                     auto values=row.draft.transaction.allocations();
-                    for(auto& value:values)value.category=allocationMap(value,categoryById).value("categoryDisplay").toString().toUtf8().toStdString();
+                    for(auto& value:values){
+                        const auto transfer=transferCategories.find({repo.account().identity,row.identity,value.identity});
+                        value.category=transfer==transferCategories.end()?allocationMap(value,categoryById).value("categoryDisplay").toString().toUtf8().toStdString():transfer->second;
+                    }
                     row.draft.transaction=row.draft.transaction.corrected(row.draft.transaction.effective_total(),std::move(values));
                 }
             }
@@ -819,8 +835,10 @@ struct ImportModel::Worker {
         std::set<imports::Occurrence> retained;
         for(const auto& row:cachedView->rows)if(selection.contains(row.identity))retained.insert(row.identity);
         selection=std::move(retained);
+        std::set<imports::Occurrence> linkedSelections;
+        if(!selection.empty() && repo.transfers_supported())for(const auto& value:repo.transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed){linkedSelections.insert(value.link.origin.endpoint.entry);if(value.link.destination.state!=transfers::State::removed)linkedSelections.insert(value.link.destination.endpoint.entry);}
         QVariantList selectedIds;QVariantMap selectedKeys;
-        for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
+        for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}value["transferLinked"]=linkedSelections.contains(id);selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
         state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;state["transferMergePreview"]=transferMergePreview;
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
         int focus=-1;
@@ -932,6 +950,34 @@ struct ImportModel::Worker {
             if(!preparedLinkExclusion)throw std::invalid_argument("Preview the exclusion first");
             const auto op=identity();try{repo.save_link_exclusion(op,*preparedLinkExclusion,linkExclusionGeneration);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
             preparedLinkExclusion.reset();linkExclusionPreview.clear();return;
+        }
+        if(action=="assign_transfer_batch" || action=="release_transfer_batch") {
+            if(selection.empty() || selection.size()>4096)throw std::invalid_argument("Select between 1 and 4096 transactions");
+            const auto destinationId=a.value("destination").toString().toLongLong();
+            const auto accounts=repo.accounts();const auto destination=std::find_if(accounts.begin(),accounts.end(),[&](const auto& account){return account.identity==destinationId;});
+            const bool release=action=="release_transfer_batch";
+            if(!release && destination==accounts.end())throw std::invalid_argument("Choose a destination account");
+            const auto categoryId=str(a.value("category"));std::string categoryPath;
+            if(release && !categoryId.empty()){const auto category=repo.resolve_category(categoryId);if(!category.assignable)throw std::invalid_argument("Choose an active ordinary category");categoryPath=category.path;}
+            const auto op=identity();std::vector<app::TransferRequest> requests;std::size_t serial=0;
+            for(const auto& id:selection){
+                context.checkpoint("Reading selected transfers");
+                const auto choice=read_transfer_choice(repo,{{"account",QString::number(repo.account().identity)},{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"allocation",selection.size()==1?a.value("allocation"):QVariant()}});
+                const auto prefix=op+"-"+std::to_string(++serial);
+                app::TransferRequest request{};request.action=app::TransferAction::retarget;request.mode=release?0:1;
+                request.expected_sequence=a.value("sequence").toString().toLongLong();request.link=choice.linked?choice.link:prefix;
+                request.kept=prefix+"-kept";request.left=choice.fact;request.batch_revision=choice.revision;request.payee=choice.payee;request.memo=choice.memo;
+                if(release){request.category_id=categoryId;request.category_path=categoryPath;}
+                else {request.generated=transfers::Endpoint{destinationId,{"~transfer-"+prefix+"-destination",0},"generated"};request.generated_currency=destination->currency.definition_id();}
+                requests.push_back(std::move(request));
+            }
+            try{repo.assign_transfer_batch(op,requests,context);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            observedSaved();selected.clear();selectedBatch.clear();transferReceipt={{"summary","Transfers assigned. Undo reverses the whole batch."}};return;
+        }
+        if(action=="undo_transfer_assignment") {
+            if(!repo.can_undo_transfer_assignment())throw std::invalid_argument("Later changes prevent transfer assignment Undo");
+            const auto op=identity();try{repo.undo_review(op);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            observedSaved();selected.clear();selectedBatch.clear();transferReceipt.clear();return;
         }
         if(action=="review_batch") {
             std::vector<app::ReviewAnswer> answers;
@@ -1790,7 +1836,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch") operation->seal();
+    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
@@ -1903,7 +1949,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             result.error=(action=="create_account" && result.success)?"Account was created durably, but its view could not be refreshed. Reopen and inspect the account list before retrying."
                 :((action=="map_import" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved durably, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved durably, but its view could not be refreshed. Reopen and inspect Review before retrying."
-                :(action.startsWith("transfer_") && result.success)?"Transfer operation was saved durably, but its view could not be refreshed. Reopen and inspect transfers before retrying."
+                :((action.startsWith("transfer_") || action=="assign_transfer_batch" || action=="release_transfer_batch" || action=="undo_transfer_assignment") && result.success)?"Transfer operation was saved durably, but its view could not be refreshed. Reopen and inspect transfers before retrying."
                 :(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved durably, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."
                 :(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Committed change "+worker->changeReceipt.value("operation").toString()+" was saved durably, but the refreshed ledger could not be loaded. Reopen and inspect committed history; do not apply the change again."
                 :(action=="rules_apply" && !ruleOperation.isEmpty())?ruleApplyRefreshFailure(ruleOperation)

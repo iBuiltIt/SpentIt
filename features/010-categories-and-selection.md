@@ -13,6 +13,47 @@ Implementation: independent assignable categories, one optional colon, case-inse
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 
+## Right-click transfer assignment — owner Go 2026-10-31
+
+The ledger's right-click **Change category** dialog accepts an account destination
+for all selected transactions. Each selected allocation creates or retargets its
+own transfer through the existing engine command, preserving its amount and date.
+The whole assignment saves atomically with one durable Undo. The owner confirmed
+that after Review finds no counterpart, assignment should create the destination
+entries directly; this command does not perform a new candidate search.
+
+The command uses ledger selection independently of the inspected record. A single
+split transaction requires an explicit allocation choice; ambiguous split rows in
+a multiple selection must be assigned individually. The current account is
+refused. Existing transfer eligibility, currency and committed-row restrictions
+remain authoritative: an invalid member rejects the whole batch. Ordinary
+categories retain bulk preview/apply. Cancel writes nothing; cancellation before
+the final durable gate rolls back the entire assignment.
+
+**Undo transfer assignment** is available in the ledger and through the existing
+Undo shortcut. The group and its link snapshots use the durable Review history;
+Undo survives reopen and backup restoration. A later dataset mutation blocks Undo
+rather than overwriting newer work. Undo removes newly generated drafts and
+restores prior links without changing the source postings. Ledger category labels
+and literal filtering derive live account destinations from the links, reverting
+to ordinary classifications when undone. See [verification](../doc/status.md).
+
+## Changing a transfer back to a category — owner Go 2026-10-31
+
+Choosing Uncategorized or an ordinary category in the right-click dialog now
+ends selected transfer links and assigns the chosen classification atomically.
+Purely generated uncommitted counterparts are removed. Independently imported
+or committed counterparts remain, with the link ended. Origin amounts/dates stay.
+The same operation supports one or multiple selected transactions, including
+mixed selections of linked and ordinary rows. A split allocation must still be
+chosen explicitly. Existing generated-side and relationship restrictions remain;
+an invalid member rejects the whole operation with an error.
+
+One Undo restores the links, removed generated drafts, original categories,
+field ownership and rule provenance. The operation and its Undo must survive a
+full audit, restart and backup restoration. The earlier ordinary bulk preview
+remains for selections without transfers. See [verification](../doc/status.md).
+
 ## Account names and aliases — accepted 2026-10-29
 
 Accounts participate in every category-selection list as typed transfer destinations. They also appear in the category editor, labelled Account, with aliases visible/searchable; their category-editor rename/archive/delete controls are disabled. Account management owns those operations. Ordinary categories, account display names and confirmed aliases share a case-insensitive namespace. New conflicting names are refused explicitly. A source catalog definition naming an existing account is retained as evidence but creates no ordinary category; the import catalog review displays an informational warning.
@@ -23,7 +64,7 @@ A bracketed or unbracketed allocation naming an account/alias is transfer intent
 
 Existing category/account conflicts remain inspectable and require renaming the ordinary category before automatic resolution. Ambiguous account aliases are reported as blockers, never chosen arbitrarily; new mappings that introduce such ambiguity are refused. Historical committed ordinary classifications are not retroactively changed solely by adding this policy. Imported catalog duplicates are not errors when they identify the same account.
 
-Rules preserve recognized account allocations even with Replace manual fields. Rules and bulk category selectors display accounts but explicitly direct users to the transfer workflow; those selectors cannot create account transfers. This is an explicit capability boundary, not storage of account names as ordinary categories. Single-allocation account selection continues to invoke the existing atomic transfer command.
+Rules preserve recognized account allocations even with Replace manual fields. Rules cannot create account transfers. The right-click category dialog supports atomic transfer assignment for the selected transactions as described above. This is an explicit capability boundary, not storage of account names as ordinary categories. Single-allocation account selection continues to invoke the existing atomic transfer command.
 
 This supersedes earlier statements below that an ordinary category may share an account name or that unbracketed account names always remain ordinary assignments. Exact verification is recorded in [status](../doc/status.md#account-aliases-and-transfer-categories--2026-10-29).
 

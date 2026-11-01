@@ -224,10 +224,31 @@ ApplicationWindow {
         }
     }
 
-    Dialog {id:bulkCategoryDialog;title:"Change category";modal:true;anchors.centerIn:parent;width:Math.min(600,window.width-40);standardButtons:Dialog.Cancel
+    Dialog {id:bulkCategoryDialog;objectName:"bulkCategoryDialog";title:"Change category";modal:true;anchors.centerIn:parent;width:Math.min(600,window.width-40);standardButtons:Dialog.Cancel
+        readonly property var choice: bulkCategory.currentIndex>=0 ? bulkCategory.model[bulkCategory.currentIndex] : ({})
+        readonly property var rows: s.selection||[]
+        readonly property var allocations: rows.length===1 ? (rows[0].splits||[]) : []
+        readonly property bool accountChoice: !!choice.account
+        readonly property bool releasesTransfers: !accountChoice && rows.some(function(row){return !!row.transferLinked})
+        readonly property bool transferOperation: accountChoice || releasesTransfers
+        readonly property bool ambiguousSplits: rows.length>1 && rows.some(function(row){return (row.splits||[]).length!==1})
+        readonly property bool transferReady: rows.length>0 && !ambiguousSplits && (!accountChoice || choice.accountId!==s.accountId) && (rows.length>1 || bulkTransferAllocation.currentIndex>=0)
         contentItem:ColumnLayout {
-                UsableComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,path:c.path+" [Account — use transfer workflow]",account:true}:c}));textRole:"path";Layout.preferredWidth:220;Accessible.name:"Category for selected transactions"}
-                Button {objectName:"bulkCategorize";text:"Change category…";enabled:!s.readOnly && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0 && !bulkCategory.model[bulkCategory.currentIndex].account;onClicked:{bulkCategoryDialog.close();guardedPreview("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})}}
+            UsableComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,accountId:c.accountId,path:c.path+" [Account]",account:true}:c}));textRole:"path";Layout.fillWidth:true;Accessible.name:"Category for selected transactions"}
+            Label {visible:bulkCategoryDialog.transferOperation;text:bulkCategoryDialog.ambiguousSplits?"Select split transactions individually and choose the allocation to transfer.":bulkCategoryDialog.accountChoice && bulkCategoryDialog.choice.accountId===s.accountId?"Choose a different account.":bulkCategoryDialog.releasesTransfers?"Ends the selected transfer links. Purely generated uncommitted counterparts are removed; imported or committed counterparts remain. One Undo restores the whole change.":"Creates a separate counterpart for each selected transaction in the destination account. One Undo reverses the whole assignment.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            UsableComboBox {id:bulkTransferAllocation;objectName:"bulkTransferAllocation";visible:bulkCategoryDialog.transferOperation && bulkCategoryDialog.allocations.length>1;model:bulkCategoryDialog.allocations;textRole:"transferLabel";currentIndex:model.length===1?0:-1;onModelChanged:currentIndex=model.length===1?0:-1;displayText:currentIndex<0?"Choose allocation to transfer":currentText;Layout.fillWidth:true;Accessible.name:"Allocation to transfer"}
+            Button {objectName:"bulkCategorize";text:bulkCategoryDialog.accountChoice?"Use as transfer":"Change category…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0 && (!bulkCategoryDialog.transferOperation || bulkCategoryDialog.transferReady);onClicked:{
+                if(!enabled)return
+                if(bulkCategoryDialog.transferOperation){
+                    let allocation=bulkCategoryDialog.rows.length===1 ? bulkCategoryDialog.allocations[bulkTransferAllocation.currentIndex].allocationId : ""
+                    let destination=bulkCategoryDialog.choice.accountId
+                    let sequence=s.transferSequence
+                    let action=bulkCategoryDialog.releasesTransfers?"release_transfer_batch":"assign_transfer_batch"
+                    let category=bulkCategoryDialog.choice.id
+                    bulkCategoryDialog.close()
+                    guard(function(){workflow.command(action,{destination:destination,category:category,allocation:allocation,sequence:sequence})})
+                }else{bulkCategoryDialog.close();guardedPreview("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})}
+            }}
         }
     }
     Menu {
@@ -779,6 +800,9 @@ ApplicationWindow {
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
             if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Commit completed."
+            if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
+            if(success && action==="release_transfer_batch")workspaceFeedback="Transfer categories changed. Undo restores the whole change."
+            if(success && action==="undo_transfer_assignment")workspaceFeedback="Transfer assignment undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
             if(success && (action==="rules_save" || action==="rules_apply"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
@@ -1238,8 +1262,8 @@ ApplicationWindow {
     }
     Shortcut {
         sequences:[StandardKey.Undo]
-        enabled:!reviewSheet.visible && !!s.canUndoReview && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
-        onActivated:workflow.command("review_undo")
+        enabled:!reviewSheet.visible && (!!s.canUndoReview || !!s.canUndoTransferAssignment) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        onActivated:workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")
     }
     property var exclusionEndpoint: ({})
     property var exclusionEditing: ({})
@@ -1647,7 +1671,7 @@ ApplicationWindow {
     Shortcut {objectName:"reviewUndoShortcut";
         sequences:[StandardKey.Undo]
         enabled:reviewSheet.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoReview && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
-        onActivated:workflow.command("review_undo")
+        onActivated:workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")
     }
             ScrollBar.vertical:UsableScrollBar {}
             ScrollBar.horizontal:UsableScrollBar {}
@@ -2044,6 +2068,7 @@ ApplicationWindow {
             RowLayout {
                 TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
+                Button {objectName:"undoTransferAssignment";text:"Undo transfer assignment";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){workflow.command("undo_transfer_assignment")})}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
             }
             Row {

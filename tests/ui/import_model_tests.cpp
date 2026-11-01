@@ -409,6 +409,65 @@ private slots:
         run(m,"transfer_clear",{{"link","clear-link"},{"operation","clear"},{"sequence",m.state().value("transferSequence")}});
         QVERIFY(m.state().value("active").toBool());QVERIFY(selected(m).isEmpty());QCOMPARE(m.state().value("projected").toString(),QString("100.00"));
     }
+    void contextCategoryTransfer() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        create(m,dir.path()+"/doc");
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Wise"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2/2/2026\nT-100\nPTransfer\n^\nD3/2/2026\nT-7\nPOther\n^\n")},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch").toString();
+        run(m,"inspect",{{"batch",batch},{"ordinal",1}});
+        run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});
+        auto* dialog=root->findChild<QObject*>("bulkCategoryDialog");QVERIFY(dialog);
+        auto* combo=root->findChild<QObject*>("bulkCategory");QVERIFY(combo);
+        auto* apply=root->findChild<QObject*>("bulkCategorize");QVERIFY(apply);
+        const auto choices=combo->property("model").toList();int wise=-1,current=-1;
+        for(int i=0;i<choices.size();++i){const auto c=choices[i].toMap();if(c.value("accountId").toString()=="2")wise=i;if(c.value("accountId").toString()=="1")current=i;}
+        QVERIFY(wise>=0);QVERIFY(current>=0);
+        combo->setProperty("currentIndex",current);QTRY_VERIFY(!apply->property("enabled").toBool());
+        combo->setProperty("currentIndex",wise);QTRY_VERIFY(apply->property("enabled").toBool());
+        run(m,"select",{{"row",m.occurrenceIndex(batch,1)},{"toggle",true}});
+        QTRY_VERIFY(apply->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
+        QVERIFY(QMetaObject::invokeMethod(dialog,"reject"));
+        QCOMPARE(m.state().value("transfers").toList().size(),0);
+        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
+        QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("transfers").toList().size(),2);
+        QCOMPARE(m.rowRecord(m.occurrenceIndex(batch,0)).value("category").toString(),QString("Wise [Account]"));
+        for(int count=1;count<=2;++count){
+            run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});if(count==2)run(m,"select",{{"row",m.occurrenceIndex(batch,1)},{"toggle",true}});
+            combo->setProperty("currentIndex",0);QTRY_VERIFY(apply->property("enabled").toBool());
+            QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+            QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+            QCOMPARE(m.rowRecord(m.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+            run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("balance").toString(),count==1?QString("7.00"):QString("0.00"));
+            run(m,"undo_transfer_assignment");QCOMPARE(m.state().value("balance").toString(),QString("107.00"));
+            run(m,"select_account",{{"id","1"}});QCOMPARE(m.rowRecord(m.occurrenceIndex(batch,0)).value("category").toString(),QString("Wise [Account]"));
+        }
+        run(m,"select_account",{{"id","2"}});
+        QCOMPARE(m.state().value("balance").toString(),QString("107.00"));
+        QVERIFY(m.state().value("canUndoTransferAssignment").toBool());
+        auto* undo=root->findChild<QObject*>("undoTransferAssignment");QVERIFY(undo);QVERIFY(undo->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(undo,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),QString("0.00"));
+        run(m,"select_account",{{"id","1"}});QCOMPARE(m.state().value("balance").toString(),QString("-107.00"));
+        run(m,"import",{{"path",fixture(dir.path(),"D4/2/2026\nT-7\nPSplit\nSFirst\n$-3\nSSecond\n$-4\n^\n")},{"profile","DMY"}});
+        const auto splitBatch=selected(m).value("batch").toString();
+        run(m,"select",{{"row",m.occurrenceIndex(splitBatch,0)}});
+        combo->setProperty("currentIndex",wise);
+        auto* allocation=root->findChild<QObject*>("bulkTransferAllocation");QVERIFY(allocation);
+        QTRY_VERIFY(!apply->property("enabled").toBool());allocation->setProperty("currentIndex",1);QTRY_VERIFY(apply->property("enabled").toBool());
+        run(m,"select",{{"row",m.occurrenceIndex(batch,0)},{"toggle",true}});QTRY_VERIFY(!apply->property("enabled").toBool());
+        run(m,"select",{{"row",m.occurrenceIndex(splitBatch,0)}});allocation->setProperty("currentIndex",1);QTRY_VERIFY(apply->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("balance").toString(),QString("4.00"));
+        run(m,"undo_transfer_assignment");QCOMPARE(m.state().value("balance").toString(),QString("0.00"));
+    }
     void transferManagementUi() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

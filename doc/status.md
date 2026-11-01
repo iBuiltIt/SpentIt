@@ -2,6 +2,108 @@
 
 Last updated: 2026-10-31
 
+## Changing transfers back to categories — 2026-10-31
+
+Implemented the owner's Go for the reverse right-click category action. Selecting
+Uncategorized or an ordinary category routes selections containing transfer links
+through the atomic group command. It ends the links and changes the selected
+allocations together, removes only disposable generated uncommitted counterparts,
+and preserves committed/independently imported counterparts. Origin money and
+dates stay. Mixed linked/ordinary selections are supported. Split ambiguity and
+invalid relationships surface errors and reject the whole group. The original
+ordinary bulk preview remains for selections without transfer links.
+
+One Undo restores counterpart relationships, original categories, field ownership
+and rule provenance. Pending-draft audit checks now recognize exact recorded
+Review Undo snapshots, including stacked Undo, without relaxing ordinary-edit
+ownership checks. Source facts use per-transaction acceptance state even in an
+otherwise pending import batch. No schema change; the build-derived verifier ID
+changes with the verification implementation.
+
+Release functional tests passed for single/multiple selection, mixed ordinary
+rows, a named category, uncommitted generated removal, committed counterpart
+retention, independent imported counterpart retention, rule-derived classifications
+before/after acceptance, cancellation, stale facts, retry, stacked Undo, reopen
+and restored backups. Final focused Qt checks (`contextCategoryTransfer`,
+`transferManagementUi`, `ledgerInteractions`) passed 5 cases including init/cleanup,
+0 failures, in 5.416 s. The local rules-enabled Release `build/SpentIt` was rebuilt.
+
+The Release regression selection passed 13/13 in 157.04 s: Review, forward/reverse
+transfer assignment, category assignments/history/validation, committed
+history/validation and rule application/reapply. Fault sweeps passed 181 write/sync
+positions for category release and 165 for its Undo, alternating disk-full/I/O
+failures; forward assignment/Undo also passed their 109/97 positions. All-or-none
+balances, retry and full audit were checked after each interruption, including
+process exits before and after durable commit. The final stacked-Undo audit
+extension was then checked by the functional release and UI runs.
+
+Final ASan/UBSan Review, release and assignment functional checks passed 3/3
+in 26.08 s with no sanitizer diagnostic. `git diff --check` passed and all 209
+relative file link targets in the changed guidance/status/feature documents
+resolved. Native interaction, rules-disabled builds, large-batch performance and
+other platforms remain unverified; sanitizer fault sweeps were not repeated for
+this follow-up. Tests used synthetic data only.
+
+## Batch category transfer assignment — 2026-10-31
+
+Implemented the owner's follow-up Go for all selected transactions in the
+[right-click category dialog](../features/010-categories-and-selection.md#right-click-transfer-assignment--owner-go-2026-10-31).
+Each transaction gets a separate generated counterpart with opposite amount and
+its original date. Existing retarget behavior applies to already-linked origins.
+One transaction encloses all writes, one durable receipt binds retries, and one
+Undo restores the entire group. Undo is available in the ledger, survives reopen
+and backup restoration, and respects intervening-mutation barriers. Purely
+generated drafts are retired on Undo; imported postings remain. Ledger account
+category labels and filtering now derive live destinations from transfer links.
+Ambiguous split rows need individual allocation selection. Existing currency,
+eligibility and committed-row restrictions remain. No new matching search or
+format change; experimental schemas remain 40/39.
+
+Release storage functional checks passed for three separate postings, exact
+amounts/dates, cancellation before and during the batch and at the final commit
+gate, stale revisions, changed facts, currency mismatch, duplicate selections,
+idempotent and conflicting retries, retargeting existing links, stacked Undo,
+reopen, backup restore and later-mutation barriers. Fault sweeps passed 109
+write/sync positions for assignment and 97 for Undo (alternating disk-full/I/O
+failures), with retry and exact all-or-none balances. Process exits immediately
+before and after each durable commit also passed. Release regression selection
+`import.review_sheet`, `import.transfer_assignment_faults`, `import.review_batch`
+and `import.review_policy` passed 4/4 in 55.23 s.
+
+The rules-enabled Release application was rebuilt at `build/SpentIt`. Final
+focused offscreen Qt checks (`contextCategoryTransfer`, `transferManagementUi`,
+`ledgerInteractions`) passed 5 cases including init/cleanup, 0 failures, in
+4.420 s. They cover multiple selection, Cancel, exact destination balances,
+ledger destination labels, the visible group Undo button, explicit split choice,
+ambiguous multi-row split refusal, existing editor transfers and ordinary bulk
+category changes. The ASan/UBSan storage functional and fault selections passed
+2/2 in 114.54 s with no sanitizer diagnostic; the final additional retarget/stack
+case was verified in Release. `git diff --check` passed and all 208 relative file
+link targets in the changed guidance/status/feature documents resolved. Native
+interaction, large-batch responsiveness, rules-disabled builds, Linux and Windows
+remain unverified. No private financial data was used in testing.
+
+## Right-click category transfer assignment: initial single-selection checkpoint — 2026-10-31
+
+Implemented the owner's Go for [single-transaction account selection](../features/010-categories-and-selection.md#right-click-transfer-assignment--owner-go-2026-10-31)
+in the right-click Change category dialog. Account selection invokes the existing
+transfer-retarget command; ordinary categories retain bulk preview/apply.
+Split rows require an explicit allocation. Current-account destinations and
+multi-row transfer assignment are disabled with visible guidance. No storage,
+engine, format or matching-policy change.
+
+Rebuilt `spentit_import_experiment` (local `build/SpentIt`) and
+`spentit_import_ui_tests` in `build/import-ui-rules-release`.
+With `QT_QPA_PLATFORM=offscreen`, focused Qt cases `contextCategoryTransfer`,
+`transferManagementUi` and `ledgerInteractions` passed (5 including init/cleanup,
+0 failed, 4.055 s). Synthetic coverage checks cancellation, current-account and
+multi-selection guards, ledger selection differing from the inspected record,
+the exact generated destination balance, existing editor transfers and ordinary
+bulk-category preview/apply with viewport retention. Native interaction, explicit
+split-picker interaction and other platforms were not verified. Existing engine
+and storage transfer restrictions remain; candidate matching and match-or-create
+confirmation are separate future work. `git diff --check` passed.
+
 ## Shared operation feedback — 2026-10-31
 
 Implemented the owner's follow-up Go for consistent [feedback placement](ui-import-cleanup.md#feedback-placement--owner-go-2026-10-31).

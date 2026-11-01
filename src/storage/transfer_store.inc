@@ -1,5 +1,13 @@
 namespace {
 bool local_side(const transfers::Side& side){return (side.manually_entered || !side.independent_evidence) && !side.attached_evidence;}
+// Undo of a newly created relationship preserves independently imported postings,
+// but retires a purely generated draft along with its relationship.
+void undo_new_relationship(app::TransferView& value) {
+    auto& destination=value.link.destination;
+    if(destination.state==transfers::State::draft && !destination.independent_evidence && !destination.manually_entered && !destination.attached_evidence && !destination.proposed_evidence)
+        destination.state=transfers::State::removed;
+    value.link.origin.state=transfers::State::removed;value.link.unresolved=true;
+}
 Money local_total(const std::vector<app::TransferView>& values,std::int64_t account,const Currency& currency,bool projected){
     std::vector<Money> amounts;
     for(const auto& value:values)for(const auto* side:{&value.link.origin,&value.link.destination})
@@ -502,7 +510,7 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
             std::size_t restored=0;
             while(history.row()){
                 const auto found=previous.find(history.bytes(0));if(found==previous.end() || transfer_codec::encode(found->second)!=history.bytes(2))fail(SQLITE_CORRUPT,"Review Undo relationship changed");
-                auto value=found->second;if(history.null(1)){value.link.origin.state=transfers::State::removed;value.link.unresolved=true;}else value=transfer_codec::view(history.bytes(1));
+                auto value=found->second;if(history.null(1)){undo_new_relationship(value);}else value=transfer_codec::view(history.bytes(1));
                 Statement stored(impl_->db,"SELECT payload FROM transfer_versions WHERE identity=? AND sequence=?");stored.text(1,history.bytes(0));stored.integer(2,sequence);if(!stored.row() || stored.bytes(0)!=transfer_codec::encode(value))fail(SQLITE_CORRUPT,"Review Undo history does not replay");
                 previous.insert_or_assign(history.bytes(0),value);++restored;++count;
             }

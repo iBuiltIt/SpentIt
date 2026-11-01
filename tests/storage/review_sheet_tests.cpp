@@ -23,6 +23,119 @@ std::vector<ReviewAnswer> batch_answers(ImportStore& store) {
     for(const auto& q:sheet.questions)if(q.kind==ReviewKind::same){ReviewAnswer a;a.generation=sheet.generation;a.question=q.key;a.action=ReviewAction::merge;for(const auto& row:q.rows)a.selected.push_back(row.identity);a.survivor=q.rows.front().identity;answers.push_back(std::move(a));}
     return answers;
 }
+std::vector<TransferRequest> assignment_requests(ImportStore& s) {
+    std::vector<TransferRequest> out;
+    for(std::size_t i=0;i<3;++i){
+        const auto row=s.row({"out",i});const auto& a=row.draft->transaction.allocations().front();
+        TransferRequest r{};r.action=TransferAction::retarget;r.mode=1;r.link="assigned-"+std::to_string(i);r.kept=r.link+"-kept";r.expected_sequence=s.transfer_sequence();
+        r.left=transfers::AllocationFact{{1,{"out",i},a.identity},a.amount,row.draft->date,transfers::State::draft,true,false,false};
+        r.generated=transfers::Endpoint{2,{"~transfer-assigned-"+std::to_string(i),0},"generated"};r.generated_currency=Currency("CAD").definition_id();r.payee=row.draft->payee;r.memo=row.draft->memo;
+        for(const auto& b:s.batches())if(b.id=="out")r.batch_revision=b.revision;
+        out.push_back(r);
+    }
+    return out;
+}
+void assignment_setup(ImportStore& s) {
+    const Currency cad("CAD");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Wise",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
+    s.ingest("out","!Type:Bank\nD01/01/2026\nT-500\nPOne\n^\nD01/01/2026\nT-1867.21\nPTwo\n^\nD12/06/2026\nT-1889.18\nPThree\n^\n",qif::DateOrder::dmy);
+}
+void assignment_check(ImportStore& s,bool assigned) {
+    s.select_account(1);check(s.balance().units()==-425639 && s.current_ledger().size()==3,"Origin rows and balance preserved");
+    s.select_account(2);if(s.balance().units()!=(assigned?425639:0) || s.current_ledger().size()!=(assigned?3:0))throw std::runtime_error("Destination assigned="+std::to_string(assigned)+" balance="+std::to_string(s.balance().units())+" rows="+std::to_string(s.current_ledger().size()));
+    s.select_account(1);s.verify();
+}
+void assignment_tests(const std::filesystem::path& dir) {
+    const auto path=dir/"assignments";const Currency cad("CAD");
+    {auto s=ImportStore::create(path,"test","Checking",cad,"2026-01-01");assignment_setup(s);const auto requests=assignment_requests(s);
+    for(int mode=0;mode<7;++mode){auto bad=requests;OperationContext c;
+        if(mode==0)bad[2].batch_revision++;
+        if(mode==1)bad[2].left->amount=Money(-1,cad);
+        if(mode==2)bad.push_back(bad.front());
+        if(mode==3)bad[2].generated_currency=Currency("USD").definition_id();
+        if(mode==4)c.request();
+        if(mode==5){int n=0;c.progress=[&,n](std::string_view phase)mutable{if(phase=="Assigning transfers" && ++n==2)c.request();};}
+        if(mode==6)s.observer([&](auto phase){if(phase==storage::ImportPhase::before_commit)c.request();});
+        bool refused=false;try{s.assign_transfer_batch("bad-"+std::to_string(mode),bad,c);}catch(const std::exception&){refused=true;}s.observer({});
+        check(refused && !s.review_outcome("bad-"+std::to_string(mode)),"Failed batch has no receipt");assignment_check(s,false);
+    }
+    OperationContext c;s.assign_transfer_batch("assign",requests,c);s.assign_transfer_batch("assign",requests,c);assignment_check(s,true);
+    auto changed=requests;changed[0].memo="changed";bool refused=false;try{s.assign_transfer_batch("assign",changed,c);}catch(const std::exception&){refused=true;}check(refused,"Changed retry refused");
+    const auto links=s.transfers();check(links.size()==3,"Three separate links");for(const auto& v:links){check(v.link.destination.amount==-v.link.origin.amount && v.link.destination.date==v.link.origin.date,"Exact opposite amount and same date");}
+    auto retarget=requests;for(auto& r:retarget){r.expected_sequence=s.transfer_sequence();r.kept+="-retarget";r.generated->entry.batch+="-retarget";}
+    OperationContext replace;s.assign_transfer_batch("retarget",retarget,replace);assignment_check(s,true);s.undo_review("undo-retarget");assignment_check(s,true);
+    check(s.can_undo_transfer_assignment(),"Undo retains preceding assignment group");
+    s.backup_to(dir/"assignment-backup","test");}
+    {auto s=ImportStore::open(dir/"assignment-backup","test");check(s.can_undo_transfer_assignment(),"Restored backup retains group Undo");s.undo_review("undo-backup");assignment_check(s,false);}
+    {auto s=ImportStore::open(path,"test");check(s.can_undo_transfer_assignment(),"Reopen retains group Undo");s.undo_review("undo");s.undo_review("undo");assignment_check(s,false);
+    auto next=assignment_requests(s);for(auto& r:next){r.link+="-again";r.generated->entry.batch+="-again";}OperationContext c;s.assign_transfer_batch("again",next,c);s.ingest("later",source("Later","-1"),qif::DateOrder::dmy);check(!s.can_undo_transfer_assignment(),"Later mutation blocks group Undo");bool refused=false;try{s.undo_review("stale");}catch(const std::exception&){refused=true;}check(refused,"Stale Undo refused");s.verify();}
+    std::cout<<"Transfer assignment tests passed\n";
+}
+std::vector<TransferRequest> release_requests(ImportStore& s) {
+    auto requests=assignment_requests(s);
+    for(auto& r:requests){r.mode=0;r.generated.reset();r.generated_currency.clear();r.left->state=s.transaction_accepted(r.left->endpoint.entry)?transfers::State::committed:transfers::State::draft;
+        for(const auto& b:s.batches())if(b.id==r.left->endpoint.entry.batch)r.batch_revision=b.revision;
+    }
+    return requests;
+}
+void release_tests(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    for(int mode=0;mode<6;++mode){std::cout<<"Release mode "<<mode<<std::endl;const auto path=dir/("release-"+std::to_string(mode));
+        {auto s=ImportStore::create(path,"test","Checking",cad,"2026-01-01");assignment_setup(s);
+        if(mode>=4){
+            if(!s.rules_supported())continue;
+            s.apply_category_change("rule-category",{CategoryAction::create,"ruled","Ruled",{},CategoryKind::leaf},0);
+            RuleDefinitionImage rule;rule.identity="classify";rule.label="Classify";rule.expression=".*";rule.actions.category="ruled";
+            OperationContext save;s.save_rules("save-rule",{{rule}},0,save);OperationContext preview;const auto p=s.preview_pending_rules({"out",0,{},false},preview);
+            OperationContext apply;s.apply_pending_rules("apply-rule",{p.batch,p.batch_revision,p.ruleset_revision,p.catalog_revision,p.replace_manual},apply);
+        }
+        if(mode==2)s.apply_category_change("create-food",{CategoryAction::create,"food","Food",{},CategoryKind::leaf},0);
+        auto requests=assignment_requests(s);if(mode==2)requests.resize(2);OperationContext assign;s.assign_transfer_batch("assign",requests,assign);
+        if(mode==3){
+            s.select_account(2);s.ingest("bank",source("Independent receipt","500.00"),qif::DateOrder::dmy);const auto row=s.row({"bank",0});const auto a=row.draft->transaction.allocations().front();s.select_account(1);
+            auto link=requests.front();link.action=TransferAction::merge;link.mode=0;link.generated.reset();link.generated_currency.clear();link.expected_sequence=s.transfer_sequence();link.kept="bank-kept";
+            link.right=transfers::AllocationFact{{2,{"bank",0},a.identity},a.amount,row.draft->date,transfers::State::draft,true,false,false};s.apply_transfer("bank-link",link);
+        }
+        if(mode==1 || mode==5)s.accept_all("accept",true);
+        auto release=release_requests(s);if(mode==2)for(auto& r:release){r.category_id="food";r.category_path="Food";}
+        for(int failure=0;failure<4;++failure){auto bad=release;OperationContext c;
+            if(failure==0)bad.back().batch_revision++;
+            if(failure==1)bad.back().category_id="missing";
+            if(failure==2){int count=0;c.progress=[&,count](std::string_view phase)mutable{if(phase=="Assigning transfers" && ++count==2)c.request();};}
+            if(failure==3)s.observer([&](auto phase){if(phase==storage::ImportPhase::before_commit)c.request();});
+            bool refused=false;try{s.assign_transfer_batch("bad-release-"+std::to_string(failure),bad,c);}catch(const std::exception&){refused=true;}s.observer({});check(refused && !s.review_outcome("bad-release-"+std::to_string(failure)),"Release rejects whole invalid/cancelled batch");s.verify();
+        }
+        OperationContext c;s.assign_transfer_batch("release",release,c);s.assign_transfer_batch("release",release,c);
+        check(s.balance().units()==-425639,"Release preserves origin total");for(std::size_t i=0;i<3;++i){for(const auto& v:s.transfers())check(v.link.unresolved || v.link.origin.state==transfers::State::removed || v.link.origin.endpoint.entry!=imports::Occurrence{"out",i},"Release ends relationship");const auto draft=(mode==1 || mode==5)?s.committed_entry({"out",i}).current.draft:*s.row({"out",i}).draft;check(draft.transaction.allocations().front().category==(mode==2?"Food":""),"Release assigns selected ordinary category");}
+        if(mode==0){
+            auto reassign=assignment_requests(s);for(auto& r:reassign){r.link+="-again";r.generated->entry.batch+="-again";}
+            OperationContext a;s.assign_transfer_batch("reassign",reassign,a);auto again=release_requests(s);for(auto& r:again)r.link+="-again";
+            OperationContext b;s.assign_transfer_batch("release-again",again,b);s.undo_review("undo-release-again");s.undo_review("undo-reassign");s.verify();
+        }
+        s.select_account(2);check(s.balance().units()==((mode==1 || mode==5)?425639:mode==3?50000:0),"Only uncommitted generated counterparts removed");s.select_account(1);s.verify();s.backup_to(dir/("release-backup-"+std::to_string(mode)),"test");}
+        for(const auto& file:{path,dir/("release-backup-"+std::to_string(mode))}){auto s=ImportStore::open(file,"test");check(s.can_undo_transfer_assignment(),"Release Undo survives reopen");s.undo_review("undo-release");s.verify();if(mode>=4){s.select_account(1);const auto restored=mode==5?s.committed_entry({"out",0}).current.draft:*s.row({"out",0}).draft;check(restored.transaction.allocations().front().category_rule.has_value(),"Undo restores rule provenance");}s.select_account(2);check(s.balance().units()==(mode==2?236721:425639),"One Undo restores release counterparts");}
+    }
+    std::cout<<"Transfer release tests passed\n";
+}
+void assignment_faults(const std::filesystem::path& dir) {
+    fault_vfs::install();const Currency cad("CAD");
+    for(int mode=0;mode<4;++mode){const auto base=dir/("assignment-base-"+std::to_string(mode));std::vector<TransferRequest> requests;
+        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");assignment_setup(s);requests=assignment_requests(s);if(mode){OperationContext c;s.assign_transfer_batch("assign",requests,c);}if(mode>=2){requests=release_requests(s);if(mode==3){OperationContext c;s.assign_transfer_batch("release",requests,c);}}}
+        const auto apply=[&](ImportStore& s){if(mode==1 || mode==3)s.undo_review("operation");else{OperationContext c;s.assign_transfer_batch("operation",requests,c);}};
+        int positions=0;
+        for(int nth=1;nth<2000;++nth){const auto trial=dir/"assignment-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
+            {auto s=ImportStore::open(trial,"test");const bool complete=s.review_outcome("operation").has_value();assignment_check(s,(mode==0 || mode==3)?complete:!complete);if(!complete)apply(s);assignment_check(s,mode==0 || mode==3);}
+            if(!fired){positions=nth-1;break;}
+        }
+        check(positions>0,"Fault sweep completed");std::cout<<"Transfer assignment fault mode "<<mode<<": "<<positions<<" positions"<<std::endl;
+        for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
+            const auto trial=dir/"assignment-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
+            const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto p){if(p==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}
+            int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Assignment crash boundary reached");
+            auto s=ImportStore::open(trial,"test");const bool complete=phase==storage::ImportPhase::after_commit;check(s.review_outcome("operation").has_value()==complete,"Assignment durable boundary");assignment_check(s,(mode==0 || mode==3)?complete:!complete);if(!complete)apply(s);assignment_check(s,mode==0 || mode==3);
+        }
+    }
+}
 void batch_tests(const std::filesystem::path& dir) {
     const Currency cad("CAD");const auto path=dir/"batch";
     {
@@ -321,6 +434,9 @@ void policy_faults(const std::filesystem::path& dir) {
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
+        if(argc>1 && std::string(argv[1])=="release"){release_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="assignment"){assignment_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="assignment_faults"){assignment_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="batch"){batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="decisions"){decision_workload(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):1000);std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="generation"){generation_workload(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):120);std::filesystem::remove_all(dir);return 0;}

@@ -87,6 +87,17 @@ Pre-release format policy (owner decision, 2026-10-26): no datasets have been re
 
 ## Scope and licensing
 
+Category transfer assignment (owner Go, 2026-10-31): the ledger's right-click
+Change category dialog assigns an account to multiple selected transactions in
+one atomic operation with one durable Undo. Changing back to an ordinary category
+ends links, removes only disposable generated drafts, and restores categories and
+relationships together on Undo. It creates separate counterparts
+through the existing transfer commands; no new matching search is added. A split
+transaction needs explicit allocation selection. This supersedes the earlier
+bulk-selector account prohibition, but rules still cannot create transfers.
+See [the contract](features/010-categories-and-selection.md#right-click-transfer-assignment--owner-go-2026-10-31)
+and [status](doc/status.md) for verification and limits.
+
 Review responsiveness and batch Merge (owner Go, 2026-10-31): the permanent bottom status line serves every right-pane workspace. Duplicate groups can be selected separately from their transaction rows and merged in one atomic batch with one Undo. Pending selection clears on leaving Review or dataset mutation; inspection alone retains it. Stale/invalid groups reject the whole batch, and cancellation before the final commit gate rolls it back. Link remains individual. Review reuses original comparison facts and checks the unchanged engine predicate before saved-choice lookups. Current experimental schemas are 40/39. See [the contract](doc/review-sheet.md#batch-merge-and-stable-status--owner-go-2026-10-31) and [status](doc/status.md) for measurements, verification and limitations.
 
 Import-mapping opening setup (owner Go, 2026-10-30): new-account mappings default to a zero opening or explicitly use the reported amount literally, and suggest the earliest valid date per source account (1900-01-01 fallback). Existing accounts retain their openings. These choices persist atomically with capture, remain valid through repairs and Commit, and replace the later opening prompt for the mapping UI. Current experimental formats are **40/39**; older formats are rejected without migration. See [the contract](doc/qif-account-imports.md#current-mapping-opening-setup--2026-10-30) and [status](doc/status.md#opening-setup-during-import-mapping--2026-10-30).

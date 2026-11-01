@@ -259,6 +259,8 @@ public:
     virtual ReviewSheet review_sheet() const {return {};}
     virtual ReviewReceipt merge_review_batch(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Batch Review unavailable");}
     virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}
+    virtual ReviewReceipt assign_transfer_batch(std::string_view,const std::vector<TransferRequest>&,const OperationContext&) {throw std::logic_error("Transfer assignment unavailable");}
+    virtual bool can_undo_transfer_assignment() const {return false;}
     virtual ReviewReceipt undo_review(std::string_view) {throw std::logic_error("Review Undo unavailable");}
     virtual std::optional<ReviewReceipt> review_outcome(std::string_view) const {return {};}
     virtual AcceptanceReview acceptance_review() const {return {};}
