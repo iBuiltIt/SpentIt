@@ -382,7 +382,6 @@ ApplicationWindow {
     property string pickerFeedback: ""
     property string categoryEditText: ""
     property bool categorySaving: false
-    property string categoryError: ""
     property var categoryMenuEntry: ({})
     property string categorySelection: ""
     property string categoryReveal: ""
@@ -414,7 +413,7 @@ ApplicationWindow {
         guard(function(){categorySort=order;categoryPreferences.setValue("sortMode",order);categoryPreferences.sync();revealCategorySelection()})
     }
     function loadCategoryForm() {
-        categoryAction="";categoryDirty=false;categorySaving=false;categoryError=""
+        categoryAction="";categoryDirty=false;categorySaving=false
     }
     function focusCategoryEditor() {
         Qt.callLater(function(){
@@ -429,11 +428,11 @@ ApplicationWindow {
         })
     }
     function newCategory() {
-        categoryFormId="";categoryFormRevision=s.catalogRevision||"";categoryEditText="";categoryError="";categoryAction="create";categoryDirty=true
+        categoryFormId="";categoryFormRevision=s.catalogRevision||"";categoryEditText="";categoryAction="create";categoryDirty=true
         focusCategoryEditor()
     }
     function renameCategory(c) {
-        categoryFormId=c.id;categoryFormRevision=s.catalogRevision||"";categoryEditText=c.name;categoryError="";categoryAction="rename";categoryDirty=true
+        categoryFormId=c.id;categoryFormRevision=s.catalogRevision||"";categoryEditText=c.name;categoryAction="rename";categoryDirty=true
         focusCategoryEditor()
     }
     function cancelCategoryEdit() {
@@ -449,7 +448,7 @@ ApplicationWindow {
     }
     function saveCategoryForm(action) {
         if(categorySaving || workflow.busy)return
-        categorySaving=true;categoryError=""
+        categorySaving=true
         workflow.command("preview_category",{action:action||categoryAction,id:categoryFormId,revision:categoryFormRevision,
             name:categoryEditText})
     }
@@ -781,6 +780,9 @@ ApplicationWindow {
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
             if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Commit completed."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
+            if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
+            if(success && (action==="rules_save" || action==="rules_apply"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
+            if(success && action.indexOf("transfer_")===0 && !(s.transferMergePreview||{}).id && (s.transferReceipt||{}).operation)workspaceFeedback="Transfer operation saved."
             if(action==="link_exclusion_save" && success)linkExclusionDialog.close()
             if(action==="link_exclusion_preview" && !success)exclusionPreviewed=false
             if(action==="commit" && commitBeforeQuit) {
@@ -826,7 +828,7 @@ ApplicationWindow {
                 transferDate.text=workflow.todayDisplay();ledgerViewRestore=null;ledgerViewKind=""
             }
             if(!success && (action==="preview_category" || action==="apply_category")) {
-                categorySaving=false;categoryError=workflow.error
+                categorySaving=false
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
             if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false}
@@ -962,7 +964,7 @@ ApplicationWindow {
                 Button {text:"Cancel";enabled:!workflow.busy;onClicked:workflow.command("cancel_import_mapping")}
                 Button {text:"Cancel processing";visible:workflow.busy;enabled:workflow.canCancel;onClicked:workflow.requestCancel()}
             }
-            Label {text:workflow.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+            Label {text:errorDialog===importMapping?workflow.error:"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
         }
     }
     Dialog {
@@ -1036,7 +1038,7 @@ ApplicationWindow {
                     }
                 }
             }
-            Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {textFormat:Text.PlainText;text:errorDialog===changePreview?workflow.error:"";visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 Button {objectName:"applyCommittedChange";text:(s.changePreview||{}).applyLabel||"Apply";enabled:!workflow.busy && !!(s.changePreview||{}).id;onClicked:workflow.command("apply_change",{preview:s.changePreview.id})}
                 Button {objectName:"cancelCommittedChange";text:"Cancel";enabled:!workflow.busy;onClicked:{changePreview.close();pendingAction=null;workflow.command("cancel_change")}}
@@ -1053,7 +1055,7 @@ ApplicationWindow {
             Label {objectName:"mergePreviewNote";textFormat:Text.PlainText;text:(s.transferMergePreview||{}).note||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {objectName:"mergePreviewImpact";textFormat:Text.PlainText;text:(s.transferMergePreview||{}).balanceImpact||"";font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {textFormat:Text.PlainText;text:"The generated duplicate leaves the committed ledger. Evidence and history stay. The other account is unchanged.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {textFormat:Text.PlainText;text:workflow.error;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {textFormat:Text.PlainText;text:errorDialog===mergePreview?workflow.error:"";visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 Button {objectName:"confirmMerge";text:"Link";enabled:!workflow.busy && !!(s.transferMergePreview||{}).id;onClicked:workflow.command("transfer_merge_apply",{preview:s.transferMergePreview.id})}
                 Button {objectName:"cancelMerge";text:"Cancel";enabled:!workflow.busy;onClicked:{mergePreview.close();workflow.command("cancel_merge")}}
@@ -1071,7 +1073,7 @@ ApplicationWindow {
                 ScrollBar.vertical:UsableScrollBar {}
                 delegate:Label {required property string modelData;width:bulkLines.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
             }
-            Label {text:workflow.error;textFormat:Text.PlainText;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:errorDialog===bulkDialog?workflow.error:"";textFormat:Text.PlainText;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 Button {objectName:"applyBulk";text:"Apply all";enabled:!workflow.busy && !!(s.bulkPreview||{}).id;onClicked:workflow.command("apply_bulk",{preview:s.bulkPreview.id})}
                 Button {objectName:"cancelBulk";text:"Cancel";enabled:!workflow.busy;onClicked:{bulkDialog.close();workflow.command("cancel_bulk")}}
@@ -1090,7 +1092,7 @@ ApplicationWindow {
                 delegate:Label {required property string modelData;width:reapplyLines.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
             }
             Label {text:(s.reapplyPreview||{}).omitted||"";visible:text.length>0;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {text:workflow.error;textFormat:Text.PlainText;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:errorDialog===reapplyDialog?workflow.error:"";textFormat:Text.PlainText;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 Button {objectName:"applyReapply";text:"Apply";enabled:!workflow.busy && !!(s.reapplyPreview||{}).id;onClicked:workflow.command("rules_reapply_apply",{preview:s.reapplyPreview.id})}
                 Button {objectName:"cancelReapply";text:"Cancel";enabled:!workflow.busy;onClicked:{reapplyDialog.close();workflow.command("cancel_reapply")}}
@@ -1215,9 +1217,9 @@ ApplicationWindow {
         onAccepted:workflow.command("discard",{token:previewToken})
     }
     Dialog {
-        id:closeAuditFailure;title:"Closing verification did not complete";modal:true;anchors.centerIn:parent;width:540
+        id:closeAuditFailure;objectName:"closeAuditFailure";title:"Closing verification did not complete";modal:true;anchors.centerIn:parent;width:540
         ColumnLayout {anchors.fill:parent
-            Label {Layout.fillWidth:true;text:workflow.error;wrapMode:Text.Wrap;textFormat:Text.PlainText}
+            Label {Layout.fillWidth:true;text:errorDialog===closeAuditFailure?workflow.error:"";wrapMode:Text.Wrap;textFormat:Text.PlainText}
             Label {Layout.fillWidth:true;text:"Your saved dataset is preserved. You can return to it, or quit without a new startup approval. The next opening will check it again.";wrapMode:Text.Wrap}
             RowLayout {
                 Button {text:"Return";onClicked:closeAuditFailure.close()}
@@ -1267,7 +1269,7 @@ ApplicationWindow {
                 Label {text:exclusionPreviewed && (s.linkExclusionPreview||{}).ready?((s.linkExclusionPreview.comparisons||[]).length+" affected comparisons"):"Preview before saving"}
             }
             ListView {Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:exclusionPreviewed?((s.linkExclusionPreview||{}).comparisons||[]):[];ScrollBar.vertical:UsableScrollBar {} delegate:Label {required property string modelData;width:ListView.view.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}}
-            Label {text:workflow.error;visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:errorDialog===linkExclusionDialog?workflow.error:"";visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true}
         }
         footer:DialogButtonBox {
             Button {text:exclusionEditing.removed?"Remove exclusion":"Save";objectName:"saveLinkExclusion";enabled:!workflow.busy && exclusionPreviewed && !!(s.linkExclusionPreview||{}).ready;onClicked:workflow.command("link_exclusion_save")}
@@ -1323,8 +1325,15 @@ ApplicationWindow {
         else {reviewPending=args;reviewSurvivors=chosen;reviewSurvivor.open()}
     }
     property string workspaceFeedback: "Ready"
-    Dialog {id:statusDetails;title:"Status details";modal:true;anchors.centerIn:parent;width:Math.min(720,window.width-40)
-        contentItem:Label {text:workflow.error;textFormat:Text.PlainText;wrapMode:Text.Wrap}
+    // One visible owner for a global operation error. Dialog validation stays
+    // beside its controls; closing the dialog returns the error to the status line.
+    readonly property var errorDialog: statusDetails.visible?statusDetails:
+        closeAuditFailure.visible?closeAuditFailure:reviewDifference.visible?reviewDifference:
+        linkExclusionDialog.visible?linkExclusionDialog:reapplyDialog.visible?reapplyDialog:
+        bulkDialog.visible?bulkDialog:mergePreview.visible?mergePreview:
+        changePreview.visible?changePreview:importMapping.visible?importMapping:null
+    Dialog {id:statusDetails;objectName:"statusDetails";title:"Status details";modal:true;anchors.centerIn:parent;width:Math.min(720,window.width-40)
+        contentItem:Label {text:errorDialog===statusDetails?workflow.error:"";textFormat:Text.PlainText;wrapMode:Text.Wrap}
         standardButtons:Dialog.Close
     }
     function answerReview(question, answer, chosen) {
@@ -1358,7 +1367,7 @@ ApplicationWindow {
         contentItem:ColumnLayout {
             Label {text:"Link "+(reviewDifference.preview.common||"")+" and categorise "+(reviewDifference.preview.remainder||"")+" as";wrapMode:Text.Wrap;Layout.fillWidth:true}
             UsableComboBox {id:reviewRemainderCategory;objectName:"reviewRemainderCategory";Layout.fillWidth:true;textRole:"path";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).filter(function(c){return c.assignable}));Accessible.name:"Category for difference"}
-            Label {text:workflow.error;visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:errorDialog===reviewDifference?workflow.error:"";visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true}
         }
         footer:DialogButtonBox {
             Button {text:"Yes";objectName:"reviewDifferenceYes";enabled:!workflow.busy;onClicked:{let args=Object.assign({},reviewDifference.preview.args,{splitDifference:true,category:reviewRemainderCategory.model[reviewRemainderCategory.currentIndex].id});workflow.command("review_answer",args)}}
@@ -1418,7 +1427,7 @@ ApplicationWindow {
                     TextField {id:unlockPassword;objectName:"unlockPassword";echoMode:TextInput.Password;placeholderText:"Password to open dataset";Layout.fillWidth:true;onAccepted:openDataset();Accessible.name:"Dataset password"}
                     Button {objectName:"openProtectedDataset";text:"Open Dataset";onClicked:openDataset()}
                 }
-                Label {objectName:"welcomeError";text:workflow.error;visible:text.length>0;textFormat:Text.PlainText;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
+                Label {objectName:"welcomeError";text:errorDialog?"":workflow.error;visible:text.length>0;textFormat:Text.PlainText;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
                 GroupBox {
                     title:"Create a new dataset";visible:settingUp;Layout.fillWidth:true;enabled:!workflow.busy
                     ColumnLayout {
@@ -1548,14 +1557,14 @@ ApplicationWindow {
                     RowLayout {anchors.fill:parent;anchors.margins:4
                         Label {id:workspaceStatusText;objectName:"operationPhase";Layout.fillWidth:true;Layout.minimumWidth:0
                             textFormat:Text.PlainText;elide:Text.ElideRight
-                            text:workflow.busy?(workflow.cancellationRequested?"Cancellation requested…":workflow.phase):(workflow.error||workspaceFeedback)
-                            color:!workflow.busy && workflow.error?"#a02020":palette.windowText
+                            text:workflow.busy?(workflow.cancellationRequested?"Cancellation requested…":workflow.phase):(workflow.error?(errorDialog?"":workflow.error):workspaceFeedback)
+                            color:!workflow.busy && workflow.error && !errorDialog?"#a02020":palette.windowText
                             Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}
                             ToolTip.visible:statusHover.hovered && truncated;ToolTip.text:text
                             HoverHandler {id:statusHover}
                         }
                         Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.busy && workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
-                        Button {text:"Details";visible:!workflow.busy && !!workflow.error;onClicked:statusDetails.open()}
+                        Button {objectName:"statusDetailsButton";text:"Details";visible:!workflow.busy && !!workflow.error && !errorDialog;onClicked:statusDetails.open()}
                     }
                 }
                 Item {
@@ -1737,7 +1746,7 @@ ApplicationWindow {
                         }
                     }
                 }
-                Label {text:(s.transferReceipt||{}).summary||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {text:(s.transferReceipt||{}).operation?((s.transferReceipt||{}).balanceImpact||""):((s.transferReceipt||{}).summary||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {text:"Transfer journal";font.bold:true}
                 Label {text:"Read only. Each line is a saved transfer operation: link, accounts, amounts, dates, action, and sequence.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Repeater {
@@ -1845,14 +1854,13 @@ ApplicationWindow {
                                 TextField {
                                     id:inlineCategory;objectName:categoryRow.editing?"categoryName":"";anchors.fill:parent;visible:categoryRow.editing;enabled:!categorySaving
                                     text:categoryRow.editing?categoryEditText:"";leftPadding:8;topPadding:2;bottomPadding:2;selectByMouse:true;Accessible.name:"Category name"
-                                    onTextEdited:{categoryEditText=text;categoryError=""}
+                                    onTextEdited:{categoryEditText=text}
                                     onAccepted:finishCategoryEdit()
                                     Keys.onEscapePressed:function(event){cancelCategoryEdit();event.accepted=true}
                                     onActiveFocusChanged:if(!activeFocus && categoryRow.editing && !categorySaving)Qt.callLater(function(){if(categoryRow.editing && !inlineCategory.activeFocus)finishCategoryEdit()})
                                 }
                             }
                         }
-                        Label {objectName:"categoryInlineError";text:categoryError;visible:text.length>0;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true;color:"#a02020"}
                     }
                 }
                 UsableScrollView {
@@ -1958,7 +1966,6 @@ ApplicationWindow {
                         Label {objectName:"rulePreviewStatus";text:(s.rulePreview||{}).label||"";font.bold:true;textFormat:Text.PlainText}
                         Label {objectName:"rulePreviewBody";text:(s.rulePreview||{}).summaryText||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                         Label {text:(s.rulePreview||{}).overlap||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
-                        Label {textFormat:Text.PlainText;text:(s.ruleReceipt||{}).summary||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         Label {objectName:"ruleLimits";text:s.ruleLimits||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                     }
                     }

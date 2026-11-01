@@ -1064,7 +1064,7 @@ struct ImportModel::Worker {
             }
             std::optional<app::TransferReceipt> result;
             try{result=repo.apply_transfer(operation,request);}catch(...){const auto failure=std::current_exception();try{result=repo.transfer_outcome(operation);if(result)result=repo.apply_transfer(operation,request);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Transfer outcome could not be confirmed. Reopen and inspect transfers before retrying.");}if(!result)std::rethrow_exception(failure);}
-            transferReceipt={{"operation",text(operation)},{"summary","Transfer operation saved · "+balanceImpact(result->before,result->change,result->after)}};observedSaved();
+            transferReceipt={{"operation",text(operation)},{"summary","Transfer operation saved · "+balanceImpact(result->before,result->change,result->after)},{"balanceImpact",balanceImpact(result->before,result->change,result->after)}};observedSaved();
             transferCandidates.clear();candidateLink.clear();preparedMerge.reset();mergeOperation.clear();transferMergePreview.clear();
             if(selectedBatch.starts_with("~transfer-")){
                 bool present=false;const auto account=repo.account().identity;

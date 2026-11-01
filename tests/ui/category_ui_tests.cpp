@@ -104,6 +104,26 @@ private slots:
         menu(model,root,leaf,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Parking"));applyCategory(model,root);
         QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_SCREENSHOT")));
         menu(model,root,leaf,"deleteCategory");wait(model,false);QVERIFY(model.error().contains("retained assignments",Qt::CaseInsensitive));
+        QCOMPARE(object(root,"operationPhase")->property("text").toString(),model.error());
+        int visibleErrors=0;
+        for(auto* item:root->findChildren<QQuickItem*>())
+            if(item->isVisible() && item->property("text").toString()==model.error())++visibleErrors;
+        QCOMPARE(visibleErrors,1);
+        // Modal validation owns the global error while open; dismissal restores
+        // it to the bottom line without clearing the underlying failure.
+        const auto error=model.error();
+        for(const char* name:{"importAccountMapping","committedChangePreview","mergePreview","bulkDialog","reapplyDialog","closeAuditFailure","linkExclusionDialog","reviewDifference","statusDetails"}) {
+            auto* dialog=object(root,name);QVERIFY(dialog);
+            QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
+            QTRY_VERIFY(dialog->property("visible").toBool());
+            QCOMPARE(object(root,"operationPhase")->property("text").toString(),QString());
+            int copies=0;for(auto* item:root->findChildren<QQuickItem*>())
+                if(item->isVisible() && item->property("text").toString()==error)++copies;
+            QCOMPARE(copies,1);
+            QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
+            QTRY_VERIFY(!dialog->property("visible").toBool());
+            QCOMPARE(object(root,"operationPhase")->property("text").toString(),error);
+        }
         run(model,"close");run(model,"open",{{"path",path}});run(model,"inspect",occurrence);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("categoryDisplay").toString(),"Parking");
         run(model,"close");auto gateway=storage::document_gateway();gateway->open(path.toStdString(),std::nullopt);const auto entry=gateway->repository().committed_entry({occurrence.value("batch").toString().toStdString(),static_cast<std::size_t>(occurrence.value("ordinal").toInt())});QCOMPARE(entry.current.draft.transaction.allocations().front().identity,allocationId.toStdString());QVERIFY(entry.current.draft.transaction.allocations().front().source_ordinal==std::optional<std::size_t>(0));
@@ -173,7 +193,7 @@ private slots:
     }
 private:
     void applyInvalid(ImportModel& model,QObject* root,QQuickWindow* window){
-        qobject_cast<QQuickItem*>(object(root,"categoryName"))->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);wait(model,false);QTest::qWait(30);QVERIFY(!root->property("categoryError").toString().isEmpty());
+        qobject_cast<QQuickItem*>(object(root,"categoryName"))->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);wait(model,false);QTest::qWait(30);QCOMPARE(object(root,"operationPhase")->property("text").toString(),model.error());
     }
 
 };

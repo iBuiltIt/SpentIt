@@ -139,6 +139,11 @@ private slots:
         splitMemoRule(s.root,"Fee","^Wise",fees,false);
         splitMemoRule(s.root,"Trip","^CARD-","",true);
         QVERIFY(click(s.root,"saveRules"));wait(s.model);QCOMPARE(s.model.state().value("ruleRevision").toString(),"1");
+        const auto savedMessage=s.model.state().value("ruleReceipt").toMap().value("summary").toString();
+        QCOMPARE(object(s.root,"operationPhase")->property("text").toString(),savedMessage);
+        int copies=0;for(auto* item:s.root->findChildren<QQuickItem*>())
+            if(item->isVisible() && item->property("text").toString()==savedMessage)++copies;
+        QCOMPARE(copies,1);
         const auto qif=s.path("wise.qif");writeQif(qif,wise());
         run(s.model,"import",{{"path",qif},{"profile","DMY"}});
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Tfl Travel UK");

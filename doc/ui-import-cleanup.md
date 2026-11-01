@@ -22,6 +22,21 @@ then Cancel. Put opening status/progress in the bottom status line. The light
 1024px image already belongs to the application resources; no new artwork is
 needed. Preserve truthful cancellation availability and existing opening safety.
 
+## Feedback placement — owner Go 2026-10-31
+
+Routine operation errors and success messages use the permanent bottom status
+line. A modal dialog that displays the operation error owns it while open: suppress
+the duplicate bottom message and Details button, then restore them on dismissal
+if the error still exists. Only one dialog displays the global error at a time.
+The user-requested Details popup follows the same rule. Welcome errors remain on
+the welcome screen when no workspace is active.
+
+Keep substantive previews, history, record diagnostics, transfer candidate guidance
+and balance-impact details in their views. Rules Save/Apply/reapply results and
+transfer completion feedback use the status line. The dedicated closing-verification
+failure dialog retains its recovery explanation and explicit choices. This changes
+presentation only, not validation, persistence or the dataset format.
+
 ## Ledger and navigation
 
 Below Hide Sidebar / forward / back / account navigation, leave only Search,

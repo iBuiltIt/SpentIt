@@ -2,6 +2,38 @@
 
 Last updated: 2026-10-31
 
+## Shared operation feedback — 2026-10-31
+
+Implemented the owner's follow-up Go for consistent [feedback placement](ui-import-cleanup.md#feedback-placement--owner-go-2026-10-31).
+Import mapping, correction/Merge previews, bulk changes, rules reapplication,
+Review link exclusions/differences and close-verification failure dialogs show
+operation errors locally while suppressing the duplicate status-line message.
+Closing them restores an uncleared error to the status line; Details follows the
+same ownership rule. Routine Rules results and transfer completion messages use
+the status line. Transfer balance-impact details, candidate guidance, substantive
+previews, history and record diagnostics remain in their views.
+
+Rebuilt the local rules-enabled Release application. Category, Rules and committed
+UI suites passed 3/3 in 28.73 s. Coverage includes one visible error across all nine
+error-owning dialogs (including Details), restoration on dismissal, invalid inline
+edits, rejected deletion and one visible Rules Save result. Four focused transfer,
+Merge and Review checks passed six Qt cases including init/cleanup (5.830 s).
+Final rebuilt Merge-preview and Rules preview/apply checks each passed three Qt
+cases including init/cleanup (1.358 / 1.968 s). Relative links/anchors and
+`git diff --check` passed. Native interaction and other platforms remain
+unverified. No format change.
+
+## Category feedback uses the status line — 2026-10-31
+
+Removed the Categories workspace's duplicate error label and redundant error
+state. Rejected deletion and invalid-name feedback now use the permanent bottom
+status line; invalid edits retain their text and focus. The error Details dialog
+remains available. Record-specific diagnostics and modal validation are unchanged.
+Rebuilt the local rules-enabled Release application. `import.category_ui` passed
+(12.16 s), including rejected deletion with exactly one visible copy of the error
+and invalid inline edits reported through the status line. Native interaction
+remains unverified.
+
 ## Documentation reconciliation — 2026-10-31
 
 Reconciled current format references to 40/39, removed superseded cleanup Go
