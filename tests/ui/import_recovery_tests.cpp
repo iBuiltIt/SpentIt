@@ -22,7 +22,7 @@ class RecoveryUiTests : public QObject {
         auto gateway=storage::document_gateway();
         gateway->create(path.toStdString(),false,"","Synthetic recovery",Currency("CAD"),"2026-01-01");
         app::OperationContext operation;
-        operation.progress=[&](std::string_view phase){if(phase=="Source evidence retained")throw std::runtime_error("Injected interruption after capture");};
+        operation.progress=[&](std::string_view phase){if(phase=="Import saved")throw std::runtime_error("Injected interruption after capture");};
         QVERIFY_THROWS_EXCEPTION(std::runtime_error,gateway->repository().ingest_controlled("retained",bytes,qif::DateOrder::dmy,operation));
         const auto batches=gateway->repository().batches();QCOMPARE(batches.size(),std::size_t(1));
         QCOMPARE(batches.front().state,app::BatchState::captured);

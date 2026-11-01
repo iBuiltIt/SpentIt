@@ -20,10 +20,9 @@ app::AcceptanceReview ImportStore::acceptance_review() const {
         Statement count(impl_->db,"SELECT count(*) FROM source_occurrences WHERE batch=?");count.text(1,id);if(!count.row())fail(SQLITE_CORRUPT);const auto remaining=static_cast<std::size_t>(count.integer(0));
         if(remaining>=review.rows.size()+accepted)result.failed_records+=remaining-review.rows.size()-accepted;
         if(info.blocked && remaining==review.rows.size()+accepted)++result.failed_records;
-        bool has_new=false;
         for(const auto& [ordinal,item]:review.rows) {
             if(item.row.excluded_by_clear || !item.row.draft)continue;
-            if(item.row.decision.disposition!=imports::Disposition::duplicate || !item.warning.empty()){++result.transactions;has_new=true;}
+            if(item.row.decision.disposition!=imports::Disposition::duplicate || !item.warning.empty())++result.transactions;
             const auto reason=!item.transfer_warning.empty()?item.transfer_warning:item.warning;
             if(!reason.empty()) {
                 app::ImportBlocker warning{owner.identity,id,ordinal,"",reason};
@@ -31,18 +30,14 @@ app::AcceptanceReview ImportStore::acceptance_review() const {
                 result.warnings.push_back(std::move(warning));
             }
         }
-        if(has_new && !owner.opening_confirmed) {
-            Statement opening(impl_->db,"SELECT 1 FROM import_group_accounts WHERE account_id=?1 AND created=1 AND balance_revision IS NOT NULL AND opening IS NOT NULL UNION ALL SELECT 1 FROM retained_opening_reviews WHERE account=?1");opening.integer(1,owner.identity);
-            if(!opening.row())result.warnings.push_back({owner.identity,id,{},"","Confirm this account's opening balance before Commit"});
-        }
     }
     for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}) {
         if(side->state!=transfers::State::draft || !local_side(*side) || side->proposed_evidence)continue;
         ++result.transactions;
-        if(value.link.unresolved || !account_by_id(side->endpoint.account).opening_confirmed)
-            result.warnings.push_back({side->endpoint.account,"",{},"","Resolve the transfer and confirm its account opening before Commit"});
+        if(value.link.unresolved)
+            result.warnings.push_back({side->endpoint.account,"",{},"","Resolve this transfer before accepting transactions"});
         else if(!side->accepted_unmatched) {
-            app::ImportBlocker warning{side->endpoint.account,"",{},"","Generated transfer has no independent bank match"};warning.overridable=true;result.warnings.push_back(std::move(warning));
+            app::ImportBlocker warning{side->endpoint.account,"",{},"","This transfer has not been matched to an imported transaction."};warning.overridable=true;result.warnings.push_back(std::move(warning));
         }
     }
     return result;

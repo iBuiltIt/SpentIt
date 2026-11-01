@@ -930,7 +930,7 @@ ImportStore::ImportStore(ImportStore&&) noexcept=default;
 ImportStore& ImportStore::operator=(ImportStore&&) noexcept=default;
 void ImportStore::observer(ImportObserver f) { impl_->observer=std::move(f); }
 ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_view password, bool create, const app::OperationContext* context,bool overwrite,const std::filesystem::path& cache) {
-    if(context) context->checkpoint("Opening dataset");
+    if(context) context->checkpoint("Opening file");
     if (password.empty() || password.size() > 1024) fail(SQLITE_MISUSE, "Password length is invalid");
     if (!create) {
         struct stat input{};
@@ -1088,7 +1088,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
                 } catch(...) {sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
             }
         }
-        if(context)context->checkpoint("Removing interrupted import preparation");
+        if(context)context->checkpoint("Removing unfinished import");
         store.impl_->startup_cleanup=store.cleanup_incomplete_imports();
         store.prepare_review();}
     return store;
@@ -1371,7 +1371,7 @@ app::BatchInfo ImportStore::ingest(std::string_view id,std::string_view bytes,qi
 }
 app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_view bytes,qif::DateOrder profile,app::OperationContext& context) {
     if(!schema3_batch(impl_->db)) {
-        context.seal();context.checkpoint("Saving import evidence and drafts");return ingest(id,bytes,profile);
+        context.seal();context.checkpoint("Saving imported transactions");return ingest(id,bytes,profile);
     }
     identifier(id);context.checkpoint("Checking QIF resource limits and format");
     const auto acct=account();require_writable_account(impl_->db,acct.identity);
@@ -1386,7 +1386,7 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
             fail(SQLITE_CONSTRAINT,"Import identity conflicts or another import needs review");
         context.seal();return batch(impl_->db,prior.bytes(0));
     }
-    context.checkpoint("Retaining source evidence");
+    context.checkpoint("Reading imported transactions");
     try {
         Atomic transaction(impl_->db);
         Statement evidence(impl_->db,"INSERT INTO sources VALUES(?,?)");evidence.text(1,id);evidence.blob(2,bytes);evidence.done();
@@ -1395,7 +1395,7 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
         insert.text(1,id);insert.integer(2,static_cast<int>(profile));insert.text(3,qif::parser_version);insert.integer(4,integer(parsed.records.size()));insert.done();
         pin_source_currency(impl_->db,id,acct.currency);
         Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'capture')");event.text(1,id);event.done();
-        context.seal();context.checkpoint("Finishing source evidence retention");finish([&]{transaction.commit();});diag::durable(diag::Code::capture);
+        context.seal();context.checkpoint("Finishing import");finish([&]{transaction.commit();});diag::durable(diag::Code::capture);
     } catch (...) {
         const auto failure=std::current_exception();
         if(!sqlite3_get_autocommit(impl_->db)){context.state.store(app::OperationContext::sealed);throw app::OperationOutcomeUnknown();}
@@ -1412,11 +1412,11 @@ app::BatchInfo ImportStore::ingest_controlled(std::string_view id,std::string_vi
     context.observeState();
     parsed={};
     try {
-        context.checkpoint("Source evidence retained");
+        context.checkpoint("Import saved");
         return resume(id,0,context);
     } catch(const app::OperationCancelled&) {
         cleanup_incomplete_imports(id);
-        throw app::OperationCancelled("Import cancelled. Incomplete preparation was removed; you can import the file again.");
+        throw app::OperationCancelled("Import cancelled. You can import the file again.");
     }
 }
 app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app::OperationContext& context) {
@@ -1424,7 +1424,7 @@ app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app
     require_account(id);require_writable_account(impl_->db,account_for_batch(id).identity);
     Statement grouped(impl_->db,"SELECT 1 FROM import_group_accounts WHERE batch=?");grouped.text(1,id);if(grouped.row())fail(SQLITE_CONSTRAINT,"Resume all source accounts together");
     if(expected<0)fail(SQLITE_CONSTRAINT,"Invalid import revision");
-    context.checkpoint("Preparing draft interpretations");
+    context.checkpoint("Importing transactions");
     const auto current=batch(impl_->db,id);
     Statement metadata(impl_->db,"SELECT materialized_revision FROM batches WHERE id=?");metadata.text(1,id);if(!metadata.row())fail(SQLITE_NOTFOUND);
     if(!metadata.null(0) && expected<INT64_MAX && metadata.integer(0)==expected+1) {context.seal();return current;}
@@ -1441,7 +1441,7 @@ app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app
             Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,?,'materialize')");event.text(1,id);event.integer(2,expected+1);event.done();
             populate(id,bytes,parsed,expected+1,&context);
             generate_explicit_transfers(&context);
-            context.seal();context.checkpoint("Finishing draft interpretations");finish([&]{transaction.commit();});diag::durable(diag::Code::prepare);
+            context.seal();context.checkpoint("Finishing import");finish([&]{transaction.commit();});diag::durable(diag::Code::prepare);
         } catch (...) {
             const auto failure=std::current_exception();
             if(!sqlite3_get_autocommit(impl_->db)){context.state.store(app::OperationContext::sealed);throw app::OperationOutcomeUnknown();}
@@ -1455,7 +1455,7 @@ app::BatchInfo ImportStore::resume(std::string_view id,std::int64_t expected,app
         return batch(impl_->db,id);
     } catch(const app::OperationCancelled&) {
         cleanup_incomplete_imports(id);
-        throw app::OperationCancelled("Import cancelled. Incomplete preparation was removed; you can import the file again.");
+        throw app::OperationCancelled("Import cancelled. You can import the file again.");
     }
 }
 void ImportStore::populate(std::string_view id,std::string_view bytes,const qif::Result& parsed,std::int64_t revision,const app::OperationContext* context) {
@@ -1721,7 +1721,6 @@ app::Receipt ImportStore::publish_review(std::string_view id,std::int64_t expect
     const auto ready=impl_->reviews.at(std::string(id));
     expect(impl_->db,id,expected); start_import_groups({std::string(id)},operation);publish_group_opening(impl_->selected_account); const auto b=batch(impl_->db,id);
     const auto acct=account();
-    if(!acct.opening_confirmed) fail(SQLITE_CONSTRAINT,"Confirm the opening balance before the first commit");
     const auto before=committed_balance();
     const auto included=ready.included,excluded=ready.excluded;
     for(const auto& [ordinal,item]:ready.rows) {
@@ -1867,13 +1866,13 @@ void ImportStore::verify(const app::OperationContext* context) const {
         }
     } rows_guard{*impl_,verified_rows,impl_->verification_rows};
     impl_->verification_rows=&verified_rows;
-    if(context) context->checkpoint("Verifying dataset integrity");
+    if(context) context->checkpoint("Checking file");
     {diag::Span integritySpan(diag::Code::integrity);
     if(scalar(impl_->db,"PRAGMA integrity_check")!="ok") fail(SQLITE_CORRUPT);
     for(const char* sql:{"PRAGMA cipher_integrity_check","PRAGMA foreign_key_check"}) { Statement s(impl_->db,sql); if(s.row()) fail(SQLITE_CORRUPT); }
     }
     std::vector<app::Account> all_accounts;Statement account_ids(impl_->db,"SELECT singleton FROM account ORDER BY singleton");while(account_ids.row())all_accounts.push_back(account_by_id(account_ids.integer(0)));if(all_accounts.empty() || all_accounts.front().identity!=1)fail(SQLITE_CORRUPT);
-    for(const auto& acct:all_accounts){safe_text(acct.name);iso_date(acct.opening_date);if(acct.name.empty() || (acct.frozen && !acct.opening_confirmed))fail(SQLITE_CORRUPT);}
+    for(const auto& acct:all_accounts){safe_text(acct.name);iso_date(acct.opening_date);if(acct.name.empty())fail(SQLITE_CORRUPT);}
     Statement creation(impl_->db,"SELECT 1 FROM account a LEFT JOIN account_creations c ON c.identity=a.singleton WHERE c.identity IS NULL");if(creation.row())fail(SQLITE_CORRUPT);
     for(const auto& acct:all_accounts){
         Statement original(impl_->db,"SELECT opening_date FROM account_creations WHERE identity=?");original.integer(1,acct.identity);if(!original.row())fail(SQLITE_CORRUPT);iso_date(original.bytes(0));
@@ -1894,7 +1893,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
     while(all_batches.row()) {
         diag::Span evidenceSpan(diag::Code::evidence);
         const auto b=batch(impl_->db,all_batches.bytes(0));const auto acct=account_for_batch(b.id);
-        if(context) context->checkpoint("Verifying import evidence");
+        if(context) context->checkpoint("Checking imported transactions");
         const auto bytes=evidence(b.id); const auto parsed=parsed_source(b.id,[&]{if(context)context->checkpoint();});
         if(!parsed.admissible || parsed.records.size()!=b.count) fail(SQLITE_CORRUPT);
         Statement count(impl_->db,"SELECT count(*) FROM records WHERE batch=?"); count.text(1,b.id); if(!count.row()) fail(SQLITE_CORRUPT);
@@ -2001,7 +2000,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
 }
 void ImportStore::backup_to(const std::filesystem::path& destination,std::string_view password,
                           const BackupObserver& observer, const app::OperationContext* context) const {
-    if(context) context->checkpoint("Preparing encrypted backup");
+    if(context) context->checkpoint("Preparing backup");
     auto candidate=destination; candidate+=".partial";
     {
         auto target=connect(candidate,password,true);
@@ -2010,19 +2009,19 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
         int step=SQLITE_OK;
         try {
             do {
-                if(context) context->checkpoint("Copying encrypted backup pages");
+                if(context) context->checkpoint("Copying backup");
                 step=sqlite3_backup_step(backup,128);
             } while(step==SQLITE_OK);
         } catch (...) { sqlite3_backup_finish(backup); throw; }
         const int finish=sqlite3_backup_finish(backup);
         if(step!=SQLITE_DONE) fail(step); ok(finish);
-        if(context) context->checkpoint("Verifying encrypted backup");
+        if(context) context->checkpoint("Checking backup");
         target.verify(context);
     }
-    if(context) context->checkpoint("Reopening encrypted backup");
+    if(context) context->checkpoint("Checking backup");
     { auto restored=open(candidate,password,context); restored.verify(context); }
     if(observer) observer(BackupPhase::before_publish);
-    if(context) { context->checkpoint("Publishing verified backup"); context->seal(); }
+    if(context) { context->checkpoint("Finishing backup"); context->seal(); }
     if(::link(candidate.c_str(),destination.c_str())!=0) fail(SQLITE_CANTOPEN,"Backup publication failed; encrypted candidate retained");
     if(observer) observer(BackupPhase::before_publish_sync);
     sync_directory(destination);

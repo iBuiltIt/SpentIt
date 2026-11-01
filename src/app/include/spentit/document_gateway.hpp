@@ -27,7 +27,7 @@ public:
     virtual void open(const std::filesystem::path&, std::optional<std::string> password) = 0;
     virtual void open_controlled(const std::filesystem::path& path, std::optional<std::string> password,
                                  const OperationContext& context) {
-        context.checkpoint("Opening dataset");
+        context.checkpoint("Opening file");
         open(path,std::move(password));
         try { context.checkpoint(); } catch (...) { close(); throw; }
     }

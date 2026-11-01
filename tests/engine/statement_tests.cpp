@@ -199,7 +199,7 @@ void parser() {
     const auto aso_fit = basis_row("2026-02-02", amount, "FIT-1", "aso");
     check(!imports::candidate_basis(qif_row, aso_other_day));
     check(imports::candidate_basis(same, aso_fit) == imports::MatchBasis::same_fitid);
-    check(imports::basis_label(imports::MatchBasis::same_fitid).find("FITID") != std::string::npos);
+    check(imports::basis_label(imports::MatchBasis::same_fitid).find("bank transaction ID") != std::string::npos);
     // Holding internal facts constant, every format pairing has identical policy.
     for(const auto left:{"qif","ofx","qfx","qbo","aso"})for(const auto right:{"qif","ofx","qfx","qbo","aso"}) {
         auto a=basis_row("2026-02-01",amount,"",left);

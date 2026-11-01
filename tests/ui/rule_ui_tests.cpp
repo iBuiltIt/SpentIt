@@ -148,15 +148,15 @@ private slots:
         run(s.model,"import",{{"path",qif},{"profile","DMY"}});
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Tfl Travel UK");
         QVERIFY(object(s.root,"createRuleFromMemo_0")->property("enabled").toBool());
-        QCOMPARE(object(s.root,"createRuleFromMemo_0")->property("text").toString(),"Create rule from this split memo");
+        QCOMPARE(object(s.root,"createRuleFromMemo_0")->property("text").toString(),"Create rule from split memo");
         if(page(s.root)!="rules"){QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);}
         QTRY_VERIFY(object(s.root,"moveRuleUp_1"));
         QVERIFY(click(s.root,"moveRuleUp_1"));QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"previewRules"));wait(s.model);
         QCOMPARE(s.model.state().value("rulePreview").toMap().value("label").toString(),"Unsaved rules");
         QVERIFY(object(s.root,"rulePreviewStatus")->property("text").toString().contains("Unsaved rules"));
-        QVERIFY(summary(s.model).contains("applied · This rule will assign the field · Beta"));
-        QVERIFY(summary(s.model).contains("competing · Also matches and disagrees; shadowed by the earlier field winner · Alpha"));
+        QVERIFY(summary(s.model).contains("applied · This rule sets the value. · Beta"));
+        QVERIFY(summary(s.model).contains("competing · Also matches; an earlier rule sets a different value. · Alpha"));
         QCOMPARE(s.model.state().value("ruleRevision").toString(),"1");
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Tfl Travel UK");
         QVERIFY(!object(s.root,"applyRules")->property("enabled").toBool());
@@ -165,7 +165,7 @@ private slots:
         QCOMPARE(s.model.state().value("rules").toList().at(0).toMap().value("label").toString(),"Alpha");
         QCOMPARE(s.model.state().value("rules").toList().at(1).toMap().value("label").toString(),"Beta");
         QVERIFY(click(s.root,"previewRules"));wait(s.model);
-        QCOMPARE(s.model.state().value("rulePreview").toMap().value("label").toString(),"Saved ruleset revision 1");
+        QCOMPARE(s.model.state().value("rulePreview").toMap().value("label").toString(),"Saved rules");
         QTRY_VERIFY(object(s.root,"applyRules")->property("enabled").toBool());
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
         const auto applied=draftOf(s.model);const auto splits=applied.value("splits").toList();
@@ -196,7 +196,7 @@ private slots:
         run(s.model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(s.model,"commit");
         QVERIFY(!object(s.root,"applyRules")->property("visible").toBool());
         QVERIFY(object(s.root,"rulesCommittedNotice")->property("visible").toBool());
-        QCOMPARE(object(s.root,"rulesCommittedNotice")->property("text").toString(),"Committed records are not changed by Apply.");
+        QCOMPARE(object(s.root,"rulesCommittedNotice")->property("text").toString(),"Apply changes only transactions that have not been accepted.");
         const auto before=s.model.state().value("ruleRevision").toString();
         QVERIFY(click(s.root,"accountNavigation"));QCOMPARE(page(s.root),"ledger");
         QVERIFY(click(s.root,"createRuleFromPayee"));wait(s.model);
@@ -219,9 +219,9 @@ private slots:
         QCOMPARE(reapply.value("changed").toInt(),0);
         QVERIFY(reapply.value("impact").toString().contains("Account balance is unchanged."));
         QVERIFY(object(s.root,"rulesCommittedNotice")->property("visible").toBool());
-        QCOMPARE(object(s.root,"rulesCommittedNotice")->property("text").toString(),"Committed records are not changed by Apply.");
+        QCOMPARE(object(s.root,"rulesCommittedNotice")->property("text").toString(),"Apply changes only transactions that have not been accepted.");
         QVERIFY(click(s.root,"applyReapply"));wait(s.model);
-        QCOMPARE(s.model.state().value("reapplyReceipt").toMap().value("summary").toString(),"No committed rows were changed");
+        QCOMPARE(s.model.state().value("reapplyReceipt").toMap().value("summary").toString(),"No accepted transactions were changed");
         QVERIFY(!object(s.root,"reapplyDialog")->property("visible").toBool());
     }
     void obsoleteDerivedPayeeRemoval(){
@@ -287,7 +287,7 @@ private slots:
             QCOMPARE(observation.latest.persistence,spentit::diagnostics::Persistence::confirmed_saved);
             QCOMPARE(observation.latest.presentation,spentit::diagnostics::Presentation::failed);
         }
-        QVERIFY(error.contains("was saved durably"));QVERIFY(error.contains(id));QVERIFY(error.contains("do not apply it again"));
+        QVERIFY(error.contains("were saved"));QVERIFY(!error.contains(id));QVERIFY(error.contains("before making more changes"));
         QVERIFY(!error.contains("rollback",Qt::CaseInsensitive));
         QVERIFY(!s.model.state().value("active").toBool());
         qunsetenv("SPENTIT_RULE_REFRESH_FAIL");

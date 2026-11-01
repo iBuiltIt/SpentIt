@@ -28,6 +28,30 @@ and explicit committed-edit opt-in presentation.
   edits. While typing unaccepted text, the text field retains native text Undo.
   Enter does not advance to another transaction.
 
+## Category completion — owner Go, 2026-11-01
+
+The allocation category button is replaced with a text field. Uncategorized is
+blank. Focus opens a dropdown with case-insensitive substring matching against
+available category names and account names/aliases. Empty text shows all choices,
+including an explicit Uncategorized choice first so clearing can remove an
+assignment. Archived/deleted categories and the current account are excluded.
+Existing retained classifications remain visible until deliberately replaced.
+Unresolved imported transfer allocations offer account destinations only and use
+the existing explicit transfer-resolution command.
+
+Typing highlights the first match; Up/Down changes that selection. Click, Enter
+or Tab chooses it using the existing complete-edit acceptance or guarded transfer
+command. Enter/Tab moves to transaction Memo for a single allocation, or that
+split's memo for multiple allocations. Date, Payee, Amount, Category and Memo
+support forward/reverse keyboard navigation. Memo follows allocations visually.
+Add split remains a button. The dropdown has an interactive scrollbar.
+
+No matches leaves the field open without creating or assigning a category.
+Escape closes the dropdown and restores its prior text; Escape with it closed
+retains the editor's existing discard behavior. Leaving a search without choosing
+restores the saved label. Category searching alone does not mutate the edit.
+Other fields retain Enter-to-accept behavior and session Undo remains unchanged.
+
 ## Undo scope and persistence
 
 Accepted edits survive closing and reopening. The editor Undo capability is
@@ -54,3 +78,25 @@ counterpart and protected-transfer edit restrictions remain in force.
 No schema change: formats remain 40 with rules / 39 without. The full-audit
 verifier identity changes with the implementation. No migrations or private
 financial fixtures are introduced.
+
+## Opening balance editing — owner Go, 2026-11-01
+
+The stored opening amount and date are usable immediately, including the initial
+zero. There is no separate confirmation action or opening-confirmation Commit
+blocker. Review no longer shows the ordinary opening setup strip. Transfer
+warnings describe transfer problems without asking for opening confirmation.
+
+Double-clicking the ledger Opening Balance row opens the existing date/amount
+dialog. The account menu offers the same correction command from creation onward.
+A successful edit is atomic and historied; account Undo restores the prior amount
+and date under its existing later-change checks. Transaction values and source
+facts stay unchanged. Existing exact-money, overflow, archived-account and
+committed-date validation remain. Import mapping still explicitly chooses zero
+or the reported amount; it needs no subsequent acknowledgement.
+
+Formats remain 40/39. The stored historical `confirmed` field is retained as
+revision metadata, not a prerequisite to use an opening, correct it or commit.
+An untouched zero opening may be frozen by Commit at revision zero; verification
+still checks its creation amount/date and all financial/history relationships.
+Legacy headless reported-balance interpretation APIs are separate from the
+desktop's fixed creation-time mapping choices.

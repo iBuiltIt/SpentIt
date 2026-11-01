@@ -51,7 +51,7 @@ public:
     }
     void open_controlled(const std::filesystem::path& p,std::optional<std::string> password,const app::OperationContext& context) override {
         diagnostics::Span span(diagnostics::Code::gateway);
-        context.checkpoint("Opening dataset");
+        context.checkpoint("Opening file");
         if(store_) throw std::logic_error("Close the current dataset first");
         auto key=password?password_key(*password):std::string(public_document_key);
         try {
@@ -70,7 +70,7 @@ public:
         if(!store_) throw std::logic_error("No dataset is open");
         try { store_->backup_to(document_path(p),key_,{},&context); }
         catch(const app::OperationCancelled&) {
-            throw app::OperationCancelled("Backup cancelled before publication. The source dataset is unchanged. An encrypted .partial candidate may remain; retry to a new destination.");
+            throw app::OperationCancelled("Backup cancelled. An unfinished .partial file may remain. Use a new filename when you try again.");
         }
     }
     void backup(const std::filesystem::path& p) override {

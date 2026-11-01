@@ -52,7 +52,7 @@ app::TransferView transition_transfer(app::TransferView value,const app::Transfe
         if(!local_side(current))fail(SQLITE_CONSTRAINT,"Commit imported entries through their import");
         value.link=transfers::commit(value.link,account);break;
     case app::TransferAction::propose_match:
-        if(!request.evidence)fail(SQLITE_CONSTRAINT,"Choose bank evidence explicitly");
+        if(!request.evidence)fail(SQLITE_CONSTRAINT,"Choose an imported transaction");
         value.link=transfers::propose_match(value.link,account,*request.evidence);break;
     case app::TransferAction::discard_match:
         if(!request.evidence || current.proposed_evidence!=request.evidence)fail(SQLITE_CONSTRAINT,"Match proposal changed");
@@ -277,20 +277,20 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             require_writable_account(impl_->db,fact.endpoint.account);(void)account_by_id(fact.endpoint.account);
             if(fact.generated || fact.manually_entered){if(fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");return;}
             if(!fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
-            if(account_for_batch(fact.endpoint.entry.batch).identity!=fact.endpoint.account)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
+            if(account_for_batch(fact.endpoint.entry.batch).identity!=fact.endpoint.account)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
             const auto info=batch(impl_->db,fact.endpoint.entry.batch);
             if(info.revision!=revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
             if(generated_match(impl_->db,fact.endpoint.entry))fail(SQLITE_CONSTRAINT,"Use the existing transfer rather than its matched source");
             const bool committed=transaction_accepted(fact.endpoint.entry);
             const bool editable=!committed && (info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts);
-            if(fact.state==transfers::State::committed){if(!committed)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");}
-            else if(fact.state!=transfers::State::draft || !editable)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
+            if(fact.state==transfers::State::committed){if(!committed)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");}
+            else if(fact.state!=transfers::State::draft || !editable)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
             std::optional<imports::DraftRow> row;
-            if(committed){const auto entry=committed_entry(fact.endpoint.entry);if(!entry.current.active)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");row=entry.current.draft;}
+            if(committed){const auto entry=committed_entry(fact.endpoint.entry);if(!entry.current.active)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");row=entry.current.draft;}
             else{const auto loaded=load_row(fact.endpoint.entry,false);if(loaded.excluded_by_clear || !loaded.draft || loaded.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");row=loaded.draft;}
             const auto& allocations=row->transaction.allocations();
             const auto allocation=std::find_if(allocations.begin(),allocations.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
-            if(allocation==allocations.end() || allocation->amount!=fact.amount || row->date!=fact.date)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
+            if(allocation==allocations.end() || allocation->amount!=fact.amount || row->date!=fact.date)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
         };
         if(request.left)confirm_fact(*request.left,request.batch_revision);
         if(request.right)confirm_fact(*request.right,request.right_revision);
@@ -303,14 +303,14 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
         if(request.action==app::TransferAction::retarget && request.mode==0){
             const auto& fact=*request.left;
             safe_text(request.category_path);
-            if(!request.category_id.empty()){identifier(request.category_id);const auto display=resolve_category(request.category_id);if(!display.assignable || display.path!=request.category_path)fail(SQLITE_CONSTRAINT,"Category choice changed or is archived; choose an active leaf again");}
+            if(!request.category_id.empty()){identifier(request.category_id);const auto display=resolve_category(request.category_id);if(!display.assignable || display.path!=request.category_path)fail(SQLITE_CONSTRAINT,"This category changed or was archived. Choose an available category.");}
             auto rewrite=[&](imports::DraftRow edit,const std::optional<imports::DraftRow>& previous,const qif::Record& source,std::int64_t revision,bool entry){
                 auto allocations=edit.transaction.allocations();bool matched=false;
                 for(auto& allocation:allocations)if(allocation.identity==fact.endpoint.allocation){
                     matched=true;allocation.category=request.category_path;allocation.category_owner=FieldOwnership::manual;allocation.category_rule.reset();
                     if(request.category_id.empty())allocation.category_binding.reset();else allocation.category_binding=CategoryBinding{request.category_id,catalog_sequence(impl_->db)};
                 }
-                if(!matched)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
+                if(!matched)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
                 edit.transaction=Transaction::repaired_import(edit.transaction.original_imported_amount(),edit.transaction.effective_total(),std::move(allocations),edit.transaction.reassigned_currency());
                 const auto canonical=canonical_draft(fact.endpoint.entry,edit,previous,revision,entry,true);
                 const bool reassigned=source.source_currency && canonical.transaction.effective_total().currency()!=*source.source_currency;
@@ -330,7 +330,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
                 else write_category();
             }else if(fact.imported && fact.state==transfers::State::committed){
                 if(fact.endpoint.account!=account.identity)fail(SQLITE_CONSTRAINT,"Open the account that holds this transaction before changing its category");
-                const auto current=committed_entry(fact.endpoint.entry);if(!current.current.active)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
+                const auto current=committed_entry(fact.endpoint.entry);if(!current.current.active)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
                 const auto canonical=rewrite(current.current.draft,current.current.draft,current.source,current.current.revision+1,true);
                 if(canonical.transaction.effective_total()!=current.current.draft.transaction.effective_total())fail(SQLITE_CONSTRAINT,"This transfer command would change committed money");
                 entry_after=current.current;entry_after->revision++;entry_after->draft=canonical;entry_after->active=true;entry_identity=fact.endpoint.entry;entry_dependencies=current.token.dependencies;entry_category=true;
@@ -366,18 +366,17 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     }else{
         if(found==values.end())fail(SQLITE_NOTFOUND,"Transfer does not exist");
         if(request.action==app::TransferAction::propose_match){
-            if(!request.evidence)fail(SQLITE_CONSTRAINT,"Choose bank evidence");
+            if(!request.evidence)fail(SQLITE_CONSTRAINT,"Choose an imported transaction");
             require_account(request.evidence->endpoint.entry.batch);if(batch(impl_->db,request.evidence->endpoint.entry.batch).state!=app::BatchState::pending)fail(SQLITE_CONSTRAINT,"Match evidence must belong to a pending import");expect(impl_->db,request.evidence->endpoint.entry.batch,request.batch_revision);
             const auto row=load_row(request.evidence->endpoint.entry,false);
             if(transaction_accepted(row.identity) || !row.draft || row.matched_generated || row.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the bank entry before matching");
             const auto& allocations=row.draft->transaction.allocations();const auto allocation=std::find_if(allocations.begin(),allocations.end(),[&](const auto& a){return a.identity==request.evidence->endpoint.allocation;});
-            if(allocation==allocations.end() || allocation->amount!=request.evidence->amount || row.draft->date!=request.evidence->posting_date || request.evidence->endpoint.account!=account.identity)fail(SQLITE_CONSTRAINT,"Bank evidence changed; refresh the proposal");
+            if(allocation==allocations.end() || allocation->amount!=request.evidence->amount || row.draft->date!=request.evidence->posting_date || request.evidence->endpoint.account!=account.identity)fail(SQLITE_CONSTRAINT,"The imported transaction changed. Choose the match again.");
         }
         *found=transition_transfer(*found,request,account.identity);
     }
     validate_transfer_set(values);
     const bool committing_local=request.action==app::TransferAction::commit_local;
-    if(committing_local && !account.opening_confirmed)fail(SQLITE_CONSTRAINT,"Confirm the opening balance before committing");
     const auto change=local_total(values,account.identity,account.currency,false)-local_before;const auto after=before+change;
     const bool did_commit=committing_local || ((request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated) && change.units()!=0);
     Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,operation);event.integer(2,account.identity);event.blob(3,encoded);event.integer(4,did_commit?1:0);event.integer(5,change.units());event.done();
@@ -858,20 +857,20 @@ app::TransferPreview ImportStore::preview_transfer(const app::TransferRequest& r
         require_writable_account(impl_->db,fact.endpoint.account);(void)account_by_id(fact.endpoint.account);
         if(fact.generated || fact.manually_entered){if(fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");return;}
         if(!fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
-        if(account_for_batch(fact.endpoint.entry.batch).identity!=fact.endpoint.account)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
+        if(account_for_batch(fact.endpoint.entry.batch).identity!=fact.endpoint.account)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
         const auto info=batch(impl_->db,fact.endpoint.entry.batch);
         if(info.revision!=revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
         if(generated_match(impl_->db,fact.endpoint.entry))fail(SQLITE_CONSTRAINT,"Use the existing transfer rather than its matched source");
             const bool committed=transaction_accepted(fact.endpoint.entry);
         const bool editable=!committed && (info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts);
-        if(fact.state==transfers::State::committed){if(!committed)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");}
-        else if(fact.state!=transfers::State::draft || !editable)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
+        if(fact.state==transfers::State::committed){if(!committed)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");}
+        else if(fact.state!=transfers::State::draft || !editable)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
         std::optional<imports::DraftRow> row;
-        if(committed){const auto entry=committed_entry(fact.endpoint.entry);if(!entry.current.active)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");row=entry.current.draft;}
+        if(committed){const auto entry=committed_entry(fact.endpoint.entry);if(!entry.current.active)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");row=entry.current.draft;}
         else{const auto loaded=load_row(fact.endpoint.entry,false);if(loaded.excluded_by_clear || !loaded.draft || loaded.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");row=loaded.draft;}
         const auto& allocations=row->transaction.allocations();
         const auto allocation=std::find_if(allocations.begin(),allocations.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
-        if(allocation==allocations.end() || allocation->amount!=fact.amount || row->date!=fact.date)fail(SQLITE_CONSTRAINT,"Transfer allocation changed; refresh before applying");
+        if(allocation==allocations.end() || allocation->amount!=fact.amount || row->date!=fact.date)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
     };
     if(request.left)confirm_fact(*request.left,request.batch_revision);
     if(request.right)confirm_fact(*request.right,request.right_revision);

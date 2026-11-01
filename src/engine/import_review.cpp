@@ -47,12 +47,12 @@ std::string basis_label(MatchBasis basis) {
     case MatchBasis::same_source_fields: return "same source fields";
     case MatchBasis::same_date_amount: return "same date and amount";
     case MatchBasis::same_amount_unknown_date: return "same original amount; source date unavailable";
-    case MatchBasis::unknown_original_amount: return "original amount unavailable; review source evidence";
-    case MatchBasis::same_fitid: return "same FITID, currency and original amount";
-    case MatchBasis::uncertain_fitid: return "same FITID with uncertain amount or currency";
+    case MatchBasis::unknown_original_amount: return "original amount unavailable; check the imported transaction";
+    case MatchBasis::same_fitid: return "same bank transaction ID, currency and imported amount";
+    case MatchBasis::uncertain_fitid: return "same bank transaction ID; check the amount and currency";
     case MatchBasis::uncertain_date: return "same original amount; dates differ across exports";
     }
-    return "review source evidence";
+    return "check the imported transaction";
 }
 std::optional<MatchBasis> candidate_basis(const qif::Record& a,const qif::Record& b,MatchContext context) {
     const auto x=evidence_key(a),y=evidence_key(b);

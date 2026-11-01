@@ -114,7 +114,7 @@ void date(std::string_view value) {
     } catch(const std::invalid_argument&) { invalid(); }
 }
 void fact_ok(const AllocationFact& fact) {
-    if(fact.endpoint.allocation.empty()) throw TransferError(Error::ambiguous_endpoint,"Choose the allocation explicitly. This transaction has more than one possible transfer endpoint.");
+    if(fact.endpoint.allocation.empty()) throw TransferError(Error::ambiguous_endpoint,"Choose which split to transfer.");
     endpoint(fact.endpoint);date(fact.date);
     if(fact.state!=State::draft && fact.state!=State::committed) invalid();
     if(fact.generated && (fact.imported || fact.manually_entered)) invalid();
@@ -390,7 +390,7 @@ LinkEdit merge(std::span<const Link> links,const AllocationFact& left,const Allo
     if(left.endpoint==right.endpoint || identity.empty()) invalid();
     if(left.amount.currency()!=right.amount.currency()) currencies();
     const auto* left_link=owner_of(links,left.endpoint);const auto* right_link=owner_of(links,right.endpoint);
-    if(left_link && right_link && left_link!=right_link) throw TransferError(Error::ambiguous_endpoint,"Choose one transfer relationship. These allocations belong to different links.");
+    if(left_link && right_link && left_link!=right_link) throw TransferError(Error::ambiguous_endpoint,"These splits belong to different transfers. Choose splits from the same transfer.");
     if(left_link && right_link) invalid();
     evidenced_generated(left_link,left);evidenced_generated(right_link,right);
     if(left_link) agree(left_link->origin.endpoint==left.endpoint?left_link->origin:left_link->destination,left);

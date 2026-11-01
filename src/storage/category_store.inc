@@ -111,7 +111,7 @@ app::CategoryPreview ImportStore::preview_category_change(const app::CategoryReq
     case app::CategoryAction::unarchive:after.archived=false;break;
     case app::CategoryAction::erase:{
         for(const auto& category:catalog.categories)if(category.parent==request.identity && !category.deleted)fail(SQLITE_CONSTRAINT,"Delete requires an empty category");
-        if(category_referenced(impl_->db,request.identity))fail(SQLITE_CONSTRAINT,"Category has retained assignments; archive it instead");after.deleted=true;break;}
+        if(category_referenced(impl_->db,request.identity))fail(SQLITE_CONSTRAINT,"Transactions use this category. Archive it instead.");after.deleted=true;break;}
     default:fail(SQLITE_CONSTRAINT,"Unknown category action");}
     after.name=canonical_category_name(after.name);if(after.kind!=CategoryKind::leaf || !after.parent.empty())fail(SQLITE_CONSTRAINT,"Create an assignable category using one optional colon, without a parent object");
     if(request.action==app::CategoryAction::create || request.action==app::CategoryAction::rename || request.action==app::CategoryAction::unarchive)
@@ -168,7 +168,7 @@ imports::DraftRow ImportStore::canonical_draft(const imports::Occurrence& id,con
         const auto category_owner=settle(allocation.category_owner,rules?allocation.category_rule:std::optional<RuleMark>{},previous?previous->category_owner:FieldOwnership::source,previous?previous->category_rule:std::optional<RuleMark>{},previous && allocation.category==previous->category && allocation.category_binding==previous->category_binding,source_category_equal(allocation,original));
         allocation.memo_owner=memo_owner.owner;allocation.category_owner=category_owner.owner;if(rules){allocation.memo_rule=memo_owner.mark;allocation.category_rule=category_owner.mark;}
         if(allocation.category_binding){validate_binding(impl_->db,allocation);const bool unchanged=previous && previous->category_binding==allocation.category_binding && previous->category==allocation.category;
-            if(check_assignment && !unchanged){const auto display=resolve_category(allocation.category_binding->identity);if(allocation.category_binding->catalog_revision!=catalog_sequence(impl_->db) || !display.assignable || display.path!=allocation.category)fail(SQLITE_CONSTRAINT,"Category choice changed or is archived; choose an active leaf again");}
+            if(check_assignment && !unchanged){const auto display=resolve_category(allocation.category_binding->identity);if(allocation.category_binding->catalog_revision!=catalog_sequence(impl_->db) || !display.assignable || display.path!=allocation.category)fail(SQLITE_CONSTRAINT,"This category changed or was archived. Choose an available category.");}
         }
     }
     const auto effective=input.transaction.effective_total();bool reassigned=input.transaction.reassigned_currency();

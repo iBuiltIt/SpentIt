@@ -32,7 +32,7 @@ void run(){
  // Cancellation during row population rolls back all generated relationships.
  for(int row:{1,2}){auto s=create(d.path/("cancel"+std::to_string(row)));capture(s);app::OperationContext c;int rows=0;s.observer([&](ImportPhase p){if(p==ImportPhase::materialize_row && ++rows==row)c.request();});bool cancelled=false;try{s.resume_import_group("interrupted",c);}catch(const app::OperationCancelled&){cancelled=true;}s.observer({});check(cancelled);s.cleanup_incomplete_imports("interrupted");preserved(s);}
  // Single-account Cancel removes capture; completed malformed imports survive.
- {auto s=create(d.path/"single");app::OperationContext c;c.progress=[&](std::string_view phase){if(phase=="Source evidence retained")c.request();};bool cancelled=false;try{s.ingest_controlled("cancelled",prior,qif::DateOrder::dmy,c);}catch(const app::OperationCancelled&){cancelled=true;}check(cancelled);preserved(s);app::OperationContext done;s.ingest_controlled("malformed","!Type:Bank\nD2026-02-02\nTbad\nPBroken\n^\n",qif::DateOrder::dmy,done);}
+ {auto s=create(d.path/"single");app::OperationContext c;c.progress=[&](std::string_view phase){if(phase=="Import saved")c.request();};bool cancelled=false;try{s.ingest_controlled("cancelled",prior,qif::DateOrder::dmy,c);}catch(const app::OperationCancelled&){cancelled=true;}check(cancelled);preserved(s);app::OperationContext done;s.ingest_controlled("malformed","!Type:Bank\nD2026-02-02\nTbad\nPBroken\n^\n",qif::DateOrder::dmy,done);}
  {auto s=ImportStore::open(d.path/"single",key);check(s.batches().size()==2 && !s.startup_import_cleanup());s.verify();}
  // Process exit on each side of preparation and cleanup commits.
  for(bool preparing:{false,true})for(bool after:{false,true}){

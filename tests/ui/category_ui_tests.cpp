@@ -64,6 +64,98 @@ class CategoryUiTests : public QObject {
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("CategoryUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
     void init(){QSettings().clear();}
+    void openingRowEditing() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Opening edit"},{"currency","CAD"}});
+        QVERIFY(!object(root,"openingSetup"));
+        QTRY_VERIFY(object(root,"ledgerRow_0"));
+        auto* row=qobject_cast<QQuickItem*>(object(root,"ledgerRow_0"));
+        QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene(QPointF(150,16)).toPoint());
+        QTRY_VERIFY(object(root,"correctOpeningDialog")->property("visible").toBool());
+        QVERIFY(edit(root,"correctOpeningDate","2026-01-01"));
+        QVERIFY(edit(root,"correctOpeningAmount","25.00"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"correctOpeningDialog"),"accept"));wait(model);
+        QCOMPARE(model.state().value("opening").toString(),QString("25.00"));
+        const auto operation=model.state().value("undoableAccountOperation").toString();QVERIFY(!operation.isEmpty());
+        run(model,"undo_account",{{"operation",model.newIdentity()},{"undoOf",operation}});
+        QCOMPARE(model.state().value("opening").toString(),QString("0.00"));
+        QFile file(dir.path()+"/source.qif");QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-10\nPOpening test\n^\n");file.close();
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        QCOMPARE(model.state().value("reviewCount").toInt(),0);run(model,"commit");
+        QVERIFY(QMetaObject::invokeMethod(root,"editOpening"));
+        QTRY_VERIFY(object(root,"correctOpeningDialog")->property("visible").toBool());
+        QVERIFY(edit(root,"correctOpeningDate","2026-01-01"));QVERIFY(edit(root,"correctOpeningAmount","50.00"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"correctOpeningDialog"),"accept"));wait(model);
+        QCOMPARE(model.state().value("opening").toString(),QString("50.00"));
+        run(model,"close");
+    }
+    void inlineCategoryCompletion() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Completion"},{"currency","CAD"}});
+        QVERIFY(click(root,"categoryNavigation"));wait(model);QTest::qWait(50);
+        const auto gas=createCategory(model,root,"Auto: Gas");
+        const auto parking=createCategory(model,root,"Auto: Parking");
+        for(int i=0;i<12;++i)createCategory(model,root,QString("Synthetic %1").arg(i,2,10,QChar('0')));
+        QVERIFY(click(root,"accountNavigation"));
+        QFile file(dir.path()+"/source.qif");QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-10\nPSynthetic completion\n^\n");file.close();
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        auto field=[&](const char* name){return qobject_cast<QQuickItem*>(object(root,name));};
+        auto category=[&](){return field("splitCategory_0");};
+        auto assigned=[&](){return selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryId").toString();};
+        QVERIFY(category());QCOMPARE(category()->property("text").toString(),QString());
+        field("durableDate")->forceActiveFocus();QTest::keyClick(window,Qt::Key_Tab);QVERIFY(field("durablePayee")->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_Tab);QVERIFY(field("durableTotal")->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_Tab);QVERIFY(category()->hasActiveFocus());
+        QVERIFY(category()->findChild<QObject*>("categoryDropdown_0"));QTRY_VERIFY(category()->findChild<QObject*>("categoryDropdown_0")->property("visible").toBool());
+        QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),15);
+        QVERIFY(object(root,"categoryDropdownScrollBar")->property("interactive").toBool());
+        QTest::qWait(50);auto* bar=qobject_cast<QQuickItem*>(object(root,"categoryDropdownScrollBar"));QVERIFY(bar);
+        QVERIFY(bar->property("size").toDouble()<1.0);
+        const auto thumb=bar->mapToScene(QPointF(bar->width()/2,bar->height()*bar->property("size").toDouble()/2)).toPoint();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,thumb);
+        QTest::mouseMove(window,thumb+QPoint(0,80));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,thumb+QPoint(0,80));
+        QVERIFY(object(root,"categoryMatches_0")->property("contentY").toDouble()>0);
+
+        for(auto key:{Qt::Key_A,Qt::Key_U,Qt::Key_T,Qt::Key_O})QTest::keyClick(window,key,Qt::ShiftModifier);QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),2);
+        QCOMPARE(object(root,"categoryMatches_0")->property("currentIndex").toInt(),0);
+        if(qEnvironmentVariableIsSet("SPENTIT_INLINE_CATEGORY_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INLINE_CATEGORY_SCREENSHOT")));}
+        QTest::keyClick(window,Qt::Key_Down);QTest::keyClick(window,Qt::Key_Return);wait(model);
+        QTRY_COMPARE(assigned(),parking);QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
+        QCOMPARE(category()->property("text").toString(),QString("Auto: Parking"));
+        QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(category()->hasActiveFocus());
+        category()->setProperty("text","gAs");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
+        QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),1);
+        QTest::keyClick(window,Qt::Key_Tab);wait(model);QTRY_COMPARE(assigned(),gas);QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_Backtab);QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(field("durableTotal")->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(field("durablePayee")->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(field("durableDate")->hasActiveFocus());
+        category()->forceActiveFocus();category()->setProperty("text","no such category");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
+        QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),0);
+        QTest::keyClick(window,Qt::Key_Return);QVERIFY(category()->hasActiveFocus());QCOMPARE(assigned(),gas);QVERIFY(!model.busy());
+        QTest::keyClick(window,Qt::Key_Escape);QCOMPARE(category()->property("text").toString(),QString("Auto: Gas"));
+        category()->setProperty("text","");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
+        QTest::keyClick(window,Qt::Key_Tab);wait(model);QTRY_VERIFY(assigned().isEmpty());QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
+        QCOMPARE(category()->property("text").toString(),QString());
+        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));wait(model);QTRY_COMPARE(assigned(),gas);
+        QTRY_VERIFY(field("durableMemo")->hasActiveFocus());QTest::qWait(50);category()->forceActiveFocus();category()->setProperty("text","Parking");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
+        QTest::qWait(50);QVERIFY(pointer(window,root,"inlineCategoryChoice_"+parking));wait(model);QTRY_COMPARE(assigned(),parking);
+        QVERIFY(file.open(QIODevice::WriteOnly|QIODevice::Truncate));file.write("D2/1/2026\nT-10\nPSynthetic splits\nS\n$-5\nS\n$-5\n^\n");file.close();
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        QVERIFY(field("splitCategory_1"));field("splitCategory_1")->forceActiveFocus();
+        QVERIFY(edit(root,"splitCategory_1","Gas"));QTest::keyClick(window,Qt::Key_Tab);wait(model);
+        QTRY_VERIFY(field("editSplitMemo_1")->hasActiveFocus());
+        QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().last().toMap().value("categoryId").toString(),gas);
+        QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(field("splitCategory_1")->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(field("editSplitAmount_0")->hasActiveFocus());
+
+
+    }
     void catalogPickerCurrentNamesAndArchive() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
         const auto path=dir.path()+"/document";run(model,"create",{{"path",path},{"protected",false},{"name","Synthetic categories"},{"currency","CAD"}});
@@ -83,11 +175,11 @@ private slots:
         run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});const auto occurrence=model.rowIdentity(model.selectedRowIndex());
         auto allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();const auto allocationId=allocation.value("allocationId").toString();QVERIFY(!allocationId.isEmpty());
         QCOMPARE(allocation.value("categoryDisplay").toString(),"Unmapped: Legacy:Transport");
-        QVERIFY(click(root,"splitCategory_0"));QVERIFY(click(root,"chooseUncategorized"));wait(model);
+        QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));QVERIFY(click(root,"chooseUncategorized"));wait(model);
         QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryDisplay").toString(),"Uncategorized");
-        QVERIFY(click(root,"splitCategory_0"));QVERIFY(edit(root,"unmappedCategoryText","Explicit review label"));QVERIFY(click(root,"chooseUnmapped"));wait(model);
+        QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));QVERIFY(edit(root,"unmappedCategoryText","Explicit review label"));QVERIFY(click(root,"chooseUnmapped"));wait(model);
         QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryDisplay").toString(),"Unmapped: Explicit review label");
-        QVERIFY(click(root,"splitCategory_0"));QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_PICKER_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_PICKER_SCREENSHOT")));QVERIFY(object(root,"pickCategory_"+group));QVERIFY(object(root,"pickCategory_"+group)->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_PICKER_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_PICKER_SCREENSHOT")));QVERIFY(object(root,"pickCategory_"+group));QVERIFY(object(root,"pickCategory_"+group)->property("enabled").toBool());
         QVERIFY(edit(root,"categoryPickerSearch","auto: parking"));QVERIFY(QMetaObject::invokeMethod(object(root,"categoryPickerSearch"),"accepted"));wait(model);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("allocationId").toString(),allocationId);
         run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(model,"commit");
@@ -103,7 +195,7 @@ private slots:
         QVERIFY(model.state().value("categoryById").toMap().value(leaf).toMap().value("assignable").toBool());
         menu(model,root,leaf,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Parking"));applyCategory(model,root);
         QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_SCREENSHOT")));
-        menu(model,root,leaf,"deleteCategory");wait(model,false);QVERIFY(model.error().contains("retained assignments",Qt::CaseInsensitive));
+        menu(model,root,leaf,"deleteCategory");wait(model,false);QVERIFY(model.error().contains("Transactions use this category",Qt::CaseInsensitive));
         QCOMPARE(object(root,"operationPhase")->property("text").toString(),model.error());
         int visibleErrors=0;
         for(auto* item:root->findChildren<QQuickItem*>())

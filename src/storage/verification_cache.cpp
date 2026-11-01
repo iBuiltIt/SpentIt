@@ -79,7 +79,7 @@ bool matches(const std::filesystem::path& path,const std::filesystem::path& cach
 }
 void publish(const std::filesystem::path& path,const std::filesystem::path& cache,std::string_view expected,const app::OperationContext* context) {
     const auto hash=fingerprint(path,context);
-    if(hash.empty() || hash!=expected || !private_directory(cache,true))throw std::runtime_error("Dataset verification passed, but its startup approval could not be saved. The next opening will verify again.");
+    if(hash.empty() || hash!=expected || !private_directory(cache,true))throw std::runtime_error("The file passed its checks. SpentIt will check it again next time you open it.");
     const auto destination=receipt(path,cache);
     auto pattern=(cache/".verification-XXXXXX").string();
     File file(::mkstemp(pattern.data()));

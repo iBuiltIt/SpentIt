@@ -256,7 +256,7 @@ void cancellation(){
         check(cancelled && s.batches().empty());
         app::OperationContext limited;const auto oversized=std::string(qif::max_file+1,'x');
         fails([&]{s.ingest_controlled("too-big",oversized,qif::DateOrder::dmy,limited);});check(s.batches().empty());
-        app::OperationContext context;context.progress=[&](std::string_view phase){if(phase=="Source evidence retained")context.request();};
+        app::OperationContext context;context.progress=[&](std::string_view phase){if(phase=="Import saved")context.request();};
         cancelled=false;try{s.ingest_controlled("new",source,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){cancelled=true;}
         check(cancelled && s.batches().empty());s.verify();
         fails([&]{s.commit("new",0,"op");});
@@ -310,7 +310,7 @@ void cancellation(){
     for(int damage=0;damage<5;++damage) {
         Directory one;
         {auto s=create(one.path/"doc");app::OperationContext context;
-            if(damage==0 || damage>=3)context.progress=[&](std::string_view phase){if(phase=="Source evidence retained")throw std::runtime_error("Interrupted preparation");};
+            if(damage==0 || damage>=3)context.progress=[&](std::string_view phase){if(phase=="Import saved")throw std::runtime_error("Interrupted preparation");};
             try{s.ingest_controlled("new",source,qif::DateOrder::dmy,context);}catch(const std::runtime_error&){}
         }
         sqlite3* db=nullptr;check(sqlite3_open((one.path/"doc").c_str(),&db)==SQLITE_OK);
@@ -324,7 +324,7 @@ void cancellation(){
         const auto unchanged=bytes(one.path/"doc");fails([&]{ImportStore::open(one.path/"doc",password);});check(bytes(one.path/"doc")==unchanged);
     }
     {Directory zero;auto s=create(zero.path/"doc");app::OperationContext context;
-        context.progress=[&](std::string_view phase){if(phase=="Source evidence retained")context.request();};
+        context.progress=[&](std::string_view phase){if(phase=="Import saved")context.request();};
         const std::string invalid="\xff";try{s.ingest_controlled("invalid",invalid,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){}
         check(s.batches().empty());
         app::OperationContext retry;const auto resumed=s.ingest_controlled("invalid",invalid,qif::DateOrder::dmy,retry);check(resumed.blocked && resumed.count==0);
@@ -460,12 +460,12 @@ void backup_cancellation(){
         for(int i=0;i<200;++i) input+="D1/1/2026\nT1\nM"+std::string(8192,'x')+"\n^\n";
         s.ingest("large",input,qif::DateOrder::dmy);
         app::OperationContext context;int chunks=0;bool cancelled=false;
-        context.progress=[&](std::string_view phase){if(phase=="Copying encrypted backup pages" && ++chunks==2)check(context.request());};
+        context.progress=[&](std::string_view phase){if(phase=="Copying backup" && ++chunks==2)check(context.request());};
         try{s.backup_to(d.path/"cancelled",password,{},&context);}catch(const app::OperationCancelled&){cancelled=true;}
         check(cancelled && chunks==2 && !fs::exists(d.path/"cancelled"));s.verify();
         s.backup_to(d.path/"retry",password);auto restored=ImportStore::open(d.path/"retry",password);check(restored.evidence("large")==input);
     }
-    for(const std::string phase:{"Preparing encrypted backup","Copying encrypted backup pages","Verifying encrypted backup","Verifying import evidence","Reopening encrypted backup","Publishing verified backup"}) {
+    for(const std::string phase:{"Preparing backup","Copying backup","Checking backup","Checking imported transactions","Checking backup","Finishing backup"}) {
         Directory d;prepare(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);
         const auto original=s.evidence("first");const auto balance=s.committed_balance();
         s.backup_to(d.path/"prior",password);const auto prior=bytes(d.path/"prior");
@@ -476,7 +476,7 @@ void backup_cancellation(){
         check(bytes(d.path/"prior")==prior && s.evidence("first")==original && s.committed_balance()==balance);s.verify();
         s.backup_to(d.path/"retry",password);
         {auto restored=ImportStore::open(d.path/"retry",password);check(restored.evidence("first")==original && restored.committed_balance()==balance);}
-        if(phase=="Publishing verified backup") {auto candidate=ImportStore::open(d.path/"candidate.partial",password);check(candidate.evidence("first")==original);}
+        if(phase=="Finishing backup") {auto candidate=ImportStore::open(d.path/"candidate.partial",password);check(candidate.evidence("first")==original);}
         no_leaks(d.path);
     }
     {Directory d;prepare(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);app::OperationContext context;bool late=false;
@@ -485,9 +485,10 @@ void backup_cancellation(){
 }
 void opening_policy(){
     Directory d;auto s=create(d.path/"doc");s.ingest("one",source,qif::DateOrder::dmy);
-    fails([&]{s.commit("one",0,"op");});s.opening(0,"2026-08-01",Money(0,cad));
-    check(s.batches().at(0).revision==1);fails([&]{s.commit("one",0,"op");});
-    check(s.commit("one",1,"op").after.units()==2069);s.verify();
+    check(s.acceptance_review().warnings.empty());
+    check(s.commit("one",0,"op").after.units()==2069);s.verify();
+    check(s.account().opening.units()==0 && s.account().revision==0);
+    fails([&]{s.opening(0,"2026-08-01",Money(0,cad));}); // Frozen values use historied correction.
 }
 void validation(){
     Directory d;prepare(d.path/"doc");

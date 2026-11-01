@@ -79,7 +79,7 @@ PreparedScope pending_scope(const ImportStore& store,std::string_view requested)
     const auto all=store.batches();const auto found=std::find_if(all.begin(),all.end(),[&](const auto& info){return info.id==id;});
     if(found==all.end()) fail(SQLITE_NOTFOUND,"Import does not exist");
     if(found->state==app::BatchState::committed) fail(SQLITE_CONSTRAINT,"Committed records are not changed by rules");
-    if(found->state!=app::BatchState::pending) fail(SQLITE_CONSTRAINT,"Rules apply only to materialized pending drafts");
+    if(found->state!=app::BatchState::pending) fail(SQLITE_CONSTRAINT,"Rules can only be applied after the import finishes.");
     PreparedScope scope;scope.present=true;scope.batch=found->id;scope.batch_revision=found->revision;
     for(std::size_t ordinal=0;ordinal<found->count;++ordinal){auto viewed=store.row({scope.batch,ordinal});if(viewed.draft && !viewed.matched_generated && !store.transaction_accepted({scope.batch,ordinal}))scope.rows.push_back(std::move(viewed));}
     return scope;

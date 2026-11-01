@@ -129,7 +129,7 @@ private slots:
             if(mode==0){QVERIFY(model.state().value("active").toBool());QCOMPARE(model.state().value("committed").toString(),"80.69");}
             if(mode==1){QVERIFY(model.state().value("active").toBool());QCOMPARE(model.state().value("committed").toString(),"100.00");}
             if(mode==2){QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("uncertain"));}
-            if(mode==3){QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("saved durably"));}
+            if(mode==3){QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("saved"));}
             fault->failBefore=false;fault->loseAcknowledgement=false;fault->unknownOutcome=false;fault->failRefresh=false;
             if(model.state().value("active").toBool())run(model,"close");run(model,"open",{{"path",dir.path()+"/document"}});
             QCOMPARE(model.state().value("committed").toString(),mode==0?"80.69":"100.00");
@@ -189,7 +189,7 @@ private slots:
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Recovered acknowledgement");
         change["payee"]="Saved despite unknown outcome";run(model,"preview_change",change);fault->unknownOutcome=true;
         run(model,"apply_change",{{"preview",model.state().value("changePreview").toMap().value("id")}},false);
-        QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("uncertain"));
+        QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("could not confirm"));
         fault->unknownOutcome=false;fault->loseAcknowledgement=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Saved despite unknown outcome");
         run(model,"history");QCOMPARE(model.state().value("history").toList().size(),2);QCOMPARE(model.state().value("committed").toString(),"80.69");
@@ -211,7 +211,7 @@ private slots:
         QCOMPARE(model.state().value("committed").toString(),"80.69");
         fault->failBefore=false;fault->failRefresh=true;
         QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model,false);
-        QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("saved durably"));
+        QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("saved"));
         fault->failRefresh=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Preserved proposal");run(model,"history");QCOMPARE(model.state().value("history").toList().size(),1);
     }

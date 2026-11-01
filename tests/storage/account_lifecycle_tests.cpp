@@ -40,6 +40,44 @@ void commit_manual_link(ImportStore& store){
     store.select_account(1);if(transfers::protected_draft(store.transfers().at(0).link,1))store.apply_transfer("clear-origin",transfer_command(store,app::TransferAction::clear_local));store.apply_transfer("commit-origin",transfer_command(store,app::TransferAction::commit_local));
 }
 void behavior(){
+    // An untouched zero opening is usable without an acknowledgement, including
+    // both sides of a transfer. Corrections remain historied before/after Commit.
+    {
+        Directory fresh("spentit-opening-default-XXXXXX");const auto path=fresh.path/"doc";
+        {
+            auto store=create(path);
+            store.correct_opening("first-edit",date,Money(2500,cad));
+            check(store.account().opening==Money(2500,cad));
+            store.undo_account_operation("undo-first","first-edit");
+            check(store.account().opening==Money(0,cad));
+            store.create_account(2,"Default zero",cad,date);store.select_account(2);
+            check(!store.account().opening_confirmed);
+            store.ingest("default-import",bytes,qif::DateOrder::dmy);
+            check(store.acceptance_review().warnings.empty());
+            check(store.review_sheet().questions.empty());
+            store.accept_all("accept-default",false);
+            check(store.committed_balance()==Money(-1000,cad));
+            check(store.account().opening==Money(0,cad));
+            store.correct_opening("later-edit",date,Money(5000,cad));
+            check(store.committed_balance()==Money(4000,cad));
+            check(store.evidence("default-import")==bytes);
+            store.undo_account_operation("undo-later","later-edit");
+            check(store.committed_balance()==Money(-1000,cad));
+            store.create_account(3,"Transfer zero",cad,date);store.select_account(3);
+            store.create_account(4,"Other zero",cad,date);
+            auto request=transfer_command(store,app::TransferAction::manual);
+            request.destination=4;request.amount=Money(-100,cad);request.date=date;request.payee="Default opening transfer";
+            store.apply_transfer("zero-transfer",request);
+            for(const auto& warning:store.acceptance_review().warnings)check(warning.reason.find("opening")==std::string::npos);
+            store.accept_all("accept-zero-transfer",true);
+            check(store.committed_balance()==Money(-100,cad));
+            store.select_account(4);check(store.committed_balance()==Money(100,cad));
+            store.verify();
+        }
+        auto reopened=ImportStore::open(path,password);reopened.verify();
+        reopened.select_account(2);check(reopened.committed_balance()==Money(-1000,cad));
+        reopened.select_account(4);check(reopened.committed_balance()==Money(100,cad));
+    }
     Directory dir("spentit-lifecycle-XXXXXX");const auto path=dir.path/"doc";
     {
         auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"40":"39"));
@@ -101,7 +139,7 @@ void behavior(){
     }
     {
         Directory opening_dir("spentit-lifecycle-opening-XXXXXX");auto store=create(opening_dir.path/"doc");store.create_account(2,"Other",cad,date);publish(store);check(store.committed_balance()==Money(9000,cad) && store.account().frozen);
-        rejects([&]{store.correct_opening("late","2026-01-02",Money(4000,cad));},"Opening date is later than a committed transaction");
+        rejects([&]{store.correct_opening("late","2026-01-02",Money(4000,cad));},"The opening date must be on or before the earliest accepted transaction.");
         check(store.committed_balance()==Money(9000,cad));
         const auto corrected=store.correct_opening("opening","2026-01-01",Money(4000,cad));
         check(corrected.opening==Money(4000,cad) && corrected.opening_date==date && store.committed_balance()==Money(3000,cad) && store.account().frozen && store.ledger(false).at(0).draft.transaction.effective_total()==Money(-1000,cad));
@@ -114,7 +152,7 @@ void behavior(){
         store.correct_opening("opening-again",date,Money(4000,cad));store.ingest("later","D3/1/2026\nT-1.00\nPLater\n^\n",qif::DateOrder::dmy);
         rejects([&]{store.undo_account_operation("undo-late","opening-again");},"A later financial operation prevents Undo");
         check(store.committed_balance()==Money(3000,cad));store.discard("later",0);store.select_account(2);
-        rejects([&]{store.correct_opening("unconfirmed",date,Money(0,cad));},"Confirm the opening before correcting it");
+        check(store.correct_opening("unconfirmed",date,Money(0,cad)).opening==Money(0,cad));
         store.select_account(1);store.verify();store.backup_to(opening_dir.path/"backup",password);
         auto restored=ImportStore::open(opening_dir.path/"backup",password);check(restored.account().opening==Money(4000,cad) && restored.committed_balance()==Money(3000,cad));restored.verify();
     }
@@ -200,6 +238,8 @@ void boundaries(){
     boundary("archive",[](const fs::path& path){auto store=create(path);store.create_account(2,"Savings",cad,date);store.select_account(2);store.opening(0,date,Money(500,cad));},[](ImportStore& store){store.select_account(2);store.archive_account("op");},[](ImportStore& store){store.select_account(2);return store.account().archived && store.committed_balance()==Money(500,cad);});
     boundary("reactivate",[](const fs::path& path){auto store=create(path);store.create_account(2,"Savings",cad,date);store.select_account(2);store.opening(0,date,Money(500,cad));store.archive_account("setup");},[](ImportStore& store){store.select_account(2);store.reactivate_account("op");},[](ImportStore& store){store.select_account(2);return !store.account().archived && store.committed_balance()==Money(500,cad);});
     boundary("delete",[](const fs::path& path){auto store=create(path);store.create_account(2,"Savings",cad,date);},[](ImportStore& store){if(!store.account_command_outcome("op"))store.select_account(2);store.delete_account("op");},[](ImportStore& store){return store.account_command_outcome("op").has_value() && store.accounts().size()==1;});
+    boundary("default-acceptance",[](const fs::path& path){auto store=create(path);store.ingest("default",bytes,qif::DateOrder::dmy);},[](ImportStore& store){store.accept_all("op",false);},[](ImportStore& store){return store.acceptance_outcome("op").has_value() && store.committed_balance()==Money(-1000,cad) && store.account().revision==0;});
+    boundary("default-opening",[](const fs::path& path){auto store=create(path);},[](ImportStore& store){store.correct_opening("op",date,Money(4000,cad));},[](ImportStore& store){return store.account().opening==Money(4000,cad) && store.committed_balance()==Money(4000,cad);});
     boundary("opening",[](const fs::path& path){auto store=create(path);publish(store);},[](ImportStore& store){store.correct_opening("op",date,Money(4000,cad));},[](ImportStore& store){return store.account().opening==Money(4000,cad) && store.committed_balance()==Money(3000,cad);});
     boundary("undo-opening",[](const fs::path& path){auto store=create(path);publish(store);store.correct_opening("setup",date,Money(4000,cad));},[](ImportStore& store){store.undo_account_operation("op","setup");},[](ImportStore& store){return store.account().opening==Money(10000,cad) && store.committed_balance()==Money(9000,cad);});
     boundary("currency",[](const fs::path& path){auto store=create(path);publish(store, "checking", Money(2000,cad));},[](ImportStore& store){store.reassign_currency("op",gbp);},[](ImportStore& store){return store.account().currency==gbp && store.committed_balance()==Money(1000,gbp) && store.evidence("checking")==bytes;});

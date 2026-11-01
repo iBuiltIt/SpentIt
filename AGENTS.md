@@ -1,10 +1,20 @@
 # SpentIt — Where did my money go?
 
+## Opening balance without confirmation — owner Go 2026-11-01
+
+Use the stored opening immediately, including zero. No separate opening
+confirmation or confirmation-based Commit blocker remains. Double-click the
+ledger Opening Balance row to edit its date/amount using the historied account
+correction and Undo. See [the contract](doc/ledger-editing.md#opening-balance-editing--owner-go-2026-11-01)
+and [status](doc/status.md) for verification and limits.
+
 ## Ledger editing — owner Go 2026-11-01
 
 The [ledger editor and session Undo contract](doc/ledger-editing.md) supersedes
 Save draft / Cancel edit. Double-click toggles, selection leaves the editor in
 place, Enter accepts a complete validated edit, and session Undo restores it.
+The category field now uses inline filtered completion with Enter/Tab selection
+and forward/reverse field navigation under the follow-up Go.
 Other dataset mutations end this Undo sequence; persistent committed history
 remains. See [status](doc/status.md) for verification and limits.
 
@@ -30,6 +40,17 @@ SpentIt is a local, single-user desktop application for understanding spending t
 ## Diagnostics hooks and agent profiling
 
 When the owner mentions hooks, diagnostics, introspection, observing the app, or agent-assisted profiling, read [Agent guide: using SpentIt diagnostics hooks for profiling](doc/agent-diagnostics-guide.md) first, then its linked runtime contract. The guide covers build variants, exact-process attachment, endpoint discovery, read-only CLI use, operation/UI correlation, timing interpretation and reproducible workloads. Owner instruction (2026-10-30): a request to use hooks explicitly pre-authorizes native macOS PID-targeted window capture and Accessibility inspection when the usual UI attachment is unavailable or unclear; do not ask for another method-specific Go. Retain and verify the original process identity, never use app-name resolution that can launch a second instance, and establish inspection access before asking the owner to prepare a selection. Follow the guide's standing authorization and OS/tool-permission boundaries. Reading a specifically selected pair's sources is authorized by a request to investigate that pair; generic profiling does not authorize unrelated private-data access, financial actions or implementation changes.
+
+## User-facing language — owner direction 2026-11-01
+
+Write from the user's point of view: explain the action they can take and any
+consequence needed to make a decision. Do not expose internal tracking terminology
+such as “evidence” or add history/preservation assurances that give the user
+nothing to act on. For example, the opening editor says “Update the opening date
+and/or balance.” Engineering documentation can retain precise internal terms.
+Apply the [user-facing language guide](doc/user-facing-language.md) to all UI
+copy, including errors and recovery messages. Ask what the user does with each
+message, whether it helps a decision, and whether it is the simplest accurate wording.
 
 ## Where information belongs
 

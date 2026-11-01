@@ -11,11 +11,11 @@
 namespace spentit::qif {
 std::string_view message(const Diagnostic& diagnostic) noexcept {
     switch(diagnostic.split_problem) {
-    case SplitProblem::missing_amount: return "Split is missing its $ amount before the terminator";
-    case SplitProblem::repeated_category: return "Repeated S category before a split $ amount";
-    case SplitProblem::repeated_memo: return "Repeated E memo before a split $ amount";
-    case SplitProblem::parent_after_split: return "Parent or unsupported field follows the start of splits";
-    case SplitProblem::parent_category: return "Parent L category conflicts with split allocations";
+    case SplitProblem::missing_amount: return "A split is missing its amount.";
+    case SplitProblem::repeated_category: return "A split contains more than one category.";
+    case SplitProblem::repeated_memo: return "A split contains more than one memo.";
+    case SplitProblem::parent_after_split: return "Transaction fields appear inside the split details.";
+    case SplitProblem::parent_category: return "The transaction category conflicts with its splits.";
     case SplitProblem::none: return message(diagnostic.issue);
     }
     return message(diagnostic.issue);
@@ -44,17 +44,17 @@ std::string_view message(Issue issue) noexcept {
     switch (issue) {
     case Issue::encoding: return "Invalid UTF-8 or unsupported control character";
     case Issue::resource_limit: return "Import resource limit exceeded";
-    case Issue::empty_file: return "No banking records";
+    case Issue::empty_file: return "No transactions found";
     case Issue::header: return "Unsupported or misplaced QIF header";
     case Issue::empty_record: return "Empty record or line";
-    case Issue::unterminated: return "Record requires a terminator";
+    case Issue::unterminated: return "This transaction is incomplete: its closing line is missing.";
     case Issue::unknown_field: return "Unsupported QIF field";
-    case Issue::repeated_field: return "Repeated singleton field";
-    case Issue::missing_field: return "Required date or total is missing";
-    case Issue::date: return "Invalid date for the selected profile";
-    case Issue::amount: return "Invalid exact amount or precision";
-    case Issue::split_structure: return "Ambiguous or incomplete split structure";
-    case Issue::split_total: return "Splits do not equal the exact total";
+    case Issue::repeated_field: return "This transaction contains the same field more than once.";
+    case Issue::missing_field: return "The transaction date or amount is missing.";
+    case Issue::date: return "The date does not match the file’s date format.";
+    case Issue::amount: return "Enter a valid amount with the decimal places allowed by this currency.";
+    case Issue::split_structure: return "The transaction’s split details are incomplete or unclear.";
+    case Issue::split_total: return "The split amounts must add up to the transaction amount.";
     case Issue::transfer: return "Invalid or unsupported transfer destination syntax";
     case Issue::category_class: return "Invalid or ambiguous category/class notation; check slash-containing category names against the catalog";
     case Issue::cleared_status: return "Unsupported cleared or budget status";

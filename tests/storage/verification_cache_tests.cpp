@@ -62,7 +62,7 @@ int main(){try{
 
     Directory d;const auto path=d.path/"dataset",cache=d.path/"cache";
     {auto s=ImportStore::create(path,key,"Synthetic",cad,"2026-10-01");s.opening(0,"2026-10-01",Money(0,cad));s.ingest("input",source,qif::DateOrder::dmy);}
-    int audits=0;app::OperationContext context;context.progress=[&](std::string_view phase){if(phase=="Verifying dataset integrity")++audits;};
+    int audits=0;app::OperationContext context;context.progress=[&](std::string_view phase){if(phase=="Checking file")++audits;};
     auto open=[&](bool expected){audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check((audits==1)==expected);check(s.ledger(true).size()==1);check(s.ledger(true).front().draft.transaction.effective_total()==Money(-1234,cad));};
     open(true); // no approval
     for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}) {
@@ -113,8 +113,8 @@ int main(){try{
     fails([&]{ImportStore::open_cached(path,key,cache);});write(path,updated);open(false);
     fs::remove(receipt);
     // Cancellation and process death before audit completion never publish approval.
-    {auto s=ImportStore::open(path,key);app::OperationContext cancelled;cancelled.progress=[](std::string_view phase){if(phase=="Verifying dataset integrity")throw app::OperationCancelled();};fails([&]{s.certify(cache,&cancelled);});check(!fs::exists(receipt));s.verify();}
-    auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,key);app::OperationContext interrupted;interrupted.progress=[](std::string_view phase){if(phase=="Verifying dataset integrity")_exit(19);};s.certify(cache,&interrupted);_exit(20);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==19);check(!fs::exists(receipt));open(true);
+    {auto s=ImportStore::open(path,key);app::OperationContext cancelled;cancelled.progress=[](std::string_view phase){if(phase=="Checking file")throw app::OperationCancelled();};fails([&]{s.certify(cache,&cancelled);});check(!fs::exists(receipt));s.verify();}
+    auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,key);app::OperationContext interrupted;interrupted.progress=[](std::string_view phase){if(phase=="Checking file")_exit(19);};s.certify(cache,&interrupted);_exit(20);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==19);check(!fs::exists(receipt));open(true);
     // The audit checks actual encrypted pages even when the connection has warm caches.
     {auto s=ImportStore::open(path,key);const auto before=bytes(path);auto damaged=before;damaged[8192]^=1;write(path,damaged);fails([&]{s.certify(cache);});check(!fs::exists(receipt));write(path,before);}
     // A process killed after publication leaves a usable approval and releases locks.

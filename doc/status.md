@@ -2,6 +2,103 @@
 
 Last updated: 2026-11-01
 
+## User-facing wording — 2026-11-01
+
+Owner Go implemented across the main desktop UI and its presentation messages.
+The [language guide](user-facing-language.md), linked from AGENTS.md, records the
+owner's three questions: what does the user do with this, does it help a decision,
+and is it the simplest accurate wording?
+
+Opening, import, Review, transfers, category/rule editing, history, setup,
+backup, quit and recovery text now uses actions and relevant consequences.
+Acceptance buttons say “Accept transactions”; Link and quit buttons name their
+actions. Routine internal identifiers, revision counts, rule-limit inventories,
+and redundant preservation/history paragraphs were removed. Original imported
+values remain inspectable. Destructive scope, currency conversion limitations,
+password consequences and saved-versus-unknown outcomes remain explicit.
+The wording follow-up changes presentation, not acceptance or storage policy;
+the opening behavior change is recorded separately below. Internal API names,
+serialized status values and diagnostic identifiers retain technical terminology.
+
+Verification: the rules-enabled macOS Release build passed, including the local
+`build/SpentIt` application. All 38 selected checks passed across the initial run
+and reruns: 32 engine/parser, transfer, mapping/lifecycle, Review and UI checks,
+plus six rule-storage, opening, import-error/repair and verification-cache checks.
+The initial run failed four test executables because assertions expected old
+phrases; those assertions were updated and all four executables passed on rerun.
+The full import UI rerun covers the cases beyond those earlier assertion failures.
+Saved/unknown recovery cases and financial state assertions remain in place.
+`git diff --check` passed and 178 relative documentation file links resolved.
+Native interaction, sanitizers, rules-disabled builds, Linux and Windows were not
+rerun for this wording pass. The running owner application and dataset were not
+touched.
+
+## Opening balance without confirmation — 2026-11-01
+
+Owner Go implemented; see [the contract](ledger-editing.md#opening-balance-editing--owner-go-2026-11-01).
+The ordinary confirmation strip and confirmation-based import/transfer Commit
+blockers are removed. Commit uses the stored opening, including untouched zero.
+Double-click Opening Balance or use the account menu to edit its amount/date
+through the existing atomic historied correction and account Undo, before or
+after Commit. Genuine transfer warnings remain without opening-confirmation text.
+Owner wording follow-up: the opening dialog now says “Update the opening date
+and/or balance.” Internal tracking and history explanations were removed.
+The historical stored flag remains revision metadata; it no longer gates these
+operations. Formats remain 40/39 and the source-bound verifier identity changes.
+
+Rules-enabled macOS Release rebuilt without compiler warnings. The initial
+15-test selection passed 14; the full import UI test dereferenced the removed
+`openingSetup` object. Both obsolete assertions now require that object to be
+absent. The rebuilt full import UI rerun passed in 79.12 s, completing all 15
+selected checks across the runs. The passing selection covered opening Commit, account lifecycle, mapping
+openings, Review, transfers, verification cache, navigation, QML and category UI.
+The new UI case double-clicks the initial opening, edits it, undoes it, commits
+an import and edits the opening afterward. Storage cases cover untouched-zero
+Commit, transfer counterparts, correction/Undo, unchanged evidence and verified
+reopening. The extended lifecycle boundary suite passed separately in 19.58 s,
+including default-zero acceptance and first opening correction: injected
+SQLITE_FULL/I/O failures at first/middle/last writes, retry, and process exits on
+both sides of durable commit. This is selected failure coverage, not a complete
+write-position sweep.
+
+The active owner process and dataset were not restarted or modified. Native UI
+interaction, sanitizers, rules-disabled builds, Linux and Windows were not rerun
+for this change. All 175 relative file links in the changed guidance documents
+resolved, and `git diff --check` passed. The rebuilt local application is
+`build/SpentIt`.
+
+## Inline ledger category completion — 2026-11-01
+
+Implemented the owner's follow-up Go in the [ledger editing contract](ledger-editing.md).
+Category is now a text field, blank for Uncategorized, with an anchored dropdown,
+case-insensitive substring filtering, first-match highlighting, Up/Down selection,
+and an interactive scrollbar. Enter/Tab accepts the highlighted choice and moves
+to Memo; clicking also selects. Date, Payee, Amount, Category and Memo have explicit
+forward/reverse navigation, with allocation memo/amount traversal for multiple
+splits. Add split remains a button. No matches cannot assign or create a category.
+Escape cancels the search before the editor's existing discard behavior applies.
+
+Assignments reuse complete-edit acceptance and existing transfer commands.
+Unresolved imported transfer allocations retain account-only explicit resolution.
+No financial/storage logic or schema changes; formats remain 40/39.
+
+Release regression passed **5/5** in **104.84 s**: ledger UI, navigation,
+committed UI, category UI and QML smoke. Focused transfer checks passed **5/5**
+including init/cleanup in **4.613 s**, covering unresolved QIF resolution,
+account destination selection and existing context transfer behavior. The new
+completion test exercises case-insensitive substring filtering, first-match and
+arrow highlighting, Enter/Tab and Shift+Tab, mouse selection, actual scrollbar
+thumb dragging, no-match rejection, clearing/Undo and multiple-split navigation.
+ASan/UBSan passed this focused test **3/3** including init/cleanup in **4.381 s**,
+with no sanitizer diagnostic (`detect_leaks=0`). The test waits for deferred Undo
+focus restoration before starting the next pointer interaction.
+
+The synthetic dropdown render was inspected and the rules-enabled Release
+`build/SpentIt` was rebuilt. `git diff --check` passed; all **152** relative file
+links in changed guidance/status/contract documents resolved. Verification used
+synthetic offscreen Qt interactions. Native Cocoa interaction, spoken accessibility,
+other platforms and large-catalog latency remain unverified.
+
 ## Stable single-click selection — 2026-11-01
 
 Implemented the follow-up Go for flashing in the open editor and sidebar.

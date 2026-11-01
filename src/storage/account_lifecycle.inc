@@ -108,14 +108,13 @@ app::AccountCommandReceipt ImportStore::correct_opening(std::string_view operati
     const auto content="4\n"+std::string(date)+"\n"+std::to_string(amount.units());
     if(auto prior=matching_account_command(impl_->db,id,content)) return *prior;
     const auto acct=command_account(true);
-    if(!acct.opening_confirmed && !acct.frozen) fail(SQLITE_CONSTRAINT,"Confirm the opening before correcting it");
     amount.require_compatible(acct.opening);
     std::optional<std::string> earliest;
     auto consider=[&](const std::string& value){if(!earliest || value<*earliest) earliest=value;};
     Statement dates(impl_->db,"SELECT e.date FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) JOIN batches b ON b.id=h.batch WHERE b.account_id=?");dates.integer(1,acct.identity);
     while(dates.row()) consider(dates.bytes(0));
     for(const auto& value:all_transfers()) for(const auto* side:{&value.link.origin,&value.link.destination}) if(side->endpoint.account==acct.identity && side->state==transfers::State::committed) consider(side->date);
-    if(earliest && date>*earliest) fail(SQLITE_CONSTRAINT,"Opening date is later than a committed transaction");
+    if(earliest && date>*earliest) fail(SQLITE_CONSTRAINT,"The opening date must be on or before the earliest accepted transaction.");
     if(acct.revision==INT64_MAX) fail(SQLITE_FULL,"Revision capacity exhausted");
     guard_money([&]{(void)(committed_balance()-acct.opening+amount);});
     Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
@@ -212,7 +211,7 @@ app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view 
     const auto id=command_id(operation);command_id(undo_of);const auto content="6\n"+std::string(undo_of);
     if(auto prior=matching_account_command(impl_->db,id,content)) return *prior;
     Statement target(impl_->db,"SELECT account,kind,name,definition,prior_definition,opening,prior_opening,opening_date,prior_opening_date,archived,revision,frozen,confirmed FROM account_operations WHERE id=?");
-    target.text(1,undo_of);if(!target.row() || (target.integer(1)!=4 && target.integer(1)!=5)) fail(SQLITE_CONSTRAINT,"Choose an opening correction or currency reassignment to undo");
+    target.text(1,undo_of);if(!target.row() || (target.integer(1)!=4 && target.integer(1)!=5)) fail(SQLITE_CONSTRAINT,"Choose an opening balance or currency change to undo.");
     const auto acct=command_account(false);
     if(target.integer(0)!=acct.identity) fail(SQLITE_CONSTRAINT,"Account command belongs to another account");
     const auto kind=static_cast<int>(target.integer(1));

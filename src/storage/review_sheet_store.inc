@@ -325,7 +325,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     }
     const auto acceptance=acceptance_review();
     for(const auto& warning:acceptance.warnings){
-        if(warning.reason=="Generated transfer has no independent bank match")continue;
+        if(warning.reason=="This transfer has not been matched to an imported transaction.")continue;
         if(warning.ordinal && (duplicate_rows.contains({warning.batch,*warning.ordinal}) || link_sources.contains({warning.batch,*warning.ordinal})))continue;
         if(warning.reason=="Review possible duplicates before committing")continue;
         const auto account=account_by_id(warning.account);
@@ -387,7 +387,7 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
     diag::Span span(diag::Code::review_write);
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE);const auto encoded=review_request(answer);
     if(const auto prior=review_outcome(operation)){Statement s(impl_->db,"SELECT request FROM review_answers WHERE id=?");s.text(1,operation);if(!s.row() || s.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Review retry changed its answer");return *prior;}
-    auto sheet=review_sheet();if(sheet.generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");if(sheet.generation!=answer.generation)fail(SQLITE_CONSTRAINT,"The transactions changed. Review the current question again.");
+    auto sheet=review_sheet();if(sheet.generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");if(sheet.generation!=answer.generation)fail(SQLITE_CONSTRAINT,"The transactions changed. Review them again.");
     if(answer.question=="selected" && answer.action==app::ReviewAction::merge){
         const auto owner=account();app::ReviewQuestion manual{"selected",app::ReviewKind::same,owner.identity,owner.name,"Are these the same?","",{}, {}};
         const std::set<imports::Occurrence> wanted(answer.selected.begin(),answer.selected.end());
@@ -462,7 +462,7 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
             auto left=origin;auto right=*std::find_if(chosen.begin(),chosen.end(),[&](const auto& r){return r.identity!=origin.identity;});
             const auto allocation=[](const app::ReviewTransaction& row,const std::string& name)->Allocation {
                 const auto& aa=row.draft.transaction.allocations();if(name.empty() && aa.size()==1)return aa.front();
-                const auto it=std::find_if(aa.begin(),aa.end(),[&](const auto& a){return a.identity==name;});if(it==aa.end())fail(SQLITE_CONSTRAINT,"Choose the allocation to link");return *it;
+                const auto it=std::find_if(aa.begin(),aa.end(),[&](const auto& a){return a.identity==name;});if(it==aa.end())fail(SQLITE_CONSTRAINT,"Choose the split to link");return *it;
             };
             const auto prior=all_transfers();
             auto a=allocation(left,answer.left_allocation),b=allocation(right,answer.right_allocation);
@@ -481,7 +481,7 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
                 for(const auto& v:prior)if(!v.link.unresolved && v.link.origin.endpoint.entry==large.identity && v.link.origin.endpoint.allocation==part.identity && !v.link.destination.independent_evidence && !v.link.destination.attached_evidence && !v.link.destination.proposed_evidence)generated=v;
                 if(transfer_linked(large.identity) && !generated)fail(SQLITE_CONSTRAINT,"Resolve the existing link before changing its allocation");
                 std::string category;std::optional<CategoryBinding> binding;
-                if(!answer.remainder_category.empty()){const auto display=resolve_category(answer.remainder_category);if(!display.assignable)fail(SQLITE_CONSTRAINT,"Choose an active ordinary category");category=display.path;binding=CategoryBinding{answer.remainder_category,catalog_sequence(impl_->db)};}
+                if(!answer.remainder_category.empty()){const auto display=resolve_category(answer.remainder_category);if(!display.assignable)fail(SQLITE_CONSTRAINT,"Choose an available category");category=display.path;binding=CategoryBinding{answer.remainder_category,catalog_sequence(impl_->db)};}
                 auto aa=large.draft.transaction.allocations();for(auto& item:aa)if(item.identity==part.identity)item.amount=common;
                 Allocation extra{category,"",remainder,binding,std::string(operation)+"-remainder"};extra.category_owner=FieldOwnership::manual;extra.memo_owner=FieldOwnership::manual;aa.push_back(extra);
                 large.draft.transaction=large.draft.transaction.corrected(large.draft.transaction.effective_total(),std::move(aa));
@@ -671,7 +671,7 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         if(committed && !committed_entry(id).current.active)fail(SQLITE_CONSTRAINT,"Transaction was removed");
         const auto previous=draft;auto aa=draft.transaction.allocations();auto a=std::find_if(aa.begin(),aa.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
         if(a==aa.end() || a->amount!=fact.amount || draft.date!=fact.date)fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before changing category");
-        if(!request.category_id.empty()){const auto display=resolve_category(request.category_id);if(!display.assignable || display.path!=request.category_path)fail(SQLITE_CONSTRAINT,"Choose an active ordinary category");}
+        if(!request.category_id.empty()){const auto display=resolve_category(request.category_id);if(!display.assignable || display.path!=request.category_path)fail(SQLITE_CONSTRAINT,"Choose an available category");}
         else if(!request.category_path.empty())fail(SQLITE_CONSTRAINT,"Choose an ordinary category or Uncategorized");
         a->category=request.category_path;a->category_binding=request.category_id.empty()?std::optional<CategoryBinding>{}:CategoryBinding{request.category_id,catalog_sequence(impl_->db)};a->category_owner=FieldOwnership::manual;a->category_rule.reset();
         draft.transaction=draft.transaction.corrected(draft.transaction.effective_total(),std::move(aa));return canonical_draft(id,draft,previous,committed?committed_entry(id).current.revision+1:request.batch_revision+1,committed);
