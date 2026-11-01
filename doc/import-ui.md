@@ -1,5 +1,11 @@
 # SpentIt application UI
 
+Current ledger behaviour (owner Go, 2026-11-01) is described in
+[ledger editing](ledger-editing.md). It supersedes Save draft / Cancel edit and
+explicit committed-edit activation below: Enter accepts, Escape discards pending
+text, double-click toggles, and accepted edits have session Undo.
+
+
 Settings is available only in the lower-left sidebar; the duplicate upper-right
 button was removed at the owner's request on 2026-10-31. Backup/restore remains in
 Settings. Show the sidebar first if it is hidden.

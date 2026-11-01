@@ -556,7 +556,7 @@ ApplicationWindow {
         splitModel.setProperty(pickerIndex,"categoryId",id)
         splitModel.setProperty(pickerIndex,"bindingRevision",id?(s.catalogRevision||""):"")
         splitModel.setProperty(pickerIndex,"categoryDisplay",id?path:path?"Unmapped: "+path:"Uncategorized")
-        splitModel.setProperty(pickerIndex,"categoryTouched",true);dirty=true;categoryPicker.close()
+        splitModel.setProperty(pickerIndex,"categoryTouched",true);dirty=true;categoryPicker.close();saveEditor()
     }
     function chooseAccountDestination(accountId) {
         if(pickerIndex<0 || pickerIndex>=splitModel.count) return
@@ -566,6 +566,10 @@ ApplicationWindow {
         categoryPicker.close()
         transferCommand("transfer_retarget",{link:link||stamp,batch:selected.batch,ordinal:selected.ordinal,allocation:split.allocationId,mode:1,destination:accountId,generatedBatch:"~transfer-"+stamp+"-destination"})
     }
+    property bool editorClosed: false
+    property Item ledgerEditorHost: null
+    property var editView: null
+    property var editFocus: null
     property bool committedEditing: false
     property bool editEnabled: (!!selected.editable || (committedEditing && !!selected.canCorrect)) && !s.readOnly
     property bool dirty: false
@@ -599,7 +603,7 @@ ApplicationWindow {
             editDate.text=d.date; editPayee.text=d.payee; editMemo.text=d.memo; editTotal.text=d.total
             for(let a of d.splits) splitModel.append(a)
         }
-        dirty=false;committedEditing=false;payeeTouched=false;memoTouched=false
+        dirty=false;committedEditing=!!selected.canCorrect;payeeTouched=false;memoTouched=false
     }
     function wholeRecognized(expr) { let body=expr.startsWith("(?-i)")?expr.slice(5):expr; return body.startsWith("^(?:") && body.endsWith(")$") && body.length>=6 }
     function ruleRow(rule) {
@@ -753,6 +757,54 @@ ApplicationWindow {
     }
     function openRuleCategory() { pickerIndex=-2; categorySearch.clear(); categoryPicker.open() }
     function inspectRecord(batch, ordinal) { guard(function(){workflow.command("inspect",{batch:batch,ordinal:ordinal})}) }
+    function toggleRecord(batch, ordinal) {
+        if(!editorClosed && selected.batch===batch && selected.ordinal===ordinal)
+            guard(function(){editorClosed=true;ledger.forceActiveFocus()})
+        else inspectRecord(batch,ordinal)
+    }
+    function rememberEditView() {
+        captureLedgerView("edit")
+        editView=ledgerViewRestore
+        if(editView && currentPage==="ledger" && workflow.selectedRowIndex()>=0)editView.editorOffset=ledgerEditorHost?ledger.contentY-ledgerEditorHost.y:0
+        ledgerViewRestore=null;ledgerViewKind=""
+        let field=window.activeFocusItem
+        editFocus=field?{name:field.objectName,position:field.cursorPosition}:null
+    }
+    function editorField(item,name) {
+        if(item.objectName===name)return item
+        for(let child of item.children){let found=editorField(child,name);if(found)return found}
+        return null
+    }
+    function restoreEditView() {
+        let view=editView,focus=editFocus;editView=null;editFocus=null
+        Qt.callLater(function(){
+            ledger.forceLayout()
+            if(view){
+                // Sorting can move the edited transaction. Follow its identity,
+                // retaining its screen offset when possible, not its old index.
+                if(view.editorOffset!==undefined && workflow.selectedRowIndex()>=0){
+                    let index=workflow.selectedRowIndex()
+                    ledger.positionViewAtIndex(index,ListView.Beginning)
+                    ledger.forceLayout()
+                    let row=ledger.itemAtIndex(index)
+                    if(row)ledger.contentY=Math.max(ledger.originY,Math.min(row.y+view.editorOffset,ledger.originY+Math.max(0,ledger.contentHeight-ledger.height)))
+                    ledger.positionViewAtIndex(index,ListView.Contain)
+                }else restoreViewport(view)
+            }
+            // A newly materialized row acquires the editor height after the
+            // first positioning pass. Settle that layout before restoring focus.
+            Qt.callLater(function(){
+                ledger.forceLayout()
+                if(view && view.editorOffset!==undefined && workflow.selectedRowIndex()>=0)
+                    ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain)
+                let field=focus && focus.name?editorField(editor,focus.name):null
+                if(field){field.forceActiveFocus();if(focus.position!==undefined)field.cursorPosition=focus.position}
+            })
+        })
+    }
+    function undoEdit() {
+        guard(function(){rememberEditView();workflow.command("undo_edit")})
+    }
     function selectLedgerRow(row, modifiers) {
         guard(function(){workflow.command("select",{row:row,range:!!(modifiers & Qt.ShiftModifier),toggle:!!(modifiers & (Qt.ControlModifier|Qt.MetaModifier)),firstSearchSelection:!!searchReturn && !searchReturn.chosen})})
     }
@@ -775,9 +827,11 @@ ApplicationWindow {
         dirty=true
     }
     function saveEditor() {
+        if(workflow.busy || !dirty)return
+        rememberEditView()
         let splits=[]
         for(let i=0;i<splitModel.count;i++) {let a=splitModel.get(i);splits.push({category:a.category,memo:a.memo,amount:a.amount,categoryId:a.categoryId||"",bindingRevision:a.bindingRevision||"",allocationId:a.allocationId||"",categoryTouched:!!a.categoryTouched,memoTouched:!!a.memoTouched})}
-        workflow.command(committedEditing?"preview_change":"save", {kind:"correct",date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits,payeeTouched:payeeTouched,memoTouched:memoTouched})
+        workflow.command(committedEditing?"accept_edit":"save", {kind:"correct",date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits,payeeTouched:payeeTouched,memoTouched:memoTouched})
     }
     onClosing: function(close) {
         if(allowClose) return
@@ -795,6 +849,7 @@ ApplicationWindow {
             if(action==="close" && !success && closingRequested){closingRequested=false;window.show();closeAuditFailure.open()}
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
 
+            if(success && (action==="inspect" || action==="undo_edit" || action==="import"))editorClosed=false
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
 
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
@@ -803,6 +858,8 @@ ApplicationWindow {
             if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
             if(success && action==="release_transfer_batch")workspaceFeedback="Transfer categories changed. Undo restores the whole change."
             if(success && action==="undo_transfer_assignment")workspaceFeedback="Transfer assignment undone."
+            if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session until another kind of change.":"Edit saved."
+            if(success && action==="undo_edit")workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
             if(success && (action==="rules_save" || action==="rules_apply"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
@@ -825,7 +882,7 @@ ApplicationWindow {
             if(action==="select")ledger.currentIndex=s.selectionIndex===undefined?-1:s.selectionIndex
             if (action==="inspect" || action==="import" || action==="map_import")
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
-            if(!success && (action==="save" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null}
+            if(!success && (action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
             if(!s.active) {linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
@@ -879,8 +936,8 @@ ApplicationWindow {
                 if(action==="apply_change") dismiss(changePreview)
                 if(action==="transfer_merge" && (s.transferMergePreview||{}).id) mergePreview.open()
                 if(action==="transfer_merge_apply") dismiss(mergePreview)
-                if(["inspect","entry_history","import","map_import","group_abort","resume","save","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
-                if(action==="save" || action==="apply_change") {
+                if(["inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
+                if(action==="save" || action==="accept_edit" || action==="apply_change") {
                     dirty=false
                     if(pendingAction) {let next=pendingAction;pendingAction=null;guard(next)}
                 }
@@ -893,6 +950,7 @@ ApplicationWindow {
                 if(action==="close") {settingUp=false;probeTimer.restart();if(closingRequested){allowClose=true;Qt.callLater(function(){window.close();Qt.quit()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
             settleLedgerView(action,success)
+            if(action==="save" || action==="accept_edit" || action==="undo_edit")restoreEditView()
         }
     }
     Component.onCompleted: {
@@ -1262,8 +1320,8 @@ ApplicationWindow {
     }
     Shortcut {
         sequences:[StandardKey.Undo]
-        enabled:!reviewSheet.visible && (!!s.canUndoReview || !!s.canUndoTransferAssignment) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
-        onActivated:workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")
+        enabled:!reviewSheet.visible && (!!s.canUndoEdit || !!s.canUndoReview || !!s.canUndoTransferAssignment) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        onActivated:if(s.canUndoEdit)undoEdit();else workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")
     }
     property var exclusionEndpoint: ({})
     property var exclusionEditing: ({})
@@ -2068,6 +2126,7 @@ ApplicationWindow {
             RowLayout {
                 TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
+                Button {objectName:"undoEdit";text:"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo accepted edits from this session. Other dataset changes end this Undo sequence.";ToolTip.visible:hovered}
                 Button {objectName:"undoTransferAssignment";text:"Undo transfer assignment";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){workflow.command("undo_transfer_assignment")})}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
             }
@@ -2122,14 +2181,22 @@ ApplicationWindow {
                     Accessible.focusable:true
                     Accessible.focused:ledger.activeFocus && index===s.selectionIndex
                     Accessible.onPressAction:{ledger.forceActiveFocus();selectLedgerRow(index,0)}
-                    property bool expanded: record.batch===selected.batch && record.ordinal===selected.ordinal
+                    property bool expanded: !window.editorClosed && record.batch===selected.batch && record.ordinal===selected.ordinal
+                    function syncEditorHost() {
+                        if(expanded)window.ledgerEditorHost=ledgerRow
+                        else if(window.ledgerEditorHost===ledgerRow)window.ledgerEditorHost=null
+                    }
+                    onExpandedChanged:syncEditorHost()
+                    Component.onCompleted:syncEditorHost()
+                    ListView.onReused:syncEditorHost()
+                    Component.onDestruction:if(window.ledgerEditorHost===ledgerRow)window.ledgerEditorHost=null
                     property bool viewingSplits: !!window.splitViews[window.splitKey(record)] && record.splits.length>1
                     property alias editorSlot: rowEditorSlot
                     width:ledger.width-20;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?"#c7e3fb":record.status==="Draft"?"#fff6de":"#f3f5f7"
                     border.width:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?1:0;border.color:"#2870a8"
                     MouseArea {width:parent.width;height:34;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){if(!(s.selectionKeys||{})[record.batch+":"+record.ordinal])selectLedgerRow(ledgerRow.index,0);ledgerContext.popup()}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
-                        onDoubleClicked:function(mouse){if(mouse.button===Qt.LeftButton && record.batch.length)inspectRecord(record.batch,record.ordinal)}
+                        onDoubleClicked:function(mouse){if(mouse.button===Qt.LeftButton && record.batch.length)toggleRecord(record.batch,record.ordinal)}
                     }
                     Row {
                         width:parent.width;height:34;spacing:0
@@ -2185,11 +2252,17 @@ ApplicationWindow {
     }
     Frame {
         id:editor;objectName:"transactionEditor"
-        // One persistent editor, visually reparented into the current row.
+        // One persistent editor, visually attached to the inspected transaction.
         // Its fields and split buffer never belong to a recycled delegate.
-        property bool inlineRow: !!ledger.currentItem && ledger.currentItem.expanded
-        parent:currentPage==="review"?reviewInspector:(inlineRow?ledger.currentItem.editorSlot:reviewPanel)
-        visible:!!s.active && !!selected.batch && (currentPage!=="review" || reviewInspecting)
+        property bool inlineRow: !!window.ledgerEditorHost && window.ledgerEditorHost.expanded
+        parent:currentPage==="review"?reviewInspector:(inlineRow?window.ledgerEditorHost.editorSlot:reviewPanel)
+        visible:!!s.active && !!selected.batch && !window.editorClosed && (currentPage!=="review" || reviewInspecting)
+        Keys.priority:Keys.AfterItem
+        Keys.onPressed:function(event) {
+            if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter)event.accepted=true
+            else if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}
+            else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}
+        }
         enabled:!workflow.busy
         width:parent.width;height:330
         UsableScrollView {
@@ -2201,18 +2274,21 @@ ApplicationWindow {
                 Label {textFormat:Text.PlainText;text:selected.sourceClasses ? "Source metadata — "+selected.sourceClasses : "";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.committed && !s.committedChangesSupported?"Editing committed transactions is not supported by this dataset.":"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 RowLayout {
-                    visible:!!selected.committed && !committedEditing
-                    Button {objectName:"editCommitted";text:"Edit committed record";visible:!!selected.canCorrect;onClicked:committedEditing=true}
-                    Button {objectName:"removeCommitted";text:"Remove transaction…";visible:!!selected.canCorrect;onClicked:workflow.command("preview_change",{kind:"remove"})}
+                    visible:!!selected.committed
+                    Button {objectName:"removeCommitted";text:"Remove transaction…";visible:!!selected.canCorrect;onClicked:guard(function(){workflow.command("preview_change",{kind:"remove"})})}
                     Button {objectName:"showEntryHistory";text:"History";visible:!!s.committedChangesSupported;onClicked:guard(function(){navigate("history");workflow.command("entry_history",{batch:selected.batch,ordinal:selected.ordinal})})}
                 }
                 RowLayout {
                     visible:!!selected.draft
-                    TextField {id:editDate;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
-                    TextField {id:editPayee;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
-                    TextField {id:editTotal;objectName:"durableTotal";placeholderText:"Exact total";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
+                    TextField {id:editDate;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
+                    TextField {id:editPayee;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
+                    TextField {id:editTotal;objectName:"durableTotal";placeholderText:"Exact total";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
                 }
-                TextField {id:editMemo;visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
+                TextField {id:editMemo;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
                 Repeater {
                     model:splitModel
                     RowLayout {
@@ -2221,19 +2297,20 @@ ApplicationWindow {
                         required property string memo
                         required property string amount
                         Button {objectName:"splitCategory_"+index;visible:!!s.categoriesSupported;text:(index>=0 && index<splitModel.count ? splitModel.get(index).categoryDisplay : "")||"Uncategorized";enabled:editEnabled || originLink(index>=0 && index<splitModel.count ? splitModel.get(index).allocationId : "").length>0;onClicked:{let id=splitModel.get(index).allocationId;if(originLink(id).length>0)openCategoryPicker(index);else if(category.startsWith("[")){guard(function(){let choices=(selected.draft||{}).splits||[];transferAllocation.currentIndex=choices.findIndex(function(a){return a.allocationId===id});transferDialog.open()})}else openCategoryPicker(index)}}
-                        TextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
-                        TextField {text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
+                        TextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
+                        TextField {objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
                         Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from this split memo":"Manual splits are not rule sources";onClicked:createFromSource("memo",index)}
-                        TextField {objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Exact split amount";readOnly:!editEnabled;onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
+                        TextField {objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Exact split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
                         Button {text:"Remove";visible:editEnabled;enabled:!category.startsWith("[");onClicked:{splitModel.remove(index);dirty=true}}
                     }
                 }
                 RowLayout {
                     visible:editEnabled
                     Button {text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
-                    Button {objectName:"saveDraft";text:committedEditing?"Review correction…":selected.repair?"Save repair":"Save draft";onClicked:saveEditor()}
-                    Button {text:"Cancel edit";onClicked:loadEditor()}
-                    Label {textFormat:Text.PlainText;text:dirty?"Unsaved changes":committedEditing?"No correction applied":selected.repair?"Repair not yet saved":"Last saved revision"}
+                    Label {textFormat:Text.PlainText;text:dirty?"Press Enter to accept the complete edit; Escape to discard pending changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 RowLayout {
                     visible:!!selected.editable && !selected.repair && !s.readOnly

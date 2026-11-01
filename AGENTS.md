@@ -1,5 +1,13 @@
 # SpentIt — Where did my money go?
 
+## Ledger editing — owner Go 2026-11-01
+
+The [ledger editor and session Undo contract](doc/ledger-editing.md) supersedes
+Save draft / Cancel edit. Double-click toggles, selection leaves the editor in
+place, Enter accepts a complete validated edit, and session Undo restores it.
+Other dataset mutations end this Undo sequence; persistent committed history
+remains. See [status](doc/status.md) for verification and limits.
+
 ## Opening and import cleanup — owner Go 2026-10-31
 
 The [opening/ledger cleanup and interrupted-import rollback](doc/ui-import-cleanup.md)

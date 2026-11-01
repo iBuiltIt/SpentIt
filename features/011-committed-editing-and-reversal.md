@@ -1,9 +1,16 @@
 # 011 — Committed editing, removal, and undo
 
+The [2026-11-01 ledger editing contract](../doc/ledger-editing.md) adds direct Enter
+acceptance and stacked session Undo for ordinary draft and committed edits.
+Committed history remains durable and its strict history Undo remains available
+when eligible after restart. This supersedes the old editor opt-in/Apply
+presentation below; other dataset mutations end the session edit Undo sequence.
+
+
 Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
 
 Status: **active**  
-Last updated: 2026-10-31  
+Last updated: 2026-11-01  
 Implementation: ordinary committed storage/UI operations are implemented per account in the [current multi-account experiment](../doc/accounts.md); schema 4 was the original one-account checkpoint. **The owner accepted the ordinary correction/removal/strict-undo policy on 2026-10-25.** Bounded verification is recorded in the [implementation report](../doc/committed-changes.md) and [project status](../doc/status.md), including configuration-specific results and limits. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-transfer-management-decisions--2026-10-27). The [2026-10-27 committed transfer edits](#accepted-committed-transfer-editing--2026-10-27) are implemented for the locked cases. Moving a committed row and rewriting source links remain open, so this feature remains active.
 
 Accepted and implemented follow-up, 2026-10-26: committed-only bulk category/removal operations exclude Opening Balance and reject draft/mixed selections. Category changes affect every allocation while retaining amounts and memos. Exact previews, durable group receipts, atomic Apply and strict group Undo are documented in [search and ledger](../doc/search-ledger.md).

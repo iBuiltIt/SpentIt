@@ -83,12 +83,12 @@ private slots:
         run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});const auto occurrence=model.rowIdentity(model.selectedRowIndex());
         auto allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();const auto allocationId=allocation.value("allocationId").toString();QVERIFY(!allocationId.isEmpty());
         QCOMPARE(allocation.value("categoryDisplay").toString(),"Unmapped: Legacy:Transport");
-        QVERIFY(click(root,"splitCategory_0"));QVERIFY(click(root,"chooseUncategorized"));QVERIFY(click(root,"saveDraft"));wait(model);
+        QVERIFY(click(root,"splitCategory_0"));QVERIFY(click(root,"chooseUncategorized"));wait(model);
         QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryDisplay").toString(),"Uncategorized");
-        QVERIFY(click(root,"splitCategory_0"));QVERIFY(edit(root,"unmappedCategoryText","Explicit review label"));QVERIFY(click(root,"chooseUnmapped"));QVERIFY(click(root,"saveDraft"));wait(model);
+        QVERIFY(click(root,"splitCategory_0"));QVERIFY(edit(root,"unmappedCategoryText","Explicit review label"));QVERIFY(click(root,"chooseUnmapped"));wait(model);
         QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryDisplay").toString(),"Unmapped: Explicit review label");
         QVERIFY(click(root,"splitCategory_0"));QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_PICKER_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_PICKER_SCREENSHOT")));QVERIFY(object(root,"pickCategory_"+group));QVERIFY(object(root,"pickCategory_"+group)->property("enabled").toBool());
-        QVERIFY(edit(root,"categoryPickerSearch","auto: parking"));QVERIFY(QMetaObject::invokeMethod(object(root,"categoryPickerSearch"),"accepted"));QVERIFY(click(root,"saveDraft"));wait(model);
+        QVERIFY(edit(root,"categoryPickerSearch","auto: parking"));QVERIFY(QMetaObject::invokeMethod(object(root,"categoryPickerSearch"),"accepted"));wait(model);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("allocationId").toString(),allocationId);
         run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(model,"commit");
         QVERIFY(click(root,"categoryNavigation"));wait(model);menu(model,root,leaf,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Transport: Parking"));applyCategory(model,root);
@@ -97,7 +97,7 @@ private slots:
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("category").toString(),"Auto: Parking");QCOMPARE(allocation.value("categoryDisplay").toString(),"Transport: Parking");
         QVERIFY(click(root,"categoryNavigation"));wait(model);menu(model,root,leaf,"archiveCategory");wait(model);
         QVERIFY(!model.state().value("categoryById").toMap().value(leaf).toMap().value("assignable").toBool());
-        QVERIFY(click(root,"accountNavigation"));run(model,"inspect",occurrence);QVERIFY(click(root,"editCommitted"));QVERIFY(edit(root,"durablePayee","Edited payee, retained category"));QVERIFY(click(root,"saveDraft"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
+        QVERIFY(click(root,"accountNavigation"));run(model,"inspect",occurrence);QVERIFY(edit(root,"durablePayee","Edited payee, retained category"));QVERIFY(QMetaObject::invokeMethod(object(root,"durablePayee"),"accepted"));wait(model);
         allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();QCOMPARE(allocation.value("categoryId").toString(),leaf);QCOMPARE(allocation.value("allocationId").toString(),allocationId);QVERIFY(allocation.value("categoryDisplay").toString().contains("Archived"));QCOMPARE(model.state().value("committed").toString(),"-10.00");
         QVERIFY(click(root,"categoryNavigation"));wait(model);object(root,"showArchivedCategories")->setProperty("checked",true);menu(model,root,leaf,"archiveCategory");wait(model);
         QVERIFY(model.state().value("categoryById").toMap().value(leaf).toMap().value("assignable").toBool());

@@ -31,6 +31,12 @@ public:
     app::BatchInfo resume(std::string_view id,std::int64_t r,app::OperationContext& c) override {return repo().resume(id,r,c);}
     std::string evidence(std::string_view b) const override {return repo().evidence(b);}
     app::RowView row(const imports::Occurrence& o) const override {return repo().row(o);}
+    app::ReviewReceipt edit_transaction(std::string_view op,const imports::Occurrence& id,std::int64_t revision,const std::optional<app::EntryToken>& token,const imports::DraftRow& draft) override {
+        if(failBefore)throw std::runtime_error("Injected failure before edit");auto result=repo().edit_transaction(op,id,revision,token,draft);refreshBroken=failRefresh;if(loseAcknowledgement)throw std::runtime_error("Injected lost acknowledgement");return result;
+    }
+    bool can_undo_transaction_edit(std::string_view op) const override {return repo().can_undo_transaction_edit(op);}
+    app::ReviewReceipt undo_transaction_edit(std::string_view op,std::string_view edit) override {return repo().undo_transaction_edit(op,edit);}
+    std::optional<app::ReviewReceipt> review_outcome(std::string_view op) const override {if(unknownOutcome)throw std::runtime_error("Injected unavailable edit outcome");return repo().review_outcome(op);}
     void save(const imports::Occurrence& o,std::int64_t r,const imports::DraftRow& d) override {repo().save(o,r,d);}
     void decide(const imports::Occurrence& o,std::int64_t r,const imports::Decision& d) override {repo().decide(o,r,d);}
     void discard(std::string_view b,std::int64_t r) override {repo().discard(b,r);}
@@ -136,24 +142,15 @@ private slots:
         prepare(model,dir.path());const auto id=model.rowIdentity(model.selectedRowIndex());
         QVERIFY(model.state().value("committedChangesSupported").toBool());QCOMPARE(model.state().value("committed").toString(),"80.69");
         QVERIFY(selected(model).value("committed").toBool());QVERIFY(!selected(model).value("editable").toBool());
-        QVERIFY(root->findChild<QObject*>("durableTotal")->property("readOnly").toBool());
-        QTest::qWait(100);QVERIFY(pointerClick(window,root,"editCommitted"));QVERIFY(root->property("committedEditing").toBool());
+        QVERIFY(!root->findChild<QObject*>("durableTotal")->property("readOnly").toBool());
         QVERIFY(edit(root,"durableTotal","-30.00"));QVERIFY(edit(root,"editSplitAmount_1","-29.86"));
-        QVERIFY(click(root,"saveDraft"));wait(model);
-        auto* preview=root->findChild<QObject*>("committedChangePreview");QVERIFY(preview);QVERIFY(preview->property("visible").toBool());
-        QCOMPARE(root->findChild<QObject*>("durableTotal")->property("text").toString(),"-30.00");QVERIFY(root->property("dirty").toBool());
-        QCOMPARE(model.state().value("committed").toString(),"80.69");
-        QVERIFY(click(root,"cancelCommittedChange"));wait(model);QVERIFY(root->property("dirty").toBool());
-        QCOMPARE(root->findChild<QObject*>("durableTotal")->property("text").toString(),"-30.00");
-        QVERIFY(click(root,"saveDraft"));wait(model);
-        QTest::qWait(100);if(qEnvironmentVariableIsSet("SPENTIT_CORRECTION_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CORRECTION_SCREENSHOT")));
-        QVERIFY(pointerClick(window,root,"applyCommittedChange"));wait(model);QCOMPARE(model.state().value("committed").toString(),"80.00");
-        const auto correction=model.state().value("changeReceipt").toMap().value("operation").toString();QVERIFY(!correction.isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model);
+        QCOMPARE(model.state().value("committed").toString(),"80.00");
+        run(model,"history");const auto correction=model.state().value("history").toList().front().toMap().value("operation").toString();QVERIFY(!correction.isEmpty());
         QCOMPARE(selected(model).value("original").toString(),"-29.31");QVERIFY(!root->property("dirty").toBool());
-        QVERIFY(click(root,"editCommitted"));QVERIFY(edit(root,"durablePayee","Corrected merchant"));
-        QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardSave"));wait(model);QVERIFY(preview->property("visible").toBool());
-        QVERIFY(click(root,"cancelCommittedChange"));wait(model);QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(root->property("dirty").toBool());
-        QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardSave"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
+        QVERIFY(edit(root,"durablePayee","Corrected merchant"));
+        QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardStay"));QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(root->property("dirty").toBool());
+        QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardSave"));wait(model);
         QCOMPARE(root->property("currentPage").toString(),"settings");QVERIFY(!root->property("dirty").toBool());
         QVERIFY(click(root,"navigationBack"));QVERIFY(click(root,"showEntryHistory"));wait(model);
         bool blocked=false;for(const auto& value:model.state().value("entryHistory").toList()) {const auto h=value.toMap();if(h.value("operation").toString()==correction)blocked=!h.value("undoEligible").toBool() && !h.value("undoReason").toString().isEmpty();}QVERIFY(blocked);
@@ -197,17 +194,24 @@ private slots:
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Saved despite unknown outcome");
         run(model,"history");QCOMPARE(model.state().value("history").toList().size(),2);QCOMPARE(model.state().value("committed").toString(),"80.69");
     }
+    void editAcknowledgementAndQuarantine() {
+        QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));prepare(model,dir.path());
+        const auto id=model.rowIdentity(model.selectedRowIndex());auto change=selected(model).value("draft").toMap();change["payee"]="Recovered edit";
+        fault->loseAcknowledgement=true;run(model,"accept_edit",change);QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Recovered edit");
+        change["payee"]="Unknown acknowledgement";fault->unknownOutcome=true;run(model,"accept_edit",change,false);QVERIFY(!model.state().value("active").toBool());
+        fault->unknownOutcome=false;fault->loseAcknowledgement=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Unknown acknowledgement");QVERIFY(!model.state().value("canUndoEdit").toBool());run(model,"history");QCOMPARE(model.state().value("history").toList().size(),2);
+    }
     void failedApplyRetainsBufferAndKnownSaveIsReported() {
         QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
         prepare(model,dir.path());const auto id=model.rowIdentity(model.selectedRowIndex());
-        QVERIFY(click(root,"editCommitted"));QVERIFY(edit(root,"durablePayee","Preserved proposal"));QVERIFY(click(root,"saveDraft"));wait(model);
-        fault->failBefore=true;QVERIFY(click(root,"applyCommittedChange"));wait(model,false);
+        QVERIFY(edit(root,"durablePayee","Preserved proposal"));
+        fault->failBefore=true;QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model,false);
         QVERIFY(root->property("dirty").toBool());QCOMPARE(root->findChild<QObject*>("durablePayee")->property("text").toString(),"Preserved proposal");
-        QVERIFY(root->findChild<QObject*>("committedChangePreview")->property("visible").toBool());QCOMPARE(model.state().value("committed").toString(),"80.69");
-        QVERIFY(click(root,"cancelCommittedChange"));wait(model);fault->failBefore=false;fault->failRefresh=true;
-        QVERIFY(click(root,"saveDraft"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model,false);
-        QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("saved durably"));QVERIFY(!root->findChild<QObject*>("committedChangePreview")->property("visible").toBool());QVERIFY(!model.state().value("changeReceipt").toMap().value("operation").toString().isEmpty());
+        QCOMPARE(model.state().value("committed").toString(),"80.69");
+        fault->failBefore=false;fault->failRefresh=true;
+        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model,false);
+        QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("saved durably"));
         fault->failRefresh=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Preserved proposal");run(model,"history");QCOMPARE(model.state().value("history").toList().size(),1);
     }

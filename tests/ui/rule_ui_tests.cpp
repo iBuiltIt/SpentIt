@@ -182,7 +182,7 @@ private slots:
         QCOMPARE(reloaded.at(1).toMap().value("categoryDisplay").toString(),"Travel: Transport");
         QCOMPARE(reloaded.at(0).toMap().value("amount").toString(),"-0.14");
         QCOMPARE(reloaded.at(1).toMap().value("amount").toString(),"-29.17");
-        QVERIFY(edit(s.root,"durablePayee",""));QVERIFY(click(s.root,"saveDraft"));wait(s.model);
+        QVERIFY(edit(s.root,"durablePayee",""));QVERIFY(QMetaObject::invokeMethod(s.root,"saveEditor"));wait(s.model);
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
         QVERIFY(!object(s.root,"replaceManualFields")->property("checked").toBool());
         QVERIFY(click(s.root,"previewRules"));wait(s.model);

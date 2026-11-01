@@ -431,9 +431,59 @@ void policy_faults(const std::filesystem::path& dir) {
     }
 }
 
+std::int64_t edit_revision(ImportStore& s,const imports::Occurrence& id){for(const auto& b:s.batches())if(b.id==id.batch)return b.revision;throw std::runtime_error("No batch");}
+std::optional<EntryToken> edit_token(ImportStore& s,const imports::Occurrence& id){return s.transaction_accepted(id)?std::optional(s.committed_entry(id).token):std::nullopt;}
+imports::DraftRow edit_row(ImportStore& s,const imports::Occurrence& id){return s.transaction_accepted(id)?s.committed_entry(id).current.draft:*s.row(id).draft;}
+void editor_tests(const std::filesystem::path& dir){
+    const Currency cad("CAD");const imports::Occurrence id{"edit",0};
+    for(int mode=0;mode<4;++mode){
+        const bool committed=mode%2,ruled=mode>=2;
+        const auto path=dir/("editor-"+std::to_string(mode));
+        {auto s=ImportStore::create(path,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));s.ingest(id.batch,source("Original"),qif::DateOrder::dmy);
+            if(ruled){if(!s.rules_supported())continue;RuleDefinitionImage rule;rule.identity="payee";rule.label="Payee";rule.expression=".*";rule.actions.payee_template="Original";OperationContext save;s.save_rules("rule",{{rule}},0,save);OperationContext preview;const auto p=s.preview_pending_rules({id.batch,0,{},false},preview);OperationContext apply;s.apply_pending_rules("apply-rule",{p.batch,p.batch_revision,p.ruleset_revision,p.catalog_revision,p.replace_manual},apply);}
+            if(committed)s.accept_all("accept",false);
+            const auto original=edit_row(s,id);auto edit=original;edit.payee="First";edit.payee_owner=FieldOwnership::manual;edit.payee_rule.reset();
+            const auto revision=edit_revision(s,id);const auto token=edit_token(s,id);
+            s.edit_transaction("first",id,revision,token,edit);s.edit_transaction("first",id,revision,token,edit);
+            check(!s.review_sheet().can_undo && s.can_undo_transaction_edit("first"),"Edit has distinct Undo");
+            bool refused=false;auto changed=edit;changed.payee="Conflicting retry";try{s.edit_transaction("first",id,revision,token,changed);}catch(...){refused=true;}check(refused,"Conflicting edit retry refused");
+            edit=edit_row(s,id);auto parts=edit.transaction.allocations();parts[0].amount=Money(-1200,cad);parts.push_back({"Refund","",Money(200,cad)});edit.transaction=edit.transaction.corrected(Money(-1000,cad),parts);
+            s.edit_transaction("split",id,edit_revision(s,id),edit_token(s,id),edit);s.verify();
+            edit=edit_row(s,id);parts=edit.transaction.allocations();parts.erase(parts.begin());parts[0].amount=Money(-1000,cad);edit.transaction=edit.transaction.corrected(Money(-1000,cad),parts);s.edit_transaction("remove-source-split",id,edit_revision(s,id),edit_token(s,id),edit);s.undo_transaction_edit("undo-remove-source","remove-source-split");check(edit_row(s,id).transaction.allocations()[0].identity==original.transaction.allocations()[0].identity,"Undo restores removed source split identity");s.verify();
+            s.undo_transaction_edit("undo-split","split");s.undo_transaction_edit("undo-split","split");
+            check(edit_row(s,id).transaction.allocations().size()==1 && s.can_undo_transaction_edit("first"),"Stack restores complete split edit");
+            s.undo_transaction_edit("undo-first","first");check(edit_row(s,id).payee==original.payee && edit_row(s,id).payee_owner==original.payee_owner,"Undo restores value and ownership");s.verify();
+            edit=edit_row(s,id);edit.payee="Persistent";edit.payee_owner=FieldOwnership::manual;edit.payee_rule.reset();s.edit_transaction("persist",id,edit_revision(s,id),edit_token(s,id),edit);s.backup_to(dir/("editor-backup-"+std::to_string(mode)),"test");
+        }
+        {auto s=ImportStore::open(path,"test");check(edit_row(s,id).payee=="Persistent","Accepted edit survives restart");s.verify();if(committed){const auto history=s.committed_history(id);const auto op=history.back().operation;const auto p=s.preview_committed_change({ChangeKind::undo,id,{},op});s.apply_committed_change_with_catalog("history-undo",p.request,p.expected,p.preview_sequence,p.catalog_revision);check(edit_row(s,id).payee=="Original","Committed history Undo survives restart");s.verify();}else{s.ingest("other",source("Other","-20"),qif::DateOrder::dmy);check(!s.can_undo_transaction_edit("persist"),"Other mutation blocks Undo");}}
+        {auto s=ImportStore::open(dir/("editor-backup-"+std::to_string(mode)),"test");check(edit_row(s,id).payee=="Persistent","Restored backup retains accepted edit");s.verify();}
+    }
+    // Editing is not permission to reconfirm a stale duplicate decision.
+    {auto s=ImportStore::create(dir/"stale-edit","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));s.ingest("target",source("Target"),qif::DateOrder::dmy);s.accept_all("accept",false);s.ingest("duplicate",source("Different payee"),qif::DateOrder::dmy);const imports::Occurrence target{"target",0},duplicate{"duplicate",0};s.decide(duplicate,edit_revision(s,duplicate),{imports::Disposition::duplicate,target});auto changed=edit_row(s,target);changed.payee="Corrected target";changed.payee_owner=FieldOwnership::manual;const auto p=s.preview_committed_change({ChangeKind::correct,target,changed,{}});s.apply_committed_change_with_catalog("correct",p.request,p.expected,p.preview_sequence,p.catalog_revision);check(s.row(duplicate).review_stale,"Duplicate stamp starts stale");auto edit=edit_row(s,duplicate);edit.payee="Edited duplicate";edit.payee_owner=FieldOwnership::manual;s.edit_transaction("edit",duplicate,edit_revision(s,duplicate),{},edit);check(s.row(duplicate).review_stale,"Edit does not reconfirm duplicate");s.undo_transaction_edit("undo","edit");check(s.row(duplicate).review_stale,"Undo does not reconfirm duplicate");s.verify();}
+    // Linked committed edits and their reversals include the counterpart.
+    {auto s=ImportStore::create(dir/"linked-edit","test","Checking",cad,"2026-01-01");assignment_setup(s);auto requests=assignment_requests(s);OperationContext context;s.assign_transfer_batch("assign",requests,context);s.accept_all("accept",true);const imports::Occurrence linked{"out",0};auto before=edit_row(s,linked);auto edit=before;auto aa=edit.transaction.allocations();aa[0].amount=Money(-40000,cad);edit.transaction=edit.transaction.corrected(Money(-40000,cad),aa);s.edit_transaction("linked",linked,edit_revision(s,linked),edit_token(s,linked),edit);s.verify();s.undo_transaction_edit("undo-linked","linked");check(edit_row(s,linked).transaction.effective_total()==before.transaction.effective_total(),"Linked edit Undo restores amount");assignment_check(s,true);}
+}
+void editor_faults(const std::filesystem::path& dir){
+    fault_vfs::install();const Currency cad("CAD");
+    for(int mode=0;mode<6;++mode){const imports::Occurrence id{mode>=4?"out":"edit",0};const auto base=dir/("editor-base-"+std::to_string(mode));std::optional<imports::DraftRow> edit;std::optional<EntryToken> token;std::int64_t revision=0;
+        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");if(mode>=4){assignment_setup(s);auto requests=assignment_requests(s);OperationContext context;s.assign_transfer_batch("assign",requests,context);}else{s.opening(0,"2026-01-01",Money(0,cad));s.ingest(id.batch,source("Original"),qif::DateOrder::dmy);}if(mode>=2)s.accept_all("accept",mode>=4);edit=edit_row(s,id);edit->payee="Edited";edit->payee_owner=FieldOwnership::manual;if(mode>=4){auto aa=edit->transaction.allocations();aa[0].amount=Money(-40000,cad);edit->transaction=edit->transaction.corrected(Money(-40000,cad),aa);}revision=edit_revision(s,id);token=edit_token(s,id);if(mode%2)s.edit_transaction("edit",id,revision,token,*edit);}
+        const auto apply=[&](ImportStore& s){if(mode%2)s.undo_transaction_edit("operation","edit");else s.edit_transaction("operation",id,revision,token,*edit);};
+        const auto verify=[&](ImportStore& s,bool complete){const bool edited=complete!=(mode%2!=0);check(edit_row(s,id).payee==(edited?"Edited":mode>=4?"One":"Original"),"All-or-none edit values");check(s.balance().units()==(mode>=4?(edited?-415639:-425639):-1000),"Exact balance after failure");if(mode>=4){s.select_account(2);check(s.balance().units()==425639,"Committed counterpart retained");s.select_account(1);}s.verify();};
+        int positions=0;
+        for(int nth=1;nth<2000;++nth){const auto trial=dir/"editor-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(...){}fired=fault_vfs::fired;fault_vfs::disarm();}
+            {auto s=ImportStore::open(trial,"test");const bool complete=s.review_outcome("operation").has_value();verify(s,complete);apply(s);verify(s,true);}
+            if(!fired){positions=nth-1;break;}
+        }
+        check(positions>0,"Edit fault sweep completed");std::cout<<"Editor fault mode "<<mode<<": "<<positions<<" positions"<<std::endl;
+        for(auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){const auto trial=dir/"editor-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto p){if(p==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Edit crash boundary reached");auto s=ImportStore::open(trial,"test");verify(s,phase==storage::ImportPhase::after_commit);apply(s);verify(s,true);}
+    }
+}
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
+        if(argc>1 && std::string(argv[1])=="editor"){editor_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="editor_faults"){editor_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="release"){release_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="assignment"){assignment_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="assignment_faults"){assignment_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

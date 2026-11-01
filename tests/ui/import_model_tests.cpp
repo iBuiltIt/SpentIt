@@ -83,6 +83,9 @@ public:
     app::BatchInfo ingest(std::string_view id,std::string_view b,qif::DateOrder p) override {return repo().ingest(id,b,p);}
     std::string evidence(std::string_view b) const override {return repo().evidence(b);}
     app::RowView row(const imports::Occurrence& o) const override {return repo().row(o);}
+    app::ReviewReceipt edit_transaction(std::string_view op,const imports::Occurrence& id,std::int64_t revision,const std::optional<app::EntryToken>& token,const imports::DraftRow& draft) override {return repo().edit_transaction(op,id,revision,token,draft);}
+    bool can_undo_transaction_edit(std::string_view op) const override {return repo().can_undo_transaction_edit(op);}
+    app::ReviewReceipt undo_transaction_edit(std::string_view op,std::string_view edit) override {return repo().undo_transaction_edit(op,edit);}
     void save(const imports::Occurrence& o,std::int64_t r,const imports::DraftRow& d) override {repo().save(o,r,d);}
     void decide(const imports::Occurrence& o,std::int64_t r,const imports::Decision& d) override {repo().decide(o,r,d);}
     void discard(std::string_view b,std::int64_t r) override {repo().discard(b,r);}
@@ -1338,7 +1341,7 @@ private slots:
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Survives recycling");
         // Qt pointer dispatch on a visible ledger row opens that occurrence.
         run(m,"inspect",{{"batch",selected(m).value("batch")},{"ordinal",1}});
-        QTest::qWait(100);ledger->setProperty("contentY",0);QTest::qWait(100);
+        QTest::qWait(100);QVERIFY(QMetaObject::invokeMethod(ledger,"positionViewAtBeginning"));QTest::qWait(100);
         const auto point=ledger->mapToScene(QPointF(100,17)).toPoint();
         QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,point);
         QTRY_VERIFY(!m.busy());QCOMPARE(selected(m).value("ordinal").toInt(),0);
@@ -1561,7 +1564,7 @@ private slots:
         run(m,"commit");QVERIFY(!selected(m).value("editable").toBool());
         toggle->setProperty("checked",true);
         QTRY_VERIFY(visualItem(window->contentItem(),"copySource_payee_-1"));
-        QVERIFY(!visualItem(window->contentItem(),"copySource_payee_-1")->property("enabled").toBool());
+        QVERIFY(visualItem(window->contentItem(),"copySource_payee_-1")->property("enabled").toBool());
         QTest::qWait(100);
         if(qEnvironmentVariableIsSet("SPENTIT_INLINE_SCREENSHOT")) QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INLINE_SCREENSHOT")));
     }
@@ -1585,7 +1588,7 @@ private slots:
         QVERIFY(!window->close());auto* save=root->findChild<QObject*>("guardSave");QVERIFY(save);QVERIFY(QMetaObject::invokeMethod(save,"clicked"));
         QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QVERIFY(root->property("dirty").toBool());QVERIFY(m.state().value("active").toBool());
         total->setProperty("text","-1.00");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));
-        auto* saveDraft=root->findChild<QObject*>("saveDraft");QVERIFY(saveDraft);QVERIFY(QMetaObject::invokeMethod(saveDraft,"clicked"));
+        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));
         QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());QVERIFY(!root->property("dirty").toBool());
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Edited through QML");
         QTest::qWait(100);
@@ -1705,6 +1708,75 @@ private slots:
         QVERIFY(!m.state().value("archived").toBool());
     }
 
+    void selectionDoesNotFlash() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2025-12-31"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT-1\nPFirst\n^\nD2/1/2026\nT-2\nPSecond\n^\nD3/1/2026\nT-3\nPThird\n^\n")},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch").toString();run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(QTest::qWaitForWindowExposed(window));auto* editor=root->findChild<QQuickItem*>("transactionEditor");auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(editor && payee);QTRY_VERIFY(editor->property("inlineRow").toBool());
+        const auto parent=editor->parentItem();const auto text=payee->property("text");
+        QSignalSpy enabled(editor,&QQuickItem::enabledChanged),resets(&m,&QAbstractItemModel::modelReset),changes(&m,&ImportModel::changed),completed(&m,&ImportModel::completed);
+        std::vector<std::unique_ptr<QSignalSpy>> sidebar;
+        for(const char* name:{"newAccount","importStatement","reviewNavigation","categoryNavigation","rulesNavigation","historyNavigation","sidebarSettings"}){
+            auto* button=root->findChild<QQuickItem*>(name);QVERIFY(button);QVERIFY(button->isEnabled());sidebar.push_back(std::make_unique<QSignalSpy>(button,&QQuickItem::enabledChanged));
+        }
+        bool sawBusy=false;connect(&m,&ImportModel::changed,this,[&]{sawBusy|=m.busy();});
+        const auto clickRow=[&](int ordinal){auto* row=visualItem(window->contentItem(),"ledgerRow_"+QString::number(m.occurrenceIndex(batch,ordinal)));if(!row)return false;QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene(QPointF(100,17)).toPoint());return true;};
+        QVERIFY(clickRow(0));QCOMPARE(changes.count(),0);QCOMPARE(completed.count(),0);
+        QVERIFY(clickRow(1));QCOMPARE(m.state().value("selectionIndex").toInt(),m.occurrenceIndex(batch,1));QVERIFY(!sawBusy);QCOMPARE(completed.count(),1);
+        QCOMPARE(selected(m).value("ordinal").toInt(),0);QCOMPARE(editor->parentItem(),parent);QCOMPARE(payee->property("text"),text);QCOMPARE(enabled.count(),0);QCOMPARE(resets.count(),0);
+        for(const auto& spy:sidebar)QCOMPARE(spy->count(),0);
+        const auto count=changes.count();QVERIFY(clickRow(1));QCOMPARE(changes.count(),count);QCOMPARE(completed.count(),1);
+        // The synchronous choice must be the anchor for subsequent worker-based ranges.
+        run(m,"select",{{"row",m.occurrenceIndex(batch,2)},{"range",true}});QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        run(m,"select",{{"row",m.occurrenceIndex(batch,2)}});QCOMPARE(m.state().value("selectionCount").toInt(),1);
+        run(m,"select",{{"row",m.occurrenceIndex(batch,0)},{"range",true}});QCOMPARE(m.state().value("selectionCount").toInt(),3);
+        run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});
+        // Repeated selection after entering a search still marks the chosen result.
+        const auto beforeSearch=completed.count();run(m,"select",{{"row",m.occurrenceIndex(batch,0)},{"firstSearchSelection",true}});QCOMPARE(completed.count(),beforeSearch+1);
+        enabled.clear();for(const auto& spy:sidebar)spy->clear();sawBusy=false;
+        payee->setProperty("text","Accepted edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));
+        QVERIFY(m.busy());QVERIFY(!editor->isEnabled());QVERIFY(!root->findChild<QQuickItem*>("sidebarSettings")->isEnabled());
+        QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());QVERIFY(sawBusy);QCOMPARE(enabled.count(),2);for(const auto& spy:sidebar)QCOMPARE(spy->count(),2);
+        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Accepted edit");
+    }
+    void immediateEditor() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto path=dir.path()+"/doc";create(m,path);run(m,"opening",{{"date","2025-12-31"},{"amount","0.00"}});
+        QByteArray bytes;for(int i=0;i<100;++i)bytes+="D1/1/2026\nT-10\nPRow "+QByteArray::number(i)+"\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});const auto batch=selected(m).value("batch").toString();
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");auto* editor=root->findChild<QQuickItem*>("transactionEditor");auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(ledger && editor && payee);
+        QVERIFY(QTest::qWaitForWindowExposed(window));run(m,"inspect",{{"batch",batch},{"ordinal",40}});QTest::qWait(100);
+        QTRY_VERIFY(editor->property("inlineRow").toBool());const auto originalParent=editor->parentItem();
+        run(m,"select",{{"row",m.occurrenceIndex(batch,41)}});
+        QCOMPARE(editor->parentItem(),originalParent);QVERIFY(editor->property("inlineRow").toBool());
+        QCOMPARE(selected(m).value("ordinal").toInt(),40);
+        // Toggle the same row closed and open using actual double-clicks.
+        auto* row=originalParent->parentItem();const auto point=row->mapToScene(QPointF(100,17)).toPoint();
+        QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,point);QTRY_VERIFY(!m.busy());QTRY_VERIFY(!editor->isVisible());QCOMPARE(row->height(),34.0);
+        QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,point);QTRY_VERIFY(!m.busy());QTRY_VERIFY(editor->isVisible());QTRY_VERIFY(editor->property("inlineRow").toBool());
+        payee->setProperty("text","Row 40 Stefan");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));payee->forceActiveFocus();payee->setProperty("cursorPosition",13);
+        const auto y=editor->mapToScene(QPointF(0,0)).y();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QTRY_COMPARE(selected(m).value("draft").toMap().value("payee").toString(),QString("Row 40 Stefan"));
+        QTRY_VERIFY(payee->hasActiveFocus());QTRY_VERIFY(qAbs(editor->mapToScene(QPointF(0,0)).y()-y)<2);QCOMPARE(payee->property("cursorPosition").toInt(),13);
+        QCOMPARE(m.state().value("selectionIndex").toInt(),m.occurrenceIndex(batch,40));QVERIFY(m.state().value("canUndoEdit").toBool());
+        if(qEnvironmentVariableIsSet("SPENTIT_EDITOR_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_EDITOR_SCREENSHOT")));
+        payee->setProperty("text","Second edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
+        QTest::keySequence(window,QKeySequence::Undo);QTRY_VERIFY(!m.busy());QTRY_COMPARE(payee->property("text").toString(),QString("Row 40 Stefan"));
+        QTest::keySequence(window,QKeySequence::Undo);QTRY_VERIFY(!m.busy());QTRY_COMPARE(payee->property("text").toString(),QString("Row 40"));QVERIFY(!m.state().value("canUndoEdit").toBool());
+        auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);total->setProperty("text","-11.00");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));total->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QVERIFY(root->property("dirty").toBool());QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),QString("-10.00"));
+        QTRY_VERIFY(total->hasActiveFocus());QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!root->property("dirty").toBool());QCOMPARE(total->property("text").toString(),QString("-10.00"));
+        payee->setProperty("text","Persistent edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));payee->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"inspect",{{"batch",batch},{"ordinal",40}});
+        QCOMPARE(payee->property("text").toString(),QString("Persistent edit"));QVERIFY(!m.state().value("canUndoEdit").toBool());
+        run(m,"commit");payee->setProperty("text","Committed edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));payee->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),QString("Committed edit"));
+        run(m,"undo_edit");QCOMPARE(payee->property("text").toString(),QString("Persistent edit"));
+        auto* date=root->findChild<QQuickItem*>("durableDate");QVERIFY(date);date->setProperty("text","2026-02-01");QVERIFY(QMetaObject::invokeMethod(date,"textEdited"));date->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());QTRY_VERIFY(date->hasActiveFocus());QTRY_VERIFY(date->mapToItem(ledger,QPointF(0,0)).y()>=0 && date->mapToItem(ledger,QPointF(0,date->height())).y()<=ledger->height());QCOMPARE(selected(m).value("ordinal").toInt(),40);
+    }
     void ledgerInteractions() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

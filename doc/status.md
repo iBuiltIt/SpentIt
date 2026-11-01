@@ -1,6 +1,81 @@
 # Project status
 
-Last updated: 2026-10-31
+Last updated: 2026-11-01
+
+## Stable single-click selection — 2026-11-01
+
+Implemented the follow-up Go for flashing in the open editor and sidebar.
+Ordinary unmodified row selection now updates the published ledger selection
+locally, using cached transfer flags, without a worker command, SQL, model reset
+or global busy state. Repeating the same selection/anchor is a no-op; explicitly
+choosing a search result still records that choice. The worker's selection and
+range anchor stay synchronized, so later bulk actions and Shift selection use the
+same identities. Range/toggle selection retains the bounded worker path. Actual
+operations still disable controls while running. No storage/financial changes.
+
+The focused Release selection/editor/transfer-category checks passed **5/5**
+including init/cleanup (4.652 s). A new pointer-dispatch regression observes no
+editor or sidebar enabled-state transitions and no model reset during ordinary
+selection; unchanged clicks emit no presentation update. It also checks editor
+identity/content, range anchors, multiselection collapse, search-result selection,
+and disabled controls during a real save. ASan/UBSan passed the same **5/5** in
+**10.849 s**, with no sanitizer diagnostic. UI tests use synthetic offscreen data;
+native interaction and other platforms remain unverified for this follow-up.
+The broader Release ledger UI, committed UI, navigation and QML regression passed
+**4/4** in **79.65 s**.
+The rules-enabled Release `build/SpentIt` was rebuilt.
+
+## Ledger editor and session Undo — 2026-11-01
+
+Implemented the owner's Go for the [ledger editing contract](ledger-editing.md).
+Double-click toggles the active transaction editor. Ordinary row selection leaves
+that editor attached to the inspected transaction, without the former bottom-panel
+jump and empty reserved space. Enter accepts the complete valid edit directly for
+both uncommitted and editable committed transactions; category-picker choices also
+accept. Save draft / Cancel edit and the committed-edit opt-in/Apply step are gone.
+Escape discards only the unaccepted buffer. Unsaved navigation remains guarded.
+Acceptance retains transaction selection, visible position and the field caret.
+
+Accepted edits have stacked session Undo, using exact encrypted snapshots in the
+existing journal. It restores split/source identities, rule ownership and changed
+transfer relationships atomically. Other dataset mutations end that session Undo
+sequence; inspection/selection/filtering do not. Closing resets the session
+capability while saved edits and committed history survive. Persistent committed
+history Undo retains its strict eligibility checks. First repair of a malformed
+record remains on the existing Review repair path, outside this ledger scope.
+Editing/Undo preserves stale duplicate-review stamps rather than reconfirming
+matches. Formats remain 40/39; no migration or private-data access.
+
+Release selected regression passed **11/11** in **79.16 s**: ledger UI, committed
+UI, category UI, rules UI, navigation, QML, editor storage, Review, batch Review,
+and forward/reverse transfer assignments. Final focused Qt checks passed **7/7**
+including init/cleanup (6.740 s) for direct editing, selection/placement,
+double-click toggling, two keyboard Undo steps, invalid input/Escape, cursor and
+viewport retention (including a date change that moves the row in sort order),
+restart, committed editing, recycling and source copying.
+After the sort-position follow-up, committed UI, navigation and QML passed
+**3/3** in **8.64 s**. The final failure/outcome checks passed **4/4** including init/cleanup (1.941 s):
+failed acceptance preserves the buffer, lost acknowledgement resolves durably,
+unknown outcome closes the session, and failed post-save refresh reports the
+saved state accurately. Final storage functional checks also cover signed splits,
+removed source-allocation restoration, rule-derived fields, stale duplicate
+stamps, retries/conflicts, mutation barriers, backup restoration and linked Undo.
+
+Release editor fault sweeps passed **814 write/sync positions**: draft acceptance
+137, draft Undo 129, committed acceptance/Undo 125 each, and linked committed
+acceptance/Undo 153/145. Disk-full and I/O failures alternated. Every trial checked
+all-or-none values, exact balances, full audit and retry; all six modes also passed
+forced exits immediately before and after durable commit. The CTest sweep passed
+in **192.56 s**. ASan/UBSan editor functional checks passed with no diagnostic;
+rules-disabled Release editor functional checks also passed. Sanitizer fault
+sweeps were not repeated. `git diff --check` passed and all **289** relative file
+links in the changed Markdown documents resolved.
+
+The rules-enabled Release application at `build/SpentIt` was rebuilt. The synthetic
+mid-ledger render was inspected. Native Cocoa interaction was attempted but Qt
+reported “Cannot create window: no screens available”; UI evidence above uses the
+offscreen platform. Linux/Windows, spoken accessibility and large-dataset save
+latency remain unverified. No performance or portability claim is made.
 
 ## Changing transfers back to categories — 2026-10-31
 

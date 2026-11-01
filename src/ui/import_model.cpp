@@ -222,7 +222,8 @@ QString phaseFor(const QString& action){
     if(action=="undo_transfer_assignment")return "Undoing transfer assignment";
     if(action=="review_undo")return "Undoing Review decision";
     if(action=="create")return "Creating dataset";
-    if(action=="save")return "Saving draft";
+    if(action=="save" || action=="accept_edit")return "Accepting edit";
+    if(action=="undo_edit")return "Undoing edit";
     if(action=="preview_change")return "Preparing committed-change preview";
     if(action=="apply_change")return "Applying committed change";
     if(action=="rules_load"||action=="rules_discard"||action=="rules_prefill")return "Loading rules";
@@ -420,7 +421,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {sessionEdits.clear();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository();
@@ -453,7 +454,23 @@ struct ImportModel::Worker {
     std::optional<app::Account> cachedAccount;
     std::shared_ptr<std::vector<app::LedgerRow>> cachedLedger;
     std::shared_ptr<const app::LedgerView> cachedView;
+    std::set<imports::Occurrence> cachedLinkedRows;
     bool deferReview=false;
+    struct SessionEdit {std::string operation;imports::Occurrence identity;std::int64_t account;};
+    std::vector<SessionEdit> sessionEdits;
+    void acceptEdit(const imports::DraftRow& edit,app::OperationContext& context) {
+        auto& repo=gateway->repository();const imports::Occurrence id{selectedBatch,selectedOrdinal};
+        const auto account=repo.account().identity;const auto operation=identity();
+        try {repo.edit_transaction(operation,id,selectedRevision,selectedCommittedToken,edit);}
+        catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;
+            try {outcome=repo.review_outcome(operation);}catch(...){throw app::OperationOutcomeUnknown();}
+            if(!outcome)std::rethrow_exception(failure);
+        }
+        observedSaved();sessionEdits.push_back({operation,id,account});
+        selection={id};selectionFocus=id;selectionAnchor=id;
+        try {inspect(id.batch,id.ordinal,context);if(selectedCommittedToken){entryDetails(id);if(historyLoaded)listHistory();}}
+        catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();sessionEdits.clear();throw std::runtime_error("Edit was saved durably, but its view could not be refreshed. Reopen and inspect the transaction before retrying.");}
+    }
     void invalidate() {diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
     std::size_t selectedOrdinal=0;
@@ -757,6 +774,8 @@ struct ImportModel::Worker {
             metadata=state;
             }
         } else state=metadata;
+        if(!sessionEdits.empty() && !repo.can_undo_transaction_edit(sessionEdits.back().operation))sessionEdits.clear();
+        state["canUndoEdit"]=!sessionEdits.empty();
         state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
         QVariantList aliasList;for(const auto& alias:repo.account_aliases())aliasList.push_back(QVariantMap{{"name",text(alias.name)},{"accountId",QString::number(alias.account)}});
         state["accountAliases"]=aliasList;
@@ -835,10 +854,10 @@ struct ImportModel::Worker {
         std::set<imports::Occurrence> retained;
         for(const auto& row:cachedView->rows)if(selection.contains(row.identity))retained.insert(row.identity);
         selection=std::move(retained);
-        std::set<imports::Occurrence> linkedSelections;
-        if(!selection.empty() && repo.transfers_supported())for(const auto& value:repo.transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed){linkedSelections.insert(value.link.origin.endpoint.entry);if(value.link.destination.state!=transfers::State::removed)linkedSelections.insert(value.link.destination.endpoint.entry);}
+        cachedLinkedRows.clear();
+        if(repo.transfers_supported())for(const auto& value:repo.transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed){cachedLinkedRows.insert(value.link.origin.endpoint.entry);if(value.link.destination.state!=transfers::State::removed)cachedLinkedRows.insert(value.link.destination.endpoint.entry);}
         QVariantList selectedIds;QVariantMap selectedKeys;
-        for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}value["transferLinked"]=linkedSelections.contains(id);selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
+        for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}value["transferLinked"]=cachedLinkedRows.contains(id);selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
         state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;state["transferMergePreview"]=transferMergePreview;
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
         int focus=-1;
@@ -1526,12 +1545,31 @@ struct ImportModel::Worker {
             if(next.size()>4096)throw std::invalid_argument("Select at most 4096 transactions per operation");
             selection=std::move(next);selectionFocus=id;if(!a.value("range").toBool())selectionAnchor=id;
         } else if(action=="inspect") {inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);selection={{selectedBatch,selectedOrdinal}};selectionAnchor=imports::Occurrence{selectedBatch,selectedOrdinal};selectionFocus=selectionAnchor;}
+        else if(action=="undo_edit") {
+            if(sessionEdits.empty())throw std::logic_error("No edits to undo in this session");
+            const auto edit=sessionEdits.back();const auto operation=identity();
+            try {repo.undo_transaction_edit(operation,edit.operation);}
+            catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;
+                try {outcome=repo.review_outcome(operation);}catch(...){throw app::OperationOutcomeUnknown();}
+                if(!outcome)std::rethrow_exception(failure);
+            }
+            observedSaved();sessionEdits.pop_back();
+            selection={edit.identity};selectionFocus=edit.identity;selectionAnchor=edit.identity;
+            try {repo.select_account(edit.account);inspect(edit.identity.batch,edit.identity.ordinal,context);if(selectedCommittedToken){entryDetails(edit.identity);if(historyLoaded)listHistory();}}
+            catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();sessionEdits.clear();throw std::runtime_error("Undo was saved durably, but its view could not be refreshed. Reopen and inspect the transaction before retrying.");}
+        }
+        else if(action=="accept_edit") {
+            if(!selectedCommittedToken || !selected.value("canCorrect").toBool())throw std::logic_error("This transaction cannot be edited");
+            const auto entry=repo.committed_entry({selectedBatch,selectedOrdinal});
+            acceptEdit(editedDraft(a,entry.current.draft.transaction.original_imported_amount(),repo,&entry.current.draft,&entry.source),context);
+        }
         else if(action=="save") {
             if(selectedBatch.empty()) throw std::logic_error("Select a draft first");
             auto row=repo.row({selectedBatch,selectedOrdinal});
             if(!row.draft && !row.source.repairable) throw std::invalid_argument("This record cannot be repaired");
             const auto edit=editedDraft(a,row.source.original_amount,repo,row.draft?&*row.draft:nullptr,&row.source);
-            repo.save({selectedBatch,selectedOrdinal},selectedRevision,edit);observedSaved(); inspect(selectedBatch,selectedOrdinal,context);
+            if(row.draft)acceptEdit(edit,context);
+            else {repo.save({selectedBatch,selectedOrdinal},selectedRevision,edit);observedSaved();inspect(selectedBatch,selectedOrdinal,context);}
         } else if(action=="decide") {
             imports::Decision decision{imports::Disposition::include,{}};
             if(a.value("duplicate").toBool()) decision={imports::Disposition::duplicate,imports::Occurrence{str(a.value("batch")),a.value("ordinal").toUInt()}};
@@ -1832,6 +1870,30 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     else diagnosticOperation_=observer.admit(safeAction,diag::EventKind::admitted,resumedDiagnostic_);
     resumedDiagnostic_=0;
     const auto diagnosticId=diagnosticOperation_;
+    // A plain selection uses only the published immutable ledger and cached
+    // relationship flags. With no command in flight, the worker's selection
+    // identities can be updated here without SQL, a model reset, or global busy
+    // presentation. Range/toggle selection retains the bounded worker path.
+    if(action=="select" && !args.value("range").toBool() && !args.value("toggle").toBool()) {
+        diag::Scope scope(diagnosticId);observer.start(diagnosticId);
+        try {
+            const int row=args.value("row",-1).toInt();
+            if(!rows_ || rows_!=worker_->cachedView || row<0 || static_cast<std::size_t>(row)>=rows_->order.size())throw std::invalid_argument("Selection row is unavailable");
+            const auto& record=rows_->rows[rows_->order[static_cast<std::size_t>(row)]];const auto& id=record.identity;
+            if(worker_->selection.size()==1 && worker_->selection.contains(id) && worker_->selectionFocus==id && worker_->selectionAnchor==id && !args.value("firstSearchSelection").toBool()) {
+                observer.finish(diagnosticId,diag::Result::succeeded,diag::Persistence::not_applicable,diag::Presentation::model_applied);observer.applied(diagnosticId);return;
+            }
+            auto value=draft(record.draft,worker_->categoryById,worker_->dateFormat);
+            value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=record.committed;value["transferLinked"]=worker_->cachedLinkedRows.contains(id);
+            auto next=state_;next["selection"]=QVariantList{value};next["selectionKeys"]=QVariantMap{{text(id.batch)+":"+QString::number(id.ordinal),true}};next["selectionCount"]=1;next["selectionIndex"]=row;
+            worker_->selection={id};worker_->selectionFocus=id;worker_->selectionAnchor=id;state_=std::move(next);error_.clear();
+            observer.finish(diagnosticId,diag::Result::succeeded,diag::Persistence::not_applicable,diag::Presentation::model_applied);observer.applied(diagnosticId);
+            emit changed();emit completed(action,true);
+        } catch(const std::exception& error) {
+            error_=QString::fromUtf8(error.what());observer.finish(diagnosticId,diag::Result::failed,diag::Persistence::not_applicable,diag::Presentation::failed);emit changed();emit completed(action,false);
+        }
+        return;
+    }
     activeAction_=action;
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
@@ -1946,7 +2008,8 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             worker->invalidate();
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
-            result.error=(action=="create_account" && result.success)?"Account was created durably, but its view could not be refreshed. Reopen and inspect the account list before retrying."
+            result.error=((action=="save" || action=="accept_edit" || action=="undo_edit") && worker->diagnosticSaved)?"Edit was saved durably, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
+                :(action=="create_account" && result.success)?"Account was created durably, but its view could not be refreshed. Reopen and inspect the account list before retrying."
                 :((action=="map_import" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved durably, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved durably, but its view could not be refreshed. Reopen and inspect Review before retrying."
                 :((action.startsWith("transfer_") || action=="assign_transfer_batch" || action=="release_transfer_batch" || action=="undo_transfer_assignment") && result.success)?"Transfer operation was saved durably, but its view could not be refreshed. Reopen and inspect transfers before retrying."

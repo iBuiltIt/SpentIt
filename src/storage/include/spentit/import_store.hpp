@@ -148,6 +148,9 @@ public:
     app::ReviewReceipt answer_review(std::string_view,const app::ReviewAnswer&) override;
     app::ReviewReceipt assign_transfer_batch(std::string_view,const std::vector<app::TransferRequest>&,const app::OperationContext&) override;
     bool can_undo_transfer_assignment() const override;
+    app::ReviewReceipt edit_transaction(std::string_view,const imports::Occurrence&,std::int64_t,const std::optional<app::EntryToken>&,const imports::DraftRow&) override;
+    bool can_undo_transaction_edit(std::string_view) const override;
+    app::ReviewReceipt undo_transaction_edit(std::string_view,std::string_view) override;
     app::ReviewReceipt undo_review(std::string_view) override;
     std::optional<app::ReviewReceipt> review_outcome(std::string_view) const override;
     app::AcceptanceReview acceptance_review() const override;
@@ -202,7 +205,7 @@ private:
     void require_account(std::string_view) const;
     app::ReviewReceipt write_review_answer(std::string_view,const app::ReviewAnswer&,const app::ReviewSheet&,std::string_view parent={});
     void restore_review_answer(std::string_view operation,std::string_view answer);
-    void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false);
+    void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false,bool=true);
     bool review_draft_undo(const imports::Occurrence&,std::int64_t,const imports::DraftRow&) const;
     imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t) const;
     void generate_explicit_transfers(app::OperationContext* context=nullptr);

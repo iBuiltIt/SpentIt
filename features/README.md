@@ -1,5 +1,11 @@
 # Feature discovery
 
+The [ledger editing and session Undo follow-up](../doc/ledger-editing.md) is
+implemented under the 2026-11-01 Go. Double-click toggles, selection keeps the
+editor attached, Enter accepts a valid edit and session Undo reverses it. See
+[status](../doc/status.md) for verification and limits.
+
+
 The [opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md)
 is implemented under the owner's 2026-10-31 Go. It includes import routing,
 Review repair/Commit, account-context Discard and automatic incomplete-preparation

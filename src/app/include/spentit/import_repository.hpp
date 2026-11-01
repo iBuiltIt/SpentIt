@@ -261,6 +261,11 @@ public:
     virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}
     virtual ReviewReceipt assign_transfer_batch(std::string_view,const std::vector<TransferRequest>&,const OperationContext&) {throw std::logic_error("Transfer assignment unavailable");}
     virtual bool can_undo_transfer_assignment() const {return false;}
+    // Complete editor acceptance and exact, stacked reversal. The UI owns the
+    // session capability; the durable journal owns snapshots and mutation gates.
+    virtual ReviewReceipt edit_transaction(std::string_view,const imports::Occurrence&,std::int64_t,const std::optional<EntryToken>&,const imports::DraftRow&) {throw std::logic_error("Transaction editing unavailable");}
+    virtual bool can_undo_transaction_edit(std::string_view) const {return false;}
+    virtual ReviewReceipt undo_transaction_edit(std::string_view,std::string_view) {throw std::logic_error("Transaction edit Undo unavailable");}
     virtual ReviewReceipt undo_review(std::string_view) {throw std::logic_error("Review Undo unavailable");}
     virtual std::optional<ReviewReceipt> review_outcome(std::string_view) const {return {};}
     virtual AcceptanceReview acceptance_review() const {return {};}

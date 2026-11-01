@@ -1,5 +1,11 @@
 # 005 — Transaction sheet and navigation
 
+Current ledger-editing follow-up (owner Go, 2026-11-01): double-click toggles the
+editor; ordinary selection leaves it attached; Enter accepts edits directly;
+Escape discards unaccepted text; session Undo restores accepted edits. See the
+[contract](../doc/ledger-editing.md) and [verification](../doc/status.md). This
+supersedes the older Save draft / Cancel edit presentation below.
+
 Settings is available only in the lower-left sidebar; the duplicate upper-right
 button was removed at the owner's request on 2026-10-31. Backup/restore remains in
 Settings. Show the sidebar first if it is hidden.
@@ -12,7 +18,7 @@ See [current verification and limits](../doc/status.md); older Resume and toolba
 descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-10-31  
+Last updated: 2026-11-01  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Next tasks: Review responsiveness and batch decisions — 2026-10-31
