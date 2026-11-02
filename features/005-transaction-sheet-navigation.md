@@ -1,5 +1,21 @@
 # 005 — Transaction sheet and navigation
 
+## Ledger transfer arrows — owner Go 2026-11-02
+
+Accepted: a small arrow button precedes the category on a linked single-split
+transaction. Incoming money shows →, outgoing money shows ←, relative to the
+current account. A zero-value linked transfer uses ↔. The tooltip and accessible
+name say “Transfer from/to [account] — show matching transaction” (with “with”
+for zero). The category text remains beside the button.
+
+Clicking follows the saved transfer endpoint, opens the other ledger, reveals and
+selects that transaction even if its prior search hid it. Existing navigation
+and edit guards apply; Back restores the previous account position. Split rows
+show an independent arrow beside each linked saved split, using that split's
+signed amount. Ordinary, unresolved, released and removed links offer no arrow.
+This adds navigation only; it does not infer matches or change financial data.
+See [verification](../doc/status.md).
+
 ## Remember account sorting — owner Go 2026-11-01
 
 Accepted and implemented: remember the ledger sort column and direction for each
@@ -54,7 +70,7 @@ See [current verification and limits](../doc/status.md); older Resume and toolba
 descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-11-01  
+Last updated: 2026-11-02  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Next tasks: Review responsiveness and batch decisions — 2026-10-31

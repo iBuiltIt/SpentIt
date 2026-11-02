@@ -733,7 +733,7 @@ struct ImportModel::Worker {
             state["accounts"]=accountList;state["homeCurrency"]=accountList.isEmpty()?text(acct.currency.code()):accountList.front().toMap().value("currency");
             state["transfersSupported"]=repo.transfers_supported();
             if(repo.transfers_supported()){
-                state["transferSequence"]=QString::number(repo.transfer_sequence());QVariantList items;
+                state["transferSequence"]=QString::number(repo.transfer_sequence());QVariantList items;QVariantMap navigation;
                 for(const auto& value:repo.transfers()){
                     const auto& side=value.link.origin.endpoint.account==acct.identity?value.link.origin:value.link.destination;
                     const auto& other=value.link.origin.endpoint.account==acct.identity?value.link.destination:value.link.origin;
@@ -743,8 +743,20 @@ struct ImportModel::Worker {
                     QString otherName;const auto otherId=QString::number(other.endpoint.account);
                     for(const auto& item:accountList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
                     if(otherName.isEmpty())for(const auto& item:archivedList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
+                    if(side.endpoint.account==acct.identity && !value.link.unresolved && !value.link.destination_released && other.state!=transfers::State::removed) {
+                        const QVariantMap destination{{"counterpartAccount",QString::number(target.account)},
+                            {"counterpartBatch",text(target.entry.batch)},{"counterpartOrdinal",static_cast<int>(target.entry.ordinal)},
+                            {"arrow",side.amount.units()<0?"←":side.amount.units()>0?"→":"↔"},
+                            {"description",(side.amount.units()<0?QString("Transfer to "):side.amount.units()>0?QString("Transfer from "):QString("Transfer with "))+otherName+" — show matching transaction"}};
+                        const auto addEndpoint=[&](const transfers::Endpoint& endpoint){
+                            const auto key=text(endpoint.entry.batch)+":"+QString::number(endpoint.entry.ordinal);
+                            auto splits=navigation.value(key).toMap();splits[text(endpoint.allocation)]=destination;navigation[key]=splits;
+                        };
+                        addEndpoint(side.endpoint);
+                        if(side.attached_evidence)addEndpoint(side.attached_evidence->endpoint);
+                    }
                     items.push_back(QVariantMap{{"id",text(value.link.identity)},{"label",otherName+" · "+money(side.amount)+" · "+dateText(side.date)},{"amount",money(side.amount)},{"date",dateText(side.date)},{"committed",side.state==transfers::State::committed},{"accepted",side.accepted_unmatched},{"evidenced",side.independent_evidence || value.source_matched},{"proposed",side.proposed_evidence.has_value()},{"provisional",side.provisional_date},{"protected",transfers::protected_draft(value.link,acct.identity)},{"local",!side.attached_evidence && (side.manually_entered || !side.independent_evidence)},{"isOrigin",value.link.origin.endpoint.account==acct.identity},{"counterpartAccount",QString::number(target.account)},{"counterpartBatch",text(target.entry.batch)},{"counterpartOrdinal",static_cast<int>(target.entry.ordinal)}});
-                }state["transfers"]=items;
+                }state["transfers"]=items;state["transferNavigation"]=navigation;
                 QVariantList journal;
                 for(const auto& entry:repo.transfer_journal()){
                     const auto accountName=[&](std::int64_t id){

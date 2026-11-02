@@ -2,6 +2,33 @@
 
 Last updated: 2026-11-02
 
+## Ledger transfer navigation arrows — 2026-11-02
+
+Owner Go implemented; see the [contract](../features/005-transaction-sheet-navigation.md#ledger-transfer-arrows--owner-go-2026-11-02).
+Linked single-split rows show a small incoming → or outgoing ← button before the
+category. Saved split viewers show it separately for each linked split. Zero
+amounts use ↔. The worker supplies direction and exact saved counterpart
+identities, including attached imported endpoints; unresolved, released or removed
+links offer no arrow. Tooltips and accessible names describe the destination.
+Click uses the existing guarded account navigation, reveals/selects the matching
+transaction and records the departing viewport for Back. No financial/storage
+or format change.
+
+Rules-enabled Release build passed. Targeted offscreen `transferManagementUi`
+and `qifTransferResolution` passed (4 Qt results including setup/cleanup): both
+directions between imported postings, selection identity/count, and a split-row
+button leading to its generated counterpart. The ordinary fee split has no
+navigation entry. Navigation and QML CTest suites passed 2/2 in 9.66 seconds,
+including the existing viewport restoration regressions. A synthetic 1440×850
+render was inspected. The broader `import.ui` run passed 66 Qt results and failed
+one stale starter-category count assertion (41 expected, 46 actual) in 83.32 s.
+That expectation was updated for the existing catalog; the rebuilt isolated
+`configuredDatesAndCategories` case then passed (3 Qt results, 0.903 s). The full
+suite was not repeated after this test-only correction. `git diff --check` passed.
+Native interaction, spoken accessibility, mixed-sign/zero
+arrow-specific cases and other platforms remain unverified. The running
+application was not restarted; the Release build updates `build/SpentIt`.
+
 ## Accounts grouped below categories — 2026-11-02
 
 Owner follow-up Go implemented: account destinations form a separate trailing

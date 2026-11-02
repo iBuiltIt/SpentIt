@@ -168,6 +168,21 @@ ApplicationWindow {
             horizontal:ledgerScroll.contentItem.contentX}
         accountViewports=views
     }
+    function ledgerTransfer(record, split) {
+        let links=(s.transferNavigation||{})[record.batch+":"+record.ordinal]||{}
+        return split ? links[split.allocationId]||null : null
+    }
+    component TransferArrow: Button {
+        property var destination: null
+        visible: !!destination
+        width:28;height:28;padding:2
+        text:destination?destination.arrow:""
+        enabled:!!destination && !workflow.busy
+        Accessible.name:destination?destination.description:""
+        ToolTip.visible:hovered
+        ToolTip.text:destination?destination.description:""
+        onClicked:window.showCounterpart(destination)
+    }
     function showCounterpart(item) {
         transferDialog.close()
         guard(function(){
@@ -2548,7 +2563,8 @@ ApplicationWindow {
                                 required property string modelData
                                 required property int index
                                 width:(ledger.width-20)*window.ledgerColumnWeights[index];height:34
-                                Label {anchors.fill:parent;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>=3?Text.AlignRight:Text.AlignLeft;visible:index!==2 || record.splits.length<2}
+                                TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===2?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===2 && record.splits.length===1?window.ledgerTransfer(record,record.splits[0]):null}
+                                Label {anchors.fill:parent;anchors.leftMargin:rowTransfer.visible?32:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>=3?Text.AlignRight:Text.AlignLeft;visible:index!==2 || record.splits.length<2}
                                 Button {
                                     anchors.fill:parent;visible:index===2 && record.splits.length>1
                                     objectName:index===2 && record.batch.length?"splitToggle_"+record.ordinal:""
@@ -2573,7 +2589,11 @@ ApplicationWindow {
                         delegate:Row {
                             required property var modelData
                             width:splitPreview.width;height:30;spacing:8
-                            Label {textFormat:Text.PlainText;text:s.categoriesSupported?modelData.categoryDisplay:(modelData.category || "Uncategorized");width:parent.width*0.25;elide:Text.ElideRight}
+                            Item {
+                                width:parent.width*0.25;height:30
+                                TransferArrow {id:splitTransfer;objectName:"splitTransferArrow_"+modelData.allocationId;destination:window.ledgerTransfer(record,modelData)}
+                                Label {anchors.fill:parent;anchors.leftMargin:splitTransfer.visible?32:0;verticalAlignment:Text.AlignVCenter;textFormat:Text.PlainText;text:s.categoriesSupported?modelData.categoryDisplay:(modelData.category || "Uncategorized");elide:Text.ElideRight}
+                            }
                             Label {textFormat:Text.PlainText;text:modelData.memo;width:parent.width*0.5;elide:Text.ElideRight}
                             Label {textFormat:Text.PlainText;text:modelData.amount;width:parent.width*0.2;horizontalAlignment:Text.AlignRight}
                         }
