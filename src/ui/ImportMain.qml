@@ -482,6 +482,7 @@ ApplicationWindow {
     Shortcut {objectName:"mergeShortcut";sequence:"Alt+L";enabled:!!s.active && !workflow.busy && !s.readOnly && !!s.transfersSupported;onActivated:mergeSelected()}
     Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
     Shortcut {sequences:[StandardKey.Forward];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(1)}
+    property bool restoringImportedText: false
     property bool payeeTouched: false
     property bool memoTouched: false
     property bool categoryDirty: false
@@ -767,7 +768,7 @@ ApplicationWindow {
             editDate.text=d.date; editPayee.text=d.payee; editMemo.text=d.memo; editTotal.text=d.total
             for(let a of d.splits) splitModel.append(a)
         }
-        dirty=false;committedEditing=!!selected.canCorrect;payeeTouched=false;memoTouched=false
+        dirty=false;committedEditing=!!selected.canCorrect;payeeTouched=false;memoTouched=false;restoringImportedText=false
     }
     // Inspect the outer syntax without treating quoted text, escaped symbols or
     // character classes as anchors/alternation. Matching still belongs to PCRE2.
@@ -1071,7 +1072,7 @@ ApplicationWindow {
                 let old=(selected.draft.splits||[]).find(a=>a.sourceOrdinal===field.split)
                 restored[field.split]={category:"",memo:"",amount:"",allocationId:old?old.allocationId:"",
                     categoryId:"",bindingRevision:"",categoryDisplay:"Uncategorized",sourceOrdinal:field.split,
-                    categoryTouched:true,memoTouched:true}
+                    categoryTouched:true,memoTouched:false}
             }
             restored[field.split][field.field]=field.value
         }
@@ -1081,7 +1082,7 @@ ApplicationWindow {
             part.categoryDisplay=part.category||"Uncategorized"
             splitModel.append(part)
         }
-        payeeTouched=true;memoTouched=true;dirty=true
+        restoringImportedText=true;payeeTouched=false;memoTouched=false;dirty=true
         editDate.forceActiveFocus()
     }
     function saveEditor() {
@@ -1089,7 +1090,7 @@ ApplicationWindow {
         rememberEditView()
         let splits=[]
         for(let i=0;i<splitModel.count;i++) {let a=splitModel.get(i);splits.push({category:a.category,memo:a.memo,amount:a.amount,categoryId:a.categoryId||"",bindingRevision:a.bindingRevision||"",allocationId:a.allocationId||"",categoryTouched:!!a.categoryTouched,memoTouched:!!a.memoTouched})}
-        workflow.command(committedEditing?"accept_edit":"save", {kind:"correct",date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits,payeeTouched:payeeTouched,memoTouched:memoTouched})
+        workflow.command(committedEditing?"accept_edit":"save", {kind:"correct",date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits,restoreImportedText:restoringImportedText,payeeTouched:payeeTouched,memoTouched:memoTouched})
     }
     onClosing: function(close) {
         if(allowClose) return

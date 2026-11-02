@@ -293,6 +293,10 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
             next.category_owner=FieldOwnership::manual;next.category_rule.reset();
         }
         if(v.value("memoTouched").toBool() || (old && next.memo!=old->memo)){next.memo_owner=FieldOwnership::manual;next.memo_rule.reset();}
+        if(a.value("restoreImportedText").toBool() && !v.value("memoTouched").toBool() && source && next.source_ordinal
+            && *next.source_ordinal<source->source_allocation_fields.size() && next.memo==source->source_allocation_fields[*next.source_ordinal].memo){
+            next.memo_owner=FieldOwnership::source;next.memo_rule.reset();
+        }
         values.push_back(std::move(next));
     }
     const auto total=Money::parse(str(a.value("total")),repo.account().currency);
@@ -307,6 +311,10 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
     result.memo_rule=baseline?baseline->memo_rule:std::nullopt;
     if(a.value("payeeTouched").toBool() || result.payee!=oldPayee){result.payee_owner=FieldOwnership::manual;result.payee_rule.reset();}
     if(a.value("memoTouched").toBool() || result.memo!=oldMemo){result.memo_owner=FieldOwnership::manual;result.memo_rule.reset();}
+    if(a.value("restoreImportedText").toBool() && source){
+        if(!a.value("payeeTouched").toBool() && result.payee==source->payee){result.payee_owner=FieldOwnership::source;result.payee_rule.reset();}
+        if(!a.value("memoTouched").toBool() && result.memo==source->memo){result.memo_owner=FieldOwnership::source;result.memo_rule.reset();}
+    }
     return result;
 }
 

@@ -129,6 +129,26 @@ void schema(){
 
 void validation(){
     fault_vfs::install();
+    {Directory dir("spentit-restore-text-XXXXXX");const auto path=dir.path/"doc";
+    {auto s=create(path);const imports::Occurrence id{"restore",0};s.ingest(id.batch,split_source,qif::DateOrder::dmy);
+    auto original=*s.row(id).draft;auto manual=original;manual.payee="Typed";manual.payee_owner=FieldOwnership::manual;
+    auto allocations=manual.transaction.allocations();allocations[0].memo="Typed split";allocations[0].memo_owner=FieldOwnership::manual;
+    manual.transaction=manual.transaction.corrected(manual.transaction.effective_total(),allocations);s.save(id,0,manual);
+    auto forged=*s.row(id).draft;forged.payee_owner=FieldOwnership::source;
+    rejects_text([&]{s.save(id,1,forged);},"Restored text must match");
+    forged.payee=original.payee;allocations=forged.transaction.allocations();allocations[0].memo_owner=FieldOwnership::source;
+    forged.transaction=forged.transaction.corrected(forged.transaction.effective_total(),allocations);
+    rejects_text([&]{s.save(id,1,forged);},"Restored text must match");
+    allocations[0].memo=original.transaction.allocations()[0].memo;
+    forged.transaction=forged.transaction.corrected(forged.transaction.effective_total(),allocations);
+    fault_vfs::arm(1,SQLITE_FULL);rejects_text([&]{s.save(id,1,forged);},"");
+    check(fault_vfs::fired);fault_vfs::disarm();
+    check(s.row(id).draft->payee=="Typed" && s.row(id).draft->payee_owner==FieldOwnership::manual);
+    s.save(id,1,forged);
+    check(s.row(id).draft->payee_owner==FieldOwnership::source);
+    check(s.row(id).draft->transaction.allocations()[0].memo_owner==FieldOwnership::source);s.verify();}
+    auto reopened=ImportStore::open(path,password);reopened.verify();}
+
     {Directory dir("spentit-rulestore-pattern-XXXXXX");auto s=create(dir.path/"doc");rejects_before_begin([&]{save_rules(s,"bad-pattern",{rule_of("bad","Bad",rules::Scope::transaction,rules::InputField::payee,"(",{"X",{},"rule-default",false})},0);},"");rejects_kind([&]{save_rules(s,"bad-pattern",{rule_of("bad","Bad",rules::Scope::transaction,rules::InputField::payee,"(",{"X",{},"rule-default",false})},0);},rules::RegexFailure::invalid_pattern,"Pattern");
     rejects_kind([&]{save_rules(s,"bad-template",{rule_of("bad","Bad",rules::Scope::transaction,rules::InputField::payee,"fee",{"${99}",{},"rule-default",false})},0);},rules::RegexFailure::invalid_template,"capture reference");
     auto empty=save_rules(s,"empty-expression",{rule_of("empty","Empty",rules::Scope::transaction,rules::InputField::payee,"",{"X",{},"rule-default",false})},0);check(empty.ruleset_after==1&&s.rule_image().ordered[0].expression.empty());}

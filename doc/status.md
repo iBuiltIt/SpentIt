@@ -2,6 +2,39 @@
 
 Last updated: 2026-11-02
 
+## Restore imported text and rule application — 2026-11-02
+
+Owner Go implemented: Restore no longer marks restored payee, transaction memo
+or retained source-split memo as manually entered. The editor sends explicit
+restoration intent and tracks subsequent typing independently. Storage accepts
+source ownership only for exact imported text when releasing manual/rule
+protection; ordinary edits of source-owned text still become manual. Historical
+verification permits those exact restorations while preserving category ownership,
+source association and rule-application protections. No schema change or automatic
+rewrite of existing transactions. Already affected rows can be restored/saved
+again, then categorized with the rule. See the [contract](ledger-editing.md#restore-imported-values--owner-go-2026-11-02).
+
+Rules-enabled Release application rebuilt. Final selected CTest pass: 14/14 in
+35.68 s, covering rule UI/application/account Apply/reapply/validation, category
+assignment/history/validation, committed basics/history/validation and ledger
+navigation/committed UI/QML. New UI cases exercise new and committed Restore →
+Apply, payee/memo changes, group Undo, reopen, manual typing after Restore
+(including identical text), releasing manual protection on another Restore, and
+committed split-memo Restore/Apply/Undo/reopen. Storage tests reject false source
+claims, verify exact split/transaction restoration, inject a first-write disk-full
+failure, check rollback and retry, and reopen. The original Restore/repair UI
+checks also passed (4 Qt results, 3.196 s).
+
+Existing committed I/O and crash sweeps passed (150.11/153.66 s) before the final
+adjustment preserving ordinary source-text-save canonicalization; those full
+sweeps were not repeated afterward. The final targeted restoration disk-full
+check passed. Rules-disabled category assignment/validation passed 2/2 (8.22 s).
+An earlier corruption fixture was updated to reject different text falsely marked
+as source, rather than rejecting an exact original-value restoration now allowed
+by the contract. `git diff --check` and changed-document relative links passed.
+Native interaction, sanitizers and other platforms were not run for this fix.
+`build/SpentIt` is updated; the running application was not restarted.
+
 ## Split-only editor buttons — 2026-11-02
 
 Owner Go implemented: Remove and Create rule from split memo are hidden when

@@ -119,6 +119,17 @@ not reverse Merge or acceptance, change the account, or recreate relationships
 outside the existing edit command. Generated entries without imported values
 cannot use Restore. Accepted edits retain normal history and session Undo.
 
+Follow-up Go (2026-11-02): restoring payee, transaction memo and retained
+source-split memos returns those fields to source ownership, clearing prior rule
+marks. Storage requires exact equality with retained imported text. Typing in a
+field after Restore makes that field manual again, even if its text equals the
+original. Save/Escape/reload ends the editor's restoration intent. Categories
+retain the existing validation and Uncategorized eligibility policy. This fixes
+Restore followed by rule Apply assigning a category but protecting the restored
+payee as though it had been typed manually. New and committed edits use their
+existing atomic history/Undo paths; no format change or data rewrite is required.
+
+
 ## Split-only editor actions — owner Go 2026-11-02
 
 Remove and Create rule from split memo appear only when the editor has more than

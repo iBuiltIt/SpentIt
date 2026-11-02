@@ -315,6 +315,89 @@ private slots:
         QVERIFY(object(s.root,"newRule")->property("enabled").toBool());
         QVERIFY(!object(s.root,"ruleRow_2")->property("isNew").toBool());
     }
+    void restoredTextCanBeRuledAgain_data(){
+        QTest::addColumn<bool>("committed");
+        QTest::newRow("new")<<false;QTest::newRow("committed")<<true;
+    }
+    void restoredTextCanBeRuledAgain(){
+        QFETCH(bool,committed);
+        Session s;createDocument(s,"Restore rule regression");
+        const auto path=s.path("restore.qif");
+        writeQif(path,"!Type:Bank\nD01/01/2026\nT-3.50\nPParking original\nMOriginal memo\n^\n");
+        run(s.model,"import",{{"path",path},{"profile","DMY"}});
+        const auto batch=selected(s.model).value("batch");
+        if(committed)run(s.model,"commit");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        if(s.root->property("ruleIndex").toInt()<0 && object(s.root,"openRule_0"))QVERIFY(click(s.root,"openRule_0"));
+        transactionRule(s.root,"Parking","^Parking","Parking renamed");
+        QVERIFY(edit(s.root,"ruleMemoTemplate","Rule memo"));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking renamed");
+        auto restore=[&]{
+            QVERIFY(click(s.root,"accountNavigation"));wait(s.model);
+            run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
+            QVERIFY(QMetaObject::invokeMethod(s.root,"restoreImportedValues"));
+            QVERIFY(QMetaObject::invokeMethod(s.root,"saveEditor"));wait(s.model);
+            QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking original");
+            QCOMPARE(draftOf(s.model).value("memo").toString(),"Original memo");
+        };
+        restore();
+        run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
+        run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        if(s.root->property("ruleIndex").toInt()<0 && object(s.root,"openRule_0"))QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(click(s.root,"previewThisRule"));wait(s.model);
+        QVERIFY(summary(s.model).contains("1 eligible; 1 will change"));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking renamed");
+        QCOMPARE(draftOf(s.model).value("memo").toString(),"Rule memo");
+        QVERIFY(click(s.root,"undoRules"));wait(s.model);
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking original");
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
+        run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking renamed");
+        // Explicit typing after Restore, even typing the original value, stays manual.
+        QVERIFY(click(s.root,"accountNavigation"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"restoreImportedValues"));
+        QVERIFY(edit(s.root,"durablePayee","Parking original"));
+        QVERIFY(edit(s.root,"durableMemo","My memo"));
+        QVERIFY(QMetaObject::invokeMethod(s.root,"saveEditor"));wait(s.model);
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        if(s.root->property("ruleIndex").toInt()<0 && object(s.root,"openRule_0"))QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking original");
+        QCOMPARE(draftOf(s.model).value("memo").toString(),"My memo");
+        restore(); // Also release manual protection through explicit Restore.
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        if(s.root->property("ruleIndex").toInt()<0 && object(s.root,"openRule_0"))QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking renamed");
+        run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
+    }
+    void restoredSplitMemoCanBeRuledAgain(){
+        Session s;createDocument(s,"Restore split memo");
+        const auto path=s.path("split.qif");writeQif(path,wise());
+        run(s.model,"import",{{"path",path},{"profile","DMY"}});
+        const auto batch=selected(s.model).value("batch");run(s.model,"commit");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        splitMemoRule(s.root,"Fee","Wise Charges",{},false);
+        QVERIFY(choose(s.root,"ruleCategory",1));QVERIFY(edit(s.root,"ruleMemoTemplate","Fee renamed"));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        auto memo=[&]{return draftOf(s.model).value("splits").toList()[0].toMap().value("memo").toString();};
+        QCOMPARE(memo(),"Fee renamed");
+        QVERIFY(click(s.root,"accountNavigation"));wait(s.model);
+        run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(QMetaObject::invokeMethod(s.root,"restoreImportedValues"));
+        QVERIFY(QMetaObject::invokeMethod(s.root,"saveEditor"));wait(s.model);
+        QCOMPARE(memo(),"Wise Charges for: card");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);QCOMPARE(memo(),"Fee renamed");
+        QVERIFY(click(s.root,"undoRules"));wait(s.model);QCOMPARE(memo(),"Wise Charges for: card");
+        run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
+        run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});QCOMPARE(memo(),"Wise Charges for: card");
+    }
     void accountScopeSaveAndApplyUndo(){
         Session s;createDocument(s,"Account rule scopes");
         const auto old=s.path("old.qif"),fresh=s.path("new.qif");

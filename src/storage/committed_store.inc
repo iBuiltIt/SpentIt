@@ -18,9 +18,9 @@ void check_rule_transition(const imports::DraftRow& before,const imports::DraftR
         mark_ok(before_owner,before_mark);mark_ok(after_owner,after_mark);
         const bool same_value=before_text==after_text && (!category || before_binding==after_binding);
         if(!apply){
-            if(before_owner==FieldOwnership::rule){if(after_owner==FieldOwnership::rule){if(!same_value || before_mark!=after_mark)fail(SQLITE_CORRUPT);}else if(after_owner==FieldOwnership::manual){if(after_mark)fail(SQLITE_CORRUPT);}else fail(SQLITE_CORRUPT);}
+            if(before_owner==FieldOwnership::rule){if(after_owner==FieldOwnership::rule){if(!same_value || before_mark!=after_mark)fail(SQLITE_CORRUPT);}else if(after_owner==FieldOwnership::manual || (!category && after_owner==FieldOwnership::source)){if(after_mark)fail(SQLITE_CORRUPT);}else fail(SQLITE_CORRUPT);}
             else if(after_owner==FieldOwnership::rule)fail(SQLITE_CORRUPT);
-            else if(before_owner==FieldOwnership::manual && after_owner!=FieldOwnership::manual)fail(SQLITE_CORRUPT,"Manual ownership was silently removed");
+            else if(before_owner==FieldOwnership::manual && after_owner!=FieldOwnership::manual && (category || after_owner!=FieldOwnership::source))fail(SQLITE_CORRUPT,"Manual ownership was silently removed");
         }else{
             if(category && (!before_text.empty() || before_binding) && (!same_value || before_owner!=after_owner || before_mark!=after_mark))fail(SQLITE_CORRUPT,"Rule changed an assigned category");
             if(before_owner==FieldOwnership::manual && after_owner==FieldOwnership::rule){if(!replace_manual && !(category && before_text.empty() && !before_binding))fail(SQLITE_CORRUPT);}

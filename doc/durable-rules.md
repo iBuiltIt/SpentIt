@@ -8,6 +8,13 @@ allocations. Selected Apply uses saved surrounding rule order and writes only th
 selected rule. Imported missing categories require a durable import-wide decision
 before automatic rules or acceptance. See [status](status.md) for verification.
 
+Restore imported values explicitly returns unchanged restored text to source
+ownership, subject to exact original-value checks in storage. Later manual edits
+remain protected. See the [Restore follow-up](ledger-editing.md#restore-imported-values--owner-go-2026-11-02).
+This supersedes the historical ordinary-save prohibition on returning text from
+manual/rule ownership to source ownership; category ownership and rule-application
+protections remain unchanged.
+
 The [single rules workspace](../features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)
 supersedes the focused/all-rules switch and UI save scope described below. Selected
 Save/Apply excludes unrelated drafts; preview is optional. Leaving uses a nonmodal
