@@ -197,6 +197,8 @@ ApplicationWindow {
         guard(function(){
             rememberAccountViewport()
             pendingImportIssue=item.record<0?item:null
+            pendingReviewInspection=item.record>=0
+            reviewInspecting=item.record>=0
             pendingCounterpart=item.record>=0?{batch:item.batch,ordinal:item.record}:null
             workflow.command("select_account",{id:item.account,reveal:item.record>=0,reviewBatch:item.batch,batch:item.batch,ordinal:item.record})
         })
@@ -1057,23 +1059,30 @@ ApplicationWindow {
     function selectLedgerRow(row, modifiers) {
         guard(function(){workflow.command("select",{row:row,range:!!(modifiers & Qt.ShiftModifier),toggle:!!(modifiers & (Qt.ControlModifier|Qt.MetaModifier)),firstSearchSelection:!!searchReturn && !searchReturn.chosen})})
     }
-    function copySource(field) {
+    function restoreImportedValues() {
         if (!editEnabled || workflow.busy) return
-        if (field.split >= 0) {
-            if (field.split >= splitModel.count) return
-            splitModel.setProperty(field.split, field.field, field.value)
-            if(field.field==="category") {splitModel.setProperty(field.split,"categoryId","");splitModel.setProperty(field.split,"bindingRevision","");splitModel.setProperty(field.split,"categoryDisplay",field.value?"Unmapped: "+field.value:"Uncategorized");splitModel.setProperty(field.split,"categoryTouched",true)}
-            if(field.field==="memo")splitModel.setProperty(field.split,"memoTouched",true)
-        } else {
-            switch (field.field) {
-            case "date": editDate.text=field.value; break
-            case "payee": editPayee.text=field.value;payeeTouched=true; break
-            case "memo": editMemo.text=field.value;memoTouched=true; break
-            case "total": editTotal.text=field.value; break
-            default: return
+        let fields=selected.sourceFields||[]
+        if (!fields.some(f=>f.field==="payee")) return
+        let value=name=>{let field=fields.find(f=>f.split<0 && f.field===name);return field?field.value:""}
+        let restored=[]
+        for(let field of fields) {
+            if(field.split<0)continue
+            if(!restored[field.split]) {
+                let old=(selected.draft.splits||[]).find(a=>a.sourceOrdinal===field.split)
+                restored[field.split]={category:"",memo:"",amount:"",allocationId:old?old.allocationId:"",
+                    categoryId:"",bindingRevision:"",categoryDisplay:"Uncategorized",sourceOrdinal:field.split,
+                    categoryTouched:true,memoTouched:true}
             }
+            restored[field.split][field.field]=field.value
         }
-        dirty=true
+        editDate.text=value("date");editPayee.text=value("payee");editMemo.text=value("memo");editTotal.text=value("total")
+        splitModel.clear()
+        for(let part of restored) {
+            part.categoryDisplay=part.category||"Uncategorized"
+            splitModel.append(part)
+        }
+        payeeTouched=true;memoTouched=true;dirty=true
+        editDate.forceActiveFocus()
     }
     function saveEditor() {
         if(workflow.busy || !dirty)return
@@ -2065,7 +2074,7 @@ ApplicationWindow {
                     Button {text:"No";objectName:"reviewNo";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,questionCard.modelData.kind==="same"?"separate":"not_linked",[])}
                     Button {text:"Selected yes";objectName:"reviewSelectedYes";visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;enabled:!workflow.busy && questionCard.chosen.length>=2;onClicked:answerReview(questionCard.modelData,"merge",questionCard.chosen)}
                     Button {text:"Accept without bank match";objectName:"acceptMissingMatch";visible:!!questionCard.modelData.waitingLink;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,"accept_missing",[])}
-                    Button {text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:{if(questionCard.modelData.ordinal>=0)reviewSheet.close();openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}}
+                    Button {objectName:"reviewCorrect";text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}
                 }
                 Repeater {model:questionCard.modelData.rows;delegate:ColumnLayout {
                     id:reviewRow;required property var modelData;required property int index;Layout.fillWidth:true
@@ -2629,9 +2638,11 @@ ApplicationWindow {
         enabled:!workflow.busy
         width:parent.width;height:330
         UsableScrollView {
+            id:editorScroll;objectName:"editorScroll"
             anchors.fill:parent;contentWidth:availableWidth
+            leftPadding:8;rightPadding:24
             ColumnLayout {
-                width:editor.availableWidth
+                width:editorScroll.availableWidth
                 Label {textFormat:Text.PlainText;text:"Imported amount: "+(selected.original||"Unavailable");visible:!!selected.original;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.diagnostic||"";color:"#a02020";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.sourceClasses ? "Details from file — "+selected.sourceClasses : "";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -2654,6 +2665,7 @@ ApplicationWindow {
                     id:editorSplits
                     model:splitModel
                     RowLayout {
+                        Layout.fillWidth:true
                         property alias categoryField: categoryInput
                         property alias amountField: splitAmount
                         required property int index
@@ -2663,7 +2675,7 @@ ApplicationWindow {
                         TextField {
                             id:categoryInput;objectName:"splitCategory_"+index
                             visible:!!s.categoriesSupported;readOnly:!editEnabled && !originLink(index>=0 && index<splitModel.count?splitModel.get(index).allocationId:"")
-                            Layout.preferredWidth:Math.min(categorySelectorWidth,Math.max(120,parent.width-240));placeholderText:"Category";maximumLength:256
+                            Layout.preferredWidth:Math.min(categorySelectorWidth,Math.max(120,editorScroll.availableWidth-240));placeholderText:"Category";maximumLength:256
                             Accessible.name:"Split category"
                             property string savedText: index>=0 && index<splitModel.count ? (splitModel.get(index).categoryDisplay==="Uncategorized" ? "" : splitModel.get(index).categoryDisplay||"") : ""
                             text:savedText
@@ -2748,10 +2760,10 @@ ApplicationWindow {
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
                         TextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
-                        Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from split memo":"Rules require an imported split";onClicked:createFromSource("memo",index)}
+                        Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported && splitModel.count>1;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from split memo":"Rules require an imported split";onClicked:createFromSource("memo",index)}
                         TextField {id:splitAmount;KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
-                        Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled;enabled:!category.startsWith("[");onClicked:{window.dirty=true;splitModel.remove(index)}}
+                        Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && !category.startsWith("[");onClicked:{if(!enabled || splitModel.count<=1)return;window.dirty=true;splitModel.remove(index)}}
                     }
                 }
                 TextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
@@ -2762,7 +2774,7 @@ ApplicationWindow {
                     Label {textFormat:Text.PlainText;text:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 RowLayout {
-                    visible:!!selected.editable && !selected.repair && !s.readOnly
+                    visible:currentPage==="review" && !!selected.editable && !selected.repair && !s.readOnly
                     Label {textFormat:Text.PlainText;text:selected.decision===0?"Unresolved match":selected.decision===2?(selected.removedDuplicate?"Keep removed: ":"Excluded duplicate: ")+(selected.duplicate||""):"Include as new"}
                     Button {objectName:"includeSeparate";text:"Include as separate transaction";onClicked:guard(function(){workflow.command("decide",{duplicate:false})})}
                     UsableComboBox {id:candidate;objectName:"duplicateCandidate";model:selected.candidates||[];textRole:"label";Layout.fillWidth:true;Accessible.name:"Matching transaction"}
@@ -2792,33 +2804,25 @@ ApplicationWindow {
                     Label {text:"The rule that assigned this value was deleted.";visible:(selected.ruleAssignments||[]).some(c=>!c.available);wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 Label {visible:!!s.rulesSupported && !!selected.ruleMatchError;textFormat:Text.PlainText;text:selected.ruleMatchError||"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                CheckBox {id:sourceToggle;objectName:"sourceToggle";text:"Show original imported transaction"}
-                Label {
-                    visible:sourceToggle.checked && (selected.sourceFields||[]).length>0;Layout.fillWidth:true;wrapMode:Text.Wrap
-                    text:"Double-click a value or choose Copy to edit to use the imported value."
-                    textFormat:Text.PlainText
-                }
-                Repeater {
-                    model:sourceToggle.checked?(selected.sourceFields||[]):[]
-                    RowLayout {
-                        required property var modelData
-                        property var sourceField:modelData
-                        Layout.fillWidth:true
-                        Label {text:sourceField.label; textFormat:Text.PlainText;Layout.preferredWidth:300;wrapMode:Text.Wrap}
-                        Label {
-                            text:sourceField.value.length?sourceField.value:"(empty)";textFormat:Text.PlainText
-                            Layout.fillWidth:true;wrapMode:Text.Wrap
-                            MouseArea {anchors.fill:parent;enabled:editEnabled;onDoubleClicked:copySource(sourceField)}
-                        }
-                        Button {
-                            text:"Copy to edit";objectName:"copySource_"+sourceField.field+"_"+sourceField.split
-                            enabled:editEnabled && (sourceField.split<0 || sourceField.split<splitModel.count)
-                            Accessible.name:"Copy "+sourceField.label+" to edit"
-                            onClicked:copySource(sourceField)
-                        }
+                CheckBox {
+                    id:sourceToggle;objectName:"sourceToggle";text:"Show original imported transaction"
+                    MouseArea {
+                        parent:sourceToggle.indicator;anchors.fill:parent
+                        onClicked:{sourceToggle.forceActiveFocus();sourceToggle.toggle()}
                     }
                 }
-                TextArea {visible:sourceToggle.checked;text:selected.source||"";readOnly:true;selectByMouse:true;textFormat:TextEdit.PlainText;wrapMode:TextEdit.Wrap;Layout.fillWidth:true;Accessible.name:"Original imported transaction"}
+                RowLayout {
+                    visible:sourceToggle.checked;Layout.fillWidth:true;spacing:12
+                    Label {objectName:"sourceFormat";text:"Format: "+((selected.sourceFields||[]).find(f=>f.field==="format")||{value:"Unavailable"}).value;textFormat:Text.PlainText}
+                    Button {
+                        objectName:"restoreImportedValues";text:"Restore imported values"
+                        enabled:editEnabled && (selected.sourceFields||[]).some(f=>f.field==="payee")
+                        onClicked:restoreImportedValues()
+                    }
+                    Item {Layout.fillWidth:true}
+                }
+                TextArea {objectName:"originalSnippet";visible:sourceToggle.checked;text:selected.source||"";readOnly:true;selectByMouse:true;textFormat:TextEdit.PlainText;wrapMode:TextEdit.Wrap;Layout.fillWidth:true;Accessible.name:"Original imported transaction"}
+
             }
         }
     }

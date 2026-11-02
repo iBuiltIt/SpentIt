@@ -100,3 +100,30 @@ An untouched zero opening may be frozen by Commit at revision zero; verification
 still checks its creation amount/date and all financial/history relationships.
 Legacy headless reported-balance interpretation APIs are separate from the
 desktop's fixed creation-time mapping choices.
+
+## Restore imported values — owner Go 2026-11-02
+
+Show original imported transaction opens a compact Format / Restore imported
+values header and the selectable original record snippet. Parsed fields and
+individual Copy to edit buttons are no longer displayed. Both the checkbox
+indicator and label toggle the panel. Editor content reserves scrollbar space.
+
+Restore replaces the entire unsaved edit buffer with parsed imported date,
+payee, memo, total and original splits/categories. Existing split identities are
+matched by source ordinal where available; additional edited splits disappear
+from the buffer. Enter validates and saves through the ordinary edit command;
+Escape discards the restoration. Unavailable original dates/amounts become empty
+fields requiring correction, rather than retaining corrected values silently.
+Existing category, transfer and financial validation still applies. Restore does
+not reverse Merge or acceptance, change the account, or recreate relationships
+outside the existing edit command. Generated entries without imported values
+cannot use Restore. Accepted edits retain normal history and session Undo.
+
+## Split-only editor actions — owner Go 2026-11-02
+
+Remove and Create rule from split memo appear only when the editor has more than
+one allocation. Add split remains available for ordinary transactions. Returning
+to one allocation hides both controls; Remove is also disabled and its handler
+rejects activation at one allocation, preserving the final category line. Existing
+transfer-removal restrictions and imported-source eligibility for memo rules
+remain in force. Memo and amount field presentation is unchanged by this fix.

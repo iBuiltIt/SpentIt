@@ -2,6 +2,64 @@
 
 Last updated: 2026-11-02
 
+## Split-only editor buttons — 2026-11-02
+
+Owner Go implemented: Remove and Create rule from split memo are hidden when
+only one allocation remains. Remove also rejects direct/queued activation on
+that final allocation. Add split and existing transfer protections remain.
+The category width now derives from the scroll viewport, avoiding a recursive
+layout calculation when controls disappear. See the
+[contract](ledger-editing.md#split-only-editor-actions--owner-go-2026-11-02).
+
+Rules-enabled Release application and committed UI target rebuilt. CTest
+`import.committed_ui` and `import.qml` passed 2/2 in 13.05 s after correcting
+the layout warning found on the first run. The updated add/remove regression
+checks one-to-two-to-one allocation transitions, both buttons' visibility,
+direct final-line removal rejection, unchanged saved splits/balance and no QML
+warnings during the edit. `git diff --check` passed. Native interaction and
+other platforms remain unverified. `build/SpentIt` is updated; the running
+application was not restarted.
+
+## Compact original transaction and Restore — 2026-11-02
+
+Owner Go implemented: original inspection now shows only Format, Restore imported
+values and the selectable source snippet. The indicator has an explicit click
+target, and the editor reserves right-side scrollbar clearance. Restore fills the
+whole unsaved editor, including the original split count, using source ordinals
+to retain matching split identities. Enter saves through existing validation;
+Escape discards. Missing original dates/amounts are blank, not guessed. Individual
+copy controls and their helper are removed. See the
+[contract](ledger-editing.md#restore-imported-values--owner-go-2026-11-02).
+
+Rules-enabled Release application and affected UI targets rebuilt. Targeted
+`inlineSourceRestore` and `recordRepair` passed (4 Qt results including setup and
+cleanup, 3.260 s): actual indicator click, no early persistence, Escape, Enter,
+restoring two edited splits to one, source retention/reopen, accepted-editor
+availability, scrollbar clearance and rejection of an unavailable original date.
+CTest `import.navigation`, `import.committed_ui` and `import.qml` passed 3/3 in
+21.27 s. Inspected a synthetic 1440×850 render showing the compact panel and
+unobscured Restore button. `git diff --check` passed. Full import UI suite was not
+repeated for this follow-up; native macOS interaction, other platforms and
+restore-specific linked-transfer cases remain unverified. `build/SpentIt` is
+updated; the running application was not restarted.
+
+## Ledger duplicate-decision cleanup — 2026-11-02
+
+Owner Go implemented: the import duplicate-decision row is absent from normal
+ledger inspection. Review retains the controls, including Keep removed versus
+Include as separate transaction for removed-record reimports. Correct and
+record-level import-blocker navigation now open inspection inside Review.
+Merge reversal remains Review Undo; no storage or financial behavior changed.
+See the [contract](ui-import-cleanup.md#duplicate-decisions-belong-in-review--owner-go-2026-11-02).
+
+Rules-enabled Release application and affected UI test targets rebuilt.
+`removedReimportRequiresReview` passed both choices (4 Qt results including
+setup/cleanup, 2.427 s), checking hidden ledger controls, Review Correct routing,
+available decisions and exact projected/accepted balances. CTest `import.ui`,
+`import.navigation` and `import.qml` passed 3/3 in 93.87 s. `git diff --check`
+passed. Native interaction and other platforms remain unverified. The running
+application was not restarted; `build/SpentIt` contains the updated Release build.
+
 ## Ledger transfer navigation arrows — 2026-11-02
 
 Owner Go implemented; see the [contract](../features/005-transaction-sheet-navigation.md#ledger-transfer-arrows--owner-go-2026-11-02).

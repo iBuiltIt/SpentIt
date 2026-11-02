@@ -1262,6 +1262,11 @@ private slots:
         if(qEnvironmentVariableIsSet("SPENTIT_REPAIR_SCREENSHOT")) QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REPAIR_SCREENSHOT")));
         auto edit=selected(m).value("draft").toMap();edit["date"]="2026-02-28";
         run(m,"save",edit);QVERIFY(!selected(m).value("repair").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window,"restoreImportedValues"));
+        QCOMPARE(window->findChild<QObject*>("durableDate")->property("text").toString(),QString());
+        QVERIFY(QMetaObject::invokeMethod(window,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());
+        QCOMPARE(selected(m).value("draft").toMap().value("date").toString(),"2026-02-28");
+        QVERIFY(QMetaObject::invokeMethod(window,"loadEditor"));
         QVERIFY(!selected(m).value("diagnostic").toString().isEmpty());
         run(m,"decide");QVERIFY(!m.state().value("projectionAvailable").toBool());
         const auto batch=selected(m).value("batch");run(m,"inspect",{{"batch",batch},{"ordinal",1}});
@@ -1540,7 +1545,7 @@ private slots:
         QTest::qWait(100);QVERIFY(QMetaObject::invokeMethod(ledger,"positionViewAtBeginning"));QTest::qWait(100);
         QTRY_VERIFY(item("splitPreview_0"));QCOMPARE(item("splitPreview_0")->height(),0);
     }
-    void inlineSourceCopy() {
+    void inlineSourceRestore() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
@@ -1559,20 +1564,28 @@ private slots:
         QTRY_VERIFY(editor->property("inlineRow").toBool());
         QCOMPARE(m.selectedRowIndex(),1); // Opening balance precedes the import.
         auto edit=selected(m).value("draft").toMap();edit["payee"]="Corrected";edit["total"]="-11.00";
-        auto splits=edit.value("splits").toList();auto split=splits[0].toMap();split["amount"]="-11.00";splits[0]=split;edit["splits"]=splits;
-        run(m,"save",edit);
-        auto* toggle=root->findChild<QObject*>("sourceToggle");QVERIFY(toggle);toggle->setProperty("checked",true);
-        QTRY_VERIFY(visualItem(window->contentItem(),"copySource_payee_-1"));
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"copySource_payee_-1"),"clicked"));
+        auto splits=edit.value("splits").toList();auto split=splits[0].toMap();split["amount"]="-11.00";splits[0]=split;auto extra=split;extra["allocationId"]="";extra["amount"]="0.00";splits.push_back(extra);edit["splits"]=splits;
+        run(m,"save",edit);QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().size(),2);
+        auto* toggle=root->findChild<QQuickItem*>("sourceToggle");QVERIFY(toggle);
+        auto* scroll=root->findChild<QObject*>("editorScroll");QVERIFY(scroll);
+        auto* flick=qvariant_cast<QObject*>(scroll->property("contentItem"));QVERIFY(flick);
+        flick->setProperty("contentY",toggle->y());QTest::qWait(100);
+        auto* indicator=qvariant_cast<QQuickItem*>(toggle->property("indicator"));QVERIFY(indicator);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,indicator->mapToScene(QPointF(indicator->width()/2,indicator->height()/2)).toPoint());
+        QTRY_VERIFY(toggle->property("checked").toBool());
+        auto* restore=visualItem(window->contentItem(),"restoreImportedValues");QVERIFY(restore);
+        QTRY_VERIFY(restore->isVisible());
+        QVERIFY(restore->mapToItem(qobject_cast<QQuickItem*>(scroll),QPointF(restore->width(),0)).x()<=qobject_cast<QQuickItem*>(scroll)->width()-24);
+        QVERIFY(!visualItem(window->contentItem(),"copySource_payee_-1"));
+        QVERIFY(QMetaObject::invokeMethod(restore,"clicked"));
         QCOMPARE(payee->property("text").toString(),"Original");QVERIFY(root->property("dirty").toBool());
-        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Corrected");
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"copySource_total_-1"),"clicked"));
         QCOMPARE(total->property("text").toString(),"-10.00");
-        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());
-        QVERIFY(!m.error().isEmpty());QVERIFY(root->property("dirty").toBool());
-        QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"-11.00");
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"copySource_amount_0"),"clicked"));
-        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
+        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Corrected");
+        QTest::keyClick(window,Qt::Key_Escape);
+        QCOMPARE(payee->property("text").toString(),"Corrected");QVERIFY(!root->property("dirty").toBool());
+        QVERIFY(QMetaObject::invokeMethod(restore,"clicked"));
+        QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
+        QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().size(),1);
         QCOMPARE(selected(m).value("source"),evidence);
         QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"-10.00");
         // Identity follows sorting; filtering the row out retains an accessible editor.
@@ -1599,9 +1612,9 @@ private slots:
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Original");
         run(m,"commit");QVERIFY(!selected(m).value("editable").toBool());
         toggle->setProperty("checked",true);
-        QTRY_VERIFY(visualItem(window->contentItem(),"copySource_payee_-1"));
-        QVERIFY(visualItem(window->contentItem(),"copySource_payee_-1")->property("enabled").toBool());
-        QTest::qWait(100);
+        QTRY_VERIFY(visualItem(window->contentItem(),"restoreImportedValues"));
+        QVERIFY(visualItem(window->contentItem(),"restoreImportedValues")->property("enabled").toBool());
+        flick->setProperty("contentY",toggle->y());QTest::qWait(100);
         if(qEnvironmentVariableIsSet("SPENTIT_INLINE_SCREENSHOT")) QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INLINE_SCREENSHOT")));
     }
     void qmlEditorNavigation() {

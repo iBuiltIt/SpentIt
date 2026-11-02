@@ -78,6 +78,19 @@ already-present and failed counts there. Persistent problems remain in Review.
 
 ## Review and source visibility
 
+### Duplicate decisions belong in Review — owner Go 2026-11-02
+
+The ledger transaction editor no longer shows the import disposition row
+(Include as new, Include as separate transaction, matching candidate and Already
+imported). A visible included transaction already counts independently; this is
+not a command for reversing Merge. Review Undo retains that responsibility.
+
+Review inspection retains explicit import decisions for unresolved records,
+including reimports of previously removed transactions (Keep removed or Include
+as separate transaction). Correct and import-blocker record navigation open the
+inspector inside Review, including records requiring repair. The existing saved
+decision commands and financial behavior are unchanged.
+
 Remove the opaque import-ID/record-number navigation. Normal rows already open
 inline. Failed records without a ledger row still need actionable Review entries.
 Review owns outstanding import failures, supported repairs, repair progress and

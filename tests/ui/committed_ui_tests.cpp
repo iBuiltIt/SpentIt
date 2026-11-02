@@ -130,14 +130,26 @@ private slots:
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
         prepare(model,dir.path());
+        run(model,"inspect",{{"batch",selected(model).value("batch")},{"ordinal",1}});
         const auto before=selected(model).value("draft").toMap();
-        const auto count=before.value("splits").toList().size();QVERIFY(count>0);
+        const auto count=before.value("splits").toList().size();QCOMPARE(count,1);
+        auto* remove=object(root,"removeSplit_0");QVERIFY(remove);
+        QVERIFY(!remove->property("visible").toBool());QVERIFY(!remove->property("enabled").toBool());
+        QVERIFY(!object(root,"createRuleFromMemo_0")->property("visible").toBool());
+        // Even a queued/direct activation must not remove the final allocation.
+        QVERIFY(QMetaObject::invokeMethod(remove,"clicked"));
+        QVERIFY(!root->property("dirty").toBool());
+        QVERIFY(object(root,"editSplitAmount_0"));
         QSignalSpy warnings(&engine,&QQmlEngine::warnings);
         QVERIFY(click(root,"addSplit"));QVERIFY(root->property("dirty").toBool());
+        QVERIFY(remove->property("visible").toBool());
+        QCOMPARE(object(root,"createRuleFromMemo_0")->property("visible").toBool(),model.state().value("rulesSupported").toBool());
         QVERIFY(object(root,"removeSplit_"+QString::number(count)));
         QVERIFY(click(root,"removeSplit_"+QString::number(count)));
         QVERIFY(root->property("dirty").toBool());
         QTRY_VERIFY(!object(root,"removeSplit_"+QString::number(count)));
+        QVERIFY(!remove->property("visible").toBool());
+        QVERIFY(!object(root,"createRuleFromMemo_0")->property("visible").toBool());
         QCOMPARE(warnings.count(),0);
         QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model);
         QCOMPARE(selected(model).value("draft").toMap().value("splits"),before.value("splits"));
@@ -242,16 +254,31 @@ private slots:
         fault->failRefresh=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Preserved proposal");run(model,"history");QCOMPARE(model.state().value("history").toList().size(),1);
     }
+    void removedReimportRequiresReview_data() {
+        QTest::addColumn<bool>("keepRemoved");
+        QTest::newRow("keep removed")<<true;
+        QTest::newRow("include separately")<<false;
+    }
     void removedReimportRequiresReview() {
+        QFETCH(bool,keepRemoved);
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();const auto file=prepare(model,dir.path());
         QVERIFY(click(root,"removeCommitted"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);QCOMPARE(model.state().value("committed").toString(),"110.00");
         run(model,"import",{{"path",file},{"profile","DMY"}});QCOMPARE(selected(model).value("decision").toInt(),0);
         const auto candidates=selected(model).value("candidates").toList();QVERIFY(!candidates.isEmpty());QVERIFY(candidates.front().toMap().value("removed").toBool());
+        QVERIFY(!root->findChild<QObject*>("includeSeparate")->property("visible").toBool());
+        QVERIFY(!root->findChild<QObject*>("excludeDuplicate")->property("visible").toBool());
+        run(model,"review_load");root->setProperty("currentPage","review");
+        QTRY_VERIFY(object(root,"reviewCorrect"));
+        QVERIFY(click(root,"reviewCorrect"));wait(model);
+        QCOMPARE(root->property("currentPage").toString(),"review");
+        QVERIFY(root->property("reviewInspecting").toBool());
+        QTRY_VERIFY(root->findChild<QObject*>("includeSeparate")->property("visible").toBool());
         auto* chooser=root->findChild<QObject*>("duplicateCandidate");QVERIFY(chooser);chooser->setProperty("currentIndex",0);
         QCOMPARE(root->findChild<QObject*>("excludeDuplicate")->property("text").toString(),"Keep removed");
-        QVERIFY(click(root,"excludeDuplicate"));wait(model);QCOMPARE(selected(model).value("decision").toInt(),2);
-        QCOMPARE(model.state().value("projected").toString(),"110.00");run(model,"commit");QCOMPARE(model.state().value("committed").toString(),"110.00");
+        QVERIFY(click(root,keepRemoved?"excludeDuplicate":"includeSeparate"));wait(model);QCOMPARE(selected(model).value("decision").toInt(),keepRemoved?2:1);
+        const auto expected=keepRemoved?QString("110.00"):QString("80.69");
+        QCOMPARE(model.state().value("projected").toString(),expected);run(model,"commit");QCOMPARE(model.state().value("committed").toString(),expected);
     }
 };
 int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");CommittedUiTests tests;return QTest::qExec(&tests,argc,argv);}
