@@ -4,6 +4,54 @@ Status: **active**
 Last updated: 2026-11-01  
 Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 40; rules-off documents use schema 39. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
 
+## Single rules workspace and independent edits — owner Go 2026-11-01
+
+Accepted and implemented under the owner's follow-up Go. This supersedes the
+focused/all-rules presentation, mandatory visible preview before Apply, and
+whole-editor Save behavior described below. Storage still uses atomic full-image
+ruleset requests; the UI constructs those requests from saved definitions plus
+only the selected rule's change.
+
+- One screen contains search (with inline clear), the ordered rule list and the
+  expanded selected editor. There is no Categorisation/New rule/Edit rule
+  subheading or All rules switch. Search matches names, patterns and action
+  summaries; the selected row stays visible even if it does not match.
+- One new unsaved rule may exist at a time. It is appended at the bottom, selected
+  and brought into view with its editor. New rule and Copy into new rule are
+  unavailable until it is saved or discarded. Transaction-created drafts use the
+  same workspace and limit.
+- Changed and new rows have a pale-yellow background; the new draft is labelled
+  New. Selection has its own outline/highlight. Selecting another rule retains
+  outstanding edits. Pending deletion is marked rather than silently saved.
+- Save and Discard beside the editor concern only the selected rule. A selected
+  save preserves unrelated saved definitions and outstanding local drafts. Saving
+  the new rule removes its New state and permits another new draft.
+- Preview this rule remains optional. Save and apply saves only the selected
+  definition, then internally prepares a fresh validated single-rule account
+  application. Apply to this account now similarly prepares and applies the saved
+  selected rule directly. The chosen account scope and manual replacement policy
+  remain explicit; money, transfer protection and group Undo retain the existing
+  contracts. Saving and applying remain separate durable operations.
+- Preview all enabled rules and the redundant editor Enabled checkbox are removed.
+  Row Enabled controls retain document-wide rule semantics. Legacy all-rule
+  preview/storage commands remain available internally. Preview results disappear
+  when the selected rule or preview inputs change.
+- Leaving with outstanding edits selects the new rule first, otherwise the first
+  changed rule in list order, and scrolls its editor into view. A compact nonmodal
+  bar above the editor reports the count and offers Save all and leave, Discard all
+  and leave, and Stay. Stay dismisses the bar without navigation.
+- Discard all drops every remaining unsaved edit and new draft, retaining already
+  saved rules and applied transaction changes. Save all validates pending
+  definitions before one atomic ruleset save, without applying transactions.
+  Validation failure selects the invalid rule and leaves all saved definitions
+  unchanged. The bar remains available for correction or discard.
+
+Verification must include an incomplete new draft alongside an edited existing
+rule, optional-preview Save and apply, persistence after reopening, discard-all
+retaining prior saves/applications, invalid save-all atomicity, priority selection
+on leaving, and visible editor/bar placement. See [status](../doc/status.md) for
+actual results and platform limits.
+
 ## Simple generated patterns and regex key — owner Go 2026-11-01
 
 Accepted and implemented; verification is in [status](../doc/status.md). Generated

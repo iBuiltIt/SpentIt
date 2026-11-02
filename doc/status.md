@@ -2,6 +2,47 @@
 
 Last updated: 2026-11-01
 
+## Single rules workspace and independent saves — 2026-11-01
+
+Owner Go implemented; see [the contract](../features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01).
+Rules now use one searchable list and expanded editor. New/changed rows are
+highlighted, selection is distinct, and one new draft is allowed. The New rule,
+Edit rule and Categorisation subheadings, All rules switch, Preview all enabled
+rules button and duplicate editor Enabled control are removed. Save/Discard sit
+beside the editor. Row Enabled retains its saved document-wide meaning.
+
+Selected Save/Save and apply merges only that identity into the saved definitions,
+retaining other local drafts, pending deletions and reorderings. Preview is
+optional; Apply still prepares a fresh validated single-rule operation internally.
+Stale preview output is hidden. Save and Apply remain separate durable operations,
+with existing account scope, manual protections, transfers and Undo unchanged.
+No financial/storage implementation or format changed.
+
+Leaving selects the new draft, otherwise the first changed rule, and reveals a
+nonmodal Save all and leave / Discard all and leave / Stay bar above the editor.
+Save all preflights pending definitions through the existing worker preview
+validation before one atomic full-image save; failure selects the invalid rule
+without writing any definitions. Save all does not apply transactions. Discard all
+drops only outstanding local changes, retaining earlier successful saves/applies.
+Deferred post-layout scrolling reveals the new row and editor in a 26-row list.
+
+Verification: rules-enabled Release build passed without compiler warnings.
+The six-suite offscreen regression (import UI, rules, categories, navigation,
+committed UI and QML) passed **6/6** (83.02 s). After the final independent-reorder
+and post-layout-scroll corrections, rules/navigation/QML passed **3/3** (27.03 s);
+the rules suite passed **19 QtTest cases**, including setup/cleanup. The optional
+diagnostics privacy case was skipped because diagnostics testing was not enabled.
+Coverage includes incomplete-new plus existing-rule Save and apply without a
+Preview click, persisted definition and transaction results after reopen,
+discard-all retaining those results, invalid save-all leaving the saved revision
+unchanged, new/first-changed leave selection, one-new enforcement, search clearing,
+independent enable/order changes, and visible new-row/editor/leave-bar geometry.
+Synthetic offscreen renders of the 26-row editor and leave bar were inspected.
+Existing cancellation, manual-value protection and post-apply refresh-failure
+coverage passed. Native interaction, narrow-window visual inspection and other
+platforms remain unverified; the running app was not restarted.
+Documentation link-target checks and `git diff --check` passed.
+
 ## Consistent search clearing — 2026-11-01
 
 Owner Go implemented: one shared ClearableSearchField supplies the inline × in

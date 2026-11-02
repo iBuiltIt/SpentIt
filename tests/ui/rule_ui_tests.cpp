@@ -57,11 +57,17 @@ class RuleUiTests : public QObject {
         return false;
     }
     void transactionRule(QObject* root,const QString& label,const QString& expression,const QString& payee,const QString& category={}){
+        if(!object(root,"newRule")->property("enabled").toBool()){
+            QVERIFY(click(root,"saveRules"));QTRY_VERIFY_WITH_TIMEOUT(!root->property("rulesDirty").toBool(),30000);
+        }
         QVERIFY(click(root,"newRule"));QVERIFY(edit(root,"ruleLabel",label));QVERIFY(edit(root,"ruleExpression",expression));
         if(!payee.isEmpty())QVERIFY(edit(root,"rulePayeeTemplate",payee));
         if(!category.isEmpty())QVERIFY(pickRuleCategory(root,category));
     }
     void splitMemoRule(QObject* root,const QString& label,const QString& expression,const QString& category,bool inherit){
+        if(!object(root,"newRule")->property("enabled").toBool()){
+            QVERIFY(click(root,"saveRules"));QTRY_VERIFY_WITH_TIMEOUT(!root->property("rulesDirty").toBool(),30000);
+        }
         QVERIFY(click(root,"newRule"));QVERIFY(edit(root,"ruleLabel",label));QVERIFY(edit(root,"ruleExpression",expression));
         QVERIFY(choose(root,"ruleScope",1));QCoreApplication::processEvents();QVERIFY(choose(root,"ruleInput",1));
         if(inherit){for(int n=0;n<20 && object(root,"ruleInherit") && !object(root,"ruleInherit")->property("visible").toBool();++n)QTest::qWait(20);QVERIFY(setChecked(root,"ruleInherit",true));}
@@ -101,7 +107,7 @@ private slots:
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);QCOMPARE(page(s.root),"rules");
         transactionRule(s.root,"Guard","^Guard","Kept");
         QVERIFY(click(s.root,"accountNavigation"));
-        QVERIFY(object(s.root,"rulesUnsavedDialog")->property("visible").toBool());
+        QVERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
         QVERIFY(click(s.root,"rulesGuardStay"));
         QCOMPARE(page(s.root),"rules");QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"accountNavigation"));QVERIFY(click(s.root,"rulesGuardDiscard"));wait(s.model);
@@ -114,20 +120,20 @@ private slots:
         QVERIFY(edit(s.root,"durablePayee","Temporary payee"));
         QVERIFY(click(s.root,"accountNavigation"));
         QVERIFY(object(s.root,"unsavedDialog")->property("visible").toBool());
-        QVERIFY(!object(s.root,"rulesUnsavedDialog")->property("visible").toBool());
+        QVERIFY(!object(s.root,"rulesLeaveBar")->property("visible").toBool());
         QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"guardDiscard"));
-        QVERIFY(object(s.root,"rulesUnsavedDialog")->property("visible").toBool());
+        QVERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
         QCOMPARE(page(s.root),"rules");QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"rulesGuardStay"));
         QCOMPARE(page(s.root),"rules");QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(edit(s.root,"durablePayee","Temporary payee"));
         QVERIFY(QMetaObject::invokeMethod(s.window,"close"));
         QVERIFY(object(s.root,"unsavedDialog")->property("visible").toBool());
-        QVERIFY(!object(s.root,"rulesUnsavedDialog")->property("visible").toBool());
+        QVERIFY(!object(s.root,"rulesLeaveBar")->property("visible").toBool());
         QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"guardDiscard"));
-        QVERIFY(object(s.root,"rulesUnsavedDialog")->property("visible").toBool());
+        QVERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
         QCOMPARE(page(s.root),"rules");QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"rulesGuardStay"));
         QVERIFY(s.window->isVisible());QVERIFY(s.model.state().value("active").toBool());
@@ -142,7 +148,7 @@ private slots:
         transactionRule(s.root,"Beta","^Tfl","Beta");
         splitMemoRule(s.root,"Fee","^Wise",fees,false);
         splitMemoRule(s.root,"Trip","^CARD-","",true);
-        QVERIFY(click(s.root,"saveRules"));wait(s.model);QCOMPARE(s.model.state().value("ruleRevision").toString(),"1");
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);QCOMPARE(s.model.state().value("ruleRevision").toString(),"4");
         const auto savedMessage=s.model.state().value("ruleReceipt").toMap().value("summary").toString();
         QCOMPARE(object(s.root,"operationPhase")->property("text").toString(),savedMessage);
         int copies=0;for(auto* item:s.root->findChildren<QQuickItem*>())
@@ -156,24 +162,24 @@ private slots:
         if(page(s.root)!="rules"){QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);}
         QTRY_VERIFY(object(s.root,"moveRuleUp_1"));
         QVERIFY(click(s.root,"moveRuleUp_1"));QVERIFY(s.root->property("rulesDirty").toBool());
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QCOMPARE(s.model.state().value("rulePreview").toMap().value("label").toString(),"All enabled rules · all transactions in this account");
         QVERIFY(object(s.root,"rulePreviewStatus")->property("text").toString().contains("All enabled rules · all transactions in this account"));
         QCOMPARE(summary(s.model),"1 matching transaction");
         const auto matches=s.model.state().value("rulePreview").toMap().value("records").toList();
         QCOMPARE(matches.size(),1);QCOMPARE(matches[0].toMap().value("payee").toString(),"Tfl Travel UK");
         QVERIFY(!matches[0].toMap().contains("explanations"));QVERIFY(!matches[0].toMap().contains("diffs"));
-        QCOMPARE(s.model.state().value("ruleRevision").toString(),"1");
+        QCOMPARE(s.model.state().value("ruleRevision").toString(),"4");
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Tfl Travel UK");
-        QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
-        QVERIFY(click(s.root,"discardRules"));wait(s.model);
+
+        run(s.model,"rules_discard");
         QVERIFY(!s.root->property("rulesDirty").toBool());
         QCOMPARE(s.model.state().value("rules").toList().at(0).toMap().value("label").toString(),"Alpha");
         QCOMPARE(s.model.state().value("rules").toList().at(1).toMap().value("label").toString(),"Beta");
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QCOMPARE(s.model.state().value("rulePreview").toMap().value("label").toString(),"All enabled rules · all transactions in this account");
-        QTRY_VERIFY(object(s.root,"applyRules")->property("enabled").toBool());
-        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+
+        run(s.model,"rules_account_apply",{{"preview",s.model.state().value("rulePreview").toMap().value("operation")}});
         const auto applied=draftOf(s.model);const auto splits=applied.value("splits").toList();
         QCOMPARE(applied.value("payee").toString(),"Alpha");QCOMPARE(splits.size(),2);
         QCOMPARE(splits.at(0).toMap().value("categoryDisplay").toString(),"Fees");
@@ -198,10 +204,10 @@ private slots:
         QVERIFY(edit(s.root,"durablePayee",""));QVERIFY(QMetaObject::invokeMethod(s.root,"saveEditor"));wait(s.model);
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
         QVERIFY(!object(s.root,"replaceManualFields")->property("checked").toBool());
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QCOMPARE(summary(s.model),"1 matching transaction");
-        QTRY_VERIFY(object(s.root,"applyRules")->property("enabled").toBool());
-        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+
+        run(s.model,"rules_account_apply",{{"preview",s.model.state().value("rulePreview").toMap().value("operation")}});
         QCOMPARE(draftOf(s.model).value("payee").toString(),"");
         const auto kept=draftOf(s.model).value("splits").toList();
         QCOMPARE(kept.at(0).toMap().value("amount").toString(),"-0.14");
@@ -214,7 +220,7 @@ private slots:
         QCOMPARE(object(s.root,"ruleExpression")->property("text").toString(),"^Tfl Travel UK$");
         QVERIFY(s.root->property("rulesDirty").toBool());QCOMPARE(s.model.state().value("ruleRevision").toString(),before);
         QVERIFY(edit(s.root,"rulePayeeTemplate","From source"));QVERIFY(click(s.root,"saveRules"));wait(s.model);
-        QCOMPARE(s.model.state().value("ruleRevision").toString(),"2");
+        QCOMPARE(s.model.state().value("ruleRevision").toString(),"5");
         bool quoted=false;
         for(const auto& value:s.model.state().value("rules").toList()){
             const auto expression=value.toMap().value("expression").toString();
@@ -223,10 +229,10 @@ private slots:
         }
         QVERIFY(quoted);
         QVERIFY(!s.root->property("rulesDirty").toBool());
-        QVERIFY(click(s.root,"allRules"));
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
+
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QCOMPARE(s.model.state().value("rulePreview").toMap().value("changed").toInt(),0);
-        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        run(s.model,"rules_account_apply",{{"preview",s.model.state().value("rulePreview").toMap().value("operation")}});
         QCOMPARE(s.model.state().value("ruleReceipt").toMap().value("summary").toString(),"0 transactions updated.");
     }
     void simplePatternsAndWholeFieldKey(){
@@ -263,6 +269,112 @@ private slots:
         s.window->resize(900,850);QTRY_COMPARE(key->property("lineCount").toInt(),2);
         if(qEnvironmentVariableIsSet("SPENTIT_PATTERN_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_PATTERN_SCREENSHOT")));}
     }
+    void newRuleInLongListIsVisible(){
+        Session s;createDocument(s,"Long rule list");
+        QVariantList definitions;
+        for(int i=0;i<25;i++)definitions.push_back(QVariantMap{
+            {"id",s.model.newIdentity()},{"enabled",true},{"label",QString("Synthetic rule %1").arg(i)},
+            {"scope","transaction"},{"input","payee"},{"expression",QString("^Synthetic %1$").arg(i)},
+            {"payeeTemplate","Synthetic result"}});
+        run(s.model,"rules_save",{{"rules",definitions}});
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QVERIFY(click(s.root,"newRule"));QTest::qWait(100);
+        QCOMPARE(s.root->property("ruleIndex").toInt(),25);
+        auto* row=qobject_cast<QQuickItem*>(object(s.root,"ruleRow_25"));QVERIFY(row);
+        auto* name=qobject_cast<QQuickItem*>(object(s.root,"ruleLabel"));QVERIFY(name);
+        auto* apply=qobject_cast<QQuickItem*>(object(s.root,"applyRules"));QVERIFY(apply);
+        QVERIFY(row->mapToScene(QPointF(0,0)).y()>=0);
+        QVERIFY(name->mapToScene(QPointF(0,0)).y()>row->mapToScene(QPointF(0,0)).y());
+        if(qEnvironmentVariableIsSet("SPENTIT_LONG_RULE_SCREENSHOT"))QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_LONG_RULE_SCREENSHOT")));
+        QVERIFY2(apply->mapToScene(QPointF(0,0)).y()+apply->height()<s.window->height(),qPrintable(QString("row=%1 name=%2 apply=%3 height=%4").arg(row->mapToScene(QPointF(0,0)).y()).arg(name->mapToScene(QPointF(0,0)).y()).arg(apply->mapToScene(QPointF(0,0)).y()).arg(s.window->height())));
+        QVERIFY(!object(s.root,"newRule")->property("enabled").toBool());
+        QVERIFY(!object(s.root,"allRules"));QVERIFY(!object(s.root,"previewRules"));
+        if(qEnvironmentVariableIsSet("SPENTIT_LONG_RULE_SCREENSHOT"))QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_LONG_RULE_SCREENSHOT")));
+    }
+    void independentDraftAndSelectedSaveApply(){
+        Session s;createDocument(s,"Independent rule editing");
+        const auto source=s.path("rides.qif");
+        writeQif(source,"!Type:Bank\nD01/01/2026\nT-12.00\nPRide North\n^\n");
+        run(s.model,"import",{{"path",source},{"profile","DMY"}});run(s.model,"commit");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"Ride","^Ride South$","Travel");
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        transactionRule(s.root,"Other","^Other$","Other result");
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(click(s.root,"newRule"));
+        QVERIFY(edit(s.root,"ruleLabel","Unfinished draft"));
+        QVERIFY(edit(s.root,"ruleExpression","^Ride North$"));
+        QVERIFY(!object(s.root,"newRule")->property("enabled").toBool());
+        QVERIFY(object(s.root,"ruleRow_2")->property("changed").toBool());
+        QVERIFY(object(s.root,"ruleRow_2")->property("isNew").toBool());
+        QVERIFY(edit(s.root,"ruleSearch","Ride"));
+        QVERIFY(!object(s.root,"ruleRow_1")->property("visible").toBool());
+        QVERIFY(object(s.root,"ruleRow_0")->property("visible").toBool());
+        QVERIFY(click(s.root,"ruleSearchClear"));
+        QCOMPARE(object(s.root,"ruleSearch")->property("text").toString(),QString());
+        QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(edit(s.root,"ruleExpression","^Ride"));
+        QVERIFY(object(s.root,"ruleRow_0")->property("changed").toBool());
+        // No Preview step: save and apply only the edited saved rule.
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QTRY_VERIFY(s.model.state().value("canUndoRules").toBool());
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
+        QCOMPARE(s.model.state().value("rules").toList().size(),2);
+        QCOMPARE(s.model.state().value("rules").toList()[0].toMap().value("expression").toString(),"^Ride");
+        QVERIFY(s.root->property("rulesDirty").toBool());
+        QVERIFY(object(s.root,"ruleRow_2")->property("isNew").toBool());
+        QVERIFY(!object(s.root,"ruleRow_0")->property("changed").toBool());
+        QVERIFY(click(s.root,"openRule_1"));QVERIFY(edit(s.root,"ruleLabel","Discard this change"));
+        QVERIFY(click(s.root,"accountNavigation"));
+        QCOMPARE(s.root->property("ruleIndex").toInt(),2);
+        QCOMPARE(s.root->property("unsavedRuleCount").toInt(),2);
+        QTRY_VERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QTest::qWait(50);
+        auto* bar=qobject_cast<QQuickItem*>(object(s.root,"rulesLeaveBar"));
+        const auto position=bar->mapToScene(QPointF(0,0));
+        QVERIFY(position.y()>=0 && position.y()+bar->height()<=s.window->height());
+        if(qEnvironmentVariableIsSet("SPENTIT_RULE_SCREENSHOT"))QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_SCREENSHOT")));
+        QVERIFY(click(s.root,"rulesGuardStay"));
+        QCOMPARE(s.root->property("ruleIndex").toInt(),2);
+        QVERIFY(click(s.root,"accountNavigation"));QVERIFY(click(s.root,"rulesGuardDiscard"));wait(s.model);
+        QCOMPARE(page(s.root),"ledger");
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
+        const auto appliedBatch=selected(s.model).value("batch");
+        run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
+        run(s.model,"inspect",{{"batch",appliedBatch},{"ordinal",0}});
+        QCOMPARE(s.model.state().value("rules").toList().size(),2);
+        QCOMPARE(s.model.state().value("rules").toList()[0].toMap().value("expression").toString(),"^Ride");
+        QCOMPARE(s.model.state().value("rules").toList()[1].toMap().value("label").toString(),"Other");
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
+    }
+    void saveAllLeaveIsAtomicAndSelectsInvalidRule(){
+        Session s;createDocument(s,"Save all rules");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"First","^First$","First result");QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        transactionRule(s.root,"Second","^Second$","Second result");QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        const auto revision=s.model.state().value("ruleRevision");
+        QVERIFY(click(s.root,"openRule_0"));QVERIFY(edit(s.root,"ruleLabel","First changed"));
+        QVERIFY(click(s.root,"openRule_1"));QVERIFY(edit(s.root,"ruleExpression","["));
+        QVERIFY(click(s.root,"accountNavigation"));
+        QCOMPARE(s.root->property("ruleIndex").toInt(),0);
+        QVERIFY(click(s.root,"rulesGuardSave"));wait(s.model,false);
+        QTRY_COMPARE(s.root->property("ruleIndex").toInt(),1);
+        QCOMPARE(s.model.state().value("ruleRevision"),revision);
+        QCOMPARE(s.model.state().value("rules").toList()[0].toMap().value("label").toString(),"First");
+        QVERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QVERIFY(edit(s.root,"ruleExpression","^Second changed$"));
+        QVERIFY(click(s.root,"rulesGuardSave"));wait(s.model);
+        QTRY_COMPARE(page(s.root),"ledger");
+        QVERIFY(!s.root->property("rulesDirty").toBool());
+        QCOMPARE(s.model.state().value("rules").toList()[0].toMap().value("label").toString(),"First changed");
+        QCOMPARE(s.model.state().value("rules").toList()[1].toMap().value("expression").toString(),"^Second changed$");
+        QVERIFY(!s.model.state().value("canUndoRules").toBool());
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"Saved new","^New$","New result");
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(object(s.root,"newRule")->property("enabled").toBool());
+        QVERIFY(!object(s.root,"ruleRow_2")->property("isNew").toBool());
+    }
     void accountScopeSaveAndApplyUndo(){
         Session s;createDocument(s,"Account rule scopes");
         const auto old=s.path("old.qif"),fresh=s.path("new.qif");
@@ -273,7 +385,7 @@ private slots:
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);transactionRule(s.root,"Ride","^Ride","Travel");
         QCOMPARE(object(s.root,"ruleTransactionScope")->property("currentIndex").toInt(),0);
         QVERIFY(click(s.root,"previewThisRule"));wait(s.model);QCOMPARE(summary(s.model),"2 matching transactions");
-        QVERIFY(choose(s.root,"ruleTransactionScope",1));QVERIFY(!object(s.root,"applyRules")->property("enabled").toBool());
+        QVERIFY(choose(s.root,"ruleTransactionScope",1));QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
         QVERIFY(click(s.root,"previewThisRule"));wait(s.model);QCOMPARE(summary(s.model),"1 matching transaction");
         QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply");
         QVERIFY(click(s.root,"applyRules"));wait(s.model);QTRY_VERIFY(s.model.state().value("canUndoRules").toBool());
@@ -304,10 +416,10 @@ private slots:
         if(page(s.root)!="ledger")QVERIFY(click(s.root,"accountNavigation"));
         QCOMPARE(object(s.root,"transactionRuleAction")->property("text").toString(),"Create rule…");
         QVERIFY(click(s.root,"transactionRuleAction"));wait(s.model);
-        QVERIFY(s.root->property("ruleFocused").toBool());
+        QVERIFY(object(s.root,"ruleEditor")->property("visible").toBool());
         QCOMPARE(s.root->property("ruleCategoryId").toString(),category);
         QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
-        QVERIFY(!object(s.root,"previewRules")->property("visible").toBool());
+        QVERIFY(!object(s.root,"previewRules"));
         if(qEnvironmentVariableIsSet("SPENTIT_RULE_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_SCREENSHOT")));}
         QVERIFY(edit(s.root,"rulePayeeTemplate","Shop"));
         QVERIFY(click(s.root,"previewThisRule"));wait(s.model);
@@ -315,13 +427,13 @@ private slots:
         QCOMPARE(result.value("evaluated").toInt(),1);QVERIFY(result.value("operation").toString().isEmpty());
         QVERIFY(!summary(s.model).contains("Other rule"));QCOMPARE(draftOf(s.model),original);
         QVERIFY(click(s.root,"saveRules"));wait(s.model);
-        QVERIFY(s.root->property("ruleFocused").toBool());QVERIFY(s.root->property("ruleIndex").toInt()>=0);
+        QVERIFY(object(s.root,"ruleEditor")->property("visible").toBool());QVERIFY(s.root->property("ruleIndex").toInt()>=0);
         QVERIFY(click(s.root,"previewThisRule"));wait(s.model);QVERIFY(!s.model.state().value("rulePreview").toMap().value("operation").toString().isEmpty());
-        QVERIFY(click(s.root,"allRules"));QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
         QVERIFY(click(s.root,"previewThisRule"));wait(s.model);
         QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
         const auto batch=selected(s.model).value("batch").toString();
         QVERIFY(click(s.root,"accountNavigation"));
@@ -332,7 +444,7 @@ private slots:
         QVERIFY(click(s.root,"accountNavigation"));run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(object(s.root,"transactionRuleAction")->property("text").toString(),"Edit rule…");
         QVERIFY(click(s.root,"transactionRuleAction"));QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
-        QVERIFY(click(s.root,"allRules"));QVERIFY(click(s.root,"deleteRule_1"));QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(click(s.root,"deleteRule_1"));QVERIFY(click(s.root,"saveRules"));wait(s.model);
         QVERIFY(click(s.root,"accountNavigation"));run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(object(s.root,"transactionRuleAction")->property("text").toString(),"Create rule…");
         const auto splitFile=s.path("split.qif");writeQif(splitFile,wise());
@@ -351,32 +463,56 @@ private slots:
         QCOMPARE(draftOf(s.model),splitBefore);
         QCOMPARE(s.model.state().value("rulePreview").toMap().value("records").toList().size(),1);
     }
-    void savedRulesNavigationAndEnabledChanges(){
-        Session s;createDocument(s,"Rule navigation regression");
-        const auto qif=s.path("navigation.qif");writeQif(qif,"!Type:Bank\nD01/01/2026\nT-12.00\nPSynthetic Shop\n^\n");
-        run(s.model,"import",{{"path",qif},{"profile","DMY"}});
+    void selectedSavePreservesUnrelatedReordering(){
+        Session s;createDocument(s,"Independent rule order");
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
         transactionRule(s.root,"First","^First","First result");
         transactionRule(s.root,"Second","^Second","Second result");
-        transactionRule(s.root,"Third","^Synthetic","Third result");
-        QVERIFY(click(s.root,"previewThisRule"));wait(s.model);
+        transactionRule(s.root,"Third","^Third","Third result");
         QVERIFY(click(s.root,"saveRules"));wait(s.model);
-        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
-        QVERIFY(!s.root->property("rulesDirty").toBool());
-        QCOMPARE(s.root->property("ruleIndex").toInt(),-1);
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
-        QCOMPARE(s.model.state().value("rulePreview").toMap().value("label").toString(),"All enabled rules · all transactions in this account");
-        QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
-        QVERIFY(setChecked(s.root,"ruleEnabled_0",false));QVERIFY(setChecked(s.root,"ruleEnabled_1",false));
+        QVERIFY(click(s.root,"moveRuleDown_0"));
+        QVERIFY(click(s.root,"moveRuleDown_1"));
+        // Local order is Second, Third, First. Editing Second must not save First's move.
+        QVERIFY(click(s.root,"openRule_0"));QVERIFY(edit(s.root,"ruleLabel","Second changed"));
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        const auto saved=s.model.state().value("rules").toList();
+        QCOMPARE(saved[0].toMap().value("label").toString(),"First");
+        QCOMPARE(saved[1].toMap().value("label").toString(),"Second changed");
+        QCOMPARE(saved[2].toMap().value("label").toString(),"Third");
+        QVERIFY(object(s.root,"openRule_0")->property("text").toString().startsWith("Second changed"));
+        QVERIFY(object(s.root,"openRule_2")->property("text").toString().startsWith("First"));
         QVERIFY(s.root->property("rulesDirty").toBool());
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
-        QCOMPARE(s.model.state().value("rulePreview").toMap().value("label").toString(),"All enabled rules · all transactions in this account");
-        QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
+        QVERIFY(click(s.root,"accountNavigation"));
+        QCOMPARE(s.root->property("ruleIndex").toInt(),2);
+        QVERIFY(click(s.root,"rulesGuardStay"));
+        QVERIFY(click(s.root,"discardRules"));
+        QVERIFY(!s.root->property("rulesDirty").toBool());
+        QVERIFY(object(s.root,"openRule_0")->property("text").toString().startsWith("First"));
+        QCOMPARE(s.model.state().value("rules").toList(),saved);
+    }
+    void savedRulesNavigationAndEnabledChanges(){
+        Session s;createDocument(s,"Rule navigation regression");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"First","^First","First result");
+        transactionRule(s.root,"Second","^Second","Second result");
         QVERIFY(click(s.root,"saveRules"));wait(s.model);
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QCOMPARE(s.root->property("ruleIndex").toInt(),-1);
+        QVERIFY(!object(s.root,"applyRules")->property("enabled").toBool());
+        QVERIFY(setChecked(s.root,"ruleEnabled_0",false));
+        QVERIFY(setChecked(s.root,"ruleEnabled_1",false));
+        QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(s.root->property("rulesDirty").toBool());
+        QVERIFY(!s.model.state().value("rules").toList()[0].toMap().value("enabled").toBool());
+        QVERIFY(s.model.state().value("rules").toList()[1].toMap().value("enabled").toBool());
+        QVERIFY(click(s.root,"accountNavigation"));
+        QCOMPARE(s.root->property("ruleIndex").toInt(),1);
+        QVERIFY(click(s.root,"rulesGuardDiscard"));wait(s.model);
         QVERIFY(!s.root->property("rulesDirty").toBool());
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
-        QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QVERIFY(!object(s.root,"ruleEnabled_0")->property("checked").toBool());
+        QVERIFY(object(s.root,"ruleEnabled_1")->property("checked").toBool());
     }
     void removedRuleKeepsEarlierAssignments(){
         Session s;createDocument(s,"Synthetic obsolete rule");
@@ -386,9 +522,9 @@ private slots:
         const auto qif=s.path("wise.qif");writeQif(qif,wise());
         run(s.model,"import",{{"path",qif},{"profile","DMY"}});
         if(page(s.root)!="rules"){QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);}
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);QVERIFY(click(s.root,"applyRules"));wait(s.model);
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Tfl Travel UK");
-        QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QCOMPARE(summary(s.model),"No matches.");
         QCOMPARE(s.model.state().value("rulePreview").toMap().value("changed").toInt(),0);
         QCOMPARE(s.model.state().value("ruleRevision").toString(),"1");
@@ -402,18 +538,18 @@ private slots:
         transactionRule(s.root,"Shop","^Shop$","Shop result");
         transactionRule(s.root,"Coffee","^Coffee$","Coffee result");
         transactionRule(s.root,"Ride","^Ride$","Ride result");
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);QCOMPARE(summary(s.model),"3 matching transactions");
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);QCOMPARE(summary(s.model),"3 matching transactions");
         QVERIFY(setChecked(s.root,"ruleEnabled_0",false));QVERIFY(setChecked(s.root,"ruleEnabled_1",false));
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);QCOMPARE(summary(s.model),"1 matching transaction");
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);QCOMPARE(summary(s.model),"1 matching transaction");
         const auto rows=s.model.state().value("rulePreview").toMap().value("records").toList();
         QCOMPARE(rows.size(),1);QCOMPARE(rows[0].toMap().value("payee").toString(),"Ride");
         QCOMPARE(object(s.root,"ruleMatches")->property("count").toInt(),1);
         QVERIFY(!object(s.root,"ruleApplyHelp")->property("visible").toBool());
         QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply");
-        QVERIFY(click(s.root,"saveRules"));wait(s.model);QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_MATCH_COMPACT_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_MATCH_COMPACT_SCREENSHOT")));}
-        QVERIFY(setChecked(s.root,"ruleEnabled_2",false));QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(setChecked(s.root,"ruleEnabled_2",false));QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QCOMPARE(summary(s.model),"No matches.");QVERIFY(!object(s.root,"ruleMatches")->property("visible").toBool());
     }
     void largeMatchListIsVirtualized(){
@@ -422,7 +558,9 @@ private slots:
         QVariantList rows;rows.reserve(100000);
         for(int i=0;i<100000;++i)rows.push_back(QVariantMap{{"date","2026-08-10"},{"payee",i==99999?QString("Synthetic\nmatch 99999"):QString("Synthetic match %1").arg(i)},{"amount","-1.00 CAD"}});
         auto state=s.model.state();state["rulePreview"]=QVariantMap{{"label","All enabled rules · all transactions in this account"},{"summaryText","100000 matching transactions"},{"records",rows},{"matched",100000}};
-        QElapsedTimer timer;timer.start();QVERIFY(s.root->setProperty("s",state));QTest::qWait(100);
+        QElapsedTimer timer;timer.start();QVERIFY(s.root->setProperty("s",state));
+        QVariant previewKey;QVERIFY(QMetaObject::invokeMethod(s.root,"rulesPreviewKey",Q_RETURN_ARG(QVariant,previewKey)));
+        QVERIFY(s.root->setProperty("rulePreviewKey",previewKey));QTest::qWait(100);
         auto* list=object(s.root,"ruleMatches");QVERIFY(list);QCOMPARE(list->property("count").toInt(),100000);
         auto* content=qobject_cast<QQuickItem*>(list->property("contentItem").value<QObject*>());QVERIFY(content);
         QVERIFY(content->childItems().size()<100);
@@ -468,7 +606,7 @@ private slots:
         const auto qif=s.path("wise.qif");writeQif(qif,wise());run(s.model,"import",{{"path",qif},{"profile","DMY"}});
         const auto batch=s.model.state().value("pending").toMap().value("id").toString();QVERIFY(!batch.isEmpty());
         if(page(s.root)!="rules"){QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);}
-        QVERIFY(click(s.root,"previewRules"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QTRY_VERIFY(object(s.root,"applyRules")->property("enabled").toBool());
         qputenv("SPENTIT_RULE_REFRESH_FAIL","1");
         QVERIFY(click(s.root,"applyRules"));wait(s.model,false);

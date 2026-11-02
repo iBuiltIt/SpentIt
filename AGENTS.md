@@ -1,5 +1,16 @@
 # SpentIt — Where did my money go?
 
+## Single rules workspace — owner Go 2026-11-01
+
+Rules use one searchable list and expanded editor. Save/Discard and optional-
+preview Save and apply concern only the selected rule, retaining unrelated drafts.
+Only one new draft is allowed. Leaving selects the new or first changed rule and
+shows a nonmodal Save all and leave / Discard all and leave / Stay bar; Save all
+validates before an atomic definition save and does not apply transactions.
+See [the contract](features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)
+and [status](doc/status.md). Earlier focused/all-rules UI and mandatory-preview
+descriptions are superseded; internal all-rules APIs remain.
+
 ## Direct ledger category menu — owner Go 2026-11-01
 
 Right-click Change category uses a scrollable submenu and applies immediately to

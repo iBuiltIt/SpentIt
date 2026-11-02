@@ -1,5 +1,10 @@
 # Feature discovery
 
+The [single rules workspace](004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)
+replaces the focused/all-rules presentation with independent selected-rule saves,
+optional previews and a nonmodal leave-screen decision for all unsaved edits.
+See [status](../doc/status.md) for verification.
+
 The [account rule scope and Apply follow-up](004-rules-and-explanations.md#rule-scope-and-account-apply--owner-go-2026-11-01)
 adds All transactions / New transactions scope, single-rule Apply, Save and apply,
 and one Undo for mixed new/committed changes. See [status](../doc/status.md) for

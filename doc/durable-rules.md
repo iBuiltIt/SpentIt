@@ -1,5 +1,10 @@
 # Durable rules integration
 
+The [single rules workspace](../features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)
+supersedes the focused/all-rules switch and UI save scope described below. Selected
+Save/Apply excludes unrelated drafts; preview is optional. Leaving uses a nonmodal
+Save all / Discard all / Stay bar and retains atomic definition validation.
+
 The [account-scope Apply contract](../features/004-rules-and-explanations.md#rule-scope-and-account-apply--owner-go-2026-11-01)
 supersedes the separate preview/Apply/Reapply UI described below. New and committed
 transactions can now be updated and undone together in the selected account.
