@@ -13,6 +13,19 @@ Implementation: independent assignable categories, one optional colon, case-inse
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
 
+## Category view controls — owner Go 2026-11-01
+
+Accepted: show an inline clear button when category search contains text; clearing
+restores the full filtered list and focuses search. Show archived includes only
+archived entries, with deleted entries always hidden. Retain internal deleted
+definition history and receipts; physical history removal is outside this change.
+Place New category before the three sort controls with a small gap. A thin
+horizontal divider separates the toolbar from the first category row.
+Follow-up Go extends the same inline clear control to every search field, removing
+separate Clear buttons while preserving existing search application and navigation
+guards. The ledger also shows × when an applied filter remains despite empty input.
+See [status](../doc/status.md) for verification.
+
 ## Direct ledger category menu — owner Go 2026-11-01
 
 Accepted and implemented: right-click **Change category ▸** opens a bounded,

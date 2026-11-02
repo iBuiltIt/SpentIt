@@ -272,6 +272,15 @@ private slots:
         QCOMPARE(model.state().value("categorySelected").toMap().value("name").toString(),"Saved on navigation");
         QVERIFY(click(root,"categoryNavigation"));wait(model);
         menu(model,root,unused,"deleteCategory");wait(model);QVERIFY(model.state().value("categoryById").toMap().value(unused).toMap().value("deleted").toBool());
+        QVERIFY(object(root,"showArchivedCategories")->setProperty("checked",true));
+        QVERIFY(!catalogNames(root).contains("Disposable"));
+        QVERIFY(pointer(window,root,"catalogSearchClear"));
+        QCOMPARE(object(root,"catalogSearch")->property("text").toString(),QString());
+        QVERIFY(object(root,"catalogSearch")->property("activeFocus").toBool());
+        QVERIFY(!object(root,"catalogSearchClear")->property("visible").toBool());
+        QVERIFY(catalogNames(root).contains("Amazon"));
+        QVERIFY(!catalogNames(root).contains("Disposable"));
+        QVERIFY(object(root,"showArchivedCategories")->setProperty("checked",false));
         QVERIFY(edit(root,"catalogSearch",""));
         for(int i=0;i<30;i++)createCategory(model,root,QString("Scroll %1").arg(i,2,10,QChar('0')));
         auto* list=object(root,"catalogList");QVERIFY(list->property("height").toDouble()>400);list->setProperty("contentY",0);QTest::qWait(50);

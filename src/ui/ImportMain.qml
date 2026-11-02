@@ -474,7 +474,7 @@ ApplicationWindow {
     Settings {id:categoryPreferences;category:"CategoryEditor";property string sortMode:""}
     property alias categorySort: categoryPreferences.sortMode
     function categoryRows() {
-        let rows=(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return (categoryAction==="rename" && c.id===categoryFormId) || ((showArchivedCategories.checked || (!c.archived && !c.deleted)) && (c.id===categoryReveal || (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0))})
+        let rows=(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return !c.deleted && ((categoryAction==="rename" && c.id===categoryFormId) || ((showArchivedCategories.checked || !c.archived) && (c.id===categoryReveal || (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0)))})
         if(categorySort==="ascending" || categorySort==="descending")rows.sort(function(a,b){
             let order=a.path.toLowerCase().localeCompare(b.path.toLowerCase())
             if(order===0)order=a.id.localeCompare(b.id)
@@ -1353,7 +1353,7 @@ ApplicationWindow {
         ColumnLayout {
             anchors.fill:parent
             Label {textFormat:Text.PlainText;text:pickerIndex>=0 && pickerIndex<splitModel.count?"Current: "+splitModel.get(pickerIndex).categoryDisplay:"";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            TextField {id:categorySearch;objectName:"categoryPickerSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;Accessible.name:"Category search";onAccepted:{let account=accountForName(categorySearch.text);if(account){chooseCategory("",categorySearch.text);return}let match=(s.categories||[]).find(function(c){return c.assignable && workflow.categoryNameMatches(c.path,categorySearch.text)});if(match)chooseCategory(match.id,match.path)}}
+            ClearableSearchField {id:categorySearch;onClearRequested:clearSearch();objectName:"categoryPickerSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;Accessible.name:"Category search";onAccepted:{let account=accountForName(categorySearch.text);if(account){chooseCategory("",categorySearch.text);return}let match=(s.categories||[]).find(function(c){return c.assignable && workflow.categoryNameMatches(c.path,categorySearch.text)});if(match)chooseCategory(match.id,match.path)}}
             ListView {
                 id:pickerChoices;Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:true
                 model:(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return !c.deleted && !c.archived && (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(categorySearch.text.toLowerCase())>=0})
@@ -1401,7 +1401,7 @@ ApplicationWindow {
             width:currencyDialog.availableWidth
             Label {text:"Choose the account currency.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {objectName:"currencyWarning";visible:!!s.currencyWarning;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText;color:"#855100";text:"Amounts will stay the same. For example, CAD 20 becomes GBP 20."}
-            TextField {id:currencySearch;objectName:"currencySearch";placeholderText:"Type a currency code";Layout.fillWidth:true;Accessible.name:"Currency code";onAccepted:if(confirmCurrency.enabled)confirmCurrency.clicked()}
+            ClearableSearchField {id:currencySearch;onClearRequested:clearSearch();objectName:"currencySearch";placeholderText:"Type a currency code";Layout.fillWidth:true;Accessible.name:"Currency code";onAccepted:if(confirmCurrency.enabled)confirmCurrency.clicked()}
             UsableComboBox {
                 id:currencyPick;objectName:"currencyPick";Layout.fillWidth:true;Accessible.name:"Matching currencies"
                 model:{var typed=currencySearch.text.toUpperCase();var all=workflow.currencies;var out=[];for(var i=0;i<all.length;i++) if(typed.length===0 || all[i].indexOf(typed)===0) out.push(all[i]);return out}
@@ -2034,15 +2034,20 @@ ApplicationWindow {
                         Label {text:"Categories";font.pixelSize:20}
                         Label {text:"Use a colon for a subcategory, for example Auto: Gas makes Gas a sub-category of Auto";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         RowLayout {
-                            TextField {id:catalogSearch;objectName:"catalogSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;enabled:!categorySaving;onTextEdited:categoryReveal=""}
-                            CheckBox {id:showArchivedCategories;objectName:"showArchivedCategories";text:"Show archived / deleted";enabled:!categorySaving}
-                            Button {objectName:"newCategory";text:"New category";enabled:!workflow.busy && !categorySaving;onClicked:guard(newCategory)}
+                            ClearableSearchField {
+                                id:catalogSearch;objectName:"catalogSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;enabled:!categorySaving;onTextEdited:categoryReveal=""
+                                onClearRequested:{categoryReveal="";clearSearch()}
+                            }
+                            CheckBox {id:showArchivedCategories;objectName:"showArchivedCategories";text:"Show archived";enabled:!categorySaving}
                         }
                         RowLayout {
+                            Button {objectName:"newCategory";text:"New category";enabled:!workflow.busy && !categorySaving;onClicked:guard(newCategory)}
+                            Item {Layout.preferredWidth:16}
                             Button {objectName:"categorySortAscending";text:"A–Z ↑";highlighted:categorySort==="ascending";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("ascending")}
                             Button {objectName:"categorySortDescending";text:"Z–A ↓";highlighted:categorySort==="descending";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("descending")}
                             Button {objectName:"categorySortAdded";text:"Order added";highlighted:categorySort==="added";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("added")}
                         }
+                        Rectangle {objectName:"categoryListDivider";Layout.fillWidth:true;Layout.preferredHeight:1;color:"#b8c0c7"}
                         ListView {
                             id:catalogList;objectName:"catalogList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:false
                             boundsBehavior:Flickable.StopAtBounds
@@ -2292,11 +2297,10 @@ ApplicationWindow {
             id:ledgerPage;objectName:"ledgerPage"
             width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight;enabled:!workflow.busy || workflow.selecting
             RowLayout {
-                TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
+                ClearableSearchField {id:search;objectName:"ledgerSearch";clearObjectName:"clearFilter";hasAppliedFilter:appliedFilter.length>0;onClearRequested:guard(function(){search.clearSearch();query()});placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
                 Button {objectName:"undoEdit";text:"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo edits from this session. Other changes end this Undo sequence.";ToolTip.visible:hovered}
                 Button {objectName:"undoTransferAssignment";text:"Undo category change";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){captureLedgerView("category");workflow.command("undo_transfer_assignment")})}
-                Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
             }
             Row {
                 Layout.fillWidth:true;spacing:0

@@ -1,6 +1,6 @@
 # Category catalog and assignments
 
-Last updated: 2026-10-31
+Last updated: 2026-11-01
 
 State: independent assignable categories are implemented in experimental schema 40 with rules and 39 without. Earlier experimental schemas, including 24/23 and 22/21, are rejected without migration. The owner-approved [category model and exact starter list](../features/010-categories-and-selection.md#independent-categories--accepted-2026-10-28) supersede the earlier group/leaf hierarchy. Verification is recorded in [project status](status.md).
 
@@ -32,7 +32,9 @@ Current builds use schema 39 without rules and schema 40 with rules and bulk rec
 
 ## UI and verification boundary
 
-The Categories page provides search and a compact, left-aligned table filling the remaining height, with a directly draggable scrollbar. New category adds and focuses a temporary bottom row, including under an active search filter. Creation and rename save on Enter or focus loss; Escape cancels, and an empty new row is discarded. Validation failures preserve the typed name and display an error. Navigation waits for a successful save. Rename, archive/unarchive and eligible deletion are right-click row actions. There is no separate save/review dialog or visible definition-history section; the existing validated atomic commands and stored history remain. The allocation picker searches parent and leaf paths and distinguishes archived existing assignments. Worker-local view decoration supplies current labels without rewriting storage snapshots or authoritative money.
+All search fields use a shared inline × clear control, including the ledger, category manager/picker, currency picker and synthetic sheet. Clear returns focus to the field; the ledger retains its guarded query and view-restoration behavior. Separate search-clear buttons are removed.
+
+The Categories page provides search with an inline clear button and a compact, left-aligned table filling the remaining height, with a directly draggable scrollbar. New category sits before the sort controls, separated by a small gap; a thin divider separates that toolbar from the list. Show archived includes archived categories only; deleted categories never appear, while their internal definition history and receipts remain retained. New category adds and focuses a temporary bottom row, including under an active search filter. Creation and rename save on Enter or focus loss; Escape cancels, and an empty new row is discarded. Validation failures preserve the typed name and display an error. Navigation waits for a successful save. Rename, archive/unarchive and eligible deletion are right-click row actions. There is no separate save/review dialog or visible definition-history section; the existing validated atomic commands and stored history remain. The allocation picker searches parent and leaf paths and distinguishes archived existing assignments. Worker-local view decoration supplies current labels without rewriting storage snapshots or authoritative money.
 
 The editor preserves its existing order until the user presses **A–Z ↑**, **Z–A ↓**, or **Order added**. The chosen sort is highlighted and remembered in application settings, including across restarts. A–Z/Z–A compare complete names without case distinctions using locale comparison; Order added puts oldest creations first and new saves at the bottom. Renames retain original creation order. Blank editing rows always start at the bottom; successful saves and sorting keep the category selected and visible. Saved names that do not match an active search remain temporarily visible until that search is edited. Sort controls never change category names, identities or assignments.
 

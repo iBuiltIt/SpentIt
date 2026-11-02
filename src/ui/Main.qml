@@ -66,7 +66,8 @@ ApplicationWindow {
             ToolButton { text: "›"; Accessible.name: "Forward"; enabled: sheet.canForward && !sheet.busy; onClicked: sheet.forward() }
             Label { text: "SpentIt"; font.pixelSize: 20; font.bold: true; color: "#126d65" }
             Label { text: "/  " + sheet.title; color: "#52636a"; Layout.fillWidth: true }
-            TextField {
+            ClearableSearchField {
+                onClearRequested: { clearSearch(); sheet.filter("") }
                 id: search; objectName: "searchField"
                 Layout.preferredWidth: 260
                 placeholderText: "⌕  Literal text filter · Enter"
@@ -74,7 +75,6 @@ ApplicationWindow {
                 enabled: !sheet.busy
                 onAccepted: { ledger.captureViewport(); sheet.filter(text) }
             }
-            ToolButton { text: "Clear"; enabled: !sheet.busy; onClicked: { search.text = ""; sheet.filter("") } }
         }
     }
     ColumnLayout {

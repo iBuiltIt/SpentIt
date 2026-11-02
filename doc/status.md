@@ -2,6 +2,40 @@
 
 Last updated: 2026-11-01
 
+## Consistent search clearing — 2026-11-01
+
+Owner Go implemented: one shared ClearableSearchField supplies the inline × in
+ledger search, category manager/picker, currency picker and synthetic sheet.
+Separate Clear buttons are removed. Clear focuses its field; ledger clearing
+retains the existing edit guard, query and selection/viewport restoration. Its
+× remains available when applied filtering remains despite manually emptied text.
+
+Rules-enabled application and synthetic-sheet Release builds passed. Initial
+checks caught a Qt SearchField type-name collision and then an inherited signal
+handler clearing text before the ledger guard. Both were corrected. The full
+import UI run passed 66 cases and failed that guard case before its correction;
+the corrected search-return/combined-search selection passed all four QtTest
+cases (3.03 s). Final category UI and QML checks passed (15.86 s / 1.25 s).
+Synthetic-sheet smoke/interaction checks passed 2/2 after the correction;
+`git diff --check` passed.
+The complete import UI suite was not repeated after the guard correction.
+Native visual inspection and other platforms remain unverified; the running
+application was not restarted.
+
+## Category view controls — 2026-11-01
+
+Owner Go implemented: search has an inline × clear button shown only for nonempty
+text, restoring focus to search. Show archived excludes deleted entries even when
+checked. New category precedes the sort buttons with a gap; a thin divider marks
+the top of the category list. Internal deleted definition history and receipts
+remain unchanged. See [the contract](../features/010-categories-and-selection.md#category-view-controls--owner-go-2026-11-01).
+
+Rules-enabled Release build passed and updated `build/SpentIt`. Offscreen
+`import.category_ui` and `import.qml` passed **2/2** (17.07 s), including a
+pointer click on search clear, restored focus/list contents, and deleted-category
+exclusion with Show archived enabled. `git diff --check` passed. Native visual
+inspection and other platforms were not tested; the running app was not restarted.
+
 ## Remembered account sorting — 2026-11-01
 
 Owner Go implemented; see [the contract](../features/005-transaction-sheet-navigation.md#remember-account-sorting--owner-go-2026-11-01).
