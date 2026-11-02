@@ -44,6 +44,8 @@ public:
     std::int64_t next_account_identity() const override{return repo().next_account_identity();}
     qif::Result parsed_source(std::string_view id,const std::function<void()>& checkpoint={}) const override{return repo().parsed_source(id,checkpoint);}
     app::ImportRepairProgress repair_progress(std::string_view id) const override{return repo().repair_progress(id);}
+    std::vector<app::MissingImportCategories> missing_import_categories() const override {return repo().missing_import_categories();}
+    void resolve_import_categories(std::string_view source,const std::vector<std::string>& names,app::OperationContext& c) override {repo().resolve_import_categories(source,names,c);}
     std::vector<app::ImportGroup> import_groups() const override{return repo().import_groups();}
     std::optional<app::ImportGroup> import_group_outcome(std::string_view id) const override {if(attempted && fault==unknown && !groupFaultAction.isEmpty())throw std::runtime_error("Injected unknown import outcome");return repo().import_group_outcome(id);}
     bool groupBefore(const QString& action){if(groupFaultAction!=action || groupInjected)return false;attempted=true;groupInjected=true;if(fault==before)throw std::runtime_error("Injected before import operation");return fault==after || fault==unknown;}
@@ -137,6 +139,7 @@ class ImportUiTests : public QObject {
     void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {
         auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
         QVERIFY2(model.error().isEmpty()==success,qPrintable(action+": "+model.error()));
+        if(success && (action=="import" || action=="map_import"))for(const auto& item:model.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(model,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}
     }
     void create(ImportModel& m,const QString& path) {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
@@ -1086,7 +1089,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"showImportBlockers"),"clicked"));
         auto* dialog=root->findChild<QObject*>("importBlockersDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
         run(m,"group_resolve_transfers",{{"group",group.value("id")}});QCOMPARE(m.state().value("transfers").toList().size(),2);
-        for(int i=0;i<2;++i){run(m,"select_account",{{"id",QString::number(i+2)}});run(m,"group_balance",{{"group",group.value("id")},{"source",i},{"revision",1},{"choice",4},{"date","2026-01-01"}});}
+        for(int i=0;i<2;++i){run(m,"select_account",{{"id",QString::number(i+2)}});run(m,"group_balance",{{"group",group.value("id")},{"source",i},{"revision",m.state().value("pending").toMap().value("revision")},{"choice",4},{"date","2026-01-01"}});}
         QVERIFY(m.state().value("importGroup").toMap().value("ready").toBool());run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"20.00");
         run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),"-20.50");QCOMPARE(m.state().value("newTransactions").toInt(),0);
     }
@@ -1110,6 +1113,7 @@ private slots:
         QTRY_COMPARE(root->findChild<QObject*>("importCategoryList")->property("count").toInt(),2);
         if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_IMPORT_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_IMPORT_SCREENSHOT")));}
         QVERIFY(QMetaObject::invokeMethod(categoryDialog,"close"));
+        for(const auto& item:m.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(m,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}
         QCOMPARE(visualItem(window->contentItem(),"durablePayee")->property("text").toString(),QString("Synthetic shop\rRepeated text\rTnot-an-amount"));
         auto group=m.state().value("importGroup").toMap();QCOMPARE(group.value("repairs").toInt(),1);QCOMPARE(group.value("amountRepairs").toInt(),1);QCOMPARE(group.value("done").toInt(),0);
         auto edit=selected(m).value("draft").toMap();edit["total"]="10.00";auto parts=edit.value("splits").toList();auto part=parts[0].toMap();part["amount"]="10.00";parts[0]=part;edit["splits"]=parts;
@@ -1236,7 +1240,8 @@ private slots:
         ImportModel other(storage::document_gateway());run(other,"open",{{"path",path}},false);QVERIFY(!other.state().value("unlockRequired").toBool());
         run(m,"close");run(m,"open",{{"path",dir.path()+"/missing"}},false);QVERIFY(!m.state().value("unlockRequired").toBool());QVERIFY(!QFile::exists(dir.path()+"/missing"));
         create(m,dir.path()+"/new");QCOMPARE(m.state().value("committed").toString(),"0.00");QVERIFY(selected(m).isEmpty());
-        const auto invalid=fixture(dir.path(),"D1/1/2026\nT1\nL[Other\n^\n");run(m,"import",{{"path",invalid},{"profile","DMY"}});
+        const auto invalid=fixture(dir.path(),"D1/1/2026\nT1\nL[Other\n^\n");m.command("import",{{"path",invalid},{"profile","DMY"},{"account",m.state().value("accountId")}});QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(m.error().isEmpty());
+        for(const auto& item:m.state().value("importCategoryDecisions").toList())run(m,"resolve_import_categories",{{"source",item.toMap().value("source")},{"selected",QVariantList{}}});
         QVERIFY(!m.state().value("projectionAvailable").toBool());
         QCOMPARE(m.rowCount(),1);QCOMPARE(m.rowRecord(0).value("payee").toString(),QString("Opening Balance"));
         QCOMPARE(m.state().value("balance").toString(),QString("0.00"));run(m,"commit");QVERIFY(m.state().value("importFailures").toInt()>0);

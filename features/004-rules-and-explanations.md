@@ -2,15 +2,14 @@
 
 Status: **active**  
 Last updated: 2026-11-02  
-Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 40; rules-off documents use schema 39. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
+Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 42; rules-off documents use schema 41. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
 
 ## Next implementation: category-gated rules and imported categories — 2026-11-02
 
-**State: accepted next-work direction; not implemented.** The owner asked to
-capture this as the next-session handoff after discussing the rules below.
-The current engine still uses first-assignment-per-field and selected-rule
-Preview/Apply still evaluates the selected rule in isolation. Do not describe
-the new policy as working until implementation and verification are recorded.
+**State: owner Go implemented; verification recorded in [status](../doc/status.md).**
+The split-first policy and import-wide decision below supersede the earlier
+per-field evaluator and isolated selected-rule Preview/Apply. Formats 42/41
+reject earlier experimental files without migration.
 
 ### Why this changes
 
@@ -19,7 +18,7 @@ With enabled rules in this order:
 1. `INDIGO PARK.*` → category Auto: Parking.
 2. `INDIGO .*` → category Books and payee INDIGO BOOKS.
 
-The current per-field winner policy can turn an imported INDIGO PARK transaction
+The previous per-field winner policy could turn an imported INDIGO PARK transaction
 into payee INDIGO BOOKS with category Auto: Parking. The owner rejected that
 mixed result. Earlier discussion proposed unconditional first-match stopping;
 the final direction instead makes categorization the eligibility/stopping gate.
@@ -32,7 +31,7 @@ Do not implement the intermediate forced-run proposal.
   applied. Validate below the UI as well as in the editor.
 - Remove the split **Use transaction category** action. An inherited category is
   not a substitute for the required explicit category.
-- Rules normally run after import on the new transactions and on explicit
+- Rules run after import on the new transactions and on explicit
   application from the Rules panel, including Save and apply. Saving a definition
   alone must retain its established save-only meaning.
 - Rules operate only on Uncategorized items. Once a category is assigned, later
@@ -80,8 +79,9 @@ Do not apply earlier rules' other actions as a side effect of applying just the
 selected rule. Preview and Apply must agree, including when Preview is skipped.
 Use saved surrounding definitions plus the selected edit, consistent with the
 independent-save contract; unrelated unfinished drafts must not block or silently
-alter an application. Confirm the treatment of unsaved order/enabled changes
-against that contract during implementation rather than silently broadening Save.
+alter an application. The selected edit replaces its saved definition in saved order (a new rule appends);
+unrelated draft order/enabled changes do not alter its context. Selected Save
+retains the established independent-save behavior.
 
 ### Imported category resolution
 
@@ -95,7 +95,8 @@ and presented for an explicit import decision:
   making them eligible for rules. Retain the original imported text in the
   existing source representation; do not rewrite imported bytes.
 
-A consolidated list with names and affected transaction counts was proposed.
+The accepted consolidated checklist lists category names once; affected counts
+remain a possible later addition.
 Resolve the choice before automatic categorization can misclassify these rows.
 Do not treat an unresolved imported label as an intentional assigned category or
 silently discard it before the user chooses. Account aliases and explicit
@@ -103,43 +104,34 @@ transfer destinations follow their transfer-resolution workflow, not this prompt
 
 Integrate with the existing complete-QIF-catalog staging/publication, multi-account
 mapping, retained new transactions, and incomplete-import cleanup contracts.
-Do not introduce a second permanent source archive. The exact prompt timing,
-durable pending-decision representation, cancellation/restart behavior, and
-whether choice is import-wide or per category still need a concrete design.
+Do not introduce a second permanent source archive. The settled import-wide checklist and cancellation/restart behavior are below.
 
-### Split boundaries still to settle
+### Settled split and import decisions — owner Go 2026-11-02
 
-The owner wants split rules among ordinary rules, using the same Uncategorized
-principle, and explicitly accepted removing category inheritance. Per-split
-eligibility is the proposed interpretation: an already categorized purchase stays
-untouched while an Uncategorized fee split remains eligible.
+Implementation is authorized. Split rules run first in their displayed order,
+independently on each Uncategorized source split. Transaction rules then run in
+their displayed order and fill only remaining Uncategorized allocations. The first
+categorizing match wins per allocation. On split transactions the transaction
+phase changes categories only, never the shared payee/memo. On unsplit transactions
+optional payee/memo actions accompany the category; manual text stays protected.
+Split memo actions affect only their own allocation. Existing transfer protection
+and explicit split-selection requirements for ledger clearing remain.
 
-**Do not invent the remaining transaction-versus-split semantics.** Before
-implementing dependent behavior, settle:
-
-- Whether a transaction-level categorizing rule may target a multi-split
-  transaction, and if so which Uncategorized allocations it assigns.
-- Whether a transaction-level match prevents later split rules, or each split
-  gets an independent first categorizing match; how the shared displayed order
-  relates to the current transaction-then-split evaluation phases.
-- Protecting the shared payee/memo and categorized splits when another split is
-  Uncategorized. A fee match must not accidentally rename the whole transaction.
-- Clearing categories on split selections for deliberate reruns: current bulk
-  assignment requires an explicit split choice and rejects ambiguous multi-split
-  selections. Do not silently widen it to clear every split.
-- How existing manual payee/memo protections interact with deliberate category
-  clearing. Removing the force UI does not authorize overwriting manual fields.
-
-The earlier Wise example (one purchase split plus one fee split) illustrated this
-boundary; it was discussion, not approval of a final two-pass algorithm.
+The missing-category decision is import-wide after all accounts/categories are
+known. Show each missing ordinary category once in a scrollable checklist,
+initially checked, with All / None. Apply Selected creates and assigns checked
+categories; unchecked assignments become Uncategorized. Use Uncategorized creates
+none. Recognized categories retain their assignments; transfers use their own
+resolution workflow. Closing leaves a durable pending decision across restart,
+and rules wait until resolution. Explicit Abort uses import-owned cleanup.
+Original imported text remains unchanged. Pending choices must be distinguished
+from interrupted preparation, which still receives automatic cleanup.
 
 ### Next-session execution and verification
 
 1. Read this handoff, current status, category/import contracts and implementation.
    Preserve the already-built attribution UI follow-up included in this checkpoint.
-2. Specify the split boundary and import-decision lifecycle with the owner where
-   needed. Continue independent discovery/design without asking for a repeated
-   approval of the already accepted ordinary category gate.
+2. Use the settled split-first policy and import-wide checklist below.
 3. Implement consistent validation and eligibility in engine/application/storage,
    import, preview and Apply. Keep heavy evaluation on the worker, exact money,
    protections, cancellation, atomicity, durable history and retry behavior.
@@ -161,8 +153,8 @@ boundary; it was discussion, not approval of a final two-pass algorithm.
      shared/multi-account sources, cancellation, restart, retry and import cleanup;
    - atomic failure/rollback and Undo across new and accepted transactions,
      reopen verification, and appropriate rules-off behavior.
-6. Record actual checks and platform limits. No runtime claims follow from this
-   documentation-only handoff; reports and other unrelated work remain deferred.
+6. Record actual checks and platform limits. Record current runtime results in status; reports and other unrelated work
+   remain deferred.
 
 See [the next-work roadmap](../doc/roadmap.md#next-session-category-gated-rules--2026-11-02),
 [category model](010-categories-and-selection.md),

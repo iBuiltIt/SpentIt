@@ -454,7 +454,7 @@ ApplicationWindow {
     property bool currentRulePreview: !!rulePreviewKey && rulePreviewKey===rulesPreviewKey()
     property bool ruleApplyAfterSave: false
     property bool ruleApplyAfterPreview: false
-    function rulesPreviewKey() {return JSON.stringify([rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,replaceManualFields.checked])}
+    function rulesPreviewKey() {return JSON.stringify([rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,false])}
     property int ruleEditGeneration: 0
     property var ruleBaseline: []
     property var ruleMovedIds: ({})
@@ -787,7 +787,7 @@ ApplicationWindow {
     }
     function writeRule() {
         if(ruleSync || ruleIndex<0 || ruleIndex>=ruleModel.count) return
-        let inherit=ruleScope.currentIndex===1 && ruleInherit.checked
+        let inherit=false
         ruleModel.setProperty(ruleIndex,"label",ruleLabel.text)
         ruleModel.setProperty(ruleIndex,"expression",ruleExpression.text)
         ruleModel.setProperty(ruleIndex,"scope",ruleScope.currentIndex===1?"split":"transaction")
@@ -805,7 +805,7 @@ ApplicationWindow {
         ruleScope.currentIndex=r.scope==="split"?1:0
         ruleInput.currentIndex=r.input==="memo"?1:r.input==="category"?2:0
         rulePayeeTemplate.text=r.payeeTemplate||""; ruleMemoTemplate.text=r.memoTemplate||""
-        ruleCategoryId=r.categoryId||""; ruleInherit.checked=!!r.inheritParent
+        ruleCategoryId=r.categoryId||""
         ruleCaseSensitive.checked=(r.expression||"").startsWith("(?-i)")
         ruleWholeField.checked=wholeRecognized(r.expression||"")
         ruleAssistNote.text=""; ruleSync=false;rulePreviewKey="";revealRuleEditor()
@@ -874,7 +874,7 @@ ApplicationWindow {
         return parts.length?parts.join("; "):"No action yet"
     }
     function acceptRuleCategory() {
-        if(ruleIndex<0 || ruleModel.get(ruleIndex).pendingDelete || ruleInherit.checked)return true
+        if(ruleIndex<0 || ruleModel.get(ruleIndex).pendingDelete)return true
         let match=ruleCategoryField.model.find(c=>workflow.categoryNameMatches(c.path,ruleCategoryField.editText))
         if(!match){workspaceFeedback="Choose an existing category.";return false}
         if(ruleCategoryId!==match.id){ruleCategoryId=match.id;writeRule()}
@@ -886,7 +886,7 @@ ApplicationWindow {
     }
     function previewAccountRules() {
         if(!acceptRuleCategory())return
-        let args={accountScope:true,newOnly:ruleTransactionScope.currentIndex===1,replaceManual:replaceManualFields.checked,unsaved:rulePreviewSingle?ruleChanged(ruleIndex):rulesDirty,singleRule:rulePreviewSingle}
+        let args={accountScope:true,newOnly:ruleTransactionScope.currentIndex===1,replaceManual:false,unsaved:rulePreviewSingle?ruleChanged(ruleIndex):rulesDirty,singleRule:rulePreviewSingle}
         if(rulePreviewSingle){args.rule=ruleModel.get(ruleIndex).id;if(ruleChanged(ruleIndex))args.rules=[ruleImage(ruleModel.get(ruleIndex))]}
         else if(rulesDirty)args.rules=rulesImage()
         rulePendingPreviewKey=rulesPreviewKey();rulePreviewKey=""
@@ -1075,6 +1075,8 @@ ApplicationWindow {
 
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
+            if(success && action==="resolve_import_categories") {importCategories.close();workspaceFeedback="Imported categories applied.";Qt.callLater(showImportCategories)}
+            if(success && ["import","confirm_import_date","confirm_import_destination","map_import","open","unlock"].indexOf(action)>=0)Qt.callLater(showImportCategories)
             if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Transactions accepted."
             if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
             if(success && action==="release_transfer_batch")workspaceFeedback="Category changed. Undo is available."
@@ -1106,7 +1108,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {if(!rulesLeaving)pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesLeaving=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesLeaving=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -1228,6 +1230,42 @@ ApplicationWindow {
     }
     FileDialog { id:createDialog; fileMode:FileDialog.SaveFile; title:"New SpentIt dataset";currentFolder:workflow.documentsFolder;selectedFile:workflow.suggestedFile;defaultSuffix:"spentit";options:FileDialog.DontConfirmOverwrite
         onAccepted:location.text=workflow.datasetFilename(workflow.localPath(selectedFile))
+    }
+    ListModel {id:importCategoryModel}
+    function showImportCategories() {
+        let pending=s.importCategoryDecisions||[]
+        if(!pending.length)return
+        importCategories.source=pending[0].source
+        allImportCategories.checked=true
+        importCategoryModel.clear()
+        for(let name of pending[0].names)importCategoryModel.append({categoryName:name,selected:true})
+        importCategories.open()
+    }
+    Dialog {
+        id:importCategories;objectName:"importCategories";title:"These imported categories don’t exist yet."
+        modal:true;anchors.centerIn:parent;width:Math.min(window.width-40,640);height:Math.min(window.height-40,500)
+        closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape
+        property string source:""
+        ColumnLayout {
+            anchors.fill:parent
+            Label {text:"Select the categories to create. Unselected categories will use Uncategorized.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            CheckBox {id:allImportCategories;objectName:"allImportCategories";text:"All / None";checked:true;enabled:!workflow.busy
+                onClicked:{for(let i=0;i<importCategoryModel.count;i++)importCategoryModel.setProperty(i,"selected",checked)}
+            }
+            ListView {
+                Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:importCategoryModel
+                ScrollBar.vertical:ScrollBar {policy:ScrollBar.AlwaysOn}
+                delegate:CheckBox {required property string categoryName;required property bool selected;required property int index
+                    width:ListView.view.width;text:categoryName;checked:selected;enabled:!workflow.busy
+                    onClicked:importCategoryModel.setProperty(index,"selected",checked)
+                }
+            }
+            RowLayout {
+                Button {objectName:"applyImportCategories";text:"Apply Selected";enabled:!workflow.busy;onClicked:{let names=[];for(let i=0;i<importCategoryModel.count;i++)if(importCategoryModel.get(i).selected)names.push(importCategoryModel.get(i).categoryName);workflow.command("resolve_import_categories",{source:importCategories.source,selected:names})}}
+                Button {objectName:"uncategorizedImport";text:"Use Uncategorized";enabled:!workflow.busy;onClicked:workflow.command("resolve_import_categories",{source:importCategories.source,selected:[]})}
+                Button {text:"Close";enabled:!workflow.busy;onClicked:importCategories.close()}
+            }
+        }
     }
     Dialog {
         id:importMapping;objectName:"importAccountMapping";title:"Choose accounts for this import";modal:true;closePolicy:Popup.NoAutoClose
@@ -1863,6 +1901,7 @@ ApplicationWindow {
 
                     }
                     Button {objectName:"importStatement";text:"Import…";Layout.fillWidth:true;enabled:!workflow.busy;onClicked:guard(function(){importTarget="";importDialog.open()})}
+                    Button {text:"Import categories…";Layout.fillWidth:true;visible:(s.importCategoryDecisions||[]).length>0;enabled:!workflow.busy;onClicked:showImportCategories()}
                     Button {objectName:"reviewNavigation";text:s.reviewReady===false?"Review":"Review ("+(s.reviewCount||0)+")";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
                     Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.active;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(s.rulesSupported && !rulesDirty)workflow.command("rules_load")})}
@@ -2274,7 +2313,7 @@ ApplicationWindow {
                             TextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Rule name";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
                             Label {text:"Match";font.bold:true}
                             RowLayout {
-                                UsableComboBox {id:ruleScope;objectName:"ruleScope";Accessible.name:"Rule scope";model:["Transaction","Split"];onActivated:if(!ruleSync){if(currentIndex===0){ruleSync=true;ruleInherit.checked=false;ruleSync=false} writeRule()}}
+                                UsableComboBox {id:ruleScope;objectName:"ruleScope";Accessible.name:"Rule scope";model:["Transaction","Split"];onActivated:if(!ruleSync){writeRule()}}
                                 UsableComboBox {id:ruleInput;objectName:"ruleInput";Accessible.name:"Rule source field";model:ruleScope.currentIndex===1?["Parent payee","Memo","Category"]:["Payee","Memo","Category"];onActivated:if(!ruleSync)writeRule()}
                             }
                             Label {text:"Pattern (regular expression)"}
@@ -2297,14 +2336,13 @@ ApplicationWindow {
                             TextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
                             RowLayout {
                                 Label {text:"Category"}
-                                UsableComboBox {id:ruleCategoryField;objectName:"ruleCategory";Layout.fillWidth:true;Layout.minimumWidth:120;Layout.preferredWidth:400;Layout.maximumWidth:600;editable:true;enabled:!ruleInherit.checked;textRole:"path";valueRole:"id"
-                                    model:[{id:"",path:"No category change"}].concat((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
+                                UsableComboBox {id:ruleCategoryField;objectName:"ruleCategory";Layout.fillWidth:true;Layout.minimumWidth:120;Layout.preferredWidth:400;Layout.maximumWidth:600;editable:true;textRole:"path";valueRole:"id"
+                                    model:[{id:"",path:"Choose a category"}].concat((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
                                     currentIndex:{for(let i=0;i<model.length;i++)if(model[i].id===ruleCategoryId)return i;return -1}
                                     onActivated:{ruleCategoryId=model[currentIndex].id;writeRule()}
                                     onAccepted:acceptRuleCategory()
                                     Accessible.name:"Rule category"
                                 }
-                                CheckBox {id:ruleInherit;objectName:"ruleInherit";visible:ruleScope.currentIndex===1;text:"Use transaction category";onClicked:if(!ruleSync){if(checked)ruleCategoryId="";writeRule()}}
                             }
                         }
                         RowLayout {
@@ -2314,7 +2352,6 @@ ApplicationWindow {
                         GridLayout {
                             columns:rulesPage.availableWidth<1000?1:4
                             Button {objectName:"previewThisRule";text:"Preview this rule";enabled:ruleIndex>=0 && !ruleModel.get(ruleIndex).pendingDelete;onClicked:previewThisRule()}
-                            CheckBox {id:replaceManualFields;objectName:"replaceManualFields";text:"Replace values I entered, including blanks"}
                             Button {objectName:"applyRules";text:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)?"Save and apply":"Apply to this account now"} enabled:applyReady();onClicked:applyRules()}
                         }
                         Label {objectName:"rulePreviewStatus";visible:currentRulePreview;text:(s.rulePreview||{}).label||"";font.bold:true;textFormat:Text.PlainText}

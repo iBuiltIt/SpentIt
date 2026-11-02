@@ -36,7 +36,7 @@ cmake --build build/import-ui-rules-release --target spentit_import_experiment -
 ./build/SpentIt
 ```
 
-The current build uses experimental schema **40 with rules / 39 without**. Create a new dataset for this version; older experimental datasets are rejected unchanged, without migration. The [unified Review sheet](doc/review-sheet.md) groups outstanding questions by account and is available from Review and Commit. Imports can accumulate before Commit. Commit accepts new transactions across all accounts; Discard uncommitted work removes the selected account's contributions while preserving accepted and independently owned transactions. See [verified scope](doc/status.md#dataset-acceptance-storage-refactor--2026-10-29).
+The current build uses experimental schema **42 with rules / 41 without**. Create a new dataset for this version; older experimental datasets are rejected unchanged, without migration. The [unified Review sheet](doc/review-sheet.md) groups outstanding questions by account and is available from Review and Commit. Imports can accumulate before Commit. Commit accepts new transactions across all accounts; Discard uncommitted work removes the selected account's contributions while preserving accepted and independently owned transactions. See [verified scope](doc/status.md#dataset-acceptance-storage-refactor--2026-10-29).
 
 The output location is saved in that build's CMake cache; subsequent rebuilds update `./build/SpentIt`. For dependency setup on a fresh checkout, see [building](doc/building.md) and [the UI setup](doc/import-ui.md). Other build trees default to producing `SpentIt` inside their own build directory.
 

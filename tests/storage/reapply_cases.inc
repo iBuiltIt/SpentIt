@@ -7,18 +7,17 @@ void reapply_basics(){
     Directory dir("spentit-reapply-XXXXXX");const auto path=dir.path/"doc";
     {
         auto s=create(path);s.create_account(2,"Visa",cad,"2026-08-01");s.select_account(2);s.opening(0,"2026-08-01",Money(0,cad));s.select_account(1);
-        save_rules(s,"save-payee",{rule_of("payee-rule","Payee rule",rules::Scope::transaction,rules::InputField::payee,marker,{"Ruled Payee",{},{},false})},0);
+        save_rules(s,"save-payee",{rule_of("payee-rule","Payee rule",rules::Scope::transaction,rules::InputField::payee,marker,{"Ruled Payee",{},"rule-default",false})},0);
         s.ingest("rows",plain_source+plain_source+plain_source+plain_source,qif::DateOrder::dmy);s.commit("rows",0,"publish-rows");
         app::ChangeRequest removal{app::ChangeKind::remove,{"rows",2},{},{}};auto removed=s.preview_committed_change(removal);s.apply_committed_change_with_catalog("remove-one",removed.request,removed.expected,removed.preview_sequence,removed.catalog_revision);
-        auto kept=s.committed_entry({"rows",3}).current.draft;kept.payee="Kept";kept.payee_owner=FieldOwnership::manual;kept.payee_rule.reset();correct(s,"keep-payee",{"rows",3},kept);
+        auto kept=s.committed_entry({"rows",3}).current.draft;kept.payee="Kept";kept.payee_owner=FieldOwnership::manual;kept.payee_rule.reset();bind(s,kept,0,"rule-default");correct(s,"keep-payee",{"rows",3},kept);
         s.ingest("draft",plain_source,qif::DateOrder::dmy);
         s.select_account(2);s.ingest("other",plain_source,qif::DateOrder::dmy);s.commit("other",0,"publish-other");const auto other_balance=s.committed_balance();s.select_account(1);
         const auto balance=s.committed_balance();const auto evidence=s.evidence("rows");
         auto looked=reapply_preview(s);check(looked.request.evaluated==3 && looked.request.changed==2 && looked.records.size()==2 && looked.change.units()==0 && looked.before==balance && looked.after==balance);
         check(looked.records[0].identity==imports::Occurrence{"rows",0} && looked.records[1].identity==imports::Occurrence{"rows",1});
         for(const auto& record:looked.records)check(record.before.payee==marker && record.after.payee=="Ruled Payee" && record.after.payee_owner==FieldOwnership::rule);
-        auto replaced=reapply_preview(s,true);check(replaced.request.changed==3);
-        bool found_kept=false;for(const auto& record:replaced.records)if(record.before.payee=="Kept"){found_kept=record.after.payee=="Ruled Payee" && record.after.payee_owner==FieldOwnership::rule;break;}check(found_kept);
+        rejects_text([&]{reapply_preview(s,true);},"Clear categories");
         app::OperationContext context;rejects_text([&]{s.apply_rule_reapply("publish-rows",looked.request,context);},"Operation identity belongs to another command");
         rejects_text([&]{s.apply_rule_reapply(std::string(97,'a'),looked.request,context);},"Rule reapply operation identity is too long");
         auto applied=reapply_apply(s,"reapply",looked.request);check(applied.operation=="reapply" && applied.entries.size()==2 && applied.change.units()==0 && applied.before==applied.after && applied.entries[0].operation=="reapply" && applied.entries[1].operation=="reapply-1");
@@ -43,12 +42,12 @@ void reapply_basics(){
     check(query(path,"SELECT ruleset_revision FROM entry_rule_fields WHERE batch='rows' AND ordinal=0 AND revision=1")=="1");no_leaks(dir.path);
     Directory unused("spentit-reapply-unused-XXXXXX");const auto spare=unused.path/"doc";
     {
-        auto s=create(spare);save_rules(s,"save-miss",{rule_of("miss","Miss",rules::Scope::transaction,rules::InputField::payee,"NoSuchPayee",{"Nope",{},{},false})},0);
+        auto s=create(spare);save_rules(s,"save-miss",{rule_of("miss","Miss",rules::Scope::transaction,rules::InputField::payee,"NoSuchPayee",{"Nope",{},"rule-default",false})},0);
         s.ingest("batch",plain_source,qif::DateOrder::dmy);s.commit("batch",0,"publish");
         auto looked=reapply_preview(s);check(looked.request.evaluated==1 && looked.request.changed==0 && looked.records.empty() && looked.change.units()==0);
         app::OperationContext context;rejects_text([&]{s.apply_rule_reapply("publish",looked.request,context);},"Operation identity belongs to another command");
         auto none=reapply_apply(s,"unused",looked.request);check(none.operation.empty() && !s.rule_reapply_outcome("unused") && s.committed_entry({"batch",0}).current.draft.payee==marker);
-        save_rules(s,"save-hit",{rule_of("payee-rule","Payee rule",rules::Scope::transaction,rules::InputField::payee,marker,{"Ruled Payee",{},{},false})},1);
+        save_rules(s,"save-hit",{rule_of("payee-rule","Payee rule",rules::Scope::transaction,rules::InputField::payee,marker,{"Ruled Payee",{},"rule-default",false})},1);
         auto next=reapply_preview(s);check(next.request.changed==1);auto wrote=reapply_apply(s,"unused",next.request);check(wrote.operation=="unused" && s.committed_entry({"batch",0}).current.draft.payee=="Ruled Payee");s.verify();
     }
     no_leaks(unused.path);
@@ -65,21 +64,18 @@ void reapply_basics(){
         auto skipped=reapply_preview(s);check(skipped.request.evaluated==1 && skipped.request.changed==0 && skipped.records.empty() && skipped.skips.size()==1 && skipped.skips[0].note=="Left the blank category on Shop (source-0). That category stays because it is a transfer link." && skipped.skips[0].category.empty());
         auto untouched=reapply_apply(s,"spare",skipped.request);check(untouched.operation.empty() && !s.rule_reapply_outcome("spare") && s.committed_entry({"shop",0}).current.draft.payee=="Shop" && s.committed_entry({"shop",0}).current.draft.transaction.allocations()[0].category.empty());
         save_rules(s,"save-shop",{rule_of("shop-rule","Shop rule",rules::Scope::transaction,rules::InputField::payee,"Shop",{"Ruled Shop",{},"fees",false})},1);
-        auto named=reapply_preview(s);check(named.request.changed==1 && named.records.size()==1 && named.records[0].after.payee=="Ruled Shop" && named.records[0].after.transaction.allocations()[0].category.empty() && named.skips.size()==1 && named.skips[0].note==skipped.skips[0].note && named.change.units()==0);
-        app::RulePreviewRequest accountQuery;accountQuery.account_scope=true;accountQuery.matches_only=true;accountQuery.replace_manual=true;
-        app::OperationContext accountContext;const auto accountPreview=s.preview_pending_rules(accountQuery,accountContext);check(accountPreview.changed==1 && accountPreview.matches.size()==1);
-        app::OperationContext accountApply;s.apply_account_rules("account-linked",accountPreview.account_request,accountApply);
-        check(s.committed_entry({"shop",0}).current.draft.transaction.allocations()[0].category.empty());s.verify();
-        s.undo_account_rules("account-linked-undo");check(s.committed_entry({"shop",0}).current.draft.payee=="Shop");s.verify();
-        named=reapply_preview(s);
-        auto wrote=reapply_apply(s,"spare",named.request);check(wrote.operation=="spare" && wrote.change.units()==0 && wrote.before==shop_balance && wrote.after==shop_balance);
-        const auto shop=s.committed_entry({"shop",0}).current.draft;check(shop.payee=="Ruled Shop" && shop.payee_owner==FieldOwnership::rule && shop.payee_rule==RuleMark{"shop-rule",0} && shop.transaction.allocations()[0].category.empty() && shop.transaction.allocations()[0].category_owner==FieldOwnership::source && !shop.transaction.allocations()[0].category_rule && shop.transaction.effective_total()==Money(10000,cad));
+        auto named=reapply_preview(s);check(named.request.changed==0 && named.records.empty() && named.skips.size()==1);
+        app::RulePreviewRequest accountQuery;accountQuery.account_scope=true;accountQuery.matches_only=true;
+        app::OperationContext accountContext;const auto accountPreview=s.preview_pending_rules(accountQuery,accountContext);check(accountPreview.changed==0 && accountPreview.matches.size()==1);
+        app::OperationContext accountApply;check(s.apply_account_rules("account-linked",accountPreview.account_request,accountApply).operation.empty());
+        auto wrote=reapply_apply(s,"spare",named.request);check(wrote.operation.empty());
+        const auto shop=s.committed_entry({"shop",0}).current.draft;check(shop.payee=="Shop" && shop.transaction.allocations()[0].category.empty() && shop.transaction.effective_total()==Money(10000,cad));
         check(s.record_evidence({"shop",0})==shop_evidence && s.committed_balance()==shop_balance);const auto still=reapply_link(s,"merged");check(!still.link.unresolved && still.link.origin.amount==Money(-10000,cad) && still.link.destination.amount==Money(10000,cad) && still.link.destination.endpoint.entry.batch=="shop" && still.link.destination.endpoint.allocation=="source-0");
         s.select_account(1);check(s.committed_entry({"left",0}).current.draft.payee=="Left" && s.committed_balance()==Money(-10000,cad) && s.record_evidence({"left",0})==left_evidence);s.verify();
     }
-    check(query(link_path,"SELECT ruleset_revision FROM entry_rule_fields WHERE batch='shop' AND ordinal=0 AND revision=1")=="2");no_leaks(linked.path);
+    check(query(link_path,"SELECT count(*) FROM entry_rule_fields WHERE batch='shop' AND ordinal=0 AND revision>0")=="0");no_leaks(linked.path);
 }
-app::RuleReapplyPreview reapply_fault_setup(const fs::path& path){auto s=create(path);save_rules(s,"save-payee",{rule_of("payee-rule","Payee rule",rules::Scope::transaction,rules::InputField::payee,marker,{"Ruled Payee",{},{},false})},0);s.ingest("batch",plain_source,qif::DateOrder::dmy);s.commit("batch",0,"publish");return reapply_preview(s);}
+app::RuleReapplyPreview reapply_fault_setup(const fs::path& path){auto s=create(path);save_rules(s,"save-payee",{rule_of("payee-rule","Payee rule",rules::Scope::transaction,rules::InputField::payee,marker,{"Ruled Payee",{},"rule-default",false})},0);s.ingest("batch",plain_source,qif::DateOrder::dmy);s.commit("batch",0,"publish");return reapply_preview(s);}
 void reapply_recover(const fs::path& path,const app::RuleReapplyPreview& preview,bool strict){
     auto s=ImportStore::open(path,password);const auto prior=s.rule_reapply_outcome("fault");if(strict)check(!prior);
     const auto current=s.committed_entry({"batch",0}).current;check(current.revision==(prior?preview.records.at(0).expected.revision+1:preview.records.at(0).expected.revision));check(current.draft.payee==(prior?"Ruled Payee":marker));

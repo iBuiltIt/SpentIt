@@ -1,8 +1,11 @@
 # Bounded rules evaluation
 
-Last updated: 2026-10-26
+Last updated: 2026-11-02
 
-State: bounded evaluator, preview adapter, schema-6 Save/Apply, and rules sheet implemented. The rules-enabled `3f94fe6` baseline passed all 72 cases in Release and ASan/UBSan on 2026-10-26, closing the earlier Debug-only gap. Current rules-enabled documents use schema 12 with [account-scoped workspaces](accounts.md) and [bulk ledger receipts](search-ledger.md). See [project status](status.md) for current verification and remaining limitations. The accepted [rules policy](../features/004-rules-and-explanations.md) and [durable-rules contract](durable-rules.md) remain unchanged.
+State: category-gated evaluation, ordered selected-rule previews and durable import
+category choices are implemented in experimental formats 42/41. See the
+[accepted contract](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02)
+and [status](status.md) for verification and limits.
 
 ## Matching and derived fields
 
@@ -10,11 +13,22 @@ The optional `SpentIt::rules` target uses [PCRE2 10.49](../third_party/pcre2/REA
 
 Templates contain literal text, `$$` for a dollar sign, and `${0}` through `${32}` for numeric captures. Zero means the complete match. References to nonexistent captures or malformed syntax fail. A valid optional capture that did not participate expands to empty text. Output is bounded before publication.
 
-Ordered transaction rules run first, then source-split rules. First assignment to each field wins; compatible and competing later assignments are explained as shadowed. Parent category classification is a temporary suggestion, not another financial allocation. Original unsplit records receive the transaction category on their associated original allocation. Actual source splits require explicit category assignment or parent inheritance. Missing parent classification is explained and leaves the field unchanged.
+Source-split rules run first, then transaction rules, retaining list order within
+each phase. Every rule assigns an explicit category. Only Uncategorized
+allocations qualify; the first categorizing match wins. Transaction rules fill
+remaining Uncategorized allocations in split transactions without changing their
+shared payee/memo. There is no parent-category inheritance or forced replacement.
+Selected-rule evaluation reserves earlier matches using saved surrounding rules,
+but exports only the selected rule's changes. Preview counts partition matching
+transactions into categorized, earlier-rule exclusions and eligible rows.
 
 The engine receives explicit retained source associations. Reordering current splits does not change which source memo a rule sees. New manual splits have no source association and are excluded from source-split matching. The interface contains no monetary amounts or financial dates, so it cannot change money, dates or split structure.
 
-Reapplication recomputes source/rule-owned fields from original facts. Manually owned fields, including blanks, remain protected unless replacement was explicitly requested for the preview. Replacement only changes fields receiving a matching rule action; unmatched manual fields remain intact. Each applied field records rule identity/version. The pure application adapter reconstructs proposed DraftRows with exact amounts, dates, structure, allocation identities and binding snapshots preserved. It requires retained field provenance for existing rule-owned fields and emits new provenance alongside the proposal. Schema 6 stores those marks and replays saved rule versions during verify. The sheet shows the current preview's overlap and removal text for the records just evaluated. It does not display the full saved-version history that verify replays.
+Reapplication preserves existing categories and manual text. Deliberately clearing
+a category permits another rule assignment. Each applied field records its rule
+identity/version; exact amounts, dates, split identities and unchanged category
+bindings remain intact. Disabled or nonmatching rules never undo earlier work.
+The storage adapter validates transitions and retains atomic receipts and Undo.
 
 ## Resource and error contract
 
@@ -23,7 +37,7 @@ The current engineering limits are explicit rejection boundaries, not truncation
 - 4 KiB pattern, 64 KiB source field/output, 32 captures, 64 nested pattern parentheses.
 - Per-pattern 1 MiB compiled code and 8 MiB allocator budget; per-match 8 MiB allocator budget, 4 MiB match heap, depth 128 and 100,000 matching/callout steps.
 - At most 128 rules and 16 MiB total compiled code in a ruleset.
-- At most 4,096 records, 4,096 allocations per record and 16,384 aggregate current/source allocations per chosen preview scope.
+- A single evaluator call permits 4,096 records, 4,096 allocations per record and 16,384 aggregate current/source allocations. Account/pending previews stream per transaction; the legacy committed reapply API retains its 4,096-row scope limit.
 - 16 MiB total input text and generated field bytes, 100,000 rule comparisons/explanations, and 1,000,000 aggregate callouts per preview scope.
 
 All selected inputs are validated before producing a result. Cancellation checks run during validation and matching. Invalid patterns, invalid input, exhausted resources, cancellation, invalid templates and dependency/internal failures are distinguished from a valid non-match. No partial result is returned when the chosen scope fails.

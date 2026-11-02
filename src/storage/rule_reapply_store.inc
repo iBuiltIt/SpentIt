@@ -15,7 +15,7 @@ constexpr const char* reapply_membership="Invalid rule reapply Undo membership";
 constexpr const char* head_where=
     "FROM entry_heads h JOIN entry_values e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision "
     "JOIN batches b ON b.id=h.batch WHERE e.active=1 AND b.account_id=spentit_account() AND b.state=1 AND substr(h.batch,1,10)<>'~transfer-'";
-bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="40";}
+bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="42";}
 std::string protection_stamp(const std::vector<app::TransferView>& links,std::int64_t account){
     std::set<std::pair<imports::Occurrence,std::string>> keys;
     for(const auto& value:links){
@@ -139,7 +139,13 @@ app::RuleReapplyPreview ImportStore::preview_rule_reapply(bool replace_manual,st
     std::vector<app::RuleProposal> proposals;
     try{
         rules::RuleSet compiled(rules_at(impl_->db,ruleset_revision(impl_->db)));
-        proposals=app::preview_rules(compiled,category_catalog(),inputs_from(rows,*this),replace_manual,[&]{return context.state.load()==app::OperationContext::requested;},true);
+        auto inputs=inputs_from(rows,*this);
+        const auto links=all_transfers();
+        for(auto& input:inputs)for(const auto& link:links)if(!link.link.unresolved)
+            for(const auto* side:{&link.link.origin,&link.link.destination})if(side->state!=transfers::State::removed && side->endpoint.account==selected && side->endpoint.entry==input.identity)
+                input.transfer_allocations.push_back(side->endpoint.allocation);
+        for(auto& input:inputs){std::sort(input.transfer_allocations.begin(),input.transfer_allocations.end());input.transfer_allocations.erase(std::unique(input.transfer_allocations.begin(),input.transfer_allocations.end()),input.transfer_allocations.end());}
+        proposals=app::preview_rules(compiled,category_catalog(),inputs,replace_manual,[&]{return context.state.load()==app::OperationContext::requested;},true);
     }catch(const rules::RegexError& error){
         if(error.kind()==rules::RegexFailure::cancelled)throw app::OperationCancelled(error.what());
         throw;
@@ -162,7 +168,8 @@ app::RuleReapplyPreview ImportStore::preview_rule_reapply(bool replace_manual,st
         std::set<std::size_t> skipped;
         for(std::size_t position=0;position<allocations.size();++position){
             const bool category_changed=allocations[position].category!=original[position].category || allocations[position].category_binding!=original[position].category_binding;
-            if(!category_changed || !linked.contains({entry.identity,original[position].identity}))continue;
+            const bool protected_match=std::any_of(explanations.begin(),explanations.end(),[&](const auto& e){return e.allocation==position && e.effect==rules::Effect::transfer_protected;});
+            if((!category_changed && !protected_match) || !linked.contains({entry.identity,original[position].identity}))continue;
             allocations[position].category=original[position].category;
             allocations[position].category_binding=original[position].category_binding;
             allocations[position].category_owner=original[position].category_owner;

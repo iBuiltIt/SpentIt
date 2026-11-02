@@ -21,7 +21,7 @@ class CategoryUiTests : public QObject {
     static bool edit(QObject* root,const QString& name,const QString& value){auto* item=object(root,name);return item && item->setProperty("text",value) && QMetaObject::invokeMethod(item,"textEdited");}
     static bool pointer(QQuickWindow* window,QObject* root,const QString& name){auto* item=qobject_cast<QQuickItem*>(object(root,name));if(!item || !item->isEnabled() || !item->isVisible())return false;const auto p=item->mapToScene(QPointF(item->width()/2,item->height()/2)).toPoint();if(!QRect(0,0,window->width(),window->height()).contains(p))return false;QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,p);return true;}
     void wait(ImportModel& m,bool success=true){QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty()==success,qPrintable(m.error()));}
-    void run(ImportModel& m,const QString& action,const QVariantMap& args={},bool success=true){auto request=args;if(action=="import" && !request.contains("account"))request["account"]=m.state().value("accountId");m.command(action,request);wait(m,success);}
+    void run(ImportModel& m,const QString& action,const QVariantMap& args={},bool success=true){auto request=args;if(action=="import" && !request.contains("account"))request["account"]=m.state().value("accountId");m.command(action,request);wait(m,success);if(success && action=="import"){for(const auto& item:m.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(m,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}}}
     static QVariantMap selected(const ImportModel& m){return m.state().value("selected").toMap();}
     void applyCategory(ImportModel& m,QObject* root){
         auto* field=qobject_cast<QQuickItem*>(object(root,"categoryName"));QVERIFY(field);
@@ -174,7 +174,7 @@ private slots:
         QFile file(dir.path()+"/source.qif");QVERIFY(file.open(QIODevice::WriteOnly));const QByteArray bytes="D1/1/2026\nT-10\nPSynthetic parking\nLLegacy:Transport\n^\n";QCOMPARE(file.write(bytes),bytes.size());file.close();
         run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});const auto occurrence=model.rowIdentity(model.selectedRowIndex());
         auto allocation=selected(model).value("draft").toMap().value("splits").toList().front().toMap();const auto allocationId=allocation.value("allocationId").toString();QVERIFY(!allocationId.isEmpty());
-        QCOMPARE(allocation.value("categoryDisplay").toString(),"Unmapped: Legacy:Transport");
+        QCOMPARE(allocation.value("categoryDisplay").toString(),"Legacy: Transport");
         QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));QVERIFY(click(root,"chooseUncategorized"));wait(model);
         QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryDisplay").toString(),"Uncategorized");
         QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));QVERIFY(edit(root,"unmappedCategoryText","Explicit review label"));QVERIFY(click(root,"chooseUnmapped"));wait(model);

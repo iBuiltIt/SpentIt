@@ -2,30 +2,24 @@
 
 ## Next session: category-gated rules — 2026-11-02
 
-**Next implementation priority, not yet implemented:** the owner's
-[category-gated rules and imported-category handoff](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
-Every rule requires an explicit category; rules only process Uncategorized items.
-No forced recategorization or category inheritance. Deliberate ledger category
-clearing enables reruns. Selected-rule preview explains pattern matches versus
-earlier-rule exclusions, and Apply must respect that same ordering. Missing
-imported categories require an explicit Create / Use Uncategorized decision.
-Experimental datasets require no compatibility handling.
+**Implemented under owner Go:** the [category-gated rules and imported-category
+contract](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
+Split rules categorize Uncategorized splits first; transaction rules fill remaining
+Uncategorized allocations. Shared payee/memo changes are restricted to unsplit
+transactions. Every rule requires an explicit category, with no force or inheritance.
+Selected-rule Preview/Apply respects ordered context without applying other rules.
+Missing imported categories use one durable import-wide checklist; automatic rules
+wait for its resolution. Formats 42/41 reject earlier experimental files.
 
-The linked handoff separates accepted policy from the remaining split-boundary
-and import-decision lifecycle questions, and contains the implementation/test
-sequence. Runtime evaluation is unchanged at this checkpoint. The owner selected
-a next-session handoff rather than starting this engine/import work now.
-
-Preserve the implemented Rules workspace (commit `931dbf6`) and the subsequent
-left-aligned Edit rule / field-specific attribution changes included in this
-handoff checkpoint. That UI follow-up was built and tested.
-No real financial data or private attachment paths belong in this handoff.
+See [status](status.md) for actual verification and platform limits. The one-screen
+Rules workspace, independent saves and field-specific attribution remain in place.
+Reports and unrelated work remain deferred and need their own Go.
 
 Previous handoff (2026-10-31): the [opening/ledger cleanup and interrupted-import
 rollback](ui-import-cleanup.md) is implemented under the owner's subsequent Go.
 See [status](status.md) for verification and limits. Further changes require their
 own Go; reports and unrelated follow-ups remain deferred. Settings is now available
-only in the lower-left sidebar. Current formats are 40/39 (rules on/off); dated
+only in the lower-left sidebar. Current formats are 42/41 (rules on/off); dated
 checkpoints below retain their original format and verification details.
 
 ## Shorter closing verification — owner Go 2026-10-31

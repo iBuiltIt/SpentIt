@@ -108,6 +108,7 @@ struct ImportGroup {
     std::size_t unresolved_transfers=0;
     std::vector<ImportBlocker> blockers={};
 };
+struct MissingImportCategories { std::string source; std::vector<std::string> names; };
 struct ImportRepairProgress {std::size_t total=0,done=0,amounts=0,blocked=0;};
 struct RowView {
     imports::Occurrence identity;
@@ -193,6 +194,8 @@ public:
     virtual std::optional<std::string> undoable_account_operation() const { return {}; }
     virtual bool account_currency_warning() const { return false; }
     virtual std::vector<BatchInfo> batches() const = 0;
+    virtual std::vector<MissingImportCategories> missing_import_categories() const {return {};}
+    virtual void resolve_import_categories(std::string_view,const std::vector<std::string>&,OperationContext&) {throw std::logic_error("Import category decisions unavailable");}
     virtual std::vector<ImportGroup> import_groups() const { return {}; }
     virtual std::optional<ImportGroup> import_group_outcome(std::string_view id) const {for(const auto& g:import_groups())if(g.id==id)return g;return {};}
     virtual ImportGroup prepare_import_group(std::string_view,std::string_view,qif::DateOrder,

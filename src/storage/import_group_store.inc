@@ -323,6 +323,7 @@ app::ImportGroup ImportStore::resume_import_group(std::string_view id,app::Opera
     Statement update(impl_->db,"UPDATE import_groups SET state=1 WHERE id=? AND state=0");update.text(1,id);update.done();
     resolve_group_transfers(id,context);
     generate_explicit_transfers(&context);
+    stage_import_categories(id,context);
     context.seal();finish([&]{transaction.commit();});return import_group(id);
 }
 void ImportStore::review_import_balance(std::string_view id,std::size_t source_account,std::int64_t expected,app::ReportedBalanceChoice choice,std::string_view date) {
@@ -391,6 +392,8 @@ void ImportStore::abort_import_group(std::string_view id) {
     Statement retired(impl_->db,"SELECT 1 FROM retired_import_accounts WHERE account_id=?");retired.integer(1,selection.prior);if(retired.row())selection.prior=smallest_active_account(impl_->db);
 }
 void ImportStore::require_group_ready(std::string_view batch_id) const {
+    Statement categories(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=0");categories.text(1,batch_id);
+    if(categories.row())fail(SQLITE_CONSTRAINT,"Choose the imported categories before accepting transactions");
     if(impl_->accepting_dataset)return;
     Statement member(impl_->db,"SELECT group_id FROM import_group_accounts WHERE batch=?");member.text(1,batch_id);if(!member.row()) {
         Statement source(impl_->db,"SELECT state,blocked FROM batches WHERE id=?");source.text(1,batch_id);if(!source.row() || source.integer(0)==1 || source.integer(0)==2)return;
@@ -424,6 +427,8 @@ void ImportStore::publish_group_opening(std::int64_t account_id) {
     Statement update(impl_->db,"UPDATE account SET opening=?,opening_date=?,revision=revision+1,confirmed=1 WHERE singleton=?");update.integer(1,staged.integer(2));update.text(2,staged.bytes(3));update.integer(3,account_id);update.done();
 }
 void ImportStore::verify_import_groups(const app::OperationContext* context) const {
+    Statement category_state(impl_->db,"SELECT 1 FROM import_category_decisions d LEFT JOIN import_groups g ON g.id=d.source WHERE g.id IS NULL OR g.state=0 OR (d.resolved=0 AND g.state=2) OR EXISTS(SELECT 1 FROM import_category_choices c WHERE c.source=d.source AND (c.chosen IS NULL)!=(d.resolved=0)) UNION ALL SELECT 1 FROM import_groups g WHERE g.state IN(1,2) AND NOT EXISTS(SELECT 1 FROM import_category_decisions d WHERE d.source=g.id)");
+    if(category_state.row())fail(SQLITE_CORRUPT,"Invalid import category decision state");
     Statement invalid(impl_->db,"SELECT 1 FROM batches b LEFT JOIN import_group_accounts m ON m.batch=b.id WHERE (b.source_account IS NULL)!=(m.batch IS NULL) OR (m.batch IS NOT NULL AND (b.source_id!=m.group_id OR b.source_account!=m.source_account OR b.account_id!=m.account_id)) UNION ALL SELECT 1 FROM retired_import_accounts r JOIN import_groups g ON g.id=r.group_id JOIN account a ON a.singleton=r.account_id WHERE g.state!=3 OR a.frozen!=0 OR NOT EXISTS(SELECT 1 FROM import_group_accounts m WHERE m.group_id=r.group_id AND m.account_id=r.account_id AND m.created=1)");
     if(invalid.row())fail(SQLITE_CORRUPT,"Invalid grouped import relationships");
     for(const auto& group:import_groups()) {

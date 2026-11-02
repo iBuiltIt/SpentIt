@@ -2,26 +2,49 @@
 
 Last updated: 2026-11-02
 
-## Next-session handoff: category-gated rules — 2026-11-02
+## Category-gated rules and imported categories — 2026-11-02
 
-Documentation only. The owner settled the next direction: every rule must set
-an explicit category, rules touch only Uncategorized items, and deliberate ledger
-category clearing replaces forced recategorization. Remove category inheritance;
-do not add compatibility handling for disposable pre-release datasets. Missing
-imported categories get an explicit Create / Use Uncategorized decision.
-Selected-rule preview must explain raw matches versus earlier-rule exclusions,
-and Apply must respect ordered categorization.
+Owner Go implemented; see the [accepted contract](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
+Every rule requires an explicit category. Split rules run first, then transaction
+rules fill remaining Uncategorized allocations. Existing categories and manual
+text stay protected; deliberate category clearing permits another assignment.
+Transaction fallback on split rows changes categories only. Inheritance and force
+replacement are removed. Selected Preview/Apply respects saved surrounding rule
+order while writing only the selected rule; raw/categorized/earlier/eligible/change
+counts accompany the eligible match list. Independent editor saves remain.
 
-**None of that evaluation/import behavior is implemented yet.** Current runtime
-still uses first-assignment-per-field; selected-rule preview/apply is isolated.
-The [full handoff](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02)
-records the unresolved split boundary, import-decision lifecycle, implementation
-sequence and verification obligations. It is [next in the roadmap](roadmap.md#next-session-category-gated-rules--2026-11-02).
+All normal UI imports use atomic account preparation and one missing-category
+checklist spanning the import's accounts and declared catalog. Initially selected
+names can be deselected, with All/None, Apply Selected and Use Uncategorized.
+Selected names are created; declined effective assignments become Uncategorized;
+original source fields remain. Existing categories and transfer aliases resolve
+separately. Automatic rules run after resolution. A closed dialog remains pending
+across restart and blocks rules/acceptance for those rows; the sidebar reopens it.
+Repairs honor the saved choices. Creation, assignments, rules and decision finish
+atomically, with identical retries supported and changed retries rejected.
 
-The previously implemented attribution UI changes are included in this checkpoint
-and must be preserved. The handoff itself changes documentation only; no runtime tests were run for
-it. Relative link file targets and new handoff anchors were checked, and
-`git diff --check` passed.
+Current experimental formats are **42 with rules / 41 without**. Earlier files
+are rejected without migration, per the disposable pre-release policy.
+
+Verification uses synthetic data on macOS. Release builds and selected engine,
+preview, ordered application, account Apply, committed reapply, restart, multiaccount
+category/repair and rules-off format checks passed. Category-decision fault sweeps
+passed at all 185 write/sync positions with disk-full/I/O failures, cancellation,
+retries and process interruption on both sides of commit. The fixture covers
+category creation and automatic rule assignments in the same operation. Account Apply fault sweeps passed
+(101.25 s); reapply failure checks passed (1.54 s). Seven selected ASan/UBSan suites
+passed without diagnostics (9.03 s). The offscreen rule UI suite passed 20 QtTest cases;
+the category dialog was rendered and visually inspected, including restart.
+
+The final 11-suite Release pass (125.89 s) covered engine/preview, category
+decisions, selected/account Apply, reapply and offscreen import/category/rules UI
+and QML. Navigation and committed UI also passed after their fixtures explicitly
+resolved missing categories. A broad regression was stopped during unrelated
+backup fault checks; no full-suite pass is claimed. Native desktop interaction,
+Linux and Windows remain unverified; the running application has not
+been restarted. Low-level legacy ingest APIs remain for internal tests/history;
+normal UI imports use the new preparation and category-decision path.
+Changed-document relative link targets and `git diff --check` passed.
 
 ## Ledger rule action placement and wording — 2026-11-01
 

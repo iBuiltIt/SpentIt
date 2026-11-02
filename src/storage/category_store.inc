@@ -173,7 +173,7 @@ imports::DraftRow ImportStore::canonical_draft(const imports::Occurrence& id,con
     }
     const auto effective=input.transaction.effective_total();bool reassigned=input.transaction.reassigned_currency();
     if(source.source_currency && effective.currency()!=*source.source_currency){if(!reassignment_authorizes(impl_->db,account_for_batch(id.batch).identity,effective.currency(),*source.source_currency))fail(SQLITE_CONSTRAINT,"Currency reassignment is not in effect");reassigned=true;}
-    result.transaction=Transaction::repaired_import(input.transaction.original_imported_amount(),effective,std::move(allocations),reassigned);return result;
+    result.transaction=Transaction::repaired_import(input.transaction.original_imported_amount(),effective,std::move(allocations),reassigned);return prior?result:resolve_repaired_categories(id.batch,result);
 }
 void ImportStore::verify_categories(const app::OperationContext* context) const {
     if(context)context->checkpoint("Verifying category history");
@@ -293,6 +293,7 @@ const std::vector<qif::CategoryDefinition>& ImportStore::source_categories(std::
     return impl_->source_category_cache;
 }
 void ImportStore::publish_import_categories(std::string_view batch_id) {
+    Statement resolved(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=1");resolved.text(1,batch_id);if(resolved.row())return;
     const auto definitions=source_categories(batch_id);
     for(std::size_t i=0;i<definitions.size();++i) {
         if(resolve_account_name(definitions[i].name))continue; // Existing account; no ordinary category is created.
@@ -309,6 +310,7 @@ void ImportStore::publish_import_categories(std::string_view batch_id) {
     }
 }
 imports::DraftRow ImportStore::bind_import_categories(std::string_view batch_id,const imports::DraftRow& input) const {
+    Statement resolved(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=1");resolved.text(1,batch_id);if(resolved.row())return input;
     const auto& definitions=source_categories(batch_id);
     if(definitions.empty())return input;
     Statement group(impl_->db,"SELECT g.id,g.state,l.catalog_revision FROM import_groups g JOIN import_group_accounts m ON m.group_id=g.id LEFT JOIN ledger_operations l ON l.id=g.publication WHERE m.batch=?");group.text(1,batch_id);

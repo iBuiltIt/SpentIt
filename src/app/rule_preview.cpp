@@ -104,7 +104,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
             auto& a=allocations[j];const auto& fields=result.record.allocations[j];
             a.memo=fields.memo.value;a.memo_owner=owner(fields.memo.ownership);a.memo_rule=marked(fields.memo);
             // A protected manual binding keeps its original label/revision snapshot.
-            const bool assigned_category=!preserve_untouched || std::any_of(result.explanations.begin(),result.explanations.end(),[&](const auto& e){return e.field=="category" && e.allocation==j && e.effect==rules::Effect::applied;});
+            const bool assigned_category=std::any_of(result.explanations.begin(),result.explanations.end(),[&](const auto& e){return e.field=="category" && e.allocation==j && e.effect==rules::Effect::applied;});
             if(assigned_category && fields.category.ownership!=rules::Ownership::manual) {
                 if(fields.category.value.identity.empty()) {a.category_binding.reset();a.category=fields.category.value.unmapped;}
                 else {a.category_binding=CategoryBinding{fields.category.value.identity,catalog.revision};a.category=paths.at(fields.category.value.identity);}
@@ -114,7 +114,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
         }
         after.transaction=after.transaction.corrected(after.transaction.effective_total(),std::move(allocations));
         imports::validate_draft(input.source,after);
-        proposals.push_back({input.identity,std::move(after),std::move(provenance),std::move(result.explanations)});
+        proposals.push_back({input.identity,std::move(after),std::move(provenance),std::move(result.explanations),result.match});
     }
     return proposals;
 }

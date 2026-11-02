@@ -67,6 +67,7 @@ struct RulePreviewResult {
     bool unsaved_rules = false;
     std::size_t evaluated = 0;
     std::size_t changed = 0;
+    std::size_t raw_matches=0, categorized_matches=0, earlier_matches=0, eligible_matches=0;
     std::vector<RulePreviewRecord> records;
     std::vector<RulePreviewMatch> matches;
     AccountRuleRequest account_request{};

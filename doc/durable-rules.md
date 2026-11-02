@@ -1,5 +1,13 @@
 # Durable rules integration
 
+The [category-gated rules contract](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02)
+is implemented in formats 42/41. It supersedes per-field winners, inherited
+categories, manual replacement and isolated selected-rule evaluation below.
+Split rules categorize first; transaction rules fill only remaining Uncategorized
+allocations. Selected Apply uses saved surrounding rule order and writes only the
+selected rule. Imported missing categories require a durable import-wide decision
+before automatic rules or acceptance. See [status](status.md) for verification.
+
 The [single rules workspace](../features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)
 supersedes the focused/all-rules switch and UI save scope described below. Selected
 Save/Apply excludes unrelated drafts; preview is optional. Leaving uses a nonmodal
@@ -24,7 +32,7 @@ See [status](status.md) for verification and limits.
 |---|---|
 | Author | SpentIt contributor (placeholder) |
 | Date | 2026-10-25 |
-| Status | Schema-6/rules-sheet baseline verified in Release and ASan/UBSan on 2026-10-26; current schema 40 retains bulk receipts and scopes Apply to an account. |
+| Status | Schema-6/rules-sheet baseline verified in Release and ASan/UBSan on 2026-10-26; current schema 42 retains bulk receipts and scopes Apply to an account. |
 | Package | Roadmap package 5, rules half only |
 | Schema | Current rules-enabled documents **40**; the historical schema-6 design below is retained as implementation rationale. No pre-release migration obligation. |
 

@@ -1,5 +1,21 @@
 # QIF account sections and whole-source review
 
+## Import category decisions — owner Go 2026-11-02
+
+The [category-gated rules contract](../features/004-rules-and-explanations.md#settled-split-and-import-decisions--owner-go-2026-11-02)
+supersedes automatic publication of the entire category catalog at acceptance.
+After atomic preparation, missing ordinary names across every mapped account and
+the complete catalog appear once in an import-wide checklist. Apply Selected creates
+checked names and clears unchecked effective assignments; Use Uncategorized clears
+all missing assignments. Original text remains in the existing source representation.
+Recognized categories bind to their existing identity; transfer aliases remain separate.
+The decision and assignments, category creation, and automatic rules commit atomically.
+Completed preparation awaiting this choice survives close/restart and blocks acceptance
+and rules on those rows. Closing the dialog defers it; the sidebar reopens it. Aborting
+uses the existing import-owned operation. Repaired rows respect the saved choice.
+Current formats are 42 with rules / 41 without; no migration is provided.
+
+
 The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
 is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
 It adds import routing, Review repair/Commit, account-context Discard and automatic
@@ -7,7 +23,7 @@ cleanup of incomplete preparation. Completed uncommitted imports remain durable.
 See [current verification and limits](status.md); older Resume and toolbar
 descriptions below are historical.
 
-Last updated: 2026-10-31
+Last updated: 2026-11-02
 
 Implemented and verified within the accepted roadmap point-1 scope; exact selected checks and limitations are recorded in status. This extends the [ordinary QIF profile](../features/009-qif-profile.md), [account workspaces](accounts.md), and [transfer lifecycle](qif-transfers.md). It does not implement general account deletion, account currency reassignment, transfer repair, or new import formats.
 

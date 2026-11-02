@@ -13,6 +13,11 @@ bool ImportStore::transaction_accepted(const imports::Occurrence& id) const {
 app::AcceptanceReview ImportStore::acceptance_review() const {
     if(impl_->review_changes!=sqlite3_total_changes64(impl_->db))const_cast<ImportStore*>(this)->prepare_review();
     app::AcceptanceReview result;
+    for(const auto& pending:missing_import_categories()) {
+        Statement member(impl_->db,"SELECT account_id,batch FROM import_group_accounts WHERE group_id=? ORDER BY source_account LIMIT 1");member.text(1,pending.source);
+        if(!member.row())fail(SQLITE_CORRUPT,"Import category decision has no accounts");
+        result.warnings.push_back({member.integer(0),member.bytes(1),{},"","Choose the imported categories before accepting transactions"});
+    }
     Statement incomplete(impl_->db,"SELECT count(*) FROM batches WHERE state=3");if(incomplete.row())result.failed_records=static_cast<std::size_t>(incomplete.integer(0));
     for(const auto& [id,review]:impl_->reviews) {
         const auto info=batch(impl_->db,id);const auto owner=account_for_batch(id);

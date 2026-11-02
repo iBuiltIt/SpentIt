@@ -13,24 +13,26 @@ Record wise() {
 }
 int main() {try {
     std::vector<Rule> definitions{
-        rule("parent",Scope::transaction,InputField::payee,"^Tfl Travel",{"TfL",{},"transport",false}),
-        rule("fee",Scope::split,InputField::memo,"^Wise Charges for:",{{},{},"fees",false}),
-        rule("inherit",Scope::split,InputField::memo,"^CARD-",{{},{},{},true}),
-        rule("later",Scope::transaction,InputField::payee,"Tfl",{"Wrong","derived memo",{},false})};
+        rule("parent",Scope::transaction,InputField::payee,"^Tfl Travel",{"TfL","parent memo","transport",false}),
+        rule("fee",Scope::split,InputField::memo,"^Wise Charges for:",{{},"fee memo","fees",false}),
+        rule("later",Scope::transaction,InputField::payee,"Tfl",{"Wrong","derived memo","fees",false})};
     RuleSet rules(definitions);auto original=wise();auto out=rules.evaluate({original},{"transport","fees"}).front();
-    require(out.record.payee.value=="TfL"&&out.record.memo.value=="derived memo","per-field precedence");
-    require(out.record.allocations[0].category.value.identity=="transport"&&out.record.allocations[1].category.value.identity=="fees","source split association and inheritance");
+    require(out.record.payee.value==original.payee.value&&out.record.memo.value==original.memo.value,"split parent text unchanged");
+    require(out.record.allocations[0].category.value.identity=="transport"&&out.record.allocations[1].category.value.identity=="fees","split first then transaction fallback despite display order");
+    require(out.record.allocations[1].memo.value=="fee memo","split memo action");
     require(out.record.source.payee==original.source.payee&&original.payee.value=="Tfl Travel UK","source and caller immutable");
     require(out.record.allocations.size()==original.allocations.size(),"structure retained");
-    bool competing=false;for(const auto& e:out.explanations)competing|=e.effect==Effect::competing;require(competing,"competing explanation");
     auto manual=original;manual.payee={"",Ownership::manual,{}};manual.allocations[0].category={{"old-archived",""},Ownership::manual,{}};
     auto protected_result=rules.evaluate({manual},{"transport","fees"}).front();
     require(protected_result.record.payee.value.empty()&&protected_result.record.allocations[0].category.value.identity=="old-archived","manual blank/archive protected");
-    auto replaced=rules.evaluate({manual},{"transport","fees"},true).front();require(replaced.record.payee.value=="TfL"&&replaced.record.payee.ownership==Ownership::rule,"explicit replacement provenance");
-    RuleSet none({});auto removed=none.evaluate({out.record},{}).front();require(removed.record.payee.value==original.source.payee&&removed.record.allocations[0].category.value.identity.empty(),"obsolete rule effects removed");
-    auto untouched=none.evaluate({manual},{},true).front();require(untouched.record.payee==manual.payee,"replace option must not erase unmatched manual field");
+    fails(RegexFailure::invalid_input,[&]{rules.evaluate({manual},{"transport","fees"},true);});
+    RuleSet none({});auto retained=none.evaluate({out.record},{}).front();require(retained.record.allocations[0].category.value.identity=="transport","removing rules preserves prior assignments");
     auto created=original;created.allocations.push_back({{}, {"CARD-new",Ownership::manual,{}},{{"manual",""},Ownership::manual,{}}});
-    require(rules.evaluate({created},{"transport","fees"},true).front().record.allocations.back().category.value.identity=="manual","new split excluded");
+    require(rules.evaluate({created},{"transport","fees"}).front().record.allocations.back().category.value.identity=="manual","categorized new split protected");
+    RuleSet selected(definitions,"parent");auto preview=selected.evaluate({original},{"transport","fees"}).front();
+    require(preview.match.raw && preview.match.eligible && preview.record.allocations[0].category.value.identity=="transport" && preview.record.allocations[1].category.value.identity.empty() && preview.record.allocations[1].memo.value==original.allocations[1].memo.value,"selected rule respects earlier phase without applying it");
+    RuleSet blocked(definitions,"later");auto excluded=blocked.evaluate({original},{"transport","fees"}).front();
+    require(excluded.match.raw && excluded.match.earlier && !excluded.match.eligible && excluded.explanations.empty(),"earlier exclusion count and no contextual side effects");
     auto forged=original;forged.allocations[1].source_ordinal=1;fails(RegexFailure::invalid_input,[&]{rules.evaluate({forged},{"transport","fees"});});
     fails(RegexFailure::invalid_input,[&]{rules.evaluate({original},{"transport"});});
     fails(RegexFailure::cancelled,[&]{rules.evaluate({original},{"transport","fees"},false,[]{return true;});});
@@ -41,11 +43,17 @@ int main() {try {
     fails(RegexFailure::resource_limit,[&]{none.evaluate(std::vector<Record>(5,huge),{});});
     unsigned validation_checks=0;fails(RegexFailure::cancelled,[&]{none.evaluate({huge},{},false,[&]{return ++validation_checks>10;});});
     auto invalid=definitions;invalid[0].expression="(";fails(RegexFailure::invalid_pattern,[&]{RuleSet bad(invalid);});
-    RuleSet inherit_only({definitions[2]});auto missing=inherit_only.evaluate({original},{}).front();require(missing.explanations.front().effect==Effect::missing_parent,"missing parent explained");
+    fails(RegexFailure::invalid_input,[&]{RuleSet bad({rule("bad",Scope::split,InputField::memo,".*",{{},{},{},true})});});
+    fails(RegexFailure::invalid_input,[&]{RuleSet bad({rule("bad",Scope::transaction,InputField::payee,".*",{"name",{},{},false})});});
     Record single;single.source={"Tfl Travel","","old",false,{{"","old"}}};single.payee={single.source.payee};single.memo={""};single.allocations={{0,{""},{{"","old"}}}};
-    require(rules.evaluate({single},{"transport","fees"}).front().record.allocations[0].category.value.identity=="transport","single allocation transaction category");
-    // A derived display payee never becomes input to another rule.
-    RuleSet no_recursive({definitions[0],rule("recursive",Scope::transaction,InputField::payee,"^TfL$",{{},"bad",{},false})});
-    require(no_recursive.evaluate({original},{"transport"}).front().record.memo.value=="bank memo","immutable matching only");
+    require(rules.evaluate({single},{"transport","fees"}).front().record.allocations[0].category.value.unmapped=="old","imported category protected");
+    single.allocations[0].category={{"",""},Ownership::manual,{}};
+    single.payee={"my payee",Ownership::manual,{}};
+    auto rerun=rules.evaluate({single},{"transport","fees"}).front();
+    require(rerun.record.allocations[0].category.value.identity=="transport" && rerun.record.payee.value=="my payee" && rerun.record.memo.value=="parent memo","deliberate clearing permits category while preserving manual payee");
+    auto again=rules.evaluate({rerun.record},{"transport","fees"}).front();
+    require(again.match.categorized && !again.match.eligible && again.explanations.empty(),"categorized rule-owned row untouched");
+    RuleSet fallback({definitions.front()});auto both=fallback.evaluate({original},{"transport"}).front();
+    require(both.record.allocations[0].category.value.identity=="transport" && both.record.allocations[1].category.value.identity=="transport","fallback fills all remaining splits");
     std::cout<<"Rule phases, source associations, provenance, manual protection and explanations passed\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

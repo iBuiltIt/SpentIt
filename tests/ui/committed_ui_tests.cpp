@@ -29,6 +29,13 @@ public:
     std::vector<app::BatchInfo> batches() const override {return repo().batches();}
     app::BatchInfo ingest(std::string_view id,std::string_view b,qif::DateOrder p) override {return repo().ingest(id,b,p);}
     app::BatchInfo ingest_controlled(std::string_view id,std::string_view b,qif::DateOrder p,app::OperationContext& c) override {return repo().ingest_controlled(id,b,p,c);}
+    std::vector<app::ImportGroup> import_groups() const override {return repo().import_groups();}
+    std::optional<app::ImportGroup> import_group_outcome(std::string_view id) const override {return repo().import_group_outcome(id);}
+    app::ImportGroup prepare_import_group(std::string_view id,std::string_view bytes,qif::DateOrder order,const std::vector<app::ImportAccountMapping>& mappings,app::OperationContext& c,std::string_view label) override {return repo().prepare_import_group(id,bytes,order,mappings,c,label);}
+    app::ImportGroup resume_import_group(std::string_view id,app::OperationContext& c) override {return repo().resume_import_group(id,c);}
+    bool cleanup_incomplete_imports(std::string_view source={}) override {return repo().cleanup_incomplete_imports(source);}
+    std::vector<app::MissingImportCategories> missing_import_categories() const override {return repo().missing_import_categories();}
+    void resolve_import_categories(std::string_view source,const std::vector<std::string>& names,app::OperationContext& c) override {repo().resolve_import_categories(source,names,c);}
     app::BatchInfo resume(std::string_view id,std::int64_t r,app::OperationContext& c) override {return repo().resume(id,r,c);}
     std::string evidence(std::string_view b) const override {return repo().evidence(b);}
     app::RowView row(const imports::Occurrence& o) const override {return repo().row(o);}
@@ -101,7 +108,7 @@ class CommittedUiTests : public QObject {
     }
     static bool edit(QObject* root,const char* name,const QString& value) {auto* item=object(root,QString::fromLatin1(name));return item && item->setProperty("text",value) && QMetaObject::invokeMethod(item,"textEdited");}
     void wait(ImportModel& model,bool success=true) {QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty()==success,qPrintable(model.error()));}
-    void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);wait(model,success);}
+    void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);wait(model,success);if(success && action=="import"){for(const auto& item:model.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(model,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}}}
     static QVariantMap selected(const ImportModel& model){return model.state().value("selected").toMap();}
     QString prepare(ImportModel& model,const QString& dir) {
         run(model,"create",{{"path",dir+"/document"},{"protected",false},{"name","Synthetic corrections"},{"currency","CAD"}});

@@ -59,7 +59,8 @@ struct Explanation {
     Effect effect;
     // Compatible/competing assignments are shadowed by the earlier field winner.
 };
-struct Result { Record record; std::vector<Explanation> explanations; };
+struct MatchSummary { bool raw=false, categorized=false, earlier=false, eligible=false; };
+struct Result { Record record; std::vector<Explanation> explanations; MatchSummary match{}; };
 struct EvaluationLimits {
     static constexpr std::size_t rules=128, records=4096, allocations=4096;
     static constexpr std::size_t scope_allocations=16384;
@@ -68,7 +69,7 @@ struct EvaluationLimits {
 };
 class RuleSet {
 public:
-    explicit RuleSet(std::vector<Rule> ordered_rules);
+    explicit RuleSet(std::vector<Rule> ordered_rules, std::string selected_rule={});
     ~RuleSet();
     RuleSet(RuleSet&&) noexcept;
     RuleSet& operator=(RuleSet&&) noexcept;

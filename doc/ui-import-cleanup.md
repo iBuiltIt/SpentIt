@@ -5,7 +5,12 @@ button was removed at the owner's request on 2026-10-31. Backup/restore remains 
 Settings. Show the sidebar first if it is hidden.
 
 Status: **implemented under owner Go; verification recorded in [status](status.md)**  
-Last updated: 2026-10-31
+Last updated: 2026-11-02
+
+A prepared import waiting for the [missing-category decision](qif-account-imports.md)
+is complete preparation, not an interrupted import. Closing that dialog or the
+application retains its rows and choices for reopening; startup cleanup must not
+remove it. The decision and automatic rules are one atomic operation.
 
 ## Priority and authorization
 

@@ -786,6 +786,12 @@ struct ImportModel::Worker {
                 if(b.state==app::BatchState::protected_drafts){std::vector<Money> values;for(std::size_t n=0;n<b.count;++n){const auto r=repo.row({b.id,n});if(!r.excluded_by_clear && r.draft && r.decision.disposition==imports::Disposition::include)values.push_back(r.draft->transaction.effective_total());}const auto change=imports::sum(acct.currency,values);info["change"]=money(change);info["after"]=money(repo.committed_balance()+change);auto retained=state.value("protectedImports").toList();retained.push_back(info);state["protectedImports"]=retained;}
             }
             state["batches"]=batches;
+            QVariantList categoryDecisions;
+            for(const auto& pending:repo.missing_import_categories()) {
+                QVariantList names;for(const auto& name:pending.names)names.push_back(text(name));
+                categoryDecisions.push_back(QVariantMap{{"source",text(pending.source)},{"names",names}});
+            }
+            state["importCategoryDecisions"]=categoryDecisions;
             for(const auto& group:repo.import_groups())if(group.state!=app::GroupState::aborted) {
                 const auto member=std::find_if(group.accounts.begin(),group.accounts.end(),[&](const auto& value){return value.account==acct.identity;});
                 if(member==group.accounts.end())continue;
@@ -918,7 +924,7 @@ struct ImportModel::Worker {
             {"rulesetRevision",QString::number(result.ruleset_revision)},{"catalogRevision",QString::number(result.catalog_revision)},{"replaceManual",result.replace_manual},
             {"operation",result.unsaved_rules?QString():text(ruleApplyOperation)},{"evaluated",static_cast<int>(result.evaluated)},{"changed",static_cast<int>(result.changed)},
             {"matched",static_cast<int>(count)},{"records",records},
-            {"summaryText",count?QString("%1 matching transaction%2").arg(count).arg(count==1?"":"s"):QString("No matches.")}};
+            {"summaryText",QString("%1 transactions match. %2 already categorized. %3 handled by earlier rules. %4 eligible; %5 will change.").arg(result.raw_matches).arg(result.categorized_matches).arg(result.earlier_matches).arg(result.eligible_matches).arg(result.changed)}};
     }
     void execute(const QString& action,const QVariantMap& input, app::OperationContext& context) {
         diagnosticSaved=false;diagnosticUnchanged=false;diagnosticPresentationFailed=false;
@@ -1475,7 +1481,7 @@ struct ImportModel::Worker {
             if(unnamed && !destination) {
                 preparedImport=PreparedImport{identity(),owned,document.format,document,order};importDestination=true;return;
             }
-            if(document.format!="qif" || document.explicit_accounts || !document.categories.empty()) {
+            if(!document.accounts.empty() && !document.diagnostic) {
                 QVariantList nextPlan;
                 const auto home=repo.accounts().empty()?std::string{}:repo.accounts().front().currency.code();
                 for(std::size_t i=0;i<document.accounts.size();++i){
@@ -1531,6 +1537,11 @@ struct ImportModel::Worker {
             repo.select_account(selectedAccount);
             importFeedback=QString("Import: %1 added; %2 already present; %3 failed").arg(added).arg(present).arg(failed);
             if(!group.accounts.empty()){const auto batches=repo.batches();const auto b=std::find_if(batches.begin(),batches.end(),[&](const auto& b){return b.id==group.accounts.front().batch;});if(b!=batches.end() && b->count)inspect(b->id,0,context);}
+        } else if(action=="resolve_import_categories") {
+            std::vector<std::string> selectedNames;for(const auto& name:a.value("selected").toList())selectedNames.push_back(str(name));
+            repo.resolve_import_categories(str(a.value("source")),selectedNames,context);observedSaved();
+            if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
+            importFeedback="Imported categories applied.";
         } else if(action=="group_resolve_transfers") {
             try{repo.resolve_import_transfers(str(a.value("group")),context);}catch(...){const auto failure=std::current_exception();(void)durableGroup(str(a.value("group")));std::rethrow_exception(failure);}
             if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
@@ -1961,7 +1972,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch") operation->seal();
+    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
@@ -2073,7 +2084,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
             result.error=((action=="save" || action=="accept_edit" || action=="undo_edit") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."
-                :((action=="map_import" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
+                :((action=="map_import" || action=="resolve_import_categories" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved, but its view could not be refreshed. Reopen and inspect Review before retrying."
                 :((action.startsWith("transfer_") || action=="assign_transfer_batch" || action=="release_transfer_batch" || action=="undo_transfer_assignment") && result.success)?"Transfer operation was saved, but its view could not be refreshed. Reopen and inspect transfers before retrying."
                 :(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."

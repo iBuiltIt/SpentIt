@@ -23,6 +23,7 @@ struct RuleProposal {
     imports::DraftRow after;
     std::vector<RuleProvenance> provenance;
     std::vector<rules::Explanation> explanations;
+    rules::MatchSummary match{};
 };
 // Verified source/current snapshots and catalog enter this pure adapter. No
 // repository write occurs; durable Apply must check their revisions again.

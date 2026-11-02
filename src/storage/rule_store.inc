@@ -238,6 +238,7 @@ std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string
 }
 app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreviewRequest& request,const app::OperationContext& context) const {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
+    if(request.replace_manual)fail(SQLITE_CONSTRAINT,"Clear categories in the ledger before running rules again");
     ScopedStatements read_plans(impl_->db);
     context.checkpoint("Loading rules");
     if(request.single_rule && request.saved_rule.empty() && (!request.editor || request.editor->size()!=1))fail(SQLITE_CONSTRAINT,"Choose one rule to preview");
@@ -246,12 +247,18 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
     app::RulePreviewResult result;result.batch=scope.batch;result.batch_revision=scope.batch_revision;result.catalog_revision=catalog_sequence(impl_->db);result.replace_manual=request.replace_manual;result.unsaved_rules=request.editor.has_value();result.ruleset_revision=request.editor?-1:ruleset_revision(impl_->db);
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     result.account_request={account().identity,review_generation(impl_->db),ruleset_revision(impl_->db),result.catalog_revision,request.new_only,request.replace_manual,request.saved_rule};
-    auto definitions=request.editor?compile_images(impl_->db,*request.editor,false):rules_at(impl_->db,result.ruleset_revision);
-    if(!request.editor && !request.saved_rule.empty()){
-        std::erase_if(definitions,[&](const auto& rule){return rule.identity!=request.saved_rule;});
-        if(definitions.size()!=1)fail(SQLITE_CONSTRAINT,"This rule changed. Preview again.");
+    auto definitions=rules_at(impl_->db,ruleset_revision(impl_->db));
+    std::string selected=request.saved_rule;
+    if(request.editor) {
+        auto edited=compile_images(impl_->db,*request.editor,false);
+        if(request.single_rule) {
+            if(edited.size()!=1)fail(SQLITE_CONSTRAINT,"Choose one rule to preview");
+            selected=edited.front().identity;
+            const auto found=std::find_if(definitions.begin(),definitions.end(),[&](const auto& r){return r.identity==selected;});
+            if(found==definitions.end())definitions.push_back(edited.front());else *found=edited.front();
+        } else definitions=std::move(edited);
     }
-    rules::RuleSet ruleset(definitions);
+    rules::RuleSet ruleset(definitions,selected);
     const auto catalog=category_catalog();
     std::map<imports::Occurrence,std::vector<std::string>> protected_allocations;
     if(request.account_scope)for(const auto& transfer:all_transfers())if(!transfer.link.unresolved)
@@ -260,6 +267,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
                 protected_allocations[side->endpoint.entry].push_back(side->endpoint.allocation);
     std::size_t result_bytes=0;
     auto evaluate=[&](app::RowView viewed) {
+        Statement awaiting(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=0");awaiting.text(1,viewed.identity.batch);if(awaiting.row())return;
         context.checkpoint(result.evaluated%256==0?"Finding matching transactions":"");
         // Each record retains the existing allocation, text and regex execution
         // bounds. Cancellation/failure discards the entire locally-built result.
@@ -271,15 +279,17 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
         catch(const std::invalid_argument&){fail(SQLITE_CONSTRAINT,rules_drift);}
         auto proposal=std::move(*evaluated);
         ++result.evaluated;
+        result.raw_matches+=proposal.match.raw;result.categorized_matches+=proposal.match.categorized;
+        result.earlier_matches+=proposal.match.earlier;result.eligible_matches+=proposal.match.eligible;
         auto diffs=app::rule_field_diffs(*viewed.draft,proposal);
         if(!diffs.empty())++result.changed;
-        if(!request.changed_only && !proposal.explanations.empty()) {
+        if(!request.changed_only && proposal.match.eligible) {
             const auto bytes=512+viewed.identity.batch.size()+viewed.draft->date.size()+viewed.source.payee.size();
             if(bytes>match_preview_budget-result_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,"This preview has too many matching details to display. Preview fewer rules or narrow their patterns.");
             result_bytes+=bytes;
             result.matches.push_back({viewed.identity,viewed.draft->date,viewed.source.payee,viewed.draft->transaction.effective_total()});
         }
-        if(!request.matches_only && (!request.single_rule || !proposal.explanations.empty()) && (!request.changed_only || !diffs.empty())) {
+        if(!request.matches_only && (!request.single_rule || proposal.match.eligible) && (!request.changed_only || !diffs.empty())) {
             auto bytes=rule_snapshot_bytes(*viewed.draft)+rule_snapshot_bytes(proposal.after);
             for(const auto& diff:diffs)bytes+=512+diff.before_text.size()+diff.after_text.size();
             if(bytes>(request.changed_only?rule_apply_budget:match_preview_budget)-result_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,request.changed_only?"These rule changes exceed the Apply memory budget. Narrow the rules and preview again.":"Detailed rule preview exceeds its memory budget. Use a compact matching preview.");
@@ -316,6 +326,7 @@ app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operatio
     ScopedStatements read_plans(impl_->db);
     context.checkpoint("Loading rules");
     const auto scope=pending_scope(*this,request.batch);
+    Statement awaiting(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=0");awaiting.text(1,scope.batch);if(awaiting.row())fail(SQLITE_CONSTRAINT,"Choose the imported categories before running rules");
     const auto catalog=catalog_sequence(impl_->db);
     if(!scope.present || scope.count==0){
         if(scope.present && request.batch_revision!=scope.batch_revision) fail(SQLITE_CONSTRAINT,refresh_rules);

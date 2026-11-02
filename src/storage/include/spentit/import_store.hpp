@@ -69,6 +69,8 @@ public:
     std::vector<app::ImportGroup> import_groups() const override;
     std::optional<app::ImportGroup> import_group_outcome(std::string_view) const override;
     app::ImportGroup prepare_import_group(std::string_view,std::string_view,qif::DateOrder,const std::vector<app::ImportAccountMapping>&,app::OperationContext&,std::string_view ="qif") override;
+    std::vector<app::MissingImportCategories> missing_import_categories() const override;
+    void resolve_import_categories(std::string_view,const std::vector<std::string>&,app::OperationContext&) override;
     app::ImportGroup resume_import_group(std::string_view,app::OperationContext&) override;
     bool cleanup_incomplete_imports(std::string_view source = {}) override;
     bool startup_import_cleanup() const override;
@@ -175,6 +177,9 @@ private:
     std::set<std::string> financial_group_batches(std::int64_t) const;
     void publish_group_opening(std::int64_t);
     const std::vector<qif::CategoryDefinition>& source_categories(std::string_view batch) const;
+    imports::DraftRow resolve_repaired_categories(std::string_view,const imports::DraftRow&) const;
+    void stage_import_categories(std::string_view,const app::OperationContext&);
+    void finish_import_categories(std::string_view,const app::OperationContext&);
     void publish_import_categories(std::string_view batch);
     imports::DraftRow bind_import_categories(std::string_view batch,const imports::DraftRow&) const;
     void start_import_groups(const std::set<std::string>&,std::string_view);
