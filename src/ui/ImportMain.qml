@@ -22,9 +22,11 @@ ApplicationWindow {
     }
     component UsableComboBox: ComboBox {
         id:combo
+        property real popupPreferredWidth: 180
         popup:Popup {
             onVisibleChanged:window.diagnosticModalChanged(29,visible)
-            y:combo.height;width:Math.max(combo.width,180);padding:4
+            y:combo.height;width:Math.min(window.width-40,Math.max(combo.width,combo.popupPreferredWidth));padding:4
+            x:Math.min(0,window.width-20-combo.mapToItem(window.contentItem,0,0).x-width)
             height:Math.min(320,menu.contentHeight+8)
             contentItem:ListView {
                 id:menu;clip:true;implicitHeight:contentHeight;model:combo.popup.visible?combo.delegateModel:null
@@ -223,7 +225,17 @@ ApplicationWindow {
         }
     }
 
-    readonly property var ledgerCategoryChoices: [{id:"",path:"Uncategorized"}].concat((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,accountId:c.accountId,path:c.path+" [Account]",account:true}:c}))
+    function sortedCategories(rows) {
+        return rows.slice().sort(function(a,b){return a.path.toLowerCase().localeCompare(b.path.toLowerCase()) || a.id.localeCompare(b.id)})
+    }
+    FontMetrics {id:categoryFontMetrics;font:window.font}
+    readonly property real categorySelectorWidth: {
+        let width=240
+        for(let c of (s.categories||[]).concat(s.accountCategories||[]))
+            if(!c.deleted)width=Math.max(width,categoryFontMetrics.advanceWidth(c.path+(c.account?" [Account]":""))+64)
+        return Math.ceil(width)
+    }
+    readonly property var ledgerCategoryChoices: [{id:"",path:"Uncategorized"}].concat(sortedCategories((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,accountId:c.accountId,path:c.path+" [Account]",account:true}:c})))
     property var pendingLedgerCategory: null
     function applyLedgerCategory(choice, allocation) {
         guard(function(){
@@ -265,7 +277,7 @@ ApplicationWindow {
         Menu {
             id:ledgerCategoryMenu;objectName:"ledgerCategoryMenu";title:"Change category";popupType:Popup.Item;cascade:true
             enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0
-            width:Math.min(380,window.width-40);height:Math.min(420,contentItem.contentHeight+topPadding+bottomPadding)
+            width:Math.min(categorySelectorWidth,window.width-40);height:Math.min(420,contentItem.contentHeight+topPadding+bottomPadding)
             contentItem:ListView {
                 implicitHeight:contentHeight;model:ledgerCategoryMenu.contentModel;clip:true
                 currentIndex:ledgerCategoryMenu.currentIndex;boundsBehavior:Flickable.StopAtBounds
@@ -277,7 +289,7 @@ ApplicationWindow {
                     required property var modelData
                     required property int index
                     objectName:"ledgerCategoryChoice_"+index
-                    text:modelData.path
+                    text:modelData.path.replace(/&/g,"&&")
                     enabled:!modelData.account || modelData.accountId!==s.accountId
                     onTriggered:chooseLedgerCategory(modelData)
                 }
@@ -540,8 +552,8 @@ ApplicationWindow {
     property var categoryMenuEntry: ({})
     property string categorySelection: ""
     property string categoryReveal: ""
-    Settings {id:categoryPreferences;category:"CategoryEditor";property string sortMode:""}
-    property alias categorySort: categoryPreferences.sortMode
+    property string categorySort: "ascending"
+    property var categoryVisitAdditions: []
     function categoryRows() {
         let rows=(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return !c.deleted && ((categoryAction==="rename" && c.id===categoryFormId) || ((showArchivedCategories.checked || !c.archived) && (c.id===categoryReveal || (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0)))})
         if(categorySort==="ascending" || categorySort==="descending")rows.sort(function(a,b){
@@ -555,6 +567,8 @@ ApplicationWindow {
             if(order===0)order=a.createdOrder.localeCompare(b.createdOrder)
             return order || a.id.localeCompare(b.id)
         })
+        let additions=categoryVisitAdditions
+        rows=rows.filter(c=>additions.indexOf(c.id)<0).concat(additions.map(id=>rows.find(c=>c.id===id)).filter(c=>!!c))
         return rows.concat(categoryAction==="create"?[{id:"",path:"",pending:true}]:[])
     }
     function revealCategorySelection() {
@@ -565,7 +579,7 @@ ApplicationWindow {
         })
     }
     function sortCategories(order) {
-        guard(function(){categorySort=order;categoryPreferences.setValue("sortMode",order);categoryPreferences.sync();revealCategorySelection()})
+        guard(function(){categoryVisitAdditions=[];categorySort=order;revealCategorySelection()})
     }
     function loadCategoryForm() {
         categoryAction="";categoryDirty=false;categorySaving=false
@@ -1129,7 +1143,7 @@ ApplicationWindow {
             if(success && action==="select" && searchReturn)searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
-                loadCategoryForm();categorySelection="";categoryReveal="";categoryMenuEntry=({});categoryContext.close()
+                loadCategoryForm();categoryVisitAdditions=[];categorySort="ascending";categorySelection="";categoryReveal="";categoryMenuEntry=({});categoryContext.close()
                 transferDate.text=workflow.todayDisplay();ledgerViewRestore=null;ledgerViewKind=""
             }
             if(!success && (action==="preview_category" || action==="apply_category")) {
@@ -1154,6 +1168,7 @@ ApplicationWindow {
                 if(action==="rules_reapply_preview")reapplyDialog.open()
                 if(action==="rules_reapply_apply"){reapplyDialog.close();loadEditor()}
                 if(action==="preview_category") workflow.command("apply_category",{preview:s.categoryPreview.id})
+                if(action==="apply_category" && categoryAction==="create")categoryVisitAdditions=categoryVisitAdditions.concat([(s.categorySelected||{}).id])
                 if(action==="category_select" || action==="apply_category")loadCategoryForm()
                 if(action==="apply_category") {categorySelection=(s.categorySelected||{}).id||"";categoryReveal=categorySelection;revealCategorySelection();let next=pendingAction;pendingAction=null;categoryDirty=false;if(!dirty)loadEditor();if(next)guard(next)}
                 if(action==="preview_change") changePreview.open()
@@ -1493,7 +1508,7 @@ ApplicationWindow {
             ClearableSearchField {id:categorySearch;onClearRequested:clearSearch();objectName:"categoryPickerSearch";placeholderText:"Search categories";Layout.fillWidth:true;maximumLength:256;Accessible.name:"Category search";onAccepted:{let account=accountForName(categorySearch.text);if(account){chooseCategory("",categorySearch.text);return}let match=(s.categories||[]).find(function(c){return c.assignable && workflow.categoryNameMatches(c.path,categorySearch.text)});if(match)chooseCategory(match.id,match.path)}}
             ListView {
                 id:pickerChoices;Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:true
-                model:(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return !c.deleted && !c.archived && (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(categorySearch.text.toLowerCase())>=0})
+                model:sortedCategories((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return !c.deleted && !c.archived && (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(categorySearch.text.toLowerCase())>=0}))
                 ScrollBar.vertical:UsableScrollBar {}
                 delegate:Button {required property var modelData;width:pickerChoices.width;text:modelData.path+(modelData.account?" [Account]"+(pickerIndex===-2?" — use transfer workflow":"")+(modelData.accountId===s.accountId?" — current account":""):(modelData.group?" (group)":""));enabled:modelData.account?(pickerIndex!==-2 && modelData.accountId!==s.accountId):modelData.assignable;objectName:modelData.account?"pickAccount_"+modelData.accountId:"pickCategory_"+modelData.id;onClicked:if(modelData.account)chooseAccountDestination(modelData.accountId);else chooseCategory(modelData.id,modelData.path)}
             }
@@ -1649,6 +1664,7 @@ ApplicationWindow {
     property string reviewSelectionGeneration: String(s.reviewGeneration||"")
     onReviewSelectionGenerationChanged: {reviewBatch=({});reviewRowChoices=({});reviewSurvivor.close()}
     onCurrentPageChanged: {
+        categoryVisitAdditions=[];categorySort="ascending"
         if(currentPage!=="review") {reviewBatch=({});reviewRowChoices=({});if(reviewPending.batchIntent)reviewSurvivor.close()}
         else if(s.reviewReady===false && !workflow.busy)workflow.command("review_load")
     }
@@ -2336,8 +2352,8 @@ ApplicationWindow {
                             TextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
                             RowLayout {
                                 Label {text:"Category"}
-                                UsableComboBox {id:ruleCategoryField;objectName:"ruleCategory";Layout.fillWidth:true;Layout.minimumWidth:120;Layout.preferredWidth:400;Layout.maximumWidth:600;editable:true;textRole:"path";valueRole:"id"
-                                    model:[{id:"",path:"Choose a category"}].concat((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
+                                UsableComboBox {id:ruleCategoryField;objectName:"ruleCategory";Layout.fillWidth:true;Layout.minimumWidth:120;Layout.preferredWidth:categorySelectorWidth;Layout.maximumWidth:Math.max(600,categorySelectorWidth);popupPreferredWidth:categorySelectorWidth;editable:true;textRole:"path";valueRole:"id"
+                                    model:[{id:"",path:"Choose a category"}].concat(sortedCategories((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted))))
                                     currentIndex:{for(let i=0;i<model.length;i++)if(model[i].id===ruleCategoryId)return i;return -1}
                                     onActivated:{ruleCategoryId=model[currentIndex].id;writeRule()}
                                     onAccepted:acceptRuleCategory()
@@ -2628,7 +2644,7 @@ ApplicationWindow {
                         TextField {
                             id:categoryInput;objectName:"splitCategory_"+index
                             visible:!!s.categoriesSupported;readOnly:!editEnabled && !originLink(index>=0 && index<splitModel.count?splitModel.get(index).allocationId:"")
-                            Layout.preferredWidth:240;placeholderText:"Category";maximumLength:256
+                            Layout.preferredWidth:Math.min(categorySelectorWidth,Math.max(120,parent.width-240));placeholderText:"Category";maximumLength:256
                             Accessible.name:"Split category"
                             property string savedText: index>=0 && index<splitModel.count ? (splitModel.get(index).categoryDisplay==="Uncategorized" ? "" : splitModel.get(index).categoryDisplay||"") : ""
                             text:savedText
@@ -2641,7 +2657,7 @@ ApplicationWindow {
                                     return (!unresolvedTransfer || c.account) && !c.deleted && !c.archived && (c.account ? c.accountId!==s.accountId : c.assignable) &&
                                         (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(query)>=0
                                 })
-                                rows.sort(function(a,b){return a.path.localeCompare(b.path)})
+                                rows=sortedCategories(rows)
                                 if(!query && !unresolvedTransfer)rows.unshift({id:"",path:"",uncategorized:true})
                                 choices=rows;categoryMatches.currentIndex=rows.length?0:-1
                                 categoryMatches.positionViewAtBeginning()
@@ -2686,7 +2702,8 @@ ApplicationWindow {
                             }
                             Popup {
                                 id:categoryPopup;objectName:"categoryDropdown_"+index
-                                y:categoryInput.height;width:Math.max(categoryInput.width,320)
+                                y:categoryInput.height;width:Math.min(window.width-40,Math.max(categoryInput.width,categorySelectorWidth))
+                                x:Math.min(0,window.width-20-categoryInput.mapToItem(window.contentItem,0,0).x-width)
                                 height:Math.min(280,Math.max(44,categoryMatches.contentHeight)+8)
                                 padding:4;focus:false;closePolicy:Popup.CloseOnPressOutside
                                 contentItem:ListView {
@@ -2699,7 +2716,7 @@ ApplicationWindow {
                                         required property int index
                                         objectName:"inlineCategoryChoice_"+(modelData.account?modelData.accountId:modelData.id||"uncategorized")
                                         width:categoryMatches.width-16
-                                        text:modelData.uncategorized?"Uncategorized":modelData.path+(modelData.account?" [Account]":"")
+                                        text:modelData.uncategorized?"Uncategorized":modelData.path.replace(/&/g,"&&")+(modelData.account?" [Account]":"")
                                         highlighted:index===categoryMatches.currentIndex
                                         focusPolicy:Qt.NoFocus
                                         onClicked:{categoryMatches.currentIndex=index;categoryInput.acceptChoice()}

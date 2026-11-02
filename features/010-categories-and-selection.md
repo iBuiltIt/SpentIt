@@ -8,10 +8,27 @@ durable. See [current verification and limits](../doc/status.md); earlier Resume
 source-retention and toolbar descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-11-01  
+Last updated: 2026-11-02  
 Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 30/29. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
+
+## Category selector widths and visit sorting — owner Go 2026-11-02
+
+Category selectors measure current category/account labels with the UI font and
+allow padding, indicators and scrollbars. Fields fit available layout space;
+popups may be wider than their field and are bounded to the window. This includes
+the transaction inline field/completion, ledger category menu and rule selector.
+The existing large category-picker dialog retains its bounded layout.
+
+Category selectors always sort complete names A–Z using case-insensitive locale
+comparison and identity as a tie-break, with Uncategorized/Choose a category first.
+The Categories workspace opens A–Z on each visit, including Back/Forward. Newly
+created rows remain at the bottom for that visit. Explicit A–Z, Z–A or Order added
+re-sorts immediately; these choices last only for the current visit. Selection,
+search, inline creation and validation guards remain. This supersedes persistent
+sort preferences and immediate insertion after save in the 2026-10-28 section.
+See [status](../doc/status.md) for verification.
 
 ## Category view controls — owner Go 2026-11-01
 

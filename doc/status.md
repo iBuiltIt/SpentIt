@@ -2,6 +2,26 @@
 
 Last updated: 2026-11-02
 
+## Category widths and alphabetical selectors — 2026-11-02
+
+Owner Go implemented; see the [contract](../features/010-categories-and-selection.md#category-selector-widths-and-visit-sorting--owner-go-2026-11-02).
+Transaction completion, the ledger category menu, the category picker and rule
+selector now use case-insensitive alphabetical ordering. Categories opens A–Z on
+every visit, including Back/Forward; additions stay at the bottom during that
+visit unless the user explicitly sorts. Z–A and Order added are visit-only choices.
+Category controls measure current labels with font metrics; dropdowns can exceed
+the field width within window bounds. Menu labels preserve literal ampersands.
+The owner's revised starter-category list is retained. No format change.
+
+Verification: rules-enabled Release build passed. All four targeted suites
+(categories UI, rules UI, navigation and QML) passed in 46.68 s. Coverage included
+creation placement, departure/Back/Forward/reopen ordering,
+selection, filtering and long-label field width. Rendered 1440×850 and 720×700
+transaction views were inspected: “Utils: Electricity, Gas & Heating” fits in both
+the field and completion list; narrow ledger horizontal scrolling remains.
+Native desktop interaction and other platforms remain unverified. The running
+application was not restarted.
+
 ## Category-gated rules and imported categories — 2026-11-02
 
 Owner Go implemented; see the [accepted contract](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).

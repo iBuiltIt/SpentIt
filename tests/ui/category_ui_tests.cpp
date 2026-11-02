@@ -101,6 +101,7 @@ private slots:
         QVERIFY(click(root,"categoryNavigation"));wait(model);QTest::qWait(50);
         const auto gas=createCategory(model,root,"Auto: Gas");
         const auto parking=createCategory(model,root,"Auto: Parking");
+        createCategory(model,root,"Utils: Electricity, Gas & Heating");
         for(int i=0;i<12;++i)createCategory(model,root,QString("Synthetic %1").arg(i,2,10,QChar('0')));
         QVERIFY(click(root,"accountNavigation"));
         QFile file(dir.path()+"/source.qif");QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-10\nPSynthetic completion\n^\n");file.close();
@@ -109,11 +110,12 @@ private slots:
         auto category=[&](){return field("splitCategory_0");};
         auto assigned=[&](){return selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryId").toString();};
         QVERIFY(category());QCOMPARE(category()->property("text").toString(),QString());
+        QTRY_VERIFY(category()->width()>=root->property("categorySelectorWidth").toDouble()-1);
         field("durableDate")->forceActiveFocus();QTest::keyClick(window,Qt::Key_Tab);QVERIFY(field("durablePayee")->hasActiveFocus());
         QTest::keyClick(window,Qt::Key_Tab);QVERIFY(field("durableTotal")->hasActiveFocus());
         QTest::keyClick(window,Qt::Key_Tab);QVERIFY(category()->hasActiveFocus());
         QVERIFY(category()->findChild<QObject*>("categoryDropdown_0"));QTRY_VERIFY(category()->findChild<QObject*>("categoryDropdown_0")->property("visible").toBool());
-        QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),15);
+        QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),16);
         QVERIFY(object(root,"categoryDropdownScrollBar")->property("interactive").toBool());
         QTest::qWait(50);auto* bar=qobject_cast<QQuickItem*>(object(root,"categoryDropdownScrollBar"));QVERIFY(bar);
         QVERIFY(bar->property("size").toDouble()<1.0);
@@ -124,12 +126,17 @@ private slots:
 
         for(auto key:{Qt::Key_A,Qt::Key_U,Qt::Key_T,Qt::Key_O})QTest::keyClick(window,key,Qt::ShiftModifier);QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),2);
         QCOMPARE(object(root,"categoryMatches_0")->property("currentIndex").toInt(),0);
-        if(qEnvironmentVariableIsSet("SPENTIT_INLINE_CATEGORY_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INLINE_CATEGORY_SCREENSHOT")));}
+        if(qEnvironmentVariableIsSet("SPENTIT_INLINE_CATEGORY_SCREENSHOT")){
+            category()->setProperty("text","Utils: Electricity, Gas & Heating");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
+            QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INLINE_CATEGORY_SCREENSHOT")));
+            window->resize(720,700);QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INLINE_CATEGORY_SCREENSHOT")+".narrow.png"));
+            window->resize(1440,850);category()->setProperty("text","AUTO");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));QTest::qWait(100);
+        }
         QTest::keyClick(window,Qt::Key_Down);QTest::keyClick(window,Qt::Key_Return);wait(model);
         QTRY_COMPARE(assigned(),parking);QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
         QCOMPARE(category()->property("text").toString(),QString("Auto: Parking"));
         QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(category()->hasActiveFocus());
-        category()->setProperty("text","gAs");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
+        category()->setProperty("text","auto: gAs");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
         QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),1);
         QTest::keyClick(window,Qt::Key_Tab);wait(model);QTRY_COMPARE(assigned(),gas);QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
         QTest::keyClick(window,Qt::Key_Backtab);QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(field("durableTotal")->hasActiveFocus());
@@ -225,12 +232,18 @@ private slots:
         {
             ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
             run(model,"create",{{"path",path},{"protected",false},{"name","Category sorting"},{"currency","CAD"}});QVERIFY(click(root,"categoryNavigation"));wait(model);
-            QCOMPARE(root->property("categorySort").toString(),"");
+            QCOMPARE(root->property("categorySort").toString(),"ascending");
             const auto z=createCategory(model,root,"Zulu");const auto a=createCategory(model,root,"alpha");middle=createCategory(model,root,"Middle");checkSelected(root,middle);
-            QStringList stored;for(const auto& c:model.state().value("categories").toList())stored.append(c.toMap().value("path").toString());QCOMPARE(catalogNames(root),stored);
+            QCOMPARE(catalogNames(root),QStringList({"Zulu","alpha","Middle"}));
+            QVERIFY(click(root,"accountNavigation"));wait(model);
+            QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,-1)));wait(model);
+            QCOMPARE(root->property("currentPage").toString(),"categories");QCOMPARE(catalogNames(root),QStringList({"alpha","Middle","Zulu"}));
+            QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,1)));wait(model);
+            QVERIFY(click(root,"categoryNavigation"));wait(model);
+            QCOMPARE(catalogNames(root),QStringList({"alpha","Middle","Zulu"}));
             QVERIFY(click(root,"categorySortAscending"));QCOMPARE(catalogNames(root),QStringList({"alpha","Middle","Zulu"}));checkSelected(root,middle);
             QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","alpha"}));checkSelected(root,middle);
-            const auto b=createCategory(model,root,"Beta");QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","Beta","alpha"}));checkSelected(root,b);QCOMPARE(root->property("categorySort").toString(),"descending");
+            const auto b=createCategory(model,root,"Beta");QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","alpha","Beta"}));checkSelected(root,b);QCOMPARE(root->property("categorySort").toString(),"descending");
             QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogNames(root),QStringList({"Zulu","alpha","Middle","Beta"}));checkSelected(root,b);
             // A rename must retain original creation order, even when its spelling changes substantially.
             menu(model,root,z,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Aardvark"));applyCategory(model,root);QVERIFY(edit(root,"catalogSearch",""));
@@ -241,12 +254,12 @@ private slots:
             QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogRows(root).last().toMap().value("id").toString(),last);checkSelected(root,last);
             QVERIFY(edit(root,"catalogSearch","no match"));const auto filtered=createCategory(model,root,"Visible after save");checkSelected(root,filtered);QCOMPARE(catalogNames(root),QStringList({"Visible after save"}));
             QVERIFY(edit(root,"catalogSearch","alpha"));QCOMPARE(catalogNames(root),QStringList({"alpha"}));
-            QCOMPARE(QSettings().value("CategoryEditor/sortMode").toString(),"descending");
+            QCOMPARE(root->property("categorySort").toString(),"descending");
             run(model,"close");
         }
         {
             ImportModel model(storage::document_gateway());run(model,"open",{{"path",path}});QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
-            QCOMPARE(root->property("categorySort").toString(),"descending");QVERIFY(click(root,"categoryNavigation"));wait(model);
+            QCOMPARE(root->property("categorySort").toString(),"ascending");QVERIFY(click(root,"categoryNavigation"));wait(model);
             QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogNames(root)[2],QString("Middle"));QCOMPARE(catalogNames(root).first(),"Aardvark");QCOMPARE(catalogNames(root).last(),"Visible after save");
         }
     }

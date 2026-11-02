@@ -1,5 +1,11 @@
 # Category catalog and assignments
 
+The [2026-11-02 selector and sorting contract](../features/010-categories-and-selection.md#category-selector-widths-and-visit-sorting--owner-go-2026-11-02)
+supersedes persistent sorting: Categories starts A–Z on every visit, with additions
+at the bottom until departure or an explicit sort. Transaction/rule selectors
+always sort alphabetically and size from current labels within available space.
+
+
 Last updated: 2026-11-01
 
 State: independent assignable categories are implemented in experimental schema 40 with rules and 39 without. Earlier experimental schemas, including 24/23 and 22/21, are rejected without migration. The owner-approved [category model and exact starter list](../features/010-categories-and-selection.md#independent-categories--accepted-2026-10-28) supersede the earlier group/leaf hierarchy. Verification is recorded in [project status](status.md).
@@ -12,7 +18,7 @@ Uniqueness and exact picker lookup use the same bounded PCRE2 Unicode caseless l
 
 Creation and rename normalize only separator spacing. Rename preserves identity and changes only that category. Moving to a different stem is a rename of the complete name. Archive, unarchive, and eligible deletion act only on the selected category. Delete requires no retained references; otherwise archive. No parent object, inherited archive state, or group action is involved. Definition history and durable operation receipts remain atomic and retained.
 
-New Dataset offers **Use default categories**, checked by default. The 41 approved categories, initial account, and immutable dataset preferences are written together in one transaction, each category with its own creation history. Unchecked creates an empty catalog. Imports without category catalogs remain unmapped until deliberately assigned; seed names do not create automatic categorization rules. Complete QIF catalogs instead follow [staging and first-commit publication](qif-account-imports.md#staged-category-catalog--2026-10-28). Income names are ordinary neutral categories, not reporting policies.
+New Dataset offers **Use default categories**, checked by default. The default categories, initial account, and immutable dataset preferences are written together in one transaction, each category with its own creation history. Unchecked creates an empty catalog. Missing imported names follow the [import-wide category decision](qif-account-imports.md#import-category-decisions--owner-go-2026-11-02); seed names do not create categorization rules. Income names are ordinary neutral categories, not reporting policies.
 
 `category:Auto` in ledger search includes the exact category and names with the `Auto:` stem boundary; `category-exact:Auto` includes only the direct category. Names with spaces can be quoted, for example `category:"auto: gas"`. These filters apply to bound categories and combine with existing text/date filters. Ordinary free-text search remains substring search. They select whole ledger rows, retaining the existing whole-transaction withdrawal/deposit totals; they are not allocation-total reports. Report selection and presentation remain deferred.
 
