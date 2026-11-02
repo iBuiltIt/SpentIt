@@ -1,6 +1,7 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QTest>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QSettings>
@@ -117,6 +118,25 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
     void init(){QSettings().clear();}
+    void addThenRemoveEmptySplit() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        prepare(model,dir.path());
+        const auto before=selected(model).value("draft").toMap();
+        const auto count=before.value("splits").toList().size();QVERIFY(count>0);
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);
+        QVERIFY(click(root,"addSplit"));QVERIFY(root->property("dirty").toBool());
+        QVERIFY(object(root,"removeSplit_"+QString::number(count)));
+        QVERIFY(click(root,"removeSplit_"+QString::number(count)));
+        QVERIFY(root->property("dirty").toBool());
+        QTRY_VERIFY(!object(root,"removeSplit_"+QString::number(count)));
+        QCOMPARE(warnings.count(),0);
+        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model);
+        QCOMPARE(selected(model).value("draft").toMap().value("splits"),before.value("splits"));
+        QCOMPARE(model.state().value("committed").toString(),QString("80.69"));
+        QVERIFY(!root->property("dirty").toBool());QCOMPARE(warnings.count(),0);
+    }
     void bulkRecoveryOutcomes() {
         for(int mode=0;mode<4;++mode){
             QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));prepare(model,dir.path());

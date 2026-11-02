@@ -2,6 +2,40 @@
 
 Last updated: 2026-11-01
 
+## Remembered account sorting — 2026-11-01
+
+Owner Go implemented; see [the contract](../features/005-transaction-sheet-navigation.md#remember-account-sorting--owner-go-2026-11-01).
+Each account retains its ledger sort column/direction in local QSettings, saved
+immediately when a successful query changes the sort. Unchanged sorting performs
+no settings write. Default is date ascending. Restoration happens before building
+the selected account's ledger view, including fresh application instances.
+Settings are scoped by canonical document location hash and account identity;
+account renaming retains preferences, different files remain isolated and explicit
+Create/Overwrite clears preferences for the replaced file. Moving a file starts
+with fresh preferences. No financial storage or dataset-format change.
+
+Rules-enabled Release build passed without compiler warnings. Navigation, QML
+and committed UI checks passed (3/3, 9.56 s). New coverage checks immediate settings
+persistence, actual row order, independent account choices, direction changes,
+fresh model/reopen, account rename, file isolation and overwrite reset. Existing
+split-removal regression remains passing. `git diff --check` passed. Native
+interaction, other platforms and settings I/O-failure injection were not tested;
+the running application was not restarted.
+
+## Removing an empty split — 2026-11-01
+
+Owner Go: the split Remove handler marks the window editor dirty before removing
+its own delegate from the split model. Previously removal destroyed that QML
+context before the subsequent unqualified `dirty` assignment, causing an invalid
+global-property write. Added stable Add/Remove control names for regression checks.
+
+Rules-enabled Release build passed. `import.committed_ui` and `import.qml` passed
+(9.79 s); the new regression adds an empty split, immediately removes it, checks
+that no QML warnings occur and the editor remains dirty, then saves and verifies
+the original splits and balance remain unchanged. `git diff --check` passed.
+Native interaction and other platforms were not rerun; the running app was not
+restarted. No financial/storage behavior changed.
+
 ## Plain ledger payees — 2026-11-01
 
 Owner Go: removed the repeated `[Not yet accepted]` suffix from the ledger payee

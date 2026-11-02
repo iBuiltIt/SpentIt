@@ -1,5 +1,22 @@
 # 005 — Transaction sheet and navigation
 
+## Remember account sorting — owner Go 2026-11-01
+
+Accepted and implemented: remember the ledger sort column and direction for each
+account, writing local application settings immediately after a successful sort
+change. No separate Settings control. Accounts without a valid saved choice use
+date ascending. Account navigation, reopening and a new application instance
+restore the preference; renaming an account does not change it.
+
+Preferences use the canonical document location (hashed in the settings key) and
+stable account identity, keeping different files separate without storing account
+names or transaction data. Moving/copying a file to another location starts with
+fresh preferences; replacing a file through Create clears its prior preferences.
+Search, selection and scroll positions remain session-local. Failed queries do
+not save a new preference; unchanged sorting does not rewrite settings. A settings
+write error is surfaced. No document-format or financial-storage change.
+See [verification](../doc/status.md).
+
 ## Ledger return position — owner Go 2026-11-01
 
 Accepted and implemented; see [verification](../doc/status.md). Leaving the ledger

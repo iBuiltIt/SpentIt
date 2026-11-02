@@ -15,6 +15,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QSettings>
+#include <QCryptographicHash>
 #include <QGuiApplication>
 #include <QScreen>
 #include <QWindow>
@@ -349,6 +350,38 @@ struct ImportModel::Worker {
     std::optional<imports::Occurrence> selectionFocus;
     struct AccountView {QString filter;bool projected;int sort;bool descending;std::string batch;std::size_t ordinal;std::set<imports::Occurrence> selection;std::optional<imports::Occurrence> anchor,focus;};
     std::map<std::int64_t,AccountView> accountViews;
+    QString sortDocument;
+    std::optional<std::int64_t> sortAccount;
+    QString sortSettingsGroup() const {
+        const QFileInfo file(path);
+        const auto canonical=file.canonicalFilePath();
+        const auto location=canonical.isEmpty()?file.absoluteFilePath():canonical;
+        return "LedgerSort/"+QString::fromLatin1(QCryptographicHash::hash(location.toUtf8(),QCryptographicHash::Sha256).toHex());
+    }
+    void restoreAccountSort() {
+        auto& repo=gateway->repository();
+        if(!repo.account_selected()){sortAccount.reset();return;}
+        const auto account=repo.account().identity;
+        if(sortAccount==account)return;
+        sort=0;descending=false;
+        if(const auto view=accountViews.find(account);view!=accountViews.end()) {
+            sort=view->second.sort;descending=view->second.descending;
+        } else {
+            const auto saved=QSettings().value(sortDocument+"/"+QString::number(account)).toList();
+            bool valid=false;const auto column=saved.size()==2?saved[0].toInt(&valid):0;
+            if(valid && column>=0 && column<6 && saved[1].metaType().id()==QMetaType::Bool){sort=column;descending=saved[1].toBool();}
+        }
+        sortAccount=account;cachedView.reset();
+    }
+    void saveAccountSort() {
+        QSettings settings;
+        const auto key=sortDocument+"/"+QString::number(gateway->repository().account().identity);
+        const QVariantList value{sort,descending};
+        if(settings.value(key).toList()==value)return;
+        settings.setValue(key,value);settings.sync();
+        if(settings.status()!=QSettings::NoError)throw std::runtime_error("The account sort order could not be saved. Check that Settings is writable and try again.");
+    }
+
     QVariantList categories,categoryHistory;
     QVariantMap categoryById,categorySelected,categoryPreview,categoryReceipt;
     std::optional<app::CategoryPreview> preparedCategory;
@@ -649,7 +682,7 @@ struct ImportModel::Worker {
         const auto home=QDir::homePath()+"/";const auto full=QFileInfo(path).absoluteFilePath();
         QVariantMap state{{"displayPath",full.startsWith(home)?"~/"+full.mid(home.size()):full},{"active",active},{"path",path},{"canOpen",canOpen},{"unlockRequired",welcomePassword},{"overwriteRequired",overwriteRequired}};
         if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
-        auto& repo=gateway->repository();catalog();state["dateFormat"]=text(dateFormat);state["startupImportCleanup"]=startupCleanupNotice;
+        auto& repo=gateway->repository();restoreAccountSort();catalog();state["dateFormat"]=text(dateFormat);state["startupImportCleanup"]=startupCleanupNotice;
         if(metadataSelection!=selected.value("batch").toString()){metadata.clear();metadataSelection=selected.value("batch").toString();}
         diag::cache(diag::Code::metadata,metadata.isEmpty()?diag::EventKind::cache_miss:diag::EventKind::cache_hit);
         if(metadata.isEmpty()) {
@@ -934,7 +967,9 @@ struct ImportModel::Worker {
             }
             startupCleanupNotice=action!="create" && (gateway->repository().startup_import_cleanup() || cleanupNoticePath==path);cleanupNoticePath.clear();
             deferReview=gateway->lazy_review() && action!="create";
+            sortAccount.reset();sortDocument=sortSettingsGroup();
             dateFormat=gateway->repository().date_format();active=true; selected.clear(); receipt.clear();clearChanges();
+            if(action=="create"){QSettings settings;settings.remove(sortDocument);settings.sync();if(settings.status()!=QSettings::NoError)throw std::runtime_error("The file was created, but its sort preferences could not be reset. Reopen the file before continuing.");}
             QSettings settings; settings.setValue("datasetPath",path); settings.sync();
             if(settings.status()!=QSettings::NoError) throw std::runtime_error("Dataset is open, but the startup path could not be saved in Settings");
             return;
@@ -1609,7 +1644,9 @@ struct ImportModel::Worker {
             if(projected!=nextProjected) cachedLedger.reset();
             cachedView.reset();
             filter=a.value("filter").toString();sort=a.value("sort",0).toInt();descending=a.value("descending",false).toBool();projected=nextProjected;
+            if(sort<0 || sort>=6)throw std::invalid_argument("Choose a valid ledger sort column.");
             (void)snapshot(&context);
+            if(sort!=oldSort || descending!=oldDescending)saveAccountSort();
             } catch(...) {
                 filter=oldFilter;sort=oldSort;descending=oldDescending;projected=oldProjected;cachedView=oldView;cachedLedger=std::move(oldLedger);
                 selected=oldSelected;selectedBatch=oldBatch;selectedOrdinal=oldOrdinal;

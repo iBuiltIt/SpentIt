@@ -59,6 +59,37 @@ private slots:
         const auto generation=model.diagnosticGeneration();model.observeUi({{"generation",generation-1},{"surface","CANARY-payee"},{"ready",true}});
         QCOMPARE(spentit::diagnostics::Collector::instance().snapshot().ui.surface,spentit::diagnostics::Surface::settings);
     }
+    void accountSortSurvivesRestart() {
+        QTemporaryDir dir;const auto path=dir.filePath("sort-document");
+        const auto checkSort=[](ImportModel& model,int column,bool descending){QCOMPARE(model.state().value("sort").toInt(),column);QCOMPARE(model.state().value("descending").toBool(),descending);};
+        {
+            ImportModel model(spentit::storage::document_gateway());
+            run(model,"create",{{"path",path},{"protected",false},{"name","First"},{"currency","CAD"}});checkSort(model,0,false);
+            QFile file(dir.filePath("sort.qif"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-1\nPAlpha\n^\nD2/1/2026\nT-2\nPZulu\n^\n");file.close();
+            run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Alpha"));
+            run(model,"query",{{"sort",1},{"descending",true}});checkSort(model,1,true);QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Zulu"));
+            QSettings settings;settings.sync();const auto keys=settings.allKeys().filter("LedgerSort/");QCOMPARE(keys.size(),1);
+            QCOMPARE(settings.value(keys.first()).toList(),(QVariantList{1,true})); // saved before quitting
+            run(model,"create_account",{{"id","2"},{"name","Second"},{"currency","CAD"},{"date","2026-01-01"}});checkSort(model,0,false);
+            run(model,"query",{{"sort",0},{"descending",true}});checkSort(model,0,true);
+            run(model,"select_account",{{"id","1"}});checkSort(model,1,true);
+            run(model,"select_account",{{"id","2"}});checkSort(model,0,true);
+            run(model,"query",{{"sort",0},{"descending",false}});checkSort(model,0,false);
+            run(model,"close");
+        }
+        {
+            ImportModel model(spentit::storage::document_gateway());run(model,"open",{{"path",path}});
+            run(model,"select_account",{{"id","1"}});checkSort(model,1,true);QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Zulu"));
+            run(model,"rename_account",{{"name","Renamed"}});checkSort(model,1,true);
+            run(model,"select_account",{{"id","2"}});checkSort(model,0,false);
+            run(model,"query",{{"sort",4},{"descending",true}});run(model,"close");
+            run(model,"create",{{"path",dir.filePath("other")},{"protected",false},{"name","Other"},{"currency","CAD"}});checkSort(model,0,false);run(model,"close");
+            run(model,"open",{{"path",path}});run(model,"select_account",{{"id","2"}});checkSort(model,4,true);
+            run(model,"close");
+            // Replacing a file is a new set of accounts, not an old preference.
+            run(model,"create",{{"path",path},{"overwrite",true},{"protected",false},{"name","Replacement"},{"currency","CAD"}});checkSort(model,0,false);run(model,"close");
+        }
+    }
     void categorySubmenuScrolls() {
         ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

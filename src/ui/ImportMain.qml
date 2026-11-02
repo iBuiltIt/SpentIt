@@ -2555,14 +2555,14 @@ ApplicationWindow {
                         Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from split memo":"Rules require an imported split";onClicked:createFromSource("memo",index)}
                         TextField {id:splitAmount;KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
-                        Button {text:"Remove";visible:editEnabled;enabled:!category.startsWith("[");onClicked:{splitModel.remove(index);dirty=true}}
+                        Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled;enabled:!category.startsWith("[");onClicked:{window.dirty=true;splitModel.remove(index)}}
                     }
                 }
                 TextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
                 RowLayout {
                     visible:editEnabled
-                    Button {text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
+                    Button {objectName:"addSplit";text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
                     Label {textFormat:Text.PlainText;text:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 RowLayout {
