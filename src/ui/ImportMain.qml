@@ -225,8 +225,17 @@ ApplicationWindow {
         }
     }
 
-    function sortedCategories(rows) {
-        return rows.slice().sort(function(a,b){return a.path.toLowerCase().localeCompare(b.path.toLowerCase()) || a.id.localeCompare(b.id)})
+    function sortedCategories(rows, order) {
+        return rows.slice().sort(function(a,b){
+            if(!!a.account!==!!b.account)return a.account?1:-1
+            let nameOrder=a.path.toLowerCase().localeCompare(b.path.toLowerCase()) || a.id.localeCompare(b.id)
+            if(a.account)return nameOrder
+            if(order==="added") {
+                // Decimal strings preserve the full stored 64-bit revision range.
+                return a.createdOrder.length-b.createdOrder.length || a.createdOrder.localeCompare(b.createdOrder) || a.id.localeCompare(b.id)
+            }
+            return order==="descending"?-nameOrder:nameOrder
+        })
     }
     FontMetrics {id:categoryFontMetrics;font:window.font}
     readonly property real categorySelectorWidth: {
@@ -235,7 +244,7 @@ ApplicationWindow {
             if(!c.deleted)width=Math.max(width,categoryFontMetrics.advanceWidth(c.path+(c.account?" [Account]":""))+64)
         return Math.ceil(width)
     }
-    readonly property var ledgerCategoryChoices: [{id:"",path:"Uncategorized"}].concat(sortedCategories((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,accountId:c.accountId,path:c.path+" [Account]",account:true}:c})))
+    readonly property var ledgerCategoryChoices: [{id:"",path:"Uncategorized"}].concat(sortedCategories((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)})).map(function(c){return c.account?{id:c.id,accountId:c.accountId,path:c.path+" [Account]",account:true}:c}))
     property var pendingLedgerCategory: null
     function applyLedgerCategory(choice, allocation) {
         guard(function(){
@@ -556,17 +565,7 @@ ApplicationWindow {
     property var categoryVisitAdditions: []
     function categoryRows() {
         let rows=(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return !c.deleted && ((categoryAction==="rename" && c.id===categoryFormId) || ((showArchivedCategories.checked || !c.archived) && (c.id===categoryReveal || (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(catalogSearch.text.toLowerCase())>=0)))})
-        if(categorySort==="ascending" || categorySort==="descending")rows.sort(function(a,b){
-            let order=a.path.toLowerCase().localeCompare(b.path.toLowerCase())
-            if(order===0)order=a.id.localeCompare(b.id)
-            return categorySort==="descending"?-order:order
-        })
-        else if(categorySort==="added")rows.sort(function(a,b){
-            // Decimal strings preserve the full stored 64-bit revision range.
-            let order=a.createdOrder.length-b.createdOrder.length
-            if(order===0)order=a.createdOrder.localeCompare(b.createdOrder)
-            return order || a.id.localeCompare(b.id)
-        })
+        rows=sortedCategories(rows,categorySort)
         let additions=categoryVisitAdditions
         rows=rows.filter(c=>additions.indexOf(c.id)<0).concat(additions.map(id=>rows.find(c=>c.id===id)).filter(c=>!!c))
         return rows.concat(categoryAction==="create"?[{id:"",path:"",pending:true}]:[])

@@ -4,6 +4,8 @@ The [2026-11-02 selector and sorting contract](../features/010-categories-and-se
 supersedes persistent sorting: Categories starts A–Z on every visit, with additions
 at the bottom until departure or an explicit sort. Transaction/rule selectors
 always sort alphabetically and size from current labels within available space.
+Accounts follow ordinary categories as a separate section, always A–Z even when
+the workspace uses Z–A or Order added. Visit-only new categories stay below them.
 
 
 Last updated: 2026-11-01

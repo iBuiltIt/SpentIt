@@ -2,6 +2,22 @@
 
 Last updated: 2026-11-02
 
+## Accounts grouped below categories — 2026-11-02
+
+Owner follow-up Go implemented: account destinations form a separate trailing
+section in Categories, transaction completion, the category picker and the ledger
+category menu. Accounts always sort case-insensitively A–Z, independent of the
+ordinary category A–Z/Z–A/Order added choice. Newly created categories remain
+below accounts during the current visit, then join the ordinary section on return
+or explicit sorting. Account visibility and transfer restrictions remain intact.
+See the [contract](../features/010-categories-and-selection.md#category-selector-widths-and-visit-sorting--owner-go-2026-11-02).
+
+Release build and targeted offscreen category/rules UI and QML suites passed.
+The category regression uses three accounts with names interleaved alphabetically
+with ordinary categories, checks each sort mode and verifies the new-row exception.
+No storage or format change. Native interaction and other platforms remain
+unverified; the running application was not restarted.
+
 ## Category widths and alphabetical selectors — 2026-11-02
 
 Owner Go implemented; see the [contract](../features/010-categories-and-selection.md#category-selector-widths-and-visit-sorting--owner-go-2026-11-02).

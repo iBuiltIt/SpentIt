@@ -231,7 +231,11 @@ private slots:
         QTemporaryDir dir;const auto path=dir.path()+"/document";QString middle;
         {
             ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
-            run(model,"create",{{"path",path},{"protected",false},{"name","Category sorting"},{"currency","CAD"}});QVERIFY(click(root,"categoryNavigation"));wait(model);
+            run(model,"create",{{"path",path},{"protected",false},{"name","Category sorting"},{"currency","CAD"}});
+            run(model,"create_account",{{"id","2"},{"name","Zulu account"},{"currency","CAD"},{"date","2026-01-01"}});
+            run(model,"create_account",{{"id","3"},{"name","alpha account"},{"currency","CAD"},{"date","2026-01-01"}});
+            QVERIFY(click(root,"categoryNavigation"));wait(model);
+            auto checkAccounts=[&]{const auto rows=catalogRows(root);QVERIFY(rows.size()>=3);QStringList names;bool accounts=false;for(const auto& value:rows){const auto row=value.toMap();if(row.value("account").toBool()){accounts=true;names.append(row.value("path").toString());}else QVERIFY(!accounts);}QCOMPARE(names,QStringList({"alpha account","Category sorting","Zulu account"}));};
             QCOMPARE(root->property("categorySort").toString(),"ascending");
             const auto z=createCategory(model,root,"Zulu");const auto a=createCategory(model,root,"alpha");middle=createCategory(model,root,"Middle");checkSelected(root,middle);
             QCOMPARE(catalogNames(root),QStringList({"Zulu","alpha","Middle"}));
@@ -241,17 +245,17 @@ private slots:
             QVERIFY(QMetaObject::invokeMethod(root,"traverseNavigation",Q_ARG(QVariant,1)));wait(model);
             QVERIFY(click(root,"categoryNavigation"));wait(model);
             QCOMPARE(catalogNames(root),QStringList({"alpha","Middle","Zulu"}));
-            QVERIFY(click(root,"categorySortAscending"));QCOMPARE(catalogNames(root),QStringList({"alpha","Middle","Zulu"}));checkSelected(root,middle);
-            QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","alpha"}));checkSelected(root,middle);
-            const auto b=createCategory(model,root,"Beta");QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","alpha","Beta"}));checkSelected(root,b);QCOMPARE(root->property("categorySort").toString(),"descending");
-            QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogNames(root),QStringList({"Zulu","alpha","Middle","Beta"}));checkSelected(root,b);
+            QVERIFY(click(root,"categorySortAscending"));QCOMPARE(catalogNames(root),QStringList({"alpha","Middle","Zulu"}));checkSelected(root,middle);checkAccounts();
+            QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","alpha"}));checkSelected(root,middle);checkAccounts();
+            const auto b=createCategory(model,root,"Beta");QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","alpha","Beta"}));checkSelected(root,b);QCOMPARE(catalogRows(root).last().toMap().value("id").toString(),b);QVERIFY(catalogRows(root)[catalogRows(root).size()-2].toMap().value("account").toBool());QCOMPARE(root->property("categorySort").toString(),"descending");
+            QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogNames(root),QStringList({"Zulu","alpha","Middle","Beta"}));checkSelected(root,b);checkAccounts();
             // A rename must retain original creation order, even when its spelling changes substantially.
             menu(model,root,z,"renameCategory");QTest::qWait(30);QVERIFY(edit(root,"categoryName","Aardvark"));applyCategory(model,root);QVERIFY(edit(root,"catalogSearch",""));
             QCOMPARE(catalogNames(root),QStringList({"Aardvark","alpha","Middle","Beta"}));checkSelected(root,z);
             for(int i=0;i<24;i++)createCategory(model,root,QString("Extra %1").arg(i,2,10,QChar('0')));
             const auto last=createCategory(model,root,"A new last entry");QCOMPARE(catalogRows(root).last().toMap().value("id").toString(),last);checkSelected(root,last);
             QVERIFY(click(root,"categorySortAscending"));QCOMPARE(catalogRows(root).first().toMap().value("id").toString(),last);checkSelected(root,last);
-            QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogRows(root).last().toMap().value("id").toString(),last);checkSelected(root,last);
+            QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogNames(root).last(),QString("A new last entry"));checkSelected(root,last);checkAccounts();
             QVERIFY(edit(root,"catalogSearch","no match"));const auto filtered=createCategory(model,root,"Visible after save");checkSelected(root,filtered);QCOMPARE(catalogNames(root),QStringList({"Visible after save"}));
             QVERIFY(edit(root,"catalogSearch","alpha"));QCOMPARE(catalogNames(root),QStringList({"alpha"}));
             QCOMPARE(root->property("categorySort").toString(),"descending");

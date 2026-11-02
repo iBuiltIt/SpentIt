@@ -23,6 +23,11 @@ The existing large category-picker dialog retains its bounded layout.
 
 Category selectors always sort complete names A–Z using case-insensitive locale
 comparison and identity as a tie-break, with Uncategorized/Choose a category first.
+Owner follow-up: accounts form a separate trailing section in every category
+list and selector, always A–Z among themselves, regardless of the ordinary
+category sort. Newly created categories in the Categories workspace remain below
+even that account section during the current visit.
+
 The Categories workspace opens A–Z on each visit, including Back/Forward. Newly
 created rows remain at the bottom for that visit. Explicit A–Z, Z–A or Order added
 re-sorts immediately; these choices last only for the current visit. Selection,
