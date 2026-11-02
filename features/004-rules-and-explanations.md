@@ -1,8 +1,163 @@
 # 004 — Rules and explanations
 
 Status: **active**  
-Last updated: 2026-10-31  
+Last updated: 2026-11-01  
 Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 40; rules-off documents use schema 39. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
+
+## Simple generated patterns and regex key — owner Go 2026-11-01
+
+Accepted and implemented; verification is in [status](../doc/status.md). Generated
+literal rules use `^text$` without an unnecessary non-capturing group. Plain source
+text stays plain; source text containing regex metacharacters uses `\Q…\E`,
+including safe handling of a literal `\E` within the source. Existing stored
+expressions are not rewritten on load or merely by saving other changes.
+
+Whole field handles simple anchored patterns and the older grouped form. Toggling
+it preserves quoted text, escaped symbols, character classes, captures and the
+editor's case-sensitive prefix. New grouping is needed only for outer alternatives
+when adding anchors. The helper does not replace regex validation or override the
+expression's matching behavior. Incomplete quoted/grouped/class syntax is left
+for the user to complete before toggling.
+
+A compact key immediately beneath Pattern explains `^`, `$`, `.`, `.*`, `*`, `+`
+and `\Q…\E`. It uses one line when wide enough and two on narrower layouts,
+with the quantifiers described as repetitions of the preceding item.
+
+## Rule scope and account Apply — owner Go 2026-11-01
+
+Accepted and implemented, superseding the separate read-only single-rule preview,
+current-import Apply and accepted-account Reapply UI below. Verification and
+remaining limits are recorded in [status](../doc/status.md).
+
+- The Rules screen and focused editor offer **All transactions in this account**
+  (default) and **New transactions only**. New means not yet committed; it covers
+  eligible transactions across all imports in that account, not just one batch.
+  Committed transactions remain eligible for categorisation. Import-time rules
+  retain their incoming-transaction scope.
+- Preview this rule and Preview all enabled rules both use the chosen scope.
+  Apply uses the same saved rule identity or enabled ruleset, account, scope and
+  manual replacement choice. Changing the editor, scope or replacement choice
+  requires another preview. Other dataset changes invalidate the prepared request.
+- After preview, **Apply to this account now** is available on either screen.
+  Unsaved definitions offer **Save and apply**: Save completes durably first,
+  followed by a fresh preview of those saved definitions and one Apply. Save and
+  Apply are separate durable operations; an Apply failure does not unsave the
+  definitions. No transaction Commit is performed by either action.
+- Matches remain a count and one Date / Imported payee / Amount row per matching
+  transaction. Manual values are protected unless Replace is explicitly checked;
+  live transfer categories, money, dates and allocations remain unchanged.
+- One atomic change journal covers matching changed new and committed rows,
+  retaining rule attribution and committed history. Cancellation before the final
+  commit gate and any failure before durable completion leave all transaction
+  changes unapplied. Retry checks the durable request rather than repeating a
+  saved operation. No evaluation chunk commits separately.
+- **Undo rule application** restores the whole operation, including mixed new and
+  committed rows. It is available while that application is the current journal
+  operation for this account; later dataset mutations end that Undo sequence.
+  Reopening does not discard the durable journal. Individual committed members
+  cannot be undone separately. The separate Reapply entry button is removed;
+  historical reapply-group Undo remains supported.
+- Preview streams the existing eligible ledger membership, with per-transaction
+  evaluator bounds and 128 MiB retained preview payload accounting. Apply retains
+  only changed snapshots, with 512 MiB payload accounting and cancellation. The
+  old 4,096-row accepted-reapply limit does not constrain this account Apply path.
+  Source-less generated counterparts are excluded. Invalid/exhausted evaluations
+  fail explicitly without truncated success.
+
+The existing snapshot journal tables are reused; no format change is introduced.
+The legacy pending Apply and committed Reapply storage APIs remain for historical
+receipts, importer/internal callers and verification. They are no longer competing
+choices on the normal Rules screen.
+
+## Match-list preview and non-reverting Apply — owner Go 2026-11-01
+
+Accepted follow-up; implementation and verification are recorded in
+[status](../doc/status.md). This supersedes earlier full-recomputation/removal
+behavior for the Rules workspace and accepted-account reapply.
+
+- Preview lists only transactions matched by enabled rules, once per transaction,
+  with Date, Imported payee and Amount. Multiple matching fields, splits or rules
+  do not multiply rows. Show a match count or “No matches.” Do not display
+  field-by-field explanations, unchanged nonmatches or before/after prose.
+- A match is not a claim that a transaction will change. Manual protection and
+  transfer protection remain in force, including matches with no writable fields.
+- Preview this rule remains read-only, evaluates only the open definition, and
+  includes accepted and new imported transactions in the selected account.
+  Preview all enabled rules retains its current pending-import scope; applying
+  accepted transactions remains an explicit separate reapply operation.
+- Save remains separate from Preview and Apply. Enabled boxes modify saved rule
+  settings; an unsaved full preview explains that saving and previewing again is
+  required before Apply. An unsuccessful preview must not leave an old Apply
+  prepared. Matching lists do not include protected source-less counterparts.
+- Apply changes only fields assigned by an enabled matching rule. Disabling or
+  deleting a rule, or editing its pattern so that it no longer matches, must not
+  by itself reverse that rule's earlier values or attribution. Fields untouched
+  by matching actions retain their exact values, bindings and ownership. An
+  enabled matching action may still replace an earlier rule-owned value; manual
+  values require explicit Replace. Ordering and transaction/split phases remain.
+- Rule compilation happens once per preview/Apply. Account and pending previews
+  stream transaction snapshots through bounded per-transaction evaluation; the
+  old 4,096-account-row ceiling is removed for those previews and pending Apply.
+  Per-record text/allocation/regex limits and cancellation remain. Failure or
+  cancellation returns no partial preview. Compact matched rows are retained for
+  display; a fixed-height virtualized list creates only visible delegates.
+- Pending Apply prepares changed transactions before one durable transaction;
+  it rechecks batch, ruleset and category revisions at the commit gate, retains
+  atomicity and retry receipts, and never commits evaluation chunks separately.
+  Memory for atomic Apply grows with changed transactions. Compact preview result
+  memory grows with matches; source/draft snapshots are evaluated one at a time.
+  Retained payload accounting is capped at 128 MiB for preview results and
+  512 MiB for pending Apply preparation. Exceeding a budget fails visibly before
+  writes; results are never silently truncated. These are payload budgets, not
+  process RSS bounds.
+- The separate accepted-account reapply keeps its existing 4,096-row limit and
+  group Undo contract. Its evaluation also preserves fields untouched by enabled
+  matching actions. This Go does not authorize automatic accepted-row changes.
+
+No schema migration or historical receipt reinterpretation is introduced. Earlier
+financial history remains readable and independently verified.
+
+## Transaction rule editor — owner Go 2026-11-01
+
+Accepted and implemented; verification is recorded in [status](../doc/status.md).
+This supersedes the earlier editor layout where they differ.
+
+- One transaction action offers Create rule, Edit rule, or Edit rules. Retained
+  field assignments take precedence over today's matching rules. Multiple rules
+  open a chooser with category assignments first and the affected fields shown.
+  Deleted responsible rules are identified; creation remains available when none
+  of the responsible rules can be edited. Editing opens the current definition,
+  not an old applied version. A manual replacement ends that field's current
+  rule ownership; persistent history is unchanged.
+- Creation uses the original imported payee as the exact matching pattern and
+  initial name, and the current ordinary category as the action. Multiple splits
+  require an explicit split choice; the dialog identifies that the resulting rule
+  matches the imported split memo. Split-memo creation also remains available. Transfer account names
+  are never copied into rule category actions.
+- Transaction entry opens a focused editor with Rule name, Match, Pattern and
+  Changes labels, an editable category completion control, and Enabled control.
+  All rules returns to ordered rules management. Save retains the open editor;
+  Save changes definitions only.
+- Preview this rule evaluates only that editor definition, before or after Save,
+  against the current account's imported ledger transactions, including accepted
+  and new rows. Disabled rules do not execute. Only matching rows are displayed.
+  Manual protection and transfer protection still apply. Values not assigned by
+  the tested rule remain unchanged, including other rules' assignments. This
+  preview is read-only and never prepares Apply.
+- Preview all enabled rules remains a separate management action using the
+  existing pending-import scope and full ordered ruleset semantics. The Enabled
+  checkbox controls rule execution, not a temporary preview selection. Saved
+  full previews and the separate accepted-account reapply retain their existing
+  atomic Apply contracts.
+- Transfer suggestion exclusions are managed from Review, not above the rule
+  editor. No matching policy, durable schema or financial write contract changes.
+
+The later match-list follow-up above removes the 4,096-account-row preview limit
+while retaining per-transaction evaluator limits.
+Generated transfer counterparts have no imported source and are not evaluated.
+Single-rule testing does not model interactions with other rules; use the full
+preview for ordering and overlap checks. Native accessibility and other-platform
+verification are not implied by synthetic Qt checks.
 
 ## Accepted requirements
 

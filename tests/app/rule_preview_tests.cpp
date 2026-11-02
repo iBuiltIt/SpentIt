@@ -4,10 +4,16 @@
 using namespace spentit;
 void require(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
 int main(){try{
-    require(app::quoted_field_pattern("")=="^(?:)$","empty source is an empty whole field");
-    require(app::quoted_field_pattern("Tfl Travel UK")=="^(?:\\QTfl Travel UK\\E)$","quoted source payee");
-    require(app::quoted_field_pattern("a\\Eb")=="^(?:\\Qa\\E\\\\E\\Qb\\E)$","quote closes around \\E");
-    require(app::quoted_field_pattern("a\\E")=="^(?:\\Qa\\E\\\\E)$","quote ends on \\E");
+    require(app::quoted_field_pattern("")=="^$","empty whole field");
+    require(app::quoted_field_pattern("Tfl Travel UK")=="^Tfl Travel UK$","plain source needs no quoting");
+    require(app::quoted_field_pattern("AMZN Mktp CA*TEST")==R"(^\QAMZN Mktp CA*TEST\E$)","literal star requires quoting");
+    require(app::quoted_field_pattern(R"(a\Eb)")==R"(^\Qa\E\\E\Qb\E$)","quote closes around literal quote terminator");
+    for(const std::string value:{"", "STARBUCKS", "A/B, C-D: 123", "Café", "a.b", "a^b$c", "a|b", "a?b*c+d", "(a)[b]{c}", R"(a\Eb)", R"(a\E)", R"(a\\E)", R"(a\E\Eb)"}) {
+        rules::Pattern literal(app::quoted_field_pattern(value));
+        require(literal.match(value).has_value(),"generated pattern matches the literal source");
+        require(!literal.match("prefix"+value) && !literal.match(value+"suffix"),"generated pattern retains its anchors");
+        require(literal.capture_count()==0,"generated pattern has no captures");
+    }
     const Currency cad("CAD");
     auto parsed=qif::parse("!Type:Bank\nD01/01/2026\nT-29.31\nPTfl Travel UK\nSUnmapped Fee\nEWise Charges for: card\n$-0.14\nSUnmapped Travel\nECARD-123\n$-29.17\n^\n",qif::DateOrder::dmy,cad);
     require(parsed.valid(),"synthetic fixture");auto source=parsed.records.front();
@@ -27,6 +33,17 @@ int main(){try{
     require(again.after.payee_rule==out.after.payee_rule && again.after.memo_rule==out.after.memo_rule,"transaction mark round-trip");
     require(again.after.transaction.allocations()[0].category_rule==allocations[0].category_rule && again.after.transaction.allocations()[1].category_rule==allocations[1].category_rule,"allocation mark round-trip");
     require(again.after.transaction.allocations()[0].amount.units()==-14 && again.after.transaction.allocations()[1].amount.units()==-2917 && again.after.transaction.effective_total()==draft.transaction.effective_total(),"round-trip money unchanged");
+    rules::RuleSet isolated({{"test",0,true,rules::Scope::transaction,rules::InputField::payee,"^Tfl",{"Test payee",{},{},false}}});
+    auto isolated_out=app::preview_rules(isolated,catalog,{{{"batch",0},source,out.after,out.provenance}},false,{},true).front();
+    require(isolated_out.after.payee=="Test payee","isolated rule runs");
+    require(isolated_out.after.transaction.allocations()[0].category_rule==allocations[0].category_rule && isolated_out.after.transaction.allocations()[1].category_rule==allocations[1].category_rule,"isolated preview preserves unrelated rule assignments");
+    require(app::rule_field_diffs(out.after,isolated_out).size()==1,"isolated diff only contains tested action");
+    auto renamed_catalog=catalog;renamed_catalog.revision=4;renamed_catalog.categories[2].name="Renamed fees";
+    auto renamed_test=app::preview_rules(isolated,renamed_catalog,{{{"batch",0},source,out.after,out.provenance}},false,{},true).front();
+    require(renamed_test.after.transaction.allocations()[0].category==allocations[0].category && renamed_test.after.transaction.allocations()[0].category_binding==allocations[0].category_binding,"untouched category keeps exact label and binding snapshot");
+    rules::RuleSet disabled({{"test",0,false,rules::Scope::transaction,rules::InputField::payee,"^Tfl",{"Test payee",{},{},false}}});
+    auto disabled_out=app::preview_rules(disabled,catalog,{{{"batch",0},source,out.after,out.provenance}},false,{},true).front();
+    require(app::rule_field_diffs(out.after,disabled_out).empty() && disabled_out.explanations.empty(),"disabled isolated rule leaves everything unchanged");
     rules::RuleSet empty({});auto restored=app::preview_rules(empty,catalog,{{{"batch",0},source,out.after,out.provenance}}).front();
     require(restored.after.payee==source.payee&&restored.after.transaction.allocations()[0].category=="Unmapped Fee"&&restored.provenance.empty(),"recompute removed rule effects");
     require(!restored.after.payee_rule && !restored.after.transaction.allocations()[0].category_rule,"recompute clears marks");

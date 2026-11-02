@@ -66,6 +66,12 @@ void reapply_basics(){
         auto untouched=reapply_apply(s,"spare",skipped.request);check(untouched.operation.empty() && !s.rule_reapply_outcome("spare") && s.committed_entry({"shop",0}).current.draft.payee=="Shop" && s.committed_entry({"shop",0}).current.draft.transaction.allocations()[0].category.empty());
         save_rules(s,"save-shop",{rule_of("shop-rule","Shop rule",rules::Scope::transaction,rules::InputField::payee,"Shop",{"Ruled Shop",{},"fees",false})},1);
         auto named=reapply_preview(s);check(named.request.changed==1 && named.records.size()==1 && named.records[0].after.payee=="Ruled Shop" && named.records[0].after.transaction.allocations()[0].category.empty() && named.skips.size()==1 && named.skips[0].note==skipped.skips[0].note && named.change.units()==0);
+        app::RulePreviewRequest accountQuery;accountQuery.account_scope=true;accountQuery.matches_only=true;accountQuery.replace_manual=true;
+        app::OperationContext accountContext;const auto accountPreview=s.preview_pending_rules(accountQuery,accountContext);check(accountPreview.changed==1 && accountPreview.matches.size()==1);
+        app::OperationContext accountApply;s.apply_account_rules("account-linked",accountPreview.account_request,accountApply);
+        check(s.committed_entry({"shop",0}).current.draft.transaction.allocations()[0].category.empty());s.verify();
+        s.undo_account_rules("account-linked-undo");check(s.committed_entry({"shop",0}).current.draft.payee=="Shop");s.verify();
+        named=reapply_preview(s);
         auto wrote=reapply_apply(s,"spare",named.request);check(wrote.operation=="spare" && wrote.change.units()==0 && wrote.before==shop_balance && wrote.after==shop_balance);
         const auto shop=s.committed_entry({"shop",0}).current.draft;check(shop.payee=="Ruled Shop" && shop.payee_owner==FieldOwnership::rule && shop.payee_rule==RuleMark{"shop-rule",0} && shop.transaction.allocations()[0].category.empty() && shop.transaction.allocations()[0].category_owner==FieldOwnership::source && !shop.transaction.allocations()[0].category_rule && shop.transaction.effective_total()==Money(10000,cad));
         check(s.record_evidence({"shop",0})==shop_evidence && s.committed_balance()==shop_balance);const auto still=reapply_link(s,"merged");check(!still.link.unresolved && still.link.origin.amount==Money(-10000,cad) && still.link.destination.amount==Money(10000,cad) && still.link.destination.endpoint.entry.batch=="shop" && still.link.destination.endpoint.allocation=="source-0");

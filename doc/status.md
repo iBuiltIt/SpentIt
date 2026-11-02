@@ -2,6 +2,232 @@
 
 Last updated: 2026-11-01
 
+## Simpler rule patterns and inline key — 2026-11-01
+
+Owner Go implemented; see [the contract](../features/004-rules-and-explanations.md#simple-generated-patterns-and-regex-key--owner-go-2026-11-01).
+Generated payee/split patterns omit the non-capturing wrapper and quote source
+text only when it contains regex metacharacters. Whole field supports simple
+anchors and older grouped patterns, distinguishing literal/escaped/class symbols
+from outer alternatives; it retains necessary grouping for alternatives and
+preserves captures and the case-sensitive prefix. Existing saved patterns are not
+rewritten automatically. A one/two-line regex key sits immediately below Pattern.
+
+Rules-enabled Release build passed without compiler warnings. All six selected
+checks passed (14.02 s): rule regex/evaluation/preview, rules UI, QML and navigation.
+Tests cover plain/quoted generated literal matching, embedded quote terminators,
+anchors, checkbox round trips, alternatives, classes, escaped dollars, existing
+captures, case flags and incomplete quotes. The UI key was checked at normal and
+900-pixel window widths (at most two lines); its narrow offscreen render was
+inspected. Correcting an incomplete pattern clears the obsolete helper message.
+`git diff --check` passed. No matching engine, financial write or dataset-format
+behavior was changed. Native interaction, other platforms and sanitizers were not
+rerun; the running owner session was left untouched.
+
+## Ledger return position — 2026-11-01
+
+Owner Go implemented; [the contract](../features/005-transaction-sheet-navigation.md#ledger-return-position--owner-go-2026-11-01)
+covers per-account session viewport restoration when returning with Back/Forward
+or an account button. Previously only cross-account departure captured a viewport;
+Categories could reset the hidden ledger model, and same-account return did not
+restore it. Departures now capture the first visible transaction and offset,
+restore after inline-editor layout, retain horizontal position and use a clamped
+row-index fallback when the anchor is gone. Hidden pages cannot overwrite the
+saved viewport. Document changes clear positions. Explicit counterpart reveals
+retain their existing priority. Focused rule navigation now records its account
+in navigation history consistently with other pages.
+
+The synthetic navigation regression passes the actual category-create/Back flow
+with an open transaction near the bottom of a 300-row ledger, including its pixel
+offset and selected/editor identity. It also checks Forward and account-button
+return, independent positions for two accounts, cross-account Back/Forward,
+filtering away the anchor into a shorter list, filter retention and document reset.
+Release build passed without compiler warnings. All 6 selected UI checks passed
+(23.88 s): navigation, Categories, Rules, committed editing/viewport retention,
+Review and QML. `git diff --check` passed. No financial/storage behavior changed;
+the running owner session was left untouched. Native interaction, other platforms
+and persistent viewport restoration across app restarts are not claimed.
+
+## Account-scoped rule Apply and Undo — 2026-11-01
+
+Owner Go implemented; [the scope contract](../features/004-rules-and-explanations.md#rule-scope-and-account-apply--owner-go-2026-11-01)
+supersedes the separate pending Apply / accepted Reapply UI described below.
+The focused editor and Rules screen offer All transactions in this account
+(default) or New transactions only. Single-rule and all-enabled previews use that
+scope; changing the rule, scope or replacement choice requires a fresh preview.
+After preview, Apply to this account now or Save and apply completes the operation.
+Save and apply saves definitions durably, previews the saved definitions, then
+applies; an Apply failure leaves the definitions saved. It does not Commit rows.
+
+Account Apply streams eligible ledger transactions across imports, prepares only
+changed snapshots, and writes one atomic snapshot-journal group for both new and
+committed rows. The request checks account, mutation generation, ruleset/category
+revisions, rule selection and manual replacement. Manual values remain protected
+by default and live transfer categories remain unchanged. Undo rule application
+restores the whole mixed group; intervening mutations end its Undo sequence.
+Committed corrections and Undo remain in persistent history. No schema change.
+The normal Reapply entry button is removed; legacy receipt and history Undo APIs
+remain. Existing per-record evaluator and 128/512 MiB payload budgets remain;
+this path has no 4,096-row committed-reapply ceiling.
+
+Release verification: the broader regression passed 24/24 tests (205.33 s).
+After the final balance-reuse and account-isolation changes, 11/11 focused checks
+passed (96.56 s), including engine rules, storage, QML, rules UI, committed UI and
+Review. The rules UI executable passed all 14 Qt cases including setup/cleanup;
+its new end-to-end case exercises unsaved single-rule Save and apply, both scopes,
+committed and new rows, scope-change invalidation, and group Undo. A synthetic
+compact Rules render was inspected.
+
+The mixed new/committed account fault test swept all 209 write/sync fault positions
+with disk-full/write errors, reopened and checked all-or-none results, retried the
+same operation identity and undid the whole group. Forced process exits immediately
+before and after durable commit also recovered as expected. Cancellation after
+writes began rolled the group back. Stale previews and wrong-account requests
+were rejected; another account stayed unchanged. Live-linked blank transfer
+categories remained protected even with Replace; exact balances and committed
+history verification passed.
+
+The 5,000-row case now commits all rows before the account Apply, updates the 500
+matching committed rows and undoes them, proving this path exceeds the legacy
+4,096-row limit. Account Apply and its group Undo reuse an unchanged committed
+balance instead of resumming the entire account for each changed row, while
+checking every change has zero balance delta.
+
+The direct 100,000-row synthetic run also passed: compact full/single previews,
+a 100,000-match result, cancellation, the legacy pending Apply, and the new account
+Apply/Undo of 10,000 matching new transactions. Unmatched rows and exact balances
+stayed unchanged. The new account preview/Apply/Undo took 0.870 / 10.939 / 49.740 s
+in that run, concurrently with other verification; these are observations, not
+an isolated performance benchmark. Large Undo remains worker-bound and is not
+cancellable; native responsiveness and larger committed-account timings are not
+established by this run.
+
+The rules-enabled Release application at `build/SpentIt` was rebuilt without
+compiler warnings. The running owner diagnostics session was left untouched;
+implementation and verification use synthetic files. Native interaction, spoken
+accessibility, sanitizers, rules-disabled builds, Linux and Windows were not rerun.
+Payload-budget exhaustion boundaries remain untested; the budgets are payload
+accounting, not process RSS bounds.
+
+## Compact matching previews and Apply — 2026-11-01
+
+Owner Go implemented; [the contract](../features/004-rules-and-explanations.md#match-list-preview-and-non-reverting-apply--owner-go-2026-11-01)
+supersedes the earlier full-recomputation behavior below. Rules previews now show
+one Date / Imported payee / Amount row per matching transaction, with a count or
+“No matches.” Unmatched transactions, per-field explanations and change prose are
+absent. Multiple matching rules/fields/splits still produce one transaction row.
+The result list has a bounded viewport and reuses visible delegates. Unsaved full
+previews explain how to enable Apply.
+
+Pending Preview/Apply and accepted-account reapply preserve values and attribution
+that no enabled matching action writes. Disabling/deleting a rule, or changing its
+pattern away from a transaction, no longer resets earlier assignments by itself.
+Manual and transfer protection remain. Pending Apply prepares changed rows and
+rechecks revisions before one atomic transaction; no evaluation chunk is committed
+separately. Unsuccessful previews clear any previously prepared Apply.
+
+Account and pending-import preview stream one source/draft snapshot at a time
+through the existing bounded evaluator, compiling rules once. The UI requests
+compact matching rows rather than retaining all before/after snapshots. The old
+4,096-total-row preview and pending Apply limit is removed. Individual transaction,
+allocation, text and regex limits remain, as does cancellation. Preview result
+memory grows with matches; atomic Apply preparation grows with changed rows.
+Retained payload accounting limits previews to 128 MiB and pending Apply
+preparation to 512 MiB, with visible failure before writes rather than truncation.
+These are payload budgets, not process RSS bounds; budget-exhaustion boundaries
+have not been separately exercised.
+
+Initial verification: six focused engine/storage checks passed, including the new
+match-only and 5,000-row cases. The Qt rules executable passed 13 cases including
+initialization/cleanup. The enable-toggle test shows three matches with three
+rules, one match with two disabled, and no matches with all disabled. The 100,000-
+row result-list test rendered and scrolled in 291 ms with 30 delegate items; the
+offscreen render was inspected.
+
+The final direct Release `spentit_rule_store_tests large_preview` run passed with
+100,000 synthetic imported transactions. It checked 10,000 matches, a single-rule
+account preview, a 100,000-match result, cancellation during preview and Apply
+preparation, and atomic Apply of the 10,000 matching transactions. Unmatched rows
+and the exact account balance stayed unchanged. Timings from that run:
+
+| Operation | Time |
+| --- | ---: |
+| Import fixture | 42.355 s |
+| Full enabled-rule preview, 10,000 matches | 1.445 s |
+| Single-rule account preview, 10,000 matches | 0.816 s |
+| Single-rule account preview, 100,000 matches | 0.846 s |
+| Cancellation checks, Apply and balance verification | 5.077 s |
+
+The initial `/usr/bin/time -l` wrapper could not read the sandboxed kernel clock
+rate after its child passed; the direct rerun above exited successfully. No peak
+RSS claim is made. The broader Release regression passed 22/22 tests, including
+rule Save/Apply disk-failure and crash sweeps with two changed rows, committed
+reapply fault coverage and surrounding import/navigation/category/review UI
+checks. After the final payload-budget and single-line-payee changes, another
+10/10 focused engine/storage/QML/rules-UI checks passed. The UI test verifies
+that an imported payee containing a line break remains one line, and both compact
+and 100,000-row offscreen renders were inspected. The Release executable at
+`build/SpentIt` was rebuilt; `git diff --check` passed and 214 relative document
+links resolved.
+
+Limits: the separate accepted-account reapply still has its existing 4,096-row
+limit and group Undo contract. The 100,000-row workload is synthetic and does not
+establish a bound for all regexes, category catalogs or split shapes. Native
+interaction, spoken accessibility, sanitizers, rules-disabled builds, Linux and
+Windows have not been rerun. No private files or the owner's running session were
+used.
+
+## Focused transaction rules — 2026-11-01
+
+Owner Go implemented; see the [editor contract](../features/004-rules-and-explanations.md#transaction-rule-editor--owner-go-2026-11-01).
+The transaction has one Create/Edit action. Stored field assignments identify
+responsible rules even after their pattern changes; multiple contributors open a
+chooser, and deleted definitions produce an explanation and creation fallback.
+Current matching rules are used only when there are no retained assignments.
+Creation copies the imported matching text and current ordinary category. Split
+selection explicitly matches the imported split memo. Rule name and pattern have
+separate labels, category is an editable completion field, and Enabled describes
+the checkbox. Transfer suggestion exclusions moved to Review.
+
+Transaction entry opens a focused editor. Save retains it. Preview this rule is a
+read-only test of the editor definition over imported current-account ledger rows,
+including accepted transactions. It preserves unrelated rule-owned fields, shows
+only matching rows, and clears any previously prepared Apply. The full ordered
+Preview all enabled rules remains separate, with its existing pending-import
+scope; accepted-account reapply retains its existing workflow. No schema or
+financial write contract changed.
+
+Verification: rules-enabled macOS Release built; the full synthetic Qt
+rules UI executable passed 10 cases, including initialization/cleanup. Coverage
+includes category prefill, single-rule preview before/after Save, full-preview
+Apply invalidation, multiple-rule chooser, changed-pattern attribution and deleted
+rule fallback. The focused screenshot run passed 3 cases and its offscreen render
+was inspected. Engine preview and storage application checks passed, including
+preserving other rules' assignments and accepted-row preview without writes.
+All 21 selected regression checks passed in 263.12 seconds: rules engine/preview,
+all 12 rule-storage cases (including disk-full/I/O and process-interruption sweeps,
+backup and reapply), Review storage, and five Qt UI checks. Initial QML syntax
+and old-control test-helper failures were corrected before the passing run.
+After the final category-field and split-chooser adjustments, all five affected
+Qt UI checks passed again in 18.29 seconds. The final rules UI case also verifies
+explicit split-memo choice and category prefill without mutating either split.
+The local `build/SpentIt` application was rebuilt without compiler warnings;
+`git diff --check` passed and 179 relative documentation file links resolved.
+
+Follow-up investigation: the synthetic `savedRulesNavigationAndEnabledChanges`
+Qt case passed (3 cases including initialization/cleanup, 1.124 seconds). Saving,
+clicking the Rules sidebar button, and previewing all enabled rules retained saved
+state and enabled Apply. Changing Enabled boxes after Save produced an unsaved
+preview and disabled Apply; saving those changes and previewing again enabled it.
+This does not establish which actions preceded the owner's reported screenshot.
+No application behavior changed during this investigation.
+
+Limits: single-rule preview retains the 4,096-ledger-row evaluator bound and
+reports excess rather than partially evaluating. Generated transfer counterparts
+have no imported source and are excluded. Native interaction, spoken accessibility,
+sanitizers, rules-disabled builds, Linux and Windows have not been rerun. Only
+synthetic files were used; the owner's running session and financial file were
+not operated on.
+
 ## User-facing wording — 2026-11-01
 
 Owner Go implemented across the main desktop UI and its presentation messages.

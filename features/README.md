@@ -1,5 +1,10 @@
 # Feature discovery
 
+The [account rule scope and Apply follow-up](004-rules-and-explanations.md#rule-scope-and-account-apply--owner-go-2026-11-01)
+adds All transactions / New transactions scope, single-rule Apply, Save and apply,
+and one Undo for mixed new/committed changes. See [status](../doc/status.md) for
+verification.
+
 The [ledger editing and session Undo follow-up](../doc/ledger-editing.md) is
 implemented under the 2026-11-01 Go. Double-click toggles, selection keeps the
 editor attached, Enter accepts a valid edit and session Undo reverses it. See
@@ -48,7 +53,7 @@ financial acceptance or authorize automatic repair.
 | [001 — Documents, storage, and security](001-documents-storage-security.md) | active | Local documents, encryption, persistence, backup, recovery, history |
 | [002 — Accounts, money, and splits](002-accounts-money-splits.md) | active | Account-scoped workspaces, rename/archive/delete, opening correction, currency reassignment, exact money and allocation invariants |
 | [003 — QIF import and review](003-qif-import-review.md) | active | Immutable source, duplicate recognition, durable drafts, atomic commit; OFX/QFX/QBO/ASO bank and credit-card statements in schema 40/39; remaining QIF product scope stays open |
-| [004 — Rules and explanations](004-rules-and-explanations.md) | active | Accepted rule policy, evaluator, preview adapter, Save/Apply, rules sheet, and selected-account committed reapplication; baseline verified in Release and ASan/UBSan; starter catalog and independent colon-category model accepted on 2026-10-28; account aliases protected during rule evaluation |
+| [004 — Rules and explanations](004-rules-and-explanations.md) | active | Accepted rule policy, evaluator, preview adapter, Save/Apply, focused transaction Create/Edit, compact match-only previews and preservation of unmatched fields during Apply, and selected-account committed reapplication; baseline verified in Release and ASan/UBSan; starter catalog and independent colon-category model accepted on 2026-10-28; account aliases protected during rule evaluation |
 | [005 — Transaction sheet and navigation](005-transaction-sheet-navigation.md) | active | Bounded combined search, multiselection, atomic committed bulk changes, and the point 8 session sidebar balances, column ratios, narrow scroll, and viewport retention; multiline notes and the rest of the layout stay open |
 | [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Period comparisons, category totals, and reproducible filters. Requirements only. The owner deferred this on 2026-10-28 while improving application usability piecemeal. Refund and income treatment, comparison boundaries, currency policy, and the creation dialog are still open. Implementation waits for an explicit Go |
 | [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | Free-access intent, resale restriction, unresolved project license; theme-aware icons and local packaging with recorded platform limits |

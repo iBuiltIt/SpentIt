@@ -1,5 +1,31 @@
 # SpentIt — Where did my money go?
 
+## Ledger return position — owner Go 2026-11-01
+
+Leaving the ledger records an identity/offset anchor per account. Back/Forward
+and account buttons restore it after layout; hidden refreshes must not replace
+it, and missing anchors fall back to a clamped row position. Session positions
+clear on document changes. See [the contract](features/005-transaction-sheet-navigation.md#ledger-return-position--owner-go-2026-11-01)
+and [status](doc/status.md).
+
+## Rule scope and Apply — owner Go 2026-11-01
+
+Rules offer All transactions in this account (default) or New transactions only.
+Single-rule and all-enabled previews lead to the same scoped Apply, with Save and
+apply for unsaved definitions and one group Undo for mixed new/committed changes.
+See [the contract](features/004-rules-and-explanations.md#rule-scope-and-account-apply--owner-go-2026-11-01)
+and [status](doc/status.md). The separate Reapply entry point is superseded;
+legacy history/receipt APIs remain. Preserve manual and transfer protections.
+
+## Rule match lists — owner Go 2026-11-01
+
+Rules previews show one compact row per matching transaction. Apply and accepted-
+account reapply preserve fields untouched by enabled matching actions; disabling
+or deleting rules does not itself reverse earlier assignments. Account/pending
+previews stream evaluation without the old 4,096-row ceiling; accepted-account
+reapply retains its separate limit. See [the contract](features/004-rules-and-explanations.md#match-list-preview-and-non-reverting-apply--owner-go-2026-11-01)
+and [status](doc/status.md) for actual verification and limits.
+
 ## Opening balance without confirmation — owner Go 2026-11-01
 
 Use the stored opening immediately, including zero. No separate opening

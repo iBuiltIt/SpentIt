@@ -29,5 +29,6 @@ struct RuleProposal {
 std::vector<RuleProposal> preview_rules(const rules::RuleSet&, const CategoryCatalog&,
                                       const std::vector<RuleInput>&,
                                       bool replace_manual=false,
-                                      const std::function<bool()>& cancelled={});
+                                      const std::function<bool()>& cancelled={},
+                                      bool preserve_untouched=false);
 }

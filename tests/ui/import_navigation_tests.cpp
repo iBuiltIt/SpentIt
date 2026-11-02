@@ -1,6 +1,7 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QTest>
+#include <QJSValue>
 #include <QTemporaryDir>
 #include <QSettings>
 #include <QFile>
@@ -21,12 +22,14 @@ class NavigationTests : public QObject {
         else QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
         QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
     }
+    static QQuickItem* visual(QQuickItem* item,const QString& name){if(item->objectName()==name)return item;for(auto* child:item->childItems())if(auto* found=visual(child,name))return found;return nullptr;}
+    static QObject* object(QObject* root,const char* name){if(auto* found=root->findChild<QObject*>(QString::fromLatin1(name)))return found;auto* window=qobject_cast<QQuickWindow*>(root);return window?visual(window->contentItem(),QString::fromLatin1(name)):nullptr;}
     static bool click(QObject* root,const char* name) {
-        auto* item=root->findChild<QObject*>(QString::fromLatin1(name));
+        auto* item=object(root,name);
         return item && QMetaObject::invokeMethod(item,"clicked");
     }
     static bool edit(QObject* root,const char* name,const QString& value) {
-        auto* item=root->findChild<QObject*>(QString::fromLatin1(name));
+        auto* item=object(root,name);
         return item && item->setProperty("text",value) && QMetaObject::invokeMethod(item,"textEdited");
     }
 private slots:
@@ -55,6 +58,57 @@ private slots:
         QVERIFY(spentit::diagnostics::Collector::instance().json().find("CANARY")==std::string::npos);
         const auto generation=model.diagnosticGeneration();model.observeUi({{"generation",generation-1},{"surface","CANARY-payee"},{"ready",true}});
         QCOMPARE(spentit::diagnostics::Collector::instance().snapshot().ui.surface,spentit::diagnostics::Surface::settings);
+    }
+    void ledgerViewportSurvivesCategoryNavigation() {
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Viewport account"},{"currency","CAD"}});
+        QFile file(dir.filePath("rows.qif"));QVERIFY(file.open(QIODevice::WriteOnly));QByteArray rows;
+        for(int i=0;i<300;++i)rows+="D1/1/2026\nT-1\nPSynthetic "+QByteArray::number(i).rightJustified(3,'0')+"\n^\n";
+        QCOMPARE(file.write(rows),rows.size());file.close();run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        const auto account=model.state().value("accountId").toString();const auto batch=model.state().value("selected").toMap().value("batch").toString();
+        run(model,"inspect",{{"batch",batch},{"ordinal",260}});
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        auto position=[&](int index){return QMetaObject::invokeMethod(ledger,"positionViewAtIndex",Q_ARG(int,index),Q_ARG(int,0));};
+        auto snapshot=[&](){QMetaObject::invokeMethod(root,"rememberAccountViewport");return root->property("accountViewports").value<QJSValue>().toVariant().toMap().value(model.state().value("accountId").toString()).toMap();};
+        auto first=[&](){int index=-1;QMetaObject::invokeMethod(ledger,"indexAt",Q_RETURN_ARG(int,index),Q_ARG(qreal,1),Q_ARG(qreal,ledger->property("contentY").toReal()+1));return index;};
+        QTest::qWait(50);QVERIFY(position(model.occurrenceIndex(batch,260)));QTest::qWait(50);
+        ledger->setProperty("contentY",ledger->property("contentY").toReal()+17);const auto saved=snapshot();QVERIFY(saved.value("index").toInt()>200);
+        const auto selected=model.state().value("selected").toMap();
+        QVERIFY(click(root,"categoryNavigation"));QTRY_VERIFY(!model.busy());QCOMPARE(root->property("currentPage").toString(),"categories");
+        QVERIFY(click(root,"newCategory"));QVERIFY(edit(root,"categoryName","New expense"));QVERIFY(QMetaObject::invokeMethod(root,"finishCategoryEdit"));
+        QTRY_VERIFY(!model.busy() && !root->property("categoryDirty").toBool());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QVERIFY(click(root,"navigationBack"));QCOMPARE(root->property("currentPage").toString(),"ledger");
+        QTRY_COMPARE(first(),saved.value("index").toInt());
+        QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
+        QCOMPARE(model.state().value("selected").toMap().value("batch"),selected.value("batch"));QCOMPARE(model.state().value("selected").toMap().value("ordinal"),selected.value("ordinal"));
+        QVERIFY(!root->property("editorClosed").toBool());
+        // Repeated visits must not overwrite the saved position from the hidden,
+        // reset list; returning through the account button uses the same anchor.
+        QVERIFY(click(root,"navigationForward"));QTRY_VERIFY(!model.busy());run(model,"category_list");
+        QVERIFY(click(root,"accountNavigation"));QTRY_COMPARE(first(),saved.value("index").toInt());
+        QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
+        // Keep independent positions when switching accounts, including while
+        // leaving a non-ledger page, and through cross-account Back/Forward.
+        QVERIFY(click(root,"categoryNavigation"));QTRY_VERIFY(!model.busy());
+        run(model,"create_account",{{"id","2"},{"name","Second viewport"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        const auto secondBatch=model.state().value("selected").toMap().value("batch").toString();
+        run(model,"inspect",{{"batch",secondBatch},{"ordinal",40}});QTest::qWait(50);QVERIFY(position(model.occurrenceIndex(secondBatch,40)));QTest::qWait(50);
+        const auto second=snapshot();
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseAccount",Q_ARG(QVariant,account)));QTRY_VERIFY(!model.busy());QTRY_COMPARE(first(),saved.value("index").toInt());
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseAccount",Q_ARG(QVariant,QString("2"))));QTRY_VERIFY(!model.busy());QTRY_COMPARE(first(),second.value("index").toInt());
+        QVERIFY(click(root,"navigationBack"));QTRY_VERIFY(!model.busy());QTRY_COMPARE(first(),saved.value("index").toInt());
+        QVERIFY(click(root,"navigationForward"));QTRY_VERIFY(!model.busy());QTRY_COMPARE(first(),second.value("index").toInt());
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseAccount",Q_ARG(QVariant,account)));QTRY_VERIFY(!model.busy());QTRY_COMPARE(first(),saved.value("index").toInt());
+        // A vanished anchor and a shorter filtered ledger clamp to a valid end.
+        QVERIFY(click(root,"categoryNavigation"));QTRY_VERIFY(!model.busy());
+        run(model,"query",{{"filter","Synthetic 00"},{"sort",0},{"descending",false}});
+        QVERIFY(click(root,"navigationBack"));QTRY_VERIFY(first()>=0 && first()<20);
+        QTRY_VERIFY(ledger->property("contentY").toReal()<=ledger->property("originY").toReal()+qMax(qreal(0),ledger->property("contentHeight").toReal()-ledger->height())+1);
+        QCOMPARE(model.state().value("filter").toString(),"Synthetic 00");
+        run(model,"close");QVERIFY(root->property("accountViewports").value<QJSValue>().toVariant().toMap().isEmpty());
     }
     void guardedNavigationAndIsolation() {
         QTemporaryDir dir;

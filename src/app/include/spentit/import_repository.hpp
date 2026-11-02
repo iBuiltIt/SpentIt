@@ -318,6 +318,9 @@ public:
     virtual std::vector<RuleTombstone> rule_tombstones() const { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual RuleSaveReceipt save_rules(std::string_view,const RuleSaveRequest&,std::int64_t,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual std::optional<RuleSaveReceipt> rule_save_outcome(std::string_view) const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual ReviewReceipt apply_account_rules(std::string_view,const AccountRuleRequest&,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual bool can_undo_account_rules() const { return false; }
+    virtual ReviewReceipt undo_account_rules(std::string_view) { throw std::logic_error("No rule application to undo"); }
     virtual RulePreviewResult preview_pending_rules(const RulePreviewRequest&,const OperationContext&) const { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual RuleApplyReceipt apply_pending_rules(std::string_view,const RuleApplyRequest&,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual std::optional<RuleApplyReceipt> rule_apply_outcome(std::string_view) const { throw std::logic_error("Rules are not enabled for this dataset"); }

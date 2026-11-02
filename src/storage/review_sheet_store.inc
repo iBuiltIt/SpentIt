@@ -152,7 +152,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     struct Scope{Impl& state;std::int64_t selected;~Scope(){state.selected_account=selected;}} scope{*impl_,impl_->selected_account};
     app::ReviewSheet result;result.generation=review_generation(impl_->db);
     Statement undo(impl_->db,"SELECT s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
-    result.can_undo=undo.row() && undo.integer(0)==result.generation && undo.bytes(1)!="ledger-edit";
+    result.can_undo=undo.row() && undo.integer(0)==result.generation && undo.bytes(1)!="ledger-edit" && undo.bytes(1)!="rules-account";
     std::map<imports::Occurrence,app::ReviewTransaction> rows;
     std::set<imports::Occurrence> unresolved;
     auto all_accounts=accounts();const auto archived=archived_accounts();all_accounts.insert(all_accounts.end(),archived.begin(),archived.end());
@@ -349,7 +349,7 @@ imports::DraftRow ImportStore::review_draft(const imports::Occurrence& id,std::i
     imports::DraftRow draft{s.bytes(0),s.bytes(1),s.bytes(2),Transaction::repaired_import(original.original_amount,Money(s.integer(3),currency),std::move(allocations),original.source_currency && *original.source_currency!=currency)};
     load_metadata(impl_->db,id,revision,draft,false);return draft;
 }
-void ImportStore::write_review_row(std::string_view answer,std::string_view child,const imports::Occurrence& id,const imports::DraftRow& draft,const imports::Decision& decision,bool active,bool undoing,bool fresh_review) {
+void ImportStore::write_review_row(std::string_view answer,std::string_view child,const imports::Occurrence& id,const imports::DraftRow& draft,const imports::Decision& decision,bool active,bool undoing,bool fresh_review,std::optional<std::int64_t> applied_ruleset,std::optional<Money> unchanged_balance) {
     impl_->selected_account=account_for_batch(id.batch).identity;require_writable_account(impl_->db,impl_->selected_account);
     const auto source=load_row(id,false).source;imports::validate_draft(source,draft,source.source_currency && *source.source_currency!=draft.transaction.effective_total().currency());
     const bool committed=transaction_accepted(id);std::int64_t prior,result;
@@ -357,14 +357,16 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
         const auto current=committed_entry(id);prior=current.current.revision;if(prior==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");result=prior+1;
         if(undoing){Statement saved(impl_->db,"SELECT result FROM review_members WHERE answer=? AND batch=? AND ordinal=?");saved.text(1,answer);saved.text(2,id.batch);saved.integer(3,integer(id.ordinal));if(!saved.row())fail(SQLITE_CORRUPT);const auto expected=entry_snapshot(id,saved.integer(0));if(expected.active!=current.current.active || !same_draft(expected.draft,current.current.draft))fail(SQLITE_CONSTRAINT,"Later transaction changes prevent Review Undo");}
         auto after=current.current;after.revision=result;after.active=active;after.draft=draft;
-        const auto before=committed_balance();const Money zero(0,before.currency());
+        const auto before=unchanged_balance?*unchanged_balance:committed_balance();const Money zero(0,before.currency());
         const auto delta=(active?draft.transaction.effective_total():zero)-(current.current.active?current.current.draft.transaction.effective_total():zero);
+        if(unchanged_balance && delta.units()!=0)fail(SQLITE_CONSTRAINT,"Rule application cannot change the account balance");
         std::optional<std::int64_t> ruleset;
 #ifdef SPENTIT_RULES_STORAGE
         std::int64_t rule_revision=prior;
         if(undoing){Statement original(impl_->db,"SELECT prior FROM review_members WHERE answer=? AND batch=? AND ordinal=?");original.text(1,answer);original.text(2,id.batch);original.integer(3,integer(id.ordinal));if(!original.row())fail(SQLITE_CORRUPT);rule_revision=original.integer(0);}
         Statement mark(impl_->db,"SELECT ruleset_revision FROM entry_rule_fields WHERE batch=? AND ordinal=? AND revision=?");mark.text(1,id.batch);mark.integer(2,integer(id.ordinal));mark.integer(3,rule_revision);if(mark.row())ruleset=mark.integer(0);
 #endif
+        if(applied_ruleset)ruleset=applied_ruleset;
         store_entry(impl_->db,id,after,ruleset);
         std::string undo_of;
         if(undoing){Statement old(impl_->db,"SELECT child FROM review_members WHERE answer=? AND batch=? AND ordinal=?");old.text(1,answer);old.text(2,id.batch);old.integer(3,integer(id.ordinal));if(!old.row())fail(SQLITE_CORRUPT);undo_of=old.bytes(0);}
@@ -379,6 +381,7 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
 #ifdef SPENTIT_RULES_STORAGE
         if(undoing){Statement original(impl_->db,"SELECT f.ruleset_revision FROM review_members m JOIN draft_rule_fields f ON f.batch=m.batch AND f.ordinal=m.ordinal AND f.revision=m.prior WHERE m.answer=? AND m.batch=? AND m.ordinal=?");original.text(1,answer);original.text(2,id.batch);original.integer(3,integer(id.ordinal));if(original.row())ruleset=original.integer(0);}
 #endif
+        if(applied_ruleset)ruleset=applied_ruleset;
         version(impl_->db,id,result,draft,decision,fresh_review,ruleset);advance(impl_->db,id.batch,info.revision,kind,static_cast<int>(info.state));
     }
     if(!undoing){Statement member(impl_->db,"INSERT INTO review_members VALUES(?,?,?,?,?,?,?)");member.text(1,answer);member.text(2,id.batch);member.integer(3,integer(id.ordinal));member.integer(4,committed?1:0);member.integer(5,prior);member.integer(6,result);member.text(7,child);member.done();}
@@ -577,14 +580,18 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             append_financial(impl_->db,child,app::ChangeKind::transfer,{"",0},-1,0,before,delta,before+delta,"",sequence-1,catalog_sequence(impl_->db));
         }
     }
-    Statement edit(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question='ledger-edit'");edit.text(1,answer);const bool editor_undo=edit.row();
+    Statement edit(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question IN('ledger-edit','rules-account')");edit.text(1,answer);const bool editor_undo=edit.row();
+    Statement rules_group(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question='rules-account'");rules_group.text(1,answer);const bool rules_undo=rules_group.row();
+    std::map<std::int64_t,Money> rule_balances;
     std::size_t serial=0;
     Statement members(impl_->db,"SELECT batch,ordinal,committed,prior,result FROM review_members WHERE answer=? ORDER BY rowid DESC");members.text(1,answer);
     while(members.row()){
         const imports::Occurrence id{members.bytes(0),static_cast<std::size_t>(members.integer(1))};impl_->selected_account=account_for_batch(id.batch).identity;
         if(members.integer(2)){
             const auto before=entry_snapshot(id,members.integer(3));
-            write_review_row(answer,std::string(operation)+"-"+std::to_string(++serial),id,before.draft,{imports::Disposition::include,{}},before.active,true);
+            std::optional<Money> unchanged;
+            if(rules_undo){auto it=rule_balances.find(impl_->selected_account);if(it==rule_balances.end())it=rule_balances.emplace(impl_->selected_account,committed_balance()).first;unchanged=it->second;}
+            write_review_row(answer,std::string(operation)+"-"+std::to_string(++serial),id,before.draft,{imports::Disposition::include,{}},before.active,true,true,{},unchanged);
         }else{
             Statement decision(impl_->db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? AND revision=?");decision.text(1,id.batch);decision.integer(2,integer(id.ordinal));decision.integer(3,members.integer(3));if(!decision.row())fail(SQLITE_CORRUPT);
             imports::Decision value{static_cast<imports::Disposition>(decision.integer(0)),{}};if(value.disposition==imports::Disposition::duplicate)value.duplicate_of=imports::Occurrence{decision.bytes(1),static_cast<std::size_t>(decision.integer(2))};

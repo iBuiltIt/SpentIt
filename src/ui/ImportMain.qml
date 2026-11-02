@@ -159,12 +159,13 @@ ApplicationWindow {
     property var pendingCounterpart: null
     property var accountViewports: ({})
     function rememberAccountViewport() {
-        if(!s.accountId || ledger.count===0)return
+        if(currentPage!=="ledger" || !s.accountId || ledger.count===0)return
         let first=ledger.indexAt(1,ledger.contentY+1)
         if(first<0)first=0
         let item=ledger.itemAtIndex(first)
         let views=Object.assign({},accountViewports)
-        views[s.accountId]={anchor:workflow.rowIdentity(first),offset:item?ledger.contentY-item.y:0}
+        views[s.accountId]={anchor:workflow.rowIdentity(first),index:first,offset:item?ledger.contentY-item.y:0,
+            horizontal:ledgerScroll.contentItem.contentX}
         accountViewports=views
     }
     function showCounterpart(item) {
@@ -259,11 +260,29 @@ ApplicationWindow {
         MenuItem {text:"Change category…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:{bulkCategoryDialog.open()}}
     }
     function restoreViewport(saved) {
+        if(!saved || ledger.count===0)return
+        ledger.forceLayout()
         let index=workflow.occurrenceIndex(saved.anchor.batch || "",saved.anchor.ordinal===undefined?-1:saved.anchor.ordinal)
-        if(index>=0) {
-            ledger.positionViewAtIndex(index,ListView.Beginning)
-            ledger.contentY+=saved.offset
-        } else ledger.positionViewAtBeginning()
+        if(index<0)index=Math.max(0,Math.min(saved.index||0,ledger.count-1))
+        ledger.positionViewAtIndex(index,ListView.Beginning)
+        ledger.forceLayout()
+        let item=ledger.itemAtIndex(index)
+        if(item)ledger.contentY=Math.max(ledger.originY,Math.min(item.y+(saved.offset||0),ledger.originY+Math.max(0,ledger.contentHeight-ledger.height)))
+        if(saved.horizontal!==undefined)ledgerScroll.contentItem.contentX=Math.max(0,Math.min(saved.horizontal,ledgerScroll.contentWidth-ledgerScroll.availableWidth))
+    }
+    property int accountViewportRestoreSerial: 0
+    function restoreAccountViewport() {
+        const account=s.accountId, saved=accountViewports[account], serial=++accountViewportRestoreSerial
+        if(!saved)return
+        Qt.callLater(function(){
+            if(serial!==accountViewportRestoreSerial || currentPage!=="ledger" || s.accountId!==account)return
+            restoreViewport(saved)
+            // Materializing the anchored row can attach the open inline editor,
+            // changing its height. Restore once more after that layout settles.
+            Qt.callLater(function(){
+                if(serial===accountViewportRestoreSerial && currentPage==="ledger" && s.accountId===account)restoreViewport(saved)
+            })
+        })
     }
     // Viewport restoration is session-only.
     property var ledgerViewRestore: null
@@ -324,13 +343,15 @@ ApplicationWindow {
     property string accountCreationDate: ""
     property bool sidebarVisible: true
     function resetNavigation() {
-        accountViewports={};pendingCounterpart=null;pendingMerge=null;mergeHint="";currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
+        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMerge=null;mergeHint="";currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
     }
     function navigate(page) {
         if(workflow.busy || !s.active || page===currentPage) return
         guard(function(){
+            rememberAccountViewport()
             let entries=navigation.slice(0,navigationIndex+1)
             entries.push(page);navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage=page
+            if(page==="ledger")restoreAccountViewport()
         })
     }
     function chooseAccount(id) {
@@ -380,11 +401,12 @@ ApplicationWindow {
         let destination=navigationIndex+delta
         if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
         guard(function(){
+            rememberAccountViewport()
             if(navigationAccounts[destination]!==s.accountId) {
                 rememberAccountViewport()
                 pendingAccountNavigation={index:destination,page:navigation[destination]}
                 workflow.command("select_account",{id:navigationAccounts[destination]})
-            } else {navigationIndex=destination;currentPage=navigation[destination]}
+            } else {navigationIndex=destination;currentPage=navigation[destination];if(currentPage==="ledger")restoreAccountViewport()}
         })
     }
     Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
@@ -396,6 +418,13 @@ ApplicationWindow {
     property bool memoTouched: false
     property bool categoryDirty: false
     property bool rulesDirty: false
+    property bool rulePreviewSingle: false
+    property string rulePreviewKey: ""
+    property string rulePendingPreviewKey: ""
+    property bool ruleApplyAfterSave: false
+    property bool ruleApplyAfterPreview: false
+    function rulesPreviewKey() {return JSON.stringify([rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,replaceManualFields.checked])}
+    property bool ruleFocused: false
     property int ruleIndex: -1
     property string ruleCategoryId: ""
     property bool guardHandoff: false
@@ -609,7 +638,29 @@ ApplicationWindow {
         }
         dirty=false;committedEditing=!!selected.canCorrect;payeeTouched=false;memoTouched=false
     }
-    function wholeRecognized(expr) { let body=expr.startsWith("(?-i)")?expr.slice(5):expr; return body.startsWith("^(?:") && body.endsWith(")$") && body.length>=6 }
+    // Inspect the outer syntax without treating quoted text, escaped symbols or
+    // character classes as anchors/alternation. Matching still belongs to PCRE2.
+    function patternShape(body) {
+        let depth=0, quoted=false, inClass=false, classStart=0
+        let alternative=false, endAnchor=false, outerEnd=-1
+        for(let i=0;i<body.length;++i) {
+            let c=body[i]
+            if(quoted){if(c==="\\" && body[i+1]==="E"){quoted=false;++i}continue}
+            if(c==="\\"){if(body[i+1]==="Q")quoted=true;++i;continue}
+            if(inClass){if(c==="]" && i>classStart)inClass=false;continue}
+            if(c==="["){inClass=true;classStart=i+1;if(body[i+1]==="^")++classStart;continue}
+            if(c==="(")++depth
+            else if(c===")"){--depth;if(depth===0 && outerEnd<0)outerEnd=i}
+            else if(c==="|" && depth===0)alternative=true
+            else if(c==="$" && depth===0 && i===body.length-1)endAnchor=true
+        }
+        return {alternative:alternative,endAnchor:endAnchor,complete:!quoted && !inClass && depth===0,
+            wrapped:body.startsWith("^(?:") && outerEnd===body.length-2 && endAnchor}
+    }
+    function wholeRecognized(expr) {
+        let body=expr.startsWith("(?-i)")?expr.slice(5):expr, shape=patternShape(body)
+        return shape.complete && body.startsWith("^") && shape.endAnchor && !shape.alternative
+    }
     function ruleRow(rule) {
         let copy=Object.assign({payeeTemplate:"",memoTemplate:"",categoryId:"",inheritParent:false,label:"",expression:"",scope:"transaction",input:"payee"}, rule||{})
         copy.ruleOn=!!rule.enabled
@@ -623,7 +674,8 @@ ApplicationWindow {
     }
     function showRulesPage() {
         if(currentPage==="rules") return
-        let entries=navigation.slice(0,navigationIndex+1); entries.push("rules"); navigation=entries; navigationIndex=entries.length-1; currentPage="rules"
+        rememberAccountViewport()
+        let entries=navigation.slice(0,navigationIndex+1); entries.push("rules"); navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts; navigationIndex=entries.length-1; currentPage="rules"
     }
     function rulesImage() {
         let rows=[]
@@ -664,17 +716,22 @@ ApplicationWindow {
             expr=rest; ruleAssistNote.text=""
         }
         if(expr!==ruleExpression.text) ruleExpression.text=expr
-        writeRule()
+        syncAssist();writeRule()
     }
     function setWhole(on) {
         let expr=ruleExpression.text
         let prefix=expr.startsWith("(?-i)")?"(?-i)":""
         let body=prefix?expr.slice(5):expr
-        let wrapped=body.startsWith("^(?:") && body.endsWith(")$") && body.length>=6
-        if(on && !wrapped) expr=prefix+"^(?:"+body+")$"
-        else if(!on && wrapped) expr=prefix+body.slice(4,body.length-2)
+        let shape=patternShape(body)
+        if(!shape.complete){ruleAssistNote.text="Complete the pattern before changing Whole field.";syncAssist();return}
+        if(on && !wholeRecognized(expr)) {
+            if(shape.alternative)body="(?:"+body+")"
+            else {if(body.startsWith("^"))body=body.slice(1);if(shape.endAnchor)body=body.slice(0,-1)}
+            expr=prefix+"^"+body+"$"
+        } else if(!on && wholeRecognized(expr))expr=prefix+(shape.wrapped?body.slice(4,-2):body.slice(1,-1))
+        ruleAssistNote.text=""
         if(expr!==ruleExpression.text) ruleExpression.text=expr
-        writeRule()
+        syncAssist();writeRule()
     }
     function syncAssist() { ruleSync=true; ruleCaseSensitive.checked=ruleExpression.text.startsWith("(?-i)"); ruleWholeField.checked=wholeRecognized(ruleExpression.text); ruleSync=false }
     function newRule() {
@@ -712,31 +769,59 @@ ApplicationWindow {
         else if(rule.categoryId) { let cat=(s.categoryById||{})[rule.categoryId]||{}; parts.push(cat.path||rule.categoryId) }
         return parts.length?parts.join("; "):"No action yet"
     }
-    function saveRules() { workflow.command("rules_save",{rules:rulesImage()}) }
-    function previewRules() {
-        let pending=s.pending||{}
-        let args={replaceManual:replaceManualFields.checked,unsaved:rulesDirty,batch:pending.id||"",batchRevision:String(pending.revision===undefined?"":pending.revision)}
-        if(rulesDirty) args.rules=rulesImage()
-        workflow.command("rules_preview",args)
-    }
-    function applyReady() {
-        if(workflow.busy || rulesDirty) return false
-        let p=s.rulePreview||{}; let pending=s.pending||{}
-        if(!p.operation || p.unsaved) return false
-        if(String(p.batchRevision)!==String(pending.revision)) return false
-        if(String(p.rulesetRevision)!==String(s.ruleRevision||"")) return false
-        if(String(p.catalogRevision)!==String(s.catalogRevision||"")) return false
-        if(!!p.replaceManual!==replaceManualFields.checked) return false
+    function acceptRuleCategory() {
+        if(ruleIndex<0 || ruleInherit.checked)return true
+        let match=ruleCategoryField.model.find(c=>workflow.categoryNameMatches(c.path,ruleCategoryField.editText))
+        if(!match){workspaceFeedback="Choose an existing category.";return false}
+        if(ruleCategoryId!==match.id){ruleCategoryId=match.id;writeRule()}
         return true
     }
+    function previewThisRule() {
+        if(ruleIndex<0 || !acceptRuleCategory()) return
+        rulePreviewSingle=true; previewAccountRules()
+    }
+    function previewAccountRules() {
+        if(!acceptRuleCategory())return
+        let args={accountScope:true,newOnly:ruleTransactionScope.currentIndex===1,replaceManual:replaceManualFields.checked,unsaved:rulesDirty,singleRule:rulePreviewSingle}
+        if(rulePreviewSingle){args.rule=ruleModel.get(ruleIndex).id;if(rulesDirty)args.rules=[rulesImage()[ruleIndex]]}
+        else if(rulesDirty)args.rules=rulesImage()
+        rulePendingPreviewKey=rulesPreviewKey();rulePreviewKey=""
+        workflow.command("rules_preview",args)
+    }
+    function ruleChoices() {
+        let assigned=selected.ruleAssignments||[]
+        let choices=assigned.length?assigned:(selected.ruleExplanations||[]).map(e=>({rule:e.rule,label:e.label,field:e.field,available:true}))
+        let unique=[]
+        // Prefer the category's responsible rule, retaining access to other contributors.
+        choices=choices.slice().sort((a,b)=>(a.field==="Category"?0:1)-(b.field==="Category"?0:1))
+        for(let choice of choices) {
+            let existing=unique.find(c=>c.rule===choice.rule)
+            if(existing)existing.field+=" / "+choice.field
+            else unique.push(Object.assign({},choice))
+        }
+        return unique
+    }
+    function transactionRuleAction() {
+        let choices=ruleChoices()
+        if(!choices.length || !choices.some(c=>c.available))createFromSource("payee")
+        else if(choices.length===1)editMatched(choices[0].rule)
+        else matchedRuleDialog.open()
+    }
+    function saveRules() { if(!acceptRuleCategory())return; workflow.command("rules_save",{rules:rulesImage()}) }
+    function previewRules() {rulePreviewSingle=false;previewAccountRules()}
+    function applyReady() {
+        return !workflow.busy && !!rulePreviewKey && rulePreviewKey===rulesPreviewKey() && !!(s.rulePreview||{}).accountScope
+    }
     function applyRules() {
-        let p=s.rulePreview||{}
-        workflow.command("rules_apply",{batch:p.batch,batchRevision:String(p.batchRevision),rulesetRevision:String(p.rulesetRevision),catalogRevision:String(p.catalogRevision),replaceManual:!!p.replaceManual})
+        if(!applyReady())return
+        if(rulesDirty){ruleApplyAfterSave=true;saveRules()}
+        else workflow.command("rules_account_apply",{preview:s.rulePreview.operation})
     }
     function createFromSource(kind, allocation) {
         if(workflow.busy || !s.rulesSupported) return
         if(dirty) { pendingAction=function(){createFromSource(kind,allocation)}; unsaved.open(); return }
         if(categoryDirty) { pendingAction=function(){createFromSource(kind,allocation)}; finishCategoryEdit(); return }
+        if(kind==="payee" && allocation===undefined && ((selected.draft||{}).splits||[]).length>1) {ruleSplitDialog.open();return}
         let args={kind:kind}; if(allocation!==undefined) args.allocation=allocation
         workflow.command("rules_prefill",args)
     }
@@ -745,21 +830,15 @@ ApplicationWindow {
         if(dirty) { pendingAction=function(){editMatched(id)}; unsaved.open(); return }
         if(categoryDirty) { pendingAction=function(){editMatched(id)}; finishCategoryEdit(); return }
         if(!rulesDirty) loadRulesForm()
-        for(let i=0;i<ruleModel.count;i++) if(ruleModel.get(i).id===id) { openRule(i); showRulesPage(); matchedRuleDialog.close(); return }
-    }
-    function openMatched() {
-        let ids=[]
-        for(let item of (selected.ruleExplanations||[])) if(ids.indexOf(item.rule)<0) ids.push(item.rule)
-        if(ids.length===1) editMatched(ids[0]); else matchedRuleDialog.open()
+        for(let i=0;i<ruleModel.count;i++) if(ruleModel.get(i).id===id) { ruleFocused=true; openRule(i); showRulesPage(); matchedRuleDialog.close(); return }
     }
     function acceptPrefill() {
         if(!rulesDirty) loadRulesForm()
         if(ruleModel.count>=128) return
         let row=s.rulePrefill||{}; if(!row.id) return
         ruleModel.append(ruleRow(row))
-        rulesDirty=true; openRule(ruleModel.count-1); showRulesPage()
+        rulesDirty=true; ruleFocused=true; openRule(ruleModel.count-1); showRulesPage()
     }
-    function openRuleCategory() { pickerIndex=-2; categorySearch.clear(); categoryPicker.open() }
     function inspectRecord(batch, ordinal) { guard(function(){workflow.command("inspect",{batch:batch,ordinal:ordinal})}) }
     function toggleRecord(batch, ordinal) {
         if(!editorClosed && selected.batch===batch && selected.ordinal===ordinal)
@@ -865,8 +944,9 @@ ApplicationWindow {
             if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session until another kind of change.":"Edit saved."
             if(success && action==="undo_edit")workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
+            if(!success){ruleApplyAfterSave=false;ruleApplyAfterPreview=false;rulePreviewKey=""}
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
-            if(success && (action==="rules_save" || action==="rules_apply"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
+            if(success && (action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
             if(success && action.indexOf("transfer_")===0 && !(s.transferMergePreview||{}).id && (s.transferReceipt||{}).operation)workspaceFeedback="Transfer operation saved."
             if(action==="link_exclusion_save" && success)linkExclusionDialog.close()
             if(action==="link_exclusion_preview" && !success)exclusionPreviewed=false
@@ -886,7 +966,7 @@ ApplicationWindow {
             if(action==="select")ledger.currentIndex=s.selectionIndex===undefined?-1:s.selectionIndex
             if (action==="inspect" || action==="import" || action==="map_import")
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
-            if(!success && (action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null}
+            if(!success && (action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
             if(!s.active) {linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesUnsaved.close();matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
@@ -921,7 +1001,7 @@ ApplicationWindow {
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
                     if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
-                    else if(accountViewports[s.accountId])Qt.callLater(function(){restoreViewport(accountViewports[s.accountId])})
+                    else if(accountViewports[s.accountId])restoreAccountViewport()
                     if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
                     if(pendingReviewInspection){currentPage="review";pendingReviewInspection=false}
@@ -946,8 +1026,13 @@ ApplicationWindow {
                     if(pendingAction) {let next=pendingAction;pendingAction=null;guard(next)}
                 }
                 if(action==="rules_load" && !rulesDirty) loadRulesForm()
-                if(action==="rules_save" || action==="rules_discard") {loadRulesForm();if(pendingAction){let next=pendingAction;pendingAction=null;guard(next)}}
-                if(action==="rules_apply" && !dirty) loadEditor()
+                if(action==="rules_save" || action==="rules_discard") {let index=ruleIndex;loadRulesForm();if(action==="rules_save" && index>=0)openRule(index);else ruleFocused=false;if(pendingAction){let next=pendingAction;pendingAction=null;guard(next)}}
+                if((action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo") && !dirty) loadEditor()
+                if(action==="rules_save" && ruleApplyAfterSave){ruleApplyAfterSave=false;ruleApplyAfterPreview=true;previewAccountRules()}
+                if(action==="rules_preview"){
+                    rulePreviewKey=rulePendingPreviewKey
+                    if(ruleApplyAfterPreview){ruleApplyAfterPreview=false;workflow.command("rules_account_apply",{preview:s.rulePreview.operation})}
+                }
                 if(action==="rules_prefill") acceptPrefill()
                 if((action==="create" || action==="open" || action==="unlock") && !rulesDirty) loadRulesForm()
                 if(action==="create" || action==="unlock") {password.text="";confirmation.text="";unlockPassword.text=""}
@@ -1193,12 +1278,35 @@ ApplicationWindow {
         onRejected:if(!guardHandoff)pendingAction=null
     }
     Dialog {
-        id:matchedRuleDialog;objectName:"matchedRuleDialog";title:"Rules that match this record";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640)
+        id:transferSuggestionSettings;title:"Transfer suggestions";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700)
+        contentItem:ColumnLayout {
+                        Label {text:"Link suggestions";font.pixelSize:18}
+                        Label {text:"Choose which transfer suggestions to hide.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Button {text:"Hide suggestions…";onClicked:openLinkExclusion({payee:"",account:s.accountId},null)}
+                        Repeater {model:s.linkExclusions||[];delegate:RowLayout {
+                            required property var modelData;Layout.fillWidth:true
+                            Label {text:(modelData.account==="0"?"All accounts":"Account "+modelData.account)+" · "+modelData.field+" · "+(modelData.regex?"Regex: ":"Exact: ")+modelData.expression;textFormat:Text.PlainText;elide:Text.ElideRight;Layout.fillWidth:true}
+                            Button {text:"Edit";onClicked:openLinkExclusion({},modelData)}
+                            Button {text:"Remove…";onClicked:openLinkExclusion({},Object.assign({},modelData,{removed:true}))}
+                        }}
+        }
+    }
+    Dialog {
+        id:ruleSplitDialog;objectName:"ruleSplitDialog";title:"Choose a split to match by its memo";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,600)
+        contentItem:ColumnLayout {
+            Repeater {model:(selected.draft||{}).splits||[]
+                Button {required property var modelData;required property int index;objectName:"ruleSplitChoice_"+index;text:modelData.categoryDisplay+" · "+modelData.amount;enabled:modelData.sourceOrdinal>=0
+                    onClicked:{ruleSplitDialog.close();createFromSource("memo",index)}}
+            }
+        }
+    }
+    Dialog {
+        id:matchedRuleDialog;objectName:"matchedRuleDialog";title:"Choose a rule to edit";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640)
         ColumnLayout {
             width:matchedRuleDialog.availableWidth
             Repeater {
-                model:selected.ruleExplanations||[]
-                Button {required property var modelData;objectName:"matchedRule_"+modelData.rule;text:modelData.label+" · "+modelData.field+" · "+modelData.wording;onClicked:editMatched(modelData.rule)}
+                model:ruleChoices()
+                Button {required property var modelData;objectName:"matchedRule_"+modelData.rule;text:modelData.label+" · "+modelData.field+(modelData.available?"":" · Deleted");enabled:modelData.available;onClicked:editMatched(modelData.rule)}
             }
         }
     }
@@ -1626,7 +1734,7 @@ ApplicationWindow {
                     Button {objectName:"importStatement";text:"Import…";Layout.fillWidth:true;enabled:!workflow.busy;onClicked:guard(function(){importTarget="";importDialog.open()})}
                     Button {objectName:"reviewNavigation";text:s.reviewReady===false?"Review":"Review ("+(s.reviewCount||0)+")";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
-                    Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.active;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(s.rulesSupported && !rulesDirty)workflow.command("rules_load")})}
+                    Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.active;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){ruleFocused=false;navigate("rules");if(s.rulesSupported && !rulesDirty)workflow.command("rules_load")})}
                     Button {objectName:"historyNavigation";text:"Change history";Layout.fillWidth:true;visible:!!s.committedChangesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("history");workflow.command("history")})}
                     Button {objectName:"sidebarSettings";text:"Settings";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="settings";onClicked:navigate("settings")}
                 }
@@ -1880,6 +1988,7 @@ ApplicationWindow {
             Layout.fillWidth:true
             Button {text:"Transfer details…";visible:!!s.transfersSupported;onClicked:guard(function(){transferDialog.open()})}
             Button {text:"Close inspection";visible:reviewInspecting;onClicked:guard(function(){reviewInspecting=false})}
+            Button {text:"Transfer suggestions…";objectName:"transferSuggestionSettings";onClicked:transferSuggestionSettings.open()}
             Button {text:"Undo";objectName:"reviewUndo";enabled:!!s.canUndoReview && !workflow.busy;onClicked:workflow.command("review_undo");ToolTip.text:Qt.platform.os==="osx"?"Cmd+Z":"Ctrl+Z";ToolTip.visible:hovered}
             Button {text:(s.acceptanceWarnings||[]).length>0?"Ignore warnings and accept":"Accept valid transactions";objectName:"reviewIgnoreCommit";visible:(s.newTransactions||0)>0;enabled:!!s.canIgnoreWarnings && !workflow.busy;onClicked:{reviewSheet.close();workflow.command("commit",{ignoreWarnings:true})}}
             Button {text:"Close";onClicked:{commitBeforeQuit=false;reviewSheet.close()}}
@@ -1943,26 +2052,19 @@ ApplicationWindow {
                     ColumnLayout {
                         width:rulesPage.availableWidth;spacing:8
                         Label {text:"Rules";font.pixelSize:20}
-                        Label {text:"Link suggestions";font.pixelSize:18}
-                        Label {text:"Choose which transfer suggestions to hide.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        Button {text:"Hide suggestions…";onClicked:openLinkExclusion({payee:"",account:s.accountId},null)}
-                        Repeater {model:s.linkExclusions||[];delegate:RowLayout {
-                            required property var modelData;Layout.fillWidth:true
-                            Label {text:(modelData.account==="0"?"All accounts":"Account "+modelData.account)+" · "+modelData.field+" · "+(modelData.regex?"Regex: ":"Exact: ")+modelData.expression;textFormat:Text.PlainText;elide:Text.ElideRight;Layout.fillWidth:true}
-                            Button {text:"Edit";onClicked:openLinkExclusion({},modelData)}
-                            Button {text:"Remove…";onClicked:openLinkExclusion({},Object.assign({},modelData,{removed:true}))}
-                        }}
                         ColumnLayout {Layout.fillWidth:true;visible:!!s.rulesSupported
-                        Label {text:"Categorisation";font.pixelSize:18}
+                        Label {text:ruleFocused?(ruleIndex>=0 && ruleIndex<ruleModel.count && (s.rules||[]).some(r=>r.id===ruleModel.get(ruleIndex).id)?"Edit rule":"New rule"):"Categorisation";font.pixelSize:18}
+                        Button {objectName:"allRules";text:"All rules";visible:ruleFocused;onClicked:ruleFocused=false}
 
-                        Label {text:"Preview your rules before saving. Save them before applying.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {visible:!ruleFocused;text:"Choose the transactions to include, preview the matches, then apply.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         RowLayout {
-                            Button {objectName:"newRule";text:"New rule";onClicked:newRule()}
+                            Button {objectName:"newRule";text:"New rule";visible:!ruleFocused;onClicked:newRule()}
                             Button {objectName:"saveRules";text:"Save";enabled:rulesDirty;onClicked:saveRules()}
                             Button {objectName:"discardRules";text:"Discard";enabled:rulesDirty;onClicked:workflow.command("rules_discard")}
-                            CheckBox {id:showRemovedRules;objectName:"showRemovedRules";text:"Show removed"}
+                            CheckBox {id:showRemovedRules;objectName:"showRemovedRules";text:"Show removed";visible:!ruleFocused}
                         }
                         Column {
+                            visible:!ruleFocused
                             Layout.fillWidth:true
                             Repeater {
                                 model:ruleModel
@@ -1982,7 +2084,7 @@ ApplicationWindow {
                                     // The rule's own flag must not disable the row. Re-enable after the role is applied.
                                     enabled:true
                                     Label {text:String(index+1);Layout.preferredWidth:28}
-                                    CheckBox {objectName:"ruleEnabled_"+index;checked:ruleEntry.ruleOn;onClicked:toggleRule(index)}
+                                    CheckBox {objectName:"ruleEnabled_"+index;text:"Enabled";checked:ruleEntry.ruleOn;onClicked:toggleRule(index)}
                                     Button {objectName:"openRule_"+index;text:label||("Rule "+(index+1));onClicked:openRule(index);Layout.fillWidth:true}
                                     Label {text:(scope==="split"?"Split":"Transaction")+" · "+(scope==="split" && input==="payee"?"Parent payee":input);Layout.preferredWidth:170}
                                     Label {text:expression;elide:Text.ElideRight;Layout.preferredWidth:180;textFormat:Text.PlainText}
@@ -1994,7 +2096,7 @@ ApplicationWindow {
                             }
                         }
                         Column {
-                            visible:showRemovedRules.checked
+                            visible:!ruleFocused && showRemovedRules.checked
                             Layout.fillWidth:true
                             Label {text:"Removed rules";font.bold:true}
                             Repeater {
@@ -2010,37 +2112,79 @@ ApplicationWindow {
                         ColumnLayout {
                             visible:ruleIndex>=0
                             Layout.fillWidth:true
-                            Label {text:"The pattern below determines what matches.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                            TextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Label";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
+                            CheckBox {text:"Enabled";checked:ruleIndex>=0 && ruleIndex<ruleModel.count?ruleModel.get(ruleIndex).ruleOn:false;onClicked:toggleRule(ruleIndex)}
+                            Label {text:"Rule name";font.bold:true}
+                            TextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Rule name";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
+                            Label {text:"Match";font.bold:true}
                             RowLayout {
                                 UsableComboBox {id:ruleScope;objectName:"ruleScope";Accessible.name:"Rule scope";model:["Transaction","Split"];onActivated:if(!ruleSync){if(currentIndex===0){ruleSync=true;ruleInherit.checked=false;ruleSync=false} writeRule()}}
                                 UsableComboBox {id:ruleInput;objectName:"ruleInput";Accessible.name:"Rule source field";model:ruleScope.currentIndex===1?["Parent payee","Memo","Category"]:["Payee","Memo","Category"];onActivated:if(!ruleSync)writeRule()}
                             }
-                            TextField {id:ruleExpression;objectName:"ruleExpression";placeholderText:"Expression";Layout.fillWidth:true;onTextEdited:{syncAssist();writeRule()} Accessible.name:"Rule expression"}
+                            Label {text:"Pattern (regular expression)"}
+                            TextField {id:ruleExpression;objectName:"ruleExpression";placeholderText:"Expression";Layout.fillWidth:true;onTextEdited:{ruleAssistNote.text="";syncAssist();writeRule()} Accessible.name:"Rule expression"}
+                            Label {
+                                objectName:"rulePatternKey";Layout.fillWidth:true;textFormat:Text.PlainText
+                                font.pixelSize:12;fontSizeMode:Text.HorizontalFit;minimumPixelSize:10
+                                property string firstLine:"^ start · $ end · . any character · .* any text"
+                                property string secondLine:"* zero or more · + one or more (of the preceding item) · \\Q…\\E literal text"
+                                text:firstLine+(width>=850?" · ":"\n")+secondLine
+                                Accessible.name:text
+                            }
                             RowLayout {
                                 CheckBox {id:ruleCaseSensitive;objectName:"ruleCaseSensitive";text:"Case sensitive";onClicked:if(!ruleSync)setCase(checked)}
                                 CheckBox {id:ruleWholeField;objectName:"ruleWholeField";text:"Whole field";onClicked:if(!ruleSync)setWhole(checked)}
                             }
                             Label {id:ruleAssistNote;objectName:"ruleAssistNote";text:"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                            Label {text:"Changes";font.bold:true}
                             TextField {id:rulePayeeTemplate;objectName:"rulePayeeTemplate";visible:ruleScope.currentIndex===0;placeholderText:"Payee template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Payee template"}
                             TextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
                             RowLayout {
-                                Button {objectName:"ruleCategory";text:ruleCategoryId?(((s.categoryById||{})[ruleCategoryId]||{}).path||ruleCategoryId):"No category";enabled:!ruleInherit.checked;onClicked:openRuleCategory()}
-                                Button {objectName:"clearRuleCategory";text:"Clear category";onClicked:{ruleCategoryId="";writeRule()}}
+                                Label {text:"Category"}
+                                UsableComboBox {id:ruleCategoryField;objectName:"ruleCategory";Layout.fillWidth:true;Layout.minimumWidth:120;Layout.preferredWidth:400;Layout.maximumWidth:600;editable:true;enabled:!ruleInherit.checked;textRole:"path";valueRole:"id"
+                                    model:[{id:"",path:"No category change"}].concat((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
+                                    currentIndex:{for(let i=0;i<model.length;i++)if(model[i].id===ruleCategoryId)return i;return -1}
+                                    onActivated:{ruleCategoryId=model[currentIndex].id;writeRule()}
+                                    onAccepted:acceptRuleCategory()
+                                    Accessible.name:"Rule category"
+                                }
                                 CheckBox {id:ruleInherit;objectName:"ruleInherit";visible:ruleScope.currentIndex===1;text:"Use transaction category";onClicked:if(!ruleSync){if(checked)ruleCategoryId="";writeRule()}}
                             }
-                            Label {text:"Choose what this rule changes. Split rules cannot change the transaction payee.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         }
                         RowLayout {
-                            Button {objectName:"previewRules";text:"Preview";onClicked:previewRules()}
-                            CheckBox {id:replaceManualFields;objectName:"replaceManualFields";text:"Replace values I entered, including blanks"}
-                            Button {objectName:"applyRules";text:"Apply";visible:currentPage==="rules" && !!s.pending && !s.pending.processingIncomplete && !selected.committed;enabled:!rulesDirty && replaceManualFields.checked===!!((s.rulePreview||{}).replaceManual) && applyReady();onClicked:applyRules()}
+                            Label {text:"Include"}
+                            UsableComboBox {id:ruleTransactionScope;objectName:"ruleTransactionScope";model:["All transactions in this account","New transactions only"];currentIndex:0;Layout.preferredWidth:340}
                         }
-                        Label {objectName:"rulesCommittedNotice";visible:currentPage==="rules" && (!!selected.committed || !s.pending);text:"Apply changes only transactions that have not been accepted.";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
-                        Button {objectName:"reapplyRules";text:"Reapply to this account";visible:!!s.rulesSupported;enabled:!rulesDirty && !workflow.busy;onClicked:guardedPreview("rules_reapply_preview",{replaceManual:replaceManualFields.checked})}
+                        GridLayout {
+                            columns:rulesPage.availableWidth<1000?1:4
+                            Button {objectName:"previewThisRule";text:"Preview this rule";enabled:ruleIndex>=0;onClicked:previewThisRule()}
+                            Button {objectName:"previewRules";text:"Preview all enabled rules";visible:!ruleFocused;onClicked:previewRules()}
+                            CheckBox {id:replaceManualFields;objectName:"replaceManualFields";text:"Replace values I entered, including blanks"}
+                            Button {objectName:"applyRules";text:rulesDirty?"Save and apply":"Apply to this account now";enabled:applyReady();onClicked:applyRules()}
+                        }
                         Label {objectName:"rulePreviewStatus";text:(s.rulePreview||{}).label||"";font.bold:true;textFormat:Text.PlainText}
                         Label {objectName:"rulePreviewBody";text:(s.rulePreview||{}).summaryText||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
-                        Label {text:(s.rulePreview||{}).overlap||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                        Label {objectName:"ruleApplyHelp";visible:!applyReady();text:"Preview the current rules and transaction scope before applying.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Button {objectName:"undoRules";text:"Undo rule application";enabled:!!s.canUndoRules && !workflow.busy;onClicked:workflow.command("rules_account_undo")}
+                        RowLayout {
+                            visible:((s.rulePreview||{}).records||[]).length>0;Layout.fillWidth:true;Layout.rightMargin:18
+                            Label {text:"Date";font.bold:true;Layout.preferredWidth:110}
+                            Label {text:"Imported payee";font.bold:true;Layout.fillWidth:true}
+                            Label {text:"Amount";font.bold:true;Layout.preferredWidth:160;horizontalAlignment:Text.AlignRight}
+                        }
+                        ListView {
+                            id:ruleMatches;objectName:"ruleMatches";model:(s.rulePreview||{}).records||[]
+                            visible:count>0;Layout.fillWidth:true;Layout.preferredHeight:Math.min(360,Math.max(40,count*36))
+                            clip:true;reuseItems:true;boundsBehavior:Flickable.StopAtBounds
+                            ScrollBar.vertical:UsableScrollBar {}
+                            delegate:RowLayout {
+                                required property var modelData
+                                required property int index
+                                width:ruleMatches.width-18;height:36;spacing:8
+                                Label {text:modelData.date;textFormat:Text.PlainText;Layout.preferredWidth:110;elide:Text.ElideRight}
+                                Label {objectName:"ruleMatchPayee_"+index;text:String(modelData.payee||"").replace(/[\r\n\t]+/g," ");textFormat:Text.PlainText;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
+                                Label {text:modelData.amount;textFormat:Text.PlainText;Layout.preferredWidth:160;horizontalAlignment:Text.AlignRight;elide:Text.ElideRight}
+                            }
+                        }
                     }
                     }
                 }
@@ -2400,9 +2544,8 @@ ApplicationWindow {
                 RowLayout {
                     visible:!!s.rulesSupported && !!selected.batch
                     Label {objectName:"ruleWinners";text:(selected.winnerLines||[]).join("\n");visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
-                    Button {objectName:"editMatchedRule";text:"Edit rule…";visible:(selected.ruleExplanations||[]).length>0;onClicked:openMatched()}
-                    Button {objectName:"createRuleFromPayee";text:"Create rule from imported payee";onClicked:createFromSource("payee")}
-                    Button {objectName:"createRuleWhenNone";text:"Create rule…";visible:(selected.ruleExplanations||[]).length===0;onClicked:createFromSource("payee")}
+                    Button {objectName:"transactionRuleAction";text:{let choices=ruleChoices();return !choices.some(c=>c.available)?"Create rule…":choices.length===1?"Edit rule…":"Edit rules…"} onClicked:transactionRuleAction()}
+                    Label {text:"The rule that assigned this value was deleted.";visible:(selected.ruleAssignments||[]).some(c=>!c.available);wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 Label {visible:!!s.rulesSupported && !!selected.ruleMatchError;textFormat:Text.PlainText;text:selected.ruleMatchError||"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 CheckBox {id:sourceToggle;objectName:"sourceToggle";text:"Show original imported transaction"}

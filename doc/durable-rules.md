@@ -1,5 +1,20 @@
 # Durable rules integration
 
+The [account-scope Apply contract](../features/004-rules-and-explanations.md#rule-scope-and-account-apply--owner-go-2026-11-01)
+supersedes the separate preview/Apply/Reapply UI described below. New and committed
+transactions can now be updated and undone together in the selected account.
+
+The [match-list and non-reverting Apply follow-up](../features/004-rules-and-explanations.md#match-list-preview-and-non-reverting-apply--owner-go-2026-11-01)
+supersedes earlier removal/recomputation and whole-scope preview limits below.
+Only enabled matches appear in the compact preview; disabled or nonmatching rules
+no longer cause earlier values to be reset by Apply or accepted-account reapply.
+
+The [transaction rule editor follow-up](../features/004-rules-and-explanations.md#transaction-rule-editor--owner-go-2026-11-01)
+supersedes the original editor layout below. It adds attribution-based Create/Edit,
+current-category prefill, focused read-only single-rule testing, and moves transfer
+suggestion controls to Review. Full-ruleset Save/Apply contracts remain unchanged.
+See [status](status.md) for verification and limits.
+
 | | |
 |---|---|
 | Author | SpentIt contributor (placeholder) |

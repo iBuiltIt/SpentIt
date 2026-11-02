@@ -224,7 +224,8 @@ QString phaseFor(const QString& action){
     if(action=="rules_load"||action=="rules_discard"||action=="rules_prefill")return "Loading rules";
     if(action=="rules_preview")return "Evaluating rules";
     if(action=="rules_save")return "Saving rules";
-    if(action=="rules_apply")return "Applying rules";
+    if(action=="rules_apply" || action=="rules_account_apply")return "Applying rules";
+    if(action=="rules_account_undo")return "Undoing rule application";
     if(action=="rules_reapply_preview")return "Checking rules against accepted transactions";
     if(action=="rules_reapply_apply")return "Reapplying rules";
     if(action=="rename_account")return "Renaming account";
@@ -356,6 +357,7 @@ struct ImportModel::Worker {
     QVariantList rules,ruleTombstones;
     QVariantMap rulePreview,ruleReceipt,rulePrefill;
     std::optional<app::RuleApplyRequest> preparedApply;
+    std::optional<app::AccountRuleRequest> preparedAccountApply;
     std::string ruleApplyOperation;
     QVariantMap reapplyPreview,reapplyReceipt;
     std::optional<app::RuleReapplyPreview> preparedReapply;
@@ -415,7 +417,7 @@ struct ImportModel::Worker {
     std::optional<app::EntryToken> selectedCommittedToken;
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
-    void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
+    void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
     void clearChanges() {sessionEdits.clear();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         PresentationRead observation{diagnosticPresentationFailed};
@@ -489,7 +491,7 @@ struct ImportModel::Worker {
         return id;
     }
     void attachRules(app::ImportRepository& repo,const imports::Occurrence& id,app::OperationContext& context) {
-        selected["ruleMatchError"]=QString();selected["winnerLines"]=QVariantList{};selected["ruleExplanations"]=QVariantList{};
+        selected["ruleAssignments"]=QVariantList{};selected["ruleMatchError"]=QString();selected["winnerLines"]=QVariantList{};selected["ruleExplanations"]=QVariantList{};
         if(!repo.rules_supported())return;
         try {
             if(!rulesLoaded)loadRules();
@@ -503,6 +505,13 @@ struct ImportModel::Worker {
                     {"effect",effectName(item.effect)},{"wording",effectWording(item.effect)},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
             }
             selected["ruleExplanations"]=explanations;
+            QVariantList assignments;
+            for(const auto& item:match.assignments) {
+                const auto id=text(item.mark.identity);
+                const bool available=std::any_of(rules.begin(),rules.end(),[&](const auto& value){return value.toMap().value("id").toString()==id;});
+                assignments.push_back(QVariantMap{{"rule",id},{"label",ruleLabel(id)},{"field",text(item.field)},{"available",available},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
+            }
+            selected["ruleAssignments"]=assignments;
         } catch(const app::OperationCancelled&){throw;}
         catch(const app::OperationOutcomeUnknown&){throw;}
         catch(const std::exception& error){selected["ruleMatchError"]=text(error.what());}
@@ -784,7 +793,7 @@ struct ImportModel::Worker {
         state["categorySelected"]=categorySelected;state["categoryHistory"]=categoryHistory;state["categoryPreview"]=categoryPreview;state["categoryReceipt"]=categoryReceipt;
         if(repo.rules_supported() && !rulesLoaded) loadRules();
         state["rulesSupported"]=repo.rules_supported();state["rules"]=rules;state["ruleTombstones"]=ruleTombstones;state["ruleRevision"]=QString::number(ruleRevision);
-        state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;
+        state["canUndoRules"]=repo.can_undo_account_rules();state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;
         state["selected"]=selected;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
         state["bulkSupported"]=repo.bulk_supported();state["bulkPreview"]=bulkPreview;state["bulkReceipt"]=bulkReceipt;
         state["reapplyPreview"]=reapplyPreview;state["reapplyReceipt"]=reapplyReceipt;
@@ -865,40 +874,18 @@ struct ImportModel::Worker {
         state["selectionIndex"]=focus;
         return {state,cachedView};
     }
-    void publishPreview(const app::RulePreviewResult& result,const QVariantList& editor) {
-        QStringList lines;
-        const auto label=result.unsaved_rules?QString("Unsaved rules"):QString("Saved rules");
-        lines<<label<<"Overlap results are only for the records just evaluated.";
+    void publishPreview(const app::RulePreviewResult& result,bool single) {
         QVariantList records;
-        for(const auto& record:result.records) {
-            QVariantList explanations;
-            for(const auto& item:record.proposal.explanations) {
-                const auto id=text(item.contribution.rule);
-                QString shown;
-                for(const auto& value:editor) {
-                    const auto map=value.toMap();
-                    if(map.value("id").toString()==id) {shown=map.value("label").toString();break;}
-                }
-                if(shown.isEmpty()) shown=ruleLabel(id);
-                const auto effect=effectName(item.effect);
-                const auto wording=effectWording(item.effect);
-                explanations.push_back(QVariantMap{{"rule",id},{"version",QString::number(item.contribution.version)},{"label",shown},{"field",text(item.field)},
-                    {"effect",effect},{"wording",wording},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
-                lines<<effect+" · "+wording+" · "+shown+" · "+text(item.field);
-            }
-            QVariantList diffs;
-            for(const auto& diff:record.diffs) {
-                const auto wording=diffWording(diff.removed,diff.assigned);
-                const auto before=text(diff.before_text), after=text(diff.after_text);
-                diffs.push_back(QVariantMap{{"field",fieldName(diff.field)},{"allocation",text(diff.allocation)},{"before",before},{"after",after},{"removed",diff.removed},{"assigned",diff.assigned},{"wording",wording}});
-                lines<<fieldName(diff.field)+" · "+before+" -> "+after+" · "+wording;
-            }
-            records.push_back(QVariantMap{{"batch",text(record.identity.batch)},{"ordinal",static_cast<int>(record.identity.ordinal)},{"payee",text(record.proposal.after.payee)},{"explanations",explanations},{"diffs",diffs}});
-        }
-        rulePreview={{"label",label},{"unsaved",result.unsaved_rules},{"batch",text(result.batch)},{"batchRevision",QString::number(result.batch_revision)},
+        for(const auto& match:result.matches)records.push_back(QVariantMap{
+            {"batch",text(match.identity.batch)},{"ordinal",static_cast<int>(match.identity.ordinal)},
+            {"date",dateText(match.date)},{"payee",text(match.payee)},{"amount",money(match.amount)}});
+        const auto count=result.matches.size();
+        rulePreview={{"label",single?QString("This rule · current account"):result.unsaved_rules?QString("Unsaved rules"):QString("Saved rules")},
+            {"unsaved",result.unsaved_rules},{"single",single},{"batch",text(result.batch)},{"batchRevision",QString::number(result.batch_revision)},
             {"rulesetRevision",QString::number(result.ruleset_revision)},{"catalogRevision",QString::number(result.catalog_revision)},{"replaceManual",result.replace_manual},
             {"operation",result.unsaved_rules?QString():text(ruleApplyOperation)},{"evaluated",static_cast<int>(result.evaluated)},{"changed",static_cast<int>(result.changed)},
-            {"overlap","Overlap results are only for the records just evaluated."},{"records",records},{"summaryText",lines.join('\n')}};
+            {"matched",static_cast<int>(count)},{"records",records},
+            {"summaryText",count?QString("%1 matching transaction%2").arg(count).arg(count==1?"":"s"):QString("No matches.")}};
     }
     void execute(const QString& action,const QVariantMap& input, app::OperationContext& context) {
         diagnosticSaved=false;diagnosticUnchanged=false;diagnosticPresentationFailed=false;
@@ -1629,7 +1616,7 @@ struct ImportModel::Worker {
                 selection=oldSelection;selectionAnchor=oldAnchor;selectionFocus=oldFocus;
                 throw;
             }
-        } else if(action=="rules_load" || action=="rules_discard" || action=="rules_save" || action=="rules_preview" || action=="rules_apply" || action=="rules_prefill") {
+        } else if(action=="rules_load" || action=="rules_discard" || action=="rules_save" || action=="rules_preview" || action=="rules_apply" || action=="rules_account_apply" || action=="rules_account_undo" || action=="rules_prefill") {
             if(!repo.rules_supported()) throw std::invalid_argument("Rules are not enabled for this dataset");
             auto closeUnknown=[&](const char* message){gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();throw std::runtime_error(message);};
             auto refreshFailed=[&](const QString& sentence){diagnosticPresentationFailed=true;const auto saved=ruleReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();ruleReceipt=saved;throw std::runtime_error(sentence.toStdString());};
@@ -1638,13 +1625,13 @@ struct ImportModel::Worker {
                 if(rows.size()>static_cast<qsizetype>(rules::EvaluationLimits::rules)) throw std::invalid_argument("Too many rules");
                 std::vector<app::RuleDefinitionImage> ordered;for(const auto& value:rows) ordered.push_back(imageFrom(value.toMap()));return ordered;
             };
-            if(action=="rules_load" || action=="rules_discard") {loadRules();if(action=="rules_discard"){rulePreview.clear();preparedApply.reset();}}
+            if(action=="rules_load" || action=="rules_discard") {loadRules();if(action=="rules_discard"){rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();}}
             else if(action=="rules_prefill") {
                 if(selectedBatch.empty()) throw std::logic_error("Select a record first");
                 auto row=repo.row({selectedBatch,selectedOrdinal});
                 const auto kind=a.value("kind").toString();
                 std::string source;auto scope=rules::Scope::transaction;auto input=rules::InputField::payee;
-                if(kind=="payee") source=row.source.payee;
+                if(kind=="payee") {source=row.source.payee;if(a.contains("allocation") || row.source.has_source_splits)scope=rules::Scope::split;}
                 else if(kind=="memo") {
                     const auto index=a.value("allocation").toInt();
                     std::optional<imports::DraftRow> committedDraft;
@@ -1658,24 +1645,46 @@ struct ImportModel::Worker {
                     source=row.source.source_allocation_fields[ordinal].memo;scope=rules::Scope::split;input=rules::InputField::memo;
                 } else throw std::invalid_argument("Unknown rule source");
                 app::RuleDefinitionImage rule;rule.identity=identity();rule.enabled=true;rule.scope=scope;rule.input=input;rule.expression=app::quoted_field_pattern(source);
+                std::optional<imports::DraftRow> current=row.draft;
+                if(selected.value("committed").toBool())current=repo.committed_entry({selectedBatch,selectedOrdinal}).current.draft;
+                rule.label=source.empty()?"New rule":source;
+                if(current) {
+                    const auto& allocations=current->transaction.allocations();
+                    if(kind=="payee" && !a.contains("allocation") && allocations.size()>1)throw std::invalid_argument("Choose a split for this rule.");
+                    const auto index=a.contains("allocation")?a.value("allocation").toInt():0;
+                    if(a.contains("allocation") && (index<0 || static_cast<std::size_t>(index)>=allocations.size() || !allocations[static_cast<std::size_t>(index)].source_ordinal))throw std::invalid_argument("Choose an imported split for this rule.");
+                    if(index>=0 && static_cast<std::size_t>(index)<allocations.size()) {
+                        const auto& allocation=allocations[static_cast<std::size_t>(index)];
+                        if(!repo.resolve_account_name(allocation.category) && allocation.category_binding)rule.actions.category=allocation.category_binding->identity;
+                    }
+                }
                 rulePrefill=ruleMap(rule);
             } else if(action=="rules_preview") {
+                preparedApply.reset();preparedAccountApply.reset();rulePreview.clear();ruleApplyOperation.clear();
                 if(qEnvironmentVariableIsSet("SPENTIT_RULE_CANCEL_WINDOW"))
                     for(int i=0;i<200 && context.state.load()==app::OperationContext::available;++i) std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 app::RulePreviewRequest request;
                 request.batch=str(a.value("batch"));
                 request.batch_revision=a.value("batchRevision").toString().isEmpty()?-1:a.value("batchRevision").toString().toLongLong();
                 request.replace_manual=a.value("replaceManual").toBool();
+                request.single_rule=a.value("singleRule").toBool();
+                request.matches_only=true;
+                request.account_scope=a.value("accountScope").toBool();
+                request.new_only=a.value("newOnly").toBool();
+                request.saved_rule=str(a.value("rule"));
                 std::optional<std::vector<app::RuleDefinitionImage>> editor;
                 if(a.value("unsaved").toBool()) editor=images();
                 request.editor=editor;
                 const auto result=repo.preview_pending_rules(request,context);
-                if(result.unsaved_rules) preparedApply.reset();
+                if(result.unsaved_rules) {preparedApply.reset();preparedAccountApply.reset();}
+                else if(request.account_scope) {ruleApplyOperation=identity();preparedAccountApply=result.account_request;}
                 else {
                     if(ruleApplyOperation.empty()) ruleApplyOperation=identity();
                     preparedApply=app::RuleApplyRequest{result.batch,result.batch_revision,result.ruleset_revision,result.catalog_revision,result.replace_manual};
                 }
-                publishPreview(result,editor?a.value("rules").toList():QVariantList{});
+                publishPreview(result,request.single_rule);
+                rulePreview["accountScope"]=request.account_scope;rulePreview["newOnly"]=request.new_only;rulePreview["rule"]=text(request.saved_rule);
+                rulePreview["label"]=request.account_scope?(request.single_rule?"This rule":"All enabled rules")+QString(request.new_only?" · new transactions only":" · all transactions in this account"):rulePreview.value("label").toString();
             } else if(action=="rules_save") {
                 ruleReceipt.clear();
                 if(!rulesLoaded) loadRules();
@@ -1692,11 +1701,28 @@ struct ImportModel::Worker {
                 if(result->unchanged)diagnosticUnchanged=true;else observedSaved();
                 ruleReceipt=result->unchanged?QVariantMap{{"operation",QString()},{"unchanged",true},{"summary","Rules unchanged"}}
                     :QVariantMap{{"operation",text(result->operation)},{"unchanged",false},{"summary","Rules saved"}};
-                rulePreview.clear();preparedApply.reset();ruleApplyOperation.clear();
+                rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();
                 try {
                     if(qEnvironmentVariableIsSet("SPENTIT_RULE_REFRESH_FAIL")) throw std::runtime_error("refresh");
                     loadRules();if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
                 } catch(...) {const auto saved=ruleReceipt.value("operation").toString();refreshFailed(saved.isEmpty()?QString("The screen could not update. Close and reopen the file before continuing."):ruleSaveRefreshFailure(saved));}
+            } else if(action=="rules_account_apply" || action=="rules_account_undo") {
+                const bool undo=action=="rules_account_undo";
+                if(!undo && (!preparedAccountApply || str(a.value("preview"))!=ruleApplyOperation))throw std::logic_error("Preview these rules again before applying.");
+                const auto operation=undo?identity():ruleApplyOperation;
+                app::ReviewReceipt result;
+                const auto changed=rulePreview.value("changed").toInt();
+                try {result=undo?repo.undo_account_rules(operation):repo.apply_account_rules(operation,*preparedAccountApply,context);}
+                catch(...) {
+                    const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;
+                    try {outcome=repo.review_outcome(operation);}catch(...){closeUnknown("Rule application outcome is uncertain. Reopen and check the transactions before retrying.");}
+                    if(!outcome){preparedAccountApply.reset();rulePreview.clear();ruleApplyOperation.clear();std::rethrow_exception(failure);}result=*outcome;
+                }
+                if(result.operation.empty())diagnosticUnchanged=true;else observedSaved();
+                ruleReceipt={{"operation",text(result.operation)},{"summary",undo?QString("Rule application undone."):QString("%1 transaction%2 updated.").arg(changed).arg(changed==1?"":"s")}};
+                preparedAccountApply.reset();rulePreview.clear();ruleApplyOperation.clear();
+                try {if(qEnvironmentVariableIsSet("SPENTIT_RULE_REFRESH_FAIL"))throw std::runtime_error("refresh");if(historyLoaded)listHistory();if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);}
+                catch(...) {refreshFailed(ruleApplyRefreshFailure(text(result.operation)));}
             } else if(action=="rules_apply") {
                 ruleReceipt.clear();
                 if(!preparedApply || ruleApplyOperation.empty()) throw std::logic_error("Review a saved rules preview first");
@@ -1710,12 +1736,12 @@ struct ImportModel::Worker {
                     const auto failure=std::current_exception();
                     try {result=repo.rule_apply_outcome(operation);}
                     catch(...) {closeUnknown("Rule application outcome is uncertain. Reopen the file and check the new transactions before retrying.");}
-                    if(!result) {ruleApplyOperation.clear();preparedApply.reset();rulePreview.clear();std::rethrow_exception(failure);}
+                    if(!result) {ruleApplyOperation.clear();preparedApply.reset();preparedAccountApply.reset();rulePreview.clear();std::rethrow_exception(failure);}
                 }
                 if(result->operation.empty())diagnosticUnchanged=true;else observedSaved();
                 ruleReceipt=result->operation.empty()?QVariantMap{{"operation",QString()},{"summary","No pending drafts were changed"}}
                     :QVariantMap{{"operation",text(result->operation)},{"summary","Rule application "+text(result->operation)+" changed "+QString::number(result->changed)+" draft(s)"}};
-                rulePreview.clear();preparedApply.reset();ruleApplyOperation.clear();
+                rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();
                 try {
                     if(qEnvironmentVariableIsSet("SPENTIT_RULE_REFRESH_FAIL")) throw std::runtime_error("refresh");
                     if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
@@ -1898,7 +1924,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch") operation->seal();
+    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
@@ -2015,7 +2041,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
                 :((action.startsWith("transfer_") || action=="assign_transfer_batch" || action=="release_transfer_batch" || action=="undo_transfer_assignment") && result.success)?"Transfer operation was saved, but its view could not be refreshed. Reopen and inspect transfers before retrying."
                 :(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."
                 :(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Your change was saved, but the screen could not update. Reopen the file and check the transaction before making more changes."
-                :(action=="rules_apply" && !ruleOperation.isEmpty())?ruleApplyRefreshFailure(ruleOperation)
+                :((action=="rules_apply" || action=="rules_account_apply" || action=="rules_account_undo") && !ruleOperation.isEmpty())?ruleApplyRefreshFailure(ruleOperation)
                 :(action=="rules_save" && !ruleOperation.isEmpty())?ruleSaveRefreshFailure(ruleOperation)
                 :(action=="rules_reapply_apply" && !reapplyOperationText.isEmpty())?ruleReapplyRefreshFailure(reapplyOperationText)
                 :(action=="apply_bulk" && !worker->bulkReceipt.isEmpty())?"Your changes were saved, but the screen could not update. Reopen the file and check the transactions before making more changes."

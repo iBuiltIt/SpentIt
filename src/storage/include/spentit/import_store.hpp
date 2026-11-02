@@ -123,6 +123,9 @@ public:
     std::vector<app::RuleTombstone> rule_tombstones() const override;
     app::RuleSaveReceipt save_rules(std::string_view,const app::RuleSaveRequest&,std::int64_t,const app::OperationContext&) override;
     std::optional<app::RuleSaveReceipt> rule_save_outcome(std::string_view) const override;
+    app::ReviewReceipt apply_account_rules(std::string_view,const app::AccountRuleRequest&,const app::OperationContext&) override;
+    bool can_undo_account_rules() const override;
+    app::ReviewReceipt undo_account_rules(std::string_view) override;
     app::RulePreviewResult preview_pending_rules(const app::RulePreviewRequest&,const app::OperationContext&) const override;
     app::RuleApplyReceipt apply_pending_rules(std::string_view,const app::RuleApplyRequest&,const app::OperationContext&) override;
     std::optional<app::RuleApplyReceipt> rule_apply_outcome(std::string_view) const override;
@@ -205,7 +208,7 @@ private:
     void require_account(std::string_view) const;
     app::ReviewReceipt write_review_answer(std::string_view,const app::ReviewAnswer&,const app::ReviewSheet&,std::string_view parent={});
     void restore_review_answer(std::string_view operation,std::string_view answer);
-    void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false,bool=true);
+    void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false,bool=true,std::optional<std::int64_t> = {},std::optional<Money> = {});
     bool review_draft_undo(const imports::Occurrence&,std::int64_t,const imports::DraftRow&) const;
     imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t) const;
     void generate_explicit_transfers(app::OperationContext* context=nullptr);

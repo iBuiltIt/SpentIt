@@ -2035,6 +2035,7 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
 #include "category_store.inc"
 #include "committed_store.inc"
 #include "bulk_store.inc"
+namespace { std::int64_t review_generation(sqlite3*); }
 #include "rule_store.inc"
 #include "rule_reapply_store.inc"
 #include "transfer_store.inc"
@@ -2045,4 +2046,5 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
 #include "account_rollback.inc"
 #include "incomplete_import_cleanup.inc"
 #include "review_sheet_store.inc"
+#include "rule_account_store.inc"
 } // namespace spentit::storage

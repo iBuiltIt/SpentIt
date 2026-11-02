@@ -32,17 +32,31 @@ struct RuleDefinitionImage {
     std::string expression;
     rules::Actions actions;
 };
+struct AccountRuleRequest {
+    std::int64_t account=0, generation=0, ruleset_revision=0, catalog_revision=0;
+    bool new_only=false, replace_manual=false;
+    std::string rule; // Empty selects all enabled rules.
+};
 struct RulePreviewRequest {
     std::string batch;
     std::int64_t batch_revision = -1;
     std::optional<std::vector<RuleDefinitionImage>> editor;
     bool replace_manual = false;
+    bool single_rule = false; // Test one definition on the current account.
+    bool matches_only = false; // Compact UI results; no retained before/after snapshots.
+    bool account_scope = false, new_only = false, changed_only = false;
+    std::string saved_rule{};
 };
 struct RulePreviewRecord {
     imports::Occurrence identity;
     imports::DraftRow before;
     RuleProposal proposal;
     std::vector<RuleFieldDiff> diffs;
+};
+struct RulePreviewMatch {
+    imports::Occurrence identity;
+    std::string date, payee;
+    Money amount;
 };
 struct RulePreviewResult {
     std::string batch;
@@ -54,6 +68,8 @@ struct RulePreviewResult {
     std::size_t evaluated = 0;
     std::size_t changed = 0;
     std::vector<RulePreviewRecord> records;
+    std::vector<RulePreviewMatch> matches;
+    AccountRuleRequest account_request{};
 };
 struct RuleApplyRequest {
     std::string batch;
@@ -96,7 +112,13 @@ struct RuleTombstone {
     std::string expression;
     rules::Actions actions;
 };
+struct RuleAssignment {
+    RuleMark mark;
+    std::string field;
+    std::optional<std::size_t> allocation;
+};
 struct RuleMatch {
+    std::vector<RuleAssignment> assignments;
     std::vector<rules::Explanation> explanations;
     std::vector<std::string> winner_lines;
     std::string error;
@@ -142,10 +164,13 @@ struct RuleReapplyReceipt {
     std::vector<ChangeReceipt> entries;
     Money before, change, after;
 };
-// Quote a source field as one literal. A source that contains \E closes the
+// Anchor a literal source field, quoting only regex metacharacters. A source
+// that contains \E closes the
 // quote, emits \\E, and reopens it. Empty source is an empty whole field.
 inline std::string quoted_field_pattern(std::string_view text) {
-    std::string pattern="^(?:";
+    if(text.find_first_of("\\.^$|?*+()[]{}") == std::string_view::npos)
+        return "^"+std::string(text)+"$";
+    std::string pattern="^";
     std::size_t index=0;
     while(index<text.size()) {
         pattern+="\\Q";
@@ -155,7 +180,7 @@ inline std::string quoted_field_pattern(std::string_view text) {
         pattern+="\\E\\\\E";
         index=end+2;
     }
-    pattern+=")$";
+    pattern+="$";
     return pattern;
 }
 }

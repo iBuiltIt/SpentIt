@@ -16,7 +16,7 @@ FieldOwnership owner(rules::Ownership value) {
     invalid("Unknown field ownership");
 }
 }
-std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const CategoryCatalog& catalog,const std::vector<RuleInput>& inputs,bool replace,const std::function<bool()>& cancelled) {
+std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const CategoryCatalog& catalog,const std::vector<RuleInput>& inputs,bool replace,const std::function<bool()>& cancelled,bool preserve_untouched) {
     if(inputs.size()>rules::EvaluationLimits::records)throw rules::RegexError(rules::RegexFailure::resource_limit,"Too many records in one rule preview");
     if(catalog.categories.size()>rules::EvaluationLimits::scope_allocations)throw rules::RegexError(rules::RegexFailure::resource_limit,"Category catalog exceeds bounded rule preview limit");
     std::size_t allocation_count=0,source_count=0,bytes=0;
@@ -76,6 +76,19 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
     std::vector<RuleProposal> proposals;proposals.reserve(inputs.size());
     for(std::size_t i=0;i<inputs.size();++i) {
         const auto& input=inputs[i];auto& result=evaluated[i];auto after=input.draft;std::vector<RuleProvenance> provenance;
+        // An isolated test only proposes the tested rule's assignments. It must
+        // not present removal of other rules' values as an effect of this rule.
+        if(preserve_untouched) {
+            auto applied=[&](std::string_view field,std::optional<std::size_t> allocation) {
+                return std::any_of(result.explanations.begin(),result.explanations.end(),[&](const auto& e){return e.field==field && e.allocation==allocation && e.effect==rules::Effect::applied;});
+            };
+            if(!applied("payee",{}))result.record.payee=records[i].payee;
+            if(!applied("memo",{}))result.record.memo=records[i].memo;
+            for(std::size_t j=0;j<result.record.allocations.size();++j) {
+                if(!applied("memo",j))result.record.allocations[j].memo=records[i].allocations[j].memo;
+                if(!applied("category",j))result.record.allocations[j].category=records[i].allocations[j].category;
+            }
+        }
         auto remember=[&](RuleField field,const std::string& allocation,const auto& value){if(value.contribution)provenance.push_back({field,allocation,*value.contribution});};
         auto marked=[&](const auto& value)->std::optional<RuleMark>{
             if(owner(value.ownership)!=FieldOwnership::rule)return {};
@@ -91,7 +104,8 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
             auto& a=allocations[j];const auto& fields=result.record.allocations[j];
             a.memo=fields.memo.value;a.memo_owner=owner(fields.memo.ownership);a.memo_rule=marked(fields.memo);
             // A protected manual binding keeps its original label/revision snapshot.
-            if(fields.category.ownership!=rules::Ownership::manual) {
+            const bool assigned_category=!preserve_untouched || std::any_of(result.explanations.begin(),result.explanations.end(),[&](const auto& e){return e.field=="category" && e.allocation==j && e.effect==rules::Effect::applied;});
+            if(assigned_category && fields.category.ownership!=rules::Ownership::manual) {
                 if(fields.category.value.identity.empty()) {a.category_binding.reset();a.category=fields.category.value.unmapped;}
                 else {a.category_binding=CategoryBinding{fields.category.value.identity,catalog.revision};a.category=paths.at(fields.category.value.identity);}
             }

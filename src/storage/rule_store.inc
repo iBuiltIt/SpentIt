@@ -72,7 +72,7 @@ std::vector<rules::Rule> compile_images(sqlite3* db,const std::vector<app::RuleD
     }
     return rules;
 }
-struct PreparedScope { bool present=false; std::string batch; std::int64_t batch_revision=0; std::vector<app::RowView> rows; };
+struct PreparedScope { bool present=false; std::string batch; std::int64_t batch_revision=0; std::size_t count=0; };
 PreparedScope pending_scope(const ImportStore& store,std::string_view requested){
     std::string id(requested);
     if(id.empty()){for(const auto& info:store.batches())if(info.state==app::BatchState::pending){id=info.id;break;}if(id.empty())return {};}
@@ -80,8 +80,7 @@ PreparedScope pending_scope(const ImportStore& store,std::string_view requested)
     if(found==all.end()) fail(SQLITE_NOTFOUND,"Import does not exist");
     if(found->state==app::BatchState::committed) fail(SQLITE_CONSTRAINT,"Committed records are not changed by rules");
     if(found->state!=app::BatchState::pending) fail(SQLITE_CONSTRAINT,"Rules can only be applied after the import finishes.");
-    PreparedScope scope;scope.present=true;scope.batch=found->id;scope.batch_revision=found->revision;
-    for(std::size_t ordinal=0;ordinal<found->count;++ordinal){auto viewed=store.row({scope.batch,ordinal});if(viewed.draft && !viewed.matched_generated && !store.transaction_accepted({scope.batch,ordinal}))scope.rows.push_back(std::move(viewed));}
+    PreparedScope scope;scope.present=true;scope.batch=found->id;scope.batch_revision=found->revision;scope.count=found->count;
     return scope;
 }
 std::vector<app::RuleInput> inputs_from(const std::vector<app::RowView>& rows,const app::ImportRepository& repo){
@@ -95,6 +94,15 @@ std::vector<app::RuleInput> inputs_from(const std::vector<app::RowView>& rows,co
         inputs.push_back(std::move(input));
     }
     return inputs;
+}
+// Bounds for retained output/preparation, separate from the evaluator's
+// per-transaction limits. These are conservative payload budgets, not RSS claims.
+constexpr std::size_t match_preview_budget=128U*1024U*1024U;
+constexpr std::size_t rule_apply_budget=512U*1024U*1024U;
+std::size_t rule_snapshot_bytes(const imports::DraftRow& row) {
+    std::size_t bytes=1024+row.date.size()+row.payee.size()+row.memo.size();
+    for(const auto& allocation:row.transaction.allocations())bytes+=512+allocation.category.size()+allocation.memo.size()+allocation.identity.size();
+    return bytes;
 }
 bool any_mark(const imports::DraftRow& row){if(row.payee_rule || row.memo_rule)return true;for(const auto& allocation:row.transaction.allocations())if(allocation.category_rule || allocation.memo_rule)return true;return false;}
 void refuse_drift(sqlite3* db,const imports::DraftRow& before,const imports::DraftRow& after,std::int64_t catalog){
@@ -230,53 +238,117 @@ std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string
 }
 app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreviewRequest& request,const app::OperationContext& context) const {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
+    ScopedStatements read_plans(impl_->db);
     context.checkpoint("Loading rules");
-    const auto scope=pending_scope(*this,request.batch);
+    if(request.single_rule && request.saved_rule.empty() && (!request.editor || request.editor->size()!=1))fail(SQLITE_CONSTRAINT,"Choose one rule to preview");
+    const auto scope=(request.single_rule || request.account_scope)?PreparedScope{}:pending_scope(*this,request.batch);
     if(scope.present && request.batch_revision!=-1 && request.batch_revision!=scope.batch_revision) fail(SQLITE_CONSTRAINT,refresh_rules);
     app::RulePreviewResult result;result.batch=scope.batch;result.batch_revision=scope.batch_revision;result.catalog_revision=catalog_sequence(impl_->db);result.replace_manual=request.replace_manual;result.unsaved_rules=request.editor.has_value();result.ruleset_revision=request.editor?-1:ruleset_revision(impl_->db);
-    if(scope.rows.empty()) return result;
-    context.checkpoint("Evaluating rules");
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
-    const auto rules=request.editor?compile_images(impl_->db,*request.editor,false):rules_at(impl_->db,result.ruleset_revision<0?0:result.ruleset_revision);
-    rules::RuleSet ruleset(rules);
-    std::vector<app::RuleProposal> proposals;
-    try { proposals=app::preview_rules(ruleset,category_catalog(),inputs_from(scope.rows,*this),request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;}); }
-    catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled) throw app::OperationCancelled(); throw;}
-    catch(const std::invalid_argument&){ fail(SQLITE_CONSTRAINT,rules_drift); }
-    result.evaluated=proposals.size();
-    for(std::size_t index=0;index<proposals.size();++index){
-        app::RulePreviewRecord record{scope.rows[index].identity,*scope.rows[index].draft,std::move(proposals[index]),{}};
-        try { record.diffs=app::rule_field_diffs(record.before,record.proposal); }
-        catch(const std::invalid_argument&){ fail(SQLITE_CONSTRAINT,rules_drift); }
-        if(!record.diffs.empty()) ++result.changed;
-        result.records.push_back(std::move(record));
+    result.account_request={account().identity,review_generation(impl_->db),ruleset_revision(impl_->db),result.catalog_revision,request.new_only,request.replace_manual,request.saved_rule};
+    auto definitions=request.editor?compile_images(impl_->db,*request.editor,false):rules_at(impl_->db,result.ruleset_revision);
+    if(!request.editor && !request.saved_rule.empty()){
+        std::erase_if(definitions,[&](const auto& rule){return rule.identity!=request.saved_rule;});
+        if(definitions.size()!=1)fail(SQLITE_CONSTRAINT,"This rule changed. Preview again.");
     }
+    rules::RuleSet ruleset(definitions);
+    const auto catalog=category_catalog();
+    std::map<imports::Occurrence,std::vector<std::string>> protected_allocations;
+    if(request.account_scope)for(const auto& transfer:all_transfers())if(!transfer.link.unresolved)
+        for(const auto* side:{&transfer.link.origin,&transfer.link.destination})
+            if(side->state!=transfers::State::removed && side->endpoint.account==account().identity)
+                protected_allocations[side->endpoint.entry].push_back(side->endpoint.allocation);
+    std::size_t result_bytes=0;
+    auto evaluate=[&](app::RowView viewed) {
+        context.checkpoint(result.evaluated%256==0?"Finding matching transactions":"");
+        // Each record retains the existing allocation, text and regex execution
+        // bounds. Cancellation/failure discards the entire locally-built result.
+        std::optional<app::RuleProposal> evaluated;
+        auto inputs=inputs_from({viewed},*this);
+        if(const auto found=protected_allocations.find(viewed.identity);found!=protected_allocations.end())inputs.front().transfer_allocations.insert(inputs.front().transfer_allocations.end(),found->second.begin(),found->second.end());
+        try {evaluated=app::preview_rules(ruleset,catalog,inputs,request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;},true).front();}
+        catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled)throw app::OperationCancelled();throw;}
+        catch(const std::invalid_argument&){fail(SQLITE_CONSTRAINT,rules_drift);}
+        auto proposal=std::move(*evaluated);
+        ++result.evaluated;
+        auto diffs=app::rule_field_diffs(*viewed.draft,proposal);
+        if(!diffs.empty())++result.changed;
+        if(!request.changed_only && !proposal.explanations.empty()) {
+            const auto bytes=512+viewed.identity.batch.size()+viewed.draft->date.size()+viewed.source.payee.size();
+            if(bytes>match_preview_budget-result_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,"This preview has too many matching details to display. Preview fewer rules or narrow their patterns.");
+            result_bytes+=bytes;
+            result.matches.push_back({viewed.identity,viewed.draft->date,viewed.source.payee,viewed.draft->transaction.effective_total()});
+        }
+        if(!request.matches_only && (!request.single_rule || !proposal.explanations.empty()) && (!request.changed_only || !diffs.empty())) {
+            auto bytes=rule_snapshot_bytes(*viewed.draft)+rule_snapshot_bytes(proposal.after);
+            for(const auto& diff:diffs)bytes+=512+diff.before_text.size()+diff.after_text.size();
+            if(bytes>(request.changed_only?rule_apply_budget:match_preview_budget)-result_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,request.changed_only?"These rule changes exceed the Apply memory budget. Narrow the rules and preview again.":"Detailed rule preview exceeds its memory budget. Use a compact matching preview.");
+            result_bytes+=bytes;
+            result.records.push_back({viewed.identity,std::move(*viewed.draft),std::move(proposal),std::move(diffs)});
+        }
+    };
+    if(request.single_rule || request.account_scope) {
+        // Same membership as current_ledger(), without materializing all drafts
+        // or generated counterpart rows (which have no imported source).
+        Statement accepted(impl_->db,"SELECT h.batch,h.ordinal,h.revision FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1 ORDER BY e.date,h.batch,h.ordinal");
+        while(!request.new_only && accepted.row()) {
+            context.checkpoint();
+            imports::Occurrence id{accepted.bytes(0),static_cast<std::size_t>(accepted.integer(1))};
+            auto viewed=load_row(id,false);viewed.draft=entry_snapshot(id,accepted.integer(2)).draft;evaluate(std::move(viewed));
+        }
+        Statement pending(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision IN(0,1) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
+        while(pending.row()){context.checkpoint();evaluate(load_row({pending.bytes(0),static_cast<std::size_t>(pending.integer(1))},false));}
+    } else {
+        for(std::size_t ordinal=0;ordinal<scope.count;++ordinal) {
+            context.checkpoint();
+            const imports::Occurrence id{scope.batch,ordinal};auto viewed=load_row(id,false);
+            if(viewed.draft && !viewed.matched_generated && !transaction_accepted(id))evaluate(std::move(viewed));
+        }
+    }
+    std::sort(result.matches.begin(),result.matches.end(),[](const auto& a,const auto& b){return std::tie(a.date,a.identity.batch,a.identity.ordinal)<std::tie(b.date,b.identity.batch,b.identity.ordinal);});
+    context.checkpoint();
     return result;
 }
 app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operation,const app::RuleApplyRequest& request,const app::OperationContext& context) {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
     identifier(operation);
     if(const auto prior=rule_apply_outcome(operation)){if(prior->batch!=request.batch || prior->batch_before!=request.batch_revision || prior->ruleset_revision!=request.ruleset_revision || prior->catalog_revision!=request.catalog_revision || prior->replace_manual!=request.replace_manual)fail(SQLITE_CONSTRAINT,reused_command);return *prior;}
+    ScopedStatements read_plans(impl_->db);
     context.checkpoint("Loading rules");
     const auto scope=pending_scope(*this,request.batch);
     const auto catalog=catalog_sequence(impl_->db);
-    if(!scope.present || scope.rows.empty()){
+    if(!scope.present || scope.count==0){
         if(scope.present && request.batch_revision!=scope.batch_revision) fail(SQLITE_CONSTRAINT,refresh_rules);
         return {"",scope.batch,scope.batch_revision,scope.batch_revision,ruleset_revision(impl_->db),catalog,request.replace_manual,0,0};
     }
-    context.checkpoint("Evaluating rules");
+    if(scope.batch_revision!=request.batch_revision || ruleset_revision(impl_->db)!=request.ruleset_revision || catalog!=request.catalog_revision)fail(SQLITE_CONSTRAINT,refresh_rules);
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     struct Prepared { imports::Occurrence identity; imports::DraftRow before; imports::Decision decision; app::RuleProposal proposal; std::vector<app::RuleFieldDiff> diffs; };
     std::vector<Prepared> prepared;
+    std::size_t evaluated=0,prepared_bytes=0;
     {
         rules::RuleSet ruleset(rules_at(impl_->db,request.ruleset_revision));
-        std::vector<app::RuleProposal> proposals;
-        try { proposals=app::preview_rules(ruleset,category_catalog(),inputs_from(scope.rows,*this),request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;}); }
-        catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled) throw app::OperationCancelled(); throw;}
-        catch(const std::invalid_argument&){ fail(SQLITE_CONSTRAINT,rules_drift); }
-        if(proposals.size()!=scope.rows.size()) fail(SQLITE_CONSTRAINT,rules_drift);
-        for(std::size_t index=0;index<proposals.size();++index){Prepared item{scope.rows[index].identity,*scope.rows[index].draft,scope.rows[index].decision,std::move(proposals[index]),{}};try{item.diffs=app::rule_field_diffs(item.before,item.proposal);}catch(const std::invalid_argument&){fail(SQLITE_CONSTRAINT,rules_drift);}prepared.push_back(std::move(item));}
+        const auto categories=category_catalog();
+        for(std::size_t ordinal=0;ordinal<scope.count;++ordinal) {
+            context.checkpoint(ordinal%256==0?"Preparing matching transactions":"");
+            const imports::Occurrence id{scope.batch,ordinal};auto viewed=load_row(id,false);
+            if(!viewed.draft || viewed.matched_generated || transaction_accepted(id))continue;
+            std::vector<app::RuleProposal> proposals;
+            try {proposals=app::preview_rules(ruleset,categories,inputs_from({viewed},*this),request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;},true);}
+            catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled) throw app::OperationCancelled(); throw;}
+            catch(const std::invalid_argument&){fail(SQLITE_CONSTRAINT,rules_drift);}
+            ++evaluated;
+            auto diffs=app::rule_field_diffs(*viewed.draft,proposals.front());
+            if(!diffs.empty()) {
+                auto bytes=rule_snapshot_bytes(*viewed.draft)+rule_snapshot_bytes(proposals.front().after);
+                for(const auto& diff:diffs)bytes+=512+diff.before_text.size()+diff.after_text.size();
+                if(bytes>rule_apply_budget-prepared_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,"These rule changes exceed the Apply memory budget. Narrow the rules and preview again.");
+                prepared_bytes+=bytes;
+                prepared.push_back({id,std::move(*viewed.draft),viewed.decision,std::move(proposals.front()),std::move(diffs)});
+            }
+        }
     }
+    if(evaluated==0)return {"",scope.batch,scope.batch_revision,scope.batch_revision,request.ruleset_revision,catalog,request.replace_manual,0,0};
     context.checkpoint("Applying rules");
     context.seal();
     Atomic transaction(impl_->db);
@@ -294,7 +366,7 @@ app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operatio
         }
         advance(impl_->db,scope.batch,request.batch_revision,"apply_rules");
     }
-    Statement application(impl_->db,"INSERT INTO rule_applications VALUES(?,?,?,?,?,?,?,?,?)");application.text(1,operation);application.text(2,scope.batch);application.integer(3,request.batch_revision);application.integer(4,after_revision);application.integer(5,request.ruleset_revision);application.integer(6,request.catalog_revision);application.integer(7,request.replace_manual?1:0);application.integer(8,integer(prepared.size()));application.integer(9,integer(changed));application.done();
+    Statement application(impl_->db,"INSERT INTO rule_applications VALUES(?,?,?,?,?,?,?,?,?)");application.text(1,operation);application.text(2,scope.batch);application.integer(3,request.batch_revision);application.integer(4,after_revision);application.integer(5,request.ruleset_revision);application.integer(6,request.catalog_revision);application.integer(7,request.replace_manual?1:0);application.integer(8,integer(evaluated));application.integer(9,integer(changed));application.done();
     finish([&]{transaction.commit();});
     return *rule_apply_outcome(operation);
 }
@@ -316,9 +388,9 @@ app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence& id,cons
         auto proposals=app::preview_rules(ruleset,category_catalog(),inputs_from({row},*this),false,[&]{return context.state.load()==app::OperationContext::requested;});
         if(proposals.size()==1) match.explanations=std::move(proposals.front().explanations);
     } catch(const rules::RegexError& error) { match.error=error.what(); }
-    auto winner=[&](const std::optional<RuleMark>& mark){if(!mark)return;Statement definition(impl_->db,"SELECT label FROM rule_definitions WHERE id=? AND version=?");definition.text(1,mark->identity);definition.integer(2,mark->version);if(!definition.row())fail(SQLITE_CORRUPT);match.winner_lines.push_back("Assigned by "+definition.bytes(0)+" v"+std::to_string(mark->version));};
-    winner(draft->payee_rule);winner(draft->memo_rule);
-    for(const auto& allocation:draft->transaction.allocations()){winner(allocation.category_rule);winner(allocation.memo_rule);}
+    auto winner=[&](const std::optional<RuleMark>& mark,const char* field,std::optional<std::size_t> allocation={}){if(!mark)return;match.assignments.push_back({*mark,field,allocation});Statement definition(impl_->db,"SELECT label FROM rule_definitions WHERE id=? AND version=?");definition.text(1,mark->identity);definition.integer(2,mark->version);if(!definition.row())fail(SQLITE_CORRUPT);match.winner_lines.push_back("Assigned by "+definition.bytes(0)+" v"+std::to_string(mark->version));};
+    winner(draft->payee_rule,"Payee");winner(draft->memo_rule,"Memo");
+    for(std::size_t i=0;i<draft->transaction.allocations().size();++i){const auto& allocation=draft->transaction.allocations()[i];winner(allocation.category_rule,"Category",i);winner(allocation.memo_rule,"Split memo",i);}
     return match;
 }
 void ImportStore::verify_rules(const app::OperationContext* context) const {
@@ -409,7 +481,11 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
                 if(draft.payee_owner==FieldOwnership::rule || draft.memo_owner==FieldOwnership::rule || marked) fail(SQLITE_CORRUPT);
                 if((kind=="ingest" || kind=="materialize") && (draft.payee_owner!=FieldOwnership::source || draft.memo_owner!=FieldOwnership::source)) fail(SQLITE_CORRUPT);
                 for(const auto& allocation:stored_allocations) if(allocation.category_owner==FieldOwnership::rule || allocation.memo_owner==FieldOwnership::rule || ((kind=="ingest" || kind=="materialize") && (allocation.category_owner!=FieldOwnership::source || allocation.memo_owner!=FieldOwnership::source))) fail(SQLITE_CORRUPT);
-            } else if(kind=="save") {if(!review_draft_undo(id,revision_at,draft))check_rule_transition(*previous,draft,false,false);}
+            } else if(kind=="save") {if(!review_draft_undo(id,revision_at,draft)){
+                Statement applied(impl_->db,"SELECT substr(a.request,1,1) FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.ordinal=? AND m.result=? AND m.committed=0 AND a.question='rules-account'");
+                applied.text(1,id.batch);applied.integer(2,integer(id.ordinal));applied.integer(3,revision_at);const bool account_apply=applied.row();
+                check_rule_transition(*previous,draft,account_apply,account_apply && applied.bytes(0)=="1");
+            }}
             else if(kind=="apply_rules"){
                 if(versions.integer(5)!=previous_decision || versions.bytes(6)!=previous_duplicate || versions.integer(7)!=previous_ordinal) fail(SQLITE_CORRUPT);
                 Statement applied(impl_->db,"SELECT replace_manual FROM rule_applications WHERE batch=? AND batch_after=?");applied.text(1,id.batch);applied.integer(2,revision_at);if(!applied.row())fail(SQLITE_CORRUPT);

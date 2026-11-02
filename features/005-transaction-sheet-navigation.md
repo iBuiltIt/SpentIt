@@ -1,5 +1,24 @@
 # 005 — Transaction sheet and navigation
 
+## Ledger return position — owner Go 2026-11-01
+
+Accepted and implemented; see [verification](../doc/status.md). Leaving the ledger
+for Categories, Rules or another workspace records its position separately for
+each account. Back/Forward and account buttons restore that position after the
+ledger and open inline editor have laid out. Hidden model refreshes must not
+overwrite the saved position. The anchor is a transaction identity plus its
+screen offset; the saved row index supplies a fallback if that identity no longer
+appears. A shorter result list clamps to its valid end. Horizontal scroll is also
+retained where possible. Existing account selection, editor, search, sort and
+navigation guards remain in charge of their own state; returning does not issue
+a new search or select another transaction merely to restore the viewport.
+
+Positions are session-local and clear on closing/switching documents. Explicit
+counterpart navigation continues to reveal its requested transaction rather than
+restoring a previous position. This does not introduce persistent layout settings
+or change transaction/category storage.
+
+
 Current ledger-editing follow-up (owner Go, 2026-11-01): double-click toggles the
 editor; ordinary selection leaves it attached; Enter accepts edits directly;
 Escape discards unaccepted text; session Undo restores accepted edits. See the
