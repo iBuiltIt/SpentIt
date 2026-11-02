@@ -68,6 +68,30 @@ void assignment_tests(const std::filesystem::path& dir) {
     {auto s=ImportStore::open(dir/"assignment-backup","test");check(s.can_undo_transfer_assignment(),"Restored backup retains group Undo");s.undo_review("undo-backup");assignment_check(s,false);}
     {auto s=ImportStore::open(path,"test");check(s.can_undo_transfer_assignment(),"Reopen retains group Undo");s.undo_review("undo");s.undo_review("undo");assignment_check(s,false);
     auto next=assignment_requests(s);for(auto& r:next){r.link+="-again";r.generated->entry.batch+="-again";}OperationContext c;s.assign_transfer_batch("again",next,c);s.ingest("later",source("Later","-1"),qif::DateOrder::dmy);check(!s.can_undo_transfer_assignment(),"Later mutation blocks group Undo");bool refused=false;try{s.undo_review("stale");}catch(const std::exception&){refused=true;}check(refused,"Stale Undo refused");s.verify();}
+    // Ordinary categorisation can include a row awaiting duplicate review, but
+    // must not resolve that decision or accept it as a side effect.
+    const auto mixed=dir/"category-mixed";
+    {auto s=ImportStore::create(mixed,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.apply_category_change("category",{CategoryAction::create,"food","Food",{},CategoryKind::leaf},0);
+        s.ingest("accepted",source("First"),qif::DateOrder::dmy);s.accept_all("accept",true);
+        s.ingest("pending",source("Second"),qif::DateOrder::dmy);
+        check(s.row({"pending",0}).decision.disposition==imports::Disposition::unresolved,"Fixture awaits duplicate review");
+        std::vector<TransferRequest> requests;
+        for(const auto& id:{imports::Occurrence{"accepted",0},imports::Occurrence{"pending",0}}){
+            const auto row=s.row(id);const auto& a=row.draft->transaction.allocations().front();TransferRequest r{};
+            r.action=TransferAction::retarget;r.mode=0;r.link="category-"+id.batch;r.kept=r.link+"-kept";r.expected_sequence=s.transfer_sequence();r.category_id="food";r.category_path="Food";
+            r.left=transfers::AllocationFact{{1,id,a.identity},a.amount,row.draft->date,s.transaction_accepted(id)?transfers::State::committed:transfers::State::draft,true,false,false};
+            for(const auto& b:s.batches())if(b.id==id.batch)r.batch_revision=b.revision;requests.push_back(r);
+        }
+        OperationContext cancelled;s.observer([&](auto phase){if(phase==storage::ImportPhase::before_commit)cancelled.request();});
+        bool refused=false;try{s.assign_transfer_batch("cancel-category",requests,cancelled);}catch(const std::exception&){refused=true;}s.observer({});
+        check(refused && !s.review_outcome("cancel-category"),"Cancelled category batch rolls back");
+        check(s.committed_entry({"accepted",0}).current.draft.transaction.allocations().front().category.empty() && s.row({"pending",0}).draft->transaction.allocations().front().category.empty(),"Both categories unchanged after rollback");
+        OperationContext c;s.assign_transfer_batch("category-change",requests,c);s.assign_transfer_batch("category-change",requests,c);
+        check(s.committed_entry({"accepted",0}).current.draft.transaction.allocations().front().category=="Food" && s.row({"pending",0}).draft->transaction.allocations().front().category=="Food","Both categories saved");
+        check(!s.transaction_accepted({"pending",0}) && s.row({"pending",0}).decision.disposition==imports::Disposition::unresolved,"Category change preserves unresolved new status");s.verify();
+    }
+    {auto s=ImportStore::open(mixed,"test");s.undo_review("undo-category");check(s.row({"pending",0}).decision.disposition==imports::Disposition::unresolved,"Undo preserves unresolved status");check(s.committed_entry({"accepted",0}).current.draft.transaction.allocations().front().category.empty() && s.row({"pending",0}).draft->transaction.allocations().front().category.empty(),"Reopened group Undo restores categories");s.verify();}
     std::cout<<"Transfer assignment tests passed\n";
 }
 std::vector<TransferRequest> release_requests(ImportStore& s) {

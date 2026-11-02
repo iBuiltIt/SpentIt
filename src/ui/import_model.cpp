@@ -47,7 +47,7 @@ struct TransferChoice {
     std::string payee,memo,link;
     bool linked=false;
 };
-TransferChoice read_transfer_choice(app::ImportRepository& repo,const QVariantMap& endpoint){
+TransferChoice read_transfer_choice(app::ImportRepository& repo,const QVariantMap& endpoint,bool ordinaryCategory=false){
     const auto account=endpoint.value("account").toString().toLongLong();
     const auto batch=str(endpoint.value("batch"));
     const auto ordinal=static_cast<std::size_t>(endpoint.value("ordinal").toUInt());
@@ -66,15 +66,15 @@ TransferChoice read_transfer_choice(app::ImportRepository& repo,const QVariantMa
         revision=info->revision;
         committed=repo.transaction_accepted(id);
         const bool editable=info->state==app::BatchState::pending || info->state==app::BatchState::protected_drafts;
-        if(!committed && !editable) throw std::invalid_argument("Resolve the draft before assigning a transfer");
+        if(!committed && !editable) throw std::invalid_argument(ordinaryCategory?"Resolve this transaction in Review before changing its category.":"Resolve the draft before assigning a transfer");
         if(committed){
             const auto entry=repo.committed_entry(id);
             if(!entry.current.active) throw std::invalid_argument("This transfer changed. Select it again before continuing.");
             row=entry.current.draft;
         }else{
             const auto loaded=repo.row(id);
-            if(loaded.excluded_by_clear || !loaded.draft || loaded.decision.disposition!=imports::Disposition::include)
-                throw std::invalid_argument("Resolve the draft before assigning a transfer");
+            if(loaded.excluded_by_clear || !loaded.draft || (loaded.decision.disposition!=imports::Disposition::include && !(ordinaryCategory && loaded.decision.disposition==imports::Disposition::unresolved)))
+                throw std::invalid_argument(ordinaryCategory?"Resolve this transaction in Review before changing its category.":"Resolve the draft before assigning a transfer");
             row=*loaded.draft;
         }
         if(allocation.empty()){
@@ -213,7 +213,7 @@ QString phaseFor(const QString& action){
     if(action=="review_answer")return "Saving Review decision";
     if(action=="review_batch")return "Checking selected matches";
     if(action=="assign_transfer_batch")return "Assigning selected transfers";
-    if(action=="release_transfer_batch")return "Changing transfer categories";
+    if(action=="release_transfer_batch")return "Changing categories";
     if(action=="undo_transfer_assignment")return "Undoing transfer assignment";
     if(action=="review_undo")return "Undoing Review decision";
     if(action=="create")return "Creating file";
@@ -968,7 +968,7 @@ struct ImportModel::Worker {
             const auto op=identity();std::vector<app::TransferRequest> requests;std::size_t serial=0;
             for(const auto& id:selection){
                 context.checkpoint("Reading selected transfers");
-                const auto choice=read_transfer_choice(repo,{{"account",QString::number(repo.account().identity)},{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"allocation",selection.size()==1?a.value("allocation"):QVariant()}});
+                const auto choice=read_transfer_choice(repo,{{"account",QString::number(repo.account().identity)},{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"allocation",selection.size()==1?a.value("allocation"):QVariant()}},release);
                 const auto prefix=op+"-"+std::to_string(++serial);
                 app::TransferRequest request{};request.action=app::TransferAction::retarget;request.mode=release?0:1;
                 request.expected_sequence=a.value("sequence").toString().toLongLong();request.link=choice.linked?choice.link:prefix;

@@ -424,28 +424,18 @@ private slots:
         const auto batch=selected(m).value("batch").toString();
         run(m,"inspect",{{"batch",batch},{"ordinal",1}});
         run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});
-        auto* dialog=root->findChild<QObject*>("bulkCategoryDialog");QVERIFY(dialog);
-        auto* combo=root->findChild<QObject*>("bulkCategory");QVERIFY(combo);
-        auto* apply=root->findChild<QObject*>("bulkCategorize");QVERIFY(apply);
-        const auto choices=combo->property("model").toList();int wise=-1,current=-1;
+        const auto choices=root->property("ledgerCategoryChoices").value<QJSValue>().toVariant().toList();int wise=-1,current=-1;
         for(int i=0;i<choices.size();++i){const auto c=choices[i].toMap();if(c.value("accountId").toString()=="2")wise=i;if(c.value("accountId").toString()=="1")current=i;}
         QVERIFY(wise>=0);QVERIFY(current>=0);
-        combo->setProperty("currentIndex",current);QTRY_VERIFY(!apply->property("enabled").toBool());
-        combo->setProperty("currentIndex",wise);QTRY_VERIFY(apply->property("enabled").toBool());
+        auto choose=[&](int index){return QMetaObject::invokeMethod(root,"chooseLedgerCategory",Q_ARG(QVariant,choices[index]));};
         run(m,"select",{{"row",m.occurrenceIndex(batch,1)},{"toggle",true}});
-        QTRY_VERIFY(apply->property("enabled").toBool());
-        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
-        QVERIFY(QMetaObject::invokeMethod(dialog,"reject"));
-        QCOMPARE(m.state().value("transfers").toList().size(),0);
-        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
-        QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QVERIFY(choose(wise));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
         QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("transfers").toList().size(),2);
         QCOMPARE(m.rowRecord(m.occurrenceIndex(batch,0)).value("category").toString(),QString("Wise [Account]"));
         for(int count=1;count<=2;++count){
             run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});if(count==2)run(m,"select",{{"row",m.occurrenceIndex(batch,1)},{"toggle",true}});
-            combo->setProperty("currentIndex",0);QTRY_VERIFY(apply->property("enabled").toBool());
-            QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+            QVERIFY(choose(0));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
             QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
             QCOMPARE(m.rowRecord(m.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
             run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("balance").toString(),count==1?QString("7.00"):QString("0.00"));
@@ -462,12 +452,10 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D4/2/2026\nT-7\nPSplit\nSFirst\n$-3\nSSecond\n$-4\n^\n")},{"profile","DMY"}});
         const auto splitBatch=selected(m).value("batch").toString();
         run(m,"select",{{"row",m.occurrenceIndex(splitBatch,0)}});
-        combo->setProperty("currentIndex",wise);
-        auto* allocation=root->findChild<QObject*>("bulkTransferAllocation");QVERIFY(allocation);
-        QTRY_VERIFY(!apply->property("enabled").toBool());allocation->setProperty("currentIndex",1);QTRY_VERIFY(apply->property("enabled").toBool());
-        run(m,"select",{{"row",m.occurrenceIndex(batch,0)},{"toggle",true}});QTRY_VERIFY(!apply->property("enabled").toBool());
-        run(m,"select",{{"row",m.occurrenceIndex(splitBatch,0)}});allocation->setProperty("currentIndex",1);QTRY_VERIFY(apply->property("enabled").toBool());
-        QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QVERIFY(choose(wise));
+        auto* dialog=root->findChild<QObject*>("bulkCategoryDialog");QVERIFY(dialog);QVERIFY(dialog->property("visible").toBool());
+        auto* splitChoice=visualItem(qobject_cast<QQuickWindow*>(root)->contentItem(),"ledgerCategorySplit_1");QVERIFY(splitChoice);
+        QVERIFY(QMetaObject::invokeMethod(splitChoice,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("balance").toString(),QString("4.00"));
         run(m,"undo_transfer_assignment");QCOMPARE(m.state().value("balance").toString(),QString("0.00"));
     }
@@ -1865,13 +1853,7 @@ private slots:
         const int anchorRow=visibleRow();QVERIFY2(anchorRow>2,qPrintable(QString("anchor %1 y %2 origin %3 count %4").arg(anchorRow).arg(ledger->property("contentY").toDouble()).arg(ledger->property("originY").toDouble()).arg(ledger->property("count").toInt())));
         const auto anchorId=m.rowIdentity(anchorRow);QVERIFY(!anchorId.isEmpty());
         const auto sameAnchor=[&]{return visibleRow()==m.occurrenceIndex(anchorId.value("batch").toString(),anchorId.value("ordinal").toInt());};
-        auto* bulkCategory=root->findChild<QObject*>("bulkCategory");QVERIFY(bulkCategory);
-        bulkCategory->setProperty("currentIndex",0);
-        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("bulkCategorize"),"clicked"));
-        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        QTRY_VERIFY(bulkDialog->property("visible").toBool());
-        QTRY_VERIFY2(sameAnchor(),qPrintable(QString("preview row %1 y %2").arg(visibleRow()).arg(ledger->property("contentY").toDouble())));
-        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("applyBulk"),"clicked"));
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseLedgerCategory",Q_ARG(QVariant,(QVariantMap{{"id",""},{"path","Uncategorized"}}))));
         QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QTRY_VERIFY(!bulkDialog->property("visible").toBool());
         QTRY_VERIFY2(sameAnchor(),qPrintable(QString("apply row %1 y %2").arg(visibleRow()).arg(ledger->property("contentY").toDouble())));

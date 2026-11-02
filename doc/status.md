@@ -2,6 +2,44 @@
 
 Last updated: 2026-11-01
 
+## Plain ledger payees — 2026-11-01
+
+Owner Go: removed the repeated `[Not yet accepted]` suffix from the ledger payee
+column. Existing pale-yellow new rows, light-grey accepted rows and blue selection
+highlight remain. This is display-only; stored payees and acceptance state do not
+change. Rules-enabled Release build and `import.qml` passed; `git diff --check`
+passed. The running application was not restarted.
+
+## Direct ledger category assignment — 2026-11-01
+
+Owner Go implemented; see [the contract](../features/010-categories-and-selection.md#direct-ledger-category-menu--owner-go-2026-11-01).
+The right-click Change category submenu applies its choice immediately, with a
+bounded scrollable list and no ordinary category confirmation/preview dialog.
+The old route called committed-only bulk preview even for new rows, and required
+a second Apply for accepted rows. Both new and accepted selections now use the
+existing atomic assignment/group Undo operation. Ordinary categorisation permits
+unresolved new rows while retaining their duplicate-review decision. A split
+selection asks only which split; ambiguous multi-split selections remain refused.
+
+Category assignment and Undo capture the ledger anchor, offset, row fallback and
+horizontal position before mutation and restore after layout settles, including
+failures. Selection identities remain selected; refreshed editor data no longer
+shows the previous category. No format change or automatic transaction acceptance.
+
+Verification: rules-enabled Release build passed without compiler warnings.
+The five selected navigation, committed UI, QML, transfer assignment and release
+checks passed (14.68 s). The assignment fault sweep passed (138.40 s), exercising
+I/O failure, retry, and process termination around the durable boundary. Added
+storage coverage checks cancellation rollback, idempotent retry, unresolved review
+status preservation, reopen, audit and group Undo for mixed new/accepted rows.
+The full import UI suite passed earlier in this change (79.65 s); focused category
+transfer and ledger interaction cases also passed. Final navigation/QML checks
+passed after the hover correction (6.41 s), including an 80-category hover menu,
+scrollbar, immediate pending assignment, near-bottom viewport retention, mixed
+selection persistence and reopened Undo. The synthetic submenu render was
+inspected. `git diff --check` passed. Native interaction, other platforms and
+sanitizers were not rerun; the owner's running application/dataset were untouched.
+
 ## Simpler rule patterns and inline key — 2026-11-01
 
 Owner Go implemented; see [the contract](../features/004-rules-and-explanations.md#simple-generated-patterns-and-regex-key--owner-go-2026-11-01).

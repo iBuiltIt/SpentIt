@@ -225,39 +225,68 @@ ApplicationWindow {
         }
     }
 
-    Dialog {id:bulkCategoryDialog;objectName:"bulkCategoryDialog";title:"Change category";modal:true;anchors.centerIn:parent;width:Math.min(600,window.width-40);standardButtons:Dialog.Cancel
-        readonly property var choice: bulkCategory.currentIndex>=0 ? bulkCategory.model[bulkCategory.currentIndex] : ({})
-        readonly property var rows: s.selection||[]
-        readonly property var allocations: rows.length===1 ? (rows[0].splits||[]) : []
-        readonly property bool accountChoice: !!choice.account
-        readonly property bool releasesTransfers: !accountChoice && rows.some(function(row){return !!row.transferLinked})
-        readonly property bool transferOperation: accountChoice || releasesTransfers
-        readonly property bool ambiguousSplits: rows.length>1 && rows.some(function(row){return (row.splits||[]).length!==1})
-        readonly property bool transferReady: rows.length>0 && !ambiguousSplits && (!accountChoice || choice.accountId!==s.accountId) && (rows.length>1 || bulkTransferAllocation.currentIndex>=0)
+    readonly property var ledgerCategoryChoices: [{id:"",path:"Uncategorized"}].concat((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,accountId:c.accountId,path:c.path+" [Account]",account:true}:c}))
+    property var pendingLedgerCategory: null
+    function applyLedgerCategory(choice, allocation) {
+        guard(function(){
+            captureLedgerView("category")
+            workflow.command(choice.account?"assign_transfer_batch":"release_transfer_batch",{destination:choice.accountId||"",category:choice.id,allocation:allocation||"",sequence:s.transferSequence})
+        })
+    }
+    function chooseLedgerCategory(choice) {
+        if(workflow.busy || s.readOnly || !(s.selectionCount>0))return
+        const rows=s.selection||[]
+        ledgerContext.close()
+        if(rows.some(function(row){return (row.splits||[]).length!==1})) {
+            pendingLedgerCategory=choice
+            bulkCategoryDialog.open()
+        } else applyLedgerCategory(choice,rows.length===1?rows[0].splits[0].allocationId:"")
+    }
+    Dialog {id:bulkCategoryDialog;objectName:"bulkCategoryDialog";title:"Choose split";modal:true;anchors.centerIn:parent;width:Math.min(600,window.width-40);standardButtons:Dialog.Cancel
+        readonly property var rows:s.selection||[]
         contentItem:ColumnLayout {
-            UsableComboBox {id:bulkCategory;objectName:"bulkCategory";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){return c.assignable || (c.account && !c.archived)}).map(function(c){return c.account?{id:c.id,accountId:c.accountId,path:c.path+" [Account]",account:true}:c}));textRole:"path";Layout.fillWidth:true;Accessible.name:"Category for selected transactions"}
-            Label {visible:bulkCategoryDialog.transferOperation;text:bulkCategoryDialog.ambiguousSplits?"Open each split transaction and choose the split to transfer.":bulkCategoryDialog.accountChoice && bulkCategoryDialog.choice.accountId===s.accountId?"Choose a different account.":bulkCategoryDialog.releasesTransfers?"Unlinks these transfers. Matching transactions created by SpentIt are deleted if they have not been accepted or imported. Other transactions remain.":"Adds a matching transfer in the destination account for each selected transaction.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            UsableComboBox {id:bulkTransferAllocation;objectName:"bulkTransferAllocation";visible:bulkCategoryDialog.transferOperation && bulkCategoryDialog.allocations.length>1;model:bulkCategoryDialog.allocations;textRole:"transferLabel";currentIndex:model.length===1?0:-1;onModelChanged:currentIndex=model.length===1?0:-1;displayText:currentIndex<0?"Choose split to transfer":currentText;Layout.fillWidth:true;Accessible.name:"Split to transfer"}
-            Button {objectName:"bulkCategorize";text:bulkCategoryDialog.accountChoice?"Use as transfer":"Change category…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0 && bulkCategory.currentIndex>=0 && (!bulkCategoryDialog.transferOperation || bulkCategoryDialog.transferReady);onClicked:{
-                if(!enabled)return
-                if(bulkCategoryDialog.transferOperation){
-                    let allocation=bulkCategoryDialog.rows.length===1 ? bulkCategoryDialog.allocations[bulkTransferAllocation.currentIndex].allocationId : ""
-                    let destination=bulkCategoryDialog.choice.accountId
-                    let sequence=s.transferSequence
-                    let action=bulkCategoryDialog.releasesTransfers?"release_transfer_batch":"assign_transfer_batch"
-                    let category=bulkCategoryDialog.choice.id
-                    bulkCategoryDialog.close()
-                    guard(function(){workflow.command(action,{destination:destination,category:category,allocation:allocation,sequence:sequence})})
-                }else{bulkCategoryDialog.close();guardedPreview("preview_bulk",{kind:"category",category:bulkCategory.model[bulkCategory.currentIndex].id})}
-            }}
+            Label {text:bulkCategoryDialog.rows.length===1?"Choose the split to change.":"Select one split transaction at a time to change its category.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Repeater {
+                model:bulkCategoryDialog.rows.length===1?(bulkCategoryDialog.rows[0].splits||[]):[]
+                delegate:Button {
+                    required property var modelData
+                    required property int index
+                    objectName:"ledgerCategorySplit_"+index
+                    text:modelData.transferLabel;Layout.fillWidth:true
+                    onClicked:{const choice=pendingLedgerCategory;pendingLedgerCategory=null;bulkCategoryDialog.close();applyLedgerCategory(choice,modelData.allocationId)}
+                }
+            }
         }
     }
     Menu {
-        id:ledgerContext
+        id:ledgerContext;objectName:"ledgerContext";popupType:Popup.Item;cascade:true
+        delegate:MenuItem {hoverEnabled:true}
         MenuItem {objectName:"duplicateMergeSelection";text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
         MenuItem {objectName:"mergeSelection";text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
         MenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
-        MenuItem {text:"Change category…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:{bulkCategoryDialog.open()}}
+        Menu {
+            id:ledgerCategoryMenu;objectName:"ledgerCategoryMenu";title:"Change category";popupType:Popup.Item;cascade:true
+            enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0
+            width:Math.min(380,window.width-40);height:Math.min(420,contentItem.contentHeight+topPadding+bottomPadding)
+            contentItem:ListView {
+                implicitHeight:contentHeight;model:ledgerCategoryMenu.contentModel;clip:true
+                currentIndex:ledgerCategoryMenu.currentIndex;boundsBehavior:Flickable.StopAtBounds
+                ScrollBar.vertical:UsableScrollBar {objectName:"ledgerCategoryScrollBar"}
+            }
+            Instantiator {
+                model:ledgerCategoryChoices
+                delegate:MenuItem {
+                    required property var modelData
+                    required property int index
+                    objectName:"ledgerCategoryChoice_"+index
+                    text:modelData.path
+                    enabled:!modelData.account || modelData.accountId!==s.accountId
+                    onTriggered:chooseLedgerCategory(modelData)
+                }
+                onObjectAdded:(index,object)=>ledgerCategoryMenu.insertItem(index,object)
+                onObjectRemoved:(index,object)=>ledgerCategoryMenu.removeItem(object)
+            }
+        }
     }
     function restoreViewport(saved) {
         if(!saved || ledger.count===0)return
@@ -296,7 +325,7 @@ ApplicationWindow {
         let first=ledger.indexAt(1,ledger.contentY+1)
         if(first<0) first=0
         let item=ledger.itemAtIndex(first)
-        ledgerViewRestore={anchor:workflow.rowIdentity(first),offset:item?ledger.contentY-item.y:0}
+        ledgerViewRestore={anchor:workflow.rowIdentity(first),index:first,offset:item?ledger.contentY-item.y:0,horizontal:ledgerScroll.contentItem.contentX}
         ledgerViewKind=kind
     }
     function guardedPreview(action, args) {
@@ -310,7 +339,10 @@ ApplicationWindow {
         let related=false
         let restore=false
         let clear=false
-        if(ledgerViewKind==="bulk") {
+        if(ledgerViewKind==="category") {
+            related=action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment"
+            restore=related;clear=true
+        } else if(ledgerViewKind==="bulk") {
             related=action==="preview_bulk" || action==="apply_bulk" || action==="cancel_bulk"
             restore=success && related
             clear=!success || action==="apply_bulk" || action==="cancel_bulk" || !related
@@ -327,7 +359,7 @@ ApplicationWindow {
         if(restore) {
             let saved=ledgerViewRestore
             if(clear) {ledgerViewRestore=null;ledgerViewKind=""}
-            Qt.callLater(function(){restoreViewport(saved)})
+            Qt.callLater(function(){restoreViewport(saved);Qt.callLater(function(){restoreViewport(saved)})})
             return
         }
         if(clear) {ledgerViewRestore=null;ledgerViewKind=""}
@@ -939,8 +971,8 @@ ApplicationWindow {
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
             if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Transactions accepted."
             if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
-            if(success && action==="release_transfer_batch")workspaceFeedback="Transfer categories changed. Undo restores the whole change."
-            if(success && action==="undo_transfer_assignment")workspaceFeedback="Transfer assignment undone."
+            if(success && action==="release_transfer_batch")workspaceFeedback="Category changed. Undo is available."
+            if(success && action==="undo_transfer_assignment")workspaceFeedback="Category change undone."
             if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session until another kind of change.":"Edit saved."
             if(success && action==="undo_edit")workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
@@ -1008,7 +1040,7 @@ ApplicationWindow {
                     loadEditor();loadRulesForm();loadCategoryForm()
                     if(currentPage==="history")Qt.callLater(function(){workflow.command("history")})
                 }
-                if(action.indexOf("transfer_")===0)loadEditor()
+                if(action.indexOf("transfer_")===0 || action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment")loadEditor()
                 if(action==="preview_bulk")bulkDialog.open()
                 if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
                 if(action==="rules_reapply_preview")reapplyDialog.open()
@@ -1430,7 +1462,7 @@ ApplicationWindow {
     Shortcut {
         sequences:[StandardKey.Undo]
         enabled:!reviewSheet.visible && (!!s.canUndoEdit || !!s.canUndoReview || !!s.canUndoTransferAssignment) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
-        onActivated:if(s.canUndoEdit)undoEdit();else workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")
+        onActivated:if(s.canUndoEdit)undoEdit();else {if(s.canUndoTransferAssignment)captureLedgerView("category");workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")}
     }
     property var exclusionEndpoint: ({})
     property var exclusionEditing: ({})
@@ -1831,7 +1863,7 @@ ApplicationWindow {
     Shortcut {objectName:"reviewUndoShortcut";
         sequences:[StandardKey.Undo]
         enabled:reviewSheet.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoReview && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
-        onActivated:workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")
+        onActivated:{if(s.canUndoTransferAssignment)captureLedgerView("category");workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")}
     }
             ScrollBar.vertical:UsableScrollBar {}
             ScrollBar.horizontal:UsableScrollBar {}
@@ -2263,7 +2295,7 @@ ApplicationWindow {
                 TextField {id:search;objectName:"ledgerSearch";placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
                 Button {objectName:"undoEdit";text:"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo edits from this session. Other changes end this Undo sequence.";ToolTip.visible:hovered}
-                Button {objectName:"undoTransferAssignment";text:"Undo transfer assignment";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){workflow.command("undo_transfer_assignment")})}
+                Button {objectName:"undoTransferAssignment";text:"Undo category change";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){captureLedgerView("category");workflow.command("undo_transfer_assignment")})}
                 Button {objectName:"clearFilter";text:"Clear";enabled:search.text.length>0 || appliedFilter.length>0;onClicked:guard(function(){search.clear();query()})}
             }
             Row {
@@ -2336,7 +2368,7 @@ ApplicationWindow {
                     }
                     Row {
                         width:parent.width;height:34;spacing:0
-                        Repeater {model:[record.date,record.payee+(record.status==="Draft"?" [Not yet accepted]":""),record.category,record.withdrawal,record.deposit,record.balance]
+                        Repeater {model:[record.date,record.payee,record.category,record.withdrawal,record.deposit,record.balance]
                             Item {
                                 required property string modelData
                                 required property int index

@@ -59,6 +59,45 @@ private slots:
         const auto generation=model.diagnosticGeneration();model.observeUi({{"generation",generation-1},{"surface","CANARY-payee"},{"ready",true}});
         QCOMPARE(spentit::diagnostics::Collector::instance().snapshot().ui.surface,spentit::diagnostics::Surface::settings);
     }
+    void categorySubmenuScrolls() {
+        ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);window->show();QVERIFY(QTest::qWaitForWindowExposed(window));
+        QVariantList categories;for(int i=0;i<80;++i)categories.push_back(QVariantMap{{"id",QString::number(i)},{"path",QString("Category %1").arg(i,2,10,QChar('0'))},{"assignable",true}});
+        root->setProperty("s",QVariantMap{{"active",true},{"selectionCount",1},{"transfersSupported",true},{"categories",categories}});
+        auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(QMetaObject::invokeMethod(context,"popup"));QTRY_VERIFY(context->property("visible").toBool());
+        auto* menu=object(root,"ledgerCategoryMenu");QVERIFY(menu);
+        // Hover the parent menu entry, as the owner requested.
+        auto* content=qvariant_cast<QQuickItem*>(context->property("contentItem"));QVERIFY(content);
+        QQuickItem* entry=nullptr;for(auto* item:content->childItems())for(auto* child:item->childItems())if(child->property("text").toString()=="Change category")entry=child;
+        QVERIFY(entry);QTest::qWait(100);QTest::mouseMove(window,entry->mapToScene(QPointF(entry->width()/2,entry->height()/2)).toPoint());
+        QTRY_VERIFY(menu->property("visible").toBool());QVERIFY(menu->property("height").toReal()<=420);
+        auto* bar=object(root,"ledgerCategoryScrollBar");QVERIFY(bar);QVERIFY(bar->property("size").toReal()<1);QVERIFY(bar->property("interactive").toBool());
+        if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_MENU_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_MENU_SCREENSHOT")));
+    }
+    void categoryMenuSavesMixedRowsAndReopens() {
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        const auto path=dir.filePath("document");
+        run(model,"create",{{"path",path},{"protected",false},{"name","Category account"},{"currency","CAD"}});
+        auto import=[&](QString name){QFile f(dir.filePath(name+".qif"));if(!f.open(QIODevice::WriteOnly))return QString();f.write(("D1/1/2026\nT-1\nP"+name+"\nLBefore\n^\n").toUtf8());f.close();run(model,"import",{{"path",f.fileName()},{"profile","DMY"}});return model.state().value("selected").toMap().value("batch").toString();};
+        const auto accepted=import("Accepted");QVERIFY(!accepted.isEmpty());run(model,"commit");
+        const auto pending=import("Pending");QVERIFY(!pending.isEmpty());
+        QMap<QString,QString> original;for(const auto& batch:{accepted,pending})original[batch]=model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString();
+        run(model,"select",{{"row",model.occurrenceIndex(accepted,0)}});run(model,"select",{{"row",model.occurrenceIndex(pending,0)},{"toggle",true}});
+        auto* menu=object(root,"ledgerCategoryMenu");QVERIFY(menu);QVERIFY(menu->property("enabled").toBool());
+        auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(QMetaObject::invokeMethod(context,"popup"));QTRY_VERIFY(context->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(menu,"open"));QTRY_VERIFY(menu->property("visible").toBool());
+        auto* choice=object(root,"ledgerCategoryChoice_0");QVERIFY(choice);
+        QVERIFY(QMetaObject::invokeMethod(choice,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        for(const auto& batch:{accepted,pending})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+        QCOMPARE(model.state().value("selectionCount").toInt(),2);
+        run(model,"close");run(model,"open",{{"path",path}});
+        for(const auto& batch:{accepted,pending})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+        run(model,"undo_transfer_assignment");
+        for(const auto& batch:{accepted,pending})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),original[batch]);
+    }
     void ledgerViewportSurvivesCategoryNavigation() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
@@ -84,6 +123,25 @@ private slots:
         QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
         QCOMPARE(model.state().value("selected").toMap().value("batch"),selected.value("batch"));QCOMPARE(model.state().value("selected").toMap().value("ordinal"),selected.value("ordinal"));
         QVERIFY(!root->property("editorClosed").toBool());
+        // A category picked for a new transaction saves immediately, without
+        // the old committed-only bulk preview or a jump to the top.
+        run(model,"select",{{"row",model.occurrenceIndex(batch,260)}});
+        QVERIFY(position(model.occurrenceIndex(batch,250)));QTest::qWait(50);
+        const auto categoryView=snapshot();
+        const auto categories=model.state().value("categories").toList();QVERIFY(!categories.isEmpty());
+        QVariantMap category;for(const auto& c:categories)if(c.toMap().value("path")=="New expense")category=c.toMap();QVERIFY(!category.isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseLedgerCategory",Q_ARG(QVariant,category)));
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,260)).value("category").toString(),QString("New expense"));
+        QTRY_COMPARE(first(),categoryView.value("index").toInt());
+        QVERIFY(!object(root,"bulkCategoryDialog")->property("visible").toBool());
+        QVERIFY(!object(root,"bulkDialog")->property("visible").toBool());
+        QCOMPARE(model.state().value("selectionCount").toInt(),1);
+        run(model,"undo_transfer_assignment");
+        QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,260)).value("category").toString(),QString("Uncategorized"));
+        run(model,"inspect",{{"batch",batch},{"ordinal",260}});QTest::qWait(50);
+        QVERIFY(position(saved.value("index").toInt()));QTest::qWait(50);
+        ledger->setProperty("contentY",ledger->property("contentY").toReal()+saved.value("offset").toReal());
         // Repeated visits must not overwrite the saved position from the hidden,
         // reset list; returning through the account button uses the same anchor.
         QVERIFY(click(root,"navigationForward"));QTRY_VERIFY(!model.busy());run(model,"category_list");

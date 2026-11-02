@@ -673,7 +673,7 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         require_writable_account(impl_->db,impl_->selected_account);require_management_shape(request);
         const bool committed=transaction_accepted(id);
         if(committed!=(fact.state==transfers::State::committed) || fact.generated || !fact.imported)fail(SQLITE_CONSTRAINT,"Invalid category assignment");
-        auto row=load_row(id,false);if(!row.draft || row.excluded_by_clear || row.matched_generated || row.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the transaction before changing category");
+        auto row=load_row(id,false);if(!row.draft || row.excluded_by_clear || row.matched_generated || (row.decision.disposition!=imports::Disposition::include && row.decision.disposition!=imports::Disposition::unresolved))fail(SQLITE_CONSTRAINT,"Resolve the transaction before changing category");
         auto draft=committed?committed_entry(id).current.draft:*row.draft;
         if(committed && !committed_entry(id).current.active)fail(SQLITE_CONSTRAINT,"Transaction was removed");
         const auto previous=draft;auto aa=draft.transaction.allocations();auto a=std::find_if(aa.begin(),aa.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
@@ -704,7 +704,7 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         if(request.left->imported)request.batch_revision=batch(impl_->db,id.batch).revision;
         impl_->composing_review=true;
         if(ordinary[serial-1]){
-            write_review_row(operation,child,id,*ordinary[serial-1],{imports::Disposition::include,{}},true);
+            write_review_row(operation,child,id,*ordinary[serial-1],load_row(id,false).decision,true,false,false);
         }else apply_transfer(child,request);
         impl_->composing_review=false;
         if(record_category && !ordinary[serial-1]){

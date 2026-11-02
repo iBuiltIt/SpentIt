@@ -8,10 +8,31 @@ durable. See [current verification and limits](../doc/status.md); earlier Resume
 source-retention and toolbar descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-10-31  
+Last updated: 2026-11-01  
 Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 30/29. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
+
+## Direct ledger category menu — owner Go 2026-11-01
+
+Accepted and implemented: right-click **Change category ▸** opens a bounded,
+scrollable submenu. Choosing an ordinary category, Uncategorized or an account
+applies immediately to the selected transactions, without category selection and
+confirmation dialogs. New and committed rows use the existing atomic assignment
+command together; this replaces the committed-only bulk preview route for this
+UI. Existing validation, transfer behavior and durable group Undo remain.
+
+A split transaction asks which split to change; multiple selection containing
+split transactions requires selecting those transactions individually. Current
+account destinations are disabled. The ledger retains its selected identities,
+vertical anchor/offset and horizontal position through success or failure, with a
+clamped row fallback if filtering removes the anchor. Undo category change uses
+the same viewport restoration. The inspected editor reloads after assignment.
+Ordinary category edits also accept new rows awaiting duplicate review, retaining
+their unresolved decision instead of silently including them. Transfers keep their
+existing eligibility checks. No storage format change. See [status](../doc/status.md)
+for actual verification and limits. Earlier dialog/preview descriptions below
+are superseded for the ledger category menu.
 
 ## Right-click transfer assignment — owner Go 2026-10-31
 

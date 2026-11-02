@@ -1,5 +1,14 @@
 # SpentIt — Where did my money go?
 
+## Direct ledger category menu — owner Go 2026-11-01
+
+Right-click Change category uses a scrollable submenu and applies immediately to
+new/committed selections through the atomic assignment command, with group Undo.
+Ordinary category changes preserve unresolved duplicate-review decisions. Split
+transactions require a split choice; ambiguous multi-split selections are refused.
+Keep the viewport through assignment and Undo. See [the contract](features/010-categories-and-selection.md#direct-ledger-category-menu--owner-go-2026-11-01)
+and [status](doc/status.md); earlier dialog/preview descriptions are superseded.
+
 ## Ledger return position — owner Go 2026-11-01
 
 Leaving the ledger records an identity/offset anchor per account. Back/Forward
