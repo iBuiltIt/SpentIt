@@ -1,5 +1,16 @@
 # SpentIt — Where did my money go?
 
+## Next work: category-gated rules — owner direction 2026-11-02
+
+Read the [next-session handoff](features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02)
+and [roadmap](doc/roadmap.md#next-session-category-gated-rules--2026-11-02) before
+further rule/import work. Accepted target: every rule assigns an explicit category,
+only Uncategorized items are eligible, no force override or category inheritance,
+and missing imported categories require Create / Use Uncategorized. This target
+is not implemented; current per-field/isolated-single-rule behavior remains.
+Split boundaries and import-decision lifecycle are explicitly unresolved in the
+handoff. No old-rule migration/compatibility work is wanted for experimental data.
+
 ## Single rules workspace — owner Go 2026-11-01
 
 Rules use one searchable list and expanded editor. Save/Discard and optional-

@@ -1,6 +1,27 @@
 # Coordinated implementation roadmap
 
-Current handoff (2026-10-31): the [opening/ledger cleanup and interrupted-import
+## Next session: category-gated rules — 2026-11-02
+
+**Next implementation priority, not yet implemented:** the owner's
+[category-gated rules and imported-category handoff](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
+Every rule requires an explicit category; rules only process Uncategorized items.
+No forced recategorization or category inheritance. Deliberate ledger category
+clearing enables reruns. Selected-rule preview explains pattern matches versus
+earlier-rule exclusions, and Apply must respect that same ordering. Missing
+imported categories require an explicit Create / Use Uncategorized decision.
+Experimental datasets require no compatibility handling.
+
+The linked handoff separates accepted policy from the remaining split-boundary
+and import-decision lifecycle questions, and contains the implementation/test
+sequence. Runtime evaluation is unchanged at this checkpoint. The owner selected
+a next-session handoff rather than starting this engine/import work now.
+
+Preserve the implemented Rules workspace (commit `931dbf6`) and the subsequent
+left-aligned Edit rule / field-specific attribution changes included in this
+handoff checkpoint. That UI follow-up was built and tested.
+No real financial data or private attachment paths belong in this handoff.
+
+Previous handoff (2026-10-31): the [opening/ledger cleanup and interrupted-import
 rollback](ui-import-cleanup.md) is implemented under the owner's subsequent Go.
 See [status](status.md) for verification and limits. Further changes require their
 own Go; reports and unrelated follow-ups remain deferred. Settings is now available
@@ -50,7 +71,7 @@ and [status](status.md). Closing-audit optimization is now implemented under the
 
 Previous implementation checkpoint: the [diagnostics-guided performance follow-up](import-ui-performance.md#diagnostics-guided-startup-and-switching-follow-up--2026-10-29) is implemented and accepted for now. On 2026-10-29 the owner measured startup at about seven seconds and judged the application usable. Further performance work is not the automatic next task. The earlier [startup/loading-screen redesign](../features/001-documents-storage-security.md#startup-presentation-follow-up--deferred-2026-10-29) is now superseded by the accepted next-work contract above; reports remain deferred. The subsequently authorized [repeated-transfer matching](status.md#repeated-transfer-matching--2026-10-29) is implemented. The subsequent [account alias/category policy](status.md#account-aliases-and-transfer-categories--2026-10-29) is implemented under its own owner authorization. Discuss the next change and wait for explicit Go. Diagnostics remain available through [the agent guide](agent-diagnostics-guide.md).
 
-Last updated: 2026-10-31
+Last updated: 2026-11-02
 
 The earlier eight-point sequence used coordinated implementation with delegated agents. That sequence is complete; the current direction below governs new work. Ask for concrete missing information or material financial/security decisions when dependent work reaches them. Routine editor layout choices can be implemented and revised after owner review. This authorization does not select a license, authorize publication, or settle unresolved financial semantics.
 

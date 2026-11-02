@@ -1,6 +1,41 @@
 # Project status
 
-Last updated: 2026-11-01
+Last updated: 2026-11-02
+
+## Next-session handoff: category-gated rules — 2026-11-02
+
+Documentation only. The owner settled the next direction: every rule must set
+an explicit category, rules touch only Uncategorized items, and deliberate ledger
+category clearing replaces forced recategorization. Remove category inheritance;
+do not add compatibility handling for disposable pre-release datasets. Missing
+imported categories get an explicit Create / Use Uncategorized decision.
+Selected-rule preview must explain raw matches versus earlier-rule exclusions,
+and Apply must respect ordered categorization.
+
+**None of that evaluation/import behavior is implemented yet.** Current runtime
+still uses first-assignment-per-field; selected-rule preview/apply is isolated.
+The [full handoff](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02)
+records the unresolved split boundary, import-decision lifecycle, implementation
+sequence and verification obligations. It is [next in the roadmap](roadmap.md#next-session-category-gated-rules--2026-11-02).
+
+The previously implemented attribution UI changes are included in this checkpoint
+and must be preserved. The handoff itself changes documentation only; no runtime tests were run for
+it. Relative link file targets and new handoff anchors were checked, and
+`git diff --check` passed.
+
+## Ledger rule action placement and wording — 2026-11-01
+
+Owner Go implemented: Create/Edit rule is left-aligned, with field-specific
+assignment text beside it. The text identifies Payee, Memo or Category and the
+rule name, including split numbers where needed; internal revisions/identities
+are not shown. Existing saved attribution and rule actions are unchanged.
+See [the contract](../features/004-rules-and-explanations.md#actionable-ledger-rule-attribution--owner-go-2026-11-01).
+
+Rules-enabled Release rebuild passed. The focused rule creation/attribution
+regression passed (3 QtTest cases including setup/cleanup, 1.96 s), checking the
+exact useful text and the button's left-edge placement; QML smoke passed (1.27 s).
+`git diff --check` passed. Native interaction and other platforms were not rerun;
+the running application was not restarted.
 
 ## Single rules workspace and independent saves — 2026-11-01
 

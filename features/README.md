@@ -1,5 +1,9 @@
 # Feature discovery
 
+**Next work (2026-11-02):** [category-gated rules and imported categories](004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
+Accepted direction, not implemented; the handoff distinguishes remaining split
+and import-lifecycle decisions from the settled category gate.
+
 The [single rules workspace](004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)
 replaces the focused/all-rules presentation with independent selected-rule saves,
 optional previews and a nonmodal leave-screen decision for all unsaved edits.

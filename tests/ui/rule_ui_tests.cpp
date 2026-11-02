@@ -438,6 +438,13 @@ private slots:
         const auto batch=selected(s.model).value("batch").toString();
         QVERIFY(click(s.root,"accountNavigation"));
         QCOMPARE(object(s.root,"transactionRuleAction")->property("text").toString(),"Edit rule…");
+        QCOMPARE(object(s.root,"ruleWinners")->property("text").toString(),QString::fromUtf8("Payee assigned by “Synthetic Shop”"));
+        QTest::qWait(30);
+        auto* action=qobject_cast<QQuickItem*>(object(s.root,"transactionRuleAction"));
+        auto* attribution=qobject_cast<QQuickItem*>(object(s.root,"ruleWinners"));
+        QVERIFY(action && attribution);
+        QVERIFY(action->x()<attribution->x());
+        QCOMPARE(action->x(),0.0);
         QVERIFY(click(s.root,"transactionRuleAction"));
         QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
         QVERIFY(edit(s.root,"ruleExpression","^No longer matches$"));QVERIFY(click(s.root,"saveRules"));wait(s.model);

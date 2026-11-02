@@ -1,8 +1,183 @@
 # 004 — Rules and explanations
 
 Status: **active**  
-Last updated: 2026-11-01  
+Last updated: 2026-11-02  
 Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 40; rules-off documents use schema 39. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
+
+## Next implementation: category-gated rules and imported categories — 2026-11-02
+
+**State: accepted next-work direction; not implemented.** The owner asked to
+capture this as the next-session handoff after discussing the rules below.
+The current engine still uses first-assignment-per-field and selected-rule
+Preview/Apply still evaluates the selected rule in isolation. Do not describe
+the new policy as working until implementation and verification are recorded.
+
+### Why this changes
+
+With enabled rules in this order:
+
+1. `INDIGO PARK.*` → category Auto: Parking.
+2. `INDIGO .*` → category Books and payee INDIGO BOOKS.
+
+The current per-field winner policy can turn an imported INDIGO PARK transaction
+into payee INDIGO BOOKS with category Auto: Parking. The owner rejected that
+mixed result. Earlier discussion proposed unconditional first-match stopping;
+the final direction instead makes categorization the eligibility/stopping gate.
+Do not implement the intermediate forced-run proposal.
+
+### Accepted rules policy
+
+- A rule must assign an explicit category. Optional payee/memo actions may
+  accompany it, but payee-only or memo-only rules cannot be previewed, saved or
+  applied. Validate below the UI as well as in the editor.
+- Remove the split **Use transaction category** action. An inherited category is
+  not a substitute for the required explicit category.
+- Rules normally run after import on the new transactions and on explicit
+  application from the Rules panel, including Save and apply. Saving a definition
+  alone must retain its established save-only meaning.
+- Rules operate only on Uncategorized items. Once a category is assigned, later
+  rules must not rename the payee, change the memo or supply another category.
+  For ordinary unsplit transactions, the first matching enabled categorizing rule
+  finishes rule processing for that transaction.
+- There is no force/replace-already-categorized mode. To recategorize, the user
+  searches in the ledger (including regex searches), deliberately clears the
+  relevant categories with the existing bulk assignment command, then runs rules.
+  Preserve the atomic assignment and Undo contracts; clearing a category is not
+  permission to clear money, payee, memo or transfer relationships.
+- Retain New transactions only / All transactions in this account as independent
+  scope choices. Both scopes remain restricted to Uncategorized items. Accepted
+  transactions are not exempt from the rule gate and do not require automatic
+  acceptance or a special force option.
+- Preserve the one-screen rule editor, independent selected-definition saves,
+  pending local drafts, optional visible Preview, group application Undo, and
+  nonmodal Save all / Discard all / Stay navigation. Do not restore the All rules
+  button or the editor's redundant Enabled checkbox.
+- Pre-release datasets are disposable and none need legacy support. Do not add
+  migration, repair, grandfathering, disabled-old-rule UI or special handling for
+  saved rules without a category. Reject incompatible experimental formats if a
+  format change is necessary; do not silently convert data.
+
+### Selected-rule preview and Apply
+
+The owner wants to distinguish a correct pattern from a rule that gets no work
+because earlier rules already handle its matches. The selected rule must be
+evaluated in ordered context, not as an isolated override.
+
+The requested explanation is, for example:
+
+> 20 transactions match this pattern. 16 are handled by earlier rules.
+> 4 will be processed by this rule.
+
+List the four remaining eligible transactions. This supersedes the earlier idea
+of listing every blocked match with an annotation. Preserve a clear distinction
+between raw pattern matches, already-categorized exclusions, matches handled by
+earlier enabled rules, and rows actually changed; counts must reconcile. Manual
+or transfer protections can mean an eligible match does not produce a change.
+
+Either inspect earlier matches after finding this rule's matches or evaluate an
+ordered read-only context; the algorithm must preserve those explanatory counts.
+Do not apply earlier rules' other actions as a side effect of applying just the
+selected rule. Preview and Apply must agree, including when Preview is skipped.
+Use saved surrounding definitions plus the selected edit, consistent with the
+independent-save contract; unrelated unfinished drafts must not block or silently
+alter an application. Confirm the treatment of unsaved order/enabled changes
+against that contract during implementation rather than silently broadening Save.
+
+### Imported category resolution
+
+Imported categories matter. Existing recognized ordinary categories are used;
+references to ordinary category names absent from the dataset must be collected
+and presented for an explicit import decision:
+
+- **Create categories:** create the missing categories and use them for their
+  imported assignments.
+- **Use Uncategorized:** clear those effective assignments to Uncategorized,
+  making them eligible for rules. Retain the original imported text in the
+  existing source representation; do not rewrite imported bytes.
+
+A consolidated list with names and affected transaction counts was proposed.
+Resolve the choice before automatic categorization can misclassify these rows.
+Do not treat an unresolved imported label as an intentional assigned category or
+silently discard it before the user chooses. Account aliases and explicit
+transfer destinations follow their transfer-resolution workflow, not this prompt.
+
+Integrate with the existing complete-QIF-catalog staging/publication, multi-account
+mapping, retained new transactions, and incomplete-import cleanup contracts.
+Do not introduce a second permanent source archive. The exact prompt timing,
+durable pending-decision representation, cancellation/restart behavior, and
+whether choice is import-wide or per category still need a concrete design.
+
+### Split boundaries still to settle
+
+The owner wants split rules among ordinary rules, using the same Uncategorized
+principle, and explicitly accepted removing category inheritance. Per-split
+eligibility is the proposed interpretation: an already categorized purchase stays
+untouched while an Uncategorized fee split remains eligible.
+
+**Do not invent the remaining transaction-versus-split semantics.** Before
+implementing dependent behavior, settle:
+
+- Whether a transaction-level categorizing rule may target a multi-split
+  transaction, and if so which Uncategorized allocations it assigns.
+- Whether a transaction-level match prevents later split rules, or each split
+  gets an independent first categorizing match; how the shared displayed order
+  relates to the current transaction-then-split evaluation phases.
+- Protecting the shared payee/memo and categorized splits when another split is
+  Uncategorized. A fee match must not accidentally rename the whole transaction.
+- Clearing categories on split selections for deliberate reruns: current bulk
+  assignment requires an explicit split choice and rejects ambiguous multi-split
+  selections. Do not silently widen it to clear every split.
+- How existing manual payee/memo protections interact with deliberate category
+  clearing. Removing the force UI does not authorize overwriting manual fields.
+
+The earlier Wise example (one purchase split plus one fee split) illustrated this
+boundary; it was discussion, not approval of a final two-pass algorithm.
+
+### Next-session execution and verification
+
+1. Read this handoff, current status, category/import contracts and implementation.
+   Preserve the already-built attribution UI follow-up included in this checkpoint.
+2. Specify the split boundary and import-decision lifecycle with the owner where
+   needed. Continue independent discovery/design without asking for a repeated
+   approval of the already accepted ordinary category gate.
+3. Implement consistent validation and eligibility in engine/application/storage,
+   import, preview and Apply. Keep heavy evaluation on the worker, exact money,
+   protections, cancellation, atomicity, durable history and retry behavior.
+4. Update UI labels/counts and remove obsolete force/inherit-category options.
+   Preserve the independently saved selected-rule workflow.
+5. Verify with synthetic fixtures:
+   - overlapping INDIGO-style patterns cannot combine a later payee with an
+     earlier category; the first categorizing rule wins;
+   - all no-category rule forms are rejected before Preview/Save/Apply;
+   - categorized imported/manual/rule-owned items stay unchanged;
+   - explicit ledger clearing permits rerun in both new-only and all-account
+     scopes, without changing acceptance, balances or unrelated fields;
+   - raw/prior-rule/already-categorized/eligible/changed preview counts reconcile,
+     including zero remaining matches and direct Apply without Preview;
+   - selected-rule Apply respects earlier rules without saving unrelated drafts
+     or applying unrelated actions; scope/order changes invalidate preparations;
+   - agreed split cases, transfer protection and manual protections;
+   - missing-category Create/Use Uncategorized, existing categories, duplicates,
+     shared/multi-account sources, cancellation, restart, retry and import cleanup;
+   - atomic failure/rollback and Undo across new and accepted transactions,
+     reopen verification, and appropriate rules-off behavior.
+6. Record actual checks and platform limits. No runtime claims follow from this
+   documentation-only handoff; reports and other unrelated work remain deferred.
+
+See [the next-work roadmap](../doc/roadmap.md#next-session-category-gated-rules--2026-11-02),
+[category model](010-categories-and-selection.md),
+[import mapping/catalog lifecycle](../doc/qif-account-imports.md),
+and [import cleanup](../doc/ui-import-cleanup.md).
+
+## Actionable ledger rule attribution — owner Go 2026-11-01
+
+The ledger's Create/Edit rule button sits at the left edge of its row. Beside
+Edit rule, name the actual assigned field and the editable rule, for example
+“Category assigned by ‘Books’”. Distinguish split numbers for multi-split rows.
+Do not display internal revisions or generic “Assigned by” text. Unnamed rules
+use “Unnamed rule”, not an identity. Only available rules contribute this
+field-specific text; the existing deleted-rule explanation and Create fallback
+remain. This changes presentation only. See [status](../doc/status.md).
 
 ## Single rules workspace and independent edits — owner Go 2026-11-01
 

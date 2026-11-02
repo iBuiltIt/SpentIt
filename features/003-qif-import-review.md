@@ -1,5 +1,11 @@
 # 003 — QIF import and review
 
+Next work (2026-11-02), not implemented: [category-gated rules and missing imported
+category resolution](004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
+The owner wants explicit Create / Use Uncategorized handling for unknown ordinary
+category references before automatic categorization; transfer references stay in
+the transfer workflow. Prompt lifecycle and split boundaries remain to be settled.
+
 The [opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md)
 is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
 It adds import routing, Review repair/Commit, account-context Discard and automatic
@@ -10,7 +16,7 @@ descriptions below are historical.
 Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
 
 Status: **active**  
-Last updated: 2026-10-31  
+Last updated: 2026-11-02  
 Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 40 with rules and schema 39 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
 
 ## Opening setup during account mapping — owner Go, 2026-10-30
