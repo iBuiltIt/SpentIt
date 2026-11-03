@@ -1,21 +1,25 @@
 # Project status
 
-Last updated: 2026-11-02
+Last updated: 2026-11-03
 
-## Owner-reported Linux build and launch — 2026-11-02
+## Owner-reported Linux build and launch — 2026-11-03
 
 The owner built the rules-enabled Release application on Linux and launched its
-window using the supplied preparation notes, now kept in
-[Linux development setup](linux-development-setup.md). The recorded host is
-Ubuntu 24.04.5 LTS, x86_64, with GCC 13.3.0 and Qt 6.8.3. This is a developer
-dependency/build guide, not packaged-application runtime requirements.
+window using the preparation notes in
+[Linux development setup](linux-development-setup.md). The recorded hosts are
+Ubuntu 24.04.5 LTS, x86_64, with GCC 13.3.0 and Qt 6.8.3 `gcc_64` (2026-11-02),
+and an aarch64 QEMU virtual machine using Qt 6.8.3 `gcc_arm64` (2026-11-03).
+The guide gives separate aqt, configure, and launch paths for those two
+architectures. apt packages, PCRE2, and SQLCipher stay shared. This is a
+developer dependency/build guide, not packaged-application runtime requirements.
 
-The owner reported warnings; the guide retains the observed Mesa/EGL messages.
-Warning investigation is deferred. No Linux automated test suite, broader
-interaction verification, other distribution, or warning-free build is claimed.
-The commands were not rerun when filing this document. The original supplied
-file remains untouched; checkout paths in the repository copy are placeholders.
-README linking and download packaging remain deferred as requested.
+The x86_64 host reported warnings; the guide retains the observed Mesa/EGL
+messages. Warning investigation is deferred. Mesa output from the aarch64
+launch was not recorded. No Linux automated test suite, broader interaction
+verification, other distribution, or warning-free build is claimed. The x86_64
+commands were not rerun when filing this document. Checkout paths in the
+repository copy are placeholders. README linking and download packaging remain
+deferred as requested.
 
 
 ## Ledger rule button placement — 2026-11-02

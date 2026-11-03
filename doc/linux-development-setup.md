@@ -4,10 +4,14 @@ Developer prerequisites and build commands for the tested Ubuntu machine below.
 This is not an installation guide for running a packaged SpentIt download.
 Set `REPO` in the examples to the path of your own checkout.
 
-Status: the rules-enabled Release application launched on this machine on 2026-11-02.
-The owner ran the commands below and reported a successful build and launch.
-These results are owner-reported; the commands were not rerun when this guide was added.
+Status: the rules-enabled Release application launched on two machines.
+On 2026-11-02 the owner reported a successful build and launch on Ubuntu 24.04.5
+LTS, x86_64, using the `gcc_64` Qt paths below. On 2026-11-03 the owner reported
+a successful configure, build, and launch on an aarch64 QEMU virtual machine,
+using the `gcc_arm64` Qt paths below. These results are owner-reported.
 Automated tests, other distributions, and a clean graphics driver were not checked.
+The x86_64 commands were not rerun when this guide was added. Mesa output from
+the aarch64 launch was not recorded.
 
 ## Host
 
@@ -76,6 +80,26 @@ The helper printed `Pinned SQLCipher generated sources verified: .../build/depen
 
 `qtdeclarative` is a base archive (`icu qtbase qtdeclarative qtsvg qttools qttranslations qtwayland`), not an add-on module. `aqt install-qt -m qtdeclarative` failed with `The packages ['qtdeclarative'] were not found`. Leaving `--archives` unset installs that base set. `qtshadertools` is a real extra module and is required by the Qt Quick CMake package.
 
+The apt packages, the PCRE2 build, and the SQLCipher helper are the same on x86_64 and aarch64. The prebuilt Qt package is the architecture-specific step. Run `uname -m` and follow the matching block. The two Qt trees can sit side by side under `$DEPS/qt/6.8.3/`. Configure and launch must use the tree that matches the machine.
+
+| `uname -m` | aqt host and architecture | Qt directory used below |
+| --- | --- | --- |
+| `x86_64` | `linux desktop 6.8.3 linux_gcc_64` | `$DEPS/qt/6.8.3/gcc_64` |
+| `aarch64` | `linux_arm64 desktop 6.8.3 linux_gcc_arm64` | `$DEPS/qt/6.8.3/gcc_arm64` |
+
+`gcc_64` is the x86_64 Qt. On an aarch64 machine its QML scanner cannot run. Configure then stops with `Syntax error: word unexpected (expecting ")")` and `Failed to scan target spentit_import_experiment for QML imports`, from `gcc_64/lib/cmake/Qt6Qml/Qt6QmlMacros.cmake`. Use `gcc_arm64` on that machine.
+
+After installation, `file` names the architecture of the tool that will run:
+
+```sh
+file "$HOME/.local/spentit-deps/qt/6.8.3/gcc_64/bin/qmake"
+file "$HOME/.local/spentit-deps/qt/6.8.3/gcc_arm64/bin/qmake"
+```
+
+The x86_64 tool is reported as x86-64. The aarch64 tool is reported as ARM aarch64.
+
+### x86_64 Qt
+
 ```sh
 DEPS="$HOME/.local/spentit-deps"
 pipx install aqtinstall
@@ -83,18 +107,40 @@ pipx install aqtinstall
   linux desktop 6.8.3 linux_gcc_64 -m qtshadertools
 ```
 
-aqtinstall 3.3.0 reported `Finished installation`. The CMake package was at `$DEPS/qt/6.8.3/gcc_64`. This is the Qt 6.8 open-source Linux desktop build. The macOS verification used Qt 6.12.0.
+On the x86_64 machine, aqtinstall 3.3.0 reported `Finished installation`. The CMake package was at `$DEPS/qt/6.8.3/gcc_64`. This is the Qt 6.8 open-source Linux desktop build for x86_64. The macOS verification used Qt 6.12.0.
+
+### aarch64 Qt
+
+```sh
+DEPS="$HOME/.local/spentit-deps"
+pipx install aqtinstall
+"$HOME/.local/bin/aqt" install-qt --outputdir "$DEPS/qt" \
+  linux_arm64 desktop 6.8.3 linux_gcc_arm64 -m qtshadertools
+```
+
+This installs the CMake package at `$DEPS/qt/6.8.3/gcc_arm64`. The owner used that directory for the aarch64 launch on 2026-11-03.
 
 ## Configure, build, and launch
 
+Paste one block into a new terminal. Leave out `set -euo pipefail`. Pasting that option into the interactive terminal closes the window when `cmake` fails, and the error leaves with the window.
+
+`LD_LIBRARY_PATH` below replaces any Qt directory already on that path. A shell which previously exported `gcc_64` will keep loading the x86_64 libraries if that directory stays on the path.
+
+If `build/import-ui-rules-release` was already configured against the other Qt tree, remove that directory from the checkout before configuring again. This leaves `build/dependencies`, including the SQLCipher sources, in place:
+
 ```sh
-set -euo pipefail
+rm -rf build/import-ui-rules-release
+```
+
+### x86_64 configure, build, and launch
+
+```sh
 REPO="/path/to/SpentIt"
 DEPS="$HOME/.local/spentit-deps"
 cd "$REPO"
 
 export PKG_CONFIG_PATH="$DEPS/pcre2-10.49/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-export LD_LIBRARY_PATH="$DEPS/pcre2-10.49/lib:$DEPS/qt/6.8.3/gcc_64/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$DEPS/pcre2-10.49/lib:$DEPS/qt/6.8.3/gcc_64/lib"
 
 cmake -S . -B build/import-ui-rules-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$DEPS/qt/6.8.3/gcc_64" \
@@ -110,9 +156,9 @@ cmake --build build/import-ui-rules-release --target spentit_import_experiment -
 ./build/SpentIt
 ```
 
-The build ended with `[43/43] Linking CXX executable .../build/SpentIt`. The owner launched that executable and reported the window was up.
+On the x86_64 machine the build ended with `[43/43] Linking CXX executable .../build/SpentIt`. The owner launched that executable and reported the window was up.
 
-On launch, Mesa printed:
+On that x86_64 launch, Mesa printed:
 
 ```text
 libEGL warning: failed to get driver name for fd -1
@@ -121,4 +167,30 @@ MESA: error: ZINK: failed to choose pdev
 libEGL warning: egl: failed to create dri2 screen
 ```
 
-The window still appeared. These lines were not investigated. No test suite was run.
+The window still appeared. These lines were not investigated. No test suite was run on that machine.
+
+### aarch64 configure, build, and launch
+
+```sh
+REPO="/path/to/SpentIt"
+DEPS="$HOME/.local/spentit-deps"
+cd "$REPO"
+
+export PKG_CONFIG_PATH="$DEPS/pcre2-10.49/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LD_LIBRARY_PATH="$DEPS/pcre2-10.49/lib:$DEPS/qt/6.8.3/gcc_arm64/lib"
+
+cmake -S . -B build/import-ui-rules-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$DEPS/qt/6.8.3/gcc_arm64" \
+  -DCMAKE_BUILD_RPATH="$DEPS/pcre2-10.49/lib;$DEPS/qt/6.8.3/gcc_arm64/lib" \
+  -DSPENTIT_STORAGE_PROTOTYPE=ON \
+  -DSPENTIT_IMPORT_WORKFLOW=ON \
+  -DSPENTIT_IMPORT_UI=ON \
+  -DSPENTIT_RULES=ON \
+  -DSPENTIT_SQLCIPHER_SOURCE="$REPO/build/dependencies/sqlcipher-build" \
+  -DSPENTIT_APPLICATION_OUTPUT_DIRECTORY="$REPO/build"
+
+cmake --build build/import-ui-rules-release --target spentit_import_experiment -j"$(nproc)"
+./build/SpentIt
+```
+
+On 2026-11-03 the owner ran this `gcc_arm64` configure, build, and launch on the aarch64 QEMU virtual machine and reported that it worked. No test suite was run there. Mesa output from that launch was not recorded.
