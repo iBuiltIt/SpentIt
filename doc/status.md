@@ -2,6 +2,59 @@
 
 Last updated: 2026-11-03
 
+## Sidebar account drag ordering — 2026-11-03
+
+Owner Go implemented in the [sidebar drag contract](../features/005-transaction-sheet-navigation.md#sidebar-account-drag-ordering--owner-go-2026-11-03).
+Drag an active account's name/balance row: a translucent rendered copy follows
+the pointer, the original dims, and a blue line marks the insertion point. Drop
+saves the order; Escape or an outside drop cancels. Long lists scroll near their
+edges. Clicks still open accounts. No sidebar controls were added.
+
+Order is saved as a local display preference per canonical document path, using
+only account IDs under the existing hashed Settings group. It survives reopening
+on this installation, appends new accounts and leaves archived/fixed sections
+separate. It does not travel with copied/moved documents or backups. Reordering
+publishes only after Settings synchronization and does not invoke a financial
+command or clear session Undo. Existing experimental formats remain 44/43.
+
+Verification on macOS arm64, rules-enabled Release:
+
+- Rebuilt the application and navigation test executable; `build/SpentIt` is
+  updated. The owner's running application was not restarted.
+- Full offscreen navigation suite: 9 passed, 0 failed, 1 skipped (opt-in diagnostics),
+  including setup/cleanup, 11.917 s. New actual-mouse tests cover upward/downward
+  drops, insertion-line coordinates, checked preview visibility, Escape/outside
+  cancellation, ordinary clicks, unchanged selected account during drag, invalid
+  permutations, reopen in a new model, independent documents, appended accounts,
+  and edge scrolling through 16 accounts.
+- Native Cocoa drag and scrolling cases: 4/4 including setup/cleanup, 5.329 s.
+  A synthetic screenshot was inspected; it exposed an initial stale line position,
+  corrected by calculating the window-relative insertion point during movement.
+  An intermediate concurrent GUI run failed its second drag; the final native
+  run was isolated and passed. The owner subsequently confirmed the interaction
+  works in the running application. The offscreen position assertion was also corrected
+  to compare scene coordinates, accounting for its in-window menu bar.
+- `git diff --check` passed. Settings-write failure injection, Linux and Windows
+  remain unverified for this change.
+
+## Single suggested Review link — 2026-11-03
+
+Owner Go implemented: a Review link question with exactly one candidate selects
+that candidate automatically, enabling Yes when the worker is idle. Multiple
+candidates still require a choice. Yes continues through the existing link
+preview and split-selection validation; selection alone does not save a link.
+See [Review interaction](review-sheet.md#user-interaction).
+
+Verification: rules-enabled Release application and UI tests rebuilt on macOS
+arm64. Five focused offscreen QtTest cases passed (7/7 including setup/cleanup,
+6.020 s): multiple link candidates, single-candidate amount-difference linking,
+unified Review, batch Review workspace and link exclusions. The single-candidate
+case confirms the checked radio and enabled Yes without clicking the candidate,
+including after dismissing the amount-difference popup. The multiple-candidate
+case checks neither candidate is selected initially and Yes enables after a choice.
+Updated `build/SpentIt`; the running application was not restarted. Native mouse
+interaction, Linux and Windows remain unverified for this change.
+
 ## Owner-reported Linux build and launch — 2026-11-03
 
 The owner built the rules-enabled Release application on Linux and launched its

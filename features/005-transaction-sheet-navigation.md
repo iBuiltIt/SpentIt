@@ -1,5 +1,31 @@
 # 005 — Transaction sheet and navigation
 
+## Sidebar account drag ordering — owner Go 2026-11-03
+
+Accepted and implemented: drag an active account's name/balance row to reorder
+active accounts. Movement past the platform drag threshold starts a translucent
+rendered copy of the row; its original dims. A blue insertion line identifies
+the destination. Release saves the order. Escape, losing window activation or
+releasing outside the active account list cancels. Near-edge dragging scrolls a
+long list. Ordinary clicks still open accounts. No new controls, handles,
+Settings dialog or context-menu actions are added. Archived accounts and fixed
+navigation items remain separate and are not drag targets.
+
+The order is a local display preference keyed to the canonical document path,
+using the existing Settings preference group (hashed path and account IDs only,
+no account names or balances). Reopening that path restores the order on this
+installation; copying/moving the file or restoring it elsewhere does not carry
+this preference. Explicit file replacement clears it with the other display
+preferences. Unknown IDs are omitted; newly created accounts append. Archived
+IDs can retain their previous position until the active list is reordered again;
+otherwise reactivated accounts append. This does not change home currency,
+account selection, transaction order, financial history or session Undo.
+
+The model validates an exact permutation of current active account IDs and
+synchronizes Settings before publishing the reordered list. Failed persistence
+shows an error and retains the displayed order. Busy operations prevent dragging.
+Verification and platform limits are in [status](../doc/status.md#sidebar-account-drag-ordering--2026-11-03).
+
 ## Ledger transfer arrows — owner Go 2026-11-02
 
 Accepted: a small arrow button precedes the category on a linked single-split
@@ -70,7 +96,7 @@ See [current verification and limits](../doc/status.md); older Resume and toolba
 descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-11-02  
+Last updated: 2026-11-03  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Next tasks: Review responsiveness and batch decisions — 2026-10-31

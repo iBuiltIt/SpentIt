@@ -29,6 +29,14 @@
 #include <set>
 using namespace spentit;
 namespace {
+QVariantList sidebarAccounts(const QVariantList& accounts,const QString& key) {
+    auto remaining=accounts;QVariantList ordered;
+    for(const auto& id:QSettings().value(key).toStringList()) {
+        const auto found=std::find_if(remaining.begin(),remaining.end(),[&](const QVariant& value){return value.toMap().value("id").toString()==id;});
+        if(found!=remaining.end()){ordered.push_back(*found);remaining.erase(found);}
+    }
+    ordered.append(remaining);return ordered;
+}
 QString text(std::string_view s) { return QString::fromUtf8(s.data(),static_cast<qsizetype>(s.size())); }
 std::string str(const QVariant& v) { return v.toString().toUtf8().toStdString(); }
 QString money(const Money& m) { return text(app::decimal(m)); }
@@ -844,6 +852,7 @@ struct ImportModel::Worker {
             metadata=state;
             }
         } else state=metadata;
+        state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         if(!sessionEdits.empty() && !repo.can_undo_transaction_edit(sessionEdits.back().operation))sessionEdits.clear();
         state["canUndoEdit"]=!sessionEdits.empty();state["groupEditUndo"]=!sessionEdits.empty() && !sessionEdits.back().selection.empty();state["editUndoLabel"]=sessionEdits.empty()?QString("Undo edit"):sessionEdits.back().label;state["ledgerEditGeneration"]=QString::number(repo.ledger_edit_generation());
         state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
@@ -1963,6 +1972,22 @@ QVariant ImportModel::data(const QModelIndex& index,int role) const {
     return row;
 }
 QHash<int,QByteArray> ImportModel::roleNames() const {return {{Qt::UserRole,"record"}};}
+bool ImportModel::reorderAccounts(const QStringList& ids) {
+    if(busy_ || !state_.value("active").toBool())return false;
+    const auto accounts=state_.value("accounts").toList();
+    QSet<QString> expected;for(const auto& value:accounts)expected.insert(value.toMap().value("id").toString());
+    const QSet<QString> requested(ids.begin(),ids.end());
+    if(ids.size()!=accounts.size() || requested!=expected){error_="The account list changed. Try dragging the account again.";emit changed();return false;}
+    QSettings settings;const auto key=worker_->sortDocument+"/SidebarOrder";
+    const auto prior=settings.value(key);
+    settings.setValue(key,ids);settings.sync();
+    if(settings.status()!=QSettings::NoError){
+        if(prior.isValid())settings.setValue(key,prior);else settings.remove(key);
+        error_="The account order could not be saved. Check that Settings is writable and try again.";emit changed();return false;
+    }
+    state_["sidebarAccounts"]=sidebarAccounts(accounts,key);error_.clear();emit changed();return true;
+}
+
 void ImportModel::requestCancel() {
     if(busy_ && operation_ && operation_->request()) {diag::Collector::instance().cancel(diagnosticOperation_,diag::Code::requested);phase_="Cancellation requested";emit changed();}
 }

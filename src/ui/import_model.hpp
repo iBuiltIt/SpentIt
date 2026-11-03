@@ -42,6 +42,7 @@ public:
     bool canCancel() const { return busy_ && operation_ && operation_->state.load()==spentit::app::OperationContext::available; }
     bool cancellationRequested() const { return busy_ && operation_ && operation_->state.load()==spentit::app::OperationContext::requested; }
     Q_INVOKABLE void requestCancel();
+    Q_INVOKABLE bool reorderAccounts(const QStringList& ids);
     QString error() const { return error_; }
     QStringList currencies() const;
     QString suggestedPath() const;

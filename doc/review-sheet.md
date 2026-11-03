@@ -32,8 +32,11 @@ otherwise the user chooses which row to keep. Merge preserves that row's current
 fields, splits and relationships. Different effective totals require correction
 first; a losing row with an existing transfer relationship cannot be merged.
 
-Link questions show one transaction and candidates with account names. Select one
-then Yes, or use No without selecting. The latter saves rejection of the displayed
+Link questions show one transaction and candidates with account names. Under the
+owner Go of 2026-11-03, a sole candidate is selected automatically and Yes is
+enabled when the worker is idle. Multiple candidates start unselected; choose one
+then Yes, or use No without selecting. Automatic selection does not confirm a
+link. No saves rejection of the displayed
 source/candidate comparisons. Split transactions require explicit allocation
 selection. Same-currency opposite amounts of different magnitudes open **Link
 10.00 and categorise 0.40 as [Uncategorized]**. No dismisses only this popup. Yes

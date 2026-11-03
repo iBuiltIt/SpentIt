@@ -453,6 +453,64 @@ ApplicationWindow {
     property string accountCreationId: ""
     property string accountCreationDate: ""
     property bool sidebarVisible: true
+    // Drag state stays outside delegates so a completed reorder can replace them safely.
+    property var accountDragRow: null
+    property point accountDragPointer: Qt.point(0,0)
+    property point accountDragOffset: Qt.point(0,0)
+    property int accountDropIndex: -1
+    property point accountDropPoint: Qt.point(0,0)
+    function cancelAccountDrag() {accountDragRow=null;accountDropIndex=-1}
+    function moveAccountDrag(point) {
+        accountDragPointer=point
+        accountDropIndex=-1
+        if(!accountDragRow)return
+        const viewport=accountScroll.mapFromItem(window.contentItem,point.x,point.y)
+        if(viewport.x<0 || viewport.x>=accountScroll.availableWidth || viewport.y<0 || viewport.y>accountScroll.height)return
+        const local=accountRows.mapFromItem(window.contentItem,point.x,point.y)
+        const last=accountRepeater.itemAt(accountRepeater.count-1)
+        if(!last || local.y<0 || local.y>last.y+last.height+6)return
+        for(let i=0;i<accountRepeater.count;++i){
+            const row=accountRepeater.itemAt(i)
+            if(local.y<row.y+row.height/2){accountDropIndex=i;accountDropPoint=accountRows.mapToItem(window.contentItem,0,row.y);return}
+        }
+        accountDropIndex=accountRepeater.count;accountDropPoint=accountRows.mapToItem(window.contentItem,0,last.y+last.height)
+    }
+    function finishAccountDrag() {
+        if(!accountDragRow)return
+        const id=accountDragRow.modelData.id
+        const slot=accountDropIndex
+        cancelAccountDrag()
+        if(slot<0)return
+        let ids=(s.sidebarAccounts||s.accounts||[]).map(row=>row.id)
+        const from=ids.indexOf(id)
+        const to=slot>from?slot-1:slot
+        if(from<0 || from===to)return
+        ids.splice(from,1);ids.splice(to,0,id)
+        workflow.reorderAccounts(ids)
+    }
+    Shortcut {sequence:"Escape";enabled:accountDragRow!==null;onActivated:cancelAccountDrag()}
+    onActiveChanged:if(!active)cancelAccountDrag()
+    Timer {
+        interval:30;repeat:true;running:accountDragRow!==null
+        onTriggered:{
+            const point=accountScroll.mapFromItem(window.contentItem,accountDragPointer.x,accountDragPointer.y)
+            if(point.x<0 || point.x>=accountScroll.availableWidth || point.y<0 || point.y>accountScroll.height)return
+            const scroll=accountScroll.contentItem
+            const delta=point.y<28?-10:point.y>accountScroll.height-28?10:0
+            if(delta && scroll && scroll.contentHeight>scroll.height){
+                scroll.contentY=Math.max(0,Math.min(scroll.contentHeight-scroll.height,scroll.contentY+delta))
+                moveAccountDrag(accountDragPointer)
+            }
+        }
+    }
+    Rectangle {
+        objectName:"accountDragPreview";parent:window.contentItem;z:1000
+        visible:accountDragRow!==null;color:window.palette.window;border.color:"#879cad";radius:3
+        x:accountDragPointer.x-accountDragOffset.x+12;y:accountDragPointer.y-accountDragOffset.y
+        width:accountDragRow?accountDragRow.width:0;height:accountDragRow?accountDragRow.height:0
+        opacity:0.9
+        ShaderEffectSource {anchors.fill:parent;sourceItem:accountDragRow;live:true}
+    }
     function resetNavigation() {
         ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMerge=null;mergeHint="";currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
     }
@@ -1186,7 +1244,7 @@ ApplicationWindow {
         // Drop the old delegate index before a smaller filtered model replaces it.
         // The occurrence selection remains in the workflow and is restored below.
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
-        function onChanged() {if(workflow.busy)captureReviewView()}
+        function onChanged() {if(workflow.busy){cancelAccountDrag();captureReviewView()}}
         function onCompleted(action,success) {
             if(action==="close" && !success && closingRequested){closingRequested=false;window.show();closeAuditFailure.open()}
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
@@ -1952,15 +2010,29 @@ ApplicationWindow {
                     SplitView {
                         orientation:Qt.Vertical;Layout.fillWidth:true;Layout.fillHeight:true
                         UsableScrollView {
-                        id:accountScroll;SplitView.fillHeight:true;SplitView.minimumHeight:120;contentWidth:availableWidth;clip:true
+                        id:accountScroll;objectName:"accountScroll";SplitView.fillHeight:true;SplitView.minimumHeight:120;contentWidth:availableWidth;clip:true
                         ColumnLayout {
-                            width:accountScroll.availableWidth
+                            id:accountRows;width:accountScroll.availableWidth
+                            Rectangle {
+                                parent:window.contentItem;z:1001
+                                x:accountDropPoint.x;y:accountDropPoint.y-1.5
+                                width:accountScroll.availableWidth;height:3
+                                color:"#2678c9";radius:1.5
+                                visible:accountDragRow!==null && accountDropIndex>=0
+                                objectName:"accountDropIndicator"
+                            }
                             Repeater {
-                                model:s.accounts||[]
-                                ColumnLayout {
-                                    required property var modelData
-                                    Layout.fillWidth:true;spacing:0
+                                id:accountRepeater;model:s.sidebarAccounts||s.accounts||[]
+                                onModelChanged:cancelAccountDrag()
+                                Item {
+                                    id:accountRow;required property var modelData
+                                    objectName:"accountRow_"+modelData.id
+                                    Layout.fillWidth:true;implicitHeight:accountRowContents.implicitHeight
+                                    opacity:accountDragRow===accountRow?0.35:1
+                                    ColumnLayout {
+                                    id:accountRowContents;width:parent.width;spacing:0
                                     Button {
+                                        id:accountRowButton
                                         objectName:modelData.id===s.accountId?"accountNavigation":"accountNavigation_"+modelData.id
                                         Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
                                         highlighted:modelData.id===s.accountId && currentPage==="ledger"
@@ -1969,10 +2041,6 @@ ApplicationWindow {
                                         onClicked:chooseAccount(modelData.id)
                                         Keys.onMenuPressed:openAccountMenu(modelData.id,this,0,height)
                                         Keys.onPressed:function(event) {if(event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier)){openAccountMenu(modelData.id,this,0,height);event.accepted=true}}
-                                        MouseArea {
-                                            anchors.fill:parent;acceptedButtons:Qt.RightButton
-                                            onClicked:function(mouse){openAccountMenu(modelData.id,parent,mouse.x,mouse.y)}
-                                        }
                                     }
                                     Label {
                                         objectName:"accountBalance_"+modelData.id
@@ -1980,6 +2048,30 @@ ApplicationWindow {
                                         topPadding:2;bottomPadding:2;leftPadding:4;rightPadding:4
                                         wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d"
                                         Accessible.name:text
+                                    }
+                                    }
+                                    MouseArea {
+                                        anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton
+                                        enabled:!workflow.busy;preventStealing:true
+                                        property point startPoint
+                                        property bool dragged:false
+                                        cursorShape:accountDragRow===accountRow?Qt.ClosedHandCursor:Qt.ArrowCursor
+                                        onPressed:function(mouse){startPoint=mapToItem(window.contentItem,mouse.x,mouse.y);dragged=false}
+                                        onPositionChanged:function(mouse){
+                                            if(!(pressedButtons & Qt.LeftButton))return
+                                            const point=mapToItem(window.contentItem,mouse.x,mouse.y)
+                                            if(!dragged && Math.hypot(point.x-startPoint.x,point.y-startPoint.y)>=Qt.styleHints.startDragDistance){
+                                                dragged=true;accountDragOffset=accountRow.mapFromItem(window.contentItem,startPoint.x,startPoint.y);accountDragRow=accountRow
+                                            }
+                                            if(accountDragRow===accountRow)moveAccountDrag(point)
+                                        }
+                                        onReleased:function(mouse){if(dragged)finishAccountDrag()}
+                                        onCanceled:cancelAccountDrag()
+                                        onClicked:function(mouse){
+                                            if(dragged)return
+                                            if(mouse.button===Qt.RightButton)openAccountMenu(modelData.id,accountRow,mouse.x,mouse.y)
+                                            else {accountRowButton.forceActiveFocus();chooseAccount(modelData.id)}
+                                        }
                                     }
                                 }
                             }
@@ -2135,7 +2227,7 @@ ApplicationWindow {
                 property int counterpart: -1
                 property string leftAllocation: ""
                 property string rightAllocation: ""
-                onModelDataChanged:{counterpart=-1;leftAllocation="";rightAllocation=""}
+                onModelDataChanged:{counterpart=modelData.kind==="link" && modelData.rows.length===2?1:-1;leftAllocation="";rightAllocation=""}
                 function toggle(row, checked){let values=chosen.slice();if(checked)values.push(row);else values=values.filter(function(v){return v.key!==row.key});let choices=Object.assign({},reviewRowChoices);choices[modelData.key]=values;reviewRowChoices=choices;let groups=Object.assign({},reviewBatch);delete groups[modelData.key];reviewBatch=groups}
                 Label {text:questionCard.modelData.accountName||"Import problems";visible:!!questionCard.modelData.separator;font.bold:true;font.pixelSize:16;Layout.fillWidth:true}
                 RowLayout {

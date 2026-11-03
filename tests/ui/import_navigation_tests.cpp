@@ -60,6 +60,88 @@ private slots:
         const auto generation=model.diagnosticGeneration();model.observeUi({{"generation",generation-1},{"surface","CANARY-payee"},{"ready",true}});
         QCOMPARE(spentit::diagnostics::Collector::instance().snapshot().ui.surface,spentit::diagnostics::Surface::settings);
     }
+    void sidebarAccountDrag() {
+        QTemporaryDir dir;const auto path=dir.filePath("order-document");
+        const auto order=[](ImportModel& model){QStringList ids;for(const auto& value:model.state().value("sidebarAccounts").toList())ids.push_back(value.toMap().value("id").toString());return ids;};
+        {
+            ImportModel model(spentit::storage::document_gateway());
+            QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+            QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+            run(model,"create",{{"path",path},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+            run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+            run(model,"create_account",{{"id","3"},{"name","Card"},{"currency","CAD"},{"date","2026-01-01"}});
+            window->show();QVERIFY(QTest::qWaitForWindowExposed(window));QTest::qWait(100);
+            QCOMPARE(order(model),(QStringList{"1","2","3"}));
+            const auto point=[&](const char* name,int y){auto* row=qobject_cast<QQuickItem*>(object(root,name));return row->mapToScene(QPointF(50,y)).toPoint();};
+            auto start=point("accountRow_3",16);auto target=point("accountRow_1",2);
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);QTest::mouseMove(window,target,50);
+            QTRY_VERIFY(object(root,"accountDragPreview")->property("visible").toBool());
+            QVERIFY(object(root,"accountDropIndicator")->property("visible").toBool());
+            QCOMPARE(root->property("accountDropIndex").toInt(),0);
+            QVERIFY(qAbs(qobject_cast<QQuickItem*>(object(root,"accountDropIndicator"))->mapToScene(QPointF(0,0)).y()-(point("accountRow_1",0).y()-1.5))<1);
+            if(qEnvironmentVariableIsSet("SPENTIT_ACCOUNT_DRAG_CAPTURE")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_ACCOUNT_DRAG_CAPTURE")));}
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,target);
+            QTRY_COMPARE(order(model),(QStringList{"3","1","2"}));
+            QCOMPARE(model.state().value("accountId").toString(),QString("3"));
+            QTest::qWait(50);
+            start=point("accountRow_3",16);target=point("accountRow_2",50);
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);QTest::mouseMove(window,target,50);
+            QTRY_VERIFY(object(root,"accountDragPreview")->property("visible").toBool());
+            QTest::keyClick(window,Qt::Key_Escape);
+            QTRY_VERIFY(!object(root,"accountDragPreview")->property("visible").toBool());
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,target);
+            QCOMPARE(order(model),(QStringList{"3","1","2"}));
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);QTest::mouseMove(window,QPoint(600,300),50);
+            QVERIFY(!object(root,"accountDropIndicator")->property("visible").toBool());
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,QPoint(600,300));
+            QCOMPARE(order(model),(QStringList{"3","1","2"}));
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,point("accountRow_3",16));
+            target=point("accountRow_2",60);QTest::mouseMove(window,target,50);
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,target);
+            QTRY_COMPARE(order(model),(QStringList{"1","2","3"}));QTest::qWait(50);
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,point("accountRow_3",16));
+            target=point("accountRow_1",2);QTest::mouseMove(window,target,50);
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,target);
+            QTRY_COMPARE(order(model),(QStringList{"3","1","2"}));QTest::qWait(50);
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,point("accountRow_1",16));
+            QTRY_COMPARE(model.state().value("accountId").toString(),QString("1"));QTRY_VERIFY(!model.busy());
+            QCOMPARE(order(model),(QStringList{"3","1","2"}));
+            QVERIFY(!model.reorderAccounts({"1","1","2"}));QVERIFY(!model.error().isEmpty());
+            QCOMPARE(order(model),(QStringList{"3","1","2"}));
+            run(model,"close");
+        }
+        {
+            ImportModel model(spentit::storage::document_gateway());run(model,"open",{{"path",path}});
+            QCOMPARE(order(model),(QStringList{"3","1","2"}));
+            run(model,"create_account",{{"id","4"},{"name","New"},{"currency","CAD"},{"date","2026-01-01"}});
+            QCOMPARE(order(model),(QStringList{"3","1","2","4"}));
+            run(model,"close");run(model,"create",{{"path",dir.filePath("other")},{"protected",false},{"name","Other"},{"currency","CAD"}});
+            QCOMPARE(order(model),(QStringList{"1"}));run(model,"close");
+            run(model,"open",{{"path",path}});QCOMPARE(order(model),(QStringList{"3","1","2","4"}));run(model,"close");
+        }
+    }
+    void sidebarAccountDragScroll() {
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        run(model,"create",{{"path",dir.filePath("scroll")},{"protected",false},{"name","First"},{"currency","CAD"}});
+        for(int i=2;i<=16;++i)run(model,"create_account",{{"id",QString::number(i)},{"name",QString("Account %1").arg(i)},{"currency","CAD"},{"date","2026-01-01"}});
+        window->show();QVERIFY(QTest::qWaitForWindowExposed(window));QTest::qWait(100);
+        auto* scroll=qobject_cast<QQuickItem*>(object(root,"accountScroll"));QVERIFY(scroll);
+        auto* flick=scroll->property("contentItem").value<QObject*>();QVERIFY(flick);
+        auto* first=qobject_cast<QQuickItem*>(object(root,"accountRow_1"));QVERIFY(first);
+        const auto start=first->mapToScene(QPointF(50,16)).toPoint();
+        const auto edge=scroll->mapToScene(QPointF(50,scroll->height()-12)).toPoint();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);QTest::mouseMove(window,edge,50);
+        QTRY_VERIFY(flick->property("contentY").toReal()>0);
+        QTRY_VERIFY_WITH_TIMEOUT(flick->property("contentY").toReal()>=flick->property("contentHeight").toReal()-flick->property("height").toReal()-1,10000);
+        auto* last=qobject_cast<QQuickItem*>(object(root,"accountRow_16"));QVERIFY(last);
+        const auto target=last->mapToScene(QPointF(50,last->height()-2)).toPoint();
+        QTest::mouseMove(window,target,50);QCOMPARE(root->property("accountDropIndex").toInt(),16);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,target);
+        QTRY_COMPARE(model.state().value("sidebarAccounts").toList().last().toMap().value("id").toString(),QString("1"));
+        QCOMPARE(model.state().value("accountId").toString(),QString("16"));run(model,"close");
+    }
     void accountSortSurvivesRestart() {
         QTemporaryDir dir;const auto path=dir.filePath("sort-document");
         const auto checkSort=[](ImportModel& model,int column,bool descending){QCOMPARE(model.state().value("sort").toInt(),column);QCOMPARE(model.state().value("descending").toBool(),descending);};
