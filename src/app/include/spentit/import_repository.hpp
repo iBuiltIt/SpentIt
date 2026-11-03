@@ -11,6 +11,13 @@
 #include <utility>
 
 namespace spentit::app {
+enum class LedgerSelectionAction { rename_payee, restore_imported };
+struct LedgerSelectionEdit {
+    LedgerSelectionAction action=LedgerSelectionAction::rename_payee;
+    std::int64_t account=0, generation=0;
+    std::vector<imports::Occurrence> selected;
+    std::string payee;
+};
 struct DatasetOptions {std::string date_format="YYYY-MM-DD";bool default_categories=false;};
 // Synchronous application persistence boundary. Call on a worker, never the UI
 // thread. Each command is one complete atomic operation including its history.
@@ -266,6 +273,8 @@ public:
     virtual bool can_undo_transfer_assignment() const {return false;}
     // Complete editor acceptance and exact, stacked reversal. The UI owns the
     // session capability; the durable journal owns snapshots and mutation gates.
+    virtual std::int64_t ledger_edit_generation() const {return 0;}
+    virtual ReviewReceipt edit_transactions(std::string_view,const LedgerSelectionEdit&,const OperationContext&) {throw std::logic_error("Selected transaction editing unavailable");}
     virtual ReviewReceipt edit_transaction(std::string_view,const imports::Occurrence&,std::int64_t,const std::optional<EntryToken>&,const imports::DraftRow&) {throw std::logic_error("Transaction editing unavailable");}
     virtual bool can_undo_transaction_edit(std::string_view) const {return false;}
     virtual ReviewReceipt undo_transaction_edit(std::string_view,std::string_view) {throw std::logic_error("Transaction edit Undo unavailable");}

@@ -1,5 +1,12 @@
 # SpentIt — Where did my money go?
 
+## Ledger selection editing — owner Go 2026-11-02
+
+Right-click Rename payee and confirmed Restore imported values operate atomically
+on one or multiple selected new/committed transactions, with group session Undo.
+See [the contract](doc/ledger-editing.md#selected-rename-payee-and-restore--owner-go-2026-11-02)
+and [status](doc/status.md) for validation, transfer restrictions and verification.
+
 ## Next work: category-gated rules — owner direction 2026-11-02
 
 Read the [next-session handoff](features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02)

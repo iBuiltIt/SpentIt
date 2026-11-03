@@ -458,6 +458,72 @@ void policy_faults(const std::filesystem::path& dir) {
 std::int64_t edit_revision(ImportStore& s,const imports::Occurrence& id){for(const auto& b:s.batches())if(b.id==id.batch)return b.revision;throw std::runtime_error("No batch");}
 std::optional<EntryToken> edit_token(ImportStore& s,const imports::Occurrence& id){return s.transaction_accepted(id)?std::optional(s.committed_entry(id).token):std::nullopt;}
 imports::DraftRow edit_row(ImportStore& s,const imports::Occurrence& id){return s.transaction_accepted(id)?s.committed_entry(id).current.draft:*s.row(id).draft;}
+LedgerSelectionEdit selection_request(ImportStore& s,LedgerSelectionAction action,std::vector<imports::Occurrence> ids,std::string payee={}){
+    return {action,s.account().identity,s.ledger_edit_generation(),std::move(ids),std::move(payee)};
+}
+void selection_edit_tests(const std::filesystem::path& dir){
+    const Currency cad("CAD");const std::vector<imports::Occurrence> ids{{"old",0},{"old",1},{"new",0},{"new",1}};
+    auto s=ImportStore::create(dir/"selection","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+    const auto rows=source("APPLE.COM","-10","Source memo")+"D02/01/2026\nT-20\nPOther\n^\n";
+    s.ingest("old",rows,qif::DateOrder::dmy);s.accept_all("accept",false);s.ingest("new",source("New","-30")+"D03/01/2026\nT-40\nPLast\n^\n",qif::DateOrder::dmy);
+    std::vector<imports::DraftRow> originals;for(const auto& id:ids)originals.push_back(edit_row(s,id));
+    OperationContext context;auto rename=selection_request(s,LedgerSelectionAction::rename_payee,ids,"APPLE");
+    s.edit_transactions("rename",rename,context);s.edit_transactions("rename",rename,context);
+    for(const auto& id:ids)check(edit_row(s,id).payee=="APPLE" && edit_row(s,id).payee_owner==FieldOwnership::manual,"Rename assigns manual payees");
+    auto changed=rename;changed.payee="Changed retry";bool refused=false;try{s.edit_transactions("rename",changed,context);}catch(...){refused=true;}check(refused,"Changed retry rejected");
+    s.undo_transaction_edit("undo-rename","rename");for(std::size_t i=0;i<ids.size();++i)check(edit_row(s,ids[i]).payee==originals[i].payee && edit_row(s,ids[i]).payee_owner==originals[i].payee_owner,"Group Undo restores ownership");
+    // Correct date, money and splits first; Restore must reverse all of them together.
+    for(std::size_t i=0;i<ids.size();++i){auto edit=edit_row(s,ids[i]);edit.date="2026-02-01";edit.payee="Edited";edit.payee_owner=FieldOwnership::manual;edit.memo="Edited memo";edit.memo_owner=FieldOwnership::manual;
+        auto parts=edit.transaction.allocations();parts[0].amount=parts[0].amount+Money(100,cad);Allocation extra{"","Extra",Money(0,cad)};parts.push_back(extra);
+        edit.transaction=edit.transaction.corrected(edit.transaction.effective_total()+Money(100,cad),parts);s.edit_transaction("edit-"+std::to_string(i),ids[i],edit_revision(s,ids[i]),edit_token(s,ids[i]),edit);}
+    auto restore=selection_request(s,LedgerSelectionAction::restore_imported,ids);OperationContext restoreContext;
+    s.edit_transactions("restore",restore,restoreContext);s.edit_transactions("restore",restore,restoreContext);
+    for(std::size_t i=0;i<ids.size();++i){auto row=edit_row(s,ids[i]);check(row.payee==originals[i].payee && row.memo==originals[i].memo && row.date==originals[i].date && row.transaction.effective_total()==originals[i].transaction.effective_total() && row.transaction.allocations().size()==1 && row.payee_owner==FieldOwnership::source,"Restore original complete transaction");}
+    check(s.committed_balance().units()==-3000 && s.projected_balance()->units()==-10000,"Restore balances reconcile");
+    s.verify();s.undo_transaction_edit("undo-restore","restore");
+    for(const auto& id:ids){const auto row=edit_row(s,id);check(row.payee=="Edited" && row.transaction.allocations().size()==2 && row.payee_owner==FieldOwnership::manual,"Restore Undo restores edited splits and fields");}
+    auto stale=selection_request(s,LedgerSelectionAction::rename_payee,ids,"Stale");s.ingest("another",source("Another","5"),qif::DateOrder::dmy);
+    refused=false;try{s.edit_transactions("stale",stale,context);}catch(...){refused=true;}check(refused && !s.review_outcome("stale"),"Stale snapshot rejected");
+    auto invalid=selection_request(s,LedgerSelectionAction::restore_imported,{ids[0],{"~transfer-no-source",0}});
+    refused=false;try{s.edit_transactions("invalid",invalid,context);}catch(...){refused=true;}check(refused && edit_row(s,ids[0]).payee=="Edited" && !s.review_outcome("invalid"),"Invalid member rejects entire selection");
+    s.ingest("broken",source("Broken","bad"),qif::DateOrder::dmy);
+    const imports::Occurrence broken{"broken",0};const auto brokenSource=s.row(broken).source;
+    imports::DraftRow repaired{brokenSource.date,brokenSource.payee,brokenSource.memo,Transaction::repaired_import({},Money(-100,cad),{{"","",Money(-100,cad)}})};
+    s.save(broken,edit_revision(s,broken),repaired);
+    auto missing=selection_request(s,LedgerSelectionAction::restore_imported,{ids[0],broken});
+    refused=false;try{s.edit_transactions("missing",missing,context);}catch(...){refused=true;}check(refused && !s.review_outcome("missing") && edit_row(s,ids[0]).payee=="Edited","Missing original amount rejects entire restoration");
+    // Cancellation after the first child write still rolls back the entire command.
+    auto cancelled=selection_request(s,LedgerSelectionAction::rename_payee,ids,"Cancelled");OperationContext cancel;int writes=0;cancel.progress=[&](auto phase){if(phase=="Updating selected transactions" && ++writes==2)cancel.request();};
+    refused=false;try{s.edit_transactions("cancel",cancelled,cancel);}catch(const OperationCancelled&){refused=true;}check(refused && !s.review_outcome("cancel"),"Cancellation rolls back group");
+    for(const auto& id:ids)check(edit_row(s,id).payee=="Edited","Cancellation preserves all rows");
+    OperationContext finalContext;restore=selection_request(s,LedgerSelectionAction::restore_imported,ids);s.edit_transactions("final",restore,finalContext);s.verify();
+    // Full reopening, rather than only inspecting the current connection.
+    {auto copy=dir/"selection-backup";s.backup_to(copy,"test");auto reopened=ImportStore::open(copy,"test");reopened.verify();check(edit_row(reopened,ids[0]).payee=="APPLE.COM","Restored values survive reopen");reopened.undo_transaction_edit("reopen-undo","final");reopened.verify();check(edit_row(reopened,ids[0]).payee=="Edited","Durable group can be reversed exactly");}
+    auto linked=ImportStore::create(dir/"selection-links","test","Checking",cad,"2026-01-01");assignment_setup(linked);OperationContext assign;linked.assign_transfer_batch("assign",assignment_requests(linked),assign);linked.accept_all("accept",true);
+    const std::vector<imports::Occurrence> linkedIds{{"out",0},{"out",1}};OperationContext linkContext;
+    linked.edit_transactions("rename",selection_request(linked,LedgerSelectionAction::rename_payee,linkedIds,"Renamed transfer"),linkContext);assignment_check(linked,true);linked.verify();
+    OperationContext linkRestore;linked.edit_transactions("restore",selection_request(linked,LedgerSelectionAction::restore_imported,linkedIds),linkRestore);linked.verify();linked.undo_transaction_edit("undo-restore","restore");assignment_check(linked,true);linked.verify();
+}
+void selection_edit_faults(const std::filesystem::path& dir){
+    fault_vfs::install();const Currency cad("CAD");const std::vector<imports::Occurrence> ids{{"old",0},{"new",0}};
+    for(int mode=0;mode<4;++mode){
+        const auto base=dir/("selection-base-"+std::to_string(mode));LedgerSelectionEdit request;
+        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));s.ingest("old",source("Original old"),qif::DateOrder::dmy);s.accept_all("accept",false);s.ingest("new",source("Original new","-20"),qif::DateOrder::dmy);
+            OperationContext seed;s.edit_transactions("seed",selection_request(s,LedgerSelectionAction::rename_payee,ids,"Edited"),seed);
+            request=selection_request(s,mode<2?LedgerSelectionAction::rename_payee:LedgerSelectionAction::restore_imported,ids,mode<2?"Renamed":"");
+            if(mode%2){OperationContext context;s.edit_transactions("edit",request,context);}}
+        const auto apply=[&](ImportStore& s){if(mode%2)s.undo_transaction_edit("operation","edit");else{OperationContext context;s.edit_transactions("operation",request,context);}};
+        const auto verify=[&](ImportStore& s,bool saved){s.verify();check(s.review_outcome("operation").has_value()==saved,"Receipt agrees with completion");for(std::size_t i=0;i<ids.size();++i){const auto applied=mode<2?"Renamed":i==0?"Original old":"Original new";check(edit_row(s,ids[i]).payee==((saved!=(mode%2!=0))?applied:"Edited"),"No partial selection writes");}};
+        int positions=0;
+        for(int nth=1;nth<600;++nth){const auto trial=dir/"selection-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired=false;
+            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(...){}fired=fault_vfs::fired;fault_vfs::disarm();}
+            {auto s=ImportStore::open(trial,"test");verify(s,s.review_outcome("operation").has_value());apply(s);apply(s);verify(s,true);}
+            if(!fired){positions=nth-1;break;}}
+        check(positions>0,"Selection fault sweep completed");std::cout<<"Selection fault mode "<<mode<<": "<<positions<<" positions"<<std::endl;
+        for(auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){const auto trial=dir/"selection-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto p){if(p==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Selection crash boundary reached");auto s=ImportStore::open(trial,"test");verify(s,phase==storage::ImportPhase::after_commit);apply(s);verify(s,true);}
+    }
+}
+
 void editor_tests(const std::filesystem::path& dir){
     const Currency cad("CAD");const imports::Occurrence id{"edit",0};
     for(int mode=0;mode<4;++mode){
@@ -506,6 +572,8 @@ void editor_faults(const std::filesystem::path& dir){
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
+        if(argc>1 && std::string(argv[1])=="selection"){selection_edit_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="selection_faults"){selection_edit_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="editor"){editor_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="editor_faults"){editor_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="release"){release_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

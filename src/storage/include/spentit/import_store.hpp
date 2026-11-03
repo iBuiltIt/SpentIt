@@ -153,6 +153,8 @@ public:
     app::ReviewReceipt answer_review(std::string_view,const app::ReviewAnswer&) override;
     app::ReviewReceipt assign_transfer_batch(std::string_view,const std::vector<app::TransferRequest>&,const app::OperationContext&) override;
     bool can_undo_transfer_assignment() const override;
+    std::int64_t ledger_edit_generation() const override;
+    app::ReviewReceipt edit_transactions(std::string_view,const app::LedgerSelectionEdit&,const app::OperationContext&) override;
     app::ReviewReceipt edit_transaction(std::string_view,const imports::Occurrence&,std::int64_t,const std::optional<app::EntryToken>&,const imports::DraftRow&) override;
     bool can_undo_transaction_edit(std::string_view) const override;
     app::ReviewReceipt undo_transaction_edit(std::string_view,std::string_view) override;

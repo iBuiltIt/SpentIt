@@ -2055,5 +2055,6 @@ namespace { std::int64_t review_generation(sqlite3*); }
 #include "account_rollback.inc"
 #include "incomplete_import_cleanup.inc"
 #include "review_sheet_store.inc"
+#include "ledger_selection_store.inc"
 #include "rule_account_store.inc"
 } // namespace spentit::storage

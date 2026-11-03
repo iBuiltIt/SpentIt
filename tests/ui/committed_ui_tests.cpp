@@ -11,6 +11,7 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QFont>
+#include <QJSValue>
 using namespace spentit;
 // Inject lost acknowledgement after real storage has durably applied the operation.
 class ChangeFaultGateway final : public app::DocumentGateway, public app::ImportRepository {
@@ -41,6 +42,10 @@ public:
     app::RowView row(const imports::Occurrence& o) const override {return repo().row(o);}
     app::ReviewReceipt edit_transaction(std::string_view op,const imports::Occurrence& id,std::int64_t revision,const std::optional<app::EntryToken>& token,const imports::DraftRow& draft) override {
         if(failBefore)throw std::runtime_error("Injected failure before edit");auto result=repo().edit_transaction(op,id,revision,token,draft);refreshBroken=failRefresh;if(loseAcknowledgement)throw std::runtime_error("Injected lost acknowledgement");return result;
+    }
+    std::int64_t ledger_edit_generation() const override {return repo().ledger_edit_generation();}
+    app::ReviewReceipt edit_transactions(std::string_view op,const app::LedgerSelectionEdit& request,const app::OperationContext& context) override {
+        if(failBefore)throw std::runtime_error("Injected failure before selection edit");auto result=repo().edit_transactions(op,request,context);refreshBroken=failRefresh;if(loseAcknowledgement)throw std::runtime_error("Injected lost acknowledgement");return result;
     }
     bool can_undo_transaction_edit(std::string_view op) const override {return repo().can_undo_transaction_edit(op);}
     app::ReviewReceipt undo_transaction_edit(std::string_view op,std::string_view edit) override {return repo().undo_transaction_edit(op,edit);}
@@ -125,6 +130,72 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
     void init(){QSettings().clear();}
+    void selectedRenameRestoreAndUndo(){
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(QTest::qWaitForWindowExposed(window));
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);prepare(model,dir.path());
+        const auto oldBatch=selected(model).value("batch");
+        QFile file(dir.path()+"/new.qif");QVERIFY(file.open(QIODevice::WriteOnly));file.write("D3/1/2026\nT-2\nPSynthetic new\n^\n");file.close();
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        const auto newBatch=selected(model).value("batch");
+        run(model,"query",{{"filter","Synthetic"}});QCOMPARE(model.rowCount(),3);
+        run(model,"select",{{"row",0}});run(model,"select",{{"row",2},{"range",true}});QCOMPARE(model.state().value("selectionCount").toInt(),3);
+        auto open=[&](const char* action){auto* item=object(root,QString::fromLatin1(action));QVERIFY(item);QVERIFY(item->property("enabled").toBool());QVERIFY(QMetaObject::invokeMethod(item,"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());};
+        open("renamePayeeSelection");QVERIFY(object(root,"selectedPayee")->setProperty("text","APPLE"));QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
+        QCOMPARE(model.rowCount(),0);QVERIFY(model.state().value("canUndoEdit").toBool());QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo payee rename");
+        run(model,"query",{{"filter","regex:\"^APPLE$\""}});QCOMPARE(model.rowCount(),3);
+        open("restoreImportedSelection");QVERIFY(root->property("restoringSelection").toBool());QCOMPARE(root->property("selectedEditCount").toInt(),3);
+        QVERIFY(click(root,"cancelSelectedEdit"));QCOMPARE(model.rowCount(),3);
+        open("restoreImportedSelection");
+        if(qEnvironmentVariableIsSet("SPENTIT_SELECTION_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_SELECTION_SCREENSHOT")));}
+        QVERIFY(click(root,"confirmSelectedEdit"));wait(model);QCOMPARE(model.rowCount(),0);
+        QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo restore");
+        // Native Undo shortcut reverses the entire selection even after it leaves the filter.
+        qobject_cast<QQuickItem*>(object(root,"durableLedger"))->forceActiveFocus();
+        QTest::keySequence(window,QKeySequence::Undo);wait(model);QTRY_COMPARE(model.rowCount(),3);
+        QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo payee rename");
+        QVERIFY(click(root,"undoEdit"));wait(model);QCOMPARE(model.rowCount(),0);
+        run(model,"query",{{"filter",""}});
+        run(model,"inspect",{{"batch",oldBatch},{"ordinal",0}});QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Synthetic purchase");
+        run(model,"inspect",{{"batch",newBatch},{"ordinal",0}});QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Synthetic new");
+        open("renamePayeeSelection");QCOMPARE(root->property("selectedEditCount").toInt(),1);QVERIFY(object(root,"selectedPayee")->setProperty("text","Single rename"));QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
+        run(model,"close");run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",{{"batch",newBatch},{"ordinal",0}});
+        QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Single rename");QVERIFY(!model.state().value("canUndoEdit").toBool());
+        QCOMPARE(warnings.size(),0);
+    }
+    void selectionEditRetainsViewport(){
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Viewport"},{"currency","CAD"}});
+        QFile file(dir.path()+"/rows.qif");QVERIFY(file.open(QIODevice::WriteOnly));QByteArray rows;
+        for(int i=0;i<150;++i)rows+="D1/1/2026\nT-1\nPSynthetic "+QByteArray::number(i).rightJustified(3,'0')+"\n^\n";
+        file.write(rows);file.close();run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        const auto batch=selected(model).value("batch").toString();run(model,"inspect",{{"batch",batch},{"ordinal",100}});
+        run(model,"select",{{"row",model.occurrenceIndex(batch,100)}});run(model,"select",{{"row",model.occurrenceIndex(batch,102)},{"range",true}});
+        auto* ledger=qobject_cast<QQuickItem*>(object(root,"durableLedger"));QVERIFY(ledger);
+        auto snapshot=[&](){QMetaObject::invokeMethod(root,"rememberAccountViewport");return root->property("accountViewports").value<QJSValue>().toVariant().toMap().value(model.state().value("accountId").toString()).toMap();};
+        QVERIFY(QMetaObject::invokeMethod(ledger,"positionViewAtIndex",Q_ARG(int,model.occurrenceIndex(batch,90)),Q_ARG(int,0)));QTest::qWait(80);
+        ledger->setProperty("contentY",ledger->property("contentY").toReal()+11);const auto saved=snapshot();
+        QVERIFY(QMetaObject::invokeMethod(object(root,"renamePayeeSelection"),"triggered"));QVERIFY(object(root,"selectedPayee")->setProperty("text","Renamed"));QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
+        QTRY_COMPARE(snapshot().value("anchor"),saved.value("anchor"));QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
+        QCOMPARE(model.state().value("selectionCount").toInt(),3);
+        QVERIFY(click(root,"undoEdit"));wait(model);
+        QTRY_COMPARE(snapshot().value("anchor"),saved.value("anchor"));QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
+        QCOMPARE(model.state().value("selectionCount").toInt(),3);
+    }
+    void selectedEditAcknowledgement(){
+        for(int mode=0;mode<4;++mode){
+            QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));prepare(model,dir.path());
+            const auto id=selected(model);const QVariantMap args{{"account",model.state().value("accountId")},{"generation",model.state().value("ledgerEditGeneration")},{"selected",QVariantList{QVariantMap{{"batch",id.value("batch")},{"ordinal",0}}}},{"payee","Renamed"}};
+            fault->failBefore=mode==0;fault->loseAcknowledgement=mode==1 || mode==2;fault->unknownOutcome=mode==2;fault->failRefresh=mode==3;
+            run(model,"rename_payee_selection",args,mode==1);
+            fault->failBefore=false;fault->loseAcknowledgement=false;fault->unknownOutcome=false;fault->failRefresh=false;
+            run(model,"close");run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",{{"batch",id.value("batch")},{"ordinal",0}});
+            QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),mode==0?"Synthetic purchase":"Renamed");
+        }
+    }
     void addThenRemoveEmptySplit() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

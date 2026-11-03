@@ -2,6 +2,52 @@
 
 Last updated: 2026-11-02
 
+## Ledger selection Rename payee and Restore — 2026-11-02
+
+Owner Go implemented: right-click Rename payee and Restore imported values work
+on single/multiple selected imported transactions, including filtered selections
+and mixed new/committed rows. Rename accepts one manual payee value. Restore
+always confirms the selection count and replaced fields. Each command validates
+all members before one atomic write and offers one visible group session Undo,
+with Cmd+Z/Ctrl+Z and viewport/selection retention. Full requests and snapshots
+use the encrypted journal; retries match the original request. Committed child
+history cannot be undone individually. No schema change. See the
+[contract](ledger-editing.md#selected-rename-payee-and-restore--owner-go-2026-11-02)
+for restoration, transfer and session Undo restrictions.
+
+Rules-enabled Release rebuild and 10 selected CTest suites passed (48.53 s):
+selection edit, ordinary editor, Review sheet, transfer assignment/release,
+committed/category/rules UI, navigation and QML. Storage coverage includes mixed
+new/committed rename and full restore, exact ownership/split/date/amount restoration,
+balance reconciliation, group Undo, retry conflict, stale request rejection,
+invalid/missing-original members rejecting the entire selection, cancellation
+after a child write, backup/reopen and committed transfer restoration/Undo.
+
+New selection fault sweeps passed (190.09 s), injecting disk-full/I/O failure at
+every observed write/sync position for Rename, Restore and each group Undo,
+checking whole-selection outcomes, reopening and identical retries. Process exits
+immediately before/after durable commit also passed. ASan/UBSan ordinary and
+selection editor checks passed 2/2 (15.81 s), without diagnostics. Rules-disabled
+selection storage and committed UI passed 2/2 (13.62 s).
+
+Focused offscreen UI checks passed: single and multi selection, rename through
+search, Cancel, confirmed Restore, native Undo shortcut, stacked group Undo,
+restart, lost acknowledgement and failed view refresh (4 Qt results, 4.604 s).
+A later 150-row viewport test passed (3 Qt results, 1.171 s), checking retained
+anchor/offset and multiselection through rename and Undo. The Restore confirmation
+was rendered at 1440×850 and visually inspected; no QML warnings were observed
+in the new interaction regression. Changed-document relative links and
+`git diff --check` passed.
+
+Limitations: generated counterpart entries, pending linked transfers, unavailable
+original fields/categories, changed currencies and removed original source-split
+associations cannot use bulk Restore; the operation rejects the entire selection
+and directs individual editing. Generated counterpart entries also reject Rename.
+Committed transfer coverage uses the existing planner; no new transfer discovery
+or relationship creation is added. The full test suite, native desktop interaction,
+Linux and Windows were not run. `build/SpentIt` is updated; the running application
+was not restarted.
+
 ## Restore imported text and rule application — 2026-11-02
 
 Owner Go implemented: Restore no longer marks restored payee, transaction memo

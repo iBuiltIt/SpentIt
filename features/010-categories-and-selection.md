@@ -48,6 +48,16 @@ separate Clear buttons while preserving existing search application and navigati
 guards. The ledger also shows × when an applied filter remains despite empty input.
 See [status](../doc/status.md) for verification.
 
+## Selected payee rename and restoration — owner Go 2026-11-02
+
+The ledger context menu adds Rename payee and confirmed Restore imported values
+for single/multiple selections. Each applies atomically across new and committed
+rows, with one group Undo and retained selection/viewport. See the
+[accepted contract](../doc/ledger-editing.md#selected-rename-payee-and-restore--owner-go-2026-11-02)
+for original-value validation, transfer restrictions and the session Undo scope,
+and [status](../doc/status.md) for verification. This does not add a rule override
+mode; rules still match imported text and operate only on Uncategorized items.
+
 ## Direct ledger category menu — owner Go 2026-11-01
 
 Accepted and implemented: right-click **Change category ▸** opens a bounded,

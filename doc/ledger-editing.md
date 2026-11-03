@@ -130,6 +130,48 @@ payee as though it had been typed manually. New and committed edits use their
 existing atomic history/Undo paths; no format change or data rewrite is required.
 
 
+## Selected Rename payee and Restore — owner Go 2026-11-02
+
+The ledger right-click menu offers **Rename payee…** and **Restore imported
+values…** for one or multiple selected transactions, including selections made
+through search. Rename opens one text field, prefilled only when all selected
+payees agree. Confirming assigns that text to each selected payee as a manual
+edit; all other fields remain unchanged.
+
+Restore always asks for confirmation, names the selected count, and explains
+that dates, amounts, payees, memos and splits/categories will be replaced. Cancel
+or dismissal does nothing. Confirming restores parsed original values, returns
+restored text to source ownership and removes edited extra splits. The command
+does not rerun rules, change acceptance/account or reverse Merge. Rules continue
+to match original imported text; clearing a category is sufficient to make an
+otherwise eligible transaction available to its categorizing rule again.
+
+Both commands are one atomic operation across new and committed rows, with
+one **Undo payee rename** or **Undo restore** action and the normal Cmd+Z/Ctrl+Z
+shortcut. Undo restores the exact prior values, ownership, splits and affected
+transfer relationships for the entire selection. These actions join the existing
+session edit Undo sequence and its mutation barrier; closing the document ends
+the UI capability. Committed history persists and cannot reverse a single child
+of a selection operation. Search, selection and ledger viewport are retained
+where their identities remain available; rows can leave a filter after a rename
+or restoration.
+
+Storage validates the complete frozen selection and mutation generation before
+writing. A stale selection or any invalid member rejects the entire operation;
+no selected row is silently skipped. Generated counterpart entries are excluded.
+Missing/invalid original fields, unavailable original categories, changed currency
+or removed original source-split associations require individual editing. Pending
+linked transfers retain the existing editor restriction. Committed transfer edits
+use the existing relationship planner and exact group Undo; overlapping changes
+to the same relationship reject the selection. Restoration does not create
+categories or silently repair incomplete originals.
+
+The storage command derives values from retained originals, records its full
+request for idempotent retries, and shares the encrypted snapshot journal with
+ordinary edits. Cancellation remains available until the final durable commit
+gate. Read-only selection changes cannot acknowledge mutations. See
+[status](status.md) for actual verification and remaining limits.
+
 ## Split-only editor actions — owner Go 2026-11-02
 
 Remove and Create rule from split memo appear only when the editor has more than

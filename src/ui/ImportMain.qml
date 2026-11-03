@@ -294,9 +294,49 @@ ApplicationWindow {
             }
         }
     }
+    property var selectedEditRequest: null
+    property bool restoringSelection: false
+    readonly property int selectedEditCount:selectedEditRequest?selectedEditRequest.selected.length:0
+    function editSelectedTransactions(restore) {
+        const rows=(s.selection||[]).map(function(r){return {batch:r.batch,ordinal:r.ordinal,payee:r.payee}})
+        if(!rows.length || workflow.busy || s.readOnly)return
+        ledgerContext.close()
+        guard(function(){
+            restoringSelection=restore
+            selectedEditRequest={selected:rows,account:s.accountId,generation:s.ledgerEditGeneration}
+            selectedPayee.text=rows.every(r=>r.payee===rows[0].payee)?rows[0].payee:""
+            selectedEditDialog.open()
+            if(!restore)selectedPayee.forceActiveFocus()
+        })
+    }
+    function applySelectedEdit() {
+        if(!selectedEditRequest || workflow.busy)return
+        const request=selectedEditRequest
+        if(!restoringSelection)request.payee=selectedPayee.text
+        captureLedgerView("selected-edit")
+        selectedEditDialog.close()
+        ledger.forceActiveFocus()
+        workflow.command(restoringSelection?"restore_imported_selection":"rename_payee_selection",request)
+    }
+    Dialog {
+        id:selectedEditDialog;objectName:"selectedEditDialog";modal:true;anchors.centerIn:parent;width:Math.min(560,window.width-40)
+        title:restoringSelection?"Restore imported values?":"Rename payee"
+        contentItem:ColumnLayout {
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:restoringSelection?
+                "Restore imported values for "+selectedEditCount+" selected "+(selectedEditCount===1?"transaction":"transactions")+"? This replaces their current dates, amounts, payees, memos, and splits/categories.":
+                "Enter a payee name for "+selectedEditCount+" selected "+(selectedEditCount===1?"transaction.":"transactions.")}
+            TextField {id:selectedPayee;objectName:"selectedPayee";visible:!restoringSelection;Layout.fillWidth:true;Accessible.name:"New payee name";onAccepted:applySelectedEdit()}
+        }
+        footer:DialogButtonBox {
+            Button {objectName:"cancelSelectedEdit";text:"Cancel";DialogButtonBox.buttonRole:DialogButtonBox.RejectRole;onClicked:selectedEditDialog.close()}
+            Button {objectName:"confirmSelectedEdit";text:restoringSelection?"Restore":"Rename";enabled:!workflow.busy;DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole;onClicked:applySelectedEdit()}
+        }
+    }
     Menu {
         id:ledgerContext;objectName:"ledgerContext";popupType:Popup.Item;cascade:true
         delegate:MenuItem {hoverEnabled:true}
+        MenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
+        MenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
         MenuItem {objectName:"duplicateMergeSelection";text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
         MenuItem {objectName:"mergeSelection";text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
         MenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !!s.bulkSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
@@ -375,7 +415,10 @@ ApplicationWindow {
         let related=false
         let restore=false
         let clear=false
-        if(ledgerViewKind==="category") {
+        if(ledgerViewKind==="selected-edit") {
+            related=action==="rename_payee_selection" || action==="restore_imported_selection" || action==="undo_edit"
+            restore=related;clear=true
+        } else if(ledgerViewKind==="category") {
             related=action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment"
             restore=related;clear=true
         } else if(ledgerViewKind==="bulk") {
@@ -1055,7 +1098,7 @@ ApplicationWindow {
         })
     }
     function undoEdit() {
-        guard(function(){rememberEditView();workflow.command("undo_edit")})
+        guard(function(){if(s.groupEditUndo)captureLedgerView("selected-edit");else rememberEditView();workflow.command("undo_edit")})
     }
     function selectLedgerRow(row, modifiers) {
         guard(function(){workflow.command("select",{row:row,range:!!(modifiers & Qt.ShiftModifier),toggle:!!(modifiers & (Qt.ControlModifier|Qt.MetaModifier)),firstSearchSelection:!!searchReturn && !searchReturn.chosen})})
@@ -1199,7 +1242,7 @@ ApplicationWindow {
                 if(action==="apply_change") dismiss(changePreview)
                 if(action==="transfer_merge" && (s.transferMergePreview||{}).id) mergePreview.open()
                 if(action==="transfer_merge_apply") dismiss(mergePreview)
-                if(["inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
+                if(["rename_payee_selection","restore_imported_selection","inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
                 if(action==="save" || action==="accept_edit" || action==="apply_change") {
                     dirty=false
                     if(pendingAction) {let next=pendingAction;pendingAction=null;guard(next)}
@@ -2495,7 +2538,7 @@ ApplicationWindow {
             RowLayout {
                 ClearableSearchField {id:search;objectName:"ledgerSearch";clearObjectName:"clearFilter";hasAppliedFilter:appliedFilter.length>0;onClearRequested:guard(function(){search.clearSearch();query()});placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
-                Button {objectName:"undoEdit";text:"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo edits from this session. Other changes end this Undo sequence.";ToolTip.visible:hovered}
+                Button {objectName:"undoEdit";text:s.editUndoLabel||"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo edits from this session. Other changes end this Undo sequence.";ToolTip.visible:hovered}
                 Button {objectName:"undoTransferAssignment";text:"Undo category change";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){captureLedgerView("category");workflow.command("undo_transfer_assignment")})}
             }
             Row {
