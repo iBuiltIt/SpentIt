@@ -155,7 +155,7 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
         const auto& l=value.link;
         if(source.empty()) {
             if((l.origin.endpoint.account==owner && l.origin.state==transfers::State::draft) ||
-               (l.destination.endpoint.account==owner && l.destination.state==transfers::State::draft && l.destination.independent_evidence))doomed.insert(l.identity);
+               (l.destination.endpoint.account==owner && l.destination.state==transfers::State::draft && (l.destination.independent_evidence || l.destination.ledger_entry)))doomed.insert(l.identity);
         } else if(removing(l.origin.endpoint) || removing(l.destination.endpoint))doomed.insert(l.identity);
     }
     // Collect the transient relationship history as a connected component. A

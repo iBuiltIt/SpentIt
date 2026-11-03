@@ -281,7 +281,7 @@ void management() {
     const auto released_edit=edit_linked_allocation(std::vector<Link>{both.link},origin,false,false,Money(-5000,cad),origin.date);
     check(released_edit.fate==LinkFate::released && released_edit.link.unresolved && released_edit.link.origin.state==State::removed && released_edit.link.destination.amount==both.link.destination.amount);
     const auto destination_edit=edit_linked_allocation(std::vector<Link>{both.link},other,true,false,other.amount,other.date);
-    check(destination_edit.fate==LinkFate::released && destination_edit.link.destination_released && destination_edit.link.destination.state==State::removed && destination_edit.link.origin.state==State::committed && destination_edit.link.origin.amount==both.link.origin.amount);
+    check(destination_edit.fate==LinkFate::released && destination_edit.link.unresolved && destination_edit.link.destination.state==State::removed && destination_edit.link.origin.state==State::removed && destination_edit.link.origin.amount==both.link.origin.amount);
     auto manual_draft=source();manual_draft.transaction=Transaction::manual(manual_draft.transaction.effective_total(),manual_draft.transaction.allocations());
     auto manual_link=commit(commit(accept_unmatched(accept_unmatched(generate("manual-release",{1,{"manual",1},"payment-a"},manual_draft,{2,{"generated-m",0},"counterpart"},cad,false),1),2),1),2);
     const auto manual_origin=fact(manual_link.origin.endpoint,manual_link.origin.amount,manual_link.origin.date,State::committed,false,false,true);

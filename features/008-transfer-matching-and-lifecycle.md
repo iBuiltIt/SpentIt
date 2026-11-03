@@ -1,9 +1,17 @@
 # 008 — Transfer matching and lifecycle
 
+Current follow-up (owner Go, 2026-11-03): the
+[transaction-origin contract](../doc/transaction-origin-handoff.md)
+supersedes origin-specific category/transfer restrictions below for saved ledger
+entries. Manual and imported postings share transfer assignment, explicit Link,
+accepted editing/history and independent-counterpart preservation. Formats are
+50 with rules / 49 without. Rule matching policy is unchanged. See
+[verification](../doc/status.md).
+
 Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
 
 Status: **active**  
-Last updated: 2026-10-30  
+Last updated: 2026-11-03  
 Implementation: the [multi-account workflow](../doc/accounts.md) and [bounded durable transfer integration](../doc/transfer-engine.md) implement manual/imported-allocation creation, generated counterparts, acceptance, provisional bank matching, per-account commit, draft protection, counterpart navigation, allocation-level Merge, unlink and replacement, and a read-only transfer journal. [Bounded QIF transfer admission and explicit resolution](../doc/qif-transfers.md) and account entries in the category selector are implemented. The [2026-10-27 committed-editing decisions](#accepted-committed-transfer-editing--2026-10-27) cover retiring a purely generated committed duplicate, ending a link when one committed side's amount, category, or removal changes, and keeping a date-only link. Moving a committed row to another account and rewriting source-occurrence links remain open. Verified scope and remaining decisions are distinguished below.
 
 ## Link terminology follow-up — accepted 2026-10-30

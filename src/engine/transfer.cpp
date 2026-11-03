@@ -13,7 +13,7 @@ void identity(std::string_view text);
 void preserved(const Link& link) {
     if(link.preserved_amounts) throw TransferError(Error::invalid_relationship,"This link preserves amounts in two currencies. It is not a match and this command does not repair it.");
 }
-bool counts_locally(const Side& side) { return (side.manually_entered || !side.independent_evidence) && !side.attached_evidence; }
+bool counts_locally(const Side& side) { return !side.ledger_entry && (side.manually_entered || !side.independent_evidence) && !side.attached_evidence; }
 bool disposable(const Side& side) {
     return side.state==State::draft && !side.independent_evidence && !side.attached_evidence && !side.manually_entered;
 }
@@ -27,8 +27,9 @@ void retire_origin(Link& link) {
 }
 void fact_ok(const AllocationFact& fact);
 Side direct_side(const AllocationFact& fact,bool origin_side) {
-    if((!origin_side && fact.manually_entered) || fact.generated) invalid();
-    Side side{fact.endpoint,fact.amount,fact.date,fact.state,fact.imported,false,origin_side && fact.manually_entered};
+    if((!origin_side && fact.manually_entered && !fact.ledger_entry) || fact.generated) invalid();
+    Side side{fact.endpoint,fact.amount,fact.date,fact.state,fact.imported,false,fact.manually_entered};
+    side.ledger_entry=fact.ledger_entry;
     if(!side.independent_evidence && !side.manually_entered) invalid();
     return side;
 }
@@ -45,7 +46,7 @@ const Link* owner_of(std::span<const Link> links,const Endpoint& endpoint) {
 }
 void agree(const Side& side,const AllocationFact& fact) {
     const bool generated=!side.independent_evidence && !side.manually_entered && !side.attached_evidence;
-    if(side.endpoint!=fact.endpoint || side.amount!=fact.amount || side.date!=fact.date || side.state!=fact.state || side.manually_entered!=fact.manually_entered || side.independent_evidence!=fact.imported || generated!=fact.generated) invalid();
+    if(side.endpoint!=fact.endpoint || side.amount!=fact.amount || side.date!=fact.date || side.state!=fact.state || side.ledger_entry!=fact.ledger_entry || side.manually_entered!=fact.manually_entered || side.independent_evidence!=fact.imported || generated!=fact.generated) invalid();
 }
 LinkEdit release_link(Link link) {
     preserved(link);
@@ -69,7 +70,7 @@ Link leftover(const Link& link,std::string identity) {
 }
 LinkEdit replace_destination(Link link,const AllocationFact& next,std::string kept_identity) {
     preserved(link);
-    if(link.unresolved || next.generated || next.manually_entered || next.endpoint.account==link.origin.endpoint.account || next.endpoint==link.destination.endpoint) invalid();
+    if(link.unresolved || next.generated || (next.manually_entered && !next.ledger_entry) || next.endpoint.account==link.origin.endpoint.account || next.endpoint==link.destination.endpoint) invalid();
     if(next.amount.currency()!=link.origin.amount.currency() || next.amount.currency()!=link.destination.amount.currency()) currencies();
     if(-link.origin.amount!=next.amount || link.destination.amount!=next.amount) mismatch();
     if(link.destination.proposed_evidence)
@@ -78,7 +79,7 @@ LinkEdit replace_destination(Link link,const AllocationFact& next,std::string ke
     if(committed_generated(link.destination)) edit.retired_committed=link.destination;
     else if(!disposable(link.destination)) edit.kept=leftover(link,std::move(kept_identity));
     link.destination.endpoint=next.endpoint;link.destination.date=next.date;link.destination.state=next.state;
-    link.destination.independent_evidence=true;link.destination.provisional_date=false;link.destination.manually_entered=false;
+    link.destination.independent_evidence=next.imported;link.destination.provisional_date=false;link.destination.manually_entered=next.manually_entered;link.destination.ledger_entry=next.ledger_entry;
     link.destination.accepted_unmatched=false;link.destination.attached_evidence.reset();link.destination.proposed_evidence.reset();
     link.destination.amount=next.amount;validate(link);edit.link=std::move(link);return edit;
 }
@@ -132,7 +133,8 @@ void side(const Side& value) {
     }
     if(value.attached_evidence && (!value.independent_evidence || value.date!=value.attached_evidence->posting_date))invalid();
     if(value.proposed_evidence && value.independent_evidence)invalid();
-    if(value.state==State::committed && !value.independent_evidence && !value.accepted_unmatched)invalid();
+    if(value.ledger_entry && (value.provisional_date || value.attached_evidence || value.proposed_evidence || (!value.manually_entered && !value.independent_evidence)))invalid();
+    if(value.state==State::committed && !value.ledger_entry && !value.independent_evidence && !value.accepted_unmatched)invalid();
 }
 const Side& chosen(const Link& link,std::int64_t account) {
     if(link.origin.endpoint.account==account)return link.origin;
@@ -157,7 +159,7 @@ void validate(const Link& link) {
     if(!link.origin.manually_entered && (link.origin.attached_evidence || link.origin.proposed_evidence))invalid();
     if(link.origin.attached_evidence) { if(link.origin_date_corrected) invalid(); }
     else if((link.origin.date!=link.generated_date)!=link.origin_date_corrected) invalid();
-    if(link.destination.manually_entered)invalid();
+    if(link.destination.manually_entered && !link.destination.ledger_entry)invalid();
     if(link.origin.manually_entered && link.origin.independent_evidence!=link.origin.attached_evidence.has_value())invalid();
     if(link.destination.attached_evidence && !link.destination.independent_evidence)invalid();
     if(link.destination_released) {
@@ -171,7 +173,7 @@ void validate(const Link& link) {
         if((link.origin.state==State::removed)!=(link.destination.state==State::removed)) invalid();
         if(link.origin.state==State::removed && link.destination.independent_evidence) invalid();
     }
-    if(!link.destination.independent_evidence && (!link.destination.provisional_date || link.destination.date!=link.generated_date)) invalid();
+    if(!link.destination.independent_evidence && !link.destination.ledger_entry && (!link.destination.provisional_date || link.destination.date!=link.generated_date)) invalid();
 }
 Link generate(std::string id,const Endpoint& origin,const imports::DraftRow& draft,
               const Endpoint& destination,const Currency& currency,bool imported) {
@@ -203,7 +205,7 @@ Link commit(const Link& link,std::int64_t account) {
         throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match explicitly");
     if(current.state==State::committed) return link;
     if(link.unresolved) invalid();
-    if(!current.independent_evidence && !current.accepted_unmatched)
+    if(!current.ledger_entry && !current.independent_evidence && !current.accepted_unmatched)
         throw TransferError(Error::acceptance_required,"Accept this entry as valid without a bank match before committing");
     auto result=link;
     (account==result.origin.endpoint.account?result.origin:result.destination).state=State::committed;
@@ -211,12 +213,12 @@ Link commit(const Link& link,std::int64_t account) {
 }
 Link release_generated(const Link& link) {
     validate(link);
-    if(link.unresolved || link.destination_released || !link.origin.independent_evidence || link.origin.state==State::removed || link.destination.state==State::removed || link.destination.independent_evidence || link.destination.manually_entered || link.destination.attached_evidence || link.destination.proposed_evidence)invalid();
+    if(link.unresolved || link.destination_released || (!link.origin.independent_evidence && !link.origin.ledger_entry) || link.origin.state==State::removed || link.destination.state==State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.manually_entered || link.destination.attached_evidence || link.destination.proposed_evidence)invalid();
     auto result=link;result.origin.state=State::removed;result.destination.state=State::removed;validate(result);return result;
 }
 Link resize_generated(const Link& link,const Money& amount) {
     validate(link);
-    if(link.unresolved || link.destination_released || !link.origin.independent_evidence || link.origin.state==State::removed || link.destination.state==State::removed || link.destination.independent_evidence || link.destination.manually_entered || link.destination.attached_evidence || link.destination.proposed_evidence)invalid();
+    if(link.unresolved || link.destination_released || (!link.origin.independent_evidence && !link.origin.ledger_entry) || link.origin.state==State::removed || link.destination.state==State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.manually_entered || link.destination.attached_evidence || link.destination.proposed_evidence)invalid();
     if(amount.currency()!=link.origin.amount.currency() || amount.units()==0 || amount.units()==INT64_MIN || (amount.units()<0)!=(link.origin.amount.units()<0))invalid();
     auto result=link;result.origin.amount=amount;result.destination.amount=Money(-amount.units(),amount.currency());validate(result);return result;
 }
@@ -236,7 +238,7 @@ Link propose_match(const Link& link,std::int64_t account,const BankEvidence& evi
         throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
     if(evidence.amount!=current.amount)
         throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required");
-    if(current.independent_evidence)
+    if(current.independent_evidence || current.ledger_entry)
         throw TransferError(Error::unresolved_policy,"Replacing transfer evidence requires the repair policy");
     if(current.proposed_evidence && *current.proposed_evidence!=evidence)
         throw TransferError(Error::unresolved_policy,"Discard the previous match proposal before choosing another");
@@ -267,7 +269,7 @@ Link clear_workspace(const Link& link,std::int64_t account) {
     if(account==link.destination.endpoint.account)
         throw TransferError(Error::origin_controls_draft,"The origin controls this generated draft. Change or discard the origin instead of deleting the destination.");
     if(link.unresolved)return link;
-    if(link.destination.independent_evidence){auto result=link;result.unresolved=true;retire_origin(result);validate(result);return result;}
+    if(link.destination.independent_evidence || link.destination.ledger_entry){auto result=link;result.unresolved=true;retire_origin(result);validate(result);return result;}
     auto result=link;result.origin.state=result.destination.state=State::removed;
     result.origin.proposed_evidence.reset();result.destination.proposed_evidence.reset();
     validate(result);return result;
@@ -287,7 +289,7 @@ void validate_set(std::span<const Link> links) {
     if(links.size()>qif::max_records)invalid();
     std::set<std::string> ids;
     std::set<std::tuple<std::int64_t,imports::Occurrence,std::string>> endpoints;
-    std::map<imports::Occurrence,std::tuple<std::int64_t,State,bool,bool,bool,std::string>> entries;
+    std::map<imports::Occurrence,std::tuple<std::int64_t,State,bool,bool,bool,std::string,bool>> entries;
     std::set<std::tuple<std::int64_t,imports::Occurrence,std::string>> evidence_endpoints;
     std::map<std::int64_t,Currency> currencies;
     for(const auto& link:links) {
@@ -297,7 +299,7 @@ void validate_set(std::span<const Link> links) {
             if(side->state==State::removed || (link.unresolved && !counts_locally(*side))) continue;
             const auto& endpoint=side->endpoint;
             if(!endpoints.emplace(endpoint.account,endpoint.entry,endpoint.allocation).second)invalid();
-            const auto metadata=std::tuple{endpoint.account,side->state,side->independent_evidence,side->manually_entered,side->accepted_unmatched,side->date};
+            const auto metadata=std::tuple{endpoint.account,side->state,side->independent_evidence,side->manually_entered,side->accepted_unmatched,side->date,side->ledger_entry};
             const auto [entry,inserted]=entries.emplace(endpoint.entry,metadata);
             if(!inserted && (entry->second!=metadata || (!side->independent_evidence && !side->manually_entered)))invalid();
             if(!link.unresolved) for(const auto* evidence:{&side->attached_evidence,&side->proposed_evidence})if(*evidence) {
@@ -380,7 +382,7 @@ std::vector<Link> edited(std::span<const Link> links,const LinkEdit& edit) {
 AllocationFact ordered_origin(AllocationFact left,AllocationFact right) {
     if(right.manually_entered && !left.manually_entered) std::swap(left,right);
     else if(!left.manually_entered && !right.manually_entered && right.endpoint.account<left.endpoint.account) std::swap(left,right);
-    if(right.manually_entered || (!left.imported && !left.manually_entered) || !right.imported) invalid();
+    if((right.manually_entered && !right.ledger_entry) || (!left.imported && !left.manually_entered) || (!right.imported && !right.ledger_entry)) invalid();
     return left;
 }
 }
@@ -436,15 +438,23 @@ LinkEdit retarget(std::span<const Link> links,const AllocationFact& origin,std::
     validate_set(links);fact_ok(origin);
     if(origin.generated) throw TransferError(Error::origin_controls_draft,"The origin controls this generated draft. Change or discard the origin instead of deleting the destination.");
     const auto* host=owner_of(links,origin.endpoint);
-    if(host && host->destination.endpoint==origin.endpoint) throw TransferError(Error::origin_controls_draft,"The origin controls this generated draft. Change or discard the origin instead of deleting the destination.");
+    if(host && host->destination.endpoint==origin.endpoint) {
+        if(host->identity!=identity)invalid();agree(host->destination,origin);preserved(*host);
+        if(!generated){const auto edit=edit_linked_allocation(links,origin,false,false,origin.amount,origin.date);edited(links,{edit.link,std::nullopt,std::nullopt});return {edit.link,std::nullopt,std::nullopt};}
+        if(counts_locally(host->origin))throw TransferError(Error::origin_controls_draft,"Change the original transfer before choosing another account.");
+        // Both postings are independently owned. Retarget the selected posting;
+        // the former counterpart remains in its ledger without a relationship.
+        auto remaining=std::vector<Link>{};for(const auto& value:links)if(value.identity!=host->identity)remaining.push_back(value);
+        return retarget(remaining,origin,std::move(identity),std::move(kept_identity),generated,generated_currency,category);
+    }
     if(host && host->origin.endpoint!=origin.endpoint) invalid();
     if(host) {if(host->identity!=identity) invalid();agree(host->origin,origin);preserved(*host);}
     else if(identity.empty()) invalid();
     if(!generated) {
         if(!host) invalid();
-        if(origin.manually_entered && origin.state!=State::committed)
+        if(origin.manually_entered && !origin.ledger_entry && origin.state!=State::committed)
             throw TransferError(Error::invalid_relationship,"Changing a manual transfer into a category is not this command. Discard the manual origin while it is uncommitted.");
-        auto edit=origin.manually_entered?release_manual(*host,category):release_link(*host);
+        auto edit=origin.manually_entered && !origin.ledger_entry?release_manual(*host,category):release_link(*host);
         edited(links,edit);return edit;
     }
     if(!generated_currency) currencies();
@@ -456,7 +466,10 @@ LinkEdit retarget(std::span<const Link> links,const AllocationFact& origin,std::
         const auto draft=origin.manually_entered
             ? imports::DraftRow{origin.date,"","",Transaction::manual(origin.amount,{only})}
             : imports::DraftRow{origin.date,"","",Transaction::imported(origin.amount,{only})};
-        LinkEdit edit{generate(std::move(identity),origin.endpoint,draft,*generated,*generated_currency),std::nullopt,std::nullopt};
+        LinkEdit edit{generate(std::move(identity),origin.endpoint,draft,*generated,*generated_currency,origin.imported),std::nullopt,std::nullopt};
+        edit.link.origin.ledger_entry=origin.ledger_entry;
+        edit.link.origin.state=origin.state;
+        validate(edit.link);
         if(edit.link.origin.state!=origin.state || edit.link.origin.amount!=origin.amount || edit.link.origin.date!=origin.date) invalid();
         edited(links,edit);return edit;
     }
@@ -488,7 +501,7 @@ EntryLinkEdit edit_linked_allocation(std::span<const Link> links,const Allocatio
             link.origin.date=std::string(after_date);
             link.origin_date_corrected=link.origin.date!=link.generated_date;
         } else {
-            if(!link.destination.independent_evidence && after_date!=link.generated_date) invalid();
+            if(!link.destination.independent_evidence && !link.destination.ledger_entry && after_date!=link.generated_date) invalid();
             link.destination.date=std::string(after_date);
         }
         validate(link);edited(links,{link,std::nullopt,std::nullopt});return {std::move(link),LinkFate::dated};
@@ -500,7 +513,9 @@ EntryLinkEdit edit_linked_allocation(std::span<const Link> links,const Allocatio
     }
     Link link=*host;
     if(link.unresolved || link.destination_released || link.destination.state==State::removed || link.origin.state==State::removed) invalid();
-    link.destination.proposed_evidence.reset();link.destination.state=State::removed;link.destination_released=true;
+    link.destination.proposed_evidence.reset();link.destination.state=State::removed;
+    if(counts_locally(link.origin))link.destination_released=true;
+    else {link.unresolved=true;retire_origin(link);}
     validate(link);edited(links,{link,std::nullopt,std::nullopt});
     return {std::move(link),LinkFate::released};
 }

@@ -1,5 +1,13 @@
 # Manual transactions
 
+Current follow-up (owner Go, 2026-11-03): the
+[transaction-origin contract](transaction-origin-handoff.md)
+supersedes origin-specific category/transfer restrictions below for saved ledger
+entries. Manual and imported postings share transfer assignment, explicit Link,
+accepted editing/history and independent-counterpart preservation. Formats are
+50 with rules / 49 without. Rule matching policy is unchanged. See
+[verification](status.md).
+
 Status: implemented under owner Go, 2026-11-03; see [verification](status.md).
 
 ## Accepted interaction

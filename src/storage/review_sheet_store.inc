@@ -237,7 +237,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     std::map<imports::Occurrence,std::string> repair_origins;
     const auto occupy=[&](const transfers::Endpoint& endpoint){occupied[endpoint.entry].insert(endpoint.allocation);};
     for(const auto& v:all_transfers())if(!v.link.unresolved && !v.link.destination_released && v.link.origin.state!=transfers::State::removed && v.link.destination.state!=transfers::State::removed){
-        if(v.link.origin.independent_evidence && !v.link.destination.independent_evidence && !v.link.destination.attached_evidence && !v.link.destination.proposed_evidence)repair_origins.emplace(v.link.origin.endpoint.entry,"Replaces the generated counterpart; the selected bank posting stays.");
+        if((v.link.origin.independent_evidence || v.link.origin.ledger_entry) && !v.link.destination.independent_evidence && !v.link.destination.ledger_entry && !v.link.destination.attached_evidence && !v.link.destination.proposed_evidence)repair_origins.emplace(v.link.origin.endpoint.entry,"Replaces the generated counterpart; the selected transaction stays.");
         else {
             for(const auto* side:{&v.link.origin,&v.link.destination}){
                 occupy(side->endpoint);if(side->attached_evidence)occupy(side->attached_evidence->endpoint);if(side->proposed_evidence)occupy(side->proposed_evidence->endpoint);
@@ -316,7 +316,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     }
     for(const auto& value:all_transfers()){
         const auto& link=value.link;
-        if(link.unresolved || link.destination_released || link.destination.state==transfers::State::removed || link.destination.independent_evidence || link.destination.attached_evidence || link.destination.proposed_evidence || link.destination.accepted_unmatched)continue;
+        if(link.unresolved || link.destination_released || link.destination.state==transfers::State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.attached_evidence || link.destination.proposed_evidence || link.destination.accepted_unmatched)continue;
         const auto row=rows.find(link.origin.endpoint.entry);if(row==rows.end())continue;
         const auto message="Transfer recorded in "+account_by_id(link.destination.endpoint.account).name+"; bank transaction not yet matched";
         auto question=std::find_if(result.questions.begin(),result.questions.end(),[&](const auto& q){return q.kind==app::ReviewKind::link && !q.rows.empty() && q.rows.front().identity==row->first && q.waiting_link.empty();});
@@ -484,7 +484,7 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
                 const auto& small=magnitude(a.amount.units())>magnitude(b.amount.units())?b:a;
                 const auto common=Money(-small.amount.units(),part.amount.currency());const auto remainder=part.amount-common;
                 std::optional<app::TransferView> generated;
-                for(const auto& v:prior)if(!v.link.unresolved && v.link.origin.endpoint.entry==large.identity && v.link.origin.endpoint.allocation==part.identity && !v.link.destination.independent_evidence && !v.link.destination.attached_evidence && !v.link.destination.proposed_evidence)generated=v;
+                for(const auto& v:prior)if(!v.link.unresolved && v.link.origin.endpoint.entry==large.identity && v.link.origin.endpoint.allocation==part.identity && !v.link.destination.independent_evidence && !v.link.destination.ledger_entry && !v.link.destination.attached_evidence && !v.link.destination.proposed_evidence)generated=v;
                 if(transfer_linked(large.identity) && !generated)fail(SQLITE_CONSTRAINT,"Resolve the existing link before changing its allocation");
                 std::string category;std::optional<CategoryBinding> binding;
                 if(!answer.remainder_category.empty()){const auto display=resolve_category(answer.remainder_category);if(!display.assignable)fail(SQLITE_CONSTRAINT,"Choose an available category");category=display.path;binding=CategoryBinding{answer.remainder_category,catalog_sequence(impl_->db)};}
@@ -501,7 +501,7 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
             // If both imported sides independently generated placeholders, retire
             // the second relationship before joining the two real postings.
             std::optional<app::TransferView> first_generated,second_generated;
-            for(const auto& value:all_transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed && !value.link.destination.independent_evidence && !value.link.destination.attached_evidence && !value.link.destination.proposed_evidence){
+            for(const auto& value:all_transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed && !value.link.destination.independent_evidence && !value.link.destination.ledger_entry && !value.link.destination.attached_evidence && !value.link.destination.proposed_evidence){
                 if(value.link.origin.endpoint.entry==left.identity && value.link.origin.endpoint.allocation==a.identity)first_generated=value;
                 if(value.link.origin.endpoint.entry==right.identity && value.link.origin.endpoint.allocation==b.identity)second_generated=value;
             }
@@ -512,9 +512,10 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
             app::TransferRequest request{};request.action=app::TransferAction::merge;request.link=std::string(operation)+"-link";request.kept=std::string(operation)+"-kept";request.expected_sequence=transfer_sequence();
             request.left=transfers::AllocationFact{{left.account,left.identity,a.identity},a.amount,left.draft.date,left.committed?transfers::State::committed:transfers::State::draft,true,false,false};
             request.right=transfers::AllocationFact{{right.account,right.identity,b.identity},b.amount,right.draft.date,right.committed?transfers::State::committed:transfers::State::draft,true,false,false};
+            for(auto* fact:{&*request.left,&*request.right}){const bool manual=batch(impl_->db,fact->endpoint.entry.batch).manual;fact->imported=!manual;fact->manually_entered=manual;fact->ledger_entry=manual;}
             request.batch_revision=batch(impl_->db,left.identity.batch).revision;request.right_revision=batch(impl_->db,right.identity.batch).revision;
             impl_->selected_account=left.account;
-            for(const auto& v:all_transfers())if(!v.link.unresolved && v.link.origin.state!=transfers::State::removed && (v.link.origin.endpoint==request.left->endpoint || v.link.origin.endpoint==request.right->endpoint)){request.link=v.link.identity;if(v.link.destination.state==transfers::State::committed && !v.link.destination.independent_evidence)impl_->selected_account=v.link.destination.endpoint.account;}
+            for(const auto& v:all_transfers())if(!v.link.unresolved && v.link.origin.state!=transfers::State::removed && (v.link.origin.endpoint==request.left->endpoint || v.link.origin.endpoint==request.right->endpoint)){request.link=v.link.identity;if(v.link.destination.state==transfers::State::committed && !v.link.destination.independent_evidence && !v.link.destination.ledger_entry)impl_->selected_account=v.link.destination.endpoint.account;}
             const auto link_operation=next();impl_->composing_review=true;apply_transfer(link_operation,request);impl_->composing_review=false;
             for(const auto& value:all_transfers()){
                 const auto old=std::find_if(prior.begin(),prior.end(),[&](const auto& v){return v.link.identity==value.link.identity;});const auto payload=transfer_codec::encode(value);
@@ -647,6 +648,50 @@ bool ImportStore::can_undo_transfer_assignment() const {
     Statement top(impl_->db,"SELECT s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
     return top.row() && top.bytes(1)=="transfer-assignment" && top.integer(0)==review_generation(impl_->db);
 }
+app::ReviewReceipt ImportStore::assign_categories(std::string_view operation,const app::CategorySelection& selection,const app::OperationContext& context) {
+    identifier(operation);
+    if(selection.account!=impl_->selected_account || selection.selected.empty() || selection.selected.size()>4096)
+        fail(SQLITE_CONSTRAINT,"Select between 1 and 4096 transactions in this account");
+    // Compare retries with the saved command, without rereading now-changed rows.
+    if(const auto receipt=review_outcome(operation)) {
+        Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='transfer-assignment'");saved.text(1,operation);
+        if(!saved.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
+        const auto bytes=saved.bytes(0);constexpr std::string_view prefix="transfer-assignment:";
+        if(!bytes.starts_with(prefix))fail(SQLITE_CORRUPT);
+        transfer_codec::Reader in{std::string_view(bytes).substr(prefix.size())};
+        for(const auto& target:selection.selected) {
+            const auto request=transfer_codec::request(in.text());
+            if(request.mode!=0 || !request.left || request.left->endpoint.account!=selection.account || request.left->endpoint.entry!=target.identity || request.allocation!=target.allocation || request.category_id!=selection.category || request.category_generation!=selection.generation)
+                fail(SQLITE_CONSTRAINT,"Category assignment retry changed its selections");
+        }
+        if(!in.bytes.empty())fail(SQLITE_CONSTRAINT,"Category assignment retry changed its selections");
+        return *receipt;
+    }
+    if(selection.generation!=ledger_edit_generation())fail(SQLITE_CONSTRAINT,"Transactions changed; select them again");
+    std::string category_path;
+    if(!selection.category.empty()){const auto category=resolve_category(selection.category);if(!category.assignable)fail(SQLITE_CONSTRAINT,"Choose an available category");category_path=category.path;}
+    const auto links=all_transfers();std::vector<app::TransferRequest> requests;std::size_t serial=0;
+    for(const auto& target:selection.selected) {
+        context.checkpoint("Reading selected transactions");require_account(target.identity.batch);
+        const auto info=batch(impl_->db,target.identity.batch);const bool accepted=transaction_accepted(target.identity);
+        const auto row=load_row(target.identity,false);if(!row.draft || row.excluded_by_clear)fail(SQLITE_CONSTRAINT,"Transaction is unavailable");
+        const auto draft=accepted?committed_entry(target.identity).current.draft:*row.draft;
+        const auto& allocations=draft.transaction.allocations();
+        if(target.allocation.empty() && allocations.size()!=1)fail(SQLITE_CONSTRAINT,"Choose which split to change");
+        const auto allocation=std::find_if(allocations.begin(),allocations.end(),[&](const auto& a){return target.allocation.empty() || a.identity==target.allocation;});
+        if(allocation==allocations.end())fail(SQLITE_CONSTRAINT,"Choose which split to change");
+        const bool imported=!info.manual;
+        app::TransferRequest request{};request.action=app::TransferAction::retarget;request.mode=0;
+        request.link=std::string(operation)+"-"+std::to_string(++serial);request.kept=request.link+"-kept";
+        request.left=transfers::AllocationFact{{selection.account,target.identity,allocation->identity},allocation->amount,draft.date,accepted?transfers::State::committed:transfers::State::draft,imported,false,!imported,!imported};
+        for(const auto& value:links)if(!value.link.unresolved)for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed && side->endpoint==request.left->endpoint){request.link=value.link.identity;request.left=fact_from(*side);}
+        request.expected_sequence=transfer_sequence();request.batch_revision=info.revision;
+        request.allocation=target.allocation;request.category_generation=selection.generation;request.category_id=selection.category;request.category_path=category_path;
+        requests.push_back(std::move(request));
+    }
+    return assign_transfer_batch(operation,requests,context);
+}
+
 app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation,const std::vector<app::TransferRequest>& requests,const app::OperationContext& context) {
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     if(requests.empty() || requests.size()>4096)fail(SQLITE_CONSTRAINT,"Select between 1 and 4096 transactions");
@@ -665,6 +710,7 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Transfer assignment retry changed its selections");return *prior;
     }
     const auto generation=review_generation(impl_->db);if(generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
+    for(const auto& request:requests)if(request.category_generation>=0 && request.category_generation!=generation)fail(SQLITE_CONSTRAINT,"Transactions changed; select them again");
     Atomic transaction(impl_->db);
     // Validate every caller snapshot before any sibling advances a batch revision.
     const auto initial=all_transfers();
@@ -681,7 +727,7 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         if(committed && !committed_entry(id).current.active)fail(SQLITE_CONSTRAINT,"Transaction was removed");
         // Manual ledger entries have no imported original. Validate the supplied
         // kind against the stored transaction rather than requiring import evidence.
-        const bool imported=draft.transaction.original_imported_amount().has_value();
+        const bool imported=!batch(impl_->db,id.batch).manual;
         if(fact.imported!=imported || fact.manually_entered==imported)
             fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before changing category");
         const auto previous=draft;auto aa=draft.transaction.allocations();auto a=std::find_if(aa.begin(),aa.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
@@ -704,12 +750,12 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         context.checkpoint("Assigning transfers");
         const auto before=all_transfers();const auto child=std::string(operation)+"-transfer-"+std::to_string(++serial);
         const auto id=request.left->endpoint.entry;
-        const bool record_category=request.mode==0 && request.left->imported;
+        const bool record_category=request.mode==0 && (request.left->imported || request.left->ledger_entry);
         const bool committed=record_category && transaction_accepted(id);
         std::int64_t prior=0;
         if(record_category){if(committed)prior=committed_entry(id).current.revision;else{Statement v(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");v.text(1,id.batch);v.integer(2,integer(id.ordinal));if(!v.row() || v.null(0))fail(SQLITE_CORRUPT);prior=v.integer(0);}}
         request.expected_sequence=transfer_sequence();
-        if(request.left->imported)request.batch_revision=batch(impl_->db,id.batch).revision;
+        if(request.left->imported || request.left->ledger_entry)request.batch_revision=batch(impl_->db,id.batch).revision;
         impl_->composing_review=true;
         if(ordinary[serial-1]){
             write_review_row(operation,child,id,*ordinary[serial-1],load_row(id,false).decision,true,false,false);

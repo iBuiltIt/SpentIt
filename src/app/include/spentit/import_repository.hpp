@@ -18,6 +18,12 @@ struct LedgerSelectionEdit {
     std::vector<imports::Occurrence> selected;
     std::string payee;
 };
+struct CategoryTarget { imports::Occurrence identity; std::string allocation; };
+struct CategorySelection {
+    std::int64_t account=0,generation=0;
+    std::string category;
+    std::vector<CategoryTarget> selected;
+};
 struct DatasetOptions {std::string date_format="YYYY-MM-DD";bool default_categories=false;};
 // Synchronous application persistence boundary. Call on a worker, never the UI
 // thread. Each command is one complete atomic operation including its history.
@@ -284,6 +290,7 @@ public:
     virtual ReviewSheet review_sheet() const {return {};}
     virtual ReviewReceipt merge_review_batch(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Batch Review unavailable");}
     virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}
+    virtual ReviewReceipt assign_categories(std::string_view,const CategorySelection&,const OperationContext&) {throw std::logic_error("Category assignment unavailable");}
     virtual ReviewReceipt assign_transfer_batch(std::string_view,const std::vector<TransferRequest>&,const OperationContext&) {throw std::logic_error("Transfer assignment unavailable");}
     virtual bool can_undo_transfer_assignment() const {return false;}
     // Complete editor acceptance and exact, stacked reversal. The UI owns the

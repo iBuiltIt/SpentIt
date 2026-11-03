@@ -2,6 +2,76 @@
 
 Last updated: 2026-11-03
 
+## Uniform transaction origins — 2026-11-03
+
+Implemented the owner's Go for the transaction/category/transfer cleanup in the
+[contract](transaction-origin-handoff.md). Rule matching remains unchanged and its
+current-versus-original input decision remains open.
+
+The category menu now submits transaction/allocation identities, category and an
+expected ledger generation. Storage derives the facts, shares canonical editor
+validation, preserves unresolved duplicate decisions and saves a mixed selection
+with one group Undo. Exact retries compare the original command rather than loading
+changed rows. Account assignment retains its complete atomic transfer command.
+
+Transfer history explicitly distinguishes saved independent ledger entries from
+transfer-local postings. Saved manual rows receive authoritative fact/revision
+validation, are counted once, support accepted account assignment and can link to
+other manual or imported postings. Either independent side can release its category
+or retarget to another account. Category, date, amount and removal changes use the
+shared financial/history paths; independent and accepted counterparts remain, while
+only disposable generated drafts are removed. Legacy local-manual transfer
+accounting remains distinct. New linked-row editing/deletion restrictions remain
+shared across origins; generated-side editing is still restricted.
+
+Formats advance to **50 with rules / 49 without**, including the new transfer
+ownership bit and category selection revision in encrypted history. Previous
+experimental formats are rejected unchanged, with no migration. Creation origin
+comes from stored metadata rather than presence of an original amount, so repaired
+imports are not mistaken for manual entries. Source-specific capabilities retain
+their existing association requirements; no new automatic matching or rule input
+semantics were added.
+
+Verification uses synthetic fixtures on macOS arm64:
+
+- Rebuilt the rules-enabled Release application with
+  `cmake --build build/import-ui-rules-release -j 2`; output is `build/SpentIt`.
+- Rules-enabled Release: 27/27 selected CTests passed in 36.13 seconds. Selection:
+  `transfers.*`, `transferstore.{basics,imports,management,splits,manual_evidence,qif,validation}`,
+  `import.{transfer_release,transfer_assignment,editor,selection_edit,review_policy,review_sheet,review_batch,generated_batch,navigation,qml}`,
+  `statement.import_undo` and `rulestore.schema`. The final expanded
+  `import.manual_transactions` passed separately in 35.19 seconds.
+- Rules-disabled Release: 9/9 selected CTests passed in 31.56 seconds:
+  `import.{manual_transactions,transfer_release,transfer_assignment,editor,selection_edit,schema_gate}`
+  and `transferstore.{management,manual_evidence,validation}`. The final expanded
+  manual suite passed again in 32.63 seconds.
+- ASan/UBSan: 12/12 selected CTests passed in 79.69 seconds:
+  `import.manual_transactions`, `transfers.*` and
+  `transferstore.{management,manual_evidence,validation}`. Options:
+  `ASAN_OPTIONS=detect_leaks=0:quarantine_size_mb=8:malloc_context_size=0:halt_on_error=1`
+  and `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`. The final expanded manual
+  suite passed again in 99.58 seconds. No sanitizer diagnostic was reported.
+- The manual suite covers all four manual/imported pairings with neither, either
+  or both sides accepted; new/accepted account assignment; both-side category
+  release, retargeting, date correction, deletion and Undo; mixed-sign/positive/zero
+  split transfers; accepted generated-counterpart preservation on amount edits;
+  bounded manual Review Link; import undo preserving a manual counterpart; reopen,
+  exact/changed retries, forged/stale snapshots and cross-currency rejection.
+- Recovery covers cancellation after partial in-transaction work, sampled disk-full
+  and write/sync failure positions, exact retries after reopening, and child exits
+  immediately before/after durable commit. These are sampled new fault checks,
+  not an exhaustive transfer fault sweep.
+- Offscreen navigation includes the new accepted-manual account assignment,
+  reopen and Undo case, alongside mixed category-menu and viewport checks.
+  Both current-format schema gates passed. `git diff --check` and changed-document
+  relative file-link checks passed.
+
+One initial Release regression exposed the old bulk API's hardcoded format gate;
+it now recognizes format 50. The rules-disabled transfer test also expected the
+rules-enabled bulk refusal text; it now checks the appropriate refusal for that
+configuration. Both reruns passed. Native mouse interaction, Linux/Windows,
+leak detection and the full suite were not run for this checkpoint.
+
 ## Next-session transaction-origin audit — 2026-11-03
 
 The [handoff](transaction-origin-handoff.md) records read-only findings and proposed

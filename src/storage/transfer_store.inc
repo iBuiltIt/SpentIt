@@ -1,5 +1,5 @@
 namespace {
-bool local_side(const transfers::Side& side){return (side.manually_entered || !side.independent_evidence) && !side.attached_evidence;}
+bool local_side(const transfers::Side& side){return !side.ledger_entry && (side.manually_entered || !side.independent_evidence) && !side.attached_evidence;}
 // Undo of a newly created relationship preserves independently imported postings,
 // but retires a purely generated draft along with its relationship.
 void undo_new_relationship(app::TransferView& value) {
@@ -27,7 +27,7 @@ std::vector<app::TransferView> import_transition(std::vector<app::TransferView> 
         if(value.link.origin.endpoint.account==account && value.link.origin.endpoint.entry.batch==batch && value.link.origin.state==transfers::State::draft){
             if(publish)value.link=transfers::commit(value.link,account);
             else if(!protected_origins.contains(value.link.origin.endpoint.entry))value.link=transfers::clear_workspace(value.link,account);
-        }else if(value.link.destination.independent_evidence && value.link.destination.endpoint.account==account && value.link.destination.endpoint.entry.batch==batch && value.link.destination.state==transfers::State::draft){
+        }else if((value.link.destination.independent_evidence || value.link.destination.ledger_entry) && value.link.destination.endpoint.account==account && value.link.destination.endpoint.entry.batch==batch && value.link.destination.state==transfers::State::draft){
             if(publish){if(!value.link.unresolved)value.link=transfers::commit(value.link,account);}
             else if(!value.link.unresolved)fail(SQLITE_CONSTRAINT,"This import is linked as a transfer destination. Change the origin before discarding it");
         }
@@ -275,8 +275,13 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
         struct ReadScope{bool& slot;bool prior;explicit ReadScope(bool& value):slot(value),prior(value){slot=true;}~ReadScope(){slot=prior;}} reading(impl_->verifying);
         auto confirm_fact=[&](const transfers::AllocationFact& fact,std::int64_t revision){
             require_writable_account(impl_->db,fact.endpoint.account);(void)account_by_id(fact.endpoint.account);
-            if(fact.generated || fact.manually_entered){if(fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");return;}
-            if(!fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
+            if(fact.generated || (fact.manually_entered && !fact.ledger_entry)){
+                if(fact.imported || !fact.endpoint.entry.batch.starts_with("~transfer-"))fail(SQLITE_CONSTRAINT,"Invalid transfer command");
+                bool found=false;for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination})
+                    if(side->endpoint==fact.endpoint && side->state==fact.state && side->amount==fact.amount && side->date==fact.date && side->manually_entered==fact.manually_entered && side->ledger_entry==fact.ledger_entry)found=true;
+                if(!found)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");return;
+            }
+            if(!fact.imported && !fact.ledger_entry)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
             if(account_for_batch(fact.endpoint.entry.batch).identity!=fact.endpoint.account)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
             const auto info=batch(impl_->db,fact.endpoint.entry.batch);
             if(info.revision!=revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
@@ -288,7 +293,8 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             std::optional<imports::DraftRow> row;
             if(committed){const auto entry=committed_entry(fact.endpoint.entry);if(!entry.current.active)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");row=entry.current.draft;}
             else{const auto loaded=load_row(fact.endpoint.entry,false);if(loaded.excluded_by_clear || !loaded.draft || loaded.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");row=loaded.draft;}
-            const auto& allocations=row->transaction.allocations();
+            if(fact.imported==info.manual || fact.manually_entered==fact.imported)fail(SQLITE_CONSTRAINT,"Transaction changed; select it again");
+        const auto& allocations=row->transaction.allocations();
             const auto allocation=std::find_if(allocations.begin(),allocations.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
             if(allocation==allocations.end() || allocation->amount!=fact.amount || row->date!=fact.date)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
         };
@@ -316,11 +322,11 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
                 const bool reassigned=source.source_currency && canonical.transaction.effective_total().currency()!=*source.source_currency;
                 imports::validate_draft(source,canonical,reassigned);return canonical;
             };
-            if(fact.manually_entered){
+            if(fact.manually_entered && !fact.ledger_entry){
                 if(fact.state!=transfers::State::committed || fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
                 bool recorded=false;for(const auto& value:managed_values)if(value.link.identity==request.link && value.link.origin_category==request.category_path && value.link.unresolved && value.link.origin.state==transfers::State::committed)recorded=true;
                 if(!recorded)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
-            }else if(fact.imported && fact.state==transfers::State::draft){
+            }else if((fact.imported || fact.ledger_entry) && fact.state==transfers::State::draft){
                 const auto info=batch(impl_->db,fact.endpoint.entry.batch);
                 if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");
                 const auto loaded=load_row(fact.endpoint.entry,false);if(!loaded.draft)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");
@@ -328,7 +334,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
                 auto write_category=[&]{version(impl_->db,fact.endpoint.entry,info.revision+1,canonical,loaded.decision,false);advance(impl_->db,fact.endpoint.entry.batch,info.revision,"save",static_cast<int>(info.state));};
                 if(info.state==app::BatchState::protected_drafts){struct CommandScope{int& slot;explicit CommandScope(int& value):slot(value){slot=1;}~CommandScope(){slot=0;}} scope(impl_->account_command);write_category();}
                 else write_category();
-            }else if(fact.imported && fact.state==transfers::State::committed){
+            }else if((fact.imported || fact.ledger_entry) && fact.state==transfers::State::committed){
                 if(fact.endpoint.account!=account.identity)fail(SQLITE_CONSTRAINT,"Open the account that holds this transaction before changing its category");
                 const auto current=committed_entry(fact.endpoint.entry);if(!current.current.active)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
                 const auto canonical=rewrite(current.current.draft,current.current.draft,current.source,current.current.revision+1,true);
@@ -453,7 +459,7 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
         if(events.integer(5)==4 && events.integer(6)!=events.integer(8))fail(SQLITE_CORRUPT,"Transfer receipt differs from its financial effect");
         const bool imported=request.action==app::TransferAction::import_commit || request.action==app::TransferAction::import_discard;
         const int kind=static_cast<int>(events.integer(5));
-        const bool committed_category=request.action==app::TransferAction::retarget && request.mode==0 && request.left && request.left->imported && !request.left->manually_entered && request.left->state==transfers::State::committed;
+        const bool committed_category=request.action==app::TransferAction::retarget && request.mode==0 && request.left && (request.left->imported || request.left->ledger_entry) && request.left->state==transfers::State::committed;
         int expected_kind=4;
         if(request.action==app::TransferAction::import_commit)expected_kind=0;
         else if(request.action==app::TransferAction::relink){if(kind!=static_cast<int>(app::ChangeKind::correct) && kind!=static_cast<int>(app::ChangeKind::remove))fail(SQLITE_CORRUPT,"Transfer history does not replay");expected_kind=kind;}
@@ -562,12 +568,12 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
             if(request.action==app::TransferAction::retarget && request.mode==0){
                 if(!request.left)fail(SQLITE_CORRUPT,"Transfer history does not replay");
                 const auto& fact=*request.left;
-                if(fact.manually_entered){
+                if(fact.manually_entered && !fact.ledger_entry){
                     if(fact.state!=transfers::State::committed)fail(SQLITE_CORRUPT,"Transfer history does not replay");
                     bool recorded_category=false;
                     for(const auto& value:changed)if(value.link.origin.endpoint==fact.endpoint && value.link.origin_category==request.category_path && value.link.unresolved && value.link.origin.state==transfers::State::committed)recorded_category=true;
                     if(!recorded_category)fail(SQLITE_CORRUPT,"Transfer history does not replay");
-                }else if(fact.imported && fact.state==transfers::State::committed){
+                }else if((fact.imported || fact.ledger_entry) && fact.state==transfers::State::committed){
                     Statement op(impl_->db,"SELECT result_revision,change FROM ledger_operations WHERE sequence=? AND kind=1");op.integer(1,sequence);
                     if(!op.row() || op.integer(1)!=0)fail(SQLITE_CORRUPT,"Transfer history does not replay");
                     const auto after_entry=entry_snapshot(fact.endpoint.entry,op.integer(0));
@@ -579,11 +585,11 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
                     bool released=false;
                     for(const auto& value:after)if(value.link.identity==request.link){
                         const bool both=value.link.origin.state==transfers::State::removed && value.link.destination.state==transfers::State::removed;
-                        const bool unresolved=value.link.unresolved && value.link.origin.state==transfers::State::removed && value.link.destination.state==transfers::State::committed;
+                        const bool unresolved=value.link.unresolved && value.link.origin.state==transfers::State::removed && value.link.destination.state!=transfers::State::removed;
                         if(both || unresolved)released=true;
                     }
                     if(!released)fail(SQLITE_CORRUPT,"Transfer history does not replay");
-                }else if(!fact.imported || fact.state!=transfers::State::draft)fail(SQLITE_CORRUPT,"Transfer history does not replay");
+                }else if((!fact.imported && !fact.ledger_entry) || fact.state!=transfers::State::draft)fail(SQLITE_CORRUPT,"Transfer history does not replay");
                 else{const auto revision=request.batch_revision+1;
                 Statement kind(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");kind.text(1,fact.endpoint.entry.batch);kind.integer(2,revision);
                 if(!kind.row() || kind.bytes(0)!="save")fail(SQLITE_CORRUPT,"Transfer history does not replay");
@@ -641,9 +647,13 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
     };
     for(const auto& value:current){
         const auto& origin=value.link.origin;
-        if(!origin.manually_entered && origin.state!=transfers::State::removed)check_evidence(origin.endpoint,origin.amount,origin.date);
-        if(!origin.manually_entered && origin.state!=transfers::State::removed){const auto source=batch(impl_->db,origin.endpoint.entry.batch);if(transaction_accepted(origin.endpoint.entry)!=(origin.state==transfers::State::committed) || (source.state!=app::BatchState::committed && source.state!=app::BatchState::pending && source.state!=app::BatchState::protected_drafts))fail(SQLITE_CORRUPT);}
+        if((!origin.manually_entered || origin.ledger_entry) && origin.state!=transfers::State::removed)check_evidence(origin.endpoint,origin.amount,origin.date);
+        if((!origin.manually_entered || origin.ledger_entry) && origin.state!=transfers::State::removed){const auto source=batch(impl_->db,origin.endpoint.entry.batch);if(transaction_accepted(origin.endpoint.entry)!=(origin.state==transfers::State::committed) || (source.state!=app::BatchState::committed && source.state!=app::BatchState::pending && source.state!=app::BatchState::protected_drafts))fail(SQLITE_CORRUPT);}
         for(const auto* side:{&value.link.origin,&value.link.destination}){
+            if(side->ledger_entry && side->state!=transfers::State::removed && !value.link.unresolved){
+                check_evidence(side->endpoint,side->amount,side->date);
+                if(transaction_accepted(side->endpoint.entry)!=(side->state==transfers::State::committed))fail(SQLITE_CORRUPT);
+            }
             for(const auto* evidence:{&side->attached_evidence,&side->proposed_evidence})if(*evidence)check_evidence((*evidence)->endpoint,(*evidence)->amount,(*evidence)->posting_date);
             if(side->attached_evidence && !transaction_accepted(side->attached_evidence->endpoint.entry))fail(SQLITE_CORRUPT);
             if(side->proposed_evidence && batch(impl_->db,side->proposed_evidence->endpoint.entry.batch).state!=app::BatchState::pending)fail(SQLITE_CORRUPT);
@@ -692,7 +702,7 @@ const Allocation* allocation_for(const imports::DraftRow& draft,std::string_view
 }
 transfers::AllocationFact fact_from(const transfers::Side& side){
     const bool generated=!side.independent_evidence && !side.manually_entered && !side.attached_evidence;
-    return {side.endpoint,side.amount,side.date,side.state,side.independent_evidence,generated,side.manually_entered};
+    return {side.endpoint,side.amount,side.date,side.state,side.independent_evidence,generated,side.manually_entered,side.ledger_entry};
 }
 }
 ImportStore::EntryLinkPlan ImportStore::plan_entry_links(const std::vector<app::TransferView>& before,const imports::Occurrence& id,const imports::DraftRow& before_draft,const imports::DraftRow& after_draft,bool remove) const {
@@ -855,8 +865,13 @@ app::TransferPreview ImportStore::preview_transfer(const app::TransferRequest& r
     }
     auto confirm_fact=[&](const transfers::AllocationFact& fact,std::int64_t revision){
         require_writable_account(impl_->db,fact.endpoint.account);(void)account_by_id(fact.endpoint.account);
-        if(fact.generated || fact.manually_entered){if(fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");return;}
-        if(!fact.imported)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
+        if(fact.generated || (fact.manually_entered && !fact.ledger_entry)){
+                if(fact.imported || !fact.endpoint.entry.batch.starts_with("~transfer-"))fail(SQLITE_CONSTRAINT,"Invalid transfer command");
+                bool found=false;for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination})
+                    if(side->endpoint==fact.endpoint && side->state==fact.state && side->amount==fact.amount && side->date==fact.date && side->manually_entered==fact.manually_entered && side->ledger_entry==fact.ledger_entry)found=true;
+                if(!found)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");return;
+            }
+        if(!fact.imported && !fact.ledger_entry)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
         if(account_for_batch(fact.endpoint.entry.batch).identity!=fact.endpoint.account)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
         const auto info=batch(impl_->db,fact.endpoint.entry.batch);
         if(info.revision!=revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
@@ -868,6 +883,7 @@ app::TransferPreview ImportStore::preview_transfer(const app::TransferRequest& r
         std::optional<imports::DraftRow> row;
         if(committed){const auto entry=committed_entry(fact.endpoint.entry);if(!entry.current.active)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");row=entry.current.draft;}
         else{const auto loaded=load_row(fact.endpoint.entry,false);if(loaded.excluded_by_clear || !loaded.draft || loaded.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");row=loaded.draft;}
+        if(fact.imported==info.manual || fact.manually_entered==fact.imported)fail(SQLITE_CONSTRAINT,"Transaction changed; select it again");
         const auto& allocations=row->transaction.allocations();
         const auto allocation=std::find_if(allocations.begin(),allocations.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
         if(allocation==allocations.end() || allocation->amount!=fact.amount || row->date!=fact.date)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");

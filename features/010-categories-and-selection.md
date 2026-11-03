@@ -1,5 +1,13 @@
 # 010 — Categories and selection
 
+Current follow-up (owner Go, 2026-11-03): the
+[transaction-origin contract](../doc/transaction-origin-handoff.md)
+supersedes origin-specific category/transfer restrictions below for saved ledger
+entries. Manual and imported postings share transfer assignment, explicit Link,
+accepted editing/history and independent-counterpart preservation. Formats are
+50 with rules / 49 without. Rule matching policy is unchanged. See
+[verification](../doc/status.md).
+
 The [opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md)
 is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
 It includes import routing, Review repair/Commit, account-context Discard and
@@ -8,7 +16,7 @@ durable. See [current verification and limits](../doc/status.md); earlier Resume
 source-retention and toolbar descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-11-02  
+Last updated: 2026-11-03  
 Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 30/29. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.

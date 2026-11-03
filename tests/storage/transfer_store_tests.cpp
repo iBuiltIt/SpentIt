@@ -263,7 +263,7 @@ void management(){
             s.commit(origin,0,"commit-"+origin);s.select_account(2);s.commit(destination,0,"commit-"+destination);s.select_account(1);
         };
         link_pair("link-a","chk-a","visa-a","D02/11/2026\nT-95\nPChecking A\n^\n","D04/11/2026\nT95\nPVisa A\n^\n","2026-11-02","2026-11-04");
-        message_has("one at a time",[&]{s.preview_bulk({app::ChangeKind::remove,{{"chk-a",0}},{},{}});});
+        message_has(s.bulk_supported()?"one at a time":"not supported",[&]{s.preview_bulk({app::ChangeKind::remove,{{"chk-a",0}},{},{}});});
         const auto checking_evidence=s.record_evidence({"chk-a",0});s.select_account(2);const auto visa_evidence=s.record_evidence({"visa-a",0});const auto visa_balance=s.committed_balance();s.select_account(1);
         const auto checking_balance=s.committed_balance();const auto visa_date=view_of(s,"link-a").link.destination.date;
         auto dated=s.committed_entry({"chk-a",0}).current.draft;dated.date="2026-11-20";

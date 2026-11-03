@@ -22,6 +22,8 @@ struct TransferRequest {
     std::optional<transfers::Endpoint> generated;
     std::optional<transfers::AllocationFact> left,right;
     std::int64_t right_revision=0;
+    // Identity-based category commands retain their selection revision for retry.
+    std::int64_t category_generation=-1;
 };
 struct TransferJournalEntry {
     std::string operation,action,link;

@@ -286,6 +286,22 @@ private slots:
         auto* bar=object(root,"ledgerCategoryScrollBar");QVERIFY(bar);QVERIFY(bar->property("size").toReal()<1);QVERIFY(bar->property("interactive").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_MENU_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_MENU_SCREENSHOT")));
     }
+    void acceptedManualTransferAssignment() {
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();const auto path=dir.filePath("document");
+        run(model,"create",{{"path",path},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        QVERIFY(click(root,"addTransaction"));QTRY_VERIFY(!model.busy());QVERIFY(edit(root,"durablePayee","Manual transfer"));QVERIFY(edit(root,"durableTotal","-10.00"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"durableTotal"),"accepted"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        const auto batch=model.state().value("selected").toMap().value("batch").toString();QVERIFY(!batch.isEmpty());run(model,"commit");
+        run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(model,"select_account",{{"id","1"}});
+        run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
+        run(model,"assign_transfer_batch",{{"destination","2"},{"sequence",model.state().value("transferSequence")}});
+        QVERIFY(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString().contains("Savings"));
+        run(model,"close");run(model,"open",{{"path",path}});run(model,"select_account",{{"id","1"}});
+        QVERIFY(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString().contains("Savings"));
+        run(model,"undo_transfer_assignment");QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+    }
     void categoryMenuSavesMixedRowsAndReopens() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

@@ -1,7 +1,8 @@
-# Next session: transaction origin and ordinary operations
+# Transaction origin and ordinary operations
 
 Last updated: 2026-11-03
-Status: audit and proposed implementation handoff; broader cleanup not implemented.
+Status: transaction/category/transfer cleanup authorized on 2026-11-03;
+verification and implementation limits are recorded in [status](status.md).
 
 ## Owner intent and authorization
 
@@ -10,17 +11,57 @@ should be manipulable like any other transaction, except where an operation
 actually requires imported information. The owner requested this handoff and a
 commit so a fresh session can take up the cleanup.
 
-The category-menu defect below received explicit implementation Go and is fixed.
-The broader six-part cleanup was proposed, then deferred to the next session.
-Do not interpret this document as an already implemented feature or a settled
-rule-matching policy. At the start of the next session, summarize the proposed
-transaction/category/transfer scope and obtain the owner's implementation Go
-under AGENTS.md. Rule matching against current rather than original values remains
-an explicit, separate decision. Read-only investigation can continue beforehand.
+The owner subsequently gave implementation Go for the transaction/category/transfer
+cleanup (items 1–4 and 6 below). Rule matching against current rather than original
+values (item 5) remains an explicit, separate decision. The audit below describes
+the starting checkpoint, not current restrictions. See the implementation section
+and [status](status.md) for results.
+
+## Implemented transaction behavior
+
+Ordinary menu category assignment submits account, transaction/split identities,
+category and the expected ledger mutation generation. Storage loads origin,
+amount/date, acceptance and relationship facts and shares canonical editor
+validation. An empty split identity is valid only for a single-allocation row.
+Mixed selections save atomically, retain unresolved duplicate choices and use the
+existing group Undo and viewport restoration.
+
+Saved manual ledger entries have explicit independent-posting ownership in transfer
+history. They are not local transfer amounts, disposable generated counterparts or
+imported originals. Earlier transfer-local manual origins retain their distinct
+representation and accounting. Transfer facts for saved manual rows now receive the
+same revision, account, allocation, amount/date and acceptance validation as imported
+rows. Creation provenance comes from stored creation metadata, including repaired
+imports whose original amount is absent.
+
+Account assignment works for new and accepted entries of either origin. Explicit
+Link accepts manual/manual, manual/imported and imported/imported ledger postings.
+Either independent side can release its category or retarget to another account;
+the former independent counterpart remains. Existing exact currency/amount rules,
+explicit split selection and bounded Review suggestion policy remain. No new
+automatic match or fuzzy exclusion is introduced.
+
+Ordinary accepted corrections and removal share transfer planning and history for
+both origins. Date-only changes retain the link; amount/category/removal changes end
+it, remove only disposable generated drafts, and keep independent or accepted
+counterparts. Undo restores transaction values and relationships atomically.
+Existing restrictions on editing/deleting new linked rows and legacy transfer-local
+postings still apply equally to both ledger origins; this is not a new unrestricted
+transfer editor.
+
+Show/Restore original, reimport recognition and import rollback still require the
+relevant source associations. Manual creation does not supply bank-file originals.
+A confirmed Merge can attach one under the existing manual survivor policy; imported
+split restoration still requires source split identities. Rules retain their
+existing original/current input distinction and manual-text protection.
+
+Formats are **50 with rules / 49 without** because transfer history now records
+posting ownership and the category command's selection revision. Old experimental
+formats are rejected unchanged; no migration or reinterpretation of old journals.
 
 ## Starting checkpoint
 
-- Current experimental formats are 48 with rules / 47 without.
+- At the audit checkpoint, experimental formats were 48 with rules / 47 without.
 - The system light/dark palette change is committed as `35fa0c7`.
 - This handoff accompanies the tested manual category-menu fix. See
   [status](status.md#manual-transaction-context-menu-categories--2026-11-03) and
@@ -30,7 +71,7 @@ an explicit, separate decision. Read-only investigation can continue beforehand.
 - Reports remain deferred and unimplemented. This work does not authorize reports,
   publication, licensing changes or general UI redesign.
 
-## What was found
+## Original audit findings (before implementation)
 
 ### Fixed: ordinary category assignment required imported origin
 
@@ -52,7 +93,7 @@ cancellation, sampled I/O faults and commit-boundary interruption. See status fo
 configurations and limitations; do not describe sampled faults as an exhaustive
 sweep.
 
-### Transfer assignment has an accepted-state gap for both origins
+### Transfer assignment had an accepted-state gap for both origins
 
 A temporary synthetic storage probe exercised the same repository operation as
 account selection in the category menu. Results:
@@ -89,7 +130,7 @@ apply/preview/history replay in `src/storage/transfer_store.inc`. In particular,
 inspect the draft-state link constructed when assigning an account to an existing
 accepted transaction; do not assume a manual-only fix solves this.
 
-### Two manual transactions cannot currently be linked
+### Two manual transactions could not be linked at the audit checkpoint
 
 `ordered_origin` in `src/engine/transfer.cpp` requires an imported destination
 and rejects a second manually entered side. Link validation also forbids a manual
@@ -124,7 +165,7 @@ included in the category bug fix. No additional blanket origin restriction was
 found in the ordinary edit, balance and search paths inspected; that statement is
 not exhaustive verification of every operation or combination.
 
-## Proposed cleanup, in order
+## Accepted cleanup scope (rule policy remains separate)
 
 1. **Ordinary category command:** identify transaction and allocation, expected
    revision and desired category. Storage loads authoritative facts. Do not require

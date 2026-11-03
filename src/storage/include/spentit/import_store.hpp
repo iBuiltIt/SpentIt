@@ -159,6 +159,7 @@ public:
     app::ReviewSheet review_sheet() const override;
     app::ReviewReceipt merge_review_batch(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&) override;
     app::ReviewReceipt answer_review(std::string_view,const app::ReviewAnswer&) override;
+    app::ReviewReceipt assign_categories(std::string_view,const app::CategorySelection&,const app::OperationContext&) override;
     app::ReviewReceipt assign_transfer_batch(std::string_view,const std::vector<app::TransferRequest>&,const app::OperationContext&) override;
     bool can_undo_transfer_assignment() const override;
     std::int64_t ledger_edit_generation() const override;

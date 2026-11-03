@@ -28,6 +28,8 @@ struct Side {
     bool accepted_unmatched=false;
     std::optional<BankEvidence> attached_evidence={};
     std::optional<BankEvidence> proposed_evidence={};
+    // Independent ledger posting; transfer state must never count or dispose of it.
+    bool ledger_entry=false;
 };
 struct Link {
     std::string identity;
@@ -55,6 +57,7 @@ struct AllocationFact {
     bool imported=false;
     bool generated=false;
     bool manually_entered=false;
+    bool ledger_entry=false;
 };
 struct LinkEdit {
     Link link;
