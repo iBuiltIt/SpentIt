@@ -38,6 +38,7 @@ struct Source {
     bool split=false;
     // One element for an unsplit record, one per original allocation otherwise.
     std::vector<SourceSplit> allocations;
+    bool imported=true;
 };
 struct AllocationFields {
     // Persisted source association, never inferred from current vector position.

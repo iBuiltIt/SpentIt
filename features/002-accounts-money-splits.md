@@ -131,3 +131,10 @@ The owner accepted the bounded policies in [feature 009](009-durable-import-mile
 ## Category metadata extension — 2026-10-25
 
 The bounded schema-5 workflow adds optional stable category bindings, allocation identities, retained source associations and explicit field ownership to the existing exact allocation values. Amount/currency/sum invariants are unchanged. Current category paths are resolved separately from retained labels. See [category implementation](../doc/categories.md). This does not implement multi-account transfers, currency reassignment or category reports. The optional [rules preview adapter](../doc/rules-engine.md) preserves dates, amounts, allocation structure and identities while proposing only classification/display changes. Schema-6 pending Apply and the rules sheet are recorded in [feature 004](004-rules-and-explanations.md). Committed reapplication remains deferred.
+
+## Manual transaction entry — owner Go 2026-11-03
+
+The [manual-entry contract](../doc/manual-transactions.md) covers ordinary expense
+and income creation, balanced splits, saved new transactions, creation Undo, and
+explicit matching to later bank imports. It extends the engine's manual-value
+support into the durable ledger. See [status](../doc/status.md) for verification.

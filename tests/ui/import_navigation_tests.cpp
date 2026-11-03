@@ -42,6 +42,49 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());QSettings().clear();
     }
     void init() { QSettings().clear(); } // Never reopen a previous test's removed temporary dataset.
+    void manualTransactionEntry() {
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
+        const auto path=dir.filePath("document");run(model,"create",{{"path",path},{"protected",false},{"name","Manual account"},{"currency","CAD"}});
+        run(model,"query",{{"filter","no matching rows"}});
+        QVERIFY(click(root,"addTransaction"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QVERIFY(model.state().value("selected").toMap().value("newManual").toBool());QVERIFY(model.selectedRowIndex()>=0);
+        QCOMPARE(object(root,"durableTotal")->property("text").toString(),QString("0.00"));
+        QVERIFY(!object(root,"sourceToggle")->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root,"discardEditor",Q_ARG(QVariant,QVariant())));QTRY_VERIFY(!model.busy());
+        QCOMPARE(model.state().value("newTransactions").toInt(),0);
+        auto* context=object(root,"addTransactionContext");QVERIFY(context);QVERIFY(QMetaObject::invokeMethod(context,"triggered"));QTRY_VERIFY(!model.busy());
+        QVERIFY(edit(root,"durablePayee","Typed purchase"));QVERIFY(edit(root,"durableTotal","-12.34"));QVERIFY(edit(root,"durableDate","2026-01-15"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"durableTotal"),"accepted"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        const auto batch=model.state().value("selected").toMap().value("batch").toString();
+        QVERIFY(!model.state().value("selected").toMap().value("newManual").toBool());QCOMPARE(model.state().value("newTransactions").toInt(),1);QVERIFY(model.selectedRowIndex()>=0);
+        run(model,"query",{{"filter",""}});run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
+        QVERIFY(click(root,"addTransaction"));QTRY_VERIFY(!model.busy());QCOMPARE(object(root,"durableDate")->property("text").toString(),QString("2026-01-15"));
+        QVERIFY(edit(root,"durablePayee","Not saved"));QVERIFY(click(root,"addTransaction"));QTRY_VERIFY(object(root,"unsavedDialog")->property("visible").toBool());
+        QVERIFY(click(root,"guardStay"));QVERIFY(model.state().value("selected").toMap().value("newManual").toBool());
+        QVERIFY(click(root,"addTransaction"));QVERIFY(click(root,"guardDiscard"));QTRY_VERIFY(!model.busy() && model.state().value("selected").toMap().value("newManual").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root,"discardEditor",Q_ARG(QVariant,QVariant())));QTRY_VERIFY(!model.busy());
+        run(model,"close");run(model,"open",{{"path",path}});run(model,"inspect",{{"batch",batch},{"ordinal",0}});
+        QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("payee").toString(),QString("Typed purchase"));
+        QVERIFY(model.state().value("selected").toMap().value("ruleMatchError").toString().isEmpty());
+        const auto before=model.selectedRowIndex();QVERIFY(edit(root,"durableDate","2027-01-15"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"durableDate"),"accepted"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QVERIFY(model.selectedRowIndex()>before);QVERIFY(!root->property("editorClosed").toBool());
+        QVERIFY(edit(root,"durablePayee","Saved before adding"));QVERIFY(click(root,"addTransaction"));QTRY_VERIFY(object(root,"unsavedDialog")->property("visible").toBool());
+        QVERIFY(click(root,"guardSave"));QTRY_VERIFY(!model.busy() && model.state().value("selected").toMap().value("newManual").toBool());
+        QCOMPARE(object(root,"durableDate")->property("text").toString(),QString("2027-01-15"));
+        QVERIFY(QMetaObject::invokeMethod(root,"discardEditor",Q_ARG(QVariant,QVariant())));QTRY_VERIFY(!model.busy());
+        run(model,"inspect",{{"batch",batch},{"ordinal",0}});QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("payee").toString(),QString("Saved before adding"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"deleteSelectedContext"),"triggered"));
+        QTRY_VERIFY(object(root,"deleteSelectionDialog")->property("visible").toBool());QVERIFY(click(root,"confirmDeleteSelection"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QCOMPARE(model.occurrenceIndex(batch,0),-1);QCOMPARE(model.state().value("newTransactions").toInt(),0);
+        run(model,"undo_edit");QVERIFY(model.occurrenceIndex(batch,0)>=0);
+        QVERIFY(QMetaObject::invokeMethod(object(root,"deleteSelectedContext"),"triggered"));QVERIFY(click(root,"confirmDeleteSelection"));QTRY_VERIFY(!model.busy());
+        run(model,"close");run(model,"open",{{"path",path}});QCOMPARE(model.occurrenceIndex(batch,0),-1);
+
+    }
     void diagnosticSemanticPrivacy() {
         if(!spentit::diagnostics::Collector::instance().enabled())QSKIP("Opt-in diagnostics test");
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());

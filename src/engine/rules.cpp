@@ -56,7 +56,7 @@ std::vector<Result> RuleSet::evaluate(const std::vector<Record>& records,const s
     // Validate the complete chosen scope before evaluation. No partial preview is returned.
     for(const auto& record:records) {
         checkpoint();
-        if(record.allocations.empty()||record.allocations.size()>EvaluationLimits::allocations||record.source.allocations.empty()||record.source.allocations.size()>EvaluationLimits::allocations||(!record.source.split&&record.source.allocations.size()!=1))invalid("Invalid source/allocation association shape");
+        if(record.allocations.empty()||record.allocations.size()>EvaluationLimits::allocations||record.source.allocations.size()>EvaluationLimits::allocations||(record.source.imported && (record.source.allocations.empty()||(!record.source.split&&record.source.allocations.size()!=1)))||(!record.source.imported && (!record.source.allocations.empty()||record.source.split)))invalid("Invalid source/allocation association shape");
         if(record.allocations.size()>EvaluationLimits::scope_allocations-allocation_count||record.source.allocations.size()>EvaluationLimits::scope_allocations-source_count)throw RegexError(RegexFailure::resource_limit,"Rule scope allocation count exceeds limit");
         allocation_count+=record.allocations.size();source_count+=record.source.allocations.size();
         count(record.source.payee);count(record.source.memo);count(record.source.category);
@@ -67,7 +67,7 @@ std::vector<Result> RuleSet::evaluate(const std::vector<Record>& records,const s
             checkpoint();field(a.memo);field(a.category);count(a.memo.value);count(a.category.value.identity);count(a.category.value.unmapped);
             if(!a.category.value.identity.empty()&&!a.category.value.unmapped.empty())invalid("Classification cannot be both mapped and unmapped");
             if(a.source_ordinal&&(*a.source_ordinal>=record.source.allocations.size()||!associations.insert(*a.source_ordinal).second))invalid("Invalid or reused retained source-allocation association");
-            if(!a.source_ordinal&&(a.memo.ownership!=Ownership::manual||a.category.ownership!=Ownership::manual))invalid("New allocations require manual field provenance");
+            if(!a.source_ordinal&&(a.memo.ownership!=Ownership::manual||a.category.ownership==Ownership::source))invalid("New allocations require manual field provenance");
         }
     }
     bool exhausted=false;

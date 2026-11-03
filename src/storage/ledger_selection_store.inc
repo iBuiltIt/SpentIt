@@ -3,14 +3,16 @@ std::int64_t ImportStore::ledger_edit_generation() const {return review_generati
 app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,const app::LedgerSelectionEdit& request,const app::OperationContext& context) {
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     if(request.selected.empty() || request.selected.size()>4096)fail(SQLITE_CONSTRAINT,"Select between 1 and 4096 transactions");
-    if(request.action!=app::LedgerSelectionAction::rename_payee && request.action!=app::LedgerSelectionAction::restore_imported)fail(SQLITE_CONSTRAINT,"Choose Rename payee or Restore imported values");
-    if(request.action==app::LedgerSelectionAction::restore_imported && !request.payee.empty())fail(SQLITE_CONSTRAINT,"Restore does not accept a replacement payee");
+    if(request.action!=app::LedgerSelectionAction::rename_payee && request.action!=app::LedgerSelectionAction::restore_imported && request.action!=app::LedgerSelectionAction::remove)fail(SQLITE_CONSTRAINT,"Choose Rename payee, Restore imported values, or Delete");
+    if(request.action!=app::LedgerSelectionAction::rename_payee && !request.payee.empty())fail(SQLITE_CONSTRAINT,"This action does not accept a replacement payee");
     if(request.payee.size()>65536)fail(SQLITE_CONSTRAINT,"The payee name is too long");
+    const bool removing=request.action==app::LedgerSelectionAction::remove;
+    const std::string question=removing?"ledger-delete":"ledger-edit-batch";
     transfer_codec::Writer encoded;encoded.number(static_cast<int>(request.action));encoded.number(request.account);encoded.number(request.generation);encoded.text(request.payee);
     std::set<imports::Occurrence> identities;
     for(const auto& id:request.selected){if(!identities.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once");encoded.text(review_key(id));}
     if(const auto prior=review_outcome(operation)){
-        Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='ledger-edit-batch'");saved.text(1,operation);
+        Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question=?");saved.text(1,operation);saved.text(2,question);
         if(!saved.row() || saved.bytes(0)!=encoded.bytes)fail(SQLITE_CONSTRAINT,"Retry changed the selected transactions or values");return *prior;
     }
     const auto current=[&]{return request.account==impl_->selected_account && request.generation==review_generation(impl_->db);};
@@ -31,7 +33,7 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
         const auto before=committed?committed_entry(id).current.draft:*row.draft;
         auto draft=before;
         if(request.action==app::LedgerSelectionAction::rename_payee){draft.payee=request.payee;draft.payee_owner=FieldOwnership::manual;draft.payee_rule.reset();}
-        else {
+        else if(!removing) {
             const auto& source=row.source;
             if(!source.transaction || !source.original_amount || source.date.empty())fail(SQLITE_CONSTRAINT,"An original date or amount is unavailable. Restore that transaction in its editor and complete the missing fields.");
             if(source.original_amount->currency()!=before.transaction.effective_total().currency())fail(SQLITE_CONSTRAINT,"The original currency differs. Restore this transaction individually.");
@@ -52,10 +54,11 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
         }
         std::optional<EntryLinkPlan> links;
         if(committed){
-            const auto preview=preview_committed_change({app::ChangeKind::correct,id,draft,{}});draft=preview.after_entry.draft;
-            links=plan_entry_links(before_links,id,before,draft,false);
-            for(const auto& link:links->changed)if(!changed_links.insert(link.link.identity).second)fail(SQLITE_CONSTRAINT,"Selected transactions change the same transfer. Restore them individually.");
+            const auto preview=preview_committed_change({removing?app::ChangeKind::remove:app::ChangeKind::correct,id,removing?std::optional<imports::DraftRow>{}:std::optional<imports::DraftRow>{draft},{}});draft=preview.after_entry.draft;
+            links=plan_entry_links(before_links,id,before,draft,removing);
+            for(const auto& link:links->changed)if(!changed_links.insert(link.link.identity).second)fail(SQLITE_CONSTRAINT,"These transactions belong to the same transfer. Change one transaction at a time.");
         }else{
+            if(removing && transfer_linked(id))fail(SQLITE_CONSTRAINT,"Unlink this transfer before deleting it.");
             require_unlinked(id);
             if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"This transaction cannot be edited.");
             if(info.revision==INT64_MAX)fail(SQLITE_FULL,"History capacity exhausted");
@@ -65,11 +68,11 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
         plans.push_back({id,std::move(draft),row.decision,std::move(links)});
     }
     Atomic transaction(impl_->db);if(!current())fail(SQLITE_CONSTRAINT,"Transactions changed. Select them again before editing.");
-    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,'ledger-edit-batch',?,?)");receipt.text(1,operation);receipt.text(2,encoded.bytes);receipt.integer(3,request.generation);receipt.done();
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,?,?,?)");receipt.text(1,operation);receipt.text(2,question);receipt.text(3,encoded.bytes);receipt.integer(4,request.generation);receipt.done();
     std::size_t serial=0;
     for(const auto& plan:plans){
         context.checkpoint("Updating selected transactions");const auto child=std::string(operation)+"-edit-"+std::to_string(++serial);
-        write_review_row(operation,child,plan.id,plan.draft,plan.decision,true,false,false);
+        write_review_row(operation,child,plan.id,plan.draft,plan.decision,!removing,false,false);
         if(plan.links && !plan.links->changed.empty()){
             write_entry_links(child,request.account,app::TransferAction::relink,financial_sequence(impl_->db),plan.links->changed);
             for(const auto& value:plan.links->changed){

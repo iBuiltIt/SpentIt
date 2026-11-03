@@ -11,7 +11,7 @@
 #include <utility>
 
 namespace spentit::app {
-enum class LedgerSelectionAction { rename_payee, restore_imported };
+enum class LedgerSelectionAction { rename_payee, restore_imported, remove };
 struct LedgerSelectionEdit {
     LedgerSelectionAction action=LedgerSelectionAction::rename_payee;
     std::int64_t account=0, generation=0;
@@ -71,6 +71,7 @@ struct BatchInfo {
     bool blocked;
     bool processing_incomplete=false;
     bool completed=false;
+    bool manual=false;
 };
 struct ImportAccountMapping {
     std::size_t source_account;
@@ -171,6 +172,10 @@ public:
     virtual TransferPreview preview_transfer(const TransferRequest&) const { throw std::logic_error("Transfers unavailable"); }
     virtual std::optional<TransferReceipt> transfer_outcome(std::string_view) const { throw std::logic_error("Transfers unavailable"); }
     virtual std::vector<TransferJournalEntry> transfer_journal() const { return {}; }
+    virtual imports::Occurrence create_manual(std::string_view,const imports::DraftRow&) {throw std::logic_error("Manual entry unavailable");}
+    virtual bool manual_outcome(std::string_view) const {return false;}
+    virtual void undo_manual(std::string_view,std::int64_t) {throw std::logic_error("Manual entry Undo unavailable");}
+    virtual std::optional<imports::Occurrence> imported_original(const imports::Occurrence& id) const {return id;}
     virtual Account account() const = 0;
     // Serial-worker session selection; commands never span accounts implicitly.
     virtual std::vector<Account> accounts() const { return {account()}; }

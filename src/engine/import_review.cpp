@@ -55,6 +55,11 @@ std::string basis_label(MatchBasis basis) {
     return "check the imported transaction";
 }
 std::optional<MatchBasis> candidate_basis(const qif::Record& a,const qif::Record& b,MatchContext context) {
+    if(a.format=="manual" || b.format=="manual") {
+        const auto& manual=a.format=="manual"?a:b;const auto& imported=a.format=="manual"?b:a;
+        if(imported.format=="manual" || !manual.transaction || !imported.original_amount || manual.date.empty() || manual.date!=imported.date || manual.transaction->effective_total()!=*imported.original_amount)return {};
+        return MatchBasis::same_date_amount;
+    }
     const auto x=evidence_key(a),y=evidence_key(b);
     const auto has_ids=[](const qif::Record& r){return !r.fitid.empty() || !r.associated_fitid.empty() || !r.associated_fitids.empty();};
     const auto contains=[](const qif::Record& r,const std::string& id){return !id.empty() &&

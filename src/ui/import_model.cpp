@@ -474,7 +474,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {sessionEdits.clear();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {newManual.reset();newManualId.clear();manualUndo.clear();revealManual.reset();sessionEdits.clear();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository();
@@ -511,6 +511,11 @@ struct ImportModel::Worker {
     bool deferReview=false;
     struct SessionEdit {std::string operation;imports::Occurrence identity;std::int64_t account;std::vector<imports::Occurrence> selection={};QString label="Undo edit";};
     std::vector<SessionEdit> sessionEdits;
+    std::optional<imports::DraftRow> newManual;
+    std::string newManualId,manualUndo;
+    std::int64_t manualUndoGeneration=-1;
+    std::optional<imports::Occurrence> revealManual;
+
     void acceptEdit(const imports::DraftRow& edit,app::OperationContext& context) {
         auto& repo=gateway->repository();const imports::Occurrence id{selectedBatch,selectedOrdinal};
         const auto account=repo.account().identity;const auto operation=identity();
@@ -552,7 +557,7 @@ struct ImportModel::Worker {
         try {
             if(!rulesLoaded)loadRules();
             const auto match=repo.match_saved_rules(id,context);
-            selected["ruleMatchError"]=text(match.error);
+            if(!match.error.empty())selected["ruleMatchError"]=QString("Couldn’t check rules for this transaction. You can still edit it.");
             QVariantList winners;for(const auto& line:match.winner_lines)winners.push_back(text(line));selected["winnerLines"]=winners;
             QVariantList explanations;
             for(const auto& item:match.explanations){
@@ -570,9 +575,10 @@ struct ImportModel::Worker {
             selected["ruleAssignments"]=assignments;
         } catch(const app::OperationCancelled&){throw;}
         catch(const app::OperationOutcomeUnknown&){throw;}
-        catch(const std::exception& error){selected["ruleMatchError"]=text(error.what());}
+        catch(const std::exception&){selected["ruleMatchError"]=QString("Couldn’t check rules for this transaction. You can still edit it.");}
     }
     void inspect(std::string batch,std::size_t ordinal,app::OperationContext& context) {
+        if(newManual && batch==newManualId)return;
         PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository(); const auto acct=repo.account();catalog();
         if(batch.starts_with("~transfer-")){
@@ -590,12 +596,13 @@ struct ImportModel::Worker {
         const auto found=std::find_if(all.begin(),all.end(),[&](const auto& b){return b.id==batch;});
         if(found==all.end() || ordinal>=found->count) throw std::invalid_argument("Choose a record in this import");
         auto row=repo.row({batch,ordinal});
-        const auto& source=row.source;
-        const auto raw=repo.record_evidence({batch,ordinal});
+        const auto original=repo.imported_original({batch,ordinal});
+        const auto source=original?repo.row(*original).source:row.source;
+        const auto raw=original?repo.record_evidence(*original):std::string{};
         selectedCommittedToken.reset();
         selectedBatch=batch; selectedOrdinal=ordinal; selectedRevision=found->revision;
         selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},
-            {"source",evidencePreview(raw)}};
+            {"source",evidencePreview(raw)},{"manual",row.source.format=="manual"},{"hasImportedOriginal",original.has_value()}};
         if(source.diagnostic) selected["diagnostic"]=text(qif::message(*source.diagnostic));
         QStringList classes;
         if(!source.source_class.empty())classes<<"Record class: "+text(source.source_class);
@@ -627,7 +634,7 @@ struct ImportModel::Worker {
                 if(a.amount)add(prefix+"amount","amount",money(*a.amount),static_cast<int>(i));
             }
         }
-        selected["sourceFields"]=fields;
+        selected["sourceFields"]=original?fields:QVariantList{};
         if(!row.draft) {
             if(row.excluded_by_clear){selected["diagnostic"]="This source contribution was discarded.";return;}
             if(source.repairable && !row.source.repairable) selected["diagnostic"]=selected["diagnostic"].toString()+" — record repair is not supported by this dataset.";
@@ -649,7 +656,7 @@ struct ImportModel::Worker {
         selected["draft"]=draft(*row.draft,categoryById,dateFormat);
         if(row.matched_generated){selected["diagnostic"]="Already present as an accepted generated transfer. This import adds source ownership only.";selected["editable"]=false;return;}
         if(source.diagnostic) selected["diagnostic"]=selected["diagnostic"].toString()+" — saved interpretation repair; original diagnostic retained.";
-        selected["original"]=row.draft->transaction.original_imported_amount()?money(*row.draft->transaction.original_imported_amount()):QString("Unavailable");
+        selected["original"]=original?(source.original_amount?money(*source.original_amount):QString("Unavailable")):QString();
         selected["editable"]=found->state==app::BatchState::pending && !repo.transaction_accepted({batch,ordinal});
         selected["decision"]=static_cast<int>(row.decision.disposition);
         selected["reviewStale"]=row.review_stale;
@@ -723,7 +730,7 @@ struct ImportModel::Worker {
             const auto review=deferReview?app::ReviewSheet{}:repo.review_sheet();state["reviewReady"]=!deferReview;QVariantList questions;std::int64_t priorAccount=-1;
             for(const auto& q:review.questions){
                 QVariantList rows;
-                for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total()):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total()):QString();value["note"]=text(row.note);value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
+                for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total()):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total()):QString();value["note"]=text(row.note);value["manual"]=row.note=="Manually entered";value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
                 questions.push_back(QVariantMap{{"waitingLink",text(q.waiting_link)},{"key",text(q.key)},{"kind",q.kind==app::ReviewKind::same?"same":q.kind==app::ReviewKind::link?"link":"correction"},{"account",QString::number(q.account)},{"accountName",text(q.account_name)},{"separator",q.account!=priorAccount},{"reason",text(q.reason)},{"batch",text(q.batch)},{"ordinal",q.ordinal?static_cast<int>(*q.ordinal):-1},{"rows",rows}});priorAccount=q.account;
             }
             QVariantList exclusions;
@@ -806,8 +813,9 @@ struct ImportModel::Worker {
             state["frozen"]=acct.frozen; state["confirmed"]=acct.opening_confirmed;
             state["balance"]=accountBalances.contains(acct.identity)?accountBalances.at(acct.identity).value("balance"):QVariant(money(repo.balance())); state["committed"]=money(repo.committed_balance()); const auto projection=repo.projected_balance();
             state["projectionAvailable"]=projection.has_value(); state["projected"]=projection?money(*projection):"Incomplete — review import";
-            QVariantList batches;
+            QVariantList batches;QVariantMap manualBatches;
             for(const auto& b:repo.batches()) {
+                if(b.manual){manualBatches[text(b.id)]=true;continue;}
                 QVariantMap info{{"id",text(b.id)},{"count",static_cast<int>(b.count)},{"status",b.state==app::BatchState::pending?"Draft":b.state==app::BatchState::committed?"Committed":b.state==app::BatchState::captured?"Processing incomplete":b.state==app::BatchState::protected_drafts?"Protected drafts":"Discarded"},{"blocked",b.blocked},{"processingIncomplete",b.processing_incomplete},{"revision",static_cast<qlonglong>(b.revision)}};
                 if(b.processing_incomplete) info["diagnostics"]="Import unfinished. Resume or discard this import.";
                 else if(b.blocked) {
@@ -828,7 +836,7 @@ struct ImportModel::Worker {
                 if(((b.state==app::BatchState::pending && !b.completed) || b.state==app::BatchState::captured) && (!state.contains("pending") || state.value("pending").toMap().value("id").toString()!=selected.value("batch").toString() || b.id==str(selected.value("batch")))) state["pending"]=info;
                 if(b.state==app::BatchState::protected_drafts){std::vector<Money> values;for(std::size_t n=0;n<b.count;++n){const auto r=repo.row({b.id,n});if(!r.excluded_by_clear && r.draft && r.decision.disposition==imports::Disposition::include)values.push_back(r.draft->transaction.effective_total());}const auto change=imports::sum(acct.currency,values);info["change"]=money(change);info["after"]=money(repo.committed_balance()+change);auto retained=state.value("protectedImports").toList();retained.push_back(info);state["protectedImports"]=retained;}
             }
-            state["batches"]=batches;
+            state["batches"]=batches;state["manualBatches"]=manualBatches;
             QVariantList categoryDecisions;
             for(const auto& pending:repo.missing_import_categories()) {
                 QVariantList names;for(const auto& name:pending.names)names.push_back(text(name));
@@ -867,6 +875,8 @@ struct ImportModel::Worker {
         } else state=metadata;
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         if(!sessionEdits.empty() && !repo.can_undo_transaction_edit(sessionEdits.back().operation))sessionEdits.clear();
+        if(!manualUndo.empty() && repo.ledger_edit_generation()!=manualUndoGeneration)manualUndo.clear();
+        state["canUndoManual"]=!manualUndo.empty();
         state["canUndoEdit"]=!sessionEdits.empty();state["groupEditUndo"]=!sessionEdits.empty() && !sessionEdits.back().selection.empty();state["editUndoLabel"]=sessionEdits.empty()?QString("Undo edit"):sessionEdits.back().label;state["ledgerEditGeneration"]=QString::number(repo.ledger_edit_generation());
         state["importUndoPreview"]=importUndoPreview;
         state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
@@ -893,6 +903,7 @@ struct ImportModel::Worker {
             if(!cachedLedger) {
                 diag::Span ledgerSpan(diag::Code::ledger);
                 cachedLedger=std::make_shared<std::vector<app::LedgerRow>>(repo.current_ledger());
+                if(newManual)cachedLedger->push_back({{newManualId,0},INT64_MAX,*newManual,false});
                 // A presentation-only copy resolves current names for both visible
                 // rows and literal filtering. Stored interpretations remain intact.
                 std::map<std::tuple<std::int64_t,imports::Occurrence,std::string>,std::string> transferCategories;
@@ -916,8 +927,9 @@ struct ImportModel::Worker {
             app::LedgerSearch query(filter.toStdString(),QDate::currentDate().year(),dateFormat);
             struct SourceFile {std::string bytes;std::vector<std::pair<std::size_t,std::size_t>> spans;};
             std::map<std::string,SourceFile> sources;std::size_t sourceBytes=0;
-            const auto lookup=[&](const imports::Occurrence& id)->std::optional<std::string_view>{
-                if(id.batch.starts_with("~transfer-"))return {};
+            const auto lookup=[&](const imports::Occurrence& ledgerId)->std::optional<std::string_view>{
+                if(ledgerId.batch.starts_with("~transfer-") || ledgerId.batch==newManualId)return {};
+                const auto original=repo.imported_original(ledgerId);if(!original)return {};const auto& id=*original;
                 auto found=sources.find(id.batch);
                 if(found==sources.end()){
                     if(context)context->checkpoint("Searching imported transactions");
@@ -935,7 +947,20 @@ struct ImportModel::Worker {
                 const auto [begin,end]=found->second.spans[id.ordinal];
                 return std::string_view(found->second.bytes).substr(begin,end-begin);
             };
-            cachedView=std::make_shared<const app::LedgerView>(app::search_ledger(*cachedAccount,*cachedLedger,query,sort,descending,lookup,[&]{return context && context->state.load()==app::OperationContext::requested;}));
+            auto view=app::search_ledger(*cachedAccount,*cachedLedger,query,sort,descending,lookup,[&]{return context && context->state.load()==app::OperationContext::requested;});
+            if(newManual || revealManual){
+                const auto id=newManual?imports::Occurrence{newManualId,0}:*revealManual;
+                const auto complete=app::ledger_view(*cachedAccount,*cachedLedger,"",sort,descending);
+                for(const auto index:complete.order)if(view.rows[index].identity==id && std::find(view.order.begin(),view.order.end(),index)==view.order.end()) {
+                    const auto rank=std::find(complete.order.begin(),complete.order.end(),index);
+                    auto where=std::find_if(view.order.begin(),view.order.end(),[&](auto other){return std::find(complete.order.begin(),complete.order.end(),other)>rank;});
+                    view.order.insert(where,index);
+                    const auto amount=view.rows[index].draft.transaction.effective_total();
+                    if(amount.units()<0)view.withdrawals=view.withdrawals+amount;else view.deposits=view.deposits+amount;
+                    break;
+                }
+            }
+            cachedView=std::make_shared<const app::LedgerView>(std::move(view));
         }
         state["withdrawals"]=money(cachedView->withdrawals);state["deposits"]=money(cachedView->deposits);
         if(selected.contains("ordinal")) {
@@ -950,7 +975,7 @@ struct ImportModel::Worker {
         cachedLinkedRows.clear();
         if(repo.transfers_supported())for(const auto& value:repo.transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed){cachedLinkedRows.insert(value.link.origin.endpoint.entry);if(value.link.destination.state!=transfers::State::removed)cachedLinkedRows.insert(value.link.destination.endpoint.entry);}
         QVariantList selectedIds;QVariantMap selectedKeys;
-        for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}value["transferLinked"]=cachedLinkedRows.contains(id);selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
+        for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}value["manual"]=state.value("manualBatches").toMap().contains(text(id.batch));value["transferLinked"]=cachedLinkedRows.contains(id);selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
         state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;state["transferMergePreview"]=transferMergePreview;
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
         int focus=-1;
@@ -1030,6 +1055,7 @@ struct ImportModel::Worker {
         if(action=="cancel_reapply") {preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
         auto& repo=gateway->repository();
+        if(action=="query" || action=="select_account")revealManual.reset();
         if(action=="review_load") {context.checkpoint("Preparing Review");return;}
         if(action=="link_exclusion_cancel"){preparedLinkExclusion.reset();linkExclusionPreview.clear();return;}
         if(action=="link_exclusion_preview"){
@@ -1623,9 +1649,9 @@ struct ImportModel::Worker {
             if(next.size()>4096)throw std::invalid_argument("Select at most 4096 transactions per operation");
             selection=std::move(next);selectionFocus=id;if(!a.value("range").toBool())selectionAnchor=id;
         } else if(action=="inspect") {inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);selection={{selectedBatch,selectedOrdinal}};selectionAnchor=imports::Occurrence{selectedBatch,selectedOrdinal};selectionFocus=selectionAnchor;}
-        else if(action=="rename_payee_selection" || action=="restore_imported_selection") {
+        else if(action=="rename_payee_selection" || action=="restore_imported_selection" || action=="delete_selection") {
             app::LedgerSelectionEdit request;
-            request.action=action=="rename_payee_selection"?app::LedgerSelectionAction::rename_payee:app::LedgerSelectionAction::restore_imported;
+            request.action=action=="delete_selection"?app::LedgerSelectionAction::remove:action=="rename_payee_selection"?app::LedgerSelectionAction::rename_payee:app::LedgerSelectionAction::restore_imported;
             request.account=a.value("account").toString().toLongLong();request.generation=a.value("generation").toString().toLongLong();
             request.payee=str(a.value("payee"));
             for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
@@ -1637,9 +1663,10 @@ struct ImportModel::Worker {
             }
             observedSaved();
             const auto inspected=selectedBatch.empty()?request.selected.front():imports::Occurrence{selectedBatch,selectedOrdinal};
-            sessionEdits.push_back({operation,inspected,request.account,request.selected,action=="rename_payee_selection"?QString("Undo payee rename"):QString("Undo restore")});
+            sessionEdits.push_back({operation,inspected,request.account,request.selected,action=="delete_selection"?QString("Undo delete"):action=="rename_payee_selection"?QString("Undo payee rename"):QString("Undo restore")});
             selection=std::set<imports::Occurrence>(request.selected.begin(),request.selected.end());
-            try {inspect(inspected.batch,inspected.ordinal,context);if(selectedCommittedToken){entryDetails(inspected);if(historyLoaded)listHistory();}}
+            if(action=="delete_selection") {selection.clear();selectionFocus.reset();selectionAnchor.reset();selected.clear();selectedBatch.clear();selectedCommittedToken.reset();}
+            else try {inspect(inspected.batch,inspected.ordinal,context);if(selectedCommittedToken){entryDetails(inspected);if(historyLoaded)listHistory();}}
             catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();sessionEdits.clear();throw std::runtime_error("Changes were saved, but the view could not update. Reopen the file and check the transactions before trying again.");}
         }
         else if(action=="undo_edit") {
@@ -1659,6 +1686,34 @@ struct ImportModel::Worker {
             if(!selectedCommittedToken || !selected.value("canCorrect").toBool())throw std::logic_error("This transaction cannot be edited");
             const auto entry=repo.committed_entry({selectedBatch,selectedOrdinal});
             acceptEdit(editedDraft(a,entry.current.draft.transaction.original_imported_amount(),repo,&entry.current.draft,&entry.source),context);
+        }
+        else if(action=="begin_manual") {
+            if(repo.account().archived)throw std::logic_error("Choose an active account");
+            if(newManual)throw std::logic_error("Finish the new transaction first");
+            auto date=QDate::currentDate().toString(Qt::ISODate).toStdString();
+            if(selectionFocus && selection.contains(*selectionFocus))for(const auto& r:repo.current_ledger())if(r.identity==*selectionFocus){date=r.draft.date;break;}
+            Money zero(0,repo.account().currency);Allocation only{"","",zero,{},"manual-d-0-0"};only.category_owner=only.memo_owner=FieldOwnership::manual;
+            newManual=imports::DraftRow{date,"","",Transaction::manual(zero,{only}),FieldOwnership::manual,FieldOwnership::manual};
+            newManualId="manual-"+identity();selectedBatch=newManualId;selectedOrdinal=0;selectedCommittedToken.reset();
+            selected={{"batch",text(newManualId)},{"ordinal",0},{"editable",true},{"manual",true},{"newManual",true},{"hasImportedOriginal",false},{"draft",draft(*newManual,categoryById,dateFormat)}};
+            selection={{newManualId,0}};selectionFocus=imports::Occurrence{newManualId,0};selectionAnchor=selectionFocus;invalidate();
+        }
+        else if(action=="cancel_manual") {
+            newManual.reset();newManualId.clear();selected.clear();selectedBatch.clear();selection.clear();selectionFocus.reset();selectionAnchor.reset();invalidate();
+        }
+        else if(action=="save_manual") {
+            if(!newManual)throw std::logic_error("No new transaction to save");
+            const auto edit=editedDraft(a,{},repo,&*newManual,nullptr);
+            const imports::Occurrence id{newManualId,0};
+            try {repo.create_manual(newManualId,edit);}
+            catch(...) {const auto failure=std::current_exception();bool saved=false;try{saved=repo.manual_outcome(newManualId);}catch(...){throw app::OperationOutcomeUnknown();}if(!saved)std::rethrow_exception(failure);}
+            observedSaved();manualUndo=id.batch;manualUndoGeneration=repo.ledger_edit_generation();
+            newManual.reset();newManualId.clear();revealManual=id;sessionEdits.clear();selection={id};selectionFocus=id;selectionAnchor=id;
+            inspect(id.batch,id.ordinal,context);
+        }
+        else if(action=="undo_manual") {
+            if(manualUndo.empty())throw std::logic_error("No new transaction to undo");
+            repo.undo_manual(manualUndo,manualUndoGeneration);observedSaved();manualUndo.clear();selected.clear();selectedBatch.clear();selection.clear();selectionFocus.reset();selectionAnchor.reset();revealManual.reset();
         }
         else if(action=="save") {
             if(selectedBatch.empty()) throw std::logic_error("Select a draft first");
@@ -1991,7 +2046,8 @@ QVariant ImportModel::data(const QModelIndex& index,int role) const {
         row["splits"]=splits;
     }
     row["batch"]=text(r.identity.batch);row["ordinal"]=static_cast<int>(r.identity.ordinal);
-    row["status"]=r.committed?"Committed":"Draft";
+    row["manual"]=state_.value("manualBatches").toMap().contains(text(r.identity.batch));
+    row["status"]=r.sequence==INT64_MAX?"New transaction":r.committed?"Committed":"Draft";
     row["category"]=t.allocations().size()==1?text(t.allocations()[0].category):"Split";
     row["withdrawal"]=amount.units()<0?money(amount).mid(1):"";
     row["deposit"]=amount.units()>=0?money(amount):"";
@@ -2175,8 +2231,9 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             worker->invalidate();
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
-            result.error=((action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
-                :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
+            result.error=((action=="save_manual" || action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
+                :(action=="delete_selection" && worker->diagnosticSaved)?"The transactions were deleted, but the screen could not update. Reopen the file before continuing."
+                 :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."
                 :((action=="map_import" || action=="resolve_import_categories" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved, but its view could not be refreshed. Reopen and inspect Review before retrying."

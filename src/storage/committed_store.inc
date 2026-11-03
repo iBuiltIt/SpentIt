@@ -97,7 +97,7 @@ std::vector<app::DependencyStamp> ImportStore::dependencies(const imports::Occur
 }
 app::CommittedEntry ImportStore::committed_entry(const imports::Occurrence& id) const {
     if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Editing committed transactions is not supported by this dataset");
-    Statement head(impl_->db,"SELECT h.revision,r.sequence FROM entry_heads h JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch=? AND h.ordinal=?");head.text(1,id.batch);head.integer(2,integer(id.ordinal));if(!head.row())fail(SQLITE_CONSTRAINT,"Choose an included committed transaction");
+    Statement head(impl_->db,"SELECT h.revision,r.sequence FROM entry_heads h JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch=? AND h.ordinal=?");head.text(1,id.batch);head.integer(2,integer(id.ordinal));if(!head.row())fail(SQLITE_CONSTRAINT,"Select an accepted transaction that has not been deleted.");
     const auto revision=head.integer(0);return {id,head.integer(1),entry_snapshot(id,revision),load_row(id,false).source,{id,revision,dependencies(id)}};
 }
 std::optional<app::ChangeReceipt> ImportStore::committed_change_outcome(std::string_view operation) const {
@@ -112,7 +112,7 @@ std::optional<app::ChangeReceipt> ImportStore::committed_change_outcome(std::str
 }
 app::ChangePreview ImportStore::preview_change(const app::ChangeRequest& request,bool links) const {
     if(request.kind==app::ChangeKind::undo){Statement rules(impl_->db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.child=? AND a.question='rules-account'");rules.text(1,request.undo_of);if(rules.row())fail(SQLITE_CONSTRAINT,"Use Undo rule application on the Rules screen to undo the whole operation.");}
-    if(request.kind==app::ChangeKind::undo){Statement group(impl_->db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.child=?1 AND a.question='ledger-edit-batch' UNION ALL SELECT 1 FROM review_undo_members m JOIN review_undos u ON u.id=m.undo_id JOIN review_answers a ON a.id=u.answer WHERE m.child=?1 AND a.question='ledger-edit-batch'");group.text(1,request.undo_of);if(group.row())fail(SQLITE_CONSTRAINT,"This change belongs to a selection edit and cannot be undone individually.");}
+    if(request.kind==app::ChangeKind::undo){Statement group(impl_->db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.child=?1 AND a.question IN('ledger-edit-batch','ledger-delete') UNION ALL SELECT 1 FROM review_undo_members m JOIN review_undos u ON u.id=m.undo_id JOIN review_answers a ON a.id=u.answer WHERE m.child=?1 AND a.question IN('ledger-edit-batch','ledger-delete')");group.text(1,request.undo_of);if(group.row())fail(SQLITE_CONSTRAINT,"This change belongs to a selection edit and cannot be undone individually.");}
     if(request.kind==app::ChangeKind::undo){Statement member(impl_->db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.child=?1 AND a.question!='ledger-edit' UNION ALL SELECT 1 FROM review_undo_members m JOIN review_undos u ON u.id=m.undo_id JOIN review_answers a ON a.id=u.answer WHERE m.child=?1 AND a.question!='ledger-edit'");member.text(1,request.undo_of);if(member.row())fail(SQLITE_CONSTRAINT,"Use Review Undo to reverse this entire decision");}
     if(!links && transfer_linked(request.identity))fail(SQLITE_CONSTRAINT,"Transfer-linked rows are corrected one at a time.");
     const auto current=committed_entry(request.identity);auto after=current.current;
@@ -141,7 +141,7 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
     identifier(operation);
     if(bulk_supported()){Statement member(impl_->db,"SELECT 1 FROM bulk_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a bulk command");}
 #ifdef SPENTIT_RULES_STORAGE
-    if(scalar(impl_->db,"PRAGMA user_version")=="46"){
+    if(scalar(impl_->db,"PRAGMA user_version")=="48"){
         Statement member(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");
         if(request.kind==app::ChangeKind::undo){Statement target(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");target.text(1,request.undo_of);if(target.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");}
     }
@@ -286,7 +286,7 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
 #ifdef SPENTIT_RULES_STORAGE
                 if(rules_format(impl_->db)){
                     bool reapply=false,replace_manual=false;
-                    if(scalar(impl_->db,"PRAGMA user_version")=="46"){
+                    if(scalar(impl_->db,"PRAGMA user_version")=="48"){
                         Statement member(impl_->db,"SELECT g.replace_manual,g.undo_of IS NULL FROM rule_reapplication_members m JOIN rule_reapplications g ON g.id=m.operation WHERE m.entry_operation=?");
                         member.text(1,operation);
                         if(member.row()){if(member.integer(1)==0)fail(SQLITE_CORRUPT,"Rule reapply Undo used a correction");reapply=true;replace_manual=member.integer(0)!=0;}

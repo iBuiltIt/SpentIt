@@ -2,6 +2,122 @@
 
 Last updated: 2026-11-03
 
+## Manual-entry Undo presentation — 2026-11-03
+
+Removed the temporary Undo add transaction button at the owner's request. The
+existing standard Undo shortcut remains available (Cmd+Z on macOS, Ctrl+Z on
+Windows/Linux), including in the clean transaction editor. No Undo behavior or
+storage changed. Rebuilt `build/SpentIt`; offscreen `import.navigation` and
+`import.qml` passed (2/2). `git diff --check` passed.
+
+## Manual-entry rules and Delete fixes — 2026-11-03
+
+Fixed both owner-reported failures under the follow-up Go. Rules explicitly support
+manual records with no imported allocation associations and match their current
+payee/memo. Uncategorized manual allocations can receive a rule category, retain
+manual text, and pass subsequent rule evaluation and reopening. The editor now
+uses a plain-language fallback if rule checking fails instead of exposing internal
+association/provenance terminology.
+
+Delete selected now confirms and atomically removes saved new transactions,
+including reopened manual entries and mixed accepted/new selections. New deletions
+are represented by the existing encrypted selection journal, without accepting the
+row or changing formats 48/47. The ledger, balances, rules, acceptance and reimport
+recognition exclude deleted new rows. Session Undo restores the whole selection;
+accepted-only selections retain their existing bulk preview/history Undo. A new
+linked transfer requires Unlink first, with no partial group changes. See the
+[updated contract](manual-transactions.md#rules-and-deleting-saved-transactions--fixes-authorized-2026-11-03).
+
+Verification on macOS:
+
+- Rebuilt `build/SpentIt`. Final focused Release tests `import.manual_transactions`,
+  `import.navigation`, and `import.qml` passed (3/3, offscreen Qt).
+- Extended storage coverage includes manual rule evaluation before/after Apply
+  and reopening; reopened manual deletion; deletion persistence, retry and Undo;
+  mixed accepted/new removal; one-of-many imported deletion; acceptance of the
+  remaining rows; invalid selection rejection and later reimport recognition.
+- New deletion recovery cases cover selected full-disk/write/sync failures,
+  cancellation after the first child write, and process exits immediately before
+  and after durable commit. Recovery and exact retries preserve whole-group
+  deletion/Undo and reconcile balances. These are sampled fault points, not an
+  exhaustive new deletion sweep.
+- The extended `import.manual_transactions` test passed in rules-disabled Release
+  and ASan/UBSan (`ASAN_OPTIONS=detect_leaks=0`). An initial test-harness failure
+  installed the fault VFS twice; installing it once fixed the harness, and both
+  configurations then passed.
+- The bounded related Release regression passed 19/19: Review, ledger and selection
+  editing, transfer assignment/release, rules preview/evaluation/application,
+  category gates, balances, reimport recognition, committed history/validation,
+  and the accepted-transaction UI. Together with the focused run, 22 selected
+  Release tests passed. An earlier overly broad selection of existing exhaustive
+  fault sweeps was stopped before completion; no result is claimed for that run.
+- `git diff --check` passed. Native manual interaction, Windows and Linux remain
+  unverified.
+
+## Manual transactions — 2026-11-03
+
+Implemented the owner's [manual-entry contract](manual-transactions.md). The
+ledger context menu offers Add transaction…, and a + button sits immediately
+right of search Apply. Existing unsaved work uses Save / Discard / Stay. Creation
+opens an unsaved row with the focused selected transaction's date (today with no
+selection), blank text, Uncategorized and zero at the account currency's scale.
+Enter validates and saves; Escape cancels creation. The new row stays visible
+through the current search; saved date changes follow the transaction's identity.
+
+Manual creation is one encrypted, atomic repository command with exact retry and
+durable outcome lookup. Entries participate in the inclusive balance, normal
+editing/session Undo, acceptance, committed history and account Discard. Creation
+Undo is session-only and ends at the next dataset mutation. It is excluded from
+Undo last import. The internal creation journal is explicitly manual and supplies
+no original imported amount or bank-file bytes. Formats advance to **48 with
+rules / 47 without**; 46/45 and older files are rejected unchanged, without
+migration. Earlier sections record their dated format checkpoints.
+
+Later imports suggest same-account/currency, exact signed effective amount and
+same-date matches without automatically consuming unmatched manual entries.
+Review Merge keeps a manual survivor and its categories, splits and notes, attaches
+the imported original, and supports atomic Review Undo. Ambiguous selections
+containing several manual entries require choosing a manual survivor. Subsequent
+reimports recognize the confirmed bank occurrence. The original-import checkbox
+is disabled until an imported occurrence is attached; Restore imported values is
+still unavailable for manual survivors because their splits have no imported
+allocation identities. Transfer accounts become selectable after the first save.
+
+Verification on macOS:
+
+- Rebuilt the rules-enabled Release application at `build/SpentIt` and the
+  existing Release test targets; no compiler warnings were reported.
+- A 39-test selected Release regression run passed 38 and exposed a new
+  cross-account batch-Review lookup error. Fixed the lookup to use account-independent
+  batch metadata. Final `ctest --test-dir build/import-ui-rules-release -R
+  '^import\.(manual_transactions|review_batch|review_sheet|navigation|qml)$'
+  --output-on-failure -j 2` passed all five tests with `QT_QPA_PLATFORM=offscreen`.
+  The other selected checks covered engine money, ledger editing and selection,
+  import recognition/rollback/Undo, verification cache, incomplete cleanup,
+  account lifecycle, transfer storage, category history, committed history and rules.
+- The new storage test covers create/retry/conflict, absent imported original,
+  reopen, balanced mixed-sign splits, pending and committed edit Undo, account
+  Discard, invalid dates/splits, acknowledgement loss, generation-guarded creation
+  Undo, explicit Merge/Undo and subsequent reimports. It also checks corrected
+  manual date/amount matching, category retention, mismatched date/amount exclusion,
+  and ambiguous manual survivors against an already accepted bank entry.
+- Selected injected full-disk/write/sync failures and subprocess exits immediately
+  before/after commit recover to a complete old/new state and retry without a
+  second transaction. These are selected failure points, not an exhaustive fault
+  sweep.
+- `import.manual_transactions` passed in `build/import-ui-no-rules-release` and
+  `build/import-ui-rules-sanitized` (ASan/UBSan, `ASAN_OPTIONS=detect_leaks=0`).
+  The rules-disabled `import.schema_gate` also passed, including rejection of
+  formats 45/46 without modifying their files.
+- The Qt navigation test covers both creation entry points, filtered visibility,
+  zero/default fields, disabled original control, cancellation, selection-date
+  reuse, Save / Discard / Stay, reopen and following a saved date change.
+
+Limits: automated Qt interactions used the offscreen platform; native interactive
+macOS use and Linux/Windows builds were not verified in this change. The complete
+158-test Release suite was not run. No performance claim is made for large manual
+ledgers, and there is no unsaved-entry crash recovery or migration.
+
 ## Undo a completed import — 2026-11-03
 
 Implemented the owner's [import-undo contract](import-undo.md). Account right-click

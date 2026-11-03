@@ -49,7 +49,7 @@ void ImportStore::prepare_review() {
         while(rows.row()) {
             const auto ordinal=static_cast<std::size_t>(rows.integer(0));present.insert(ordinal);
             const imports::Occurrence identity{id,ordinal};
-            const bool retained=retained_member(impl_->db,id,ordinal);
+            const bool retained=retained_member(impl_->db,id,ordinal) && !pending_removed(impl_->db,identity);
             std::string stamp=retained?"kept":"excluded";
             for(int column=1;column<6;++column)stamp+=":"+std::to_string(rows.integer(column));
             auto found=review.rows.find(ordinal);
@@ -65,7 +65,7 @@ void ImportStore::prepare_review() {
                     else {
                         const auto& target=*row.decision.duplicate_of;
                         const auto other=load_row(target,false);
-                        if(!review_merged_source(impl_->db,identity) && (other.decision.disposition!=imports::Disposition::include || !imports::candidate_basis(row.source,other.source,confirmed_duplicate(impl_->db,identity,target,rows.integer(1))?imports::MatchContext::confirmed_decision:imports::MatchContext::suggestion)))
+                        if(!review_merged_source(impl_->db,identity) && (other.decision.disposition!=imports::Disposition::include || !imports::candidate_basis(row.source,other.source.format=="manual" && imported_original(target)?load_row(*imported_original(target),false).source:other.source,confirmed_duplicate(impl_->db,identity,target,rows.integer(1))?imports::MatchContext::confirmed_decision:imports::MatchContext::suggestion)))
                             warning="Invalid duplicate relationship";
                     }
                 }
@@ -74,7 +74,7 @@ void ImportStore::prepare_review() {
                 if(impl_->observer)impl_->observer(ImportPhase::review_row);
             }
             auto& item=found->second;const auto& row=item.row;
-            if(!retained){++review.excluded;continue;}
+            if(!retained){if(!pending_removed(impl_->db,identity))++review.excluded;continue;}
             if(!item.warning.empty())review.warning=item.warning;
             if(row.draft && (row.decision.disposition!=imports::Disposition::duplicate || !item.warning.empty())) {
                 auto transfer_stamp=names;

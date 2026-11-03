@@ -1,5 +1,9 @@
 # Feature discovery
 
+[Manual transactions](../doc/manual-transactions.md) add ledger context-menu and
+search-bar entry points, an unsaved editor, and explicit matching to later imports.
+Current experimental formats are **48/47**; see [status](../doc/status.md).
+
 The [completed-import Undo contract](../doc/import-undo.md) adds account-menu
 **Undo last import…** and Review **Undo import…**, including reversal of a later
 match into committed transfer work. Formats stay 46/45 with descriptive source

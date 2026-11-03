@@ -180,10 +180,11 @@ ResolvedTransfers resolved_transfers(const std::vector<app::TransferView>& value
 #include "transfer_schema.inc"
 #include "review_sheet_schema.inc"
 #include "transfer_codec.inc"
+#include "manual_codec.inc"
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=45;
+PRAGMA user_version=47;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -321,7 +322,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=46;
+PRAGMA user_version=48;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -525,6 +526,9 @@ CREATE TRIGGER acceptance_members_immutable BEFORE UPDATE ON acceptance_members 
 CREATE TRIGGER acceptance_members_keep BEFORE DELETE ON acceptance_members BEGIN SELECT RAISE(ABORT,'immutable acceptance'); END;
 CREATE TRIGGER acceptance_operations_immutable BEFORE UPDATE ON acceptance_operations BEGIN SELECT RAISE(ABORT,'immutable acceptance'); END;
 CREATE TRIGGER acceptance_operations_keep BEFORE DELETE ON acceptance_operations BEGIN SELECT RAISE(ABORT,'immutable acceptance'); END;
+CREATE TABLE manual_creations(batch TEXT PRIMARY KEY REFERENCES batches(id),generation INTEGER NOT NULL CHECK(generation>0)) STRICT;
+CREATE TRIGGER manual_creation_immutable BEFORE UPDATE ON manual_creations BEGIN SELECT RAISE(ABORT,'Immutable creation'); END;
+CREATE TRIGGER manual_creation_keep BEFORE DELETE ON manual_creations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Ownership cleanup required'); END;
 CREATE TABLE mutation_generation(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL CHECK(revision>=0)) STRICT;
 INSERT INTO mutation_generation VALUES(1,0);
 CREATE TABLE rollback_receipt(singleton INTEGER PRIMARY KEY CHECK(singleton=1),operation TEXT NOT NULL,account INTEGER NOT NULL,transactions INTEGER NOT NULL,failures INTEGER NOT NULL) STRICT;
@@ -552,8 +556,8 @@ CREATE VIEW review_targets AS SELECT r.batch,r.ordinal,
  LEFT JOIN entry_revisions e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision
  WHERE v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1
 ;
-CREATE TABLE source_headers(source_id TEXT PRIMARY KEY REFERENCES sources(id),format TEXT NOT NULL CHECK(format IN('qif','ofx','qfx','qbo','aso')),grammar TEXT NOT NULL CHECK(grammar IN('qif','ofx-sgml','ofx-xml')),header TEXT NOT NULL) STRICT;
-CREATE TABLE source_occurrences(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,format TEXT NOT NULL CHECK(format IN('qif','ofx','qfx','qbo','aso')),grammar TEXT NOT NULL CHECK(grammar IN('qif','ofx-sgml','ofx-xml')),begin_offset INTEGER NOT NULL,end_offset INTEGER NOT NULL,fitid TEXT NOT NULL,source_account_key TEXT NOT NULL,time_evidence TEXT NOT NULL,trntype TEXT NOT NULL,currency TEXT NOT NULL,original_units INTEGER,original_date TEXT NOT NULL,payee TEXT NOT NULL,memo TEXT NOT NULL,reference TEXT NOT NULL,uninterpreted TEXT NOT NULL,diagnostic INTEGER,blocked INTEGER NOT NULL CHECK(blocked IN(0,1)),PRIMARY KEY(batch,ordinal),FOREIGN KEY(batch) REFERENCES batches(id)) STRICT;
+CREATE TABLE source_headers(source_id TEXT PRIMARY KEY REFERENCES sources(id),format TEXT NOT NULL CHECK(format IN('qif','ofx','qfx','qbo','aso','manual')),grammar TEXT NOT NULL CHECK(grammar IN('qif','ofx-sgml','ofx-xml','manual')),header TEXT NOT NULL) STRICT;
+CREATE TABLE source_occurrences(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,format TEXT NOT NULL CHECK(format IN('qif','ofx','qfx','qbo','aso','manual')),grammar TEXT NOT NULL CHECK(grammar IN('qif','ofx-sgml','ofx-xml','manual')),begin_offset INTEGER NOT NULL,end_offset INTEGER NOT NULL,fitid TEXT NOT NULL,source_account_key TEXT NOT NULL,time_evidence TEXT NOT NULL,trntype TEXT NOT NULL,currency TEXT NOT NULL,original_units INTEGER,original_date TEXT NOT NULL,payee TEXT NOT NULL,memo TEXT NOT NULL,reference TEXT NOT NULL,uninterpreted TEXT NOT NULL,diagnostic INTEGER,blocked INTEGER NOT NULL CHECK(blocked IN(0,1)),PRIMARY KEY(batch,ordinal),FOREIGN KEY(batch) REFERENCES batches(id)) STRICT;
 CREATE TABLE source_associations(ledger_batch TEXT NOT NULL,ledger_ordinal INTEGER NOT NULL,source_batch TEXT NOT NULL,source_ordinal INTEGER NOT NULL,PRIMARY KEY(ledger_batch,ledger_ordinal,source_batch,source_ordinal),FOREIGN KEY(ledger_batch,ledger_ordinal) REFERENCES records(batch,ordinal),FOREIGN KEY(source_batch,source_ordinal) REFERENCES source_occurrences(batch,ordinal)) STRICT;
 CREATE TRIGGER source_headers_immutable BEFORE UPDATE ON source_headers BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER source_headers_keep BEFORE DELETE ON source_headers WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
@@ -594,26 +598,26 @@ CREATE TRIGGER order_account AFTER INSERT ON account_operations BEGIN INSERT INT
 )SQL";
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="17" || version=="19" || version=="45"
+    return version=="3" || version=="4" || version=="17" || version=="19" || version=="47"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="46"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="48"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="17" || version=="19" || version=="45"
+    return version=="4" || version=="17" || version=="19" || version=="47"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="46"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="48"
 #endif
         ;
 }
 app::BatchInfo batch(sqlite3* db,std::string_view id) {
-    Statement s(db,schema3_batch(db)?"SELECT id,profile,state,revision,count,blocked,materialized_revision IS NULL FROM batches WHERE id=?":"SELECT id,profile,state,revision,count,blocked,0 FROM batches WHERE id=?"); s.text(1,id);
+    Statement s(db,schema3_batch(db)?"SELECT id,profile,state,revision,count,blocked,materialized_revision IS NULL,parser='manual-v1' FROM batches WHERE id=?":"SELECT id,profile,state,revision,count,blocked,0,parser='manual-v1' FROM batches WHERE id=?"); s.text(1,id);
     if (!s.row()) fail(SQLITE_NOTFOUND,"Import does not exist");
     Statement completed(db,"SELECT 1 FROM import_completions WHERE batch=?");completed.text(1,id);
     return {s.bytes(0),static_cast<qif::DateOrder>(s.integer(1)),static_cast<app::BatchState>(s.integer(2)),s.integer(3),
-        static_cast<std::size_t>(s.integer(4)),s.integer(5)!=0,s.integer(6)!=0,completed.row()};
+        static_cast<std::size_t>(s.integer(4)),s.integer(5)!=0,s.integer(6)!=0,completed.row(),s.integer(7)!=0};
 }
 bool retained_batch(sqlite3* db,std::string_view id){Statement q(db,"SELECT 1 FROM retained_transfer_rows WHERE batch=? LIMIT 1");q.text(1,id);return q.row();}
 bool retained_member(sqlite3* db,std::string_view id,std::size_t ordinal){if(!retained_batch(db,id))return true;Statement q(db,"SELECT 1 FROM retained_transfer_rows WHERE batch=? AND ordinal=?");q.text(1,id);q.integer(2,integer(ordinal));return q.row();}
@@ -635,10 +639,16 @@ bool generated_match(sqlite3* db,const imports::Occurrence& id){Statement row(db
 std::size_t accepted_row_count(sqlite3* db,std::string_view id) {
     Statement row(db,"SELECT (SELECT count(*) FROM accepted_transactions WHERE batch=?1)+(SELECT count(*) FROM generated_source_matches WHERE batch=?1)");row.text(1,id);if(!row.row())fail(SQLITE_CORRUPT);return static_cast<std::size_t>(row.integer(0));
 }
+// The existing command journal retains new-row deletion across restarts; Undo
+// retires the deletion without accepting the transaction or changing its source.
+bool pending_removed(sqlite3* db,const imports::Occurrence& id) {
+    Statement q(db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.ordinal=? AND m.committed=0 AND a.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=m.answer)");
+    q.text(1,id.batch);q.integer(2,integer(id.ordinal));return q.row();
+}
 std::pair<std::int64_t,bool> review_target(sqlite3* db,const imports::Occurrence& id) {
     Statement row(db,"SELECT revision,active FROM review_targets WHERE batch=? AND ordinal=?");
     row.text(1,id.batch);row.integer(2,integer(id.ordinal));if(!row.row())fail(SQLITE_CONSTRAINT,"Duplicate target is no longer available");
-    return {row.integer(0),row.integer(1)!=0};
+    return {row.integer(0),row.integer(1)!=0 && !pending_removed(db,id)};
 }
 bool review_target_active(sqlite3* db,const imports::Occurrence& id) {return review_target(db,id).second;}
 void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const imports::DraftRow& row,const imports::Decision& decision,bool fresh_review=true,std::optional<std::int64_t> ruleset=std::nullopt) {
@@ -668,14 +678,14 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="45"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="47"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16" || version=="18" || version=="20" || version=="46"
+    || version=="6" || version=="16" || version=="18" || version=="20" || version=="48"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="46";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="48";
 #else
     (void)db;return false;
 #endif
@@ -694,7 +704,7 @@ void bind_candidate(Statement& statement,const qif::Record& record) {
 }
 constexpr const char* candidate_where =
     "b.account_id=spentit_account() AND b.state IN(0,1,4) AND r.batch<>?4 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1 "
-    "AND (?5=1 OR (?3<>'' AND EXISTS(SELECT 1 FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=r.batch AND a.ledger_ordinal=r.ordinal AND o.fitid=?3)) "
+    "AND (b.parser='manual-v1' OR ?5=1 OR (?3<>'' AND EXISTS(SELECT 1 FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=r.batch AND a.ledger_ordinal=r.ordinal AND o.fitid=?3)) "
     "OR ((r.original=?2 OR r.original IS NULL OR ?2 IS NULL) AND (r.source_date=?1 OR r.source_date='' OR ?1='')))";
 void load_associated_ids(sqlite3* db,const imports::Occurrence& id,qif::Record& source) {
     source.associated_fitid.clear();source.associated_fitids.clear();
@@ -1009,9 +1019,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="46";
+        constexpr const char* expected_format="48";
 #else
-        constexpr const char* expected_format="45";
+        constexpr const char* expected_format="47";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"This dataset format is not supported by this version of SpentIt; the file has not been changed");
@@ -1019,7 +1029,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
            scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='account_creations'")!="1")
             fail(SQLITE_SCHEMA,"Account structure does not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('transfer_events','transfer_versions','transfer_heads','retained_transfer_rows')")!="4")fail(SQLITE_SCHEMA,"Transfer structure does not match format version");
-        if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('source_headers','source_occurrences','source_associations')")!="3")fail(SQLITE_SCHEMA,"Document structure does not match format version");
+        if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('source_headers','source_occurrences','source_associations','manual_creations')")!="4")fail(SQLITE_SCHEMA,"Document structure does not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='dataset_preferences'")!="1")fail(SQLITE_SCHEMA,"Dataset preferences do not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('review_answers','review_undos','review_undo_members','review_stack','review_members','review_choices','review_sources','review_merges','review_link_history','link_exclusion_events')")!="10")fail(SQLITE_SCHEMA,"Review structure does not match format version");
         const auto common=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('account','account_creations','sources','batches','records','versions','allocations','operations','events','entry_revisions','entry_allocations','entry_heads','ledger_operations','change_dependencies','history_order','review_stamps','category_state','category_versions','category_heads','category_operations','operation_registry','draft_fields','entry_fields','draft_allocation_meta','entry_allocation_meta')");
@@ -1220,6 +1230,7 @@ qif::Result ImportStore::parsed_source(std::string_view id,const std::function<v
     require_account(id);const auto b=batch(impl_->db,id);const auto currency=pinned_currency(impl_->db,id);
     const auto bytes=evidence(id);
     Statement association(impl_->db,"SELECT b.source_account,b.parser,h.format,h.grammar FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE b.id=?");association.text(1,id);if(!association.row())fail(SQLITE_CORRUPT,"Source header is missing");
+    if(association.bytes(1)=="manual-v1")return manual_codec::parse(bytes,currency);
     if(association.bytes(1)==qif::parser_version || association.bytes(2)=="qif") {
         if(association.null(0))return qif::parse(bytes,b.profile,currency,checkpoint);
         const auto document=qif::index_document(bytes,checkpoint);
@@ -1277,7 +1288,7 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
             cached.matched_generated=generated_match(impl_->db,id);
             const auto prior_size=VerificationRows::row_size(cached);
             if(!impl_->verification_rows) {
-                cached.excluded_by_clear=!retained_member(impl_->db,id.batch,id.ordinal);
+                cached.excluded_by_clear= !retained_member(impl_->db,id.batch,id.ordinal) || pending_removed(impl_->db,id);
                 load_associated_ids(impl_->db,id,cached.source);
                 if(cached.decision.duplicate_of && review_merged_source(impl_->db,id)){cached.decision.duplicate_of=review_association(impl_->db,id);cached.review_stale=false;}
                 else if(cached.decision.duplicate_of) {
@@ -1303,12 +1314,12 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         return {id,std::move(source),{}, {imports::Disposition::unresolved,{}},{}};
     }
     Statement parser(impl_->db,"SELECT parser FROM batches WHERE id=?");parser.text(1,id.batch);if(!parser.row())fail(SQLITE_CORRUPT);
-    const auto parsed=parser.bytes(0)==qif::parser_version ? qif::parse(src.bytes(0),b.profile,source_currency,{},source_categories(id.batch)) : statements::parse_occurrence(src.bytes(0),parser.bytes(0),source_currency,b.profile);
+    const auto parsed=parser.bytes(0)=="manual-v1" ? manual_codec::parse(src.bytes(0),source_currency) : parser.bytes(0)==qif::parser_version ? qif::parse(src.bytes(0),b.profile,source_currency,{},source_categories(id.batch)) : statements::parse_occurrence(src.bytes(0),parser.bytes(0),source_currency,b.profile);
     if(parsed.diagnostic || parsed.records.size()!=1 || (!parsed.records[0].transaction && !parsed.records[0].repairable)) fail(SQLITE_CORRUPT);
     auto source=parsed.records[0]; overlay_occurrence(impl_->db,id,source);
     load_associated_ids(impl_->db,id,source);
     app::RowView out{id,std::move(source),{}, {},{}};out.matched_generated=generated_match(impl_->db,id);
-    out.excluded_by_clear=!retained_member(impl_->db,id.batch,id.ordinal);
+    out.excluded_by_clear= !retained_member(impl_->db,id.batch,id.ordinal) || pending_removed(impl_->db,id);
     Statement v(impl_->db,"SELECT revision,date,payee,memo,total,decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? ORDER BY revision DESC LIMIT 1");
     v.text(1,id.batch); v.integer(2,integer(id.ordinal)); if(!v.row()) fail(SQLITE_CORRUPT);
     Statement allocations(impl_->db,"SELECT position,category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");
@@ -1352,7 +1363,14 @@ std::vector<imports::Occurrence> ImportStore::duplicate_candidates(const qif::Re
     while(candidates.row()) {
         if(++scanned>1000000)fail(SQLITE_TOOBIG,"Duplicate review exceeds one million candidate comparisons");
         const imports::Occurrence target{candidates.bytes(0),static_cast<std::size_t>(candidates.integer(1))};
-        if(!imports::candidate_basis(source,load_row(target,false).source))continue;
+        auto other=load_row(target,false);
+        if(other.excluded_by_clear)continue;
+        if(other.source.format=="manual") {
+            const auto value=transaction_accepted(target)?committed_entry(target).current.draft:*other.draft;
+            if(!source.original_amount || source.date!=value.date || *source.original_amount!=value.transaction.effective_total())continue;
+        } else if(source.format=="manual") {
+            if(!source.transaction || !other.source.original_amount || source.date!=other.source.date || source.transaction->effective_total()!=*other.source.original_amount)continue;
+        } else if(!imports::candidate_basis(source,other.source))continue;
         if(result.size()==4096)fail(SQLITE_TOOBIG,"More than 4096 possible duplicate occurrences; review requires a narrower source import");
         result.push_back(target);if(first_only)break;
     }
@@ -1620,6 +1638,7 @@ void ImportStore::save(const imports::Occurrence& id,std::int64_t expected,const
     ScopedStatements plans(impl_->db);
     require_unlinked(id);require_writable_account(impl_->db,account_for_batch(id.batch).identity);
     Atomic a(impl_->db); expect(impl_->db,id.batch,expected); if(generated_match(impl_->db,id))fail(SQLITE_CONSTRAINT,"Edit the existing transfer rather than its matched source");const auto old=load_row(id,false);
+    if(old.excluded_by_clear)fail(SQLITE_CONSTRAINT,"This transaction was deleted. Undo the deletion before editing it.");
     const auto canonical=canonical_draft(id,edit,old.draft,expected+1,false);
     const bool reassigned=old.source.source_currency && canonical.transaction.effective_total().currency()!=*old.source.source_currency;
     imports::validate_draft(old.source,canonical,reassigned);
@@ -1651,6 +1670,7 @@ void ImportStore::decide(const imports::Occurrence& id,std::int64_t expected,con
     if(review_survivor(impl_->db,id)!=id)fail(SQLITE_CONSTRAINT,"Use Review Undo to restore a merged transaction");
     require_unlinked(id);require_writable_account(impl_->db,account_for_batch(id.batch).identity);
     Atomic a(impl_->db); expect(impl_->db,id.batch,expected);if(generated_match(impl_->db,id))fail(SQLITE_CONSTRAINT,"This source already matches an accepted transfer"); const auto old=row(id);
+    if(old.excluded_by_clear)fail(SQLITE_CONSTRAINT,"This transaction was deleted. Undo the deletion before reviewing it.");
     if(!old.draft) fail(SQLITE_CONSTRAINT,"Save the record repair before duplicate review");
     imports::validate_decisions({old.candidates},std::span(&decision,1),false);
     if(decision.duplicate_of) {
@@ -1770,14 +1790,14 @@ std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current
         std::vector<app::LedgerRow> result;
         Statement entries(impl_->db,"SELECT h.batch,h.ordinal,h.revision,r.sequence FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1 ORDER BY e.date,r.sequence");
         while(entries.row()){imports::Occurrence identity{entries.bytes(0),static_cast<std::size_t>(entries.integer(1))};result.push_back({identity,entries.integer(3),entry_snapshot(identity,entries.integer(2)).draft,true});}
-        if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND (v.decision=1 OR (?1=1 AND v.decision=0)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");pending.integer(1,current?1:0);while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
+        if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND (v.decision=1 OR (?1=1 AND v.decision=0)) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");pending.integer(1,current?1:0);while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
         const auto local=local_transfer_ledger(projected);result.insert(result.end(),local.begin(),local.end());
         std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return std::tie(a.draft.date,a.sequence)<std::tie(b.draft.date,b.sequence);});return result;
     }
     if(projected && !current && !projected_balance()) fail(SQLITE_CONSTRAINT,"Projection is incomplete; resolve the pending import first");
     Statement s(impl_->db,"SELECT r.batch,r.ordinal,r.sequence,b.state FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal "
         "WHERE b.account_id=spentit_account() AND (b.state=1 OR (b.state=0 AND ?=1 AND b.blocked=0)) AND v.decision=1 "
-        "AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) ORDER BY v.date,r.sequence");
+        "AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) ORDER BY v.date,r.sequence");
     s.integer(1,projected?1:0); std::vector<app::LedgerRow> result;
     while(s.row()) {
         imports::Occurrence id{s.bytes(0),static_cast<std::size_t>(s.integer(1))}; auto r=load_row(id,false);
@@ -1794,7 +1814,7 @@ Money ImportStore::balance_for(std::int64_t id) const {
         "UNION ALL SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch "
         "WHERE b.account_id=?1 AND b.state IN(0,4) "
         "AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) "
-        "AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision IN(0,1) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
+        "AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision IN(0,1) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     rows.integer(1,id);
     while(rows.row())amounts.emplace_back(rows.integer(0),acct.currency);
     return imports::sum(acct.currency,amounts);
@@ -1816,7 +1836,7 @@ Money ImportStore::committed_balance() const {
     if(committed_changes_supported()) return committed_for(impl_->selected_account);
     const auto a=account(); std::vector<Money> amounts{a.opening};
     Statement s(impl_->db,"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.state=1 AND v.decision=1 "
-        "AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
+        "AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     while(s.row()) amounts.emplace_back(s.integer(0),a.currency); return imports::sum(a.currency,amounts);
 }
 std::optional<Money> ImportStore::projected_for(std::int64_t id) const {
@@ -1826,16 +1846,16 @@ std::optional<Money> ImportStore::projected_for(std::int64_t id) const {
             const auto reviewed=impl_->reviews.find(b.id);
             if(reviewed!=impl_->reviews.end() && !reviewed->second.warning.empty())return {};
         }
-        Statement s(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=0 AND (NOT EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch) OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) LIMIT 1");
+        Statement s(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=0 AND (NOT EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch) OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) LIMIT 1");
         s.text(1,b.id); if(s.row()) return {};
     }
     if(committed_changes_supported()) {
-        Statement stale(impl_->db,"SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch JOIN review_stamps s USING(batch,ordinal,revision) JOIN review_targets h ON h.batch=v.duplicate_batch AND h.ordinal=v.duplicate_ordinal WHERE b.account_id=? AND b.state=0 AND v.decision=2 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) AND (s.target_revision!=h.revision OR s.target_active!=h.active) LIMIT 1");
+        Statement stale(impl_->db,"SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch JOIN review_stamps s USING(batch,ordinal,revision) JOIN review_targets h ON h.batch=v.duplicate_batch AND h.ordinal=v.duplicate_ordinal WHERE b.account_id=? AND b.state=0 AND v.decision=2 AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) AND (s.target_revision!=h.revision OR s.target_active!=h.active) LIMIT 1");
         stale.integer(1,id);if(stale.row())return {};
     }
     const auto a=account_by_id(id);std::vector<Money> amounts{committed_changes_supported()?committed_for(id):a.opening,local_transfer_total(id,true)-local_transfer_total(id,false)};
-    Statement s(impl_->db,committed_changes_supported()?"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=? AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision=1 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)":"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=? AND b.state IN(0,1) AND v.decision=1 "
-        "AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
+    Statement s(impl_->db,committed_changes_supported()?"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=? AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision=1 AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)":"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=? AND b.state IN(0,1) AND v.decision=1 "
+        "AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     s.integer(1,id);while(s.row()) amounts.emplace_back(s.integer(0),a.currency);return imports::sum(a.currency,amounts);
 }
 std::optional<Money> ImportStore::projected_balance() const {return projected_for(impl_->selected_account);}
@@ -1891,14 +1911,16 @@ void ImportStore::verify(const app::OperationContext* context) const {
     {diag::Span phaseSpan(diag::Code::accounts);verify_account_commands(context);}
     {diag::Span phaseSpan(diag::Code::groups);verify_import_groups(context);}
     Statement invalid(impl_->db,
-        "SELECT 1 FROM batches b WHERE parser NOT IN('bank-v6','ofx-sgml-1','ofx-xml-2') OR (state=1 AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
+        "SELECT 1 FROM batches b WHERE parser NOT IN('bank-v6','ofx-sgml-1','ofx-xml-2','manual-v1') OR (state=1 AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
         "OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR revision+1!=(SELECT count(*) FROM events WHERE batch=b.id) "
         "UNION ALL SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch WHERE v.revision>b.revision "
         "UNION ALL SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id) "
         "UNION ALL SELECT 1 FROM account a WHERE frozen!=(EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id=a.singleton) OR EXISTS(SELECT 1 FROM transfer_events t WHERE t.account=a.singleton AND t.did_commit=1))");
     if(invalid.row()) fail(SQLITE_CORRUPT,"Invalid import history relationships");
-    Statement headers(impl_->db,"SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM source_headers h WHERE h.source_id=s.id) UNION ALL SELECT 1 FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE NOT ((b.parser='bank-v6' AND h.format='qif' AND h.grammar='qif') OR (b.parser='ofx-sgml-1' AND h.grammar='ofx-sgml' AND h.format IN('ofx','qfx','qbo','aso')) OR (b.parser='ofx-xml-2' AND h.grammar='ofx-xml' AND h.format IN('ofx','qfx','qbo','aso')))");
+    Statement headers(impl_->db,"SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM source_headers h WHERE h.source_id=s.id) UNION ALL SELECT 1 FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE NOT ((b.parser='manual-v1' AND h.format='manual' AND h.grammar='manual') OR (b.parser='bank-v6' AND h.format='qif' AND h.grammar='qif') OR (b.parser='ofx-sgml-1' AND h.grammar='ofx-sgml' AND h.format IN('ofx','qfx','qbo','aso')) OR (b.parser='ofx-xml-2' AND h.grammar='ofx-xml' AND h.format IN('ofx','qfx','qbo','aso')))");
     if(headers.row()) fail(SQLITE_CORRUPT,"Source evidence does not match its import");
+    Statement manual_history(impl_->db,"SELECT 1 FROM batches b LEFT JOIN manual_creations m ON m.batch=b.id WHERE (b.parser='manual-v1')!=(m.batch IS NOT NULL) OR (m.batch IS NOT NULL AND m.generation>(SELECT revision FROM mutation_generation WHERE singleton=1))");
+    if(manual_history.row())fail(SQLITE_CORRUPT,"Manual creation history is inconsistent");
     Statement all_batches(impl_->db,"SELECT id FROM batches ORDER BY rowid");
     while(all_batches.row()) {
         diag::Span evidenceSpan(diag::Code::evidence);
@@ -1976,7 +1998,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
                     const bool reviewed=explicit_review_merge(impl_->db,{b.id,i},vv.integer(0));
                     if(account_for_batch(target.batch).identity!=acct.identity || (target.batch==b.id && !reviewed)) fail(SQLITE_CORRUPT);
                     const auto other=load_row(target,false);
-                    if(!reviewed && !review_merged_source(impl_->db,{b.id,i}) && ((other.decision.disposition!=imports::Disposition::include && review_survivor(impl_->db,target)==target) || !imports::candidate_basis(source,other.source,confirmed_duplicate(impl_->db,{b.id,i},target,vv.integer(0))?imports::MatchContext::confirmed_decision:imports::MatchContext::suggestion))) fail(SQLITE_CORRUPT);
+                    if(!reviewed && !review_merged_source(impl_->db,{b.id,i}) && ((other.decision.disposition!=imports::Disposition::include && review_survivor(impl_->db,target)==target) || !imports::candidate_basis(source,other.source.format=="manual" && imported_original(target)?load_row(*imported_original(target),false).source:other.source,confirmed_duplicate(impl_->db,{b.id,i},target,vv.integer(0))?imports::MatchContext::confirmed_decision:imports::MatchContext::suggestion))) fail(SQLITE_CORRUPT);
                 }
             }
         }
@@ -2043,6 +2065,7 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
 }
 #include "account_aliases.inc"
 #include "category_store.inc"
+#include "manual_store.inc"
 #include "committed_store.inc"
 #include "bulk_store.inc"
 namespace { std::int64_t review_generation(sqlite3*); }

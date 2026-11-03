@@ -59,6 +59,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
         rules::Record record;
         record.source={input.source.payee,input.source.memo,input.source.source_category,input.source.has_source_splits,{}};
         for(const auto& a:input.source.source_allocation_fields)record.source.allocations.push_back({a.memo,a.category});
+        if(input.source.format=="manual") {record.source.imported=false;record.source.payee=input.draft.payee;record.source.memo=input.draft.memo;}
         record.payee={input.draft.payee,owner(input.draft.payee_owner),contribution(RuleField::payee,"",input.draft.payee_owner)};
         record.memo={input.draft.memo,owner(input.draft.memo_owner),contribution(RuleField::memo,"",input.draft.memo_owner)};
         std::set<std::string> allocation_ids;

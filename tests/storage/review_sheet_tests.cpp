@@ -499,7 +499,10 @@ void selection_edit_tests(const std::filesystem::path& dir){
     OperationContext finalContext;restore=selection_request(s,LedgerSelectionAction::restore_imported,ids);s.edit_transactions("final",restore,finalContext);s.verify();
     // Full reopening, rather than only inspecting the current connection.
     {auto copy=dir/"selection-backup";s.backup_to(copy,"test");auto reopened=ImportStore::open(copy,"test");reopened.verify();check(edit_row(reopened,ids[0]).payee=="APPLE.COM","Restored values survive reopen");reopened.undo_transaction_edit("reopen-undo","final");reopened.verify();check(edit_row(reopened,ids[0]).payee=="Edited","Durable group can be reversed exactly");}
-    auto linked=ImportStore::create(dir/"selection-links","test","Checking",cad,"2026-01-01");assignment_setup(linked);OperationContext assign;linked.assign_transfer_batch("assign",assignment_requests(linked),assign);linked.accept_all("accept",true);
+    auto linked=ImportStore::create(dir/"selection-links","test","Checking",cad,"2026-01-01");assignment_setup(linked);OperationContext assign;linked.assign_transfer_batch("assign",assignment_requests(linked),assign);
+    OperationContext removal;refused=false;try{linked.edit_transactions("delete-linked",selection_request(linked,LedgerSelectionAction::remove,{{"out",1},{"out",0}}),removal);}catch(const std::exception& e){refused=std::string(e.what())=="Unlink this transfer before deleting it.";}
+    check(refused && !linked.review_outcome("delete-linked"),"Linked new deletion is refused atomically");assignment_check(linked,true);linked.verify();
+    linked.accept_all("accept",true);
     const std::vector<imports::Occurrence> linkedIds{{"out",0},{"out",1}};OperationContext linkContext;
     linked.edit_transactions("rename",selection_request(linked,LedgerSelectionAction::rename_payee,linkedIds,"Renamed transfer"),linkContext);assignment_check(linked,true);linked.verify();
     OperationContext linkRestore;linked.edit_transactions("restore",selection_request(linked,LedgerSelectionAction::restore_imported,linkedIds),linkRestore);linked.verify();linked.undo_transaction_edit("undo-restore","restore");assignment_check(linked,true);linked.verify();

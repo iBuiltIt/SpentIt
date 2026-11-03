@@ -267,6 +267,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
                 protected_allocations[side->endpoint.entry].push_back(side->endpoint.allocation);
     std::size_t result_bytes=0;
     auto evaluate=[&](app::RowView viewed) {
+        if(viewed.excluded_by_clear)return;
         Statement awaiting(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=0");awaiting.text(1,viewed.identity.batch);if(awaiting.row())return;
         context.checkpoint(result.evaluated%256==0?"Finding matching transactions":"");
         // Each record retains the existing allocation, text and regex execution
@@ -489,9 +490,10 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
             Statement event(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");event.text(1,id.batch);event.integer(2,revision_at);if(!event.row())fail(SQLITE_CORRUPT);
             const auto kind=event.bytes(0);
             if(!previous){
+                const auto initial_owner=source.format=="manual"?FieldOwnership::manual:FieldOwnership::source;
                 if(draft.payee_owner==FieldOwnership::rule || draft.memo_owner==FieldOwnership::rule || marked) fail(SQLITE_CORRUPT);
-                if((kind=="ingest" || kind=="materialize") && (draft.payee_owner!=FieldOwnership::source || draft.memo_owner!=FieldOwnership::source)) fail(SQLITE_CORRUPT);
-                for(const auto& allocation:stored_allocations) if(allocation.category_owner==FieldOwnership::rule || allocation.memo_owner==FieldOwnership::rule || ((kind=="ingest" || kind=="materialize") && (allocation.category_owner!=FieldOwnership::source || allocation.memo_owner!=FieldOwnership::source))) fail(SQLITE_CORRUPT);
+                if((kind=="ingest" || kind=="materialize") && (draft.payee_owner!=initial_owner || draft.memo_owner!=initial_owner)) fail(SQLITE_CORRUPT);
+                for(const auto& allocation:stored_allocations) if(allocation.category_owner==FieldOwnership::rule || allocation.memo_owner==FieldOwnership::rule || ((kind=="ingest" || kind=="materialize") && (allocation.category_owner!=initial_owner || allocation.memo_owner!=initial_owner))) fail(SQLITE_CORRUPT);
             } else if(kind=="save") {if(!review_draft_undo(id,revision_at,draft)){
                 Statement applied(impl_->db,"SELECT substr(a.request,1,1) FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.ordinal=? AND m.result=? AND m.committed=0 AND a.question='rules-account'");
                 applied.text(1,id.batch);applied.integer(2,integer(id.ordinal));applied.integer(3,revision_at);const bool account_apply=applied.row();

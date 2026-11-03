@@ -152,7 +152,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     struct Scope{Impl& state;std::int64_t selected;~Scope(){state.selected_account=selected;}} scope{*impl_,impl_->selected_account};
     app::ReviewSheet result;result.generation=review_generation(impl_->db);
     Statement undo(impl_->db,"SELECT s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
-    result.can_undo=undo.row() && undo.integer(0)==result.generation && undo.bytes(1)!="ledger-edit" && undo.bytes(1)!="ledger-edit-batch" && undo.bytes(1)!="rules-account";
+    result.can_undo=undo.row() && undo.integer(0)==result.generation && undo.bytes(1)!="ledger-edit" && undo.bytes(1)!="ledger-edit-batch" && undo.bytes(1)!="ledger-delete" && undo.bytes(1)!="rules-account";
     std::map<imports::Occurrence,app::ReviewTransaction> rows;
     std::set<imports::Occurrence> unresolved;
     auto all_accounts=accounts();const auto archived=archived_accounts();all_accounts.insert(all_accounts.end(),archived.begin(),archived.end());
@@ -160,7 +160,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         impl_->selected_account=account.identity;
         for(const auto& row:current_ledger()) {
             if(row.identity.batch.starts_with("~transfer-"))continue;
-            rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,row.draft,row.committed,{}});
+            rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,row.draft,row.committed,batch(impl_->db,row.identity.batch).manual?"Manually entered":""});
         }
         for(const auto& b:batches())if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts){
             if(b.processing_incomplete){result.questions.push_back({"file:"+b.id,app::ReviewKind::correction,account.identity,account.name,"Resume this import before reviewing its transactions",b.id,{},{}});continue;}
@@ -394,7 +394,7 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
     if(answer.question=="selected" && answer.action==app::ReviewAction::merge){
         const auto owner=account();app::ReviewQuestion manual{"selected",app::ReviewKind::same,owner.identity,owner.name,"Are these the same?","",{}, {}};
         const std::set<imports::Occurrence> wanted(answer.selected.begin(),answer.selected.end());
-        for(const auto& row:current_ledger())if(wanted.contains(row.identity) && !row.identity.batch.starts_with("~transfer-"))manual.rows.push_back({row.identity,owner.identity,owner.name,row.draft,row.committed,{}});
+        for(const auto& row:current_ledger())if(wanted.contains(row.identity) && !row.identity.batch.starts_with("~transfer-"))manual.rows.push_back({row.identity,owner.identity,owner.name,row.draft,row.committed,batch(impl_->db,row.identity.batch).manual?"Manually entered":""});
         sheet.questions.push_back(std::move(manual));
     }
     return write_review_answer(operation,answer,sheet);
@@ -431,7 +431,10 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
     std::optional<imports::Occurrence> survivor=answer.action==app::ReviewAction::merge?answer.survivor:std::nullopt;
     if(answer.action==app::ReviewAction::merge){
         const auto committed=std::count_if(chosen.begin(),chosen.end(),[](const auto& r){return r.committed;});
-        if(committed==1)survivor=std::find_if(chosen.begin(),chosen.end(),[](const auto& r){return r.committed;})->identity;
+        const auto manual=std::count_if(chosen.begin(),chosen.end(),[&](const auto& r){return batch(impl_->db,r.identity.batch).manual;});
+        if(manual==1)survivor=std::find_if(chosen.begin(),chosen.end(),[&](const auto& r){return batch(impl_->db,r.identity.batch).manual;})->identity;
+        else if(manual>1){if(!survivor || !selected.contains(*survivor) || !batch(impl_->db,survivor->batch).manual)fail(SQLITE_CONSTRAINT,"Choose the manually entered transaction to keep");}
+        else if(committed==1)survivor=std::find_if(chosen.begin(),chosen.end(),[](const auto& r){return r.committed;})->identity;
         if(!survivor || !selected.contains(*survivor))fail(SQLITE_CONSTRAINT,"Choose the transaction to keep");
         for(const auto& r:chosen){if(r.account!=chosen.front().account)fail(SQLITE_CONSTRAINT,"Merge transactions within the same account");if(r.draft.transaction.effective_total()!=chosen.front().draft.transaction.effective_total())fail(SQLITE_CONSTRAINT,"Amounts differ. Edit the transactions before merging.");if(r.identity!=*survivor && transfer_linked(r.identity))fail(SQLITE_CONSTRAINT,"Resolve the existing links before merging this transaction");}
     }
@@ -580,7 +583,7 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             append_financial(impl_->db,child,app::ChangeKind::transfer,{"",0},-1,0,before,delta,before+delta,"",sequence-1,catalog_sequence(impl_->db));
         }
     }
-    Statement edit(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question IN('ledger-edit','ledger-edit-batch','rules-account')");edit.text(1,answer);const bool editor_undo=edit.row();
+    Statement edit(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question IN('ledger-edit','ledger-edit-batch','ledger-delete','rules-account')");edit.text(1,answer);const bool editor_undo=edit.row();
     Statement rules_group(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question='rules-account'");rules_group.text(1,answer);const bool rules_undo=rules_group.row();
     std::map<std::int64_t,Money> rule_balances;
     std::size_t serial=0;
@@ -780,7 +783,7 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
 }
 bool ImportStore::can_undo_transaction_edit(std::string_view edit) const {
     Statement top(impl_->db,"SELECT s.answer,s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
-    return top.row() && top.bytes(0)==edit && (top.bytes(2)=="ledger-edit" || top.bytes(2)=="ledger-edit-batch") && top.integer(1)==review_generation(impl_->db);
+    return top.row() && top.bytes(0)==edit && (top.bytes(2)=="ledger-edit" || top.bytes(2)=="ledger-edit-batch" || top.bytes(2)=="ledger-delete") && top.integer(1)==review_generation(impl_->db);
 }
 app::ReviewReceipt ImportStore::undo_transaction_edit(std::string_view operation,std::string_view edit) {
     if(const auto receipt=review_outcome(operation)){

@@ -96,7 +96,7 @@ app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool i
         auto& prepared=impl_->reviews.at(id);impl_->selected_account=account_for_batch(id).identity;
         // Ignore is an explicit Include decision on already-valid rows. It
         // changes review metadata and consumes the previously validated image.
-        if(ignore_warnings)for(auto& [ordinal,item]:prepared.rows)if(!item.warning.empty() && item.row.draft) {
+        if(ignore_warnings)for(auto& [ordinal,item]:prepared.rows)if(!item.row.excluded_by_clear && !item.warning.empty() && item.row.draft) {
             const auto revision=batch(impl_->db,id).revision;
             item.row.decision={imports::Disposition::include,{}};item.row.review_stale=false;item.warning.clear();
             version(impl_->db,{id,ordinal},revision+1,*item.row.draft,item.row.decision);
@@ -104,7 +104,7 @@ app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool i
         }
         prepared.included=0;prepared.excluded=0;prepared.amounts.clear();
         for(const auto& [ordinal,item]:prepared.rows) {
-            (void)ordinal;if(item.row.excluded_by_clear){++prepared.excluded;continue;}
+            if(item.row.excluded_by_clear){if(!pending_removed(impl_->db,{id,ordinal}))++prepared.excluded;continue;}
             if(item.row.decision.disposition==imports::Disposition::include){++prepared.included;prepared.amounts.push_back(item.row.draft->transaction.effective_total());}
             else ++prepared.excluded;
         }

@@ -38,6 +38,10 @@ public:
     ImportStore(ImportStore&&) noexcept;
     ImportStore& operator=(ImportStore&&) noexcept;
     std::string date_format() const override;
+    imports::Occurrence create_manual(std::string_view,const imports::DraftRow&) override;
+    bool manual_outcome(std::string_view) const override;
+    void undo_manual(std::string_view,std::int64_t) override;
+    std::optional<imports::Occurrence> imported_original(const imports::Occurrence&) const override;
     app::Account account() const override;
     bool transfers_supported() const override { return true; }
     std::int64_t transfer_sequence() const override;
