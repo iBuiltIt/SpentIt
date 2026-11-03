@@ -139,6 +139,12 @@ struct RollbackReview {
     std::size_t transactions=0,failures=0;
     std::vector<std::int64_t> affected_accounts;
 };
+struct UndoableImport {
+    std::string source,format,first_date,last_date;
+    std::int64_t order=0;
+    std::size_t records=0;
+    std::vector<std::int64_t> accounts;
+};
 struct RollbackReceipt {std::string operation;std::int64_t account=0;std::size_t transactions=0,failures=0;};
 struct AcceptanceReview {
     std::size_t transactions=0,failed_records=0;
@@ -260,6 +266,10 @@ public:
     virtual std::optional<Receipt> outcome(std::string_view operation) const = 0;
     virtual bool transaction_accepted(const imports::Occurrence&) const {return false;}
     virtual ImportResult import_result(std::string_view) const {return {};}
+    virtual std::vector<UndoableImport> undoable_imports() const {return {};}
+    virtual RollbackReview review_import_undo(std::string_view) const {throw std::logic_error("Import undo unavailable");}
+    virtual RollbackReceipt undo_import(std::string_view,std::string_view,std::int64_t) {throw std::logic_error("Import undo unavailable");}
+    virtual std::optional<RollbackReceipt> import_undo_outcome(std::string_view,std::string_view) const {return {};}
     virtual RollbackReview rollback_review() const {return {};}
     virtual RollbackReceipt rollback_account(std::string_view,std::int64_t) {throw std::logic_error("Rollback unavailable");}
     virtual std::optional<RollbackReceipt> rollback_outcome(std::string_view) const {return {};}

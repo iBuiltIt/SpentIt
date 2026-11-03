@@ -2,6 +2,9 @@
 #include <spentit/transaction.hpp>
 
 namespace spentit {
+// Exact remainder, allowing mixed signs and cancellation before overflow checks.
+Money split_remainder(const Money& total, const std::vector<Money>& entered);
+
 // An immutable editing session over a valid transaction. Indices refer to the
 // current allocation order. The designated remainder cannot be directly edited
 // or removed; designate another row first. No persistent history is implied.

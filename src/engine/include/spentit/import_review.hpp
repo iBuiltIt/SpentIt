@@ -56,6 +56,8 @@ struct DraftRow {
     Transaction transaction;
     FieldOwnership payee_owner=FieldOwnership::untracked,memo_owner=FieldOwnership::untracked;
     std::optional<RuleMark> payee_rule={}, memo_rule={};
+    bool manual_split_amounts=false; // Explicit balancing-split amount disables automatic edits.
+    std::string remainder_allocation={}; // Stable allocation identity; empty until first editor save.
 };
 // reassigned is true when a recorded currency reassignment authorizes a
 // different effective currency. The effective decimal need not equal the

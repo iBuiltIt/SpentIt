@@ -6,6 +6,7 @@
 #include <spentit/diagnostics.hpp>
 #include "import_model.hpp"
 #include <spentit/import_view.hpp>
+#include <spentit/split_editor.hpp>
 #include <spentit/statements.hpp>
 #include <QtConcurrent>
 #include <QFutureWatcher>
@@ -150,7 +151,7 @@ QVariantMap allocationMap(const Allocation& a,const QVariantMap& labels={}) {
     return {{"category",text(a.category)},{"memo",text(a.memo)},{"amount",money(a.amount)},
         {"transferDestination",qif::transfer_destination(a.category)?text(std::string(*qif::transfer_destination(a.category))):QString{}},{"transferLabel",money(a.amount)+" · "+label+" · "+text(a.identity)},{"categoryId",categoryId},{"bindingRevision",a.category_binding?QString::number(a.category_binding->catalog_revision):QString{}},
         {"allocationId",text(a.identity)},{"categoryDisplay",label},{"reviewLabel",money(a.amount)+" · "+label},{"categoryTouched",false},{"memoTouched",false},
-        {"sourceOrdinal",a.source_ordinal?QVariant(static_cast<int>(*a.source_ordinal)):QVariant(-1)},
+        {"transferAmount",!accountId.isEmpty() || qif::transfer_destination(a.category).has_value()},{"sourceOrdinal",a.source_ordinal?QVariant(static_cast<int>(*a.source_ordinal)):QVariant(-1)},
         {"categoryOwner",ownerName(a.category_owner)},{"memoOwner",ownerName(a.memo_owner)},{"categoryRule",markText(a.category_rule)},{"memoRule",markText(a.memo_rule)}};
 }
 QVariantList allocations(const Transaction& t,const QVariantMap& labels={}) {
@@ -159,6 +160,7 @@ QVariantList allocations(const Transaction& t,const QVariantMap& labels={}) {
 QVariantMap draft(const imports::DraftRow& d,const QVariantMap& labels={},std::string_view format="YYYY-MM-DD") {
     return {{"date",text(display_date(d.date,format))},{"payee",text(d.payee)},{"memo",text(d.memo)},
         {"payeeOwner",ownerName(d.payee_owner)},{"memoOwner",ownerName(d.memo_owner)},{"payeeRule",markText(d.payee_rule)},{"memoRule",markText(d.memo_rule)},
+        {"remainderAllocation",text(d.remainder_allocation)},{"manualSplitAmounts",d.manual_split_amounts},{"currencyDefinition",text(d.transaction.effective_total().currency().definition_id())},
         {"total",money(d.transaction.effective_total())},{"splits",allocations(d.transaction,labels)}};
 }
 QString scopeName(rules::Scope scope){return scope==rules::Scope::split?"split":"transaction";}
@@ -315,6 +317,8 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
         Transaction::repaired_import(original,total,std::move(values),reassigned)};
     const auto oldPayee=baseline?baseline->payee:source?source->payee:std::string{};
     const auto oldMemo=baseline?baseline->memo:source?source->memo:std::string{};
+    result.remainder_allocation=baseline && !baseline->remainder_allocation.empty()?baseline->remainder_allocation:str(a.value("remainderAllocation"));
+    result.manual_split_amounts=(baseline && baseline->manual_split_amounts) || a.value("manualSplitAmounts").toBool();
     result.payee_owner=baseline?baseline->payee_owner:source?FieldOwnership::source:FieldOwnership::manual;
     result.memo_owner=baseline?baseline->memo_owner:source?FieldOwnership::source:FieldOwnership::manual;
     result.payee_rule=baseline?baseline->payee_rule:std::nullopt;
@@ -356,6 +360,7 @@ struct ImportModel::Worker {
     QVariantMap bulkPreview,bulkReceipt;
     struct PreparedImport {std::string id,bytes,label;statements::Index document;qif::DateOrder profile;};
     std::optional<PreparedImport> preparedImport, dateImport;
+    QVariantMap importUndoPreview;
     QVariantMap importDateQuestion;
     QVariantList importPlan,importMappingArgs;
     QString importTarget,cleanupNoticePath,importFeedback;bool importDestination=false,startupCleanupNotice=false;
@@ -725,6 +730,14 @@ struct ImportModel::Worker {
             for(const auto& rule:repo.link_exclusions())if(!rule.removed)exclusions.push_back(QVariantMap{{"identity",text(rule.identity)},{"field",text(rule.field)},{"expression",text(rule.expression)},{"account",QString::number(rule.account)},{"regex",rule.regex}});
             state["linkExclusions"]=exclusions;state["linkExclusionPreview"]=linkExclusionPreview;
             state["reviewQuestions"]=questions;state["reviewCount"]=questions.size();state["reviewGeneration"]=QString::number(review.generation);state["canUndoReview"]=review.can_undo;state["canUndoTransferAssignment"]=repo.can_undo_transfer_assignment();state["reviewLinkPreview"]=reviewLinkPreview;
+            QVariantList undoableImports;
+            for(const auto& item:repo.undoable_imports()) {
+                QVariantList accounts;for(const auto id:item.accounts)accounts.push_back(QString::number(id));
+                const auto dates=item.first_date.empty()?QString("No transaction dates"):dateText(item.first_date)+(item.last_date!=item.first_date?QString(" – ")+dateText(item.last_date):QString());
+                const auto label=QString("%1 import · %2 · Records: %3").arg(text(item.format).toUpper(),dates).arg(item.records);
+                undoableImports.push_back(QVariantMap{{"source",text(item.source)},{"label",label},{"accounts",accounts}});
+            }
+            state["undoableImports"]=undoableImports;
             const auto rollback=repo.rollback_review();QVariantList affected;for(const auto id:rollback.affected_accounts)affected.push_back(QString::number(id));
             state["rollback"]=QVariantMap{{"token",QString::number(rollback.token)},{"transactions",static_cast<qlonglong>(rollback.transactions)},{"failures",static_cast<qlonglong>(rollback.failures)},{"accounts",affected}};
             state["newTransactions"]=static_cast<qlonglong>(acceptance.transactions);state["importFailures"]=static_cast<qlonglong>(acceptance.failed_records);state["acceptanceWarnings"]=acceptanceWarnings;state["canIgnoreWarnings"]=canOverride;
@@ -855,6 +868,7 @@ struct ImportModel::Worker {
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         if(!sessionEdits.empty() && !repo.can_undo_transaction_edit(sessionEdits.back().operation))sessionEdits.clear();
         state["canUndoEdit"]=!sessionEdits.empty();state["groupEditUndo"]=!sessionEdits.empty() && !sessionEdits.back().selection.empty();state["editUndoLabel"]=sessionEdits.empty()?QString("Undo edit"):sessionEdits.back().label;state["ledgerEditGeneration"]=QString::number(repo.ledger_edit_generation());
+        state["importUndoPreview"]=importUndoPreview;
         state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
         QVariantList aliasList;for(const auto& alias:repo.account_aliases())aliasList.push_back(QVariantMap{{"name",text(alias.name)},{"accountId",QString::number(alias.account)}});
         state["accountAliases"]=aliasList;
@@ -981,7 +995,7 @@ struct ImportModel::Worker {
             return;
         }
         if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -1672,6 +1686,19 @@ struct ImportModel::Worker {
             }
             receipt={{"operation",text(result->operation)},{"summary",QString("Accepted %1 new transactions across all accounts. %2 import problems remain.").arg(result->transactions).arg(result->failed_records)}};observedSaved();
             if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
+        } else if(action=="preview_import_undo") {
+            importUndoPreview.clear();
+            const auto source=str(a.value("source"));const auto preview=repo.review_import_undo(source);
+            QVariantList accounts;for(const auto id:preview.affected_accounts)accounts.push_back(QString::number(id));
+            importUndoPreview={{"source",text(source)},{"token",QString::number(preview.token)},{"transactions",static_cast<qlonglong>(preview.transactions)},{"failures",static_cast<qlonglong>(preview.failures)},{"accounts",accounts}};
+        } else if(action=="undo_import") {
+            const auto source=str(a.value("source"));
+            if(importUndoPreview.value("source").toString()!=text(source) || importUndoPreview.value("token")!=a.value("token"))throw std::logic_error("Review this import before undoing it.");
+            const auto operation="undo-import-"+identity();std::optional<app::RollbackReceipt> result;
+            try{result=repo.undo_import(operation,source,a.value("token").toString().toLongLong());}
+            catch(...){const auto failure=std::current_exception();try{result=repo.import_undo_outcome(operation,source);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("SpentIt could not confirm whether the import was undone. Reopen the file and check the transactions before trying again.");}if(!result)std::rethrow_exception(failure);}
+            observedSaved();importUndoPreview.clear();selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();
+            receipt={{"operation",text(result->operation)},{"summary",QString("Import undone. Removed %1 new transactions and %2 import problems.").arg(result->transactions).arg(result->failures)}};
         } else if(action=="discard") {
             if(!a.contains("token"))throw std::logic_error("Review account rollback first");
             const auto operation="rollback-"+identity();std::optional<app::RollbackReceipt> result;
@@ -2149,6 +2176,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
             result.error=((action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
+                :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."
                 :((action=="map_import" || action=="resolve_import_categories" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved, but its view could not be refreshed. Reopen and inspect Review before retrying."
@@ -2217,4 +2245,37 @@ void ImportModel::observeUi(const QVariantMap& values) {
         for(auto* window:QGuiApplication::topLevelWindows())if(window->isExposed())window->requestUpdate();
     }
     }catch(...){observer.healthFailure();}
+}
+
+QVariantMap ImportModel::splitAmounts(const QString& totalText,const QVariantList& amounts,bool automatic,const QString& definition,int remainderIndex) const {
+    try {
+        if(amounts.empty() || amounts.size()>static_cast<qsizetype>(qif::max_allocations))throw std::invalid_argument("Enter between 1 and 1000 splits.");
+        const auto currency=Currency::from_definition(str(definition));
+        const auto total=Money::parse(str(totalText),currency);
+        std::vector<Money> values;
+        if(automatic && (remainderIndex<0 || remainderIndex>=amounts.size()))throw std::invalid_argument("Choose a valid balancing split.");
+        for(qsizetype i=0;i<amounts.size();++i)if(!automatic || i!=remainderIndex)values.push_back(Money::parse(str(amounts[i]),currency));
+        if(automatic)values.insert(values.begin()+remainderIndex,split_remainder(total,values));
+        const auto sum=imports::sum(currency,values);
+        QVariantList formatted;for(const auto& value:values)formatted.push_back(money(value));
+        return {{"valid",true},{"balanced",sum==total},{"sum",money(sum)},{"amounts",formatted}};
+    }catch(const std::exception& e){return {{"valid",false},{"error",QString::fromUtf8(e.what())}};}
+}
+
+int ImportModel::chooseSplitRemainder(const QString& totalText,const QVariantList& splits,const QString& definition) const {
+    try {
+        const auto currency=Currency::from_definition(str(definition));
+        const auto total=Money::parse(str(totalText),currency).units();
+        int best=-1;bool bestSame=false;std::uint64_t largest=0;
+        for(qsizetype i=0;i<splits.size();++i){
+            const auto part=splits[i].toMap();if(part.value("transferAmount").toBool())continue;
+            const auto units=Money::parse(str(part.value("amount")),currency).units();
+            const bool same=(total>0 && units>0) || (total<0 && units<0);
+            const auto magnitude=units<0?std::uint64_t(-(units+1))+1:std::uint64_t(units);
+            if(best<0 || (same && !bestSame) || (same==bestSame && magnitude>largest)){
+                best=static_cast<int>(i);bestSame=same;largest=magnitude;
+            }
+        }
+        return best;
+    }catch(const std::exception&){return -1;}
 }

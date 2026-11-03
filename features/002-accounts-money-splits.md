@@ -1,10 +1,21 @@
 # 002 — Accounts, money, and splits
 
 Status: **active**  
-Last updated: 2026-11-01  
+Last updated: 2026-11-03  
 Implementation: partial; exact in-memory money, validated allocations, and original/effective totals are implemented. The pinned ISO currency catalog and engine remainder editing are also implemented. Production accounts, transfers and UI remain unimplemented; a separate [synthetic sheet experiment](../doc/sheet-prototype.md) exercises the engine. The optional storage prototype now round-trips the engine subset; production account/document persistence remains unimplemented.
 
 The [account-scoped durable workflow](../doc/accounts.md) adds account creation/selection, independent drafts, ordinary financial histories, and the point-4 account commands below. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md). New documents now use schema 22 with rules and 21 without. The point-4 paragraph below records schema 20 for that checkpoint. Schema 20 is rejected without migration. Reports and exchange rates remain unfinished. Feature 002 stays **active**.
+
+## Split amount editor follow-up — owner Go 2026-11-03
+
+The [ledger split amount contract](../doc/ledger-editing.md#split-amount-editing--owner-go-2026-11-03)
+supersedes the proposed mixed-sign confirmation below for the durable editor.
+The largest eligible split initially absorbs the remainder, preferring the total’s
+sign. Its identity stays fixed. Manually editing its amount disables automatic
+adjustment, and that choice persists. Only balanced transactions are saved. A mismatched
+buffer remains editable, and leaving offers Change amount / Keep editing.
+Arithmetic entry and crash recovery drafts are outside this change. Current
+experimental formats are 46/45; see [verification](../doc/status.md).
 
 ## Opening correction follow-up — owner Go, 2026-11-01
 

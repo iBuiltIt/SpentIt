@@ -1,5 +1,11 @@
 # Feature discovery
 
+The [completed-import Undo contract](../doc/import-undo.md) adds account-menu
+**Undo last import…** and Review **Undo import…**, including reversal of a later
+match into committed transfer work. Formats stay 46/45 with descriptive source
+labels. See [status](../doc/status.md) for verification and limits.
+
+
 **Next work (2026-11-02):** [category-gated rules and imported categories](004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
 Accepted direction, not implemented; the handoff distinguishes remaining split
 and import-lifecycle decisions from the settled category gate.

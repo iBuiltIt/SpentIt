@@ -575,8 +575,10 @@ private slots:
         auto* action=qobject_cast<QQuickItem*>(object(s.root,"transactionRuleAction"));
         auto* attribution=qobject_cast<QQuickItem*>(object(s.root,"ruleWinners"));
         QVERIFY(action && attribution);
-        QVERIFY(action->x()<attribution->x());
-        QCOMPARE(action->x(),0.0);
+        // The rule action now shares the Add split row; attribution is below it.
+        auto* addSplit=qobject_cast<QQuickItem*>(object(s.root,"addSplit"));QVERIFY(addSplit);
+        QTRY_VERIFY(action->mapToScene(QPointF()).x()<addSplit->mapToScene(QPointF()).x());
+        QTRY_VERIFY(action->mapToScene(QPointF()).y()<attribution->mapToScene(QPointF()).y());
         QVERIFY(click(s.root,"transactionRuleAction"));
         QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
         QVERIFY(edit(s.root,"ruleExpression","^No longer matches$"));QVERIFY(click(s.root,"saveRules"));wait(s.model);

@@ -5,7 +5,7 @@ button was removed at the owner's request on 2026-10-31. Backup/restore remains 
 Settings. Show the sidebar first if it is hidden.
 
 Status: **implemented under owner Go; verification recorded in [status](status.md)**  
-Last updated: 2026-11-02
+Last updated: 2026-11-03
 
 A prepared import waiting for the [missing-category decision](qif-account-imports.md)
 is complete preparation, not an interrupted import. Closing that dialog or the
@@ -193,3 +193,11 @@ OFX-family routing also checks prior confirmed bank identity mappings without
 adding bank identifiers to transfer-name aliases. The status summary totals all
 mapped source accounts. Full-file source storage and inline record inspection
 remain unchanged.
+
+## Completed import undo — owner Go 2026-11-03
+
+[Undo import](import-undo.md) adds source-scoped reversal after preparation has
+completed, through the account context menu and Review. It is separate from both
+account-wide Discard and the incomplete-preparation cleanup above. Existing
+formats remain readable; import labels use type, dates, count and order because
+original filenames were not persisted.

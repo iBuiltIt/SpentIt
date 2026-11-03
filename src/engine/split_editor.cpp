@@ -13,6 +13,12 @@ bool has_mixed_signs(const std::vector<Allocation>& allocations) {
     return positive && negative;
 }
 }
+Money split_remainder(const Money& total, const std::vector<Money>& entered) {
+    std::vector<detail::Term> terms{{total.units()}};
+    for(const auto& amount:entered){total.require_compatible(amount);terms.push_back({amount.units(),true});}
+    return Money(detail::exact_sum(terms),total.currency());
+}
+
 SplitEditor::SplitEditor(Transaction transaction, std::size_t remainder)
     : transaction_(std::move(transaction)), remainder_(remainder),
       mixed_(has_mixed_signs(transaction_.allocations())) { require_index(remainder); }

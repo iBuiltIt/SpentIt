@@ -2,6 +2,106 @@
 
 Last updated: 2026-11-03
 
+## Undo a completed import — 2026-11-03
+
+Implemented the owner's [import-undo contract](import-undo.md). Account right-click
+**Undo last import…** and Review **Undo import…** share source-scoped preview and
+atomic undo. Review filters imports by account, newest first; both routes show the
+whole file's affected accounts before confirmation. Account-wide Discard remains
+separate. Formats stay **46/45**, including existing documents. Per owner choice,
+labels use type, transaction dates, record count and order; filenames were not
+persisted and no migration or format extension was added.
+
+Source associations protect earlier and shared transactions, including an earlier
+source undone before its final remaining owner. Source-local cleanup removes
+exclusive generated counterparts and removes a later bank proposal without
+removing a committed counterpart. Explicit Review Links into committed work restore
+unchanged prior relationship/transaction snapshots through persistent history.
+Records needed to replay that surviving history remain in a discarded batch;
+conflicting later links/edits or shared linked rows refuse the whole operation.
+Account/category creation, aliases and opening choices remain. Imports containing
+accepted transactions are not offered for whole-import undo.
+
+Verification uses synthetic data only on macOS arm64:
+
+- Final Release `statement.import_undo` passed after grouped-file coverage (5.98 s):
+  wrong-account second import, preserved earlier edit, earlier/later shared source
+  removal and final-owner cleanup, duplicate-only import against accepted work,
+  whole mapped-file removal, generated counterparts, committed bank proposals,
+  direct Review Link with/without a pre-existing generated counterpart (ordinary
+  and grouped inputs), failed rows, stale previews, scope-bound retry, reopen and
+  restored encrypted backup.
+- Release offscreen `undoSelectedImport importUndoOutcomes
+  datasetAcceptanceAndRollback unifiedReviewLinkDifference` passed **6/6** QtTest
+  cases including setup/cleanup (6.072 s). Coverage includes menu enablement,
+  cancellation, latest and older import selection, acceptance disabling undo,
+  before-save failure, lost acknowledgement, unknown outcome and failed refresh.
+  The final two focused UI tests passed again (**4/4** including setup/cleanup,
+  2.701 s). The confirmation dialog was rendered and visually inspected offscreen.
+- Final rules-disabled Release `statement.import_undo` passed (5.63 s). ASan/UBSan
+  passed that storage suite (15.36 s; leak detection disabled), with no diagnostics.
+- Final Release recovery sweep passed (271.97 s), together with the functional
+  suite (**2/2**, 271.98 s total): **181 ordinary / 137 committed-link** write/sync
+  positions. It exercises both paths with alternating disk-full/write failures, abrupt exits at every observed
+  write/sync position, before/after durable-boundary exits, reopen, receipt/retry
+  and encrypted marker checks. The earlier sweep also passed (285.56 s).
+- Existing Release rollback, reimport and overlap checks passed. Rebuilt Review,
+  incomplete-preparation cleanup and QML smoke checks passed **3/3** (48.27 s).
+
+Native Cocoa execution was attempted but the test process reported no screens and
+aborted before interaction; native interaction remains unverified. Linux/Windows
+and the full unrelated suite were not run. The rules-enabled Release application at `build/SpentIt` was rebuilt; the running
+application was not restarted. The user's financial document was not opened or
+modified. The existing working-tree split-editing changes were preserved.
+
+## Stable balancing split — 2026-11-03
+
+Owner follow-up Go implemented in the [split-editing contract](ledger-editing.md#split-amount-editing--owner-go-2026-11-03).
+The initial automatic remainder is the largest eligible absolute amount, preferring
+the total's sign; ties retain row order. Account destinations/aliases and linked
+allocations are excluded. The editor marks the chosen row **Automatic remainder**.
+Its allocation identity persists through balanced saves, restart, acceptance and
+backup, so a newly entered larger split never takes over. Manual editing/removal
+of the chosen row disables automatic adjustment. Removing an earlier row retains
+the chosen identity. No eligible row means manual balancing; mixed signs remain
+supported. Undo restores the amounts, identity and manual mode together.
+
+Current experimental formats are **46 with rules / 45 without**. Saved revisions,
+retry equality, rule protections and audit checks include the identity. Earlier
+experimental formats are rejected unchanged, without migration. The rules-enabled
+Release application at `build/SpentIt` is rebuilt; the running app was not restarted.
+
+Verification on macOS arm64 with synthetic fixtures:
+
+- Focused Release offscreen checks initially passed 6/6 QtTest cases including
+  setup/cleanup (4.862 s): imported fee/purchase allocations, a larger new split,
+  reopen, acceptance, preceding-row removal, Undo, manual mode, signed selection,
+  stable ties, transfer exclusion, invalid amounts and int64 minimum magnitude.
+- Native Cocoa final split checks passed 6/6 (3.155 s), including removal of the
+  initial balancing row before its first save and Undo of that removal.
+- Ten selected Release suites passed (83.19 s): editor, selection editing, rule
+  application/schema/reapply/account application, committed/category/rules UI and
+  QML smoke.
+- Rules-disabled Release editor and schema-gate checks passed 2/2 (9.36 s).
+- ASan/UBSan focused UI checks passed 6/6 (6.988 s; Qt leak detection disabled),
+  and storage editor checks passed 1/1 (14.37 s), with no sanitizer diagnostics.
+  Storage editor coverage checks restart, restored backup and committed history
+  Undo of the balancing identity.
+
+- The extended Release edit/Undo fault sweep passed 1/1 (202.59 s), exercising
+  137, 129, 125, 125, 153 and 145 injected disk-full/write-failure positions across
+  six modes, retries, and process interruptions before/after durable commit.
+  Assertions cover the identity together with amounts and manual mode. This sweep
+  preceded the small follow-up allowing removal of the initial chosen row before
+  its first save; that case passed final native and sanitizer UI checks.
+- The first full Release import UI run passed 72 cases and failed two obsolete
+  repeated-restore assertions expecting Split 1 to absorb the adjustment. Those
+  now assert the unchanged fee and adjusted purchase. The final full offscreen
+  rerun passed **74/74** QtTest cases including setup/cleanup (89.029 s), including
+  12 repeated edit/restore cycles each for new and committed transactions.
+- Compiler logs had no warnings; relative-link target checks and `git diff --check`
+  passed. Linux and Windows remain unverified.
+
 ## Split Enter crash investigation — 2026-11-03
 
 Owner Go: investigate the intermittent crash after repeated edits/restores,
@@ -93,6 +193,67 @@ including after dismissing the amount-difference popup. The multiple-candidate
 case checks neither candidate is selected initially and Yes enables after a choice.
 Updated `build/SpentIt`; the running application was not restarted. Native mouse
 interaction, Linux and Windows remain unverified for this change.
+
+## Split amount editing — 2026-11-03
+
+Owner Go implemented in the [ledger editor](ledger-editing.md#split-amount-editing--owner-go-2026-11-03).
+Split 1 absorbs the exact remainder, including negative values, until its amount
+is manually edited. That choice persists in encrypted transaction revisions.
+Balanced edits save immediately on Enter; mismatches retain the in-memory buffer
+and last balanced saved transaction. Leaving or quitting offers Change amount /
+Keep editing. Change amount saves the total and splits together, then continues
+only after success. Undo restores amounts and editing mode. Removing the first
+split disables automatic adjustment; other removals recalculate the remainder.
+No arithmetic expressions, recovery drafts or migration were added.
+
+Experimental formats are **44 with rules / 43 without**. Metadata, history
+comparison, retry checks, rule protections, format gates and audit verification
+include the new flag. Earlier formats are rejected unchanged. Updated the
+rules-enabled Release application at `build/SpentIt`; the owner's running
+application was not restarted.
+
+Verification uses synthetic fixtures on macOS arm64:
+
+- Release focused split/immediate-editor UI checks passed 4/4 QtTest cases
+  including setup/cleanup (3.478 s). Coverage includes negative remainders, the
+  manual $0.20 amount after reopen and acceptance, mismatched Enter, Keep editing
+  during quit, Change amount when closing, Undo, precision rejection, overflow,
+  and cancellation across values whose intermediate sum exceeds int64.
+- Release editor storage/history checks passed, including pending/committed and
+  rule-assigned transactions, restart, restored backup and persistent history
+  Undo. The first editor/failure sweep passed 2/2 (206.74 s total), checking the
+  flag and values together across disk-full/write failure, retry and process
+  interruption on both sides of durable commit. Final rerun recorded below.
+- Rules-disabled Debug editor and schema rejection checks passed 2/2 (10.84 s).
+- ASan/UBSan editor storage checks passed 1/1 (15.34 s); focused split/immediate
+  UI checks passed 4/4 (13.105 s), with leak detection disabled for Qt. Final UI
+  follow-up recorded below.
+- Native Cocoa split interaction passed 3/3 including setup/cleanup (1.592 s).
+  The initial sandboxed native attempt had no window-server access and aborted;
+  the authorized native rerun above passed.
+
+The first broader 15-suite Release run passed 11/15. It exposed a split-removal
+callback running after its delegate was destroyed (fixed by moving removal and
+recalculation into the window), assertions expecting worker errors instead of
+inline amount errors (updated), and an obsolete rule-button layout assertion
+(updated to its existing Add split row). A keyboard/search timing check failed
+under parallel load, then passed alone (3/3, 1.008 s); the serial full UI rerun is
+recorded below. Validation failure also clears a pending navigation action, so
+later Enter cannot accidentally resume a previously failed leave/quit request.
+Final Release failure sweep passed **1/1** (196.90 s) on the final storage code.
+The six edit/Undo modes exercised 137, 129, 125, 125, 153 and 145 injected fault
+positions respectively, plus before/after-commit process interruptions and retries.
+
+Final serial Release UI rerun passed **7/7** suites (149.20 s): import UI,
+navigation, recovery, committed edits, categories, rules and QML. The eight
+selected storage/rule suites in the earlier broader run also passed. Final
+compiler logs contained no warnings. Relative-link target checks and
+`git diff --check` passed.
+
+Final ASan/UBSan UI follow-up passed 5/5 split/immediate/navigation QtTest cases
+(10.545 s) and 3/3 add/remove-empty-split cases (2.465 s), including setup/cleanup,
+with no sanitizer diagnostics. Linux/Windows interactions and a full all-tests
+sanitizer run remain unverified.
 
 ## Owner-reported Linux build and launch — 2026-11-03
 

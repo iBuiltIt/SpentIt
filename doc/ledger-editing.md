@@ -191,3 +191,48 @@ Escape, split-field navigation and category Undo retain their existing behavior.
 Ledger choices still include Uncategorized and eligible transfer accounts, and
 assignment still uses the existing immediate command. Rule choices and saves
 remain separate caller responsibilities. See [status](status.md) for checks.
+
+## Split amount editing — owner Go 2026-11-03
+
+Follow-up owner Go (2026-11-03): a designated balancing split replaces the
+fixed Split 1 rule. On first opening an automatic editor, choose the largest
+eligible amount by absolute magnitude, preferring the transaction's sign. Ties
+use existing row order; a zero total has no sign preference. Transfer destinations
+(including account aliases) and linked allocations are ineligible. A previously
+saved manual mode remains manual. If no eligible split exists, validate the
+entered amounts without automatic adjustment.
+
+The chosen row is labelled **Automatic remainder**. Its stable allocation identity
+is saved with the next balanced edit and retained through reopening, acceptance,
+backup and Undo; it does not switch when another split becomes larger. Other
+entered amounts stay fixed. Enter calculates `remainder = total - sum(other splits)`
+with exact money arithmetic, including zero and negative results. Changing the
+total also recalculates the same remainder. Arithmetic expressions remain deferred.
+
+Typing in the balancing split's amount disables automatic adjustment for that
+transaction. Category/memo edits do not. Removing it disables adjustment; removing
+an earlier row retains the balancing identity at its new position. Restore imported
+values preserves a saved manual choice and the balancing identity. If that identity
+is absent or now protected as a transfer, automatic adjustment remains unavailable;
+it never silently chooses a replacement. Edit Undo restores amounts and editing
+metadata together. The identity may remain recorded after removal so subsequent
+edits cannot silently select a different row.
+
+A balanced manual edit saves on Enter. An unbalanced manual edit stays in the
+editor without changing the last saved transaction. Leaving that edit, including
+closing its transaction, switching transactions or quitting, asks:
+“The splits add up to [sum]. Change the transaction amount from [total] to [sum]?”
+**Change amount** saves the total and splits atomically, then continues the pending
+action only after successful saving. **Keep editing**, Escape or dismissing the
+dialog cancels that action and retains the entire edit buffer. Invalid amounts,
+precision or overflow remain visible and cannot be saved or rounded. Existing
+validation and transfer restrictions still apply.
+
+A crash can lose the unaccepted buffer; the saved transaction remains balanced.
+No crash recovery draft or automatic editor restoration is added. Escape in the
+editor retains the existing explicit discard behavior.
+
+Experimental formats are now **46 with rules / 45 without**. The encrypted draft
+and entry revision metadata stores the balancing identity and manual-mode flag
+alongside every complete transaction snapshot, including Undo history. Earlier experimental files are
+rejected unchanged, without migration. See [status](status.md) for verification.

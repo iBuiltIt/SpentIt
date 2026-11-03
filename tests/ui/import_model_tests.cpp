@@ -130,6 +130,10 @@ public:
     }
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view op) const override {if(attempted && fault==unknown)throw std::runtime_error("Injected outcome lookup failure");return repo().acceptance_outcome(op);}
     app::ImportResult import_result(std::string_view id) const override{return repo().import_result(id);}
+    std::vector<app::UndoableImport> undoable_imports() const override{return repo().undoable_imports();}
+    app::RollbackReview review_import_undo(std::string_view source) const override{return repo().review_import_undo(source);}
+    app::RollbackReceipt undo_import(std::string_view op,std::string_view source,std::int64_t token) override{const bool lose=groupBefore("undo_import");auto result=repo().undo_import(op,source,token);if(lose)throw std::runtime_error("Injected lost import undo acknowledgement");return result;}
+    std::optional<app::RollbackReceipt> import_undo_outcome(std::string_view op,std::string_view source) const override{if(attempted && fault==unknown && groupFaultAction=="undo_import")throw app::OperationOutcomeUnknown();return repo().import_undo_outcome(op,source);}
     app::RollbackReview rollback_review() const override{return repo().rollback_review();}
     app::RollbackReceipt rollback_account(std::string_view op,std::int64_t token) override{return repo().rollback_account(op,token);}
     std::optional<app::RollbackReceipt> rollback_outcome(std::string_view op) const override{return repo().rollback_outcome(op);}
@@ -312,6 +316,42 @@ private slots:
         auto* category=visualItem(window->contentItem(),"reviewRemainderCategory");QVERIFY(category);QVERIFY(category->property("count").toInt()>1);category->setProperty("currentIndex",1);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewDifferenceYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"10.00");
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),1);
+    }
+    void undoSelectedImport() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        auto* last=window->findChild<QObject*>("undoLastImport");QVERIFY(last);QVERIFY(!last->property("enabled").toBool());
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT1\nPFirst\n^\n")}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-02\nT2\nPWrong account\n^\n")}});
+        QCOMPARE(m.state().value("undoableImports").toList().size(),2);QVERIFY(last->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(last,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        auto* confirm=window->findChild<QObject*>("importUndoConfirm");QVERIFY(confirm);QTRY_VERIFY(confirm->property("visible").toBool());
+        QCOMPARE(m.state().value("importUndoPreview").toMap().value("transactions").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(confirm,"close"));QCOMPARE(m.state().value("balance").toString(),"3.00");
+        QVERIFY(QMetaObject::invokeMethod(last,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QTRY_VERIFY(confirm->property("visible").toBool());
+        if(qEnvironmentVariableIsSet("SPENTIT_UNDO_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_UNDO_CAPTURE")));}
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmImportUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),"1.00");QCOMPARE(m.state().value("undoableImports").toList().size(),1);
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-03\nT3\nPThird\n^\n")}});
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("chooseImportUndo"),"clicked"));QTRY_VERIFY(window->findChild<QObject*>("importUndoPicker")->property("visible").toBool());
+        QCOMPARE(window->findChild<QObject*>("importUndoList")->property("count").toInt(),2);
+        QTRY_VERIFY(visualItem(window->contentItem(),"importUndoChoice_1"));
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"importUndoChoice_1"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QTRY_VERIFY(confirm->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmImportUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),"3.00");
+        run(m,"commit");QVERIFY(!last->property("enabled").toBool());QVERIFY(m.state().value("undoableImports").toList().isEmpty());
+    }
+    void importUndoOutcomes() {
+        for(int mode=0;mode<4;++mode){
+            QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* fault=gateway.get();ImportModel m(std::move(gateway));create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+            run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT1\nPFirst\n^\n")}});
+            const auto source=m.state().value("undoableImports").toList().first().toMap().value("source");run(m,"preview_import_undo",{{"source",source}});
+            const auto preview=m.state().value("importUndoPreview").toMap();
+            fault->groupFaultAction="undo_import";fault->fault=mode==0?OutcomeGateway::before:mode==2?OutcomeGateway::unknown:OutcomeGateway::after;fault->failReviewRefresh=mode==3;
+            run(m,"undo_import",{{"source",source},{"token",preview.value("token")}},mode==1);
+            if(mode==0){QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("balance").toString(),"1.00");}
+            if(mode==1){QCOMPARE(m.state().value("balance").toString(),"0.00");QVERIFY(m.state().value("undoableImports").toList().isEmpty());}
+            if(mode>=2)QVERIFY(!m.state().value("active").toBool());
+            if(mode==3)QVERIFY(m.error().contains("undone"));
+        }
     }
     void datasetAcceptanceAndRollback() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
@@ -1526,7 +1566,7 @@ private slots:
         QCOMPARE(search->property("text").toString(),"Row 7");QVERIFY(root->property("dirty").toBool());
         auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);
         total->setProperty("text","bad");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));
-        QVERIFY(click("clearFilter"));QVERIFY(click("guardSave"));QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());
+        QVERIFY(click("clearFilter"));QVERIFY(click("guardSave"));QTRY_VERIFY(!m.busy());QVERIFY(!root->property("splitEditMessage").toString().isEmpty());
         QCOMPARE(search->property("text").toString(),"Row 7");QVERIFY(root->property("dirty").toBool());
         QVERIFY(click("clearFilter"));QVERIFY(click("guardDiscard"));QTRY_VERIFY(!m.busy());
         QCOMPARE(search->property("text").toString(),"");QVERIFY(!root->property("dirty").toBool());
@@ -1644,7 +1684,7 @@ private slots:
         total->setProperty("text","bad");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));
         QVERIFY(QMetaObject::invokeMethod(root,"inspectRecord",Q_ARG(QVariant,batch),Q_ARG(QVariant,QVariant(1))));
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardSave"),"clicked"));
-        QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QCOMPARE(selected(m).value("ordinal").toInt(),0);
+        QTRY_VERIFY(!m.busy());QVERIFY(!root->property("splitEditMessage").toString().isEmpty());QCOMPARE(selected(m).value("ordinal").toInt(),0);
         QVERIFY(root->property("dirty").toBool());
         QVERIFY(QMetaObject::invokeMethod(root,"inspectRecord",Q_ARG(QVariant,batch),Q_ARG(QVariant,QVariant(1))));
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("guardDiscard"),"clicked"));
@@ -1679,7 +1719,7 @@ private slots:
         QVERIFY(root->property("dirty").toBool());QVERIFY(!dialog->property("visible").toBool());
         auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);total->setProperty("text","invalid");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));
         QVERIFY(!window->close());auto* save=root->findChild<QObject*>("guardSave");QVERIFY(save);QVERIFY(QMetaObject::invokeMethod(save,"clicked"));
-        QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QVERIFY(root->property("dirty").toBool());QVERIFY(m.state().value("active").toBool());
+        QTRY_VERIFY(!m.busy());QVERIFY(!root->property("splitEditMessage").toString().isEmpty());QVERIFY(root->property("dirty").toBool());QVERIFY(m.state().value("active").toBool());
         total->setProperty("text","-1.00");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));
         QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));
         QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());QVERIFY(!root->property("dirty").toBool());
@@ -1868,7 +1908,7 @@ private slots:
             QTRY_VERIFY(item("editSplitAmount_2"));QTest::qWait(100);auto* amount=item("editSplitAmount_2");
             amount->forceActiveFocus();QTRY_VERIFY(amount->hasActiveFocus());
             QTest::keySequence(window,QKeySequence::SelectAll);QTest::keyClick(window,Qt::Key_Minus);QTest::keyClick(window,Qt::Key_1);QTest::keyClick(window,Qt::Key_Return);waitSaved();
-            QCOMPARE(splits().size(),3);QCOMPARE(splits()[0].toMap().value("amount").toString(),QString("0.96"));QCOMPARE(splits()[2].toMap().value("amount").toString(),QString("-1.00"));
+            QCOMPARE(splits().size(),3);QCOMPARE(splits()[0].toMap().value("amount").toString(),QString("-0.04"));QCOMPARE(splits()[1].toMap().value("amount").toString(),QString("-6.31"));QCOMPARE(splits()[2].toMap().value("amount").toString(),QString("-1.00"));
             QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),QString("-7.35"));
             if(cycle%3==0) {
                 QVERIFY(QMetaObject::invokeMethod(root,"restoreImportedValues"));
@@ -1887,6 +1927,101 @@ private slots:
         qInfo()<<"Completed split/restore cycles:"<<cycles<<"status text changes:"<<updates.count();
         run(m,"close");run(m,"open",{{"path",path}});run(m,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(splits().size(),2);QCOMPARE(selected(m).value("source"),original);
+    }
+    void existingSplitRemainder() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto path=dir.path()+"/doc";create(m,path);
+        run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT-10.00\nPSynthetic purchase\nS\nEFee\n$-0.25\nS\nEPurchase\n$-9.75\n^\n")},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto item=[&](const QString& name){return visualItem(window->contentItem(),name);};
+        auto saved=[&](int i){return selected(m).value("draft").toMap().value("splits").toList()[i].toMap().value("amount").toString();};
+        auto type=[&](int i,const QString& value){auto* field=item("editSplitAmount_"+QString::number(i));QVERIFY(field);field->setProperty("text",value);QVERIFY(QMetaObject::invokeMethod(field,"textEdited"));};
+        auto enter=[&]{QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));};
+        QCOMPARE(root->property("automaticSplitIndex").toInt(),1);
+        QVERIFY(item("splitRemainder_1")->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(item("addSplit"),"clicked"));QTRY_VERIFY(item("editSplitAmount_2"));
+        type(2,"-8.00");enter();QCOMPARE(saved(0),"-0.25");QCOMPARE(saved(1),"-1.75");QCOMPARE(saved(2),"-8.00");
+        const auto identity=selected(m).value("draft").toMap().value("remainderAllocation").toString();QVERIFY(!identity.isEmpty());
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        QCOMPARE(root->property("automaticSplitIndex").toInt(),1); // Never jumps to the now larger manually entered split.
+        run(m,"commit");type(0,"-0.50");enter();QCOMPARE(saved(1),"-1.50");
+        QVERIFY(QMetaObject::invokeMethod(item("removeSplit_0"),"clicked"));enter();
+        QCOMPARE(root->property("automaticSplitIndex").toInt(),0);QCOMPARE(saved(0),"-2.00");
+        run(m,"undo_edit");QCOMPARE(root->property("automaticSplitIndex").toInt(),1);QCOMPARE(saved(0),"-0.50");
+        type(1,"-1.00");enter();QVERIFY(root->property("dirty").toBool());QCOMPARE(saved(1),"-1.50");
+        type(2,"-8.50");enter();QVERIFY(selected(m).value("draft").toMap().value("manualSplitAmounts").toBool());
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        QCOMPARE(root->property("automaticSplitIndex").toInt(),-1);QCOMPARE(saved(1),"-1.00");
+    }
+    void removedInitialRemainder() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");
+        run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT-10\nPSynthetic removal\nS\n$-1\nS\n$-9\n^\n")},{"profile","DMY"}});
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto item=[&](const QString& name){return visualItem(window->contentItem(),name);};
+        QCOMPARE(root->property("automaticSplitIndex").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(item("removeSplit_1"),"clicked"));
+        QCOMPARE(root->property("automaticSplitIndex").toInt(),-1);QVERIFY(root->property("manualSplitAmounts").toBool());
+        item("durableTotal")->setProperty("text","-1");QVERIFY(QMetaObject::invokeMethod(item("durableTotal"),"textEdited"));
+        QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QVERIFY(selected(m).value("draft").toMap().value("manualSplitAmounts").toBool());
+        QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().size(),1);
+        run(m,"undo_edit");QCOMPARE(root->property("automaticSplitIndex").toInt(),1);
+    }
+    void remainderSelection() {
+        ImportModel m(storage::document_gateway());const auto definition=QString::fromStdString(Currency("CAD").definition_id());
+        auto part=[](const QString& amount,bool transfer=false){return QVariantMap{{"amount",amount},{"transferAmount",transfer}};};
+        QCOMPARE(m.chooseSplitRemainder("-10",{part("-1"),part("-9")},definition),1);
+        QCOMPARE(m.chooseSplitRemainder("-10",{part("50"),part("-30"),part("-30")},definition),1);
+        QCOMPARE(m.chooseSplitRemainder("0",{part("10"),part("-10")},definition),0);
+        QCOMPARE(m.chooseSplitRemainder("-10",{part("-1"),part("-9",true)},definition),0);
+        QCOMPARE(m.chooseSplitRemainder("-10",{part("-10",true)},definition),-1);
+        QCOMPARE(m.chooseSplitRemainder("-92233720368547758.08",{part("-92233720368547758.08"),part("0")},definition),0);
+        QCOMPARE(m.chooseSplitRemainder("-10",{part("invalid")},definition),-1);
+        auto result=m.splitAmounts("-10",{"-0.25","ignored","-2"},true,definition,1);
+        QVERIFY(result.value("balanced").toBool());QCOMPARE(result.value("amounts").toList()[1].toString(),"-7.75");
+        QVERIFY(!m.splitAmounts("-10",{"-10"},true,definition,1).value("valid").toBool());
+    }
+    void splitAmountEditing() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto path=dir.path()+"/doc";create(m,path);
+        run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT1000\nPSplits\n^\n")},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto item=[&](const QString& name){return visualItem(window->contentItem(),name);};
+        auto press=[&](const QString& name){auto* control=item(name);QVERIFY(control);QVERIFY(QMetaObject::invokeMethod(control,"clicked"));};
+        auto type=[&](int index,const QString& value){auto* field=item("editSplitAmount_"+QString::number(index));QVERIFY(field);field->setProperty("text",value);QVERIFY(QMetaObject::invokeMethod(field,"textEdited"));};
+        auto enter=[&]{QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));};
+        auto saved=[&](int index){return selected(m).value("draft").toMap().value("splits").toList()[index].toMap().value("amount").toString();};
+        press("addSplit");QTRY_VERIFY(item("editSplitAmount_1"));type(1,"300");enter();QCOMPARE(saved(0),"700.00");QCOMPARE(saved(1),"300.00");
+        press("addSplit");QTRY_VERIFY(item("editSplitAmount_2"));type(2,"900");enter();QCOMPARE(saved(0),"-200.00");
+        // A manual first amount prevents saving a mismatch; Keep editing retains it.
+        type(0,"0.20");enter();QVERIFY(root->property("dirty").toBool());QCOMPARE(saved(0),"-200.00");
+        QVERIFY(!window->close());auto* dialog=root->findChild<QObject*>("splitMismatchDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
+        press("splitKeepEditing");QVERIFY(window->isVisible());QCOMPARE(item("editSplitAmount_0")->property("text").toString(),"0.20");QVERIFY(root->property("dirty").toBool());
+        // Reconcile manually and persist without changing the total.
+        type(1,"99.80");enter();QCOMPARE(saved(0),"0.20");QVERIFY(selected(m).value("draft").toMap().value("manualSplitAmounts").toBool());
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(root->property("manualSplitAmounts").toBool());run(m,"commit");
+        press("addSplit");QTRY_VERIFY(item("editSplitAmount_3"));type(3,"12");enter();QCOMPARE(saved(0),"0.20");QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().size(),3);
+        // Closing the editor asks to change the total, then saves and closes it.
+        QVERIFY(QMetaObject::invokeMethod(root,"toggleRecord",Q_ARG(QVariant,batch),Q_ARG(QVariant,0)));
+        QTRY_VERIFY(dialog->property("visible").toBool());press("splitChangeAmount");QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"1012.00");QCOMPARE(saved(0),"0.20");QVERIFY(root->property("editorClosed").toBool());
+        run(m,"undo_edit");QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"1000.00");QCOMPARE(saved(0),"0.20");QVERIFY(root->property("manualSplitAmounts").toBool());
+        // Exact arithmetic, including a transient sum larger than int64.
+        const auto definition=selected(m).value("draft").toMap().value("currencyDefinition").toString();
+        auto result=m.splitAmounts("1000",{"0","1100"},true,definition);QVERIFY(result.value("valid").toBool());QCOMPARE(result.value("amounts").toList()[0].toString(),"-100.00");
+        result=m.splitAmounts("92233720368547758.07",{"0","92233720368547758.07","0.01"},true,definition);QVERIFY(result.value("valid").toBool());QCOMPARE(result.value("amounts").toList()[0].toString(),"-0.01");
+        QVERIFY(!m.splitAmounts("0",{"0","92233720368547758.07","0.02"},true,definition).value("valid").toBool());
+        QVERIFY(!m.splitAmounts("1000",{"0","1.001"},true,definition).value("valid").toBool());
     }
     void immediateEditor() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
@@ -1914,7 +2049,7 @@ private slots:
         payee->setProperty("text","Second edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
         QTest::keySequence(window,QKeySequence::Undo);QTRY_VERIFY(!m.busy());QTRY_COMPARE(payee->property("text").toString(),QString("Row 40 Stefan"));
         QTest::keySequence(window,QKeySequence::Undo);QTRY_VERIFY(!m.busy());QTRY_COMPARE(payee->property("text").toString(),QString("Row 40"));QVERIFY(!m.state().value("canUndoEdit").toBool());
-        auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);total->setProperty("text","-11.00");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));total->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QVERIFY(root->property("dirty").toBool());QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),QString("-10.00"));
+        auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);total->setProperty("text","-11.001");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));total->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(!root->property("splitEditMessage").toString().isEmpty());QVERIFY(root->property("dirty").toBool());QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),QString("-10.00"));
         QTRY_VERIFY(total->hasActiveFocus());QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!root->property("dirty").toBool());QCOMPARE(total->property("text").toString(),QString("-10.00"));
         payee->setProperty("text","Persistent edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));payee->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
         run(m,"close");run(m,"open",{{"path",path}});run(m,"inspect",{{"batch",batch},{"ordinal",40}});

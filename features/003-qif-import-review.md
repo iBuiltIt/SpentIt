@@ -16,7 +16,7 @@ descriptions below are historical.
 Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
 
 Status: **active**  
-Last updated: 2026-11-02  
+Last updated: 2026-11-03  
 Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 40 with rules and schema 39 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
 
 ## Opening setup during account mapping — owner Go, 2026-10-30
@@ -169,3 +169,12 @@ The subsequent [whole-source account workflow](../doc/qif-account-imports.md) im
 ## Complete QIF exports — accepted 2026-10-28
 
 The owner gave Go for full category catalogs alongside existing account definitions/switching, ISO dates and validated comma-grouped amounts. Categories stage with the import and publish atomically with its first account commit; Abort removes the entire staged catalog even when drafts use it. See the [profile](009-qif-profile.md) and [publication contract](../doc/qif-account-imports.md#staged-category-catalog--2026-10-28). This is a bounded import extension, not universal QIF support or report implementation.
+
+## Undo a completed import — owner Go 2026-11-03
+
+The accepted [import-undo contract](../doc/import-undo.md) adds account-menu
+**Undo last import…** and Review **Undo import…**. Both operate on one entire
+uncommitted source, preserving earlier/shared/accepted work and reversing the
+selected import's transfer effects. See [status](../doc/status.md) for actual
+verification and limitations. This adds a selected-import command without changing
+account-wide Discard, acceptance, or incomplete-import cleanup.

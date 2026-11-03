@@ -334,7 +334,7 @@ private slots:
         auto* dialog=root->findChild<QObject*>("unsavedDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
         QVERIFY(click(root,"guardStay"));QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(root->property("dirty").toBool());
         QVERIFY(edit(root,"durableTotal","invalid"));QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardSave"));
-        QTRY_VERIFY(!model.busy());QVERIFY(!model.error().isEmpty());
+        QTRY_VERIFY(!model.busy());QVERIFY(!root->property("splitEditMessage").toString().isEmpty());
         QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(root->property("dirty").toBool());
         QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardDiscard"));
         QCOMPARE(root->property("currentPage").toString(),"settings");QVERIFY(!root->property("dirty").toBool());

@@ -1,12 +1,13 @@
 namespace {
 bool same_draft(const imports::DraftRow& a,const imports::DraftRow& b) {
-    if(a.payee_owner!=b.payee_owner || a.memo_owner!=b.memo_owner || a.payee_rule!=b.payee_rule || a.memo_rule!=b.memo_rule || a.date!=b.date || a.payee!=b.payee || a.memo!=b.memo || a.transaction.effective_total()!=b.transaction.effective_total() || a.transaction.original_imported_amount()!=b.transaction.original_imported_amount())return false;
+    if(a.remainder_allocation!=b.remainder_allocation || a.manual_split_amounts!=b.manual_split_amounts || a.payee_owner!=b.payee_owner || a.memo_owner!=b.memo_owner || a.payee_rule!=b.payee_rule || a.memo_rule!=b.memo_rule || a.date!=b.date || a.payee!=b.payee || a.memo!=b.memo || a.transaction.effective_total()!=b.transaction.effective_total() || a.transaction.original_imported_amount()!=b.transaction.original_imported_amount())return false;
     const auto& aa=a.transaction.allocations();const auto& bb=b.transaction.allocations();if(aa.size()!=bb.size())return false;
     for(std::size_t i=0;i<aa.size();++i)if(aa[i].category_binding!=bb[i].category_binding || aa[i].identity!=bb[i].identity || aa[i].source_ordinal!=bb[i].source_ordinal || aa[i].category_owner!=bb[i].category_owner || aa[i].memo_owner!=bb[i].memo_owner || aa[i].category_rule!=bb[i].category_rule || aa[i].memo_rule!=bb[i].memo_rule || aa[i].category!=bb[i].category || aa[i].memo!=bb[i].memo || aa[i].amount!=bb[i].amount)return false;
     return true;
 }
 #ifdef SPENTIT_RULES_STORAGE
 void check_rule_transition(const imports::DraftRow& before,const imports::DraftRow& after,bool apply,bool replace_manual) {
+    if(apply && (before.remainder_allocation!=after.remainder_allocation || before.manual_split_amounts!=after.manual_split_amounts))fail(SQLITE_CORRUPT,"Rule changed split amount editing mode");
     if(apply && replace_manual)fail(SQLITE_CORRUPT,"Rule application cannot replace manual fields");
     if(apply) {
         const auto& allocations=before.transaction.allocations();
@@ -140,7 +141,7 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
     identifier(operation);
     if(bulk_supported()){Statement member(impl_->db,"SELECT 1 FROM bulk_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a bulk command");}
 #ifdef SPENTIT_RULES_STORAGE
-    if(scalar(impl_->db,"PRAGMA user_version")=="42"){
+    if(scalar(impl_->db,"PRAGMA user_version")=="46"){
         Statement member(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");
         if(request.kind==app::ChangeKind::undo){Statement target(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");target.text(1,request.undo_of);if(target.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");}
     }
@@ -285,7 +286,7 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
 #ifdef SPENTIT_RULES_STORAGE
                 if(rules_format(impl_->db)){
                     bool reapply=false,replace_manual=false;
-                    if(scalar(impl_->db,"PRAGMA user_version")=="42"){
+                    if(scalar(impl_->db,"PRAGMA user_version")=="46"){
                         Statement member(impl_->db,"SELECT g.replace_manual,g.undo_of IS NULL FROM rule_reapplication_members m JOIN rule_reapplications g ON g.id=m.operation WHERE m.entry_operation=?");
                         member.text(1,operation);
                         if(member.row()){if(member.integer(1)==0)fail(SQLITE_CORRUPT,"Rule reapply Undo used a correction");reapply=true;replace_manual=member.integer(0)!=0;}

@@ -15,7 +15,7 @@ constexpr const char* reapply_membership="Invalid rule reapply Undo membership";
 constexpr const char* head_where=
     "FROM entry_heads h JOIN entry_values e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision "
     "JOIN batches b ON b.id=h.batch WHERE e.active=1 AND b.account_id=spentit_account() AND b.state=1 AND substr(h.batch,1,10)<>'~transfer-'";
-bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="42";}
+bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="46";}
 std::string protection_stamp(const std::vector<app::TransferView>& links,std::int64_t account){
     std::set<std::pair<imports::Occurrence,std::string>> keys;
     for(const auto& value:links){
@@ -31,7 +31,7 @@ std::string protection_stamp(const std::vector<app::TransferView>& links,std::in
 }
 void reapply_keep(sqlite3* db,const imports::DraftRow& before,const imports::DraftRow& after,std::int64_t catalog){
     if(before.transaction.effective_total()!=after.transaction.effective_total() || before.transaction.original_imported_amount()!=after.transaction.original_imported_amount())fail(SQLITE_CONSTRAINT,reapply_money);
-    if(before.date!=after.date)fail(SQLITE_CONSTRAINT,rules_drift);
+    if((before.remainder_allocation!=after.remainder_allocation || before.manual_split_amounts!=after.manual_split_amounts) || before.date!=after.date)fail(SQLITE_CONSTRAINT,rules_drift);
     const auto& left=before.transaction.allocations();const auto& right=after.transaction.allocations();
     if(left.size()!=right.size())fail(SQLITE_CONSTRAINT,rules_drift);
     for(std::size_t index=0;index<left.size();++index){

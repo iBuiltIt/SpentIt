@@ -48,6 +48,7 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
                 }
             }
             draft={source.date,source.payee,source.memo,Transaction::repaired_import(source.original_amount,*source.original_amount,std::move(allocations)),FieldOwnership::source,FieldOwnership::source};
+            draft.manual_split_amounts=before.manual_split_amounts;draft.remainder_allocation=before.remainder_allocation;
         }
         std::optional<EntryLinkPlan> links;
         if(committed){

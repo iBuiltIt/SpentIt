@@ -550,6 +550,7 @@ ApplicationWindow {
     Menu {
         id:accountContext;objectName:"accountContextMenu"
         MenuItem {objectName:"accountImport";text:"Import…";enabled:!s.readOnly && !workflow.busy;onTriggered:{importTarget=s.accountId;importDialog.open()}}
+        MenuItem {objectName:"undoLastImport";text:"Undo last import…";enabled:!s.readOnly && !workflow.busy && accountImports(s.accountId||"").length>0;onTriggered:guard(function(){let items=accountImports(s.accountId||"");if(items.length)requestImportUndo(items[0])})}
         MenuItem {objectName:"discardImport";text:"Discard new transactions…";enabled:!s.readOnly && !workflow.busy;onTriggered:guard(function(){discardDialog.open()})}
         parent:window.contentItem
         MenuItem {height:visible?implicitHeight:0;objectName:"renameAccount";text:"Rename…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){renameField.text=s.name||"";renameDialog.open()})}
@@ -878,6 +879,11 @@ ApplicationWindow {
     property bool committedEditing: false
     property bool editEnabled: (!!selected.editable || (committedEditing && !!selected.canCorrect)) && !s.readOnly
     property bool dirty: false
+    property bool manualSplitAmounts: false
+    property int automaticSplitIndex: -1
+    property string remainderAllocation: ""
+    property string splitEditMessage: ""
+    property string splitSum: ""
     property var pendingAction: null
     property bool allowClose: false
     property bool closingRequested: false
@@ -899,14 +905,23 @@ ApplicationWindow {
         else {beginQuit()}
     }
     property bool settingUp: false
-    function guard(action) { if (dirty) { pendingAction=action; unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;showRulesLeave()} else action() }
+    function guard(action) { if (dirty) { pendingAction=action; if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;showRulesLeave()} else action() }
     function dismiss(dialog) { guardHandoff=true; dialog.close(); Qt.callLater(function(){guardHandoff=false}) }
     function loadEditor() {
         let d=selected.draft
+        manualSplitAmounts=!!(d && d.manualSplitAmounts);splitEditMessage="";splitSum=""
+        automaticSplitIndex=-1;remainderAllocation=d?(d.remainderAllocation||""):""
         splitModel.clear()
         if (d) {
             editDate.text=d.date; editPayee.text=d.payee; editMemo.text=d.memo; editTotal.text=d.total
             for(let a of d.splits) splitModel.append(a)
+            if(!manualSplitAmounts){
+                let candidates=d.splits.map(function(a){return {amount:a.amount,transferAmount:!!a.transferAmount || !!originLink(a.allocationId)}})
+                automaticSplitIndex=remainderAllocation!==""?d.splits.findIndex(a=>a.allocationId===remainderAllocation):workflow.chooseSplitRemainder(d.total,candidates,d.currencyDefinition)
+                if(automaticSplitIndex>=0 && candidates[automaticSplitIndex].transferAmount)automaticSplitIndex=-1
+                if(automaticSplitIndex>=0)remainderAllocation=d.splits[automaticSplitIndex].allocationId
+                else manualSplitAmounts=true
+            }
         }
         dirty=false;committedEditing=!!selected.canCorrect;payeeTouched=false;memoTouched=false;restoringImportedText=false
     }
@@ -1223,15 +1238,37 @@ ApplicationWindow {
             part.categoryDisplay=part.category||"Uncategorized"
             splitModel.append(part)
         }
+        automaticSplitIndex=manualSplitAmounts?-1:restored.findIndex(a=>a.allocationId===remainderAllocation)
+        if(automaticSplitIndex<0 && remainderAllocation!=="")manualSplitAmounts=true
         restoringImportedText=true;payeeTouched=false;memoTouched=false;dirty=true
         editDate.forceActiveFocus()
     }
+    function removeEditorSplit(index) {
+        if(index<0 || index>=splitModel.count || splitModel.count<=1)return
+        dirty=true
+        if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1}
+        else if(index<automaticSplitIndex)--automaticSplitIndex
+        splitModel.remove(index)
+        prepareSplitAmounts()
+    }
+    function prepareSplitAmounts() {
+        splitEditMessage="";splitSum=""
+        if(!selected.draft || !selected.draft.currencyDefinition)return true
+        let amounts=[]
+        for(let i=0;i<splitModel.count;++i)amounts.push(splitModel.get(i).amount)
+        let result=workflow.splitAmounts(editTotal.text,amounts,!manualSplitAmounts && automaticSplitIndex>=0,selected.draft.currencyDefinition,automaticSplitIndex)
+        if(!result.valid){splitEditMessage=result.error;return false}
+        if(!result.balanced){splitSum=result.sum;splitEditMessage="Splits add up to "+result.sum+". Adjust the split amounts or close the transaction to change its total.";return false}
+        for(let i=0;i<splitModel.count;++i)splitModel.setProperty(i,"amount",result.amounts[i])
+        return true
+    }
     function saveEditor() {
         if(workflow.busy || !dirty)return
+        if(!prepareSplitAmounts()){pendingAction=null;return}
         rememberEditView()
         let splits=[]
         for(let i=0;i<splitModel.count;i++) {let a=splitModel.get(i);splits.push({category:a.category,memo:a.memo,amount:a.amount,categoryId:a.categoryId||"",bindingRevision:a.bindingRevision||"",allocationId:a.allocationId||"",categoryTouched:!!a.categoryTouched,memoTouched:!!a.memoTouched})}
-        workflow.command(committedEditing?"accept_edit":"save", {kind:"correct",date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits,restoreImportedText:restoringImportedText,payeeTouched:payeeTouched,memoTouched:memoTouched})
+        workflow.command(committedEditing?"accept_edit":"save", {remainderAllocation:remainderAllocation,manualSplitAmounts:manualSplitAmounts,kind:"correct",date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits,restoreImportedText:restoringImportedText,payeeTouched:payeeTouched,memoTouched:memoTouched})
     }
     onClosing: function(close) {
         if(allowClose) return
@@ -1246,6 +1283,8 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onChanged() {if(workflow.busy){cancelAccountDrag();captureReviewView()}}
         function onCompleted(action,success) {
+            if(success && action==="preview_import_undo")importUndoConfirm.open()
+            if(success && action==="undo_import"){importUndoConfirm.close();importUndoPicker.close();workspaceFeedback=(s.receipt||{}).summary||"Import undone."}
             if(action==="close" && !success && closingRequested){closingRequested=false;window.show();closeAuditFailure.open()}
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
 
@@ -1287,7 +1326,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {if(!rulesLeaving)pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesLeaving=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesLeaving=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -1526,11 +1565,22 @@ ApplicationWindow {
     FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),account:importTarget}) }
     FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save a backup to a new file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
     Dialog {
+        id:splitMismatch;objectName:"splitMismatchDialog";title:"Change transaction amount?";modal:true;anchors.centerIn:parent
+        onRejected:pendingAction=null
+        ColumnLayout {
+            Label {textFormat:Text.PlainText;text:"The splits add up to "+splitSum+". Change the transaction amount from "+editTotal.text+" to "+splitSum+"?";wrapMode:Text.Wrap;Layout.maximumWidth:480}
+            RowLayout {
+                Button {objectName:"splitChangeAmount";text:"Change amount";onClicked:{editTotal.text=splitSum;dirty=true;splitMismatch.close();saveEditor()}}
+                Button {objectName:"splitKeepEditing";text:"Keep editing";onClicked:{pendingAction=null;splitMismatch.close()}}
+            }
+        }
+    }
+    Dialog {
         id:unsaved;objectName:"unsavedDialog"; title:"Unsaved changes"; modal:true; anchors.centerIn:parent
         ColumnLayout {
             Label {textFormat:Text.PlainText;text:"Save your changes before leaving?"}
             RowLayout {
-                Button {objectName:"guardSave";text:"Save";onClicked:{let next=pendingAction;dismiss(unsaved);pendingAction=next;saveEditor()}}
+                Button {objectName:"guardSave";text:"Save";onClicked:{let next=pendingAction;dismiss(unsaved);pendingAction=next;if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else saveEditor()}}
                 Button {objectName:"guardDiscard";text:"Discard";onClicked:{let next=pendingAction;pendingAction=null;dismiss(unsaved);loadEditor();if(next)guard(next)}}
                 Button {objectName:"guardStay";text:"Stay";onClicked:{unsaved.close();pendingAction=null}}
             }
@@ -1748,6 +1798,52 @@ ApplicationWindow {
             }
         }
     }
+    function accountImports(account) {
+        return (s.undoableImports||[]).filter(item=>(item.accounts||[]).indexOf(account)>=0)
+    }
+    property string importUndoLabel: ""
+    function requestImportUndo(item) {
+        importUndoLabel=item.label
+        workflow.command("preview_import_undo",{source:item.source})
+    }
+    function openImportUndoPicker() {
+        importUndoAccount.currentIndex=Math.max(0,(s.accounts||[]).findIndex(a=>a.id===(s.accountId||"")))
+        importUndoPicker.open()
+    }
+    Dialog {
+        id:importUndoPicker;objectName:"importUndoPicker";title:"Undo import";modal:true;anchors.centerIn:parent
+        width:Math.min(window.width-48,720);height:Math.min(window.height-48,480)
+        ColumnLayout {anchors.fill:parent
+            Label {text:"Account"}
+            ComboBox {id:importUndoAccount;objectName:"importUndoAccount";Layout.fillWidth:true;model:s.accounts||[];textRole:"name";enabled:!workflow.busy}
+            Label {text:"Imports not yet accepted, newest first.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+            ListView {id:importUndoList;objectName:"importUndoList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:6
+                model:accountImports(((s.accounts||[])[importUndoAccount.currentIndex]||{}).id||"")
+                ScrollBar.vertical:ScrollBar {policy:ScrollBar.AsNeeded}
+                delegate:ItemDelegate {required property var modelData;required property int index;objectName:"importUndoChoice_"+index;width:ListView.view.width
+                    text:(index===0?"Latest · ":"")+modelData.label;enabled:!workflow.busy
+                    onClicked:requestImportUndo(modelData)
+                }
+                Label {anchors.centerIn:parent;visible:importUndoList.count===0;text:"No imports available to undo."}
+            }
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;visible:errorDialog===importUndoPicker && workflow.error.length>0;text:visible?workflow.error:"";color:"#a02020"}
+            Button {text:"Close";enabled:!workflow.busy;onClicked:importUndoPicker.close()}
+        }
+    }
+    Dialog {
+        id:importUndoConfirm;objectName:"importUndoConfirm";title:"Undo this import?";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640)
+        closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape
+        ColumnLayout {anchors.fill:parent
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:importUndoLabel}
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                text:"New transactions to remove: "+((s.importUndoPreview||{}).transactions||0)+". Import problems to remove: "+((s.importUndoPreview||{}).failures||0)+". Transfer matches made by this import will be undone.\nAffected accounts: "+(((s.importUndoPreview||{}).accounts)||[]).map(function(id){let a=(s.accounts||[]).concat(s.archivedAccounts||[]).find(a=>a.id===id);return a?a.name:id}).join(", ")+"."}
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;visible:errorDialog===importUndoConfirm && workflow.error.length>0;text:visible?workflow.error:"";color:"#a02020"}
+            RowLayout {
+                Button {objectName:"confirmImportUndo";text:"Undo import";enabled:!workflow.busy;onClicked:workflow.command("undo_import",{source:(s.importUndoPreview||{}).source,token:(s.importUndoPreview||{}).token})}
+                Button {text:"Cancel";enabled:!workflow.busy;onClicked:importUndoConfirm.close()}
+            }
+        }
+    }
     Dialog {
         id:discardDialog;objectName:"discardImportDialog";width:Math.min(window.width-48,640);title:"Discard new transactions in this account?";modal:true;anchors.centerIn:parent
         property string previewToken:""
@@ -1869,7 +1965,7 @@ ApplicationWindow {
     // One visible owner for a global operation error. Dialog validation stays
     // beside its controls; closing the dialog returns the error to the status line.
     readonly property var errorDialog: statusDetails.visible?statusDetails:
-        closeAuditFailure.visible?closeAuditFailure:reviewDifference.visible?reviewDifference:
+        importUndoConfirm.visible?importUndoConfirm:importUndoPicker.visible?importUndoPicker:closeAuditFailure.visible?closeAuditFailure:reviewDifference.visible?reviewDifference:
         linkExclusionDialog.visible?linkExclusionDialog:reapplyDialog.visible?reapplyDialog:
         bulkDialog.visible?bulkDialog:mergePreview.visible?mergePreview:
         changePreview.visible?changePreview:importMapping.visible?importMapping:null
@@ -2155,6 +2251,7 @@ ApplicationWindow {
             Layout.fillWidth:true
             RowLayout {Layout.fillWidth:true;Layout.margins:12
                 Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true}
+                Button {objectName:"chooseImportUndo";text:"Undo import…";enabled:!workflow.busy && (s.undoableImports||[]).length>0;onClicked:guard(openImportUndoPicker)}
                 Button {objectName:"commitImport";text:"Accept transactions";enabled:!workflow.busy && (s.newTransactions||0)>0;onClicked:guard(requestCommit)}
                 Button {objectName:"mergeSelectedMatches";text:"Merge "+Object.keys(reviewBatch).length+" selected matches";enabled:!workflow.busy && Object.keys(reviewBatch).length>0
                     onClicked:{captureReviewView();workflow.command("review_batch",{groups:Object.keys(reviewBatch).map(key=>reviewBatch[key])})}}
@@ -2877,8 +2974,9 @@ ApplicationWindow {
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
                         Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported && splitModel.count>1;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from split memo":"Rules require an imported split";onClicked:createFromSource("memo",index)}
                         TextField {id:splitAmount;KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
-                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);dirty=true} Accessible.name:"Split amount"}
-                        Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && !category.startsWith("[");onClicked:{if(!enabled || splitModel.count<=1)return;window.dirty=true;splitModel.remove(index)}}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1};splitEditMessage="";dirty=true} Accessible.name:"Split amount"}
+                        Label {objectName:"splitRemainder_"+index;visible:!manualSplitAmounts && automaticSplitIndex===index;text:"Automatic remainder"}
+                        Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && !category.startsWith("[");onClicked:{if(!enabled || splitModel.count<=1)return;window.removeEditorSplit(index)}}
                     }
                 }
                 TextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
@@ -2887,7 +2985,7 @@ ApplicationWindow {
                     visible:editEnabled || (!!s.rulesSupported && !!selected.batch)
                     Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch;text:{let choices=ruleChoices();return !choices.some(c=>c.available)?"Create rule…":choices.length===1?"Edit rule…":"Edit rules…"} onClicked:transactionRuleAction()}
                     Button {objectName:"addSplit";visible:editEnabled;text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
-                    Label {visible:editEnabled;textFormat:Text.PlainText;text:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                    Label {visible:editEnabled;textFormat:Text.PlainText;text:splitEditMessage!==""?splitEditMessage:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 RowLayout {
                     visible:currentPage==="review" && !!selected.editable && !selected.repair && !s.readOnly

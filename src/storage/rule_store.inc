@@ -106,7 +106,7 @@ std::size_t rule_snapshot_bytes(const imports::DraftRow& row) {
 }
 bool any_mark(const imports::DraftRow& row){if(row.payee_rule || row.memo_rule)return true;for(const auto& allocation:row.transaction.allocations())if(allocation.category_rule || allocation.memo_rule)return true;return false;}
 void refuse_drift(sqlite3* db,const imports::DraftRow& before,const imports::DraftRow& after,std::int64_t catalog){
-    if(before.date!=after.date || before.transaction.effective_total()!=after.transaction.effective_total() || before.transaction.original_imported_amount()!=after.transaction.original_imported_amount()) fail(SQLITE_CONSTRAINT,rules_drift);
+    if((before.remainder_allocation!=after.remainder_allocation || before.manual_split_amounts!=after.manual_split_amounts) || before.date!=after.date || before.transaction.effective_total()!=after.transaction.effective_total() || before.transaction.original_imported_amount()!=after.transaction.original_imported_amount()) fail(SQLITE_CONSTRAINT,rules_drift);
     const auto& left=before.transaction.allocations();const auto& right=after.transaction.allocations();if(left.size()!=right.size())fail(SQLITE_CONSTRAINT,rules_drift);
     for(std::size_t index=0;index<left.size();++index){
         if(left[index].identity!=right[index].identity || left[index].source_ordinal!=right[index].source_ordinal || left[index].amount.units()!=right[index].amount.units()) fail(SQLITE_CONSTRAINT,rules_drift);

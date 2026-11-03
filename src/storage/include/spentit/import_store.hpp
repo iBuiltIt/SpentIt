@@ -142,6 +142,10 @@ public:
     void observer(ImportObserver);
     bool transaction_accepted(const imports::Occurrence&) const override;
     app::ImportResult import_result(std::string_view) const override;
+    std::vector<app::UndoableImport> undoable_imports() const override;
+    app::RollbackReview review_import_undo(std::string_view) const override;
+    app::RollbackReceipt undo_import(std::string_view,std::string_view,std::int64_t) override;
+    std::optional<app::RollbackReceipt> import_undo_outcome(std::string_view,std::string_view) const override;
     app::RollbackReview rollback_review() const override;
     app::RollbackReceipt rollback_account(std::string_view,std::int64_t) override;
     std::optional<app::RollbackReceipt> rollback_outcome(std::string_view) const override;
@@ -164,6 +168,9 @@ public:
     app::AcceptanceReceipt accept_all(std::string_view,bool=false) override;
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
 private:
+    std::vector<std::string> import_link_undos(std::string_view) const;
+    app::RollbackReceipt undo_linked_import(std::string_view,std::string_view,const app::RollbackReview&,const std::vector<std::string>&);
+    app::RollbackReceipt rollback_scope(std::string_view,std::int64_t,std::string_view);
     std::vector<imports::Occurrence> duplicate_candidates(const qif::Record&,std::string_view,bool first_only) const;
     app::Receipt publish_review(std::string_view,std::int64_t,std::string_view);
     void accept_local(std::string_view,const app::TransferRequest&);
