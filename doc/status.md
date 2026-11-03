@@ -2,6 +2,45 @@
 
 Last updated: 2026-11-03
 
+## Split Enter crash investigation — 2026-11-03
+
+Owner Go: investigate the intermittent crash after repeated edits/restores,
+adding a third split, typing a negative amount and pressing Enter. **Unresolved;
+no production fix claimed or applied.** The supplied report terminates on the
+main thread with EXC_GUARD / GUARD_TYPE_MACH_PORT / INVALID_OPTIONS during
+QQuickAccessibleAttached::setName → AppKit accessibility notification →
+_XMIGPostNotification. The worker was rebuilding Review in a post-command
+snapshot; this does not prove whether the owner's edit was durably saved.
+No private report, transaction text or dataset was copied into the repository.
+
+Added `repeatedSplitRestoreEnter` synthetic UI coverage for new and committed
+transactions: real amount-field key events, editor Restore imported values,
+selection Restore imported values, session Undo, original-source visibility,
+250 background rows, periodic close/reopen and exact saved split/total checks.
+The test waits for deferred editor focus restoration before entering keys.
+Optional `SPENTIT_SPLIT_REPRO_CYCLES` extends each case (default 12, cap 100).
+`SPENTIT_SPLIT_AX_TRACE=1` counts accessibility events in this test only, forwarding
+every event through the original handler/native bridge; it logs no field values.
+
+Native Cocoa Release on macOS arm64 / Qt 6.12:
+- Traced run: 24 edit/restore cycles, 4/4 QtTest cases including setup/cleanup,
+  14.070 s. Accessibility reported active. Status-label name changes: 286/293;
+  other name changes: 6432/6890; announcements: 286/293 (new/committed).
+- Untraced run: 80 cycles, 4/4 cases, 47.341 s. No reproduced crash.
+- ASan/UBSan offscreen run: 24 cycles, 4/4 cases, 60.386 s; no sanitizer
+  diagnostics (Qt leak detection disabled). This does not exercise native Mach
+  notification delivery. Linux/Windows and live assistive-client churn remain
+  unverified. `git diff --check` passed.
+
+The dynamic status label is a demonstrated source of notifications matching
+this stack, but the report does not identify its originating QML object.
+[Mozilla bug 1838947](https://bugzilla.mozilla.org/show_bug.cgi?id=1838947)
+reports the same macOS notification stack and intermittent INVALID_OPTIONS
+failures in other applications; that is supporting context, not proof of a shared
+root cause. No accessibility suppression or speculative arithmetic change was
+introduced. An exact reproduction or another owner report is still needed to
+establish a fix. Existing app binary and financial behavior are unchanged.
+
 ## Sidebar account drag ordering — 2026-11-03
 
 Owner Go implemented in the [sidebar drag contract](../features/005-transaction-sheet-navigation.md#sidebar-account-drag-ordering--owner-go-2026-11-03).

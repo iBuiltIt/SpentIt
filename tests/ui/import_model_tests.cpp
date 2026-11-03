@@ -4,6 +4,7 @@
 #include <spentit/storage_document_gateway.hpp>
 #include <QTest>
 #include <QSignalSpy>
+#include <QMetaProperty>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QFileInfo>
@@ -20,6 +21,33 @@
 #include <QStyleHints>
 #include <sqlite3.h>
 using namespace spentit;
+// Opt-in synthetic-only tracing. Forward every event through the original
+// handler/native bridge: observing notifications must not suppress the crash path.
+class SplitAccessibilityTrace {
+    inline static SplitAccessibilityTrace* current=nullptr;
+    QAccessible::UpdateHandler previous=nullptr;
+    int statusNames=0,otherNames=0,announcements=0;
+    static void observe(QAccessibleEvent* event) {
+        auto* self=current;
+        if(event->type()==QAccessible::NameChanged) {
+            if(event->object() && event->object()->objectName()=="operationPhase")++self->statusNames;
+            else ++self->otherNames;
+        }
+        if(event->type()==QAccessible::Announcement)++self->announcements;
+        QAccessible::installUpdateHandler(self->previous);
+        QAccessible::updateAccessibility(event);
+        QAccessible::installUpdateHandler(observe);
+    }
+public:
+    SplitAccessibilityTrace() {
+        if(qEnvironmentVariableIsSet("SPENTIT_SPLIT_AX_TRACE")){current=this;previous=QAccessible::installUpdateHandler(observe);}
+    }
+    ~SplitAccessibilityTrace() {
+        if(current!=this)return;
+        QAccessible::installUpdateHandler(previous);current=nullptr;
+        qInfo()<<"Accessibility trace: status name changes"<<statusNames<<"other name changes"<<otherNames<<"announcements"<<announcements<<"active"<<QAccessible::isActive();
+    }
+};
 // Delegates every real storage operation; only caller acknowledgement and
 // outcome-query failures are injected. These tests never replace durability.
 class OutcomeGateway final : public app::DocumentGateway, public app::ImportRepository {
@@ -1806,6 +1834,59 @@ private slots:
         QVERIFY(m.busy());QVERIFY(!editor->isEnabled());QVERIFY(!root->findChild<QQuickItem*>("sidebarSettings")->isEnabled());
         QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());QVERIFY(sawBusy);QCOMPARE(enabled.count(),2);for(const auto& spy:sidebar)QCOMPARE(spy->count(),2);
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Accepted edit");
+    }
+    void repeatedSplitRestoreEnter_data() {
+        QTest::addColumn<bool>("committed");
+        QTest::newRow("new")<<false;
+        QTest::newRow("committed")<<true;
+    }
+    void repeatedSplitRestoreEnter() {
+        QFETCH(bool,committed);
+        QAccessible::setActive(true);
+        SplitAccessibilityTrace trace;
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto path=dir.path()+"/doc";create(m,path);
+        QByteArray bytes="D1/1/2026\nT-7.35\nPSynthetic split purchase\nMFixture memo\nS\nEFixture fee\n$-0.04\nS\nEFixture purchase\n$-7.31\n^\n";
+        // Keep Review rebuilding while queued progress changes update the status label.
+        for(int i=0;i<250;++i)bytes+="D2/1/2026\nT-2\nPFixture "+QByteArray::number(i)+"\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch");
+        if(committed)run(m,"commit");
+        run(m,"review_load");run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const auto original=selected(m).value("source");
+        auto item=[&](const QString& name){return visualItem(window->contentItem(),name);};
+        auto* source=item("sourceToggle");QVERIFY(source);source->setProperty("checked",true);
+        auto* phase=item("operationPhase");QVERIFY(phase);QSignalSpy updates(phase,phase->metaObject()->property(phase->metaObject()->indexOfProperty("text")).notifySignal());QVERIFY(updates.isValid());
+        const auto splits=[&]{return selected(m).value("draft").toMap().value("splits").toList();};
+        const auto waitSaved=[&]{QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QVERIFY(!root->property("dirty").toBool());};
+        const int cycles=qEnvironmentVariableIntValue("SPENTIT_SPLIT_REPRO_CYCLES")>0?qMin(100,qEnvironmentVariableIntValue("SPENTIT_SPLIT_REPRO_CYCLES")):12;
+        for(int cycle=0;cycle<cycles;++cycle) {
+            QVERIFY(QMetaObject::invokeMethod(item("addSplit"),"clicked"));
+            QTRY_VERIFY(item("editSplitAmount_2"));QTest::qWait(100);auto* amount=item("editSplitAmount_2");
+            amount->forceActiveFocus();QTRY_VERIFY(amount->hasActiveFocus());
+            QTest::keySequence(window,QKeySequence::SelectAll);QTest::keyClick(window,Qt::Key_Minus);QTest::keyClick(window,Qt::Key_1);QTest::keyClick(window,Qt::Key_Return);waitSaved();
+            QCOMPARE(splits().size(),3);QCOMPARE(splits()[0].toMap().value("amount").toString(),QString("0.96"));QCOMPARE(splits()[2].toMap().value("amount").toString(),QString("-1.00"));
+            QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),QString("-7.35"));
+            if(cycle%3==0) {
+                QVERIFY(QMetaObject::invokeMethod(root,"restoreImportedValues"));
+                QTest::keyClick(window,Qt::Key_Return);waitSaved();
+            } else if(cycle%3==1) {
+                run(m,"undo_edit");
+            } else {
+                run(m,"select",{{"row",m.occurrenceIndex(batch.toString(),0)}});
+                run(m,"restore_imported_selection",{{"account",m.state().value("accountId")},{"generation",m.state().value("ledgerEditGeneration")},{"selected",QVariantList{QVariantMap{{"batch",batch},{"ordinal",0}}}}});
+            }
+            QCOMPARE(splits().size(),2);QCOMPARE(splits()[0].toMap().value("amount").toString(),QString("-0.04"));QCOMPARE(splits()[1].toMap().value("amount").toString(),QString("-7.31"));
+            QCOMPARE(selected(m).value("source"),original);
+            if(cycle%4==3){run(m,"close");run(m,"open",{{"path",path}});run(m,"review_load");run(m,"inspect",{{"batch",batch},{"ordinal",0}});}
+        }
+        QVERIFY(updates.count()>cycles);
+        qInfo()<<"Completed split/restore cycles:"<<cycles<<"status text changes:"<<updates.count();
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        QCOMPARE(splits().size(),2);QCOMPARE(selected(m).value("source"),original);
     }
     void immediateEditor() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
