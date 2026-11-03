@@ -1,5 +1,19 @@
 # 005 — Transaction sheet and navigation
 
+## System light and dark palettes — owner Go 2026-11-03
+
+Accepted and implemented: the desktop UI follows the system appearance at startup
+and while running. Unknown appearance uses light. One shared semantic colour set
+provides light and dark variants for window/control surfaces, text, selection,
+focus, borders, draft/changed rows, errors, warnings and scrollbars. Custom ledger,
+sidebar, category and rule colours use those roles alongside inherited Qt control
+palettes. Dark mode uses charcoal surfaces and soft white text with blue accents.
+There is no separate appearance preference or document-format change. The older
+standalone synthetic sheet prototype is outside this desktop change.
+
+See [status](../doc/status.md#system-light-and-dark-palettes--2026-11-03) for
+native switching, contrast checks and verification limits.
+
 ## Sidebar account drag ordering — owner Go 2026-11-03
 
 Accepted and implemented: drag an active account's name/balance row to reorder

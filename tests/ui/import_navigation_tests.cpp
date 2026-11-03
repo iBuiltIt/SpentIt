@@ -11,6 +11,9 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QFont>
+#include <QStyleHints>
+#include <QPalette>
+#include <cmath>
 
 class NavigationTests : public QObject {
     Q_OBJECT
@@ -42,6 +45,49 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());QSettings().clear();
     }
     void init() { QSettings().clear(); } // Never reopen a previous test's removed temporary dataset.
+    void appearanceSwitching() {
+        if(QGuiApplication::platformName()=="offscreen")QSKIP("System appearance switching requires a native platform; run this case on macOS.");
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Theme account"},{"currency","CAD"}});
+        auto* theme=object(root,"applicationTheme");QVERIFY(theme);
+        const auto contrast=[](QColor a,QColor b) {
+            const auto luminance=[](QColor c) {
+                const auto channel=[](double v){return v<=0.04045?v/12.92:std::pow((v+0.055)/1.055,2.4);};
+                return 0.2126*channel(c.redF())+0.7152*channel(c.greenF())+0.0722*channel(c.blueF());
+            };
+            const double x=luminance(a),y=luminance(b);return (std::max(x,y)+0.05)/(std::min(x,y)+0.05);
+        };
+        // Exercise both transitions on the same loaded workspace, including inherited controls.
+        for(auto scheme:{Qt::ColorScheme::Light,Qt::ColorScheme::Dark,Qt::ColorScheme::Light}) {
+            QGuiApplication::styleHints()->setColorScheme(scheme);
+            QTRY_COMPARE(theme->property("dark").toBool(),scheme==Qt::ColorScheme::Dark);
+            const auto colour=[&](const char* role){return theme->property(role).value<QColor>();};
+            QTRY_COMPARE(window->color(),colour("window"));
+            auto* search=object(root,"ledgerSearch");QVERIFY(search);
+            QTRY_COMPARE(search->property("color").value<QColor>(),colour("text"));
+            auto* row=object(root,"ledgerRow_0");QVERIFY(row);
+            QTRY_COMPARE(row->property("color").value<QColor>(),colour("row"));
+            auto* balance=object(root,("accountBalance_"+model.state().value("accountId").toString()).toUtf8().constData());QVERIFY(balance);
+            QCOMPARE(balance->property("color").value<QColor>(),colour("text"));
+            auto* account=object(root,"accountNavigation");QVERIFY(account);
+            auto* accountBackground=account->property("background").value<QObject*>();QVERIFY(accountBackground);
+            auto* accountText=account->property("contentItem").value<QObject*>();QVERIFY(accountText);
+            QVERIFY(contrast(accountText->property("color").value<QColor>(),accountBackground->property("color").value<QColor>())>=4.5);
+            for(const char* background:{"window","surface","alternate","row","selection","draft","changed","button"})
+                QVERIFY2(contrast(colour("text"),colour(background))>=4.5,background);
+            QVERIFY(contrast(colour("highlightedText"),colour("highlight"))>=4.5);
+            for(const char* foreground:{"muted","error","warning"})
+                QVERIFY2(contrast(colour(foreground),colour("surface"))>=4.5,foreground);
+            if(qEnvironmentVariableIsSet("SPENTIT_THEME_CAPTURE")) {
+                QTest::qWait(100);
+                QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_THEME_CAPTURE")+(scheme==Qt::ColorScheme::Dark?"-dark.png":"-light.png")));
+            }
+        }
+        QGuiApplication::styleHints()->unsetColorScheme();
+    }
     void manualTransactionEntry() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

@@ -5,11 +5,37 @@ import QtQuick.Dialogs
 import QtCore
 ApplicationWindow {
     id: window
+    Theme { id: theme; objectName: "applicationTheme" }
+    color: theme.window
+    palette.window: theme.window
+    palette.windowText: theme.text
+    palette.base: theme.surface
+    palette.alternateBase: theme.alternate
+    palette.text: theme.text
+    palette.button: theme.button
+    palette.buttonText: theme.text
+    palette.highlight: theme.highlight
+    palette.highlightedText: theme.highlightedText
+    palette.placeholderText: theme.muted
+    palette.mid: theme.border
+    palette.dark: theme.border
+    palette.light: theme.alternate
+    palette.midlight: theme.divider
+    palette.shadow: theme.window
+    palette.toolTipBase: theme.surface
+    palette.toolTipText: theme.text
+    palette.link: theme.focus
+    palette.linkVisited: theme.focus
+    palette.accent: theme.focus
+    palette.disabled.windowText: theme.disabled
+    palette.disabled.text: theme.disabled
+    palette.disabled.buttonText: theme.disabled
+    palette.disabled.highlightedText: theme.disabled
     component UsableScrollBar: ScrollBar {
         id:bar;z:10;policy:ScrollBar.AsNeeded;interactive:true;minimumSize:0.08
         implicitWidth:16;implicitHeight:16;padding:2
-        contentItem:Rectangle {visible:bar.size>0 && bar.size<0.999;implicitWidth:12;implicitHeight:12;radius:6;color:bar.pressed?"#52687b":bar.hovered?"#73879a":"#94a3b0"}
-        background:Rectangle {color:"#e9edf0";radius:8;visible:bar.size>0 && bar.size<0.999}
+        contentItem:Rectangle {visible:bar.size>0 && bar.size<0.999;implicitWidth:12;implicitHeight:12;radius:6;color:bar.pressed?theme.scrollPressed:bar.hovered?theme.scrollHover:theme.scrollThumb}
+        background:Rectangle {color:theme.scrollTrack;radius:8;visible:bar.size>0 && bar.size<0.999}
     }
     component UsableScrollView: ScrollView {
         id:view
@@ -70,7 +96,7 @@ ApplicationWindow {
     Connections {target:importCategoriesDialog;function onVisibleChanged(){window.diagnosticModalChanged(26,importCategoriesDialog.visible)}}
     Connections {target:discardDialog;function onVisibleChanged(){window.diagnosticModalChanged(27,discardDialog.visible)}}
     // Diagnostics publishes only this explicit semantic allowlist, at <=10 Hz.
-    Label {z:1000;anchors.right:parent.right;anchors.top:parent.top;text:"Diagnostics enabled";visible:workflow.diagnosticsEnabled;color:"#9b5a00"}
+    Label {z:1000;anchors.right:parent.right;anchors.top:parent.top;text:"Diagnostics enabled";visible:workflow.diagnosticsEnabled;color:theme.warning}
     property bool diagnosticSearchValid: true
     Connections {target:workflow;function onCompleted(action,success){if(action==="query")window.diagnosticSearchValid=success}}
     function publishDiagnostics() {
@@ -506,7 +532,7 @@ ApplicationWindow {
     }
     Rectangle {
         objectName:"accountDragPreview";parent:window.contentItem;z:1000
-        visible:accountDragRow!==null;color:window.palette.window;border.color:"#879cad";radius:3
+        visible:accountDragRow!==null;color:window.palette.window;border.color:theme.border;radius:3
         x:accountDragPointer.x-accountDragOffset.x+12;y:accountDragPointer.y-accountDragOffset.y
         width:accountDragRow?accountDragRow.width:0;height:accountDragRow?accountDragRow.height:0
         opacity:0.9
@@ -1644,7 +1670,7 @@ ApplicationWindow {
                     }
                 }
             }
-            Label {textFormat:Text.PlainText;text:errorDialog===changePreview?workflow.error:"";visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {textFormat:Text.PlainText;text:errorDialog===changePreview?workflow.error:"";visible:text.length>0;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 Button {objectName:"applyCommittedChange";text:(s.changePreview||{}).applyLabel||"Apply";enabled:!workflow.busy && !!(s.changePreview||{}).id;onClicked:workflow.command("apply_change",{preview:s.changePreview.id})}
                 Button {objectName:"cancelCommittedChange";text:"Cancel";enabled:!workflow.busy;onClicked:{changePreview.close();pendingAction=null;workflow.command("cancel_change")}}
@@ -1661,7 +1687,7 @@ ApplicationWindow {
             Label {objectName:"mergePreviewNote";textFormat:Text.PlainText;text:(s.transferMergePreview||{}).note||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {objectName:"mergePreviewImpact";textFormat:Text.PlainText;text:(s.transferMergePreview||{}).balanceImpact||"";font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {textFormat:Text.PlainText;text:"Removes the duplicate transfer created by SpentIt. The transaction in the other account remains.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {textFormat:Text.PlainText;text:errorDialog===mergePreview?workflow.error:"";visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {textFormat:Text.PlainText;text:errorDialog===mergePreview?workflow.error:"";visible:text.length>0;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 Button {objectName:"confirmMerge";text:"Link";enabled:!workflow.busy && !!(s.transferMergePreview||{}).id;onClicked:workflow.command("transfer_merge_apply",{preview:s.transferMergePreview.id})}
                 Button {objectName:"cancelMerge";text:"Cancel";enabled:!workflow.busy;onClicked:{mergePreview.close();workflow.command("cancel_merge")}}
@@ -1678,7 +1704,7 @@ ApplicationWindow {
                 ScrollBar.vertical:UsableScrollBar {}
                 delegate:Label {required property string modelData;width:bulkLines.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
             }
-            Label {text:errorDialog===bulkDialog?workflow.error:"";textFormat:Text.PlainText;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:errorDialog===bulkDialog?workflow.error:"";textFormat:Text.PlainText;visible:text.length>0;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 Button {objectName:"applyBulk";text:"Apply all";enabled:!workflow.busy && !!(s.bulkPreview||{}).id;onClicked:workflow.command("apply_bulk",{preview:s.bulkPreview.id})}
                 Button {objectName:"cancelBulk";text:"Cancel";enabled:!workflow.busy;onClicked:{bulkDialog.close();workflow.command("cancel_bulk")}}
@@ -1697,7 +1723,7 @@ ApplicationWindow {
                 delegate:Label {required property string modelData;width:reapplyLines.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}
             }
             Label {text:(s.reapplyPreview||{}).omitted||"";visible:text.length>0;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {text:errorDialog===reapplyDialog?workflow.error:"";textFormat:Text.PlainText;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:errorDialog===reapplyDialog?workflow.error:"";textFormat:Text.PlainText;visible:text.length>0;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {
                 Button {objectName:"applyReapply";text:"Apply";enabled:!workflow.busy && !!(s.reapplyPreview||{}).id;onClicked:workflow.command("rules_reapply_apply",{preview:s.reapplyPreview.id})}
                 Button {objectName:"cancelReapply";text:"Cancel";enabled:!workflow.busy;onClicked:{reapplyDialog.close();workflow.command("cancel_reapply")}}
@@ -1758,7 +1784,7 @@ ApplicationWindow {
             Button {objectName:"chooseUncategorized";text:"Uncategorized";onClicked:chooseCategory("","")}
             TextField {id:unmappedCategory;objectName:"unmappedCategoryText";placeholderText:"Explicit unmapped classification text";Layout.fillWidth:true;Accessible.name:"Unmapped category text"}
             Button {objectName:"chooseUnmapped";text:"Keep as unmapped text";enabled:unmappedCategory.text.length>0;onClicked:chooseCategory("",unmappedCategory.text)}
-            Label {text:pickerFeedback;visible:text.length>0;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:pickerFeedback;visible:text.length>0;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {text:"Accounts are transfer destinations. Their aliases identify the same account. Rules cannot create transfers; use the transfer workflow.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {text:"Choose a category within a group.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             Button {text:"Cancel";onClicked:categoryPicker.close()}
@@ -1795,7 +1821,7 @@ ApplicationWindow {
         ColumnLayout {
             width:currencyDialog.availableWidth
             Label {text:"Choose the account currency.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            Label {objectName:"currencyWarning";visible:!!s.currencyWarning;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText;color:"#855100";text:"Amounts will stay the same. For example, CAD 20 becomes GBP 20."}
+            Label {objectName:"currencyWarning";visible:!!s.currencyWarning;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText;color:theme.warning;text:"Amounts will stay the same. For example, CAD 20 becomes GBP 20."}
             ClearableSearchField {id:currencySearch;onClearRequested:clearSearch();objectName:"currencySearch";placeholderText:"Type a currency code";Layout.fillWidth:true;Accessible.name:"Currency code";onAccepted:if(confirmCurrency.enabled)confirmCurrency.clicked()}
             UsableComboBox {
                 id:currencyPick;objectName:"currencyPick";Layout.fillWidth:true;Accessible.name:"Matching currencies"
@@ -1854,7 +1880,7 @@ ApplicationWindow {
                 }
                 Label {anchors.centerIn:parent;visible:importUndoList.count===0;text:"No imports available to undo."}
             }
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;visible:errorDialog===importUndoPicker && workflow.error.length>0;text:visible?workflow.error:"";color:"#a02020"}
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;visible:errorDialog===importUndoPicker && workflow.error.length>0;text:visible?workflow.error:"";color:theme.error}
             Button {text:"Close";enabled:!workflow.busy;onClicked:importUndoPicker.close()}
         }
     }
@@ -1865,7 +1891,7 @@ ApplicationWindow {
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:importUndoLabel}
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
                 text:"New transactions to remove: "+((s.importUndoPreview||{}).transactions||0)+". Import problems to remove: "+((s.importUndoPreview||{}).failures||0)+". Transfer matches made by this import will be undone.\nAffected accounts: "+(((s.importUndoPreview||{}).accounts)||[]).map(function(id){let a=(s.accounts||[]).concat(s.archivedAccounts||[]).find(a=>a.id===id);return a?a.name:id}).join(", ")+"."}
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;visible:errorDialog===importUndoConfirm && workflow.error.length>0;text:visible?workflow.error:"";color:"#a02020"}
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;visible:errorDialog===importUndoConfirm && workflow.error.length>0;text:visible?workflow.error:"";color:theme.error}
             RowLayout {
                 Button {objectName:"confirmImportUndo";text:"Undo import";enabled:!workflow.busy;onClicked:workflow.command("undo_import",{source:(s.importUndoPreview||{}).source,token:(s.importUndoPreview||{}).token})}
                 Button {text:"Cancel";enabled:!workflow.busy;onClicked:importUndoConfirm.close()}
@@ -1933,7 +1959,7 @@ ApplicationWindow {
                 Label {text:exclusionPreviewed && (s.linkExclusionPreview||{}).ready?((s.linkExclusionPreview.comparisons||[]).length+" affected comparisons"):"Preview before saving"}
             }
             ListView {Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:exclusionPreviewed?((s.linkExclusionPreview||{}).comparisons||[]):[];ScrollBar.vertical:UsableScrollBar {} delegate:Label {required property string modelData;width:ListView.view.width;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap}}
-            Label {text:errorDialog===linkExclusionDialog?workflow.error:"";visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:errorDialog===linkExclusionDialog?workflow.error:"";visible:text.length>0;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
         }
         footer:DialogButtonBox {
             Button {text:exclusionEditing.removed?"Remove exclusion":"Save";objectName:"saveLinkExclusion";enabled:!workflow.busy && exclusionPreviewed && !!(s.linkExclusionPreview||{}).ready;onClicked:workflow.command("link_exclusion_save")}
@@ -2035,7 +2061,7 @@ ApplicationWindow {
         contentItem:ColumnLayout {
             Label {text:"Link "+(reviewDifference.preview.common||"")+" and categorise "+(reviewDifference.preview.remainder||"")+" as";wrapMode:Text.Wrap;Layout.fillWidth:true}
             UsableComboBox {id:reviewRemainderCategory;objectName:"reviewRemainderCategory";Layout.fillWidth:true;textRole:"path";model:[{id:"",path:"Uncategorized"}].concat((s.categories||[]).filter(function(c){return c.assignable}));Accessible.name:"Category for difference"}
-            Label {text:errorDialog===reviewDifference?workflow.error:"";visible:text.length>0;color:"#c04040";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:errorDialog===reviewDifference?workflow.error:"";visible:text.length>0;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
         }
         footer:DialogButtonBox {
             Button {text:"Link";objectName:"reviewDifferenceYes";enabled:!workflow.busy;onClicked:{let args=Object.assign({},reviewDifference.preview.args,{splitDifference:true,category:reviewRemainderCategory.model[reviewRemainderCategory.currentIndex].id});workflow.command("review_answer",args)}}
@@ -2095,7 +2121,7 @@ ApplicationWindow {
                     TextField {id:unlockPassword;objectName:"unlockPassword";echoMode:TextInput.Password;placeholderText:"Password to open dataset";Layout.fillWidth:true;onAccepted:openDataset();Accessible.name:"Dataset password"}
                     Button {objectName:"openProtectedDataset";text:"Open file";onClicked:openDataset()}
                 }
-                Label {objectName:"welcomeError";text:errorDialog?"":workflow.error;visible:text.length>0;textFormat:Text.PlainText;color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
+                Label {objectName:"welcomeError";text:errorDialog?"":workflow.error;visible:text.length>0;textFormat:Text.PlainText;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
                 GroupBox {
                     title:"Create a new dataset";visible:settingUp;Layout.fillWidth:true;enabled:!workflow.busy
                     ColumnLayout {
@@ -2113,7 +2139,7 @@ ApplicationWindow {
                         TextField {id:password;objectName:"newDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Password";Layout.fillWidth:true;Accessible.name:"New password"}
                         TextField {id:confirmation;objectName:"confirmDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Confirm password";Layout.fillWidth:true;Accessible.name:"Confirm password"}
                         Label {textFormat:Text.PlainText;visible:protection.checked;text:"Keep your password safe. If you forget it, you cannot open this file or its backups.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        Label {textFormat:Text.PlainText;visible:!protection.checked;text:"Anyone with this file or a backup can read your financial information.";wrapMode:Text.Wrap;Layout.fillWidth:true;color:"#a02020"}
+                        Label {textFormat:Text.PlainText;visible:!protection.checked;text:"Anyone with this file or a backup can read your financial information.";wrapMode:Text.Wrap;Layout.fillWidth:true;color:theme.error}
                         Button {objectName:"createDataset";text:"Create file";enabled:currency.currentIndex>=0;onClicked:createDataset(false)}
                     }
                 }
@@ -2144,7 +2170,7 @@ ApplicationWindow {
                                 parent:window.contentItem;z:1001
                                 x:accountDropPoint.x;y:accountDropPoint.y-1.5
                                 width:accountScroll.availableWidth;height:3
-                                color:"#2678c9";radius:1.5
+                                color:theme.focus;radius:1.5
                                 visible:accountDragRow!==null && accountDropIndex>=0
                                 objectName:"accountDropIndicator"
                             }
@@ -2163,7 +2189,12 @@ ApplicationWindow {
                                         objectName:modelData.id===s.accountId?"accountNavigation":"accountNavigation_"+modelData.id
                                         Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
                                         highlighted:modelData.id===s.accountId && currentPage==="ledger"
-                                        contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
+                                        background:Rectangle {
+                                            implicitWidth:100;implicitHeight:40
+                                            color:parent.highlighted?theme.selection:parent.hovered?theme.alternate:theme.button
+                                            border.width:parent.visualFocus?2:0;border.color:theme.focus
+                                        }
+                                        contentItem:Label {text:parent.text;color:parent.enabled?theme.text:theme.disabled;textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
                                         Accessible.name:"Open account "+modelData.name
                                         onClicked:chooseAccount(modelData.id)
                                         Keys.onMenuPressed:openAccountMenu(modelData.id,this,0,height)
@@ -2173,7 +2204,7 @@ ApplicationWindow {
                                         objectName:"accountBalance_"+modelData.id
                                         Layout.fillWidth:true;Layout.minimumHeight:28;text:sidebarBalanceText(modelData)
                                         topPadding:2;bottomPadding:2;leftPadding:4;rightPadding:4
-                                        wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d"
+                                        wrapMode:Text.Wrap;textFormat:Text.PlainText;color:theme.text
                                         Accessible.name:text
                                     }
                                     }
@@ -2219,7 +2250,12 @@ ApplicationWindow {
                                         objectName:"archivedAccount_"+modelData.id
                                         Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
                                         highlighted:modelData.id===s.accountId
-                                        contentItem:Label {text:parent.text;color:parent.highlighted?"#ffffff":"#18232d";textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
+                                        background:Rectangle {
+                                            implicitWidth:100;implicitHeight:40
+                                            color:parent.highlighted?theme.selection:parent.hovered?theme.alternate:theme.button
+                                            border.width:parent.visualFocus?2:0;border.color:theme.focus
+                                        }
+                                        contentItem:Label {text:parent.text;color:parent.enabled?theme.text:theme.disabled;textFormat:Text.PlainText;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter}
                                         Accessible.name:"Open archived account "+modelData.name
                                         onClicked:chooseAccount(modelData.id)
                                         Keys.onMenuPressed:openAccountMenu(modelData.id,this,0,height)
@@ -2233,7 +2269,7 @@ ApplicationWindow {
                                         objectName:"accountBalance_"+modelData.id
                                         Layout.fillWidth:true;Layout.minimumHeight:28;text:sidebarBalanceText(modelData)
                                         topPadding:2;bottomPadding:2;leftPadding:4;rightPadding:4
-                                        wrapMode:Text.Wrap;textFormat:Text.PlainText;color:"#18232d"
+                                        wrapMode:Text.Wrap;textFormat:Text.PlainText;color:theme.text
                                         Accessible.name:text
                                     }
                                 }
@@ -2261,7 +2297,7 @@ ApplicationWindow {
                         Label {id:workspaceStatusText;objectName:"operationPhase";Layout.fillWidth:true;Layout.minimumWidth:0
                             textFormat:Text.PlainText;elide:Text.ElideRight
                             text:workflow.busy?(workflow.cancellationRequested?"Cancellation requested…":workflow.phase):(workflow.error?(errorDialog?"":workflow.error):workspaceFeedback)
-                            color:!workflow.busy && workflow.error && !errorDialog?"#a02020":palette.windowText
+                            color:!workflow.busy && workflow.error && !errorDialog?theme.error:palette.windowText
                             Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}
                             ToolTip.visible:statusHover.hovered && truncated;ToolTip.text:text
                             HoverHandler {id:statusHover}
@@ -2528,7 +2564,7 @@ ApplicationWindow {
                             Button {objectName:"categorySortDescending";text:"Z–A ↓";highlighted:categorySort==="descending";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("descending")}
                             Button {objectName:"categorySortAdded";text:"Order added";highlighted:categorySort==="added";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("added")}
                         }
-                        Rectangle {objectName:"categoryListDivider";Layout.fillWidth:true;Layout.preferredHeight:1;color:"#b8c0c7"}
+                        Rectangle {objectName:"categoryListDivider";Layout.fillWidth:true;Layout.preferredHeight:1;color:theme.border}
                         ListView {
                             id:catalogList;objectName:"catalogList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:false
                             boundsBehavior:Flickable.StopAtBounds
@@ -2540,11 +2576,11 @@ ApplicationWindow {
                                 required property var modelData
                                 required property int index
                                 width:catalogList.width-catalogBar.width;height:30
-                                color:categorySelection===modelData.id && !modelData.pending?"#dce8f2":index%2?"#f1f4f6":"#ffffff"
+                                color:categorySelection===modelData.id && !modelData.pending?theme.selection:index%2?theme.alternate:theme.surface
                                 property bool editing:categoryAction==="create"?!!modelData.pending:categoryAction==="rename" && modelData.id===categoryFormId
                                 function focusEditor(){inlineCategory.forceActiveFocus();inlineCategory.selectAll()}
-                                Rectangle {anchors.bottom:parent.bottom;width:parent.width;height:1;color:"#dce1e5"}
-                                Label {anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignLeft;textFormat:Text.PlainText;elide:Text.ElideRight;color:"#18232d";visible:!categoryRow.editing;text:modelData.path+(modelData.account?" [Account — edit in Accounts]"+(modelData.aliases?" · Aliases: "+modelData.aliases:""):"")+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"")}
+                                Rectangle {anchors.bottom:parent.bottom;width:parent.width;height:1;color:theme.divider}
+                                Label {anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignLeft;textFormat:Text.PlainText;elide:Text.ElideRight;color:theme.text;visible:!categoryRow.editing;text:modelData.path+(modelData.account?" [Account — edit in Accounts]"+(modelData.aliases?" · Aliases: "+modelData.aliases:""):"")+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"")}
                                 MouseArea {
                                     anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton;enabled:!categoryRow.editing && !workflow.busy && !categorySaving
                                     onClicked:function(mouse){
@@ -2598,7 +2634,7 @@ ApplicationWindow {
                                     objectName:"ruleRow_"+index
                                     visible:index===ruleIndex || (label+" "+expression+" "+actionSummary(ruleEntry)).toLowerCase().indexOf(ruleSearch.text.toLowerCase())>=0
                                     width:rulesPage.availableWidth
-                                    Rectangle {anchors.fill:parent;z:-1;color:ruleEntry.changed?"#fff2cf":"transparent";border.width:ruleIndex===ruleEntry.index?2:0;border.color:"#3679b5"}
+                                    Rectangle {anchors.fill:parent;z:-1;color:ruleEntry.changed?theme.changed:"transparent";border.width:ruleIndex===ruleEntry.index?2:0;border.color:theme.focus}
                                     height:visible?ruleRowLayout.implicitHeight:0
                                     enabled:true
                                     RowLayout {
@@ -2857,8 +2893,8 @@ ApplicationWindow {
                     Component.onDestruction:if(window.ledgerEditorHost===ledgerRow)window.ledgerEditorHost=null
                     property bool viewingSplits: !!window.splitViews[window.splitKey(record)] && record.splits.length>1
                     property alias editorSlot: rowEditorSlot
-                    width:ledger.width-20;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?"#c7e3fb":record.status==="Draft"?"#fff6de":"#f3f5f7"
-                    border.width:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?1:0;border.color:"#2870a8"
+                    width:ledger.width-20;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?theme.draft:theme.row
+                    border.width:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?1:0;border.color:theme.focus
                     MouseArea {width:parent.width;height:34;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){if(!(s.selectionKeys||{})[record.batch+":"+record.ordinal])selectLedgerRow(ledgerRow.index,0);ledgerContext.popup()}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
                         onDoubleClicked:function(mouse){if(mouse.button!==Qt.LeftButton)return;if(record.batch.length)toggleRecord(record.batch,record.ordinal);else editOpening()}
@@ -2942,7 +2978,7 @@ ApplicationWindow {
             ColumnLayout {
                 width:editorScroll.availableWidth
                 Label {textFormat:Text.PlainText;text:"Imported amount: "+(selected.original||"Unavailable");visible:!!selected.original;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                Label {textFormat:Text.PlainText;text:selected.diagnostic||"";color:"#a02020";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {textFormat:Text.PlainText;text:selected.diagnostic||"";color:theme.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.sourceClasses ? "Details from file — "+selected.sourceClasses : "";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.committed && !s.committedChangesSupported?"This file does not support editing accepted transactions.":"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 RowLayout {
@@ -3049,7 +3085,7 @@ ApplicationWindow {
                     }
                     Label {text:"The rule that assigned this value was deleted.";visible:(selected.ruleAssignments||[]).some(c=>!c.available);wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
-                Label {visible:!!s.rulesSupported && !!selected.ruleMatchError;textFormat:Text.PlainText;text:selected.ruleMatchError||"";color:"#a02020";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {visible:!!s.rulesSupported && !!selected.ruleMatchError;textFormat:Text.PlainText;text:selected.ruleMatchError||"";color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {text:selected.newManual?"New transaction · not saved":"Manually entered";visible:!!selected.manual;textFormat:Text.PlainText}
                 CheckBox {
                     id:sourceToggle;objectName:"sourceToggle";text:"Show original imported transaction";enabled:!selected.manual || !!selected.hasImportedOriginal

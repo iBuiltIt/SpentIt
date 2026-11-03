@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 
 TextField {
+    Theme { id: theme }
     id: field
     property var model: []
     property string savedText: ""
@@ -96,9 +97,9 @@ TextField {
                 contentItem:Rectangle {
                     visible:bar.size>0 && bar.size<0.999
                     implicitWidth:12;implicitHeight:12;radius:6
-                    color:bar.pressed?"#52687b":bar.hovered?"#73879a":"#94a3b0"
+                    color:bar.pressed?theme.scrollPressed:bar.hovered?theme.scrollHover:theme.scrollThumb
                 }
-                background:Rectangle {color:"#e9edf0";radius:8;visible:bar.size>0 && bar.size<0.999}
+                background:Rectangle {color:theme.scrollTrack;radius:8;visible:bar.size>0 && bar.size<0.999}
             }
             delegate:ItemDelegate {
                 required property var modelData

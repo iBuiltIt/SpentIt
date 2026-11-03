@@ -2,6 +2,40 @@
 
 Last updated: 2026-11-03
 
+## System light and dark palettes — 2026-11-03
+
+Implemented the owner's [system appearance direction](../features/005-transaction-sheet-navigation.md#system-light-and-dark-palettes--owner-go-2026-11-03).
+The desktop window and inherited Qt controls share semantic light/dark colours
+with custom ledger rows, sidebar selections/balances, category lists, rule draft
+highlights, dialogs and completion scrollbars. Appearance follows Qt's system
+colour-scheme notification; unknown uses light. Formats remain 48/47.
+
+Verification on macOS, Qt 6.12.0, rules-enabled Release:
+
+- Rebuilt `build/SpentIt` and the selected UI test executables.
+- Offscreen `import.navigation`, `import.category_ui`, `import.rules_ui` and
+  `import.qml` passed 4/4 before the final sidebar-selection contrast correction.
+- Native `spentit_import_navigation_tests appearanceSwitching` passed 3/3
+  including setup/cleanup after that correction. A synthetic account remained
+  open through light → dark → light via Qt's native appearance API. Checks cover
+  inherited input text, window and ledger colours, sidebar balance/selection,
+  and at least 4.5:1 contrast for primary text on the main semantic surfaces,
+  highlighted text, and secondary/error/warning text on the control surface.
+- Final offscreen `import.navigation` and `import.qml` passed 2/2 after the
+  sidebar correction (native appearance case explicitly skipped offscreen).
+  `git diff --check` passed.
+- Native light/dark ledger captures were inspected. Initial captures exposed a
+  light-mode selected-account contrast issue, corrected with an explicit paired
+  selection background/text. The native test now checks that rendered pair.
+- Offscreen cannot change the platform colour scheme: the first attempted
+  switching test failed there, and this native-only case now explicitly skips
+  on offscreen. A sandboxed native attempt had no screen access; the native pass
+  used permitted desktop access. No private document was opened.
+
+This is not an exhaustive accessibility audit or visual review of every dialog.
+Linux, Windows, and rules-disabled builds remain unverified for this change.
+The separate older synthetic sheet prototype is unchanged.
+
 ## Exact amount expressions — 2026-11-03
 
 Implemented the owner's [amount-expression contract](ledger-editing.md#amount-expressions--owner-go-2026-11-03).
