@@ -180,3 +180,14 @@ to one allocation hides both controls; Remove is also disabled and its handler
 rejects activation at one allocation, preserving the final category line. Existing
 transfer-removal restrictions and imported-source eligibility for memo rules
 remain in force. Memo and amount field presentation is unchanged by this fix.
+
+## Shared category completion — owner Go 2026-11-02
+
+The ledger and rule editor now share `CategoryCompletion.qml`. Gaining focus
+selects the current text for replacement; later clicks/dragging select text
+normally. Typing filters the still-open list immediately, retaining keyboard
+focus. The list renders ampersands literally. Up/Down, Enter/Tab, mouse choice,
+Escape, split-field navigation and category Undo retain their existing behavior.
+Ledger choices still include Uncategorized and eligible transfer accounts, and
+assignment still uses the existing immediate command. Rule choices and saves
+remain separate caller responsibilities. See [status](status.md) for checks.

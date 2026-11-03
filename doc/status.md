@@ -2,6 +2,42 @@
 
 Last updated: 2026-11-02
 
+## Shared rule and ledger category completion — 2026-11-02
+
+Owner Go implemented. Both editors use `src/ui/CategoryCompletion.qml` for
+select-all on focus, subsequent mouse text selection, live case-insensitive
+substring filtering while the popup remains open, keyboard highlight/acceptance,
+and plain-text category names (including literal ampersands). The existing
+scrollbar appearance and narrow-window popup positioning are retained.
+
+Rules supply ordinary categories and accept the choice into the unsaved rule;
+there is no Uncategorized or transfer destination choice. The ledger supplies
+its existing eligible categories/accounts, retains Uncategorized, and calls the
+same immediate category/transfer commands with split navigation and session Undo.
+Caller-specific eligibility and financial commands remain outside the shared
+component. See the [rules contract](../features/004-rules-and-explanations.md#shared-category-completion--owner-go-2026-11-02)
+and [ledger contract](ledger-editing.md#shared-category-completion--owner-go-2026-11-02).
+
+Verification: rebuilt the rules-enabled Release application and affected UI
+test targets. The seven-suite CTest selection (import UI, navigation, recovery,
+committed UI, categories, rules and QML) passed **7/7** (158.89 s).
+Rules passed **25 QtTest cases**, categories **7**, including setup/cleanup.
+Navigation retained one optional skipped check. New/focused coverage includes
+replacement after focus, partial mouse drag selection, filtering with retained
+focus, literal ampersand labels, no matches, Escape cancellation, draft-only rule
+selection, excluded Uncategorized, ledger scrollbar drag, split navigation,
+immediate assignment and Undo. All fixtures were synthetic.
+
+Native Cocoa focused rules and ledger completion checks each passed **3/3**
+including setup/cleanup (1.249 s and 4.395 s). A native narrow-window capture was
+inspected and showed the ampersand correctly in the field and result row. The
+final scrollbar styling was checked by those native tests and the category/rules
+suites; the broader import/navigation/recovery/committed binaries were built before
+that presentation-only adjustment. `git diff --check` passed. Linux, Windows and
+rules-disabled builds remain unverified. Updated `build/SpentIt`; the owner's
+running application was not restarted.
+
+
 ## Quit after dismissing the rules dialog — 2026-11-02
 
 Fixed a regression introduced by the separate rules confirmation window. Its

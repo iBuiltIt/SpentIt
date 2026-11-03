@@ -56,7 +56,7 @@ class RuleUiTests : public QObject {
         auto* field=object(root,"ruleCategory");if(!field)return false;
         const auto value=field->property("model");
         const auto choices=value.metaType()==QMetaType::fromType<QJSValue>()?value.value<QJSValue>().toVariant().toList():value.toList();
-        for(int i=0;i<choices.size();++i)if(choices[i].toMap().value("id").toString()==id)return choose(root,"ruleCategory",i);
+        for(int i=0;i<choices.size();++i)if(choices[i].toMap().value("id").toString()==id)return QMetaObject::invokeMethod(field,"selectIndex",Q_ARG(QVariant,QVariant(i)));
         return false;
     }
     void transactionRule(QObject* root,const QString& label,const QString& expression,const QString& payee,const QString& category={}){
@@ -65,7 +65,7 @@ class RuleUiTests : public QObject {
         }
         QVERIFY(click(root,"newRule"));QVERIFY(edit(root,"ruleLabel",label));QVERIFY(edit(root,"ruleExpression",expression));
         if(!payee.isEmpty())QVERIFY(edit(root,"rulePayeeTemplate",payee));
-        if(!category.isEmpty())QVERIFY(pickRuleCategory(root,category));else QVERIFY(choose(root,"ruleCategory",1));
+        if(!category.isEmpty())QVERIFY(pickRuleCategory(root,category));else QVERIFY(QMetaObject::invokeMethod(object(root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));
     }
     void splitMemoRule(QObject* root,const QString& label,const QString& expression,const QString& category,bool inherit){
         if(!object(root,"newRule")->property("enabled").toBool()){
@@ -319,6 +319,50 @@ private slots:
         QCOMPARE(s.model.state().value("rules").toList()[1].toMap().value("label").toString(),"Other");
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
     }
+    void sharedCategoryCompletion(){
+        Session s;createDocument(s,"Shared category completion");
+        QVERIFY(click(s.root,"categoryNavigation"));wait(s.model);
+        const auto heating=createCategory(s.model,s.root,"Utilities: Gas & Heating");
+        createCategory(s.model,s.root,"Utilities: Water");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"Completion","^Synthetic$","Synthetic",heating);
+        auto* field=qobject_cast<QQuickItem*>(object(s.root,"ruleCategory"));QVERIFY(field);
+        field->forceActiveFocus();
+        QTRY_COMPARE(field->property("selectedText").toString(),QString("Utilities: Gas & Heating"));
+        QTest::keyClick(s.window,Qt::Key_U);
+        QCOMPARE(field->property("text").toString(),QString("u"));
+        QTest::keyClick(s.window,Qt::Key_T);
+        QCOMPARE(object(s.root,"ruleCategoryMatches")->property("count").toInt(),2);
+        QVERIFY(field->hasActiveFocus());
+        QVERIFY(edit(s.root,"ruleCategory","Gas &"));
+        QCOMPARE(object(s.root,"ruleCategoryMatches")->property("count").toInt(),1);
+        QTest::qWait(50);
+        auto* choice=object(s.root,"inlineCategoryChoice_"+heating);QVERIFY(choice);
+        QCOMPARE(choice->property("text").toString(),QString("Utilities: Gas & Heating"));
+        // A drag within the already focused field selects only part of the text.
+        const auto from=field->mapToScene(QPointF(8,field->height()/2)).toPoint();
+        const auto to=from+QPoint(25,0);
+        QTest::mousePress(s.window,Qt::LeftButton,Qt::NoModifier,from);
+        QTest::mouseMove(s.window,to,50);
+        QTest::mouseRelease(s.window,Qt::LeftButton,Qt::NoModifier,to);
+        QVERIFY(!field->property("selectedText").toString().isEmpty());
+        QVERIFY(field->property("selectedText").toString().size()<field->property("text").toString().size());
+        QTest::keyClick(s.window,Qt::Key_Return);
+        QCOMPARE(s.root->property("ruleCategoryId").toString(),heating);
+        QVERIFY(s.root->property("rulesDirty").toBool());
+        QCOMPARE(s.model.state().value("rules").toList().size(),0);
+        field->forceActiveFocus();
+        QTRY_COMPARE(field->property("selectedText").toString(),QString("Utilities: Gas & Heating"));
+        QVERIFY(edit(s.root,"ruleCategory","does not exist"));
+        QCOMPARE(object(s.root,"ruleCategoryMatches")->property("count").toInt(),0);
+        QTest::keyClick(s.window,Qt::Key_Return);
+        QCOMPARE(s.root->property("ruleCategoryId").toString(),heating);
+        QTest::keyClick(s.window,Qt::Key_Escape);
+        QCOMPARE(field->property("text").toString(),QString("Utilities: Gas & Heating"));
+        QVERIFY(edit(s.root,"ruleCategory",""));
+        QCOMPARE(object(s.root,"ruleCategoryMatches")->property("count").toInt(),3);
+        QVERIFY(!field->property("allowUncategorized").toBool());
+    }
     void quitAfterDiscardedRule(){
         if(!qEnvironmentVariableIsSet("SPENTIT_QUIT_RULE_CHILD")){
             QProcess child;
@@ -443,7 +487,7 @@ private slots:
         const auto batch=selected(s.model).value("batch");run(s.model,"commit");
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
         splitMemoRule(s.root,"Fee","Wise Charges",{},false);
-        QVERIFY(choose(s.root,"ruleCategory",1));QVERIFY(edit(s.root,"ruleMemoTemplate","Fee renamed"));
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));QVERIFY(edit(s.root,"ruleMemoTemplate","Fee renamed"));
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
         auto memo=[&]{return draftOf(s.model).value("splits").toList()[0].toMap().value("memo").toString();};
         QCOMPARE(memo(),"Fee renamed");

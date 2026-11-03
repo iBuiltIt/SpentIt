@@ -136,6 +136,7 @@ private slots:
         QTRY_COMPARE(assigned(),parking);QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
         QCOMPARE(category()->property("text").toString(),QString("Auto: Parking"));
         QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(category()->hasActiveFocus());
+        QTRY_COMPARE(category()->property("selectedText").toString(),QString("Auto: Parking"));
         category()->setProperty("text","auto: gAs");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
         QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),1);
         QTest::keyClick(window,Qt::Key_Tab);wait(model);QTRY_COMPARE(assigned(),gas);QTRY_VERIFY(field("durableMemo")->hasActiveFocus());

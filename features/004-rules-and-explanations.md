@@ -4,6 +4,23 @@ Status: **active**
 Last updated: 2026-11-02  
 Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 42; rules-off documents use schema 41. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
 
+## Shared category completion — owner Go 2026-11-02
+
+The rule editor and ledger use one shared category-completion field. On first
+focus, select the text so typing replaces it. Subsequent clicks and dragging
+support normal text selection. Typing keeps focus in the field and immediately
+filters the open list by case-insensitive substring, including aliases. Up/Down
+moves the highlight; Enter/Tab or a mouse click accepts it. Escape cancels the
+incomplete selection. Category names, including ampersands, display literally.
+
+Callers retain their own eligible choices and assignment commands. Rules choose
+an existing ordinary category and update only the local rule draft; no account
+transfer or Uncategorized choice is added. Save still validates the category.
+The ledger retains Uncategorized, eligible account destinations, immediate
+assignment, split navigation and session Undo. The shared presentation component
+does not own financial commands. See [status](../doc/status.md) for verification.
+
+
 ## Next implementation: category-gated rules and imported categories — 2026-11-02
 
 **State: owner Go implemented; verification recorded in [status](../doc/status.md).**

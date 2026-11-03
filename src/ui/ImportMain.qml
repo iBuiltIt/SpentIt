@@ -919,6 +919,7 @@ ApplicationWindow {
         ruleInput.currentIndex=r.input==="memo"?1:r.input==="category"?2:0
         rulePayeeTemplate.text=r.payeeTemplate||""; ruleMemoTemplate.text=r.memoTemplate||""
         ruleCategoryId=r.categoryId||""
+        ruleCategoryField.resetText()
         ruleCaseSensitive.checked=(r.expression||"").startsWith("(?-i)")
         ruleWholeField.checked=wholeRecognized(r.expression||"")
         ruleAssistNote.text=""; ruleSync=false;rulePreviewKey="";revealRuleEditor()
@@ -988,7 +989,7 @@ ApplicationWindow {
     }
     function acceptRuleCategory() {
         if(ruleIndex<0 || ruleModel.get(ruleIndex).pendingDelete)return true
-        let match=ruleCategoryField.model.find(c=>workflow.categoryNameMatches(c.path,ruleCategoryField.editText))
+        let match=ruleCategoryField.model.find(c=>workflow.categoryNameMatches(c.path,ruleCategoryField.text))
         if(!match){workspaceFeedback="Choose an existing category.";return false}
         if(ruleCategoryId!==match.id){ruleCategoryId=match.id;writeRule()}
         return true
@@ -2445,11 +2446,16 @@ ApplicationWindow {
                             TextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
                             RowLayout {
                                 Label {text:"Category"}
-                                UsableComboBox {id:ruleCategoryField;objectName:"ruleCategory";Layout.fillWidth:true;Layout.minimumWidth:120;Layout.preferredWidth:categorySelectorWidth;Layout.maximumWidth:Math.max(600,categorySelectorWidth);popupPreferredWidth:categorySelectorWidth;editable:true;textRole:"path";valueRole:"id"
-                                    model:[{id:"",path:"Choose a category"}].concat(sortedCategories((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted))))
-                                    currentIndex:{for(let i=0;i<model.length;i++)if(model[i].id===ruleCategoryId)return i;return -1}
-                                    onActivated:{ruleCategoryId=model[currentIndex].id;writeRule()}
-                                    onAccepted:acceptRuleCategory()
+                                CategoryCompletion {
+                                    id:ruleCategoryField;objectName:"ruleCategory"
+                                    Layout.fillWidth:true;Layout.minimumWidth:120;Layout.preferredWidth:categorySelectorWidth
+                                    Layout.maximumWidth:Math.max(600,categorySelectorWidth);popupPreferredWidth:categorySelectorWidth
+                                    placeholderText:"Choose a category";restoreOnFocusLoss:false
+                                    model:sortedCategories((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
+                                    savedText:{let row=model.find(c=>c.id===ruleCategoryId);return row?row.path:""}
+                                    onChoiceAccepted:function(choice){ruleCategoryId=choice.id;writeRule();ruleTransactionScope.forceActiveFocus()}
+                                    onBackwardRequested:ruleMemoTemplate.forceActiveFocus()
+                                    onEscapeRequested:resetText()
                                     Accessible.name:"Rule category"
                                 }
                             }
@@ -2742,32 +2748,22 @@ ApplicationWindow {
                         required property string category
                         required property string memo
                         required property string amount
-                        TextField {
+                        CategoryCompletion {
                             id:categoryInput;objectName:"splitCategory_"+index
+                            popupObjectName:"categoryDropdown_"+index
+                            matchesObjectName:"categoryMatches_"+index
+                            scrollBarObjectName:"categoryDropdownScrollBar"
                             visible:!!s.categoriesSupported;readOnly:!editEnabled && !originLink(index>=0 && index<splitModel.count?splitModel.get(index).allocationId:"")
-                            Layout.preferredWidth:Math.min(categorySelectorWidth,Math.max(120,editorScroll.availableWidth-240));placeholderText:"Category";maximumLength:256
+                            Layout.preferredWidth:Math.min(categorySelectorWidth,Math.max(120,editorScroll.availableWidth-240))
+                            popupPreferredWidth:categorySelectorWidth;placeholderText:"Category"
                             Accessible.name:"Split category"
-                            property string savedText: index>=0 && index<splitModel.count ? (splitModel.get(index).categoryDisplay==="Uncategorized" ? "" : splitModel.get(index).categoryDisplay||"") : ""
-                            text:savedText
-                            property bool unresolvedTransfer: category.startsWith("[") && !originLink(index>=0 && index<splitModel.count?splitModel.get(index).allocationId:"")
-                            property var choices: []
-                            property bool choosing:false
-                            function refreshChoices() {
-                                let query=text.toLowerCase()
-                                let rows=(s.categories||[]).concat(s.accountCategories||[]).filter(function(c){
-                                    return (!unresolvedTransfer || c.account) && !c.deleted && !c.archived && (c.account ? c.accountId!==s.accountId : c.assignable) &&
-                                        (c.path+" "+(c.aliases||"")).toLowerCase().indexOf(query)>=0
-                                })
-                                rows=sortedCategories(rows)
-                                if(!query && !unresolvedTransfer)rows.unshift({id:"",path:"",uncategorized:true})
-                                choices=rows;categoryMatches.currentIndex=rows.length?0:-1
-                                categoryMatches.positionViewAtBeginning()
-                            }
-                            function openChoices() {if(!readOnly){refreshChoices();categoryPopup.open()}}
-                            function acceptChoice() {
-                                if(categoryMatches.currentIndex<0)return
-                                let choice=choices[categoryMatches.currentIndex]
-                                choosing=true;text=choice.path;categoryPopup.close()
+                            savedText:index>=0 && index<splitModel.count ? (splitModel.get(index).categoryDisplay==="Uncategorized" ? "" : splitModel.get(index).categoryDisplay||"") : ""
+                            property bool unresolvedTransfer:category.startsWith("[") && !originLink(index>=0 && index<splitModel.count?splitModel.get(index).allocationId:"")
+                            allowUncategorized:!unresolvedTransfer
+                            model:sortedCategories((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){
+                                return (!unresolvedTransfer || c.account) && !c.deleted && !c.archived && (c.account ? c.accountId!==s.accountId : c.assignable)
+                            }))
+                            onChoiceAccepted:function(choice) {
                                 // Move first so durable acceptance restores the intended next field.
                                 if(splitModel.count===1)editMemo.forceActiveFocus()
                                 else splitMemo.forceActiveFocus()
@@ -2775,56 +2771,13 @@ ApplicationWindow {
                                 if(choice.account && unresolvedTransfer)transferCommand("transfer_from_draft",{link:workflow.newIdentity(),destination:choice.accountId,allocation:splitModel.get(index).allocationId})
                                 else if(choice.account)chooseAccountDestination(choice.accountId)
                                 else chooseCategory(choice.id,choice.path)
-                                choosing=false
                             }
-                            onActiveFocusChanged: {
-                                if(activeFocus)openChoices()
-                                else if(!choosing){categoryPopup.close();text=savedText}
+                            onBackwardRequested: {
+                                if(index>0)editorSplits.itemAt(index-1).amountField.forceActiveFocus();else editTotal.forceActiveFocus()
                             }
-                            onPressed:openChoices()
-                            onTextEdited: {refreshChoices();categoryPopup.open()}
-                            Keys.priority:Keys.BeforeItem
-                            Keys.onPressed:function(event) {
-                                if(event.key===Qt.Key_Backtab || (event.key===Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))){
-                                    categoryPopup.close();text=savedText
-                                    if(index>0)editorSplits.itemAt(index-1).amountField.forceActiveFocus();else editTotal.forceActiveFocus()
-                                    event.accepted=true
-                                }else if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter || event.key===Qt.Key_Tab){
-                                    if(!categoryPopup.visible)openChoices()
-                                    acceptChoice();event.accepted=true
-                                }else if(event.key===Qt.Key_Down || event.key===Qt.Key_Up){
-                                    if(!categoryPopup.visible)openChoices()
-                                    else categoryMatches.currentIndex=Math.max(0,Math.min(choices.length-1,categoryMatches.currentIndex+(event.key===Qt.Key_Down?1:-1)))
-                                    categoryMatches.positionViewAtIndex(categoryMatches.currentIndex,ListView.Contain);event.accepted=true
-                                }else if(event.key===Qt.Key_Escape){
-                                    if(categoryPopup.visible){categoryPopup.close();text=savedText}else loadEditor()
-                                    event.accepted=true
-                                }else if(event.matches(StandardKey.Undo) && text===savedText && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}
-                            }
-                            Popup {
-                                id:categoryPopup;objectName:"categoryDropdown_"+index
-                                y:categoryInput.height;width:Math.min(window.width-40,Math.max(categoryInput.width,categorySelectorWidth))
-                                x:Math.min(0,window.width-20-categoryInput.mapToItem(window.contentItem,0,0).x-width)
-                                height:Math.min(280,Math.max(44,categoryMatches.contentHeight)+8)
-                                padding:4;focus:false;closePolicy:Popup.CloseOnPressOutside
-                                contentItem:ListView {
-                                    id:categoryMatches;objectName:"categoryMatches_"+index
-                                    clip:true;model:categoryInput.choices;currentIndex:-1
-                                    boundsBehavior:Flickable.StopAtBounds
-                                    ScrollBar.vertical:UsableScrollBar {objectName:"categoryDropdownScrollBar"}
-                                    delegate:ItemDelegate {
-                                        required property var modelData
-                                        required property int index
-                                        objectName:"inlineCategoryChoice_"+(modelData.account?modelData.accountId:modelData.id||"uncategorized")
-                                        width:categoryMatches.width-16
-                                        text:modelData.uncategorized?"Uncategorized":modelData.path.replace(/&/g,"&&")+(modelData.account?" [Account]":"")
-                                        highlighted:index===categoryMatches.currentIndex
-                                        focusPolicy:Qt.NoFocus
-                                        onClicked:{categoryMatches.currentIndex=index;categoryInput.acceptChoice()}
-                                    }
-                                    Label {anchors.centerIn:parent;text:"No matches";visible:categoryInput.choices.length===0}
-                                }
-                            }
+                            onEscapeRequested:loadEditor()
+                            canUndoAssignment:!dirty && !!s.canUndoEdit
+                            onUndoAssignmentRequested:undoEdit()
                         }
                         TextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
