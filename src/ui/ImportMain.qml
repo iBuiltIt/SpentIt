@@ -2792,9 +2792,10 @@ ApplicationWindow {
                 TextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){loadEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && s.canUndoEdit){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
                 RowLayout {
-                    visible:editEnabled
-                    Button {objectName:"addSplit";text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
-                    Label {textFormat:Text.PlainText;text:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                    visible:editEnabled || (!!s.rulesSupported && !!selected.batch)
+                    Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch;text:{let choices=ruleChoices();return !choices.some(c=>c.available)?"Create rule…":choices.length===1?"Edit rule…":"Edit rules…"} onClicked:transactionRuleAction()}
+                    Button {objectName:"addSplit";visible:editEnabled;text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
+                    Label {visible:editEnabled;textFormat:Text.PlainText;text:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 RowLayout {
                     visible:currentPage==="review" && !!selected.editable && !selected.repair && !s.readOnly
@@ -2806,7 +2807,6 @@ ApplicationWindow {
                 }
                 RowLayout {
                     visible:!!s.rulesSupported && !!selected.batch
-                    Button {objectName:"transactionRuleAction";text:{let choices=ruleChoices();return !choices.some(c=>c.available)?"Create rule…":choices.length===1?"Edit rule…":"Edit rules…"} onClicked:transactionRuleAction()}
                     Label {
                         objectName:"ruleWinners";Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
                         text:{

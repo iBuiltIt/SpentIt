@@ -2,6 +2,15 @@
 
 Last updated: 2026-11-02
 
+## Ledger rule button placement — 2026-11-02
+
+Moved Create rule (or Edit rule/Edit rules when applicable) to the left of Add
+split on the same transaction-editor row. Existing action visibility and behavior
+are retained; rule attribution remains below. Rebuilt rules-enabled Release
+`build/SpentIt`; `import.qml` passed (1/1, 1.50 s) and `git diff --check`
+passed. Native layout inspection and other platforms were not rerun.
+
+
 ## Shared rule and ledger category completion — 2026-11-02
 
 Owner Go implemented. Both editors use `src/ui/CategoryCompletion.qml` for
