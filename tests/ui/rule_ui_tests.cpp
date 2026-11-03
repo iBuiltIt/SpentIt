@@ -3,6 +3,9 @@
 #include <spentit/storage_document_gateway.hpp>
 #include "../storage/import_schema5_fixture.hpp"
 #include <QTest>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QTimer>
 #include <QJSValue>
 #include <QElapsedTimer>
 #include <QTemporaryDir>
@@ -107,7 +110,7 @@ private slots:
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);QCOMPARE(page(s.root),"rules");
         transactionRule(s.root,"Guard","^Guard","Kept");
         QVERIFY(click(s.root,"accountNavigation"));
-        QVERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QVERIFY(object(s.root,"rulesLeaveDialog")->property("visible").toBool());
         QVERIFY(click(s.root,"rulesGuardStay"));
         QCOMPARE(page(s.root),"rules");QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"accountNavigation"));QVERIFY(click(s.root,"rulesGuardDiscard"));wait(s.model);
@@ -120,20 +123,20 @@ private slots:
         QVERIFY(edit(s.root,"durablePayee","Temporary payee"));
         QVERIFY(click(s.root,"accountNavigation"));
         QVERIFY(object(s.root,"unsavedDialog")->property("visible").toBool());
-        QVERIFY(!object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QVERIFY(!object(s.root,"rulesLeaveDialog")->property("visible").toBool());
         QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"guardDiscard"));
-        QVERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QVERIFY(object(s.root,"rulesLeaveDialog")->property("visible").toBool());
         QCOMPARE(page(s.root),"rules");QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"rulesGuardStay"));
         QCOMPARE(page(s.root),"rules");QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(edit(s.root,"durablePayee","Temporary payee"));
         QVERIFY(QMetaObject::invokeMethod(s.window,"close"));
         QVERIFY(object(s.root,"unsavedDialog")->property("visible").toBool());
-        QVERIFY(!object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QVERIFY(!object(s.root,"rulesLeaveDialog")->property("visible").toBool());
         QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"guardDiscard"));
-        QVERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QVERIFY(object(s.root,"rulesLeaveDialog")->property("visible").toBool());
         QCOMPARE(page(s.root),"rules");QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"rulesGuardStay"));
         QVERIFY(s.window->isVisible());QVERIFY(s.model.state().value("active").toBool());
@@ -266,18 +269,47 @@ private slots:
         QVERIFY(!object(s.root,"ruleRow_0")->property("changed").toBool());
         QVERIFY(click(s.root,"openRule_1"));QVERIFY(edit(s.root,"ruleLabel","Discard this change"));
         QVERIFY(click(s.root,"accountNavigation"));
-        QCOMPARE(s.root->property("ruleIndex").toInt(),2);
+        QCOMPARE(s.root->property("ruleIndex").toInt(),1);
         QCOMPARE(s.root->property("unsavedRuleCount").toInt(),2);
-        QTRY_VERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QTRY_VERIFY(object(s.root,"rulesLeaveDialog")->property("visible").toBool());
         QTest::qWait(50);
-        auto* bar=qobject_cast<QQuickItem*>(object(s.root,"rulesLeaveBar"));
-        const auto position=bar->mapToScene(QPointF(0,0));
-        QVERIFY(position.y()>=0 && position.y()+bar->height()<=s.window->height());
-        if(qEnvironmentVariableIsSet("SPENTIT_RULE_SCREENSHOT"))QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_SCREENSHOT")));
+        auto* dialog=qobject_cast<QQuickWindow*>(object(s.root,"rulesLeaveDialog"));
+        QVERIFY(dialog);
+        QCOMPARE(dialog->modality(),Qt::ApplicationModal);
+        QVERIFY(dialog->flags().testFlag(Qt::WindowTitleHint));
+        auto* content=qobject_cast<QQuickItem*>(object(s.root,"rulesLeaveContent"));
+        QVERIFY(content);
+        QTRY_COMPARE(dialog->height(),qRound(content->implicitHeight()+40));
+        QCOMPARE(content->y(),20.0);
+        QCOMPARE(dialog->transientParent(),s.window);
+        if(QGuiApplication::platformName()=="cocoa")QVERIFY(dialog->frameMargins().top()>0);
+        const auto position=dialog->position();
+        dialog->setPosition(position+QPoint(60,40));
+        QCOMPARE(dialog->position(),position+QPoint(60,40));
+        dialog->close();
+        QTRY_VERIFY(!dialog->isVisible());
+        QCOMPARE(page(s.root),"rules");
+        QVERIFY(s.root->property("rulesDirty").toBool());
+        QVERIFY(click(s.root,"accountNavigation"));
+        QTRY_VERIFY(dialog->isVisible());
+        dialog->requestActivate();
+        QTest::qWait(50);
+        QTest::keyClick(dialog,Qt::Key_Escape);
+        QTRY_VERIFY(!dialog->isVisible());
+        QVERIFY(s.root->property("rulesDirty").toBool());
+        QVERIFY(click(s.root,"accountNavigation"));
+        QTRY_VERIFY(dialog->isVisible());
+        QCOMPARE(object(s.root,"rulesGuardSave")->property("text").toString(),QString("Save"));
+        QCOMPARE(object(s.root,"rulesGuardDiscard")->property("text").toString(),QString("Discard"));
+        if(qEnvironmentVariableIsSet("SPENTIT_RULE_SCREENSHOT"))QVERIFY(dialog->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_SCREENSHOT")));
         QVERIFY(click(s.root,"rulesGuardStay"));
-        QCOMPARE(s.root->property("ruleIndex").toInt(),2);
+        QCOMPARE(s.root->property("ruleIndex").toInt(),1);
         QVERIFY(click(s.root,"accountNavigation"));QVERIFY(click(s.root,"rulesGuardDiscard"));wait(s.model);
         QCOMPARE(page(s.root),"ledger");
+        QVERIFY(!dialog->isVisible());
+        // Qt quit closes even hidden windows that still have a native handle.
+        // A dismissed confirmation must not veto that close.
+        QVERIFY(dialog->close());
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
         const auto appliedBatch=selected(s.model).value("batch");
         run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
@@ -286,6 +318,34 @@ private slots:
         QCOMPARE(s.model.state().value("rules").toList()[0].toMap().value("expression").toString(),"^Ride");
         QCOMPARE(s.model.state().value("rules").toList()[1].toMap().value("label").toString(),"Other");
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
+    }
+    void quitAfterDiscardedRule(){
+        if(!qEnvironmentVariableIsSet("SPENTIT_QUIT_RULE_CHILD")){
+            QProcess child;
+            auto environment=QProcessEnvironment::systemEnvironment();
+            environment.insert("SPENTIT_QUIT_RULE_CHILD","1");
+            child.setProcessEnvironment(environment);
+            child.start(QCoreApplication::applicationFilePath(),{"quitAfterDiscardedRule"});
+            QVERIFY(child.waitForStarted());
+            QVERIFY2(child.waitForFinished(30000),"Quit did not terminate the test process");
+            const auto output=child.readAllStandardOutput()+child.readAllStandardError();
+            QCOMPARE(child.exitStatus(),QProcess::NormalExit);
+            QVERIFY2(child.exitCode()==0,output.constData());
+            return;
+        }
+        Session s;createDocument(s,"Quit after rule discard");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"Discard before quit","^Synthetic$","Synthetic");
+        QVERIFY(click(s.root,"accountNavigation"));
+        QVERIFY(click(s.root,"rulesGuardDiscard"));wait(s.model);
+        QCOMPARE(page(s.root),"ledger");
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        connect(&timeout,&QTimer::timeout,[]{QCoreApplication::exit(87);});
+        timeout.start(15000);
+        QTimer::singleShot(0,[]{QCoreApplication::quit();});
+        QCOMPARE(QGuiApplication::exec(),0);
+        QVERIFY(!s.model.state().value("active").toBool());
     }
     void saveAllLeaveIsAtomicAndSelectsInvalidRule(){
         Session s;createDocument(s,"Save all rules");
@@ -296,13 +356,14 @@ private slots:
         QVERIFY(click(s.root,"openRule_0"));QVERIFY(edit(s.root,"ruleLabel","First changed"));
         QVERIFY(click(s.root,"openRule_1"));QVERIFY(edit(s.root,"ruleExpression","["));
         QVERIFY(click(s.root,"accountNavigation"));
-        QCOMPARE(s.root->property("ruleIndex").toInt(),0);
+        QCOMPARE(s.root->property("ruleIndex").toInt(),1);
         QVERIFY(click(s.root,"rulesGuardSave"));wait(s.model,false);
         QTRY_COMPARE(s.root->property("ruleIndex").toInt(),1);
         QCOMPARE(s.model.state().value("ruleRevision"),revision);
         QCOMPARE(s.model.state().value("rules").toList()[0].toMap().value("label").toString(),"First");
-        QVERIFY(object(s.root,"rulesLeaveBar")->property("visible").toBool());
+        QVERIFY(!object(s.root,"rulesLeaveDialog")->property("visible").toBool());
         QVERIFY(edit(s.root,"ruleExpression","^Second changed$"));
+        QVERIFY(click(s.root,"accountNavigation"));
         QVERIFY(click(s.root,"rulesGuardSave"));wait(s.model);
         QTRY_COMPARE(page(s.root),"ledger");
         QVERIFY(!s.root->property("rulesDirty").toBool());
@@ -517,8 +578,9 @@ private slots:
         QVERIFY(object(s.root,"openRule_2")->property("text").toString().startsWith("First"));
         QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"accountNavigation"));
-        QCOMPARE(s.root->property("ruleIndex").toInt(),2);
+        QCOMPARE(s.root->property("ruleIndex").toInt(),0);
         QVERIFY(click(s.root,"rulesGuardStay"));
+        QVERIFY(click(s.root,"openRule_2"));
         QVERIFY(click(s.root,"discardRules"));
         QVERIFY(!s.root->property("rulesDirty").toBool());
         QVERIFY(object(s.root,"openRule_0")->property("text").toString().startsWith("First"));
@@ -541,7 +603,7 @@ private slots:
         QVERIFY(!s.model.state().value("rules").toList()[0].toMap().value("enabled").toBool());
         QVERIFY(s.model.state().value("rules").toList()[1].toMap().value("enabled").toBool());
         QVERIFY(click(s.root,"accountNavigation"));
-        QCOMPARE(s.root->property("ruleIndex").toInt(),1);
+        QCOMPARE(s.root->property("ruleIndex").toInt(),0);
         QVERIFY(click(s.root,"rulesGuardDiscard"));wait(s.model);
         QVERIFY(!s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);

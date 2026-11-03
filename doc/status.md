@@ -2,6 +2,80 @@
 
 Last updated: 2026-11-02
 
+## Quit after dismissing the rules dialog — 2026-11-02
+
+Fixed a regression introduced by the separate rules confirmation window. Its
+close handler rejected every close event, even while hidden after Discard/Save/
+Stay. Qt application shutdown attempts to close hidden windows with native
+handles too; the hidden confirmation could therefore veto Quit after the main
+window disappeared. The handler now accepts closure when the confirmation is
+inactive or the document-close audit has authorized final exit. Active-dialog
+close/Escape still mean Stay. Document auditing and failure recovery are unchanged.
+
+Verification: a regression assertion reproduced the old failure after Discard:
+`dialog->close()` returned false. Rebuilt rules-enabled Release application
+(`build/SpentIt`) and rules UI tests. Full offscreen rules suite passed **24/24**
+QtTest cases (28.779 s), including a child-process test that discards a rule and
+exits through the document-close workflow. The final version of that test uses
+an application Quit request instead of a main-window close; it passed offscreen
+**3/3** including setup/cleanup (0.772 s), and native Cocoa together with the
+dialog lifecycle case **4/4** (3.595 s). The parent verifies normal child-process
+exit; the child verifies the document is closed. Synthetic fixtures only.
+This tests the shutdown path rather than a physical Cmd+Q keystroke or the exact
+transaction-prefill sequence. Other platforms remain unverified.
+`git diff --check` passed; the owner's running application was not restarted.
+
+
+## Rules dialog layout and native window correction — 2026-11-02
+
+Owner Go implemented after the screenshot showed excessive vertical space and an
+attached macOS sheet. The rules confirmation now uses application modality, so
+macOS presents a separate framed dialog. Height follows content, with 20-pixel
+outer padding and 16-pixel message/button spacing; the content layout no longer
+stretches vertically. Save / Discard / Stay and the prior navigation semantics
+are unchanged. This corrects the window-modal implementation described below.
+
+Verification: rebuilt the rules-enabled Release application at `build/SpentIt`
+and rules UI tests. The full offscreen rules suite passed **23/23 QtTest cases**
+(27.239 s). Native Cocoa testing with window access passed the independent-draft
+and invalid-save cases, **4/4 including setup/cleanup** (4.336 s). The native run
+checks application modality, a nonzero top window frame, programmatic movement,
+content-sized height, Escape/close cancellation, save/discard and invalid-save
+atomicity. The native content capture was inspected for spacing and clipping.
+Physical title-bar dragging was not exercised; Linux/Windows remain unverified.
+The final native run includes an added Cocoa-only frame assertion after the full
+offscreen run. `git diff --check` passed. The owner's application was not restarted.
+
+
+## Movable rules leave dialog — 2026-11-02
+
+Owner follow-up Go implemented: leaving Rules with unsaved edits now opens a
+separate window-modal dialog with Save / Discard / Stay. A normal dialog title
+bar permits repositioning. The underlying workspace is not dimmed; the selected
+rule, search and scroll position remain in place. Save and Discard concern all
+outstanding rule edits; selected-rule editor buttons retain their existing scope.
+Escape and window close mean Stay. Buttons and dismissal are blocked during the
+operation. Validation failure cancels navigation, hides the dialog and reveals
+the invalid rule. This supersedes the inline bar and selection-on-leave behavior
+in the November 1 checkpoint below. See the
+[contract](../features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01).
+
+Verification: rules-enabled Release application and rules/navigation test targets
+rebuilt successfully. The full offscreen rules suite passed **23/23 QtTest cases**
+(including setup/cleanup, 26.935 s); navigation and QML CTest checks passed **2/2**
+(9.91 s). Coverage includes dialog modality/parent, repositioning, exact button
+labels, close/Escape cancellation, selected-rule retention, save/discard navigation,
+and invalid-save atomicity with return to the editor. No QML warnings appeared in
+the final rules run. `git diff --check` passed. Updated `build/SpentIt`; the
+owner's application was not restarted.
+
+A native Cocoa test attempt aborted at window creation with “no screens available”
+in this execution environment (exit 134), before either requested interaction case
+could run. Native title-bar dragging/appearance, other platforms and the full
+project suite remain unverified. The movement check above changes the window
+position programmatically; it is not a physical drag test.
+
+
 ## Ledger selection Rename payee and Restore — 2026-11-02
 
 Owner Go implemented: right-click Rename payee and Restore imported values work

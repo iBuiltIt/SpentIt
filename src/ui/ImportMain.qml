@@ -574,11 +574,50 @@ ApplicationWindow {
     }
     function revealRuleEditor() {ruleRevealPasses=2;ruleRevealTimer.restart()}
     function showRulesLeave() {
-        showRulesPage();ruleSearch.clear()
-        let index=newRuleIndex(),changed=dirtyRuleIndices()
-        if(index<0 && changed.length)index=changed[0]
-        if(index>=0)openRule(index)
-        rulesLeaving=true;revealRuleEditor()
+        showRulesPage()
+        rulesLeaveDialog.x=window.x+(window.width-rulesLeaveDialog.width)/2
+        rulesLeaveDialog.y=window.y+(window.height-rulesLeaveDialog.height)/2
+        rulesLeaving=true
+        rulesLeaveDialog.requestActivate()
+    }
+    function stayInRules() {rulesLeaving=false;pendingAction=null}
+    Window {
+        id:rulesLeaveDialog;objectName:"rulesLeaveDialog"
+        transientParent:window
+        flags:Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint
+        // WindowModal becomes an attached sheet on macOS, without a draggable title bar.
+        modality:Qt.ApplicationModal
+        title:"Save changes before leaving Rules?"
+        width:460;height:rulesLeaveContent.implicitHeight+40
+        minimumWidth:460;maximumWidth:460
+        minimumHeight:rulesLeaveContent.implicitHeight+40
+        maximumHeight:rulesLeaveContent.implicitHeight+40
+        color:window.palette.window
+        visible:rulesLeaving
+        onClosing:function(close) {
+            // Quit also closes hidden windows with native handles. Only an active
+            // confirmation may veto closure; a dismissed dialog must allow exit.
+            if(!rulesLeaving || allowClose)return
+            close.accepted=false
+            if(!workflow.busy && !ruleValidatingAll)stayInRules()
+        }
+        Shortcut {sequence:"Escape";enabled:rulesLeaving && !workflow.busy && !ruleValidatingAll;onActivated:stayInRules()}
+        ColumnLayout {
+            id:rulesLeaveContent;objectName:"rulesLeaveContent"
+            anchors.top:parent.top;anchors.left:parent.left;anchors.right:parent.right
+            anchors.margins:20;spacing:16
+            Label {
+                Layout.fillWidth:true;wrapMode:Text.Wrap
+                text:unsavedRuleCount===1?"You have unsaved changes to 1 rule.":"You have unsaved changes to "+unsavedRuleCount+" rules."
+            }
+            RowLayout {
+                Layout.alignment:Qt.AlignRight
+                enabled:!workflow.busy && !ruleValidatingAll
+                Button {objectName:"rulesGuardSave";text:"Save";onClicked:saveAllRulesAndLeave()}
+                Button {objectName:"rulesGuardDiscard";text:"Discard";onClicked:workflow.command("rules_discard")}
+                Button {objectName:"rulesGuardStay";text:"Stay";onClicked:stayInRules()}
+            }
+        }
     }
     function discardRule() {
         if(ruleIndex<0)return
@@ -595,7 +634,7 @@ ApplicationWindow {
         openRule(index);updateRulesDirty()
     }
     function saveAllRulesAndLeave() {
-        if(!acceptRuleCategory())return
+        if(!acceptRuleCategory()){stayInRules();revealRuleEditor();return}
         ruleValidationQueue=dirtyRuleIndices().filter(i=>!ruleModel.get(i).pendingDelete).map(i=>ruleModel.get(i).id)
         ruleValidatingAll=true;validateNextRule()
     }
@@ -1165,7 +1204,7 @@ ApplicationWindow {
             if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session until another kind of change.":"Edit saved."
             if(success && action==="undo_edit")workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
-            if(!success){ruleApplyAfterSave=false;ruleApplyAfterPreview=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];revealRuleEditor()}}
+            if(!success){ruleApplyAfterSave=false;ruleApplyAfterPreview=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
             if(success && (action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
             if(success && action.indexOf("transfer_")===0 && !(s.transferMergePreview||{}).id && (s.transferReceipt||{}).operation)workspaceFeedback="Transfer operation saved."
@@ -2374,19 +2413,6 @@ ApplicationWindow {
                             id:ruleEditor;objectName:"ruleEditor"
                             visible:ruleIndex>=0
                             Layout.fillWidth:true
-                            Frame {
-                                objectName:"rulesLeaveBar";visible:rulesLeaving;Layout.fillWidth:true
-                                ColumnLayout {
-                                    anchors.fill:parent
-                                    Label {text:"You have unsaved changes to "+unsavedRuleCount+" rule"+(unsavedRuleCount===1?".":"s.");wrapMode:Text.Wrap;Layout.fillWidth:true}
-                                    Flow {
-                                        Layout.fillWidth:true;spacing:8
-                                        Button {objectName:"rulesGuardSave";text:"Save all and leave";onClicked:saveAllRulesAndLeave()}
-                                        Button {objectName:"rulesGuardDiscard";text:"Discard all and leave";onClicked:workflow.command("rules_discard")}
-                                        Button {objectName:"rulesGuardStay";text:"Stay";onClicked:{rulesLeaving=false;pendingAction=null}}
-                                    }
-                                }
-                            }
                             RowLayout {
                                 Layout.fillWidth:true
                                 Label {text:"Rule name";font.bold:true;Layout.fillWidth:true}

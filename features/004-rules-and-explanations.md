@@ -49,7 +49,7 @@ Do not implement the intermediate forced-run proposal.
   acceptance or a special force option.
 - Preserve the one-screen rule editor, independent selected-definition saves,
   pending local drafts, optional visible Preview, group application Undo, and
-  nonmodal Save all / Discard all / Stay navigation. Do not restore the All rules
+  movable Save / Discard / Stay navigation confirmation. Do not restore the All rules
   button or the editor's redundant Enabled checkbox.
 - Pre-release datasets are disposable and none need legacy support. Do not add
   migration, repair, grandfathering, disabled-old-rule UI or special handling for
@@ -203,20 +203,30 @@ only the selected rule's change.
   Row Enabled controls retain document-wide rule semantics. Legacy all-rule
   preview/storage commands remain available internally. Preview results disappear
   when the selected rule or preview inputs change.
-- Leaving with outstanding edits selects the new rule first, otherwise the first
-  changed rule in list order, and scrolls its editor into view. A compact nonmodal
-  bar above the editor reports the count and offers Save all and leave, Discard all
-  and leave, and Stay. Stay dismisses the bar without navigation.
-- Discard all drops every remaining unsaved edit and new draft, retaining already
-  saved rules and applied transaction changes. Save all validates pending
+- Owner follow-up Go, 2026-11-02: leaving with outstanding edits opens a separate,
+  movable, application-modal dialog titled “Save changes before leaving Rules?” with
+  Save / Discard / Stay. Its text gives the number of changed rules. Keep the
+  current rule, search and scroll position underneath; do not dim the workspace.
+  The title bar allows moving the dialog aside; editing waits for an answer.
+  Application modality avoids the attached macOS sheet presentation. Height follows
+  the contents, with 20-pixel outer padding and a 16-pixel message/button gap.
+  Escape and the window close control mean Stay while the prompt is active.
+  Once dismissed, the hidden dialog accepts close requests so it cannot veto
+  application shutdown. Final closure after the document audit is also accepted.
+  Selecting another rule within
+  Rules continues to retain local edits without prompting.
+- Discard drops every remaining unsaved edit and new draft, retaining already
+  saved rules and applied transaction changes. Save validates all pending
   definitions before one atomic ruleset save, without applying transactions.
-  Validation failure selects the invalid rule and leaves all saved definitions
-  unchanged. The bar remains available for correction or discard.
+  Validation failure dismisses the dialog, cancels navigation and reveals the
+  invalid rule for correction, leaving saved definitions unchanged. Dialog
+  actions and dismissal are unavailable while the save/discard is running.
+  This supersedes the nonmodal leave bar and automatic selection on leaving.
 
 Verification must include an incomplete new draft alongside an edited existing
 rule, optional-preview Save and apply, persistence after reopening, discard-all
-retaining prior saves/applications, invalid save-all atomicity, priority selection
-on leaving, and visible editor/bar placement. See [status](../doc/status.md) for
+retaining prior saves/applications, invalid save-all atomicity, selection retention
+on leaving, movable dialog placement, and Escape/close cancellation. See [status](../doc/status.md) for
 actual results and platform limits.
 
 ## Simple generated patterns and regex key — owner Go 2026-11-01
