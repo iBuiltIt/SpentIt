@@ -675,10 +675,15 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
             fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before changing category");
         require_writable_account(impl_->db,impl_->selected_account);require_management_shape(request);
         const bool committed=transaction_accepted(id);
-        if(committed!=(fact.state==transfers::State::committed) || fact.generated || !fact.imported)fail(SQLITE_CONSTRAINT,"Invalid category assignment");
+        if(committed!=(fact.state==transfers::State::committed) || fact.generated)fail(SQLITE_CONSTRAINT,"Invalid category assignment");
         auto row=load_row(id,false);if(!row.draft || row.excluded_by_clear || row.matched_generated || (row.decision.disposition!=imports::Disposition::include && row.decision.disposition!=imports::Disposition::unresolved))fail(SQLITE_CONSTRAINT,"Resolve the transaction before changing category");
         auto draft=committed?committed_entry(id).current.draft:*row.draft;
         if(committed && !committed_entry(id).current.active)fail(SQLITE_CONSTRAINT,"Transaction was removed");
+        // Manual ledger entries have no imported original. Validate the supplied
+        // kind against the stored transaction rather than requiring import evidence.
+        const bool imported=draft.transaction.original_imported_amount().has_value();
+        if(fact.imported!=imported || fact.manually_entered==imported)
+            fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before changing category");
         const auto previous=draft;auto aa=draft.transaction.allocations();auto a=std::find_if(aa.begin(),aa.end(),[&](const auto& value){return value.identity==fact.endpoint.allocation;});
         if(a==aa.end() || a->amount!=fact.amount || draft.date!=fact.date)fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before changing category");
         if(!request.category_id.empty()){const auto display=resolve_category(request.category_id);if(!display.assignable || display.path!=request.category_path)fail(SQLITE_CONSTRAINT,"Choose an available category");}

@@ -16,6 +16,79 @@ imports::DraftRow manual(std::string amount="-10.00") {
 LedgerSelectionEdit deletion(ImportStore& s,std::vector<imports::Occurrence> ids) {
     LedgerSelectionEdit r;r.action=LedgerSelectionAction::remove;r.account=s.account().identity;r.generation=s.ledger_edit_generation();r.selected=std::move(ids);return r;
 }
+std::string current_category(ImportStore& s,const imports::Occurrence& id) {
+    const auto draft=s.transaction_accepted(id)?s.committed_entry(id).current.draft:*s.row(id).draft;
+    return draft.transaction.allocations()[0].category;
+}
+std::vector<TransferRequest> category_requests(ImportStore& s,const std::vector<imports::Occurrence>& ids) {
+    std::vector<TransferRequest> requests;
+    for(const auto& id:ids) {
+        const bool accepted=s.transaction_accepted(id);
+        const auto draft=accepted?s.committed_entry(id).current.draft:*s.row(id).draft;
+        const auto& a=draft.transaction.allocations().front();
+        const bool imported=draft.transaction.original_imported_amount().has_value();
+        TransferRequest r{};r.action=TransferAction::retarget;r.mode=0;r.link="category-"+id.batch;r.kept=r.link+"-kept";
+        r.expected_sequence=s.transfer_sequence();r.category_id="expense";r.category_path="Expense";
+        r.left=transfers::AllocationFact{{s.account().identity,id,a.identity},a.amount,draft.date,accepted?transfers::State::committed:transfers::State::draft,imported,false,!imported};
+        for(const auto& b:s.batches())if(b.id==id.batch)r.batch_revision=b.revision;
+        requests.push_back(r);
+    }
+    return requests;
+}
+void category_tests(const std::filesystem::path& dir) {
+    const auto path=dir/"category";OperationContext context;
+    const std::vector<imports::Occurrence> ids{{"accepted",0},{"pending",0},{"bank",0}};
+    {auto s=ImportStore::create(path,"test-password","Categories",Currency("CAD"),"2025-01-01");
+    s.apply_category_change("category",{CategoryAction::create,"expense","Expense",""},0);
+    s.create_manual("accepted",manual());s.accept_all("accept");s.create_manual("pending",manual("-2.00"));
+    s.ingest("bank","!Type:Bank\nD03/01/2026\nT-3.00\nPBank\n^\n",qif::DateOrder::dmy);}
+    {auto s=ImportStore::open(path,"test-password");auto requests=category_requests(s,ids);
+    auto bad=requests;bad[1].left->imported=true;bad[1].left->manually_entered=false;
+    rejects([&]{s.assign_transfer_batch("bad-kind",bad,context);});check(!s.review_outcome("bad-kind"),"Forged source kind rejected atomically");
+    bad=requests;bad[1].batch_revision++;rejects([&]{s.assign_transfer_batch("stale",bad,context);});
+    OperationContext cancelled;int writes=0;cancelled.progress=[&](auto phase){if(phase=="Assigning transfers" && ++writes==2)cancelled.request();};
+    rejects([&]{s.assign_transfer_batch("cancel",requests,cancelled);});check(!s.review_outcome("cancel"),"Category cancellation rolls back");
+    for(const auto& id:ids)check(current_category(s,id).empty(),"Rejected batch preserves all categories");
+    s.assign_transfer_batch("assign",requests,context);s.assign_transfer_batch("assign",requests,context);
+    check(!s.transaction_accepted(ids[1]) && !s.imported_original(ids[1]),"Assignment neither accepts nor invents imported original");
+    check(s.balance().units()==-1500,"Category preserves balance");s.verify();}
+    {auto s=ImportStore::open(path,"test-password");
+    for(const auto& id:ids)check(current_category(s,id)=="Expense","Mixed categories survive reopening");
+    s.undo_review("undo");for(const auto& id:ids)check(current_category(s,id).empty(),"Mixed category Undo");s.verify();
+    auto requests=category_requests(s,{ids[1]});s.assign_transfer_batch("single",requests,context);
+    requests=category_requests(s,{ids[1]});requests[0].category_id.clear();requests[0].category_path.clear();s.assign_transfer_batch("uncategorized",requests,context);
+    check(current_category(s,ids[1]).empty(),"Manual Uncategorized");s.undo_review("undo-uncategorized");check(current_category(s,ids[1])=="Expense","Manual Uncategorized Undo");s.verify();}
+}
+void category_recovery(const std::filesystem::path& dir) {
+    const auto base=dir/"category-base";const std::vector<imports::Occurrence> ids{{"one",0},{"two",0}};
+    {auto s=ImportStore::create(base,"test-password","Recovery",Currency("CAD"),"2025-01-01");
+    s.apply_category_change("category",{CategoryAction::create,"expense","Expense",""},0);
+    s.create_manual("one",manual());s.accept_all("accept");s.create_manual("two",manual("2.00"));}
+    const auto check_atomic=[&](ImportStore& s) {
+        const auto first=current_category(s,ids[0]);
+        check(first.empty() || first=="Expense","Unexpected category");
+        check(current_category(s,ids[1])==first,"Partial category batch");
+        check(s.balance().units()==-800,"Category failure changed balance");
+    };
+    for(const int nth:{1,2,4,8,16,32,64,128,256,512}) {
+        const auto trial=dir/("category-fault-"+std::to_string(nth));std::filesystem::copy_file(base,trial);bool fired=false;std::vector<TransferRequest> requests;
+        {auto s=ImportStore::open(trial,"test-password");requests=category_requests(s,ids);OperationContext c;
+        fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.assign_transfer_batch("assign",requests,c);}catch(...){}fired=fault_vfs::fired;fault_vfs::disarm();}
+        {auto s=ImportStore::open(trial,"test-password");check_atomic(s);OperationContext c;s.assign_transfer_batch("assign",requests,c);
+        check(current_category(s,ids[0])=="Expense","Category fault retry");check_atomic(s);s.verify();
+        s.undo_review("undo");check(current_category(s,ids[0]).empty(),"Category fault Undo");check_atomic(s);s.verify();}
+        if(!fired)break;
+    }
+    for(auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}) {
+        const auto trial=dir/(phase==storage::ImportPhase::before_commit?"category-before":"category-after");std::filesystem::copy_file(base,trial);std::vector<TransferRequest> requests;
+        {auto s=ImportStore::open(trial,"test-password");requests=category_requests(s,ids);}
+        const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test-password");s.observer([&](auto point){if(point==phase)_exit(71);});OperationContext c;s.assign_transfer_batch("assign",requests,c);_exit(72);}catch(...){_exit(73);}}
+        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Category crash boundary");
+        auto s=ImportStore::open(trial,"test-password");check_atomic(s);
+        check(current_category(s,ids[0])==(phase==storage::ImportPhase::after_commit?"Expense":""),"Category durable boundary");
+        OperationContext c;s.assign_transfer_batch("assign",requests,c);check_atomic(s);s.verify();
+    }
+}
 void manual_rules(const std::filesystem::path& dir) {
     const auto path=dir/"manual-rules";OperationContext context;
     {auto s=ImportStore::create(path,"test-password","Rules",Currency("CAD"),"2025-01-01");if(!s.rules_supported())return;
@@ -26,7 +99,7 @@ void manual_rules(const std::filesystem::path& dir) {
     check(s.match_saved_rules(id,context).error.empty(),"Manual saved rule inspection");
     AccountRuleRequest request;request.account=s.account().identity;request.generation=s.ledger_edit_generation();request.ruleset_revision=s.rule_image().revision;request.catalog_revision=s.category_catalog().revision;
     s.apply_account_rules("apply",request,context);
-    check(s.row(id).draft->payee=="Manual shop" && s.row(id).draft->transaction.allocations()[0].category=="Expense","Manual rule category and text protection");
+    check(s.row(id).draft->payee=="Manual shop" && current_category(s,id)=="Expense","Manual rule category and text protection");
     check(s.match_saved_rules(id,context).error.empty(),"Applied manual category re-evaluation");s.verify();}
     {auto s=ImportStore::open(path,"test-password");check(s.match_saved_rules({"manual",0},context).error.empty(),"Manual rules reopen");s.verify();}
 }
@@ -90,7 +163,7 @@ void recovery(const std::filesystem::path& dir) {
 int main(){
     const auto dir=std::filesystem::canonical(std::filesystem::temp_directory_path())/("spentit-manual-"+std::to_string(getpid()));std::filesystem::create_directory(dir);const auto path=dir/"test.spentit";
     try {
-        fault_vfs::install();manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
+        fault_vfs::install();category_tests(dir);category_recovery(dir);manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
         {auto s=ImportStore::create(path,"test-password","Checking",Currency("CAD"),"2025-01-01");
         const auto id=s.create_manual("manual-one",manual());check(id.batch=="manual-one","Identity");
         check(s.balance().units()==-1000,"Balance");check(!s.row(id).draft->transaction.original_imported_amount(),"No invented original");check(!s.imported_original(id),"No imported original");check(s.undoable_imports().empty(),"Manual is not an import");

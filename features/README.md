@@ -1,5 +1,10 @@
 # Feature discovery
 
+**Next-session handoff (2026-11-03):** [transaction origin and ordinary operations](../doc/transaction-origin-handoff.md).
+Includes the fixed manual category menu, remaining transfer gaps, proposed cleanup
+and the separately undecided rule-matching policy.
+
+
 [Manual transactions](../doc/manual-transactions.md) add ledger context-menu and
 search-bar entry points, an unsaved editor, and explicit matching to later imports.
 Current experimental formats are **48/47**; see [status](../doc/status.md).

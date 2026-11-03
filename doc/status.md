@@ -2,6 +2,51 @@
 
 Last updated: 2026-11-03
 
+## Next-session transaction-origin audit — 2026-11-03
+
+The [handoff](transaction-origin-handoff.md) records read-only findings and proposed
+cleanup. Synthetic repository probes reproduced account assignment failure for
+accepted transactions of both origins; new manual/imported variants succeeded.
+Two-manual-endpoint linking is restricted in inspected code. Rule matching retains
+its existing origin-dependent semantics pending an explicit decision. No broader
+cleanup was implemented during the audit; the category fix below is separate.
+
+## Manual transaction context-menu categories — 2026-11-03
+
+Fixed the owner's reported `Invalid category assignment` failure under Go.
+The ordinary category branch of atomic assignment previously required imported
+provenance. It now checks supplied manual/imported flags against the stored
+transaction, allowing saved manual rows without inventing originals. Existing
+revision/account/allocation checks, generated-row restrictions, transfer paths,
+category validation and group journal remain. See the
+[contract](manual-transactions.md#right-click-category-assignment--fix-authorized-2026-11-03).
+Formats stay 48/47 and existing manual entries work without recreation.
+
+Verification on macOS:
+
+- Rebuilt rules-enabled Release `build/SpentIt`.
+- Extended `import.manual_transactions` passed in rules-enabled and rules-disabled
+  Release. Checks include reopened manual entries, accepted/new/manual/imported
+  mixed selections, category and Uncategorized, exact retry, stale/forged request
+  rejection, unchanged balances and acceptance state, persistence and group Undo.
+- Recovery checks include cancellation after the first child, sampled full-disk
+  and write/sync failures, retries and Undo after reopening, and process exit on
+  both sides of durable commit. These are sampled fault positions, not an
+  exhaustive new sweep.
+- Release `import.transfer_assignment`, `import.transfer_release` and `import.qml`
+  passed. The extended offscreen menu case passed 3/3 including setup/cleanup:
+  select an ordinary category for a manual row, change a mixed selection to
+  Uncategorized, reopen and Undo the group.
+- Final full offscreen `import.navigation` passed. The extended manual storage
+  suite also passed ASan/UBSan with `ASAN_OPTIONS=detect_leaks=0`; no sanitizer
+  diagnostic was reported. `git diff --check` passed.
+- Initial new test assertions read the original accepted draft instead of the
+  current revision, and opened a submenu without its parent context menu. Those
+  harness errors were corrected before the passing reruns.
+
+Native mouse interaction, Linux/Windows and the full suite were not run for this
+fix. No new transfer behavior or document format is introduced.
+
 ## System light and dark palettes — 2026-11-03
 
 Implemented the owner's [system appearance direction](../features/005-transaction-sheet-navigation.md#system-light-and-dark-palettes--owner-go-2026-11-03).

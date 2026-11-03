@@ -295,19 +295,31 @@ private slots:
         auto import=[&](QString name){QFile f(dir.filePath(name+".qif"));if(!f.open(QIODevice::WriteOnly))return QString();f.write(("D1/1/2026\nT-1\nP"+name+"\nLBefore\n^\n").toUtf8());f.close();run(model,"import",{{"path",f.fileName()},{"profile","DMY"}});return model.state().value("selected").toMap().value("batch").toString();};
         const auto accepted=import("Accepted");QVERIFY(!accepted.isEmpty());run(model,"commit");
         const auto pending=import("Pending");QVERIFY(!pending.isEmpty());
-        QMap<QString,QString> original;for(const auto& batch:{accepted,pending})original[batch]=model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString();
+        QVERIFY(click(root,"addTransaction"));QTRY_VERIFY(!model.busy());
+        QVERIFY(edit(root,"durablePayee","Manual category test"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"durableTotal"),"accepted"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        const auto manualBatch=model.state().value("selected").toMap().value("batch").toString();QVERIFY(!manualBatch.isEmpty());
+        auto* manualContext=object(root,"ledgerContext");QVERIFY(manualContext);QVERIFY(QMetaObject::invokeMethod(manualContext,"popup"));QTRY_VERIFY(manualContext->property("visible").toBool());
+        auto* manualMenu=object(root,"ledgerCategoryMenu");QVERIFY(manualMenu);
+        QVERIFY(QMetaObject::invokeMethod(manualMenu,"open"));QTRY_VERIFY(manualMenu->property("visible").toBool());
+        QObject* beforeChoice=nullptr;
+        for(int i=0;i<20;++i){auto* candidate=object(root,("ledgerCategoryChoice_"+QString::number(i)).toUtf8().constData());if(candidate && candidate->property("text").toString()=="Before"){beforeChoice=candidate;break;}}
+        QVERIFY(beforeChoice);QVERIFY(QMetaObject::invokeMethod(beforeChoice,"triggered"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QCOMPARE(model.rowRecord(model.occurrenceIndex(manualBatch,0)).value("category").toString(),QString("Before"));
+        QMap<QString,QString> original;for(const auto& batch:{accepted,pending,manualBatch})original[batch]=model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString();
         run(model,"select",{{"row",model.occurrenceIndex(accepted,0)}});run(model,"select",{{"row",model.occurrenceIndex(pending,0)},{"toggle",true}});
+        run(model,"select",{{"row",model.occurrenceIndex(manualBatch,0)},{"toggle",true}});
         auto* menu=object(root,"ledgerCategoryMenu");QVERIFY(menu);QVERIFY(menu->property("enabled").toBool());
         auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(QMetaObject::invokeMethod(context,"popup"));QTRY_VERIFY(context->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(menu,"open"));QTRY_VERIFY(menu->property("visible").toBool());
         auto* choice=object(root,"ledgerCategoryChoice_0");QVERIFY(choice);
         QVERIFY(QMetaObject::invokeMethod(choice,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
-        for(const auto& batch:{accepted,pending})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
-        QCOMPARE(model.state().value("selectionCount").toInt(),2);
+        for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+        QCOMPARE(model.state().value("selectionCount").toInt(),3);
         run(model,"close");run(model,"open",{{"path",path}});
-        for(const auto& batch:{accepted,pending})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+        for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
         run(model,"undo_transfer_assignment");
-        for(const auto& batch:{accepted,pending})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),original[batch]);
+        for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),original[batch]);
     }
     void ledgerViewportSurvivesCategoryNavigation() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());

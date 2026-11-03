@@ -1,5 +1,13 @@
 # Coordinated implementation roadmap
 
+## Next session: transaction origin cleanup — 2026-11-03
+
+Start with the [transaction-origin handoff](transaction-origin-handoff.md).
+The manual category-menu fix is tested; broader category/transfer cleanup is
+proposed for a fresh session. Current-value rule matching remains undecided.
+The handoff records authorization boundaries, reproducible findings and checks.
+
+
 ## Next session: category-gated rules — 2026-11-02
 
 **Implemented under owner Go:** the [category-gated rules and imported-category

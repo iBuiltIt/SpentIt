@@ -58,6 +58,17 @@ New-row deletion derives from the existing encrypted selection journal and its
 Undo records. These fixes keep formats 48/47 and work with existing manual entries
 in those formats. No recreation of a manual entry is needed.
 
+## Right-click category assignment — fix authorized 2026-11-03
+
+Saved manual transactions support ordinary category and Uncategorized assignment
+from the ledger context menu, including accepted entries and mixed selections
+with imported rows. Storage validates manual/imported identity against the stored
+transaction instead of requiring an imported original. Existing split selection,
+transfer restrictions, atomic group saving and Undo remain in force. Category
+assignment does not create an imported original or accept a new transaction.
+Reopening preserves the category and eligible group Undo. Formats remain 48/47;
+existing manual entries need no recreation. See [status](status.md) for checks.
+
 ## Explicit matching
 
 A later bank import suggests a manual match only in the same account/currency,

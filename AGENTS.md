@@ -1,5 +1,13 @@
 # SpentIt — Where did my money go?
 
+## Next session: transaction origin cleanup — 2026-11-03
+
+Read the [transaction-origin handoff](doc/transaction-origin-handoff.md) before
+further manual/category/transfer cleanup. It distinguishes the tested category-menu
+fix, audited transfer gaps, proposed uniform transaction behavior and the still-open
+rule-matching decision. The handoff is not a blanket implementation Go.
+
+
 ## Manual transactions — owner Go 2026-11-03
 
 Ledger **Add transaction…** and the **+** beside search Apply share an unsaved
