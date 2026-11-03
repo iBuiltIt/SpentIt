@@ -207,7 +207,7 @@ is saved with the next balanced edit and retained through reopening, acceptance,
 backup and Undo; it does not switch when another split becomes larger. Other
 entered amounts stay fixed. Enter calculates `remainder = total - sum(other splits)`
 with exact money arithmetic, including zero and negative results. Changing the
-total also recalculates the same remainder. Arithmetic expressions remain deferred.
+total also recalculates the same remainder. Arithmetic expressions are supported by the follow-up below.
 
 Typing in the balancing split's amount disables automatic adjustment for that
 transaction. Category/memo edits do not. Removing it disables adjustment; removing
@@ -236,3 +236,32 @@ Experimental formats are now **46 with rules / 45 without**. The encrypted draft
 and entry revision metadata stores the balancing identity and manual-mode flag
 alongside every complete transaction snapshot, including Undo history. Earlier experimental files are
 rejected unchanged, without migration. See [status](status.md) for verification.
+
+
+## Amount expressions — owner Go 2026-11-03
+
+Accepted: monetary entry supports decimal numbers, whitespace, unary plus/minus,
+`+`, `-`, `*`, `/` and parentheses, with normal precedence and left-associative
+binary operations. No variables, references, functions, percent or exponent syntax.
+For example, `-9.34+(12*0.25)` produces `-6.34`.
+
+Transaction totals, split amounts, opening corrections and manual transfer amounts
+use the shared exact engine evaluator. Leaving a valid amount field replaces the
+expression with its formatted answer; Enter/save also evaluates before submitting
+an amount. Invalid input stays available for correction and cannot save. Only the
+answer enters transaction storage, history and Undo; no formula or expression
+history is stored. No format change is needed (48/47).
+
+Intermediate fractions remain exact: `(10/3)*3` is `10.00`. Final results must fit
+the currency's retained scale and signed 64-bit minor-unit range. `10/3` in CAD is
+rejected rather than rounded. Division by zero, invalid syntax, excessive length,
+nesting and checked intermediate overflow produce explicit errors. Evaluation is
+bounded to 4096 input bytes, 64 recursive levels and reduced rational numbers with
+unsigned 64-bit numerator/denominator magnitudes. A calculation that exceeds an
+intermediate bound is rejected even if a later operation could reduce it.
+
+Existing split balancing, manual-mode selection, transfer protections and atomic
+save/Undo validation still apply to evaluated amounts. An invalid or unbalanced
+edit cannot change the saved transaction. Bank-file and storage decimal parsing
+remain strict and do not evaluate expressions. See [status](status.md) for tests
+and platform limits.

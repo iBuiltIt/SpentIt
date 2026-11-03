@@ -56,8 +56,15 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(root,"discardEditor",Q_ARG(QVariant,QVariant())));QTRY_VERIFY(!model.busy());
         QCOMPARE(model.state().value("newTransactions").toInt(),0);
         auto* context=object(root,"addTransactionContext");QVERIFY(context);QVERIFY(QMetaObject::invokeMethod(context,"triggered"));QTRY_VERIFY(!model.busy());
-        QVERIFY(edit(root,"durablePayee","Typed purchase"));QVERIFY(edit(root,"durableTotal","-12.34"));QVERIFY(edit(root,"durableDate","2026-01-15"));
+        QVERIFY(edit(root,"durableTotal","10/3"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"durableTotal"),"accepted"));QTRY_VERIFY(!model.busy());
+        QVERIFY(model.state().value("selected").toMap().value("newManual").toBool());
+        QCOMPARE(model.state().value("newTransactions").toInt(),0);
+        QCOMPARE(object(root,"durableTotal")->property("text").toString(),QString("10/3"));
+        QVERIFY(!root->property("splitEditMessage").toString().isEmpty());
+        QVERIFY(edit(root,"durablePayee","Typed purchase"));QVERIFY(edit(root,"durableTotal","-9.34-(12*0.25)"));QVERIFY(edit(root,"durableDate","2026-01-15"));
         QVERIFY(QMetaObject::invokeMethod(object(root,"durableTotal"),"accepted"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QCOMPARE(object(root,"durableTotal")->property("text").toString(),QString("-12.34"));
         const auto batch=model.state().value("selected").toMap().value("batch").toString();
         QVERIFY(!model.state().value("selected").toMap().value("newManual").toBool());QCOMPARE(model.state().value("newTransactions").toInt(),1);QVERIFY(model.selectedRowIndex()>=0);
         run(model,"query",{{"filter",""}});run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
@@ -68,6 +75,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(root,"discardEditor",Q_ARG(QVariant,QVariant())));QTRY_VERIFY(!model.busy());
         run(model,"close");run(model,"open",{{"path",path}});run(model,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("payee").toString(),QString("Typed purchase"));
+        QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("total").toString(),QString("-12.34"));
         QVERIFY(model.state().value("selected").toMap().value("ruleMatchError").toString().isEmpty());
         const auto before=model.selectedRowIndex();QVERIFY(edit(root,"durableDate","2027-01-15"));
         QVERIFY(QMetaObject::invokeMethod(object(root,"durableDate"),"accepted"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));

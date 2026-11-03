@@ -2,6 +2,41 @@
 
 Last updated: 2026-11-03
 
+## Exact amount expressions — 2026-11-03
+
+Implemented the owner's [amount-expression contract](ledger-editing.md#amount-expressions--owner-go-2026-11-03).
+Editable transaction totals, split amounts, opening balances and manual transfers
+accept `+`, `-`, `*`, `/`, parentheses, unary signs, decimals and whitespace.
+Valid field completion and saving replace the expression with the formatted amount;
+only the answer reaches storage/history. Final fractional minor units are rejected,
+while intermediate fractions remain exact. No formula history or format change
+(48/47). Existing import/storage decimal parsing remains strict.
+
+The independent engine parser uses checked, reduced unsigned-64-bit rational
+magnitudes, bounded input length and nesting. Oversized intermediate calculations
+are rejected explicitly. Split remainders and existing atomic commands receive
+validated Money values; no storage transaction or schema changes were needed.
+
+Verification on macOS:
+
+- Rebuilt the rules-enabled Release application at `build/SpentIt`.
+- Release engine tests plus offscreen `import.navigation` and `import.qml` passed
+  **13/13**. Engine expression cases include precedence, signed/zero arithmetic,
+  exact fraction cancellation, currency scales, final precision rejection,
+  division by zero, malformed syntax, signed monetary boundaries, intermediate
+  overflow, length/depth bounds and 6,231 exact cancellation combinations.
+- Six focused Qt cases passed (**8/8** including setup/cleanup): expressions in
+  opening corrections with reopen, split evaluation, automatic-remainder identity,
+  manual split editing, remainder removal and manual transfer/acceptance/reopen.
+  The navigation test exercises expression-based manual creation, answer-only
+  display and reopening. A final focused manual-entry run passed **3/3** including
+  setup/cleanup after adding rejection of `10/3`, verifying that its text remains
+  editable and no transaction is created.
+- The engine expression suite passed ASan/UBSan with leak detection disabled.
+- `git diff --check` passed. Native macOS interaction, Linux/Windows and the full
+  storage recovery suite were not run for this parser/UI change. No new durability
+  behavior is claimed; existing money-valued storage commands are reused.
+
 ## Manual-entry Undo presentation — 2026-11-03
 
 Removed the temporary Undo add transaction button at the owner's request. The

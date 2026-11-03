@@ -280,7 +280,7 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
     for(const auto& value:splits) {
         const auto v=value.toMap();const auto allocationId=str(v.value("allocationId"));const Allocation* old=nullptr;
         if(prior && !allocationId.empty())for(const auto& candidate:*prior)if(candidate.identity==allocationId){old=&candidate;break;}
-        Allocation next{str(v.value("category")),str(v.value("memo")),Money::parse(str(v.value("amount")),repo.account().currency)};
+        Allocation next{str(v.value("category")),str(v.value("memo")),Money::evaluate(str(v.value("amount")),repo.account().currency)};
         // Marks come from the stored baseline. A touched field becomes manual and drops its mark.
         if(old) {next.identity=old->identity;next.source_ordinal=old->source_ordinal;next.category_binding=old->category_binding;next.category_owner=old->category_owner;next.memo_owner=old->memo_owner;next.category_rule=old->category_rule;next.memo_rule=old->memo_rule;}
         else if(repo.categories_supported()){
@@ -311,7 +311,7 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
         }
         values.push_back(std::move(next));
     }
-    const auto total=Money::parse(str(a.value("total")),repo.account().currency);
+    const auto total=Money::evaluate(str(a.value("total")),repo.account().currency);
     const bool reassigned=(original && original->currency()!=total.currency()) || (source && source->source_currency && *source->source_currency!=total.currency());
     imports::DraftRow result{str(a.value("date")),str(a.value("payee")),str(a.value("memo")),
         Transaction::repaired_import(original,total,std::move(values),reassigned)};
@@ -808,7 +808,7 @@ struct ImportModel::Worker {
                 state["transferJournal"]=journal;
             }
             state["nextAccountId"]=QString::number(repo.next_account_identity());
-            state["name"]=text(acct.name); state["currency"]=text(acct.currency.code());
+            state["name"]=text(acct.name); state["currency"]=text(acct.currency.code()); state["currencyDefinition"]=text(acct.currency.definition_id());
             state["openingDate"]=dateText(acct.opening_date); state["opening"]=money(acct.opening);
             state["frozen"]=acct.frozen; state["confirmed"]=acct.opening_confirmed;
             state["balance"]=accountBalances.contains(acct.identity)?accountBalances.at(acct.identity).value("balance"):QVariant(money(repo.balance())); state["committed"]=money(repo.committed_balance()); const auto projection=repo.projected_balance();
@@ -1162,7 +1162,7 @@ struct ImportModel::Worker {
             }else{
             request.link=str(a.value("link"));request.expected_sequence=a.value("sequence").toString().toLongLong();
             if(action=="transfer_manual"){
-                request.action=app::TransferAction::manual;request.destination=a.value("destination").toString().toLongLong();request.amount=Money::parse(str(a.value("amount")),repo.account().currency);request.date=str(a.value("date"));request.payee=str(a.value("payee"));request.memo=str(a.value("memo"));
+                request.action=app::TransferAction::manual;request.destination=a.value("destination").toString().toLongLong();request.amount=Money::evaluate(str(a.value("amount")),repo.account().currency);request.date=str(a.value("date"));request.payee=str(a.value("payee"));request.memo=str(a.value("memo"));
             }else if(action=="transfer_from_draft"){
                 request.action=app::TransferAction::from_draft;request.origin=imports::Occurrence{selectedBatch,selectedOrdinal};request.allocation=str(a.value("allocation"));request.batch_revision=selectedRevision;request.destination=a.value("destination").toString().toLongLong();
             }else if(action=="transfer_accept")request.action=app::TransferAction::accept;
@@ -1247,7 +1247,7 @@ struct ImportModel::Worker {
                 if(action=="archive_account") return saved.kind==1;
                 if(action=="reactivate_account") return saved.kind==2;
                 if(action=="delete_account") return saved.kind==3 && saved.retired;
-                if(action=="correct_opening") return saved.kind==4 && saved.opening_date==str(a.value("date")) && saved.opening==Money::parse(str(a.value("amount")),saved.currency);
+                if(action=="correct_opening") return saved.kind==4 && saved.opening_date==str(a.value("date")) && saved.opening==Money::evaluate(str(a.value("amount")),saved.currency);
                 if(action=="reassign_currency") return saved.kind==5 && saved.currency==Currency(str(a.value("currency")));
                 return saved.kind==6;
             };
@@ -1269,7 +1269,7 @@ struct ImportModel::Worker {
                 else if(action=="archive_account") repo.archive_account(operation);
                 else if(action=="reactivate_account") repo.reactivate_account(operation);
                 else if(action=="delete_account") repo.delete_account(operation);
-                else if(action=="correct_opening") {const auto acct=repo.account();repo.correct_opening(operation,str(a.value("date")),Money::parse(str(a.value("amount")),acct.currency));}
+                else if(action=="correct_opening") {const auto acct=repo.account();repo.correct_opening(operation,str(a.value("date")),Money::evaluate(str(a.value("amount")),acct.currency));}
                 else if(action=="reassign_currency") repo.reassign_currency(operation,Currency(str(a.value("currency"))));
                 else repo.undo_account_operation(operation,str(a.value("undoOf")));
             } catch(...) {
@@ -1727,7 +1727,7 @@ struct ImportModel::Worker {
             if(a.value("duplicate").toBool()) decision={imports::Disposition::duplicate,imports::Occurrence{str(a.value("batch")),a.value("ordinal").toUInt()}};
             repo.decide({selectedBatch,selectedOrdinal},selectedRevision,decision);observedSaved();inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="opening") {
-            const auto acct=repo.account();repo.opening(acct.revision,str(a.value("date")),Money::parse(str(a.value("amount")),acct.currency));observedSaved();
+            const auto acct=repo.account();repo.opening(acct.revision,str(a.value("date")),Money::evaluate(str(a.value("amount")),acct.currency));observedSaved();
             if(!selectedBatch.empty()) inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="commit") {
             const auto operation="accept-"+str(QUuid::createUuid().toString(QUuid::WithoutBraces));
@@ -2304,29 +2304,35 @@ void ImportModel::observeUi(const QVariantMap& values) {
     }catch(...){observer.healthFailure();}
 }
 
+QVariantMap ImportModel::amountValue(const QString& expression,const QString& definition) const {
+    try {
+        return {{"valid",true},{"amount",money(Money::evaluate(str(expression),Currency::from_definition(str(definition))))}};
+    } catch(const std::exception& e) { return {{"valid",false},{"error",QString::fromUtf8(e.what())}}; }
+}
+
 QVariantMap ImportModel::splitAmounts(const QString& totalText,const QVariantList& amounts,bool automatic,const QString& definition,int remainderIndex) const {
     try {
         if(amounts.empty() || amounts.size()>static_cast<qsizetype>(qif::max_allocations))throw std::invalid_argument("Enter between 1 and 1000 splits.");
         const auto currency=Currency::from_definition(str(definition));
-        const auto total=Money::parse(str(totalText),currency);
+        const auto total=Money::evaluate(str(totalText),currency);
         std::vector<Money> values;
         if(automatic && (remainderIndex<0 || remainderIndex>=amounts.size()))throw std::invalid_argument("Choose a valid balancing split.");
-        for(qsizetype i=0;i<amounts.size();++i)if(!automatic || i!=remainderIndex)values.push_back(Money::parse(str(amounts[i]),currency));
+        for(qsizetype i=0;i<amounts.size();++i)if(!automatic || i!=remainderIndex)values.push_back(Money::evaluate(str(amounts[i]),currency));
         if(automatic)values.insert(values.begin()+remainderIndex,split_remainder(total,values));
         const auto sum=imports::sum(currency,values);
         QVariantList formatted;for(const auto& value:values)formatted.push_back(money(value));
-        return {{"valid",true},{"balanced",sum==total},{"sum",money(sum)},{"amounts",formatted}};
+        return {{"valid",true},{"balanced",sum==total},{"sum",money(sum)},{"total",money(total)},{"amounts",formatted}};
     }catch(const std::exception& e){return {{"valid",false},{"error",QString::fromUtf8(e.what())}};}
 }
 
 int ImportModel::chooseSplitRemainder(const QString& totalText,const QVariantList& splits,const QString& definition) const {
     try {
         const auto currency=Currency::from_definition(str(definition));
-        const auto total=Money::parse(str(totalText),currency).units();
+        const auto total=Money::evaluate(str(totalText),currency).units();
         int best=-1;bool bestSame=false;std::uint64_t largest=0;
         for(qsizetype i=0;i<splits.size();++i){
             const auto part=splits[i].toMap();if(part.value("transferAmount").toBool())continue;
-            const auto units=Money::parse(str(part.value("amount")),currency).units();
+            const auto units=Money::evaluate(str(part.value("amount")),currency).units();
             const bool same=(total>0 && units>0) || (total<0 && units<0);
             const auto magnitude=units<0?std::uint64_t(-(units+1))+1:std::uint64_t(units);
             if(best<0 || (same && !bestSame) || (same==bestSame && magnitude>largest)){

@@ -74,3 +74,8 @@ add_executable(spentit_date_format_tests date_format_tests.cpp)
 target_link_libraries(spentit_date_format_tests PRIVATE SpentIt::engine)
 spentit_compiler_options(spentit_date_format_tests)
 add_test(NAME engine.date_format COMMAND spentit_date_format_tests)
+
+add_executable(spentit_amount_expression_tests amount_expression_tests.cpp)
+target_link_libraries(spentit_amount_expression_tests PRIVATE SpentIt::engine)
+spentit_compiler_options(spentit_amount_expression_tests)
+add_test(NAME engine.amount_expression COMMAND spentit_amount_expression_tests)

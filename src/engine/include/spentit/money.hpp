@@ -55,6 +55,9 @@ class Money {
 public:
     Money(std::int64_t units, Currency currency) : units_(units), currency_(std::move(currency)) {}
     static Money parse(std::string_view decimal, Currency currency);
+    // User-entered arithmetic only; imported decimals retain strict parse().
+    // Exact bounded rational evaluation; the final amount must fit the currency.
+    static Money evaluate(std::string_view expression, Currency currency);
     std::int64_t units() const noexcept { return units_; }
     const Currency& currency() const noexcept { return currency_; }
     void require_compatible(const Money& other) const;

@@ -487,7 +487,7 @@ private slots:
         run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});
         run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});
         const auto transfer=[&](QString action,QVariantMap args={},bool success=true){args["link"]="test-link";args["sequence"]=m.state().value("transferSequence");args["operation"]=m.newIdentity();run(m,action,args,success);};
-        transfer("transfer_manual",{{"destination","2"},{"date","2026-01-02"},{"amount","-100.00"},{"payee","Payment"}});
+        transfer("transfer_manual",{{"destination","2"},{"date","2026-01-02"},{"amount","-(1200/3)/4"},{"payee","Payment"}});
         QCOMPARE(m.state().value("committed").toString(),QString("200.00"));QCOMPARE(m.state().value("projected").toString(),QString("100.00"));
         transfer("transfer_commit",{},false);transfer("transfer_accept");transfer("transfer_commit");
         run(m,"query",{{"filter","Payment"},{"projected",true}});
@@ -1973,6 +1973,23 @@ private slots:
         QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().size(),1);
         run(m,"undo_edit");QCOMPARE(root->property("automaticSplitIndex").toInt(),1);
     }
+    void amountExpressions() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        const auto path=dir.path()+"/doc";create(m,path);
+        run(m,"opening",{{"date","2025-12-31"},{"amount","(10/3)*3"}});
+        QCOMPARE(m.state().value("opening").toString(),"10.00");
+        run(m,"correct_opening",{{"date","2025-12-31"},{"amount","-9.34+(12*0.25)"}});
+        QCOMPARE(m.state().value("opening").toString(),"-6.34");
+        run(m,"close");run(m,"open",{{"path",path}});
+        QCOMPARE(m.state().value("opening").toString(),"-6.34");
+        const auto definition=QString::fromStdString(Currency("CAD").definition_id());
+        auto result=m.splitAmounts("-10*2",{"ignored","-9.34+(12*0.25)"},true,definition,0);
+        QVERIFY(result.value("valid").toBool());QVERIFY(result.value("balanced").toBool());
+        QCOMPARE(result.value("total").toString(),"-20.00");
+        QCOMPARE(result.value("amounts").toList()[0].toString(),"-13.66");
+        QCOMPARE(result.value("amounts").toList()[1].toString(),"-6.34");
+        QVERIFY(!m.splitAmounts("10",{"ignored","10/3"},true,definition,0).value("valid").toBool());
+    }
     void remainderSelection() {
         ImportModel m(storage::document_gateway());const auto definition=QString::fromStdString(Currency("CAD").definition_id());
         auto part=[](const QString& amount,bool transfer=false){return QVariantMap{{"amount",amount},{"transferAmount",transfer}};};
@@ -2000,8 +2017,8 @@ private slots:
         auto type=[&](int index,const QString& value){auto* field=item("editSplitAmount_"+QString::number(index));QVERIFY(field);field->setProperty("text",value);QVERIFY(QMetaObject::invokeMethod(field,"textEdited"));};
         auto enter=[&]{QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));};
         auto saved=[&](int index){return selected(m).value("draft").toMap().value("splits").toList()[index].toMap().value("amount").toString();};
-        press("addSplit");QTRY_VERIFY(item("editSplitAmount_1"));type(1,"300");enter();QCOMPARE(saved(0),"700.00");QCOMPARE(saved(1),"300.00");
-        press("addSplit");QTRY_VERIFY(item("editSplitAmount_2"));type(2,"900");enter();QCOMPARE(saved(0),"-200.00");
+        press("addSplit");QTRY_VERIFY(item("editSplitAmount_1"));type(1,"(1200/3)-100");enter();QCOMPARE(saved(0),"700.00");QCOMPARE(saved(1),"300.00");
+        press("addSplit");QTRY_VERIFY(item("editSplitAmount_2"));type(2,"300*3");enter();QCOMPARE(saved(0),"-200.00");
         // A manual first amount prevents saving a mismatch; Keep editing retains it.
         type(0,"0.20");enter();QVERIFY(root->property("dirty").toBool());QCOMPARE(saved(0),"-200.00");
         QVERIFY(!window->close());auto* dialog=root->findChild<QObject*>("splitMismatchDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());

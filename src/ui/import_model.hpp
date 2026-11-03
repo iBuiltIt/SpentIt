@@ -59,6 +59,7 @@ public:
     Q_INVOKABLE bool accountNameMatches(const QString& name,const QString& selected);
     Q_INVOKABLE bool categoryNameMatches(const QString& name,const QString& selected,bool includeChildren=false);
     Q_INVOKABLE QString newIdentity() const;
+    Q_INVOKABLE QVariantMap amountValue(const QString& expression,const QString& currencyDefinition) const;
     Q_INVOKABLE QVariantMap splitAmounts(const QString& total,const QVariantList& amounts,bool automatic,const QString& currencyDefinition,int remainderIndex=0) const;
     Q_INVOKABLE int chooseSplitRemainder(const QString& total,const QVariantList& splits,const QString& currencyDefinition) const;
     Q_INVOKABLE QString localPath(const QUrl&) const;

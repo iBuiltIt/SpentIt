@@ -117,9 +117,9 @@ Snapshot save_edit(const Rows& rows, const Edit& edit) {
     // Validate the combined field edit, not an intermediate total/split combination.
     editor = editor.allow_mixed_signs();
     const auto currency = original.transaction.effective_total().currency();
-    editor = editor.correct_total(Money::parse(edit.total, currency));
+    editor = editor.correct_total(Money::evaluate(edit.total, currency));
     if (original.transaction.allocations().size() > 1 || edit.addAllocation) {
-        const Allocation allocation{edit.category, edit.memo, Money::parse(edit.allocation, currency)};
+        const Allocation allocation{edit.category, edit.memo, Money::evaluate(edit.allocation, currency)};
         if (original.transaction.allocations().size() > 1) editor = editor.edit(1, allocation);
         else editor = editor.append(allocation);
     }

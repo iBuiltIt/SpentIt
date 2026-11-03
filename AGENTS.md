@@ -26,8 +26,9 @@ labels rather than a new format to persist filenames. Manual entry now uses 48/4
 The largest eligible split (preferring the total’s sign) initially absorbs the
 remainder. Its identity stays fixed; manually editing it disables adjustment.
 Both choices persist. Transfer splits are excluded. Only balanced edits save.
-Leaving a mismatch offers Change amount / Keep editing; no crash recovery buffer or arithmetic expressions are
-included. See [the contract](doc/ledger-editing.md#split-amount-editing--owner-go-2026-11-03)
+Leaving a mismatch offers Change amount / Keep editing; no crash recovery buffer is
+included. The [amount-expression follow-up](doc/ledger-editing.md#amount-expressions--owner-go-2026-11-03)
+adds exact arithmetic entry and retains only the answer, rejecting fractional minor units. See [the contract](doc/ledger-editing.md#split-amount-editing--owner-go-2026-11-03)
 and [status](doc/status.md). Current experimental formats are 48/47.
 
 ## Ledger selection editing — owner Go 2026-11-02

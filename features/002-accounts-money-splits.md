@@ -14,7 +14,7 @@ The largest eligible split initially absorbs the remainder, preferring the total
 sign. Its identity stays fixed. Manually editing its amount disables automatic
 adjustment, and that choice persists. Only balanced transactions are saved. A mismatched
 buffer remains editable, and leaving offers Change amount / Keep editing.
-Arithmetic entry and crash recovery drafts are outside this change. Current
+Arithmetic entry is now accepted in the [amount-expression follow-up](../doc/ledger-editing.md#amount-expressions--owner-go-2026-11-03); crash recovery drafts remain outside scope. Current
 experimental formats are 46/45; see [verification](../doc/status.md).
 
 ## Opening correction follow-up — owner Go, 2026-11-01
