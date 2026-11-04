@@ -8,6 +8,18 @@ provides light and dark variants for window/control surfaces, text, selection,
 focus, borders, draft/changed rows, errors, warnings and scrollbars. Custom ledger,
 sidebar, category and rule colours use those roles alongside inherited Qt control
 palettes. Dark mode uses charcoal surfaces and soft white text with blue accents.
+Owner follow-up Go (2026-11-03): dropdown choices explicitly pair normal themed
+text with blue selection/pressed surfaces; menus share those surfaces. Highlighted
+buttons use themed text rather than the platform's bright-text default. All desktop
+dropdowns use the shared component, including amount formatting and import Undo.
+Contrast verification includes actual control text/background properties in normal
+highlighted and pressed states, with native light/dark switching and light-mode
+offscreen coverage.
+
+A further owner-approved light-mode adjustment uses `#e6ebf0` for ordinary
+committed ledger rows, making them more distinct from the window background.
+Blue selection, warm draft colours and dark-mode rows retain their existing values.
+
 There is no separate appearance preference or document-format change. The older
 standalone synthetic sheet prototype is outside this desktop change.
 

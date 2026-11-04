@@ -46,7 +46,7 @@ private slots:
     }
     void init() { QSettings().clear(); } // Never reopen a previous test's removed temporary dataset.
     void appearanceSwitching() {
-        if(QGuiApplication::platformName()=="offscreen")QSKIP("System appearance switching requires a native platform; run this case on macOS.");
+        const bool native=QGuiApplication::platformName()!="offscreen";
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
@@ -61,8 +61,8 @@ private slots:
             const double x=luminance(a),y=luminance(b);return (std::max(x,y)+0.05)/(std::min(x,y)+0.05);
         };
         // Exercise both transitions on the same loaded workspace, including inherited controls.
-        for(auto scheme:{Qt::ColorScheme::Light,Qt::ColorScheme::Dark,Qt::ColorScheme::Light}) {
-            QGuiApplication::styleHints()->setColorScheme(scheme);
+        for(auto scheme:native ? QList{Qt::ColorScheme::Light,Qt::ColorScheme::Dark,Qt::ColorScheme::Light} : QList{Qt::ColorScheme::Light}) {
+            if(native)QGuiApplication::styleHints()->setColorScheme(scheme);
             QTRY_COMPARE(theme->property("dark").toBool(),scheme==Qt::ColorScheme::Dark);
             const auto colour=[&](const char* role){return theme->property(role).value<QColor>();};
             QTRY_COMPARE(window->color(),colour("window"));
@@ -76,17 +76,44 @@ private slots:
             auto* accountBackground=account->property("background").value<QObject*>();QVERIFY(accountBackground);
             auto* accountText=account->property("contentItem").value<QObject*>();QVERIFY(accountText);
             QVERIFY(contrast(accountText->property("color").value<QColor>(),accountBackground->property("color").value<QColor>())>=4.5);
-            for(const char* background:{"window","surface","alternate","row","selection","draft","changed","button"})
+            for(const char* background:{"window","surface","alternate","row","selection","selectionPressed","draft","changed","button"})
                 QVERIFY2(contrast(colour("text"),colour(background))>=4.5,background);
             QVERIFY(contrast(colour("highlightedText"),colour("highlight"))>=4.5);
             for(const char* foreground:{"muted","error","warning"})
                 QVERIFY2(contrast(colour(foreground),colour("surface"))>=4.5,foreground);
+            // Check the controls' actual rendered colour properties, not just theme pairs.
+            QVERIFY(click(root,"sidebarSettings"));
+            auto* combo=qobject_cast<QQuickItem*>(object(root,"amountFormatStyle"));QVERIFY(combo);
+            auto* popup=combo->property("popup").value<QObject*>();QVERIFY(popup);
+            combo->forceActiveFocus();
+            QVERIFY(QMetaObject::invokeMethod(popup,"open"));
+            QTest::keyClick(window,Qt::Key_Down);
+            QTRY_COMPARE(combo->property("highlightedIndex").toInt(),1);
+            QTRY_VERIFY(object(root,"comboChoice_1"));
+            auto* choice=object(root,"comboChoice_1");
+            QVERIFY(choice->property("highlighted").toBool());
+            const auto checkControl=[&](QObject* control) {
+                auto* text=control->property("contentItem").value<QObject*>();
+                auto* background=control->property("background").value<QObject*>();
+                return text && background && contrast(text->property("color").value<QColor>(),background->property("color").value<QColor>())>=4.5;
+            };
+            QVERIFY(checkControl(choice));
+            QVERIFY(choice->setProperty("down",true));QVERIFY(checkControl(choice));
+            QVERIFY(choice->setProperty("down",false));
+            auto* menuItem=object(root,"addTransactionContext");QVERIFY(menuItem);
+            QVERIFY(menuItem->setProperty("highlighted",true));QVERIFY(checkControl(menuItem));
+            QVERIFY(menuItem->setProperty("down",true));QVERIFY(checkControl(menuItem));
+            QVERIFY(menuItem->setProperty("down",false));
+            QVERIFY(menuItem->setProperty("highlighted",false));
+            auto* settingsButton=object(root,"sidebarSettings");QVERIFY(checkControl(settingsButton));
             if(qEnvironmentVariableIsSet("SPENTIT_THEME_CAPTURE")) {
                 QTest::qWait(100);
                 QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_THEME_CAPTURE")+(scheme==Qt::ColorScheme::Dark?"-dark.png":"-light.png")));
             }
+            QVERIFY(QMetaObject::invokeMethod(popup,"close"));
+            QVERIFY(QMetaObject::invokeMethod(account,"clicked"));
         }
-        QGuiApplication::styleHints()->unsetColorScheme();
+        if(native)QGuiApplication::styleHints()->unsetColorScheme();
     }
     void manualTransactionEntry() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());

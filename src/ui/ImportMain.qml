@@ -14,13 +14,15 @@ ApplicationWindow {
     palette.text: theme.text
     palette.button: theme.button
     palette.buttonText: theme.text
+    palette.brightText: theme.text
     palette.highlight: theme.highlight
     palette.highlightedText: theme.highlightedText
     palette.placeholderText: theme.muted
     palette.mid: theme.border
     palette.dark: theme.border
-    palette.light: theme.alternate
-    palette.midlight: theme.divider
+    // Basic menus and delegates paint these roles behind their selection text.
+    palette.light: theme.selection
+    palette.midlight: theme.selectionPressed
     palette.shadow: theme.window
     palette.toolTipBase: theme.surface
     palette.toolTipText: theme.text
@@ -49,6 +51,22 @@ ApplicationWindow {
     component UsableComboBox: ComboBox {
         id:combo
         property real popupPreferredWidth: 180
+        delegate: ItemDelegate {
+            required property var model
+            required property int index
+            objectName: "comboChoice_" + index
+            width: ListView.view.width
+            text: model[combo.textRole]
+            contentItem: Label {
+                text: parent.text; textFormat: Text.PlainText
+                color: parent.enabled ? theme.text : theme.disabled
+                font: parent.font
+                verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+            }
+            font.weight: combo.currentIndex === index ? Font.DemiBold : Font.Normal
+            highlighted: combo.highlightedIndex === index
+            hoverEnabled: combo.hoverEnabled
+        }
         popup:Popup {
             onVisibleChanged:window.diagnosticModalChanged(29,visible)
             y:combo.height;width:Math.min(window.width-40,Math.max(combo.width,combo.popupPreferredWidth));padding:4
@@ -1878,12 +1896,13 @@ ApplicationWindow {
         width:Math.min(window.width-48,720);height:Math.min(window.height-48,480)
         ColumnLayout {anchors.fill:parent
             Label {text:"Account"}
-            ComboBox {id:importUndoAccount;objectName:"importUndoAccount";Layout.fillWidth:true;model:s.accounts||[];textRole:"name";enabled:!workflow.busy}
+            UsableComboBox {id:importUndoAccount;objectName:"importUndoAccount";Layout.fillWidth:true;model:s.accounts||[];textRole:"name";enabled:!workflow.busy}
             Label {text:"Imports not yet accepted, newest first.";Layout.fillWidth:true;wrapMode:Text.Wrap}
             ListView {id:importUndoList;objectName:"importUndoList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:6
                 model:accountImports(((s.accounts||[])[importUndoAccount.currentIndex]||{}).id||"")
                 ScrollBar.vertical:ScrollBar {policy:ScrollBar.AsNeeded}
                 delegate:ItemDelegate {required property var modelData;required property int index;objectName:"importUndoChoice_"+index;width:ListView.view.width
+                    palette.highlightedText:theme.text
                     text:(index===0?"Latest · ":"")+modelData.label;enabled:!workflow.busy
                     onClicked:requestImportUndo(modelData)
                 }
@@ -2855,7 +2874,7 @@ ApplicationWindow {
                         RowLayout {
                             CheckBox {objectName:"amountFormatting";text:"Use amount formatting";checked:s.amountFormatting===undefined?true:s.amountFormatting
                                 onToggled:guard(function(){workflow.command("amount_format",{enabled:checked,style:s.amountStyle||"comma-dot"})})}
-                            ComboBox {objectName:"amountFormatStyle";enabled:!!s.amountFormatting
+                            UsableComboBox {objectName:"amountFormatStyle";enabled:!!s.amountFormatting
                                 model:["1,234.56","1.234,56","1 234,56"]
                                 currentIndex:["comma-dot","dot-comma","space-comma"].indexOf(s.amountStyle||"comma-dot")
                                 onActivated:guard(function(){workflow.command("amount_format",{enabled:true,style:["comma-dot","dot-comma","space-comma"][currentIndex]})})}

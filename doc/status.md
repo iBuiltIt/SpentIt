@@ -2,6 +2,54 @@
 
 Last updated: 2026-11-03
 
+## Stronger committed-row background — 2026-11-03
+
+Implemented the owner's Go to change light-mode ordinary ledger rows from
+`#f3f5f7` to `#e6ebf0`, separating them more clearly from the `#f6f7f9` window.
+Selected/draft colours and the dark palette are unchanged. See
+[the palette contract](../features/005-transaction-sheet-navigation.md#system-light-and-dark-palettes--owner-go-2026-11-03).
+
+Verification: rebuilt rules-enabled Release with
+`cmake --build build/import-ui-rules-release -j 2`; `build/SpentIt` contains the
+change. Existing offscreen `appearanceSwitching` light-mode checks passed
+**3/3 including setup/cleanup**, 0.856 s, including ledger row colour and text
+contrast. Primary text on the new row background has **13.29:1** contrast.
+Changed-document relative file links and `git diff --check` passed. Native visual
+inspection, dark-mode rerun, other platforms and the full suite were not run for
+this one-colour adjustment.
+
+## Readable dropdown and menu highlights — 2026-11-03
+
+Implemented the owner's follow-up Go for the light-palette contrast defect.
+Qt Basic item delegates used white highlighted text over the pale `palette.light`
+surface. Shared dropdown delegates now use explicit themed plain-text labels;
+menu/delegate light and midlight roles use blue selection and pressed surfaces.
+Amount-format and import-Undo account dropdowns now use that shared component.
+Highlighted buttons explicitly inherit themed bright-text colour. Text-field
+selection retains its existing white-on-blue pair. No data-format change.
+See [the palette contract](../features/005-transaction-sheet-navigation.md#system-light-and-dark-palettes--owner-go-2026-11-03).
+
+Verification on macOS arm64, Qt 6.12.0, synthetic data:
+
+- Rebuilt rules-enabled Release with `cmake --build build/import-ui-rules-release -j 2`;
+  `build/SpentIt` contains the fix.
+- CTests `import.navigation` and `import.qml`: **2/2 passed**, 19.91 s.
+- Extended `appearanceSwitching` checks actual dropdown/menu text and background
+  properties for highlighted/pressed states and a highlighted sidebar button,
+  requiring at least 4.5:1 contrast. After adding keyboard Down selection,
+  final offscreen light run: **3 passed**, 0 failed, 0.493 s including setup/cleanup;
+  native light → dark → light: **3 passed**, 0 failed, 1.412 s.
+- Inspected final native light/dark dropdown captures. Light mode shows dark text
+  on pale blue; dark mode shows light text on darker blue.
+- Offscreen `mappingOpeningChoices amountFormatting importUndoOutcomes`:
+  **5 passed**, 0 failed including setup/cleanup, 4.391 s.
+- Initial sandboxed native attempt failed because no screens were available;
+  native verification then passed with permitted window access.
+- `git diff --check` and changed-document relative file-link checks passed.
+
+Full application suite, mouse-hover coverage of every menu, rules-disabled builds,
+Linux and Windows were not run. Existing transaction-origin changes were preserved.
+
 ## Saved amount formatting — 2026-11-03
 
 Implemented the owner's Go for **Settings → File settings → Use amount formatting**
