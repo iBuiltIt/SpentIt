@@ -117,6 +117,7 @@ struct RuleAssignment {
     RuleMark mark;
     std::string field;
     std::optional<std::size_t> allocation;
+    rules::Scope scope = rules::Scope::transaction;
 };
 struct RuleMatch {
     std::vector<RuleAssignment> assignments;

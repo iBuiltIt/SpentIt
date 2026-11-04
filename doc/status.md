@@ -2,6 +2,82 @@
 
 Last updated: 2026-11-03
 
+## Transaction and split rule actions — 2026-11-03
+
+Implemented the owner's Go for separate **Create rule…** and **Edit rule…**
+buttons. Transaction (payee) and imported splits (memo) are separate targets.
+Create offers targets without an editable applied rule; Edit offers those with
+one. One choice opens directly, multiple choices open a labelled chooser, and
+no choices disables the button. Split choices include amount and memo. Individual
+split creation buttons are removed. Deleted rules permit creation again; splits
+without imported source fields cannot seed split-memo rules.
+
+Attribution includes the applied definition's saved scope, so a transaction rule
+that categorized a split occupies the transaction target. A new transaction rule
+on a split transaction uses the original payee and leaves category selection to
+the user. Existing split-memo prefill, unsaved-edit guards, attribution and
+category gates remain. No persisted format or rule-evaluation policy changes.
+See [the contract](../features/004-rules-and-explanations.md#transaction-rule-editor--owner-go-2026-11-01).
+
+Verification on macOS arm64 with synthetic data:
+
+- Rebuilt rules-enabled Release with `cmake --build build/import-ui-rules-release -j 2`;
+  `build/SpentIt` includes the change.
+- Selected CTests `^(import\.(rules_ui|qml)|rulestore\.(category_gate|category_multi|match_preview))$`:
+  5/5 passed in 41.90 s. The full rules UI suite reported 27 passed, 0 failed,
+  including setup/cleanup; no QML warnings were reported.
+- Target tests cover unsplit/split combinations, transaction and split attribution,
+  deleted definitions, no imported split source, direct versus chooser routing,
+  and original-payee transaction prefill without an arbitrary split category.
+  An imported two-split case applies a split rule and transaction rule, checks their
+  saved scopes and opens the remaining split's memo through Create.
+- `spentit_committed_ui_tests addThenRemoveEmptySplit` passed (3 including
+  setup/cleanup, 1.291 s), with obsolete split-button expectations removed.
+- Visually inspected the offscreen imported two-split editor capture: Create/Edit
+  share the Add split row and attribution remains below it.
+- `git diff --check` and changed-document relative file-link checks passed.
+
+Native mouse interaction, dark-theme capture, rules-disabled builds, sanitizers,
+Linux/Windows and the full project suite were not run for this follow-up.
+
+## Review candidate defaults and grouping — 2026-11-03
+
+Implemented the owner's Go for a unique same-date candidate default, automatic
+unique exact opposite-amount split selection whenever a candidate is selected,
+and clearer question boundaries. Missing or ambiguous exact split pairs show
+**Select split**; changing candidates refreshes both allocation choices. Manual
+split choices remain available and Yes still confirms through the existing
+revalidated command. Each question has a solid separator, alternating themed
+background and spacing; a compact labelled split selector belongs to its row.
+See [the interaction contract](review-sheet.md#user-interaction).
+
+The defaults use existing eligible candidates and exact Money values in storage;
+no floating-point amount comparison, new matching eligibility, persistence change
+or format bump is introduced. Formats remain 50/49.
+
+Verification on macOS arm64, synthetic data:
+
+- Rebuilt rules-enabled Release with `cmake --build build/import-ui-rules-release -j 2`;
+  the local application is `build/SpentIt`.
+- Offscreen `spentit_import_ui_tests reviewMultipleLinkCandidates unifiedReviewSheet
+  unifiedReviewLinkDifference`: 8 passed, 0 failed (including setup/cleanup), 7.873 s.
+  Four candidate cases cover unique/no/tied exact dates, mixed-sign splits,
+  ambiguous exact splits, manual split override, switching away/back, and confirmed
+  linking using the refreshed choice. Existing Merge/Undo and amount-difference
+  confirmation cases also pass. No QML warnings in the final run.
+- Selected Release CTests `^import\.(review_sheet|review_batch|review_policy|review_state|qml)$`:
+  5/5 passed, 17.89 s.
+- Visually inspected an offscreen rendered two-question Review view: distinct
+  backgrounds and separator, compact indented split selection, aligned columns.
+- `git diff --check` and changed-document relative file-link checks pass.
+
+An initial UI run exposed a missing QML handler separator, fixed before final
+verification. The mixed-sign fixture initially depended on new-row pair orientation;
+accepted candidate rows now make its orientation deterministic. An overlapping
+intermediate build produced stale Qt test metadata; a fresh build resolved it.
+Native mouse interaction, dark-theme capture, sanitizers, rules-disabled builds,
+Linux/Windows and the full suite were not run for this presentation follow-up.
+
 ## Uniform transaction origins — 2026-11-03
 
 Implemented the owner's Go for the transaction/category/transfer cleanup in the

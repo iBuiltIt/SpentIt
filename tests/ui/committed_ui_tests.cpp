@@ -206,7 +206,6 @@ private slots:
         const auto count=before.value("splits").toList().size();QCOMPARE(count,1);
         auto* remove=object(root,"removeSplit_0");QVERIFY(remove);
         QVERIFY(!remove->property("visible").toBool());QVERIFY(!remove->property("enabled").toBool());
-        QVERIFY(!object(root,"createRuleFromMemo_0")->property("visible").toBool());
         // Even a queued/direct activation must not remove the final allocation.
         QVERIFY(QMetaObject::invokeMethod(remove,"clicked"));
         QVERIFY(!root->property("dirty").toBool());
@@ -214,13 +213,11 @@ private slots:
         QSignalSpy warnings(&engine,&QQmlEngine::warnings);
         QVERIFY(click(root,"addSplit"));QVERIFY(root->property("dirty").toBool());
         QVERIFY(remove->property("visible").toBool());
-        QCOMPARE(object(root,"createRuleFromMemo_0")->property("visible").toBool(),model.state().value("rulesSupported").toBool());
         QVERIFY(object(root,"removeSplit_"+QString::number(count)));
         QVERIFY(click(root,"removeSplit_"+QString::number(count)));
         QVERIFY(root->property("dirty").toBool());
         QTRY_VERIFY(!object(root,"removeSplit_"+QString::number(count)));
         QVERIFY(!remove->property("visible").toBool());
-        QVERIFY(!object(root,"createRuleFromMemo_0")->property("visible").toBool());
         QCOMPARE(warnings.count(),0);
         QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model);
         QCOMPARE(selected(model).value("draft").toMap().value("splits"),before.value("splits"));

@@ -571,7 +571,7 @@ struct ImportModel::Worker {
             for(const auto& item:match.assignments) {
                 const auto id=text(item.mark.identity);
                 const bool available=std::any_of(rules.begin(),rules.end(),[&](const auto& value){return value.toMap().value("id").toString()==id;});
-                assignments.push_back(QVariantMap{{"rule",id},{"label",ruleLabel(id)},{"field",text(item.field)},{"available",available},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
+                assignments.push_back(QVariantMap{{"rule",id},{"label",ruleLabel(id)},{"field",text(item.field)},{"available",available},{"scope",scopeName(item.scope)},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
             }
             selected["ruleAssignments"]=assignments;
         } catch(const app::OperationCancelled&){throw;}
@@ -731,7 +731,7 @@ struct ImportModel::Worker {
             const auto review=deferReview?app::ReviewSheet{}:repo.review_sheet();state["reviewReady"]=!deferReview;QVariantList questions;std::int64_t priorAccount=-1;
             for(const auto& q:review.questions){
                 QVariantList rows;
-                for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total()):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total()):QString();value["note"]=text(row.note);value["manual"]=row.note=="Manually entered";value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
+                for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total()):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total()):QString();value["note"]=text(row.note);value["sameDate"]=!q.rows.empty() && !row.draft.date.empty() && row.draft.date==q.rows.front().draft.date;value["suggestedLeftAllocation"]=text(row.suggested_left_allocation);value["suggestedRightAllocation"]=text(row.suggested_right_allocation);value["manual"]=row.note=="Manually entered";value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
                 questions.push_back(QVariantMap{{"waitingLink",text(q.waiting_link)},{"key",text(q.key)},{"kind",q.kind==app::ReviewKind::same?"same":q.kind==app::ReviewKind::link?"link":"correction"},{"account",QString::number(q.account)},{"accountName",text(q.account_name)},{"separator",q.account!=priorAccount},{"reason",text(q.reason)},{"batch",text(q.batch)},{"ordinal",q.ordinal?static_cast<int>(*q.ordinal):-1},{"rows",rows}});priorAccount=q.account;
             }
             QVariantList exclusions;
@@ -1816,7 +1816,7 @@ struct ImportModel::Worker {
                 auto row=repo.row({selectedBatch,selectedOrdinal});
                 const auto kind=a.value("kind").toString();
                 std::string source;auto scope=rules::Scope::transaction;auto input=rules::InputField::payee;
-                if(kind=="payee") {source=row.source.payee;if(a.contains("allocation") || row.source.has_source_splits)scope=rules::Scope::split;}
+                if(kind=="payee") {source=row.source.payee;if(a.contains("allocation"))scope=rules::Scope::split;}
                 else if(kind=="memo") {
                     const auto index=a.value("allocation").toInt();
                     std::optional<imports::DraftRow> committedDraft;
@@ -1835,8 +1835,7 @@ struct ImportModel::Worker {
                 rule.label=source.empty()?"New rule":source;
                 if(current) {
                     const auto& allocations=current->transaction.allocations();
-                    if(kind=="payee" && !a.contains("allocation") && allocations.size()>1)throw std::invalid_argument("Choose a split for this rule.");
-                    const auto index=a.contains("allocation")?a.value("allocation").toInt():0;
+                    const auto index=a.contains("allocation")?a.value("allocation").toInt():(allocations.size()==1?0:-1);
                     if(a.contains("allocation") && (index<0 || static_cast<std::size_t>(index)>=allocations.size() || !allocations[static_cast<std::size_t>(index)].source_ordinal))throw std::invalid_argument("Choose an imported split for this rule.");
                     if(index>=0 && static_cast<std::size_t>(index)<allocations.size()) {
                         const auto& allocation=allocations[static_cast<std::size_t>(index)];

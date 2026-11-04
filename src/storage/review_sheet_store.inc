@@ -310,6 +310,15 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
             auto candidate=right;
             candidate.note=(difference?"Explicit transfer destination; outgoing difference at most 4%; ":"Equal opposite allocation amounts; ")+std::to_string(std::abs(days.at(id)-days.at(other)))+" calendar day(s) apart";
             if(repair_origins.contains(other))candidate.note+=". "+repair_origins.at(other);
+            std::size_t exact_pairs=0;
+            for(const auto& a:left.draft.transaction.allocations())for(const auto& b:right.draft.transaction.allocations()){
+                if(occupied[id].contains(a.identity) || occupied[other].contains(b.identity) || !review_link_category(a.category,right.account) || !review_link_category(b.category,left.account))continue;
+                if(a.amount.units()==INT64_MIN || b.amount.units()==INT64_MIN || a.amount.units()!=-b.amount.units() || !imports::link_amount_candidate(a.amount,b.amount,false))continue;
+                ++exact_pairs;
+                candidate.suggested_left_allocation=a.identity;
+                candidate.suggested_right_allocation=b.identity;
+            }
+            if(exact_pairs!=1){candidate.suggested_left_allocation.clear();candidate.suggested_right_allocation.clear();}
             candidates.push_back(std::move(candidate));
         }
         if(candidates.size()>1){link_sources.insert(id);result.questions.push_back({"link:"+review_key(id),app::ReviewKind::link,left.account,left.account_name,"Does this link with any of these?",id.batch,id.ordinal,std::move(candidates)});}

@@ -1,7 +1,7 @@
 # 004 — Rules and explanations
 
 Status: **active**  
-Last updated: 2026-11-02  
+Last updated: 2026-11-03  
 Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 42; rules-off documents use schema 41. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
 
 ## Shared category completion — owner Go 2026-11-02
@@ -364,18 +364,25 @@ financial history remains readable and independently verified.
 Accepted and implemented; verification is recorded in [status](../doc/status.md).
 This supersedes the earlier editor layout where they differ.
 
-- One transaction action offers Create rule, Edit rule, or Edit rules. Retained
-  field assignments take precedence over today's matching rules. Multiple rules
-  open a chooser with category assignments first and the affected fields shown.
-  Deleted responsible rules are identified; creation remains available when none
-  of the responsible rules can be edited. Editing opens the current definition,
-  not an old applied version. A manual replacement ends that field's current
-  rule ownership; persistent history is unchanged.
-- Creation uses the original imported payee as the exact matching pattern and
-  initial name, and the current ordinary category as the action. Multiple splits
-  require an explicit split choice; the dialog identifies that the resulting rule
-  matches the imported split memo. Split-memo creation also remains available. Transfer account names
-  are never copied into rule category actions.
+- Owner follow-up Go, 2026-11-03: separate **Create rule…** and **Edit rule…**
+  buttons treat Transaction (payee) and each imported Split (memo) as targets.
+  Create offers targets without an editable applied rule; Edit offers targets with
+  one. A sole choice opens directly; multiple choices show target labels, including
+  split amount/memo. No choices disables the respective button. Individual split
+  creation buttons are removed. If several rules contributed to one target, Edit
+  lists each contributor with that target. Deleted rules allow creation again.
+- Applied-version scope distinguishes a transaction rule that categorized a split
+  from a split rule. Current matching alone does not occupy a target. Editing opens
+  the current definition; retained attribution remains visible. Manual replacement
+  ends that field's current rule ownership; history is unchanged.
+- Transaction creation uses the original imported payee as the exact pattern/name,
+  with transaction scope even on split transactions. On an unsplit transaction its
+  ordinary category seeds the action; on split transactions the user chooses the
+  category rather than copying one arbitrary split. Split creation uses the
+  original split memo and that split's current ordinary category. Newly added
+  splits without imported source fields are not creation targets. Transfer account
+  names are never copied into rule category actions. Existing category eligibility
+  and shared-text restrictions remain unchanged.
 - Transaction entry opens a focused editor with Rule name, Match, Pattern and
   Changes labels, an editable category completion control, and Enabled control.
   All rules returns to ordered rules management. Save retains the open editor;

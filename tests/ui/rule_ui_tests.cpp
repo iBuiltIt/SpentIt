@@ -527,6 +527,60 @@ private slots:
         QVERIFY(click(s.root,"undoRules"));wait(s.model);QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride old");
         run(s.model,"inspect",{{"batch",newBatch},{"ordinal",0}});QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride new");
     }
+    void appliedSplitAndTransactionTargets() {
+        Session s;createDocument(s,"Applied targets");
+        QVERIFY(click(s.root,"categoryNavigation"));wait(s.model);
+        const auto category=createCategory(s.model,s.root,"Transport");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        splitMemoRule(s.root,"Fee","^Wise Charges for: card$",category,false);
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        transactionRule(s.root,"Merchant","^Tfl Travel UK$","",category);
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        const auto path=s.path("split.qif");writeQif(path,wise());
+        run(s.model,"import",{{"path",path},{"profile","DMY"}});
+        if(page(s.root)!="ledger")QVERIFY(click(s.root,"accountNavigation"));
+        const auto assignments=selected(s.model).value("ruleAssignments").toList();
+        QCOMPARE(assignments.size(),2);
+        QCOMPARE(assignments[0].toMap().value("scope").toString(),"split");
+        QCOMPARE(assignments[1].toMap().value("scope").toString(),"transaction");
+        QVERIFY(click(s.root,"editTransactionRule"));
+        QVERIFY(object(s.root,"matchedRuleDialog")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"matchedRuleDialog"),"close"));
+        if(qEnvironmentVariableIsSet("SPENTIT_RULE_TARGET_CAPTURE")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_TARGET_CAPTURE")));}
+        // Only split 2 has no split-scope rule: Create opens its memo directly.
+        QVERIFY(click(s.root,"transactionRuleAction"));wait(s.model);
+        QCOMPARE(object(s.root,"ruleExpression")->property("text").toString(),"^CARD-123$");
+        QCOMPARE(object(s.root,"ruleScope")->property("currentIndex").toInt(),1);
+    }
+    void ruleTargetChoices() {
+        Session s;createDocument(s,"Rule targets");
+        const QVariantMap split{{"amount","-1.00"},{"memo","Fee"},{"sourceOrdinal",0}};
+        const QVariantMap second{{"amount","-9.00"},{"memo","Purchase"},{"sourceOrdinal",1}};
+        const QVariantMap transactionRule{{"rule","transaction"},{"label","Merchant"},{"scope","transaction"},{"allocation",1},{"available",true}};
+        const QVariantMap splitRule{{"rule","fee"},{"label","Fee"},{"scope","split"},{"allocation",0},{"available",true}};
+        const QVariantMap secondRule{{"rule","purchase"},{"label","Purchase"},{"scope","split"},{"allocation",1},{"available",true}};
+        auto check=[&](QVariantList splits,QVariantList assignments,int creates,int edits){
+            s.root->setProperty("selected",QVariantMap{{"batch","synthetic"},{"draft",QVariantMap{{"splits",splits}}},{"ruleAssignments",assignments}});
+            QVariant createResult,editResult;
+            QVERIFY(QMetaObject::invokeMethod(s.root,"ruleCreateChoices",Q_RETURN_ARG(QVariant,createResult)));
+            QVERIFY(QMetaObject::invokeMethod(s.root,"ruleChoices",Q_RETURN_ARG(QVariant,editResult)));
+            auto list=[](const QVariant& value){return value.metaType()==QMetaType::fromType<QJSValue>()?value.value<QJSValue>().toVariant().toList():value.toList();};
+            QCOMPARE(list(createResult).size(),creates);QCOMPARE(list(editResult).size(),edits);
+            QCOMPARE(object(s.root,"transactionRuleAction")->property("enabled").toBool(),creates>0);
+            QCOMPARE(object(s.root,"editTransactionRule")->property("enabled").toBool(),edits>0);
+        };
+        check({split},{},1,0);
+        check({split},{transactionRule},0,1);
+        check({split,second},{},3,0);
+        check({split,second},{transactionRule},2,1);
+        check({split,second},{splitRule},2,1);
+        check({split,second},{transactionRule,splitRule},1,2);
+        check({split,second},{transactionRule,splitRule,secondRule},0,3);
+        auto deleted=splitRule;deleted["available"]=false;
+        check({split,second},{transactionRule,deleted},2,1);
+        auto generated=second;generated["sourceOrdinal"]=-1;
+        check({split,generated},{transactionRule,splitRule},0,2);
+    }
     void focusedCreationPreviewAndAttribution(){
         Session s;createDocument(s,"Focused rule flow");
         QVERIFY(click(s.root,"categoryNavigation"));wait(s.model);
@@ -569,7 +623,8 @@ private slots:
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
         const auto batch=selected(s.model).value("batch").toString();
         QVERIFY(click(s.root,"accountNavigation"));
-        QCOMPARE(object(s.root,"transactionRuleAction")->property("text").toString(),"Edit rule…");
+        QVERIFY(!object(s.root,"transactionRuleAction")->property("enabled").toBool());
+        QVERIFY(object(s.root,"editTransactionRule")->property("enabled").toBool());
         QCOMPARE(object(s.root,"ruleWinners")->property("text").toString(),QString::fromUtf8("Payee assigned by “Synthetic Shop”\nCategory assigned by “Synthetic Shop”"));
         QTest::qWait(30);
         auto* action=qobject_cast<QQuickItem*>(object(s.root,"transactionRuleAction"));
@@ -579,12 +634,13 @@ private slots:
         auto* addSplit=qobject_cast<QQuickItem*>(object(s.root,"addSplit"));QVERIFY(addSplit);
         QTRY_VERIFY(action->mapToScene(QPointF()).x()<addSplit->mapToScene(QPointF()).x());
         QTRY_VERIFY(action->mapToScene(QPointF()).y()<attribution->mapToScene(QPointF()).y());
-        QVERIFY(click(s.root,"transactionRuleAction"));
+        QVERIFY(click(s.root,"editTransactionRule"));
         QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
         QVERIFY(edit(s.root,"ruleExpression","^No longer matches$"));QVERIFY(click(s.root,"saveRules"));wait(s.model);
         QVERIFY(click(s.root,"accountNavigation"));run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
-        QCOMPARE(object(s.root,"transactionRuleAction")->property("text").toString(),"Edit rule…");
-        QVERIFY(click(s.root,"transactionRuleAction"));QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
+        QVERIFY(!object(s.root,"transactionRuleAction")->property("enabled").toBool());
+        QVERIFY(object(s.root,"editTransactionRule")->property("enabled").toBool());
+        QVERIFY(click(s.root,"editTransactionRule"));QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
         QVERIFY(click(s.root,"deleteRule_1"));QVERIFY(click(s.root,"saveRules"));wait(s.model);
         QVERIFY(click(s.root,"accountNavigation"));run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(object(s.root,"transactionRuleAction")->property("text").toString(),"Create rule…");
@@ -594,6 +650,13 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(object(s.root,"splitCategory_0"),"acceptChoice"));
         QVERIFY(QMetaObject::invokeMethod(s.root,"saveEditor"));wait(s.model);
         const auto splitBefore=draftOf(s.model);
+        run(s.model,"rules_prefill",{{"kind","payee"}});
+        QCOMPARE(s.model.state().value("rulePrefill").toMap().value("scope").toString(),"transaction");
+        QCOMPARE(s.model.state().value("rulePrefill").toMap().value("expression").toString(),"^Tfl Travel UK$");
+        QVERIFY(s.model.state().value("rulePrefill").toMap().value("categoryId").toString().isEmpty());
+        // Discard the unsaved prefill before choosing a split through Create.
+        QVERIFY(click(s.root,"discardRules"));wait(s.model);
+        QVERIFY(click(s.root,"accountNavigation"));
         QVERIFY(click(s.root,"transactionRuleAction"));QVERIFY(object(s.root,"ruleSplitDialog")->property("visible").toBool());
         QVERIFY(click(s.root,"ruleSplitChoice_0"));wait(s.model);
         QCOMPARE(object(s.root,"ruleScope")->property("currentIndex").toInt(),1);

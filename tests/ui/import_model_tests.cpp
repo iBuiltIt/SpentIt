@@ -286,21 +286,49 @@ private slots:
         auto removed=rule;removed["removed"]=true;run(m,"link_exclusion_preview",removed);QCOMPARE(m.state().value("linkExclusionPreview").toMap().value("comparisons").toList().size(),1);run(m,"link_exclusion_save");QCOMPARE(m.state().value("reviewCount").toInt(),1);
         run(m,"close");run(m,"open",{{"path",dir.path()+"/doc"}});QCOMPARE(m.state().value("reviewCount").toInt(),1);
     }
+    void reviewMultipleLinkCandidates_data() {
+        QTest::addColumn<QString>("firstDate");
+        QTest::addColumn<QString>("secondDate");
+        QTest::addColumn<bool>("ambiguousSplits");
+        QTest::addColumn<bool>("preselected");
+        QTest::newRow("unique-date-and-split")<<"2026-02-01"<<"2026-02-02"<<false<<true;
+        QTest::newRow("no-exact-date")<<"2026-02-02"<<"2026-02-03"<<false<<false;
+        QTest::newRow("tied-date")<<"2026-02-01"<<"2026-02-01"<<false<<false;
+        QTest::newRow("ambiguous-split")<<"2026-02-01"<<"2026-02-02"<<true<<true;
+    }
     void reviewMultipleLinkCandidates() {
+        QFETCH(QString,firstDate);QFETCH(QString,secondDate);QFETCH(bool,ambiguousSplits);QFETCH(bool,preselected);
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
-        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPOutgoing\n^\n")}});
         run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
-        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT10\nPFirst\n^\nD2026-02-02\nT10\nPSecond\n^\n")}});
+        run(m,"import",{{"path",fixture(dir.path(),("D"+firstDate+"\nT9\nPFirst\nS\n$-1\nS\n$10\n^\nD"+secondDate+(ambiguousSplits?"\nT8\nPSecond\nS\n$10\nS\n$10\nS\n$-12\n^\n":"\nT8\nPSecond\nS\n$10\nS\n$-2\n^\n")+"D2026-03-01\nT30\nPAnother incoming\n^\n").toUtf8())}});
+        run(m,"commit");run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPOutgoing\n^\nD2026-03-01\nT-30\nPAnother transfer\n^\n")}});
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_2"));
-        QVERIFY(!visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());
+        QCOMPARE(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool(),preselected);
         QVERIFY(!visualItem(window->contentItem(),"reviewLinkCandidate_2")->property("checked").toBool());
-        QVERIFY(!visualItem(window->contentItem(),"reviewYes")->isEnabled());
+        QCOMPARE(visualItem(window->contentItem(),"reviewYes")->isEnabled(),preselected);
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewSplit_1"));
+        if(preselected)QCOMPARE(visualItem(window->contentItem(),"reviewSplit_1")->property("currentIndex").toInt(),1);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_2"),"clicked"));
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
         QVERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_2")->property("checked").toBool());
         QVERIFY(!visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewSplit_2")->isVisible());
+        QCOMPARE(visualItem(window->contentItem(),"reviewSplit_2")->property("currentIndex").toInt(),ambiguousSplits?-1:0);
+        if(ambiguousSplits){QCOMPARE(visualItem(window->contentItem(),"reviewSplit_2")->property("displayText").toString(),QString("Select split"));return;}
+        QVERIFY(!visualItem(window->contentItem(),"reviewSplit_1")->isVisible());
+        auto* split=visualItem(window->contentItem(),"reviewSplit_2");
+        QVERIFY(QMetaObject::invokeMethod(split,"activated",Q_ARG(int,1)));
+        QCOMPARE(split->property("currentIndex").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_1"),"clicked"));
+        QCOMPARE(visualItem(window->contentItem(),"reviewSplit_1")->property("currentIndex").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_2"),"clicked"));
+        QCOMPARE(split->property("currentIndex").toInt(),0);
+        if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_SELECTION_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_SELECTION_CAPTURE")));}
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
     }
     void unifiedReviewLinkDifference() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);

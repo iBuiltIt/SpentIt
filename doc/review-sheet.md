@@ -34,11 +34,18 @@ first; a losing row with an existing transfer relationship cannot be merged.
 
 Link questions show one transaction and candidates with account names. Under the
 owner Go of 2026-11-03, a sole candidate is selected automatically and Yes is
-enabled when the worker is idle. Multiple candidates start unselected; choose one
-then Yes, or use No without selecting. Automatic selection does not confirm a
+enabled when the worker is idle. With multiple candidates, the unique same-date candidate is preselected; no exact
+date or tied exact dates leave the choice unselected. Choose a candidate then Yes,
+or use No without selecting. Automatic selection does not confirm a
 link. No saves rejection of the displayed
-source/candidate comparisons. Split transactions require explicit allocation
-selection. Same-currency opposite amounts of different magnitudes open **Link
+source/candidate comparisons. Whenever a candidate is selected, by the user or the initial default, its unique
+eligible exact opposite-amount allocation pair is preselected. Changing candidates
+resets both allocation choices to that pair, or to **Select split** when no unique
+exact pair exists. Users can change the split selection before confirming. These
+are presentation defaults only; the existing Link command revalidates the selection.
+Each Review question has a solid top separator, spacing and alternating themed
+background. Split selectors are indented, labelled **Split to link**, and kept
+within their owning transaction row rather than spanning the question. Same-currency opposite amounts of different magnitudes open **Link
 10.00 and categorise 0.40 as [Uncategorized]**. No dismisses only this popup. Yes
 splits the larger allocation, assigns the remainder's chosen ordinary category,
 and links the common amount in one transaction. Both account totals and unrelated

@@ -1125,24 +1125,34 @@ ApplicationWindow {
         rulePendingPreviewKey=rulesPreviewKey();rulePreviewKey=""
         workflow.command("rules_preview",args)
     }
-    function ruleChoices() {
-        let assigned=selected.ruleAssignments||[]
-        let choices=assigned.length?assigned:(selected.ruleExplanations||[]).map(e=>({rule:e.rule,label:e.label,field:e.field,available:true}))
-        let unique=[]
-        // Prefer the category's responsible rule, retaining access to other contributors.
-        choices=choices.slice().sort((a,b)=>(a.field==="Category"?0:1)-(b.field==="Category"?0:1))
-        for(let choice of choices) {
-            let existing=unique.find(c=>c.rule===choice.rule)
-            if(existing)existing.field+=" / "+choice.field
-            else unique.push(Object.assign({},choice))
+    function ruleTargets() {
+        const splits=(selected.draft||{}).splits||[]
+        let targets=[{index:-1,label:"Transaction (payee)",rules:[],creatable:!selected.manual}]
+        if(splits.length>1)for(let i=0;i<splits.length;i++)targets.push({index:i,label:"Split "+(i+1)+" (memo) · "+splits[i].amount+" · "+splits[i].memo,rules:[],creatable:splits[i].sourceOrdinal>=0})
+        for(const assignment of selected.ruleAssignments||[]) {
+            if(!assignment.available)continue
+            const index=assignment.scope==="split" && splits.length>1?assignment.allocation:-1
+            const target=targets.find(t=>t.index===index)
+            if(target && !target.rules.some(r=>r.rule===assignment.rule))target.rules.push(assignment)
         }
-        return unique
+        return targets
+    }
+    function ruleCreateChoices() {return ruleTargets().filter(t=>t.creatable && !t.rules.length)}
+    function ruleChoices() {
+        let choices=[]
+        for(const target of ruleTargets())for(const rule of target.rules)choices.push({rule:rule.rule,label:target.label+" · "+rule.label})
+        return choices
     }
     function transactionRuleAction() {
-        let choices=ruleChoices()
-        if(!choices.length || !choices.some(c=>c.available))createFromSource("payee")
-        else if(choices.length===1)editMatched(choices[0].rule)
-        else matchedRuleDialog.open()
+        const choices=ruleCreateChoices()
+        if(choices.length===1)createRuleTarget(choices[0].index)
+        else if(choices.length>1)ruleSplitDialog.open()
+    }
+    function createRuleTarget(index) {ruleSplitDialog.close();if(index<0)createFromSource("payee");else createFromSource("memo",index)}
+    function editTransactionRule() {
+        const choices=ruleChoices()
+        if(choices.length===1)editMatched(choices[0].rule)
+        else if(choices.length>1)matchedRuleDialog.open()
     }
     function saveRules() {
         if(ruleIndex<0 || !acceptRuleCategory())return
@@ -1192,7 +1202,6 @@ ApplicationWindow {
         if(workflow.busy || !s.rulesSupported) return
         if(dirty) { pendingAction=function(){createFromSource(kind,allocation)}; unsaved.open(); return }
         if(categoryDirty) { pendingAction=function(){createFromSource(kind,allocation)}; finishCategoryEdit(); return }
-        if(kind==="payee" && allocation===undefined && ((selected.draft||{}).splits||[]).length>1) {ruleSplitDialog.open();return}
         let args={kind:kind}; if(allocation!==undefined) args.allocation=allocation
         workflow.command("rules_prefill",args)
     }
@@ -1745,11 +1754,11 @@ ApplicationWindow {
         }
     }
     Dialog {
-        id:ruleSplitDialog;objectName:"ruleSplitDialog";title:"Choose a split to match by its memo";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,600)
+        id:ruleSplitDialog;objectName:"ruleSplitDialog";title:"Create a rule for";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,600)
         contentItem:ColumnLayout {
-            Repeater {model:(selected.draft||{}).splits||[]
-                Button {required property var modelData;required property int index;objectName:"ruleSplitChoice_"+index;text:modelData.categoryDisplay+" · "+modelData.amount;enabled:modelData.sourceOrdinal>=0
-                    onClicked:{ruleSplitDialog.close();createFromSource("memo",index)}}
+            Repeater {model:ruleCreateChoices()
+                Button {required property var modelData;objectName:"ruleSplitChoice_"+modelData.index;text:modelData.label
+                    onClicked:createRuleTarget(modelData.index)}
             }
         }
     }
@@ -1759,7 +1768,7 @@ ApplicationWindow {
             width:matchedRuleDialog.availableWidth
             Repeater {
                 model:ruleChoices()
-                Button {required property var modelData;objectName:"matchedRule_"+modelData.rule;text:modelData.label+" · "+modelData.field+(modelData.available?"":" · Deleted");enabled:modelData.available;onClicked:editMatched(modelData.rule)}
+                Button {required property var modelData;objectName:"matchedRule_"+modelData.rule;text:modelData.label;onClicked:editMatched(modelData.rule)}
             }
         }
     }
@@ -2385,14 +2394,35 @@ ApplicationWindow {
             ScrollBar.vertical:UsableScrollBar {}
             ScrollBar.horizontal:UsableScrollBar {}
             Label {anchors.centerIn:parent;visible:reviewQuestions.count===0;text:s.reviewReady===false?"Review has not loaded yet.":"Nothing left to review."}
-            delegate:ColumnLayout {
-                id:questionCard;required property var modelData;required property int index;width:reviewQuestions.contentWidth-24;spacing:4
+            delegate:Item {
+                id:questionCard;required property var modelData;required property int index;width:reviewQuestions.contentWidth-24;height:questionContent.implicitHeight
                 property var chosen: reviewRowChoices[modelData.key]||[]
                 property int counterpart: -1
                 property string leftAllocation: ""
                 property string rightAllocation: ""
-                onModelDataChanged:{counterpart=modelData.kind==="link" && modelData.rows.length===2?1:-1;leftAllocation="";rightAllocation=""}
+                function selectCounterpart(row) {
+                    counterpart=row
+                    const candidate=row>=1?modelData.rows[row]:({})
+                    leftAllocation=candidate.suggestedLeftAllocation||""
+                    rightAllocation=candidate.suggestedRightAllocation||""
+                }
+                onModelDataChanged:{
+                    let selected=-1
+                    if(modelData.kind==="link") {
+                        if(modelData.rows.length===2)selected=1
+                        else {
+                            const matches=[]
+                            for(let i=1;i<modelData.rows.length;++i)if(modelData.rows[i].sameDate)matches.push(i)
+                            if(matches.length===1)selected=matches[0]
+                        }
+                    }
+                    selectCounterpart(selected)
+                }
+                Rectangle {anchors.fill:parent;color:questionCard.index%2?theme.alternate:theme.surface}
                 function toggle(row, checked){let values=chosen.slice();if(checked)values.push(row);else values=values.filter(function(v){return v.key!==row.key});let choices=Object.assign({},reviewRowChoices);choices[modelData.key]=values;reviewRowChoices=choices;let groups=Object.assign({},reviewBatch);delete groups[modelData.key];reviewBatch=groups}
+                ColumnLayout {id:questionContent;width:parent.width;spacing:4
+                Rectangle {Layout.fillWidth:true;Layout.preferredHeight:2;color:theme.border}
+                Item {Layout.preferredHeight:6}
                 Label {text:questionCard.modelData.accountName||"Import problems";visible:!!questionCard.modelData.separator;font.bold:true;font.pixelSize:16;Layout.fillWidth:true}
                 RowLayout {
                     Layout.fillWidth:true
@@ -2423,7 +2453,7 @@ ApplicationWindow {
                         Layout.fillWidth:true
                         Item {Layout.preferredWidth:32;Layout.preferredHeight:36
                         CheckBox {objectName:"reviewRowSelect_"+reviewRow.index;anchors.centerIn:parent;enabled:!workflow.busy;checked:questionCard.chosen.some(row=>row.key===reviewRow.modelData.key);visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;onClicked:questionCard.toggle(reviewRow.modelData,checked);Accessible.name:"Select transaction "+reviewRow.modelData.payee}
-                        RadioButton {anchors.centerIn:parent;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;onClicked:{questionCard.counterpart=reviewRow.index;questionCard.rightAllocation=""} Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee}
+                        RadioButton {anchors.centerIn:parent;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;onClicked:questionCard.selectCounterpart(reviewRow.index);Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee}
                         }
                         Label {text:reviewRow.modelData.date;Layout.preferredWidth:95;textFormat:Text.PlainText}
                         Label {text:reviewRow.modelData.accountName;Layout.preferredWidth:105;elide:Text.ElideRight;textFormat:Text.PlainText}
@@ -2440,8 +2470,23 @@ ApplicationWindow {
                     Repeater {model:reviewRow.showSplits?reviewRow.modelData.splits:[];delegate:Label {required property var modelData;Layout.fillWidth:true;leftPadding:24;text:modelData.amount+" · "+modelData.categoryDisplay+" · "+modelData.memo;textFormat:Text.PlainText;wrapMode:Text.Wrap}}
                     Label {text:reviewRow.modelData.note||"";visible:text.length>0;wrapMode:Text.Wrap;textFormat:Text.PlainText;Layout.fillWidth:true;font.italic:true}
                     Label {text:reviewRow.modelData.memo||"";visible:reviewRow.showSplits && text.length>0;wrapMode:Text.Wrap;textFormat:Text.PlainText;Layout.fillWidth:true}
-                    UsableComboBox {visible:questionCard.modelData.kind==="link" && reviewRow.modelData.splits.length>1 && (reviewRow.index===0 || reviewRow.index===questionCard.counterpart);Layout.fillWidth:true;model:reviewRow.modelData.splits;textRole:"reviewLabel";currentIndex:-1;displayText:currentIndex<0?"Choose split to link":currentText;onActivated:{if(reviewRow.index===0)questionCard.leftAllocation=model[currentIndex].allocationId;else questionCard.rightAllocation=model[currentIndex].allocationId}}
+                    RowLayout {
+                        visible:questionCard.modelData.kind==="link" && reviewRow.modelData.splits.length>1 && (reviewRow.index===0 || reviewRow.index===questionCard.counterpart)
+                        Layout.fillWidth:true;Layout.leftMargin:40;Layout.bottomMargin:8
+                        Label {text:"Split to link"}
+                        UsableComboBox {
+                            objectName:"reviewSplit_"+reviewRow.index
+                            Layout.preferredWidth:360;Layout.maximumWidth:reviewRow.width-140
+                            model:reviewRow.modelData.splits;textRole:"reviewLabel"
+                            currentIndex:model.findIndex(part=>part.allocationId===(reviewRow.index===0?questionCard.leftAllocation:questionCard.rightAllocation))
+                            displayText:currentIndex<0?"Select split":currentText
+                            onActivated:function(index){if(reviewRow.index===0)questionCard.leftAllocation=model[index].allocationId;else questionCard.rightAllocation=model[index].allocationId}
+                        }
+                        Item {Layout.fillWidth:true}
+                    }
                 }}
+                Item {Layout.preferredHeight:8}
+                }
             }
         }
         Frame {
@@ -3041,7 +3086,6 @@ ApplicationWindow {
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
                         TextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
-                        Button {objectName:"createRuleFromMemo_"+index;visible:!!s.rulesSupported && splitModel.count>1;enabled:index>=0 && index<splitModel.count && !!splitModel.get(index) && splitModel.get(index).sourceOrdinal>=0;text:enabled?"Create rule from split memo":"Rules require an imported split";onClicked:createFromSource("memo",index)}
                         TextField {id:splitAmount;onEditingFinished:{if(selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1};splitEditMessage="";dirty=true} Accessible.name:"Split amount"}
                         Label {objectName:"splitRemainder_"+index;visible:!manualSplitAmounts && automaticSplitIndex===index;text:"Automatic remainder"}
@@ -3052,7 +3096,8 @@ ApplicationWindow {
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
                 RowLayout {
                     visible:editEnabled || (!!s.rulesSupported && !!selected.batch)
-                    Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:{let choices=ruleChoices();return !choices.some(c=>c.available)?"Create rule…":choices.length===1?"Edit rule…":"Edit rules…"} onClicked:transactionRuleAction()}
+                    Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Create rule…";enabled:!workflow.busy && ruleCreateChoices().length>0;onClicked:transactionRuleAction()}
+                    Button {objectName:"editTransactionRule";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Edit rule…";enabled:!workflow.busy && ruleChoices().length>0;onClicked:editTransactionRule()}
                     Button {objectName:"addSplit";visible:editEnabled;text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
                     Label {visible:editEnabled;textFormat:Text.PlainText;text:splitEditMessage!==""?splitEditMessage:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }

@@ -21,6 +21,8 @@ struct ReviewTransaction {
     imports::DraftRow draft;
     bool committed=false;
     std::string note;
+    // Presentation defaults relative to the question’s source; never confirm a link.
+    std::string suggested_left_allocation={}, suggested_right_allocation={};
 };
 struct ReviewQuestion {
     std::string key;
