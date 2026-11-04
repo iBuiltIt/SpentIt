@@ -244,6 +244,35 @@ private slots:
             run(model,"open",{{"path",path}});QCOMPARE(order(model),(QStringList{"3","1","2","4"}));run(model,"close");
         }
     }
+    void newAccountScroll_data() {
+        QTest::addColumn<int>("accounts");
+        QTest::newRow("short-list")<<1;
+        QTest::newRow("scrolling-list")<<16;
+    }
+    void newAccountScroll() {
+        QFETCH(int,accounts);
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        run(model,"create",{{"path",dir.filePath("accounts")},{"protected",false},{"name","First"},{"currency","CAD"}});
+        for(int i=2;i<=accounts;++i)run(model,"create_account",{{"id",QString::number(i)},{"name",QString("Account %1").arg(i)},{"currency","CAD"},{"date","2026-01-01"}});
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* scroll=qobject_cast<QQuickItem*>(object(root,"accountScroll"));QVERIFY(scroll);
+        auto* flick=scroll->property("contentItem").value<QObject*>();QVERIFY(flick);
+        auto* field=qobject_cast<QQuickItem*>(object(root,"newAccountName"));QVERIFY(field);
+        const auto bounded=[&](){const auto y=flick->property("contentY").toReal();return y>=-1 && y<=qMax(qreal(0),flick->property("contentHeight").toReal()-flick->property("height").toReal())+1;};
+        const auto visible=[&](QQuickItem* item){const auto y=item->mapToItem(scroll,QPointF(0,0)).y();return y>=-1 && y+item->height()<=scroll->height()+1;};
+        for(bool save:{false,true}) {
+            QVERIFY(click(root,"newAccount"));QTRY_VERIFY(field->hasActiveFocus());
+            QTRY_VERIFY(bounded());QTRY_VERIFY(visible(field));
+            if(accounts==1){QTRY_COMPARE(flick->property("contentY").toReal(),qreal(0));QVERIFY(visible(qobject_cast<QQuickItem*>(object(root,"accountRow_1"))));}
+            if(save){field->setProperty("text","Added account");QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!model.busy() && !root->property("addingAccount").toBool());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));}
+            else {QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!root->property("addingAccount").toBool());}
+            QTRY_VERIFY(bounded());
+        }
+        QCOMPARE(model.state().value("accounts").toList().size(),accounts+1);
+    }
     void sidebarAccountDragScroll() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

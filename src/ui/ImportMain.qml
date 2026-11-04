@@ -498,6 +498,25 @@ ApplicationWindow {
     property string accountCreationId: ""
     property string accountCreationDate: ""
     property bool sidebarVisible: true
+    function revealAccountEntry() {
+        const scroll=accountScroll.contentItem
+        if(!scroll)return
+        const minimum=scroll.originY
+        const maximum=minimum+Math.max(0,scroll.contentHeight-scroll.height)
+        let position=scroll.contentY
+        if(addingAccount) {
+            const top=newAccountName.mapToItem(scroll.contentItem,0,0).y
+            if(top<position)position=top
+            else if(top+newAccountName.height>position+scroll.height)
+                position=top+newAccountName.height-scroll.height
+        }
+        scroll.contentY=Math.max(minimum,Math.min(maximum,position))
+    }
+    Connections {
+        target:accountScroll.contentItem
+        function onContentHeightChanged(){Qt.callLater(window.revealAccountEntry)}
+        function onHeightChanged(){Qt.callLater(window.revealAccountEntry)}
+    }
     // Drag state stays outside delegates so a completed reorder can replace them safely.
     property var accountDragRow: null
     property point accountDragPointer: Qt.point(0,0)
@@ -2186,7 +2205,7 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth:true;spacing:6
                         Label {text:"Accounts";font.bold:true;font.pixelSize:14;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
-                        Button {objectName:"newAccount";text:"+ New Account";font.pixelSize:12;leftPadding:6;rightPadding:6;topPadding:4;bottomPadding:4;Layout.preferredWidth:implicitContentWidth+12;Layout.preferredHeight:28;visible:!addingAccount;enabled:!workflow.busy && !!s.nextAccountId;onClicked:guard(function(){accountCreationId=s.nextAccountId;accountCreationDate=workflow.todayDisplay();newAccountName.clear();addingAccount=true;Qt.callLater(function(){newAccountName.forceActiveFocus();accountScroll.ScrollBar.vertical.position=1})})}
+                        Button {objectName:"newAccount";text:"+ New Account";font.pixelSize:12;leftPadding:6;rightPadding:6;topPadding:4;bottomPadding:4;Layout.preferredWidth:implicitContentWidth+12;Layout.preferredHeight:28;visible:!addingAccount;enabled:!workflow.busy && !!s.nextAccountId;onClicked:guard(function(){accountCreationId=s.nextAccountId;accountCreationDate=workflow.todayDisplay();newAccountName.clear();addingAccount=true;Qt.callLater(function(){newAccountName.forceActiveFocus();revealAccountEntry()})})}
                     }
                     SplitView {
                         orientation:Qt.Vertical;Layout.fillWidth:true;Layout.fillHeight:true

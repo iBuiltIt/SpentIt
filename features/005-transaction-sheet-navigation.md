@@ -26,6 +26,15 @@ standalone synthetic sheet prototype is outside this desktop change.
 See [status](../doc/status.md#system-light-and-dark-palettes--2026-11-03) for
 native switching, contrast checks and verification limits.
 
+## New-account sidebar scrolling — owner Go 2026-11-03
+
+Accepted and implemented: **+ New Account** focuses the inline account-name field
+and scrolls only enough to reveal it after layout. The sidebar stays within its
+valid content bounds, including when saving/cancelling removes the form or the
+viewport resizes. Short lists remain at the top; existing accounts are not pushed
+out of view by an unconditional scrollbar position. Account ordering and creation
+semantics are unchanged. See [verification](../doc/status.md#new-account-sidebar-scroll-fix--2026-11-03).
+
 ## Sidebar account drag ordering — owner Go 2026-11-03
 
 Accepted and implemented: drag an active account's name/balance row to reorder

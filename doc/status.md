@@ -2,6 +2,36 @@
 
 Last updated: 2026-11-03
 
+## New-account sidebar scroll fix — 2026-11-03
+
+Implemented the owner's Go to replace the **+ New Account** handler's unconditional
+scrollbar `position=1` with a bounded reveal of the inline account-name field.
+Deferred layout/viewport changes also clamp the sidebar position, including when
+the form is removed. Account creation and drag ordering are unchanged. The faulty
+handler predates drag reordering (Git blame: 2026-10-28). See
+[the contract](../features/005-transaction-sheet-navigation.md#new-account-sidebar-scrolling--owner-go-2026-11-03).
+
+Verification on macOS arm64, Qt 6.12.0, synthetic data:
+
+- Added short-list (1 account) and scrolling-list (16 accounts) regression cases
+  that open the form, check focus/visibility/scroll bounds, cancel with Escape,
+  reopen and create with Enter, then check bounds and account count.
+- Before the fix, the scrolling-list case failed because the field was outside
+  the viewport; short-list passed (3 passed, 1 failed including setup/cleanup).
+- Rebuilt rules-enabled Release using
+  `cmake --build build/import-ui-rules-release -j 2`; `build/SpentIt` contains the fix.
+- Offscreen `newAccountScroll sidebarAccountDrag sidebarAccountDragScroll`:
+  **6 passed**, 0 failed including setup/cleanup, 7.803 s.
+- Native `newAccountScroll`, with permitted window access: **4 passed**, 0 failed
+  including setup/cleanup, 2.064 s.
+- CTest `import.qml`: **1/1 passed**, 1.44 s.
+- Changed-document relative file links and `git diff --check` passed.
+
+Native tests invoked the New Account button's signal and used keyboard events;
+physical mouse interaction, archived-account variants, viewport-resize interaction,
+Linux/Windows, rules-disabled builds and the full suite were not exercised.
+Existing transaction-origin changes were preserved.
+
 ## Stronger committed-row background — 2026-11-03
 
 Implemented the owner's Go to change light-mode ordinary ledger rows from
