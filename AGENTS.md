@@ -1,5 +1,14 @@
 # SpentIt — Where did my money go?
 
+## Private document locks — owner Go 2026-11-04
+
+Private local datasets and backup candidates use persistent empty locks under
+the platform application-data directory. Shared/unsupported locations and
+existing legacy sidecars retain adjacent protection. Never delete a lock during
+a session or silently change namespaces. Read [the locking contract](doc/document-locking.md)
+before changing creation, overwrite, lock paths or legacy cleanup; see
+[status](doc/status.md) for actual verification and platform limits.
+
 ## Amount formatting — owner Go 2026-11-03
 
 Settings offers saved **Use amount formatting** and comma/dot, dot/comma or

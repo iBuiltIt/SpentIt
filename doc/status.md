@@ -2,6 +2,55 @@
 
 Last updated: 2026-11-04
 
+## Private document lock directory — 2026-11-04
+
+Owner-approved session locks now use private application-data storage for
+private local datasets and backup candidates. Path reservations cover creation;
+file-identity locks cover existing documents, renames and overwrite. Locks stay
+held until after SQLCipher closes and are released by the OS after a crash.
+Shared/unsupported dataset locations and existing adjacent locks retain the
+sidecar mechanism. Existing sidecars are not automatically removed. See the
+[locking contract](document-locking.md), including the requirement to retire
+older binaries before one-time legacy cleanup. No format or journal change.
+
+The platform directory is resolved inside storage using native APIs/XDG rather
+than introducing a Qt dependency. Missing, unsafe or unwritable lock storage
+fails the operation. Source and backup paths resolve their parent once, before
+locking/I/O; dataset symlinks remain rejected. Windows/Linux branches exist but
+were not compiled or executed on this macOS host.
+
+Verification uses synthetic data, Apple clang arm64, macOS, rules-enabled
+Release in `build/import-ui-rules-release`:
+
+- Application, storage-test and new document-lock test targets rebuilt without
+  first-party compiler warnings. `git diff --check` and edited-document relative
+  link target checks passed.
+- Eight focused CTest cases passed on the final build in 48.98 s: `import.document_locks`,
+  `import.local_locks`, `import.replacement`, `import.basics`, `import.backup`,
+  `import.backup_publication`, `import.backup_cancellation`, and `import.qml`.
+  The replacement case initially stopped at its stale 41-category expectation;
+  that case now checks the current 46-category starter catalog and passes its
+  disk-full/I/O and before/after creation-interruption checks.
+- The full `import.io` and `import.crashes` sweeps passed in 364.01 s and
+  365.60 s during implementation. Together with `import.replacement`, that
+  selection passed 3/3 in 733.67 s. The sweeps used builds before the final
+  parent-path normalization and legacy-sidecar permission follow-ups; those
+  follow-ups are covered by the final focused run above.
+- The standalone lock implementation and tests were compiled with
+  `-fsanitize=address,undefined -fno-omit-frame-pointer` and passed without a
+  sanitizer diagnostic. This is lock-mechanism coverage, not a sanitized build
+  of the complete storage application.
+- Lock tests cover competing processes before creation and during a session,
+  rename and parent aliases, force-kill/reopen, legacy-held locks, shared-mode
+  fallback, invalid directories, permissions and lock-file symlinks. Integration
+  checks cover unchanged bytes after refused overwrite, failed authentication,
+  reopening and restoring a backup, and no adjacent locks for private local
+  source/backup files.
+
+Native Windows/Linux, network shares, cross-user sessions and other filesystem
+variants remain unverified. The full application suite and full backup fault
+sweeps were not run. Existing user datasets/sidecars were not changed.
+
 ## Light icon geometry — 2026-11-04
 
 Owner-approved regeneration and deterministic cleanup replaced the light icon's

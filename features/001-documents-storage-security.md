@@ -12,12 +12,18 @@ durable. See [current verification and limits](../doc/status.md); earlier Resume
 source-retention and toolbar descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-10-31  
+Last updated: 2026-11-04  
 Implementation: partial; optional SQLCipher synthetic-data storage/recovery prototype and [headless durable-import experiment](../doc/durable-import.md). Bounded document switching, backup/restore, ordinary strict Undo and atomic group Undo are implemented; full application lifecycle and password changes remain incomplete.
 
 Accepted format policy, 2026-10-26: no datasets exist in the wild. Experimental formats need no migration, upgrade or backward-compatibility work until the owner explicitly announces a release. Migration requirements below apply only once that gate makes them relevant; encryption, current-format atomicity and recovery remain required. Current group-history behavior is described in [search and ledger](../doc/search-ledger.md).
 
 ## Accepted requirements
+
+Owner Go, 2026-11-04: private local document-session locks move to the platform
+application-data directory, including backup candidates. Shared/unsupported
+locations retain adjacent protection. Existing sidecars are honored, not
+automatically deleted. See the [locking contract](../doc/document-locking.md)
+and [actual verification](../doc/status.md#private-document-lock-directory--2026-11-04).
 
 - Local, single-user operation. Each running application has one active financial dataset at a time. The owner clarified on 2026-10-25 that there is no one-application-per-user rule; the earlier one-running-application-per-PC wording is superseded. Do not introduce an application-wide instance limit.
 - Settings contains the path specifying which dataset to load. A user may have multiple datasets; close the active dataset before opening another. This is a dataset-selection setting, not a new in-app user/account system.

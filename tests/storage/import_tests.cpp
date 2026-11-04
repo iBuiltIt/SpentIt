@@ -492,6 +492,31 @@ void opening_policy(){
     check(s.account().opening.units()==0 && s.account().revision==0);
     fails([&]{s.opening(0,"2026-08-01",Money(0,cad));}); // Frozen values use historied correction.
 }
+void local_locks(){
+    Directory d;const auto path=d.path/"local.spentit";
+    {
+        auto s=create(path);
+        check(!fs::exists(path.string()+".lock"));
+        const auto original=bytes(path);
+        fails([&]{ImportStore::open(path,password);});
+        fails([&]{ImportStore::create(path,password,"Replace",cad,"2026-11-04",true);});
+        check(bytes(path)==original);
+        const auto renamed=d.path/"renamed.spentit";
+        fs::rename(path,renamed);
+        fails([&]{ImportStore::open(renamed,password);});
+        fails([&]{ImportStore::create(renamed,password,"Replace",cad,"2026-11-04",true);});
+        check(bytes(renamed)==original);fs::rename(renamed,path);
+        s.backup_to(d.path/"backup.spentit",password);
+        check(!fs::exists(d.path/"backup.spentit.partial.lock"));
+        check(!fs::exists(d.path/"backup.spentit.partial"));
+        auto independent=ImportStore::open(d.path/"backup.spentit",password);
+        independent.verify(); // A backup is a distinct file, not a global app lock.
+    }
+    fails([&]{ImportStore::open(path,"incorrect password");});
+    {auto s=ImportStore::open(path,password);s.verify();}
+    {auto s=ImportStore::open(d.path/"backup.spentit",password);s.verify();}
+    for(const auto& entry:fs::directory_iterator(d.path))check(entry.path().extension()!=".lock");
+}
 void validation(){
     Directory d;prepare(d.path/"doc");
     // Deliberately corrupt authenticated synthetic state; no user data involved.
@@ -517,13 +542,13 @@ void replacement(){
     fails([&]{ImportStore::create(path,password,"Replacement",cad,"2026-10-28",true,{"YYYY-MM",true});});check(bytes(path)==original);
     const auto alias=d.path/"alias";fs::create_symlink(path,alias);
     fails([&]{ImportStore::create(alias,password,"Replacement",cad,"2026-10-28",true);});check(bytes(path)==original);
-    {auto s=replace();check(s.batches().empty() && s.account().name=="Replacement" && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==41);s.verify();}
-    {auto s=ImportStore::open(path,password);check(s.batches().empty() && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==41);s.verify();}
+    {auto s=replace();check(s.batches().empty() && s.account().name=="Replacement" && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==46);s.verify();}
+    {auto s=ImportStore::open(path,password);check(s.batches().empty() && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==46);s.verify();}
     fault_vfs::install();fault_vfs::arm(100000);{auto s=replace();}const int count=fault_vfs::seen;fault_vfs::disarm();check(count>0);
     for(int error:{SQLITE_FULL,SQLITE_IOERR_WRITE})for(int position:{1,std::max(1,count/2),count}) {
         fault_vfs::arm(position,error);bool failed=false;try{auto s=replace();}catch(const ImportError&){failed=true;}
         const bool fired=fault_vfs::fired;fault_vfs::disarm();check(fired && failed);
-        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==41);}
+        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==46);}
         catch(const ImportError&) {} // An interrupted destructive creation may be incomplete, never partially usable.
         // Overwrite is destructive by owner choice. Failure must be reported;
         // an explicit retry must replace any incomplete database and journals.
@@ -533,13 +558,13 @@ void replacement(){
     for(int position:{1,std::max(1,count/2),count}) {
         const auto child=replacement_child(path,position);
         int status=0;const auto waited=waitpid(child,&status,0);if(waited!=child || !WIFEXITED(status) || WEXITSTATUS(status)!=71)std::cerr<<"Creation interruption position "<<position<<" of "<<count<<", process status "<<status<<"\n";check(waited==child && WIFEXITED(status) && WEXITSTATUS(status)==71);
-        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==41);}
+        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==46);}
         catch(const ImportError&) {}
         {auto s=replace();s.verify();}
     }
     const auto child=replacement_child(path,0);
     int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
-    {auto s=ImportStore::open(path,password);s.verify();check(s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==41);}
+    {auto s=ImportStore::open(path,password);s.verify();check(s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==46);}
     no_leaks(d.path);
 }
 void benchmark(std::size_t n){
@@ -557,7 +582,7 @@ int main(int argc,char** argv){if(std::getenv("SPENTIT_TEST_DIAGNOSTICS"))spenti
     if(argc==4 && std::string_view(argv[1])=="replacement_child"){fault_vfs::install();const int position=std::stoi(argv[3]);if(position>0)fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);{auto store=ImportStore::create(argv[2],password,"Replacement",cad,"2026-10-28",true,{"DD/MM/YYYY",true});}_exit(72);}
 
     const std::string mode=argc>1?argv[1]:"";
-    if(mode=="replacement")replacement();else if(mode=="amount_candidate_limit")amount_candidate_limit();else if(mode=="amount_repairs")amount_repairs();else if(mode=="basics")basics();else if(mode=="cancellation")cancellation();else if(mode=="review")review();else if(mode=="repairs")repairs();else if(mode=="errors")errors();else if(mode=="backup")backup();
+    if(mode=="local_locks")local_locks();else if(mode=="replacement")replacement();else if(mode=="amount_candidate_limit")amount_candidate_limit();else if(mode=="amount_repairs")amount_repairs();else if(mode=="basics")basics();else if(mode=="cancellation")cancellation();else if(mode=="review")review();else if(mode=="repairs")repairs();else if(mode=="errors")errors();else if(mode=="backup")backup();
     else if(mode=="io")io(false);else if(mode=="crashes")io(true);else if(mode=="backup_failures")backup_failures();else if(mode=="backup_crashes")backup_failures(true);else if(mode=="backup_publication")backup_publication();else if(mode=="backup_cancellation")backup_cancellation();else if(mode=="validation")validation();else if(mode=="opening")opening_policy();else if(mode=="benchmark")benchmark(argc>2?std::stoul(argv[2]):100000);else return 2;
     std::cout<<"Import "<<mode<<" passed\n";
 }catch(const ImportError& e){std::cerr<<"Storage code "<<e.code()<<": "<<e.what()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

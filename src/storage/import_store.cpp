@@ -26,6 +26,7 @@ namespace diag = spentit::diagnostics;
 #include <limits>
 #include <optional>
 #include "verification_cache.hpp"
+#include "document_lock.hpp"
 #ifdef SPENTIT_RULES_STORAGE
 #include <spentit/rule_preview.hpp>
 #endif
@@ -36,6 +37,14 @@ namespace {
     throw ImportError(code, message); // Never expose SQL, keys, paths or record values.
 }
 void ok(int rc) { if (rc != SQLITE_OK) fail(rc); }
+std::filesystem::path document_location(const std::filesystem::path& requested) {
+    std::error_code error;
+    const auto absolute=std::filesystem::absolute(requested,error);
+    if(error)fail(SQLITE_CANTOPEN,"Cannot resolve file location");
+    const auto parent=std::filesystem::canonical(absolute.parent_path(),error);
+    if(error)fail(SQLITE_CANTOPEN,"File folder is unavailable");
+    return parent/absolute.filename(); // Resolve the parent, never a dataset symlink.
+}
 void exec(sqlite3* db, const char* sql) { ok(sqlite3_exec(db, sql, nullptr, nullptr, nullptr)); }
 // Reuse prepared plans only within one bounded repository operation. Results are
 // never cached: each use binds afresh and steps the database again. Finalizing
@@ -911,11 +920,7 @@ struct PreparedImport {
 };
 struct ImportStore::Impl {
     sqlite3* db=nullptr;
-#ifdef _WIN32
-    win::FileLock lock;
-#else
-    int lock=-1;
-#endif
+    std::unique_ptr<DocumentLock> lock;
     std::filesystem::path path;
     std::int64_t selected_account=1;
     int account_command=0;
@@ -964,13 +969,7 @@ struct ImportStore::Impl {
     mutable std::map<imports::Occurrence,std::set<std::string>> link_occupied;
     sqlite3_int64 review_changes=-1;
     ImportObserver observer;
-    ~Impl() { if (db) sqlite3_close_v2(db);
-#ifdef _WIN32
-        win::close_lock(lock);
-#else
-        if(lock>=0) ::close(lock);
-#endif
-    }
+    ~Impl() { if (db) sqlite3_close_v2(db); }
 
 };
 ImportStore::ImportStore(std::unique_ptr<Impl> p):impl_(std::move(p)){}
@@ -978,9 +977,12 @@ ImportStore::~ImportStore()=default;
 ImportStore::ImportStore(ImportStore&&) noexcept=default;
 ImportStore& ImportStore::operator=(ImportStore&&) noexcept=default;
 void ImportStore::observer(ImportObserver f) { impl_->observer=std::move(f); }
-ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_view password, bool create, const app::OperationContext* context,bool overwrite,const std::filesystem::path& cache) {
+ImportStore ImportStore::connect(const std::filesystem::path& requested_path, std::string_view password, bool create, const app::OperationContext* context,bool overwrite,const std::filesystem::path& cache) {
     if(context) context->checkpoint("Opening file");
     if (password.empty() || password.size() > 1024) fail(SQLITE_MISUSE, "Password length is invalid");
+    // Resolve the parent once for both session locking and all database I/O.
+    // Do not resolve the file itself: dataset symlinks remain unsupported.
+    const auto path=document_location(requested_path);
     if (!create) {
 #ifdef _WIN32
         if (!win::is_single_regular_file(path))
@@ -992,22 +994,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     }
     auto impl = std::make_unique<Impl>();
     impl->path=path;
-    // Use a separate lock inode: on some macOS filesystems SQLite itself uses
-    // flock on the database. Never delete the lock file or steal a live lock.
-    // An empty leftover file is harmless; kernel ownership ends on process exit.
-    auto lock_path=path; lock_path+=".lock";
-#ifdef _WIN32
-    {
-        const auto locked = win::acquire_lock(lock_path, impl->lock);
-        if (!locked) fail(locked.code, locked.message);
-    }
-#else
-    impl->lock=::open(lock_path.c_str(),O_RDWR|O_CREAT|O_NOFOLLOW,0600);
-    if (impl->lock<0 || ::flock(impl->lock,LOCK_EX|LOCK_NB)!=0) fail(SQLITE_BUSY,"Document is already open or unavailable");
-    struct stat owned_lock{};
-    if(::fstat(impl->lock,&owned_lock)!=0 || !S_ISREG(owned_lock.st_mode) || owned_lock.st_nlink!=1 || owned_lock.st_uid!=::geteuid())
-        fail(SQLITE_CANTOPEN,"Document lock is not a supported regular file");
-#endif
+    impl->lock=std::make_unique<DocumentLock>(path);
     if(create) {
 #ifdef _WIN32
         if(overwrite && win::path_exists(path)) {
@@ -1042,14 +1029,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
         } else exclusive_file(path);
 #endif
     }
-#ifdef _WIN32
-    if (!win::is_single_regular_file(path) || !impl->lock.handle || !win::regular_private(static_cast<HANDLE>(impl->lock.handle), true, false, nullptr))
-#else
-    struct stat st{}, lock_st{};
-    if (::stat(path.c_str(),&st)!=0 || !S_ISREG(st.st_mode) || st.st_nlink!=1 ||
-        ::fstat(impl->lock,&lock_st)!=0 || !S_ISREG(lock_st.st_mode) || lock_st.st_nlink!=1 || lock_st.st_uid!=::geteuid())
-#endif
-        fail(SQLITE_CANTOPEN,"Document or lock is not a supported regular file");
+    impl->lock->bind_file();
     const bool clean_input=verification_cache::no_journals(path);
 #ifdef _WIN32
     const auto filename=win::sqlite_filename(path);
@@ -1057,6 +1037,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
 #else
     ok(sqlite3_open_v2(path.c_str(), &impl->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW, nullptr));
 #endif
+    impl->lock->validate();
     sqlite3* db = impl->db;
     ok(sqlite3_create_function_v2(db,"spentit_account",0,SQLITE_UTF8,impl.get(),
         [](sqlite3_context* ctx,int,sqlite3_value**){
@@ -2120,9 +2101,10 @@ void ImportStore::verify(const app::OperationContext* context) const {
     }
     if(balance!=committed_balance()) fail(SQLITE_CORRUPT);
 }
-void ImportStore::backup_to(const std::filesystem::path& destination,std::string_view password,
+void ImportStore::backup_to(const std::filesystem::path& requested_destination,std::string_view password,
                           const BackupObserver& observer, const app::OperationContext* context) const {
     if(context) context->checkpoint("Preparing backup");
+    const auto destination=document_location(requested_destination);
     auto candidate=destination; candidate+=".partial";
     {
         auto target=connect(candidate,password,true);

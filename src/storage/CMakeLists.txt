@@ -32,7 +32,7 @@ set_target_properties(spentit_storage_prototype PROPERTIES CXX_EXTENSIONS OFF)
 spentit_compiler_options(spentit_storage_prototype)
 
 if(SPENTIT_IMPORT_WORKFLOW)
-add_library(spentit_import_store STATIC import_store.cpp document_gateway.cpp verification_cache.cpp)
+add_library(spentit_import_store STATIC import_store.cpp document_gateway.cpp verification_cache.cpp document_lock.cpp)
 # Approval is invalidated whenever financial/storage/app validation sources change.
 file(GLOB_RECURSE verifier_sources CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/src/storage/*.cpp" "${PROJECT_SOURCE_DIR}/src/storage/*.inc" "${PROJECT_SOURCE_DIR}/src/storage/*.hpp"
@@ -47,6 +47,9 @@ endforeach()
 string(SHA256 verifier_id "${verifier_material}")
 target_compile_definitions(spentit_import_store PRIVATE SPENTIT_VERIFIER_ID="${verifier_id}")
 target_link_libraries(spentit_import_store PRIVATE OpenSSL::Crypto)
+if(WIN32)
+  target_link_libraries(spentit_import_store PRIVATE shell32 ole32 uuid)
+endif()
 target_include_directories(spentit_import_store PUBLIC include "${PROJECT_SOURCE_DIR}/src/app/include")
 target_link_libraries(spentit_import_store PUBLIC SpentIt::engine PRIVATE spentit_sqlcipher spentit_import_view)
 if(SPENTIT_RULES)
