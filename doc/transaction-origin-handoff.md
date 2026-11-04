@@ -49,6 +49,14 @@ Existing restrictions on editing/deleting new linked rows and legacy transfer-lo
 postings still apply equally to both ledger origins; this is not a new unrestricted
 transfer editor.
 
+Owner follow-up Go, 2026-11-03: the transaction editor resolves each live linked
+allocation's category display to the current counterpart account name, including
+the destination side and generated postings. This matches the saved ledger split
+view even when the underlying category is blank. Display metadata marks the
+allocation as a transfer so it cannot display or become the automatic remainder.
+Stored categories, amounts, link ownership and editing permissions are unchanged.
+Removed, released and unresolved links do not supply this display override.
+
 Show/Restore original, reimport recognition and import rollback still require the
 relevant source associations. Manual creation does not supply bank-file originals.
 A confirmed Merge can attach one under the existing manual survivor policy; imported

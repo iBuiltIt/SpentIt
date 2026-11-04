@@ -579,6 +579,29 @@ struct ImportModel::Worker {
         catch(const app::OperationOutcomeUnknown&){throw;}
         catch(const std::exception&){selected["ruleMatchError"]=QString("Couldn’t check rules for this transaction. You can still edit it.");}
     }
+    void decorateSelectedTransfers(app::ImportRepository& repo,const std::vector<app::TransferView>& links) {
+        auto current=selected.value("draft").toMap();auto splits=current.value("splits").toList();
+        const imports::Occurrence entry{str(selected.value("batch")),static_cast<std::size_t>(selected.value("ordinal").toUInt())};
+        const auto account=repo.account().identity;
+        std::map<std::int64_t,QString> names;
+        for(const auto& link:links) {
+            if(link.link.unresolved || link.link.destination_released || link.link.origin.state==transfers::State::removed || link.link.destination.state==transfers::State::removed)continue;
+            for(const auto* side:{&link.link.origin,&link.link.destination}) {
+                if(side->endpoint.account!=account || side->endpoint.entry!=entry)continue;
+                if(names.empty()){
+                    for(const auto& item:repo.accounts())names[item.identity]=text(item.name);
+                    for(const auto& item:repo.archived_accounts())names[item.identity]=text(item.name);
+                }
+                const auto other=side==&link.link.origin?link.link.destination.endpoint.account:link.link.origin.endpoint.account;
+                for(auto& value:splits){auto part=value.toMap();if(part.value("allocationId").toString()!=text(side->endpoint.allocation))continue;
+                    // Display metadata only: never replace the stored category in an edit.
+                    part["categoryDisplay"]=names.at(other)+" [Account]";
+                    part["transferAmount"]=true;value=part;
+                }
+            }
+        }
+        current["splits"]=splits;selected["draft"]=current;
+    }
     void inspect(std::string batch,std::size_t ordinal,app::OperationContext& context) {
         if(newManual && batch==newManualId)return;
         PresentationRead observation{diagnosticPresentationFailed};
@@ -590,7 +613,7 @@ struct ImportModel::Worker {
                 selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById,dateFormat,amountFormat)}};
                 QVariantList origins;
                 if(!value.link.unresolved && side==&value.link.origin)origins.push_back(QVariantMap{{"allocation",text(side->endpoint.allocation)},{"link",text(value.link.identity)}});
-                selected["transferOrigins"]=origins;return;
+                selected["transferOrigins"]=origins;decorateSelectedTransfers(repo,repo.transfers());return;
             }
             throw std::invalid_argument("Transfer entry is unavailable");
         }
@@ -706,6 +729,7 @@ struct ImportModel::Worker {
         QVariantList origins;
         for(const auto& value:transferLinks)if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed && value.link.origin.endpoint.account==acct.identity && value.link.origin.endpoint.entry==imports::Occurrence{batch,ordinal})origins.push_back(QVariantMap{{"allocation",text(value.link.origin.endpoint.allocation)},{"link",text(value.link.identity)}});
         selected["transferOrigins"]=origins;
+        decorateSelectedTransfers(repo,transferLinks);
         if(row.excluded_by_clear)selected["diagnostic"]="Removed from this account.";
         attachRules(repo,{batch,ordinal},context);
     }

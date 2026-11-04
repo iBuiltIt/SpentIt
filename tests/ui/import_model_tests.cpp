@@ -327,8 +327,28 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_2"),"clicked"));
         QCOMPARE(split->property("currentIndex").toInt(),0);
         if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_SELECTION_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_SELECTION_CAPTURE")));}
+        const auto linkedRows=m.state().value("reviewQuestions").toList().first().toMap().value("rows").toList();
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));
         QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        // Both editor endpoints use the actual relationship, including the accepted
+        // imported split whose stored category is still empty.
+        for(const int index:{0,2}) {
+            const auto row=linkedRows[index].toMap();
+            run(m,"select_account",{{"id",row.value("account")}});
+            run(m,"inspect",{{"batch",row.value("batch")},{"ordinal",row.value("ordinal")}});
+            const auto splits=selected(m).value("draft").toMap().value("splits").toList();
+            const auto transfer=splits.first().toMap();
+            QCOMPARE(transfer.value("categoryDisplay").toString(),index==0?QString("Savings [Account]"):QString("Synthetic test [Account]"));
+            QVERIFY(transfer.value("transferAmount").toBool());
+            QCOMPARE(transfer.value("category").toString(),row.value("splits").toList().first().toMap().value("category").toString());
+            if(index==2){
+                QVERIFY(QMetaObject::invokeMethod(window,"navigate",Q_ARG(QVariant,QVariant("ledger"))));
+                QTRY_VERIFY(visualItem(window->contentItem(),"splitCategory_0"));
+                QCOMPARE(visualItem(window->contentItem(),"splitCategory_0")->property("text").toString(),QString("Synthetic test [Account]"));
+                QVERIFY(!visualItem(window->contentItem(),"splitRemainder_0")->isVisible());
+                if(qEnvironmentVariableIsSet("SPENTIT_TRANSFER_EDITOR_CAPTURE")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_TRANSFER_EDITOR_CAPTURE")));}
+            }
+        }
     }
     void unifiedReviewLinkDifference() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
@@ -487,6 +507,8 @@ private slots:
         const auto source=selected(m);
         const auto sourceBatch=source.value("batch").toString();
         const auto savedSplits=source.value("draft").toMap().value("splits").toList();
+        QCOMPARE(savedSplits.last().toMap().value("categoryDisplay").toString(),QString("Visa [Account]"));
+        QVERIFY(savedSplits.last().toMap().value("transferAmount").toBool());
         const auto navigation=m.state().value("transferNavigation").toMap().value(sourceBatch+":0").toMap();
         QCOMPARE(navigation.size(),1);
         QVERIFY(!navigation.contains(savedSplits.first().toMap().value("allocationId").toString()));
@@ -525,6 +547,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
         QCOMPARE(m.state().value("accountId").toString(),QString("2"));
         QCOMPARE(selected(m).value("batch").toString(),navigation.value(transferAllocation).toMap().value("counterpartBatch").toString());
+        QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().first().toMap().value("categoryDisplay").toString(),QString("Synthetic test [Account]"));
         run(m,"select_account",{{"id","2"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});run(m,"commit",{{"ignoreWarnings",true}});QCOMPARE(m.state().value("committed").toString(),QString("-101.00"));
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("transfers").toList().size(),1);
         run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("projected").toString(),QString("100.00"));QCOMPARE(m.state().value("committed").toString(),QString("100.00"));

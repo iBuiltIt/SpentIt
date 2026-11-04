@@ -255,6 +255,36 @@ Native mouse interaction, dark theme, full storage fault sweeps, storage/UI
 sanitizers, Linux/Windows and the full project suite were not run for this change.
 Existing uncommitted transaction-origin editor changes were preserved.
 
+## Linked split account display in the editor — 2026-11-03
+
+Implemented the owner's Go to display the live counterpart account in the
+transaction editor, matching the saved ledger split view. Both independent
+endpoints and generated postings use the current account name plus `[Account]`,
+even when the stored split category is blank. Display metadata marks linked
+allocations as transfers, excluding them from automatic remainder selection and
+its label. Stored category values and existing editing restrictions are unchanged;
+released, removed and unresolved links do not supply this override. No format
+change. See [the contract](transaction-origin-handoff.md#implemented-transaction-behavior).
+
+Verification on macOS arm64 with synthetic data:
+
+- Rebuilt rules-enabled Release `build/SpentIt` using
+  `cmake --build build/import-ui-rules-release -j 2`.
+- Offscreen `spentit_import_ui_tests reviewMultipleLinkCandidates
+  qifTransferResolution transferManagementUi splitAmountEditing`: 9 passed,
+  0 failed (including setup/cleanup), 9.642 s, no QML warnings.
+- Extended checks cover both independent endpoints, the accepted imported split
+  with blank underlying category, visible editor text, exclusion from the remainder
+  label, unchanged category data, explicit QIF transfer resolution and a generated
+  counterpart. Existing transfer-management and split-amount cases also pass.
+- Visually inspected an offscreen two-split editor capture: counterpart account is
+  visible on the linked split and the remainder label appears only on the other
+  eligible split.
+- `git diff --check` and changed-document relative file-link checks passed.
+
+Native mouse interaction, dark theme, rules-disabled builds, sanitizers,
+Linux/Windows and the full project suite were not run for this follow-up.
+
 ## Transaction and split rule actions — 2026-11-03
 
 Implemented the owner's Go for separate **Create rule…** and **Edit rule…**
