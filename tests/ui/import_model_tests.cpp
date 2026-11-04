@@ -494,6 +494,23 @@ private slots:
         QCOMPARE(navigation.value(transferAllocation).toMap().value("arrow").toString(),QString("←"));
         QVERIFY(QMetaObject::invokeMethod(root,"toggleRecord",Q_ARG(QVariant,sourceBatch),Q_ARG(QVariant,0)));
         QTRY_VERIFY(visualItem(window->contentItem(),"splitToggle_0"));
+        const auto rowArrowName="ledgerTransferArrow_"+QString::number(m.occurrenceIndex(sourceBatch,0));
+        QTRY_VERIFY(visualItem(window->contentItem(),rowArrowName));
+        auto* rowArrow=visualItem(window->contentItem(),rowArrowName);
+        QTRY_VERIFY(rowArrow->isVisible());
+        QCOMPARE(rowArrow->property("text").toString(),QString("←"));
+        const auto destinationValue=rowArrow->property("destination");
+        const auto rowDestination=destinationValue.metaType()==QMetaType::fromType<QJSValue>()?destinationValue.value<QJSValue>().toVariant().toMap():destinationValue.toMap();
+        QCOMPARE(rowDestination,navigation.value(transferAllocation).toMap());
+        QVERIFY(rowDestination.value("description").toString().contains("Visa"));
+        auto* toggle=visualItem(window->contentItem(),"splitToggle_0");
+        QVERIFY(toggle->mapToScene(QPointF(0,0)).x()>=rowArrow->mapToScene(QPointF(rowArrow->width(),0)).x());
+        if(qEnvironmentVariableIsSet("SPENTIT_SPLIT_ARROW_CAPTURE")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_SPLIT_ARROW_CAPTURE")));}
+        QVERIFY(QMetaObject::invokeMethod(rowArrow,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QCOMPARE(m.state().value("accountId").toString(),QString("2"));
+        QCOMPARE(selected(m).value("batch").toString(),rowDestination.value("counterpartBatch").toString());
+        run(m,"select_account",{{"id","1"}});
+        QTRY_VERIFY(visualItem(window->contentItem(),"splitToggle_0"));
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"splitToggle_0"),"clicked"));
         const auto arrowName="splitTransferArrow_"+transferAllocation;
         QTRY_VERIFY(visualItem(window->contentItem(),arrowName));

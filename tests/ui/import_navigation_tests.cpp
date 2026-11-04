@@ -244,6 +244,26 @@ private slots:
             run(model,"open",{{"path",path}});QCOMPARE(order(model),(QStringList{"3","1","2","4"}));run(model,"close");
         }
     }
+    void firstSplitTransferNavigation() {
+        ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        const QVariantMap first{{"counterpartAccount","2"}},second{{"counterpartAccount","3"}};
+        auto state=model.state();
+        state["transferNavigation"]=QVariantMap{{"synthetic:0",QVariantMap{{"z",first},{"a",second}}}};
+        QVERIFY(root->setProperty("s",state));
+        const auto destination=[&](const QStringList& ids) {
+            QVariantList splits;for(const auto& id:ids)splits.push_back(QVariantMap{{"allocationId",id}});
+            QVariant result;const QVariant record=QVariantMap{{"batch","synthetic"},{"ordinal",0},{"splits",splits}};
+            if(!QMetaObject::invokeMethod(root,"firstLedgerTransfer",Q_RETURN_ARG(QVariant,result),Q_ARG(QVariant,record)))return QVariantMap{{"error",true}};
+            return result.metaType()==QMetaType::fromType<QJSValue>()?result.value<QJSValue>().toVariant().toMap():result.toMap();
+        };
+        QCOMPARE(destination({"fee","z","a"}),first);
+        QCOMPARE(destination({"fee","a","z"}),second);
+        QCOMPARE(destination({"z"}),first);
+        QVERIFY(destination({"fee"}).isEmpty());
+        QVERIFY(destination({}).isEmpty());
+    }
     void newAccountScroll_data() {
         QTest::addColumn<int>("accounts");
         QTest::newRow("short-list")<<1;

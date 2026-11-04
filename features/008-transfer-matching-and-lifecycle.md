@@ -67,6 +67,15 @@ Deletion/reversal depends on provenance and state:
 
 ### Match navigation
 
+Owner follow-up Go, 2026-11-03: the transaction row displays a transfer arrow for
+its first linked split in displayed split order, skipping ordinary allocations.
+This includes collapsed split transactions. Expanded saved splits retain their
+individual arrows to their exact counterparts. Each arrow's tooltip names its
+destination account. The row arrow sits beside, without overlapping, the split
+expand/collapse control. Multiple linked allocations remain independently linked;
+choosing the first for row navigation does not combine or modify them.
+
+
 For both manual and automatic links, a match icon navigates to the counterpart in the other account's ledger, selects it, and brings it on-screen. The counterpart's match icon navigates back. Toolbar Back also returns to the previous ledger location. Navigation respects the [Save / Discard / Stay contract](005-transaction-sheet-navigation.md). Final icon artwork is unspecified.
 
 ## Accepted first implementation scope — 2026-10-26

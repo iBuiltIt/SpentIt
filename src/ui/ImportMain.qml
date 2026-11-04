@@ -216,6 +216,13 @@ ApplicationWindow {
         let links=(s.transferNavigation||{})[record.batch+":"+record.ordinal]||{}
         return split ? links[split.allocationId]||null : null
     }
+    function firstLedgerTransfer(record) {
+        for(const split of record.splits) {
+            const destination=ledgerTransfer(record,split)
+            if(destination)return destination
+        }
+        return null
+    }
     component TransferArrow: Button {
         property var destination: null
         visible: !!destination
@@ -2999,10 +3006,10 @@ ApplicationWindow {
                                 required property string modelData
                                 required property int index
                                 width:(ledger.width-20)*window.ledgerColumnWeights[index];height:34
-                                TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===2?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===2 && record.splits.length===1?window.ledgerTransfer(record,record.splits[0]):null}
+                                TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===2?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===2?window.firstLedgerTransfer(record):null}
                                 Label {anchors.fill:parent;anchors.leftMargin:rowTransfer.visible?32:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>=3?Text.AlignRight:Text.AlignLeft;visible:index!==2 || record.splits.length<2}
                                 Button {
-                                    anchors.fill:parent;visible:index===2 && record.splits.length>1
+                                    anchors.fill:parent;anchors.leftMargin:rowTransfer.visible?32:0;visible:index===2 && record.splits.length>1
                                     objectName:index===2 && record.batch.length?"splitToggle_"+record.ordinal:""
                                     text:(ledgerRow.viewingSplits?"▾ ":"▸ ")+record.splits.length+" splits"
                                     enabled:!workflow.busy && !ledgerRow.expanded

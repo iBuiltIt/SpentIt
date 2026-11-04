@@ -2,6 +2,39 @@
 
 Last updated: 2026-11-03
 
+## Transaction-row arrows for split transfers — 2026-11-03
+
+Implemented the owner's Go to show a transfer navigation arrow on a split
+transaction's main ledger row, including while collapsed. It chooses the first
+linked allocation in displayed split order, skipping ordinary categories such as
+fees. The split toggle leaves space for the arrow. Expanded saved splits retain
+their own exact-counterpart arrows; existing destination-account tooltips and
+navigation guards are reused. No transfer ownership or financial data changes.
+See [the contract](../features/008-transfer-matching-and-lifecycle.md#match-navigation).
+
+Verification on macOS arm64, Qt 6.12.0, synthetic data:
+
+- Rebuilt rules-enabled Release with `cmake --build build/import-ui-rules-release -j 2`;
+  `build/SpentIt` contains the change.
+- Offscreen `qifTransferResolution transferManagementUi`: **4 passed**, 0 failed
+  including setup/cleanup, 3.784 s. The fee-first split case checks the collapsed
+  row arrow, destination description, non-overlap with the toggle, navigation to
+  the counterpart, and retained expanded-split navigation. Existing unsplit
+  incoming/outgoing navigation also passes.
+- Offscreen `firstSplitTransferNavigation`: **3 passed**, 0 failed including
+  setup/cleanup, 0.861 s. Synthetic navigation metadata checks multiple linked
+  allocations in both display orders, skipping an ordinary fee, one link and no
+  links. This is a selector test, not a new multi-account transfer storage test.
+- Final synthetic collapsed-split screenshot visually inspected: arrow and split
+  toggle are both visible on the transaction row.
+- CTest `import.qml`: **1/1 passed**, 1.75 s.
+- Initial new test assertions needed correction to handle QVariantMap as well as
+  QJSValue returns; the final runs above include that correction.
+- Changed-document relative file links and `git diff --check` passed.
+
+Native mouse interaction, dark-mode capture, rules-disabled builds, Linux/Windows
+and the full suite were not run. Existing linked-split editor work was preserved.
+
 ## New-account sidebar scroll fix — 2026-11-03
 
 Implemented the owner's Go to replace the **+ New Account** handler's unconditional
