@@ -3012,7 +3012,7 @@ ApplicationWindow {
                     Component.onDestruction:if(window.ledgerEditorHost===ledgerRow)window.ledgerEditorHost=null
                     property bool viewingSplits: !!window.splitViews[window.splitKey(record)] && record.splits.length>1
                     property alias editorSlot: rowEditorSlot
-                    width:ledger.width-20;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?theme.draft:(index%2===0?theme.row:theme.rowAlternate)
+                    width:ledger.width-20;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?(index%2===0?theme.draft:theme.draftAlternate):(index%2===0?theme.row:theme.rowAlternate)
                     border.width:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?1:0;border.color:theme.focus
                     MouseArea {width:parent.width;height:34;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){if(!(s.selectionKeys||{})[record.batch+":"+record.ordinal])selectLedgerRow(ledgerRow.index,0);ledgerContext.popup()}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}

@@ -21,7 +21,10 @@ committed ledger rows, making them more distinct from the window background.
 Owner follow-up Go (2026-11-03): ordinary ledger rows alternate this blue-grey
 with white in displayed order. Dark mode alternates `#222a33` and `#28323d`.
 Expanded saved splits remain within their transaction's stripe. Blue selection
-and warm draft backgrounds take priority over striping.
+takes priority over striping. Owner follow-up Go (2026-11-03): uncommitted
+rows also alternate, using existing pale yellow `#fff6de` and lighter cream
+`#fffdf2` in light mode, and warm `#3d3524` / `#49402c` in dark mode.
+They use the same displayed-index parity and parent stripe for expanded splits.
 
 Ledger transfer and split controls have transparent resting backgrounds, themed
 hover/pressed surfaces and a visible keyboard-focus outline. The category column

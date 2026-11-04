@@ -2,6 +2,30 @@
 
 Last updated: 2026-11-03
 
+## Alternating uncommitted ledger rows — 2026-11-03
+
+Implemented the owner's follow-up Go: uncommitted rows alternate existing pale
+yellow `#fff6de` with lighter cream `#fffdf2`; dark mode uses warm `#3d3524`
+and `#49402c`. Expanded splits share the parent stripe and selection retains
+priority. See [the palette contract](../features/005-transaction-sheet-navigation.md#system-light-and-dark-palettes--owner-go-2026-11-03).
+
+Verification on macOS arm64, Qt 6.12.0, synthetic data:
+
+- Rebuilt rules-enabled Release with `cmake --build build/import-ui-rules-release -j 2`;
+  `build/SpentIt` contains the change.
+- Parameterized the existing stripe checks for committed/uncommitted rows,
+  sorting, filtering, expanded splits and controls; palette contrast includes
+  the new draft alternate colour.
+- Native `ledgerStripes appearanceSwitching`: **5 passed** including setup/cleanup,
+  3.826 s. Light/dark uncommitted screenshots visually inspected.
+- CTest `import.qml`: **1/1 passed**, 1.69 s.
+- Initial uncommitted test expected a draft colour for the opening-balance row;
+  corrected that expectation before the final passing run.
+- Changed-document relative links and `git diff --check` passed.
+
+Windows/Linux, rules-disabled builds and the full suite were not run. Existing
+unrelated linked-split editor changes were preserved.
+
 ## Alternating ledger rows and aligned controls — 2026-11-03
 
 Implemented the owner's Go for alternating ordinary transaction backgrounds:

@@ -21,6 +21,7 @@ QtObject {
     readonly property color selectionPressed: dark ? "#3b5c77" : "#afd3f2"
     readonly property color focus: dark ? "#79b9ed" : "#2870a8"
     readonly property color draft: dark ? "#3d3524" : "#fff6de"
+    readonly property color draftAlternate: dark ? "#49402c" : "#fffdf2"
     readonly property color changed: dark ? "#463b24" : "#fff2cf"
     readonly property color error: dark ? "#ff9999" : "#a02020"
     readonly property color warning: dark ? "#e9be70" : "#855100"

@@ -122,7 +122,7 @@ private slots:
             auto* accountBackground=account->property("background").value<QObject*>();QVERIFY(accountBackground);
             auto* accountText=account->property("contentItem").value<QObject*>();QVERIFY(accountText);
             QVERIFY(contrast(accountText->property("color").value<QColor>(),accountBackground->property("color").value<QColor>())>=4.5);
-            for(const char* background:{"window","surface","alternate","row","rowAlternate","selection","selectionPressed","draft","changed","button"})
+            for(const char* background:{"window","surface","alternate","row","rowAlternate","selection","selectionPressed","draft","draftAlternate","changed","button"})
                 QVERIFY2(contrast(colour("text"),colour(background))>=4.5,background);
             QVERIFY(contrast(colour("highlightedText"),colour("highlight"))>=4.5);
             for(const char* foreground:{"muted","error","warning"})
@@ -161,7 +161,13 @@ private slots:
         }
         if(native)QGuiApplication::styleHints()->unsetColorScheme();
     }
+    void ledgerStripes_data() {
+        QTest::addColumn<bool>("accepted");
+        QTest::newRow("committed")<<true;
+        QTest::newRow("uncommitted")<<false;
+    }
     void ledgerStripes() {
+        QFETCH(bool,accepted);
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
@@ -171,7 +177,7 @@ private slots:
         file.write("!Type:Bank\n");
         for(int i=0;i<6;++i)file.write(("D1/1/2026\nT-10\nPRow "+QString::number(i)+"\nSExpense\n$-12\nSRefund\n$2\n^\n").toUtf8());
         file.close();run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
-        run(model,"commit",{{"ignoreWarnings",true}});
+        if(accepted)run(model,"commit",{{"ignoreWarnings",true}});
         root->setProperty("editorClosed",true);
         auto* theme=object(root,"applicationTheme");QVERIFY(theme);
         const bool native=QGuiApplication::platformName()!="offscreen";
@@ -185,7 +191,9 @@ private slots:
                 for(int i=0;i<4;++i) {
                     QTRY_VERIFY(object(root,qPrintable("ledgerRow_"+QString::number(i))));
                     auto* row=object(root,qPrintable("ledgerRow_"+QString::number(i)));
-                    QTRY_COMPARE(row->property("color").value<QColor>(),theme->property(i%2?"rowAlternate":"row").value<QColor>());
+                    const bool draft=model.rowRecord(i).value("status").toString()=="Draft";
+                    if(i>0)QCOMPARE(draft,!accepted); // Opening balance sorts first in ascending order.
+                    QTRY_COMPARE(row->property("color").value<QColor>(),theme->property(draft?(i%2?"draftAlternate":"draft"):(i%2?"rowAlternate":"row")).value<QColor>());
                 }
             }
             auto* toggle=qobject_cast<QQuickItem*>(object(root,"splitToggle_0"));QVERIFY(toggle);
@@ -210,12 +218,12 @@ private slots:
             QTRY_VERIFY(object(root,"splitPreview_0")->property("height").toReal()>0);
             if(qEnvironmentVariableIsSet("SPENTIT_STRIPE_CAPTURE")) {
                 QTest::qWait(100);
-                QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_STRIPE_CAPTURE")+(scheme==Qt::ColorScheme::Dark?"-dark.png":"-light.png")));
+                QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_STRIPE_CAPTURE")+(accepted?"-committed":"-uncommitted")+(scheme==Qt::ColorScheme::Dark?"-dark.png":"-light.png")));
             }
             QVERIFY(QMetaObject::invokeMethod(toggle,"clicked"));
             run(model,"query",{{"filter","Row 0"},{"sort",1}});
             QTRY_VERIFY(object(root,"ledgerRow_0"));
-            QCOMPARE(object(root,"ledgerRow_0")->property("color").value<QColor>(),theme->property("row").value<QColor>());
+            QCOMPARE(object(root,"ledgerRow_0")->property("color").value<QColor>(),theme->property(accepted?"row":"draft").value<QColor>());
         }
         if(native)QGuiApplication::styleHints()->unsetColorScheme();
     }
