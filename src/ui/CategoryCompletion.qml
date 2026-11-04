@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-TextField {
+NavigableTextField {
     Theme { id: theme }
     id: field
     property var model: []

@@ -309,3 +309,17 @@ before UI success; unknown outcomes require reopening. Preference changes invali
 cached presentation. Experimental formats are **52 with rules / 51 without**;
 older formats are rejected unchanged, with no migration. See [status](status.md)
 for actual verification and platform limits.
+
+## Text-field Home and End — owner Go 2026-11-03
+
+All editable single-line fields use shared Home/End handling: Home moves to
+position zero, End to the text end, and Shift extends selection to that boundary
+while retaining its anchor. Selected text uses ordinary copy/delete/replacement
+behavior. This covers setup/passwords, dialogs, search, account/category names,
+rules, ledger and split editors, and the synthetic sheet. Control/Alt/Meta
+combinations retain Qt's platform behavior. Completion and existing Enter, Tab,
+Escape and Undo handling remain in their field-specific handlers.
+
+The implementation uses shared Qt Quick code on all platforms. macOS verification
+is recorded in [status](status.md); Windows/Linux behavior remains unverified.
+Read-only multiline displays retain Qt's existing navigation.

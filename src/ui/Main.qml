@@ -269,21 +269,21 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     Label { text: "Payee" }
-                    TextField { objectName: "editPayee"; Layout.fillWidth: true; text: sheet.edit.payee || ""; maximumLength: 200; enabled: !sheet.busy; onTextEdited: sheet.setField("payee",text); onAccepted: sheet.save() }
+                    NavigableTextField { objectName: "editPayee"; Layout.fillWidth: true; text: sheet.edit.payee || ""; maximumLength: 200; enabled: !sheet.busy; onTextEdited: sheet.setField("payee",text); onAccepted: sheet.save() }
                     Label { text: "Signed total CAD" }
-                    TextField { objectName: "editTotal"; Layout.preferredWidth: 135; text: sheet.edit.total || ""; maximumLength: 40; enabled: !sheet.busy; onTextEdited: sheet.setField("total",text); onAccepted: sheet.save() }
+                    NavigableTextField { objectName: "editTotal"; Layout.preferredWidth: 135; text: sheet.edit.total || ""; maximumLength: 40; enabled: !sheet.busy; onTextEdited: sheet.setField("total",text); onAccepted: sheet.save() }
                 }
                 CheckBox { text: "Include a second allocation"; checked: sheet.edit.addAllocation || false; enabled: !sheet.busy && !sheet.edit.hasSplit; onToggled: sheet.setField("addAllocation", checked ? "true" : "false") }
                 Label { text: "Allocation 1 is the remainder. Edit allocation 2 below; other amounts stay fixed."; color: "#52636a"; font.pixelSize: 11 }
                 RowLayout {
                     Layout.fillWidth: true
-                    TextField { Layout.fillWidth: true; placeholderText: "Category"; text: sheet.edit.category || ""; maximumLength: 200; enabled: !sheet.busy && sheet.edit.addAllocation; onTextEdited: sheet.setField("category",text); onAccepted: sheet.save() }
-                    TextField { Layout.fillWidth: true; placeholderText: "Allocation memo"; text: sheet.edit.memo || ""; maximumLength: 500; enabled: !sheet.busy && sheet.edit.addAllocation; onTextEdited: sheet.setField("memo",text); onAccepted: sheet.save() }
-                    TextField { objectName: "editAllocation"; Layout.preferredWidth: 135; placeholderText: "Signed CAD"; text: sheet.edit.allocation || ""; maximumLength: 40; enabled: !sheet.busy && sheet.edit.addAllocation; onTextEdited: sheet.setField("allocation",text); onAccepted: sheet.save() }
+                    NavigableTextField { Layout.fillWidth: true; placeholderText: "Category"; text: sheet.edit.category || ""; maximumLength: 200; enabled: !sheet.busy && sheet.edit.addAllocation; onTextEdited: sheet.setField("category",text); onAccepted: sheet.save() }
+                    NavigableTextField { Layout.fillWidth: true; placeholderText: "Allocation memo"; text: sheet.edit.memo || ""; maximumLength: 500; enabled: !sheet.busy && sheet.edit.addAllocation; onTextEdited: sheet.setField("memo",text); onAccepted: sheet.save() }
+                    NavigableTextField { objectName: "editAllocation"; Layout.preferredWidth: 135; placeholderText: "Signed CAD"; text: sheet.edit.allocation || ""; maximumLength: 40; enabled: !sheet.busy && sheet.edit.addAllocation; onTextEdited: sheet.setField("allocation",text); onAccepted: sheet.save() }
                 }
                 RowLayout {
                     Label { text: "Note" }
-                    TextField { Layout.fillWidth: true; text: sheet.edit.note || ""; maximumLength: 2000; enabled: !sheet.busy; onTextEdited: sheet.setField("note",text); onAccepted: sheet.save() }
+                    NavigableTextField { Layout.fillWidth: true; text: sheet.edit.note || ""; maximumLength: 2000; enabled: !sheet.busy; onTextEdited: sheet.setField("note",text); onAccepted: sheet.save() }
                 }
                 RowLayout {
                     CheckBox { text: "Explicitly allow mixed signs"; checked: sheet.edit.mixed || false; enabled: !sheet.busy; onToggled: sheet.setMixed(checked) }

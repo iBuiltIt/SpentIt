@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-TextField {
+NavigableTextField {
     id: field
     property string clearObjectName: objectName + "Clear"
     property bool hasAppliedFilter: false

@@ -2,6 +2,33 @@
 
 Last updated: 2026-11-03
 
+## Text-field Home and End — 2026-11-03
+
+Implemented the owner's Go for shared Home/End cursor movement and Shift
+selection across editable single-line fields, including search, completion,
+passwords, rules, dialogs and ledger/split editors. A forwarded key handler
+preserves field-specific key handlers; modified Control/Alt/Meta shortcuts retain
+Qt behavior. See [the contract](ledger-editing.md#text-field-home-and-end--owner-go-2026-11-03).
+
+Verification on macOS arm64, Qt 6.12.0, synthetic text:
+
+- Rebuilt rules-enabled Release using `cmake --build build/import-ui-rules-release -j 2`;
+  `build/SpentIt` contains the change.
+- `textBoundaries` tests plain, search and category-completion fields: movement,
+  selection-anchor reversal, deletion, replacement, collapsing selection, empty
+  input, Left and Escape. Offscreen **5 passed** including setup/cleanup (0.165 s);
+  native macOS **5 passed** (0.517 s).
+- CTests `import.navigation`, `import.category_ui`, `import.rules_ui`, `import.qml`:
+  **4/4 passed**, 75.60 s.
+- Initial test compilation used an unavailable QWindow `keyClicks` overload;
+  corrected to `keyClick` before the passing runs. Initial sandboxed native run
+  could not access a screen; rerun with permitted window access passed.
+- Changed-document relative links and `git diff --check` passed.
+
+Windows/Linux, rules-disabled and synthetic-sheet builds, physical keyboard/mouse
+interaction and the full suite were not run. Read-only multiline displays retain
+Qt navigation. Existing unrelated transaction-origin changes were preserved.
+
 ## Transaction-row arrows for split transfers — 2026-11-03
 
 Implemented the owner's Go to show a transfer navigation arrow on a split

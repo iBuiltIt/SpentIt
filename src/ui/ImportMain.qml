@@ -376,7 +376,7 @@ ApplicationWindow {
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:restoringSelection?
                 "Restore imported values for "+selectedEditCount+" selected "+(selectedEditCount===1?"transaction":"transactions")+"? This replaces their current dates, amounts, payees, memos, and splits/categories.":
                 "Enter a payee name for "+selectedEditCount+" selected "+(selectedEditCount===1?"transaction.":"transactions.")}
-            TextField {id:selectedPayee;objectName:"selectedPayee";visible:!restoringSelection;Layout.fillWidth:true;Accessible.name:"New payee name";onAccepted:applySelectedEdit()}
+            NavigableTextField {id:selectedPayee;objectName:"selectedPayee";visible:!restoringSelection;Layout.fillWidth:true;Accessible.name:"New payee name";onAccepted:applySelectedEdit()}
         }
         footer:DialogButtonBox {
             Button {objectName:"cancelSelectedEdit";text:"Cancel";DialogButtonBox.buttonRole:DialogButtonBox.RejectRole;onClicked:selectedEditDialog.close()}
@@ -1621,7 +1621,7 @@ ApplicationWindow {
                         Label {text:"Currency"}
                         UsableComboBox {objectName:"sourceCurrency_"+index;model:workflow.currencies;currentIndex:workflow.currencies.indexOf((importMapping.mappings[mappingDelegate.index]||{}).currency);Accessible.name:"Currency for "+modelData.name;onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"currency",currentText)}}
                         Label {text:"Opening date"}
-                        TextField {objectName:"sourceOpeningDate_"+index;Layout.fillWidth:true;text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
+                        NavigableTextField {objectName:"sourceOpeningDate_"+index;Layout.fillWidth:true;text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
                     }
                     RowLayout {
                         visible:!!importMapping.mappings[index] && importMapping.mappings[index].create
@@ -1835,7 +1835,7 @@ ApplicationWindow {
                 delegate:Button {required property var modelData;width:pickerChoices.width;text:modelData.path+(modelData.account?" [Account]"+(pickerIndex===-2?" — use transfer workflow":"")+(modelData.accountId===s.accountId?" — current account":""):(modelData.group?" (group)":""));enabled:modelData.account?(pickerIndex!==-2 && modelData.accountId!==s.accountId):modelData.assignable;objectName:modelData.account?"pickAccount_"+modelData.accountId:"pickCategory_"+modelData.id;onClicked:if(modelData.account)chooseAccountDestination(modelData.accountId);else chooseCategory(modelData.id,modelData.path)}
             }
             Button {objectName:"chooseUncategorized";text:"Uncategorized";onClicked:chooseCategory("","")}
-            TextField {id:unmappedCategory;objectName:"unmappedCategoryText";placeholderText:"Explicit unmapped classification text";Layout.fillWidth:true;Accessible.name:"Unmapped category text"}
+            NavigableTextField {id:unmappedCategory;objectName:"unmappedCategoryText";placeholderText:"Explicit unmapped classification text";Layout.fillWidth:true;Accessible.name:"Unmapped category text"}
             Button {objectName:"chooseUnmapped";text:"Keep as unmapped text";enabled:unmappedCategory.text.length>0;onClicked:chooseCategory("",unmappedCategory.text)}
             Label {text:pickerFeedback;visible:text.length>0;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
             Label {text:"Accounts are transfer destinations. Their aliases identify the same account. Rules cannot create transfers; use the transfer workflow.";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -1848,7 +1848,7 @@ ApplicationWindow {
         width:Math.min(window.width-48,480)
         ColumnLayout {
             width:renameDialog.availableWidth
-            TextField {id:renameField;objectName:"renameAccountName";Layout.fillWidth:true;Accessible.name:"Account name";onAccepted:acceptDialog(renameDialog)}
+            NavigableTextField {id:renameField;objectName:"renameAccountName";Layout.fillWidth:true;Accessible.name:"Account name";onAccepted:acceptDialog(renameDialog)}
             Label {text:"This changes the current display name only.";wrapMode:Text.Wrap;Layout.fillWidth:true}
         }
         onAccepted:workflow.command("rename_account",{operation:workflow.newIdentity(),name:renameField.text})
@@ -1864,8 +1864,8 @@ ApplicationWindow {
         ColumnLayout {
             width:correctOpeningDialog.availableWidth
             Label {text:"Update the opening date and/or balance.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            TextField {id:correctDate;objectName:"correctOpeningDate";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Corrected opening date";onAccepted:acceptDialog(correctOpeningDialog)}
-            TextField {id:correctAmount;onEditingFinished:resolveAmount(correctAmount);objectName:"correctOpeningAmount";placeholderText:"Amount";Accessible.name:"Corrected opening amount";onAccepted:acceptDialog(correctOpeningDialog)}
+            NavigableTextField {id:correctDate;objectName:"correctOpeningDate";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Corrected opening date";onAccepted:acceptDialog(correctOpeningDialog)}
+            NavigableTextField {id:correctAmount;onEditingFinished:resolveAmount(correctAmount);objectName:"correctOpeningAmount";placeholderText:"Amount";Accessible.name:"Corrected opening amount";onAccepted:acceptDialog(correctOpeningDialog)}
         }
         onAccepted:workflow.command("correct_opening",{operation:workflow.newIdentity(),date:correctDate.text,amount:correctAmount.text})
     }
@@ -2004,7 +2004,7 @@ ApplicationWindow {
         contentItem:ColumnLayout {
             Label {text:"Hide suggested links when either transaction matches this condition. Transfers still waiting for a bank transaction remain in Review.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             UsableComboBox {id:exclusionField;objectName:"exclusionField";model:["Payee","Memo (including split memos)"];onActivated:{exclusionPreviewed=false;if(!exclusionEditing.identity)exclusionText.text=currentIndex===0?(exclusionEndpoint.payee||""):(exclusionEndpoint.memo||((exclusionEndpoint.splits||[]).find(function(part){return !!part.memo})||{}).memo||"")}}
-            TextField {id:exclusionText;objectName:"exclusionText";Layout.fillWidth:true;placeholderText:"Matching condition";onTextEdited:exclusionPreviewed=false;Accessible.name:"Link exclusion condition"}
+            NavigableTextField {id:exclusionText;objectName:"exclusionText";Layout.fillWidth:true;placeholderText:"Matching condition";onTextEdited:exclusionPreviewed=false;Accessible.name:"Link exclusion condition"}
             CheckBox {id:exclusionRegex;objectName:"exclusionRegex";text:"Regular expression";onToggled:exclusionPreviewed=false}
             CheckBox {id:exclusionAccount;objectName:"exclusionAccount";text:"Only in this account";onToggled:exclusionPreviewed=false}
             Label {text:"Matches the whole field. Capitalization is ignored; spaces and punctuation must match.";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -2159,7 +2159,7 @@ ApplicationWindow {
                 Label {text:"Where did my money go?";font.pixelSize:18;Layout.alignment:Qt.AlignHCenter}
                 Item {Layout.preferredHeight:16}
                 Label {text:"Choose your SpentIt file";font.pixelSize:16;Layout.fillWidth:true}
-                TextField {id:location;objectName:"datasetPath";text:s.path || workflow.suggestedPath;Layout.fillWidth:true;placeholderText:"File path";Accessible.name:"File path"
+                NavigableTextField {id:location;objectName:"datasetPath";text:s.path || workflow.suggestedPath;Layout.fillWidth:true;placeholderText:"File path";Accessible.name:"File path"
                     enabled:!workflow.busy
                     onTextEdited:{unlockPassword.clear();if(!settingUp)probeTimer.restart()}
                     onAccepted:if(!settingUp)probeTimer.restart()
@@ -2172,7 +2172,7 @@ ApplicationWindow {
                 }
                 RowLayout {
                     visible:!settingUp && s.path===location.text && !!s.unlockRequired;Layout.fillWidth:true;enabled:!workflow.busy;spacing:12
-                    TextField {id:unlockPassword;objectName:"unlockPassword";echoMode:TextInput.Password;placeholderText:"Password to open dataset";Layout.fillWidth:true;onAccepted:openDataset();Accessible.name:"Dataset password"}
+                    NavigableTextField {id:unlockPassword;objectName:"unlockPassword";echoMode:TextInput.Password;placeholderText:"Password to open dataset";Layout.fillWidth:true;onAccepted:openDataset();Accessible.name:"Dataset password"}
                     Button {objectName:"openProtectedDataset";text:"Open file";onClicked:openDataset()}
                 }
                 Label {objectName:"welcomeError";text:errorDialog?"":workflow.error;visible:text.length>0;textFormat:Text.PlainText;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
@@ -2182,16 +2182,16 @@ ApplicationWindow {
                         anchors.fill:parent;spacing:12
                         Button {text:"Browse new location…";onClicked:{createDialog.currentFolder=workflow.documentsFolder;createDialog.selectedFile=workflow.suggestedFile;createDialog.open()}}
                         Label {text:"Account name"}
-                        TextField {id:accountName;objectName:"initialAccountName";text:"SpentIt";placeholderText:"Account name";Layout.fillWidth:true;Accessible.name:"Account name"}
+                        NavigableTextField {id:accountName;objectName:"initialAccountName";text:"SpentIt";placeholderText:"Account name";Layout.fillWidth:true;Accessible.name:"Account name"}
                         RowLayout {Label {text:"Home / account currency"} UsableComboBox {id:currency;objectName:"setupCurrency";model:workflow.currencies;currentIndex:workflow.currencies.indexOf("CAD");Accessible.name:"Currency";onActivated:suggestSetupDate()}}
                         Label {text:"Date format"}
                         UsableComboBox {id:setupDate;objectName:"setupDateFormat";Layout.preferredWidth:230;model:datePresets;Accessible.name:"Date format";onActivated:{setupDateOverridden=true;if(currentIndex<6)customDate.text=currentText}}
-                        TextField {id:customDate;objectName:"customDateFormat";visible:setupDate.currentIndex===6;text:"YYYY-MM-DD";placeholderText:"YYYY-MM-DD";maximumLength:10;Accessible.name:"Custom date format";onTextEdited:setupDateOverridden=true}
+                        NavigableTextField {id:customDate;objectName:"customDateFormat";visible:setupDate.currentIndex===6;text:"YYYY-MM-DD";placeholderText:"YYYY-MM-DD";maximumLength:10;Accessible.name:"Custom date format";onTextEdited:setupDateOverridden=true}
                         Label {text:"Example: "+workflow.dateFormatExample(setupDate.currentIndex===6?customDate.text:setupDate.currentText);wrapMode:Text.Wrap;Layout.fillWidth:true}
                         CheckBox {id:defaultCategories;objectName:"defaultCategories";text:"Use default categories";checked:true}
                         CheckBox {id:protection;objectName:"passwordProtection";text:"Password protection";checked:true}
-                        TextField {id:password;objectName:"newDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Password";Layout.fillWidth:true;Accessible.name:"New password"}
-                        TextField {id:confirmation;objectName:"confirmDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Confirm password";Layout.fillWidth:true;Accessible.name:"Confirm password"}
+                        NavigableTextField {id:password;objectName:"newDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Password";Layout.fillWidth:true;Accessible.name:"New password"}
+                        NavigableTextField {id:confirmation;objectName:"confirmDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Confirm password";Layout.fillWidth:true;Accessible.name:"Confirm password"}
                         Label {textFormat:Text.PlainText;visible:protection.checked;text:"Keep your password safe. If you forget it, you cannot open this file or its backups.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         Label {textFormat:Text.PlainText;visible:!protection.checked;text:"Anyone with this file or a backup can read your financial information.";wrapMode:Text.Wrap;Layout.fillWidth:true;color:theme.error}
                         Button {objectName:"createDataset";text:"Create file";enabled:currency.currentIndex>=0;onClicked:createDataset(false)}
@@ -2287,7 +2287,7 @@ ApplicationWindow {
                                     }
                                 }
                             }
-                            TextField {
+                            NavigableTextField {
                                 id:newAccountName;objectName:"newAccountName";visible:addingAccount;Layout.fillWidth:true;enabled:!workflow.busy
                                 placeholderText:"Account name · Enter";Accessible.name:"New account name"
                                 onAccepted:if(text.length>0)workflow.command("create_account",{id:accountCreationId,name:text,currency:s.homeCurrency,date:accountCreationDate})
@@ -2398,7 +2398,7 @@ ApplicationWindow {
                 Label {text:"Reported balance: "+(s.groupReportedBalance||"")+" · Reviewed change: "+(s.groupReviewedChange||"")+" "+(s.currency||"")+" · Proposed opening: "+(s.groupProposedOpening||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 RowLayout {
                     UsableComboBox {id:balanceMeaning;objectName:"groupBalanceMeaning";Layout.preferredWidth:330;model:["Choose balance meaning","Zero opening (balance agrees)","Treat as opening balance","Treat as closing balance","Ignore reported balance"] ;Accessible.name:"Reported balance meaning"}
-                    TextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
+                    NavigableTextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
                     Button {objectName:"confirmGroupOpening";text:"Calculate opening balance";enabled:!s.readOnly && !!s.groupCanReviewBalance && balanceMeaning.currentIndex>0;onClicked:guard(function(){workflow.command("group_balance",{group:s.importGroup.id,source:s.importGroup.sourceAccount,revision:s.pending.revision,choice:balanceMeaning.currentIndex,date:groupOpeningDate.text})})}
                 }
                 Label {text:"The opening stays staged until this account first commits. Existing mapped account openings are never replaced.";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -2555,13 +2555,13 @@ ApplicationWindow {
                             UsableComboBox {id:transferDestination;objectName:"transferDestination";model:transferDestinations();textRole:"name";currentIndex:0;onModelChanged:currentIndex=0;Layout.fillWidth:true;Accessible.name:"Transfer destination account"}
                         }
                         RowLayout {
-                            TextField {id:transferDate;objectName:"transferDate";text:workflow.todayDisplay();placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
-                            TextField {id:transferAmount;onEditingFinished:resolveAmount(transferAmount);objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
-                            TextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
+                            NavigableTextField {id:transferDate;objectName:"transferDate";text:workflow.todayDisplay();placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
+                            NavigableTextField {id:transferAmount;onEditingFinished:resolveAmount(transferAmount);objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
+                            NavigableTextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
                             Button {objectName:"createManualTransfer";text:"Add transfer";enabled:!s.readOnly && transferDestination.currentIndex>0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
                         }
                         Label {text:"Choose the destination account. If the matching transfer is already listed, link it instead of adding another.";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        TextField {id:transferMemo;placeholderText:"Memo (optional)";Layout.fillWidth:true;Accessible.name:"Manual transfer memo"}
+                        NavigableTextField {id:transferMemo;placeholderText:"Memo (optional)";Layout.fillWidth:true;Accessible.name:"Manual transfer memo"}
                         RowLayout {
                             Label {text:"Selected split"}
                             UsableComboBox {id:transferAllocation;objectName:"transferAllocation";model:(selected.draft||{}).splits||[];textRole:"transferLabel";Layout.fillWidth:true;Accessible.name:"Selected transfer split"}
@@ -2679,7 +2679,7 @@ ApplicationWindow {
                                         guard(function(){categorySelection=c.id;if(mouse.button===Qt.RightButton){categoryMenuEntry=c;categoryContext.popup(pt.x,pt.y)}})
                                     }
                                 }
-                                TextField {
+                                NavigableTextField {
                                     id:inlineCategory;objectName:categoryRow.editing?"categoryName":"";anchors.fill:parent;visible:categoryRow.editing;enabled:!categorySaving
                                     text:categoryRow.editing?categoryEditText:"";leftPadding:8;topPadding:2;bottomPadding:2;selectByMouse:true;Accessible.name:"Category name"
                                     onTextEdited:{categoryEditText=text}
@@ -2766,14 +2766,14 @@ ApplicationWindow {
                             Button {objectName:"saveRules";text:"Save";enabled:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)} onClicked:saveRules()}
                             Button {objectName:"discardRules";text:"Discard";enabled:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)} onClicked:discardRule()}
                             }
-                            TextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Rule name";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
+                            NavigableTextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Rule name";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
                             Label {text:"Match";font.bold:true}
                             RowLayout {
                                 UsableComboBox {id:ruleScope;objectName:"ruleScope";Accessible.name:"Rule scope";model:["Transaction","Split"];onActivated:if(!ruleSync){writeRule()}}
                                 UsableComboBox {id:ruleInput;objectName:"ruleInput";Accessible.name:"Rule source field";model:ruleScope.currentIndex===1?["Parent payee","Memo","Category"]:["Payee","Memo","Category"];onActivated:if(!ruleSync)writeRule()}
                             }
                             Label {text:"Pattern (regular expression)"}
-                            TextField {id:ruleExpression;objectName:"ruleExpression";placeholderText:"Expression";Layout.fillWidth:true;onTextEdited:{ruleAssistNote.text="";syncAssist();writeRule()} Accessible.name:"Rule expression"}
+                            NavigableTextField {id:ruleExpression;objectName:"ruleExpression";placeholderText:"Expression";Layout.fillWidth:true;onTextEdited:{ruleAssistNote.text="";syncAssist();writeRule()} Accessible.name:"Rule expression"}
                             Label {
                                 objectName:"rulePatternKey";Layout.fillWidth:true;textFormat:Text.PlainText
                                 font.pixelSize:12;fontSizeMode:Text.HorizontalFit;minimumPixelSize:10
@@ -2788,8 +2788,8 @@ ApplicationWindow {
                             }
                             Label {id:ruleAssistNote;objectName:"ruleAssistNote";text:"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                             Label {text:"Changes";font.bold:true}
-                            TextField {id:rulePayeeTemplate;objectName:"rulePayeeTemplate";visible:ruleScope.currentIndex===0;placeholderText:"Payee template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Payee template"}
-                            TextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
+                            NavigableTextField {id:rulePayeeTemplate;objectName:"rulePayeeTemplate";visible:ruleScope.currentIndex===0;placeholderText:"Payee template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Payee template"}
+                            NavigableTextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
                             RowLayout {
                                 Label {text:"Category"}
                                 CategoryCompletion {
@@ -3088,11 +3088,11 @@ ApplicationWindow {
                 }
                 RowLayout {
                     visible:!!selected.draft
-                    TextField {id:editDate;KeyNavigation.tab:editPayee;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                    NavigableTextField {id:editDate;KeyNavigation.tab:editPayee;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
-                    TextField {id:editPayee;KeyNavigation.tab:editTotal;KeyNavigation.backtab:editDate;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                    NavigableTextField {id:editPayee;KeyNavigation.tab:editTotal;KeyNavigation.backtab:editDate;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
-                    TextField {id:editTotal;onEditingFinished:if(selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                    NavigableTextField {id:editTotal;onEditingFinished:if(selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
                 }
                 Repeater {
@@ -3137,17 +3137,17 @@ ApplicationWindow {
                             canUndoAssignment:!dirty && !!s.canUndoEdit
                             onUndoAssignmentRequested:undoEdit()
                         }
-                        TextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                        NavigableTextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
-                        TextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                        NavigableTextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
-                        TextField {id:splitAmount;onEditingFinished:{if(selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                        NavigableTextField {id:splitAmount;onEditingFinished:{if(selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1};splitEditMessage="";dirty=true} Accessible.name:"Split amount"}
                         Label {objectName:"splitRemainder_"+index;visible:!manualSplitAmounts && automaticSplitIndex===index;text:"Automatic remainder"}
                         Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && !category.startsWith("[");onClicked:{if(!enabled || splitModel.count<=1)return;window.removeEditorSplit(index)}}
                     }
                 }
-                TextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                NavigableTextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
                 RowLayout {
                     visible:editEnabled || (!!s.rulesSupported && !!selected.batch)

@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlComponent>
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QQuickStyle>
@@ -45,6 +46,51 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());QSettings().clear();
     }
     void init() { QSettings().clear(); } // Never reopen a previous test's removed temporary dataset.
+    void textBoundaries_data() {
+        QTest::addColumn<QString>("type");
+        for(const auto* type:{"NavigableTextField","ClearableSearchField","CategoryCompletion"})
+            QTest::newRow(type)<<QString::fromLatin1(type);
+    }
+    void textBoundaries() {
+        QFETCH(QString,type);
+        QQmlApplicationEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(("import QtQuick\nimport QtQuick.Controls\n"+type+
+            " { width: 300; height: 40; property bool escaped: false; "
+            "Keys.onEscapePressed: escaped = true }").toUtf8(),QUrl("qrc:/spentit/BoundaryTest.qml"));
+        std::unique_ptr<QObject> field(component.create());
+        QVERIFY2(field,qPrintable(component.errorString()));
+        auto* item=qobject_cast<QQuickItem*>(field.get());QVERIFY(item);
+        QQuickWindow window;window.resize(400,100);item->setParentItem(window.contentItem());window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));item->forceActiveFocus();
+        QTRY_VERIFY(item->hasActiveFocus());QCoreApplication::processEvents();
+        const auto reset=[&](QString text="alpha beta",int position=5) {
+            field->setProperty("text",text);field->setProperty("cursorPosition",position);
+        };
+        reset();
+        QTest::keyClick(&window,Qt::Key_Home);QCOMPARE(field->property("cursorPosition").toInt(),0);
+        QTest::keyClick(&window,Qt::Key_End);QCOMPARE(field->property("cursorPosition").toInt(),10);
+        reset();
+        QTest::keyClick(&window,Qt::Key_Home,Qt::ShiftModifier);
+        QCOMPARE(field->property("selectedText").toString(),"alpha");
+        QTest::keyClick(&window,Qt::Key_End,Qt::ShiftModifier);
+        QCOMPARE(field->property("selectedText").toString()," beta");
+        QTest::keyClick(&window,Qt::Key_Home,Qt::ShiftModifier);
+        QCOMPARE(field->property("selectedText").toString(),"alpha");
+        QTest::keyClick(&window,Qt::Key_Backspace);
+        QCOMPARE(field->property("text").toString()," beta");
+        reset();QTest::keyClick(&window,Qt::Key_End,Qt::ShiftModifier);
+        QTest::keyClick(&window,Qt::Key_Exclam);QCOMPARE(field->property("text").toString(),"alpha!");
+        reset();QTest::keyClick(&window,Qt::Key_Home,Qt::ShiftModifier);
+        QTest::keyClick(&window,Qt::Key_End);
+        QCOMPARE(field->property("selectedText").toString(),QString());
+        QCOMPARE(field->property("cursorPosition").toInt(),10);
+        reset("",0);QTest::keyClick(&window,Qt::Key_End,Qt::ShiftModifier);
+        QTest::keyClick(&window,Qt::Key_Home);QCOMPARE(field->property("cursorPosition").toInt(),0);
+        reset();QTest::keyClick(&window,Qt::Key_Left);QCOMPARE(field->property("cursorPosition").toInt(),4);
+        QTest::keyClick(&window,Qt::Key_Escape);QVERIFY(field->property("escaped").toBool());
+        item->setParentItem(nullptr);
+    }
     void appearanceSwitching() {
         const bool native=QGuiApplication::platformName()!="offscreen";
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
