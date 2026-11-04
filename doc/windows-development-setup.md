@@ -2,9 +2,11 @@
 
 Developer prerequisites and build commands for the tested Windows machine below.
 This is not an installation guide for running a packaged SpentIt download.
-Set `REPO` in the examples to the path of your own checkout. The commands are
-`cmd.exe` lines for the Visual Studio prompt in the next section. PowerShell
-does not continue lines with `^`.
+Set `REPO` in the examples to the path of your own checkout. Each build step
+is shown for `cmd.exe` and for PowerShell. `cmd.exe` continues a line with
+`^`. PowerShell continues a line with a backtick. A fresh checkout has no
+build directory: the `cmake -S` command creates it. `cmake --build` alone
+looks for a directory that CMake has already configured.
 
 Status: on 2026-11-03 the rules-enabled Release application configured, compiled,
 and opened its window on the host below. `ctest` registered 40 tests; 39 passed
@@ -36,8 +38,13 @@ Requesting the sanitizer preset on Windows stops configuration: `Sanitizer prese
 "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat" -vcvars_ver=14.44
 ```
 
-The banner then says the environment was initialized for `x64`. Run the rest of
-this guide in that prompt.
+The banner then says the environment was initialized for `x64`. Run the
+`cmd.exe` examples in that prompt.
+
+The Visual Studio Developer PowerShell can be used instead when `cl` in that
+window reports `19.44.35229`. A normal PowerShell window does not have this
+compiler. The PowerShell examples below assume that Developer PowerShell and
+skip `vcvars64.bat`.
 
 ## OpenSSL
 
@@ -107,12 +114,28 @@ Generated `sqlite3.h` SHA-256 `8a9d1bff44d75174ca6dea3ea9bac50a6104d86facb566647
 CMake rejects any other generated pair. Tcl is required on the Unix side
 because `make sqlite3.c` generates the amalgamation.
 
+A fresh checkout does not contain `sqlite3.c`. If
+`build/dependencies/sqlcipher-build` is left over without that file, remove it
+before generating again. The helper still needs the archive even when the
+extracted `sqlcipher-4.19.0` tree is already present.
+
 ```sh
 REPO="/mnt/c/path/to/SpentIt"
 curl --fail --location \
   https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.19.0.tar.gz \
   -o /tmp/spentit-sqlcipher-4.19.0.tar.gz
+rm -rf "$REPO/build/dependencies/sqlcipher-build"
 python3 "$REPO/tools/prepare_sqlcipher.py" /tmp/spentit-sqlcipher-4.19.0.tar.gz
+```
+
+PowerShell can download the archive and delete the old directory, but it cannot
+run the helper to completion. `prepare_sqlcipher.py` executes the Unix
+`configure` script and `make sqlite3.c`. From the Developer PowerShell, start
+that same Ubuntu step with `wsl.exe`. Change the `/mnt/c/path/to/SpentIt` path
+to the checkout.
+
+```powershell
+wsl.exe -d Ubuntu -- bash -lc 'cd /mnt/c/path/to/SpentIt && curl --fail --location https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.19.0.tar.gz -o /tmp/spentit-sqlcipher-4.19.0.tar.gz && rm -rf build/dependencies/sqlcipher-build && python3 tools/prepare_sqlcipher.py /tmp/spentit-sqlcipher-4.19.0.tar.gz'
 ```
 
 MSVC then compiles those sources. The `spentit_sqlcipher` target uses `/W0`.
@@ -168,18 +191,50 @@ cmake -S "%REPO%" -B "%REPO%\build\import-ui-rules-release" -G Ninja -DCMAKE_BUI
 cmake --build "%REPO%\build\import-ui-rules-release" --target spentit_import_experiment
 ```
 
+The same configure and build from the Developer PowerShell, which creates
+`build\import-ui-rules-release` when that directory is absent:
+
+```powershell
+$repo = 'C:\path\to\SpentIt'
+$deps = Join-Path $env:USERPROFILE '.local\spentit-deps'
+
+cmake -S $repo -B "$repo\build\import-ui-rules-release" -G Ninja -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_PREFIX_PATH="$deps\qt\6.8.3\msvc2022_64" `
+  -DOPENSSL_ROOT_DIR='C:\Users\swessels\develop\github\external\vcpkg\installed\x64-windows' `
+  -DSPENTIT_PCRE2_ROOT="$deps\pcre2-10.49" `
+  -DSPENTIT_STORAGE_PROTOTYPE=ON `
+  -DSPENTIT_IMPORT_WORKFLOW=ON `
+  -DSPENTIT_IMPORT_UI=ON `
+  -DSPENTIT_RULES=ON `
+  -DSPENTIT_SQLCIPHER_SOURCE="$repo\build\dependencies\sqlcipher-build" `
+  -DSPENTIT_APPLICATION_OUTPUT_DIRECTORY="$repo\build"
+
+cmake --build "$repo\build\import-ui-rules-release" --target spentit_import_experiment
+```
+
 Configure identified MSVC `19.44.35229.0` and OpenSSL `3.5.2`. The link after
 the directory-flush correction ended with `Linking CXX executable ...\build\SpentIt.exe`.
 First-party `/W4` output in that rebuild had no warnings. SQLCipher stayed `/W0`.
 
 Launch from the same prompt. Qt and OpenSSL both have to be on `PATH`. Qt loads
-plugins relative to `Qt6Core.dll` in the Qt `bin` directory. `windeployqt` was
-not run.
+plugins relative to `Qt6Core.dll` in the Qt `bin` directory.
 
 ```bat
 set PATH=%USERPROFILE%\.local\spentit-deps\qt\6.8.3\msvc2022_64\bin;C:\Users\swessels\develop\github\external\vcpkg\installed\x64-windows\bin;%PATH%
 build\SpentIt.exe
 ```
+
+From the Developer PowerShell, in the same window that just built:
+
+```powershell
+$env:PATH = "$deps\qt\6.8.3\msvc2022_64\bin;C:\Users\swessels\develop\github\external\vcpkg\installed\x64-windows\bin;" + $env:PATH
+& "$repo\build\SpentIt.exe"
+```
+
+`$repo` and `$deps` are the variables from the PowerShell configure above. The
+`PATH` change lasts for that window. Running `build\SpentIt.exe` without those
+two `bin` directories on `PATH` fails to load the Qt DLLs. `windeployqt` was
+not run, so the DLLs are not copied next to the executable.
 
 On 2026-11-03 the process stayed up with window title `SpentIt`. That launch
 was before directory publication used write access. Creating a document at
