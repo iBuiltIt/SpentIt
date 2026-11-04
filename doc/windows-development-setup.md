@@ -114,17 +114,17 @@ Generated `sqlite3.h` SHA-256 `8a9d1bff44d75174ca6dea3ea9bac50a6104d86facb566647
 CMake rejects any other generated pair. Tcl is required on the Unix side
 because `make sqlite3.c` generates the amalgamation.
 
-A fresh checkout does not contain `sqlite3.c`. If
-`build/dependencies/sqlcipher-build` is left over without that file, remove it
-before generating again. The helper still needs the archive even when the
-extracted `sqlcipher-4.19.0` tree is already present.
+A fresh checkout does not contain `sqlite3.c`. The helper skips extraction when
+`build/dependencies/sqlcipher-4.19.0` already exists. A directory left behind
+without its files, including `configure`, has to be removed too. The helper
+still needs the archive.
 
 ```sh
 REPO="/mnt/c/path/to/SpentIt"
 curl --fail --location \
   https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.19.0.tar.gz \
   -o /tmp/spentit-sqlcipher-4.19.0.tar.gz
-rm -rf "$REPO/build/dependencies/sqlcipher-build"
+rm -rf "$REPO/build/dependencies/sqlcipher-4.19.0" "$REPO/build/dependencies/sqlcipher-build"
 python3 "$REPO/tools/prepare_sqlcipher.py" /tmp/spentit-sqlcipher-4.19.0.tar.gz
 ```
 
@@ -135,7 +135,7 @@ that same Ubuntu step with `wsl.exe`. Change the `/mnt/c/path/to/SpentIt` path
 to the checkout.
 
 ```powershell
-wsl.exe -d Ubuntu -- bash -lc 'cd /mnt/c/path/to/SpentIt && curl --fail --location https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.19.0.tar.gz -o /tmp/spentit-sqlcipher-4.19.0.tar.gz && rm -rf build/dependencies/sqlcipher-build && python3 tools/prepare_sqlcipher.py /tmp/spentit-sqlcipher-4.19.0.tar.gz'
+wsl.exe -d Ubuntu -- bash -lc 'cd /mnt/c/path/to/SpentIt && curl --fail --location https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.19.0.tar.gz -o /tmp/spentit-sqlcipher-4.19.0.tar.gz && rm -rf build/dependencies/sqlcipher-4.19.0 build/dependencies/sqlcipher-build && python3 tools/prepare_sqlcipher.py /tmp/spentit-sqlcipher-4.19.0.tar.gz'
 ```
 
 MSVC then compiles those sources. The `spentit_sqlcipher` target uses `/W0`.
