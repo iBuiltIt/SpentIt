@@ -716,7 +716,8 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
     }
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='transfer-assignment'");saved.text(1,operation);
-        if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Transfer assignment retry changed its selections");return *prior;
+        if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Transfer assignment retry changed its selections");
+        return *prior;
     }
     const auto generation=review_generation(impl_->db);if(generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
     for(const auto& request:requests)if(request.category_generation>=0 && request.category_generation!=generation)fail(SQLITE_CONSTRAINT,"Transactions changed; select them again");
@@ -779,7 +780,8 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
             if(old!=before.end() && payload==transfer_codec::encode(*old))continue;
             if(!changed.insert(value.link.identity).second)fail(SQLITE_CONSTRAINT,"Selected transfers affect the same relationship");
             Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
-            if(old!=before.end())history.blob(3,transfer_codec::encode(*old));history.blob(4,payload);history.text(5,child);history.done();
+            if(old!=before.end())history.blob(3,transfer_codec::encode(*old));
+            history.blob(4,payload);history.text(5,child);history.done();
         }
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();
@@ -835,7 +837,8 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
         for(const auto& value:links->changed){
             const auto old=std::find_if(before_links.begin(),before_links.end(),[&](const auto& v){return v.link.identity==value.link.identity;});
             Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
-            if(old!=before_links.end())history.blob(3,transfer_codec::encode(*old));history.blob(4,transfer_codec::encode(value));history.text(5,child);history.done();
+            if(old!=before_links.end())history.blob(3,transfer_codec::encode(*old));
+            history.blob(4,transfer_codec::encode(value));history.text(5,child);history.done();
         }
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();
@@ -848,7 +851,8 @@ bool ImportStore::can_undo_transaction_edit(std::string_view edit) const {
 app::ReviewReceipt ImportStore::undo_transaction_edit(std::string_view operation,std::string_view edit) {
     if(const auto receipt=review_outcome(operation)){
         Statement prior(impl_->db,"SELECT answer FROM review_undos WHERE id=?");prior.text(1,operation);
-        if(!prior.row() || prior.bytes(0)!=edit)fail(SQLITE_CONSTRAINT,"Undo retry changed its edit");return *receipt;
+        if(!prior.row() || prior.bytes(0)!=edit)fail(SQLITE_CONSTRAINT,"Undo retry changed its edit");
+        return *receipt;
     }
     if(!can_undo_transaction_edit(edit))fail(SQLITE_CONSTRAINT,"Later changes prevent transaction edit Undo");
     return undo_review(operation);

@@ -13,7 +13,8 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
     for(const auto& id:request.selected){if(!identities.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once");encoded.text(review_key(id));}
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question=?");saved.text(1,operation);saved.text(2,question);
-        if(!saved.row() || saved.bytes(0)!=encoded.bytes)fail(SQLITE_CONSTRAINT,"Retry changed the selected transactions or values");return *prior;
+        if(!saved.row() || saved.bytes(0)!=encoded.bytes)fail(SQLITE_CONSTRAINT,"Retry changed the selected transactions or values");
+        return *prior;
     }
     const auto current=[&]{return request.account==impl_->selected_account && request.generation==review_generation(impl_->db);};
     if(!current())fail(SQLITE_CONSTRAINT,"Transactions changed. Select them again before editing.");
@@ -78,7 +79,8 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
             for(const auto& value:plan.links->changed){
                 const auto old=std::find_if(before_links.begin(),before_links.end(),[&](const auto& v){return v.link.identity==value.link.identity;});
                 Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
-                if(old!=before_links.end())history.blob(3,transfer_codec::encode(*old));history.blob(4,transfer_codec::encode(value));history.text(5,child);history.done();
+                if(old!=before_links.end())history.blob(3,transfer_codec::encode(*old));
+                history.blob(4,transfer_codec::encode(value));history.text(5,child);history.done();
             }
         }
     }

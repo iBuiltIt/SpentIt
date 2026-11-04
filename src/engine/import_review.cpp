@@ -18,7 +18,8 @@ int posting_distance(std::string_view left,std::string_view right) {
         if(text.size()!=10 || text[4]!='-' || text[7]!='-')invalid();
         const auto number=[](std::string_view part){int n=0;const auto r=std::from_chars(part.data(),part.data()+part.size(),n);if(r.ec!=std::errc{} || r.ptr!=part.data()+part.size())invalid();return n;};
         const std::chrono::year_month_day date{std::chrono::year(number(text.substr(0,4))),std::chrono::month(static_cast<unsigned>(number(text.substr(5,2)))),std::chrono::day(static_cast<unsigned>(number(text.substr(8,2))))};
-        if(!date.ok() || int(date.year())<1)invalid();return std::chrono::sys_days(date);
+        if(!date.ok() || int(date.year())<1)invalid();
+        return std::chrono::sys_days(date);
     };
     const auto distance=(day(left)-day(right)).count();return static_cast<int>(distance<0?-distance:distance);
 }

@@ -892,8 +892,8 @@ private slots:
         QVERIFY(!m.rememberWindowPosition());QVERIFY(m.saveWindowPosition(&window));QVERIFY(!QSettings().contains("Window/position"));
         m.setRememberWindowPosition(true);QVERIFY(m.saveWindowPosition(&window));QCOMPARE(QSettings().value("Window/position").toPoint(),first);
         // No-op saves must leave the preferences file untouched.
-        QSettings settings;settings.sync();const auto modified=QFileInfo(settings.fileName()).lastModified();
-        QVERIFY(m.saveWindowPosition(&window));QCOMPARE(QFileInfo(settings.fileName()).lastModified(),modified);
+        QSettings preferences;preferences.sync();const auto modified=QFileInfo(preferences.fileName()).lastModified();
+        QVERIFY(m.saveWindowPosition(&window));QCOMPARE(QFileInfo(preferences.fileName()).lastModified(),modified);
         const QPoint second=first+QPoint(20,20);window.setFramePosition(second);QTRY_COMPARE(window.framePosition(),second);
         QVERIFY(m.saveWindowPosition(&window));QCOMPARE(QSettings().value("Window/position").toPoint(),second);
         ImportModel reopened(storage::document_gateway());QVERIFY(reopened.rememberWindowPosition());QQuickWindow restored;restored.resize(400,300);reopened.restoreWindowPosition(&restored);restored.show();QTRY_COMPARE(restored.framePosition(),second);
@@ -1580,7 +1580,8 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("sidebarSettings"),"clicked"));
         auto* dialog=root->findChild<QObject*>("unsavedDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
         auto* guardSave=root->findChild<QQuickItem*>("guardSave");QVERIFY(guardSave);
-        auto* guardAccessible=QAccessible::queryAccessibleInterface(guardSave);QVERIFY(guardAccessible);
+        QAccessibleInterface* guardAccessible=nullptr;
+        QTRY_VERIFY(guardAccessible=QAccessible::queryAccessibleInterface(guardSave));
         QTRY_VERIFY(!guardAccessible->state().invisible);
         QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!dialog->property("visible").toBool());QVERIFY(root->property("dirty").toBool());
         QTRY_VERIFY(payee->hasActiveFocus());

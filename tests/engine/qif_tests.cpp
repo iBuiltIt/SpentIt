@@ -199,7 +199,7 @@ void malformed() {
     auto food=parse_dmy("D1/1/2026\nT1\nLFood/Class\n^");check(food.valid() && food.records[0].source_category=="Food" && food.records[0].source_class=="Class");
     for(const auto value:{"Food/", "Food/A/B", "Food/|Class", "[Visa]/[Class]"}) invalid(std::string("D1/1/2026\nT1\nL")+value+"\n^",Issue::category_class);
     invalid("D1/1/2026\nT1\nC?\n^",Issue::cleared_status);
-    invalid(std::string("D1/1/2026\nT1\nP")+char(0xff)+"\n^",Issue::encoding);
+    invalid(std::string("D1/1/2026\nT1\nP")+"\xff\n^",Issue::encoding);
     invalid(std::string("D1/1/2026\nT1\nP")+char(0)+"\n^",Issue::encoding);
     invalid("D1/1/2026\rT1\n^",Issue::encoding);
     for (const auto s:{"\xc0\x80","\xed\xa0\x80","\xf4\x90\x80\x80","\xe2\x82"}) check(!valid_utf8(s));

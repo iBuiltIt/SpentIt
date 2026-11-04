@@ -205,7 +205,8 @@ std::optional<Header> read_header(std::string_view bytes, bool xml, std::string&
     const auto start = skip_bom(bytes);
     auto reject = [&](std::string text, std::size_t at, bool resource = false) {
         refusal = std::move(text); diagnostic = qif::Diagnostic{resource ? qif::Issue::resource_limit : qif::Issue::header, at};
-        if(resource) admissible = false; return std::optional<Header>{};
+        if(resource) admissible = false;
+        return std::optional<Header>{};
     };
     std::string security, compression, version, ofxheader, data;
     if(!xml) {

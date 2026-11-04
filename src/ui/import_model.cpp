@@ -439,8 +439,8 @@ struct ImportModel::Worker {
             const CategoryDefinition* parent=nullptr;
             if(!c.parent.empty())for(const auto& p:current.categories)if(p.identity==c.parent){parent=&p;break;}
             const bool archived=c.archived || (parent && parent->archived);
-            const auto path=parent?parent->name+": "+c.name:c.name;
-            QVariantMap value{{"id",text(c.identity)},{"name",text(c.name)},{"parent",text(c.parent)},{"path",text(path)},
+            const auto categoryPath=parent?parent->name+": "+c.name:c.name;
+            QVariantMap value{{"id",text(c.identity)},{"name",text(c.name)},{"parent",text(c.parent)},{"path",text(categoryPath)},
                 {"createdOrder",QString::number(current.creation_order.at(c.identity))},
                 {"group",c.kind==CategoryKind::group},{"archived",archived},{"ownArchived",c.archived},{"deleted",c.deleted},
                 {"assignable",c.kind==CategoryKind::leaf && !archived && !c.deleted},{"revision",QString::number(c.revision)}};
@@ -570,9 +570,9 @@ struct ImportModel::Worker {
             selected["ruleExplanations"]=explanations;
             QVariantList assignments;
             for(const auto& item:match.assignments) {
-                const auto id=text(item.mark.identity);
-                const bool available=std::any_of(rules.begin(),rules.end(),[&](const auto& value){return value.toMap().value("id").toString()==id;});
-                assignments.push_back(QVariantMap{{"rule",id},{"label",ruleLabel(id)},{"field",text(item.field)},{"available",available},{"scope",scopeName(item.scope)},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
+                const auto ruleId=text(item.mark.identity);
+                const bool available=std::any_of(rules.begin(),rules.end(),[&](const auto& value){return value.toMap().value("id").toString()==ruleId;});
+                assignments.push_back(QVariantMap{{"rule",ruleId},{"label",ruleLabel(ruleId)},{"field",text(item.field)},{"available",available},{"scope",scopeName(item.scope)},{"allocation",item.allocation?QVariant(static_cast<int>(*item.allocation)):QVariant()}});
             }
             selected["ruleAssignments"]=assignments;
         } catch(const app::OperationCancelled&){throw;}
@@ -777,10 +777,10 @@ struct ImportModel::Worker {
             state["committedChangesSupported"]=repo.committed_changes_supported();state["categoriesSupported"]=repo.categories_supported();
             if(!repo.account_selected()) {
                 cachedAccount.reset();
-                const auto home=archivedList.isEmpty()?QString():archivedList.front().toMap().value("currency").toString();
+                const auto archivedHome=archivedList.isEmpty()?QString():archivedList.front().toMap().value("currency").toString();
                 state["accounts"]=QVariantList{};state["accountSelected"]=false;state["readOnly"]=true;state["archived"]=false;
                 state["emptyActive"]="No active account is selected. Archived accounts remain available.";
-                state["homeCurrency"]=home;state["accountId"]="";state["name"]="";state["currency"]=home;
+                state["homeCurrency"]=archivedHome;state["accountId"]="";state["name"]="";state["currency"]=archivedHome;
                 state["openingDate"]="";state["opening"]="";state["frozen"]=false;state["confirmed"]=false;
                 state["committed"]="";state["projectionAvailable"]=false;state["projected"]="Incomplete — review import";
                 state["batches"]=QVariantList{};state["undoableAccountOperation"]="";state["currencyWarning"]=false;
@@ -1856,7 +1856,7 @@ struct ImportModel::Worker {
                 if(selectedBatch.empty()) throw std::logic_error("Select a record first");
                 auto row=repo.row({selectedBatch,selectedOrdinal});
                 const auto kind=a.value("kind").toString();
-                std::string source;auto scope=rules::Scope::transaction;auto input=rules::InputField::payee;
+                std::string source;auto scope=rules::Scope::transaction;auto inputField=rules::InputField::payee;
                 if(kind=="payee") {source=row.source.payee;if(a.contains("allocation"))scope=rules::Scope::split;}
                 else if(kind=="memo") {
                     const auto index=a.value("allocation").toInt();
@@ -1868,9 +1868,9 @@ struct ImportModel::Worker {
                     else if(!current && row.source.repairable && index>=0 && static_cast<std::size_t>(index)<row.source.source_allocation_fields.size())sourceOrdinal=static_cast<std::size_t>(index);
                     if(!sourceOrdinal || *sourceOrdinal>=row.source.source_allocation_fields.size())throw std::invalid_argument("Rules require an imported split");
                     const auto ordinal=*sourceOrdinal;
-                    source=row.source.source_allocation_fields[ordinal].memo;scope=rules::Scope::split;input=rules::InputField::memo;
+                    source=row.source.source_allocation_fields[ordinal].memo;scope=rules::Scope::split;inputField=rules::InputField::memo;
                 } else throw std::invalid_argument("Unknown rule source");
-                app::RuleDefinitionImage rule;rule.identity=identity();rule.enabled=true;rule.scope=scope;rule.input=input;rule.expression=app::quoted_field_pattern(source);
+                app::RuleDefinitionImage rule;rule.identity=identity();rule.enabled=true;rule.scope=scope;rule.input=inputField;rule.expression=app::quoted_field_pattern(source);
                 std::optional<imports::DraftRow> current=row.draft;
                 if(selected.value("committed").toBool())current=repo.committed_entry({selectedBatch,selectedOrdinal}).current.draft;
                 rule.label=source.empty()?"New rule":source;

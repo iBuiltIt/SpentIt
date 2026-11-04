@@ -69,7 +69,8 @@ void ImportStore::accept_local(std::string_view operation,const app::TransferReq
 app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool ignore_warnings) {
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE,"Acceptance operation identifier is too long");
     if(const auto prior=acceptance_outcome(operation)) {
-        if(prior->ignored_warnings!=ignore_warnings)fail(SQLITE_CONSTRAINT,"Acceptance retry changed its warning decision");return *prior;
+        if(prior->ignored_warnings!=ignore_warnings)fail(SQLITE_CONSTRAINT,"Acceptance retry changed its warning decision");
+        return *prior;
     }
     const auto review=acceptance_review();
     for(const auto& warning:review.warnings)if(!ignore_warnings || !warning.overridable)fail(SQLITE_CONSTRAINT,warning.reason.c_str());

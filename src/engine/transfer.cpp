@@ -313,7 +313,8 @@ void validate_set(std::span<const Link> links) {
     for(const auto& e:evidence_endpoints)if(endpoints.contains(e))invalid();
 }
 std::vector<Link> commit_account(std::span<const Link> links,std::int64_t account) {
-    if(account<=0)invalid();validate_set(links);
+    if(account<=0)invalid();
+    validate_set(links);
     std::vector<Link> result;result.reserve(links.size());
     for(const auto& link:links) {
         const bool participates=link.origin.endpoint.account==account || link.destination.endpoint.account==account;
@@ -322,7 +323,8 @@ std::vector<Link> commit_account(std::span<const Link> links,std::int64_t accoun
     validate_set(result);return result;
 }
 std::vector<Link> clear_account(std::span<const Link> links,std::int64_t account) {
-    if(account<=0)invalid();validate_set(links);
+    if(account<=0)invalid();
+    validate_set(links);
     std::set<imports::Occurrence> preserved;
     for(const auto& link:links) {
         if((link.origin.endpoint.account==account || link.destination.endpoint.account==account) && protected_draft(link,account))
@@ -336,18 +338,21 @@ std::vector<Link> clear_account(std::span<const Link> links,std::int64_t account
     validate_set(result);return result;
 }
 std::vector<Link> accept_entry(std::span<const Link> links,std::int64_t account,const imports::Occurrence& entry) {
-    if(account<=0)invalid();validate_set(links);
+    if(account<=0)invalid();
+    validate_set(links);
     std::vector<Link> result;result.reserve(links.size());bool found=false;
     for(const auto& link:links) {
         const bool participates=link.origin.endpoint.account==account || link.destination.endpoint.account==account;
         const bool matches=participates && chosen(link,account).endpoint.entry==entry;
         result.push_back(matches?accept_unmatched(link,account):link);found=found || matches;
     }
-    if(!found)invalid();validate_set(result);return result;
+    if(!found)invalid();
+    validate_set(result);return result;
 }
 namespace {
 std::vector<Link> import_matches(std::span<const Link> links,std::int64_t account,std::string_view batch,bool publish) {
-    if(account<=0)invalid();identity(batch);validate_set(links);
+    if(account<=0)invalid();
+    identity(batch);validate_set(links);
     std::vector<Link> result;result.reserve(links.size());
     for(const auto& link:links) {
         const bool participates=link.origin.endpoint.account==account || link.destination.endpoint.account==account;
@@ -439,7 +444,8 @@ LinkEdit retarget(std::span<const Link> links,const AllocationFact& origin,std::
     if(origin.generated) throw TransferError(Error::origin_controls_draft,"The origin controls this generated draft. Change or discard the origin instead of deleting the destination.");
     const auto* host=owner_of(links,origin.endpoint);
     if(host && host->destination.endpoint==origin.endpoint) {
-        if(host->identity!=identity)invalid();agree(host->destination,origin);preserved(*host);
+        if(host->identity!=identity)invalid();
+        agree(host->destination,origin);preserved(*host);
         if(!generated){const auto edit=edit_linked_allocation(links,origin,false,false,origin.amount,origin.date);edited(links,{edit.link,std::nullopt,std::nullopt});return {edit.link,std::nullopt,std::nullopt};}
         if(counts_locally(host->origin))throw TransferError(Error::origin_controls_draft,"Change the original transfer before choosing another account.");
         // Both postings are independently owned. Retarget the selected posting;

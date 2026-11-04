@@ -229,7 +229,8 @@ std::optional<app::ImportGroup> ImportStore::import_group_outcome(std::string_vi
 std::vector<app::ImportGroup> ImportStore::import_groups() const {
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement ids(impl_->db,"SELECT id FROM import_groups ORDER BY rowid");std::vector<app::ImportGroup> result;
-    while(ids.row())result.push_back(import_group(ids.bytes(0)));return result;
+    while(ids.row())result.push_back(import_group(ids.bytes(0)));
+    return result;
 }
 app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::string_view bytes,qif::DateOrder profile,
     const std::vector<app::ImportAccountMapping>& mappings,app::OperationContext& context,std::string_view label) {
@@ -471,7 +472,8 @@ void ImportStore::verify_import_groups(const app::OperationContext* context) con
                 const auto change=imports::sum(historical,amounts);if(change.units()!=decisions.integer(5))fail(SQLITE_CORRUPT,"Reviewed balance change does not replay");Money expected(0,historical);
                 const auto choice=static_cast<app::ReportedBalanceChoice>(decisions.integer(0));
                 if(choice==app::ReportedBalanceChoice::opening || choice==app::ReportedBalanceChoice::closing) {
-                    if(!reported)fail(SQLITE_CORRUPT);expected=qif::amount(*reported,historical);if(choice==app::ReportedBalanceChoice::closing)expected=expected-change;
+                    if(!reported)fail(SQLITE_CORRUPT);
+                    expected=qif::amount(*reported,historical);if(choice==app::ReportedBalanceChoice::closing)expected=expected-change;
                 } else if(choice==app::ReportedBalanceChoice::zero) {
                     if(reported && qif::amount(*reported,historical)!=change)fail(SQLITE_CORRUPT,"Invalid zero-opening comparison");
                 } else if(choice!=app::ReportedBalanceChoice::ignore)fail(SQLITE_CORRUPT);

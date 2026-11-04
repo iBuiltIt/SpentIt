@@ -19,7 +19,7 @@ int main() {try {
     fails(RegexFailure::invalid_input,[&]{payee.match(std::string("a\0b",3));});
     fails(RegexFailure::resource_limit,[&]{payee.match(std::string(65537,'x'));});
     fails(RegexFailure::cancelled,[&]{payee.match("TfL Travel",[]{return true;});});
-    fails(RegexFailure::internal,[&]{payee.match("TfL Travel",[]{throw std::runtime_error("check failed");return false;});});
+    fails(RegexFailure::internal,[&]{payee.match("TfL Travel",[]() -> bool {throw std::runtime_error("check failed");});});
     fails(RegexFailure::resource_limit,[]{Pattern p(std::string(65,'(')+"x"+std::string(65,')'));});
     fails(RegexFailure::resource_limit,[]{std::string expression;for(unsigned i=0;i<33;++i)expression+="(x)";Pattern p(expression);});
     unsigned checks=0;Pattern slow("(*NO_START_OPT)(a+)+$");

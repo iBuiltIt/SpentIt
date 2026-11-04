@@ -360,7 +360,9 @@ void recovered(const fs::path& path,int kind){
     if(kind==2){const auto b=s.batches().at(0);check(b.state==app::BatchState::pending || b.state==app::BatchState::discarded);s.discard("first",0);check(s.committed_balance().units()==10000);}
     if(kind==4 || kind==6){const auto b=s.batches()[0];check(b.revision==0 || b.revision==1);
         check(s.row({"first",0}).draft.has_value()==(b.revision==1));check(b.blocked==(b.revision==0));
-        if(b.revision==0)operation(s,kind);check(!s.projected_balance());s.verify();}
+        if(b.revision==0)operation(s,kind);
+        check(!s.projected_balance());
+        s.verify();}
     if(kind==7){check(s.committed_balance().units()==10000 || s.committed_balance().units()==9000);check(s.commit("first",2,"op").after.units()==9000);check(!s.committed_entry({"first",0}).current.draft.transaction.original_imported_amount());}
     if(kind==3){check(s.committed_balance().units()==10000 || s.committed_balance().units()==12069);check(s.commit("first",0,"op").after.units()==12069);check(s.ledger(false).size()==2);}
 }

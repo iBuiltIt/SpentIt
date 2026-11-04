@@ -50,7 +50,7 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-See the linked prototype instructions for optional targets and additional dependencies. macOS verification is recorded in the project documents; Linux and Windows remain unverified.
+See the linked prototype instructions for optional targets and additional dependencies. macOS verification is recorded in the project documents. Linux and Windows developer builds are described in [Linux development setup](doc/linux-development-setup.md) and [Windows development setup](doc/windows-development-setup.md). What those hosts actually ran is in [project status](doc/status.md).
 
 ## Repository conventions
 

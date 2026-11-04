@@ -2,9 +2,13 @@
 #include <sqlite3.h>
 #include <algorithm>
 #include <climits>
+#ifndef _WIN32
 #include <fcntl.h>
-#include <limits>
 #include <unistd.h>
+#else
+#include "windows_files.hpp"
+#endif
+#include <limits>
 
 namespace spentit::storage {
 namespace {
@@ -71,11 +75,20 @@ void identifier(std::string_view id) {
         fail(SQLITE_MISUSE, "Invalid prototype identifier");
 }
 void exclusive_file(const std::filesystem::path& path) {
+#ifdef _WIN32
+    const auto created = win::exclusive_file(path);
+    if (!created) fail(created.code, created.message);
+#else
     int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (fd < 0) fail(SQLITE_CANTOPEN, "Cannot create new storage file exclusively");
     if (::close(fd) != 0) fail(SQLITE_IOERR_CLOSE);
+#endif
 }
 void sync_directory(const std::filesystem::path& path) {
+#ifdef _WIN32
+    const auto synced = win::sync_parent(path);
+    if (!synced) fail(synced.code, synced.message);
+#else
     auto parent = path.parent_path();
     if (parent.empty()) parent = ".";
     const int fd = ::open(parent.c_str(), O_RDONLY | O_DIRECTORY);
@@ -83,6 +96,7 @@ void sync_directory(const std::filesystem::path& path) {
     const int rc = ::fsync(fd);
     const int closed = ::close(fd);
     if (rc || closed) fail(SQLITE_IOERR_FSYNC);
+#endif
 }
 constexpr const char* schema = R"SQL(
 PRAGMA application_id=1397770576;
@@ -132,7 +146,12 @@ PrototypeStore PrototypeStore::connect(const std::filesystem::path& path, std::s
     if (password.empty() || password.size() > 1024) fail(SQLITE_MISUSE, "Password length is invalid");
     if (create) exclusive_file(path);
     auto impl = std::make_unique<Impl>();
+#ifdef _WIN32
+    const auto filename = win::sqlite_filename(path);
+    ok(sqlite3_open_v2(filename.c_str(), &impl->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW, nullptr));
+#else
     ok(sqlite3_open_v2(path.c_str(), &impl->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW, nullptr));
+#endif
     sqlite3* db = impl->db;
     sqlite3_limit(db, SQLITE_LIMIT_LENGTH, 2 * 1024 * 1024);
     sqlite3_limit(db, SQLITE_LIMIT_SQL_LENGTH, 64 * 1024);
@@ -288,9 +307,23 @@ void PrototypeStore::backup_to(const std::filesystem::path& destination, std::st
     }
     { auto restored = open(candidate, password); restored.verify(); }
     // link is an atomic no-replace publication on this POSIX prototype.
+#ifdef _WIN32
+    {
+        const auto published = win::publish_link(candidate, destination, "Backup publication failed; candidate retained");
+        if (!published) fail(published.code, published.message);
+    }
+#else
     if (::link(candidate.c_str(), destination.c_str()) != 0) fail(SQLITE_CANTOPEN, "Backup publication failed; candidate retained");
+#endif
     sync_directory(destination);
+#ifdef _WIN32
+    {
+        const auto removed = win::remove_file(candidate, "Backup published; candidate cleanup failed");
+        if (!removed) fail(removed.code, removed.message);
+    }
+#else
     if (::unlink(candidate.c_str()) != 0) fail(SQLITE_IOERR_DELETE, "Backup published; candidate cleanup failed");
+#endif
     sync_directory(destination);
 }
 } // namespace spentit::storage

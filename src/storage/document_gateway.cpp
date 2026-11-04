@@ -63,7 +63,8 @@ public:
         }
     }
     app::ImportRepository& repository() override {
-        if(!store_) throw std::logic_error("No dataset is open"); return *store_;
+        if(!store_) throw std::logic_error("No dataset is open");
+        return *store_;
     }
     void backup_controlled(const std::filesystem::path& p,const app::OperationContext& context) override {
         diagnostics::Span span(diagnostics::Code::gateway);
@@ -74,7 +75,8 @@ public:
         }
     }
     void backup(const std::filesystem::path& p) override {
-        if(!store_) throw std::logic_error("No dataset is open"); store_->backup_to(document_path(p),key_);
+        if(!store_) throw std::logic_error("No dataset is open");
+        store_->backup_to(document_path(p),key_);
     }
 };
 }

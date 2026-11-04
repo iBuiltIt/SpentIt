@@ -1,3 +1,7 @@
+if(WIN32)
+  # Storage tests inject crashes with fork and waitpid. Those tests stay Unix-only.
+  return()
+endif()
 add_executable(spentit_storage_tests storage_tests.cpp)
 target_link_libraries(spentit_storage_tests PRIVATE spentit_storage_prototype spentit_sqlcipher)
 set_target_properties(spentit_storage_tests PROPERTIES CXX_EXTENSIONS OFF)

@@ -37,7 +37,8 @@ std::optional<app::BulkReceipt> ImportStore::bulk_outcome(std::string_view opera
     return receipt;
 }
 app::BulkPreview ImportStore::preview_bulk(const app::BulkRequest& request) const {
-    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes are not supported by this dataset");bulk_bound(request);
+    if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes are not supported by this dataset");
+    bulk_bound(request);
     if(request.kind!=app::ChangeKind::correct && request.kind!=app::ChangeKind::remove && request.kind!=app::ChangeKind::undo)fail(SQLITE_CONSTRAINT,"Invalid bulk action");
     if((request.kind!=app::ChangeKind::correct && !request.category.empty()) || (request.kind!=app::ChangeKind::undo && !request.undo_of.empty()))fail(SQLITE_CONSTRAINT,"Invalid bulk fields");
     const auto epoch=catalog_sequence(impl_->db),sequence=financial_sequence(impl_->db);const auto before=committed_balance();
@@ -97,7 +98,8 @@ app::BulkReceipt ImportStore::apply_bulk(std::string_view operation,const app::B
 void ImportStore::verify_bulk(const app::OperationContext* context) const {
     Statement groups(impl_->db,"SELECT id FROM bulk_operations ORDER BY preview_sequence");
     while(groups.row()){
-        if(context)context->checkpoint("Verifying bulk change history");const auto receipt=*bulk_outcome(groups.bytes(0));
+        if(context)context->checkpoint("Verifying bulk change history");
+        const auto receipt=*bulk_outcome(groups.bytes(0));
         std::optional<app::BulkReceipt> original;
         if(receipt.request.kind==app::ChangeKind::undo){original=bulk_outcome(receipt.request.undo_of);if(!original || original->entries.size()!=receipt.entries.size() || original->request.identities!=receipt.request.identities)fail(SQLITE_CORRUPT,"Invalid bulk Undo membership");}
         for(std::size_t i=0;i<receipt.entries.size();++i){const auto& entry=receipt.entries[i];

@@ -126,7 +126,8 @@ std::string date(std::string_view s, DateOrder order) {
     unsigned a = number(s.substr(0,first)), b = number(s.substr(first+1,second-first-1)), y = number(s.substr(second+1));
     const auto m = order == DateOrder::dmy ? b : a, d = order == DateOrder::dmy ? a : b;
     if (y == 0 || !std::chrono::year_month_day(std::chrono::year(static_cast<int>(y)),std::chrono::month(m),std::chrono::day(d)).ok()) fail();
-    char out[11]; std::snprintf(out,sizeof(out),"%04u-%02u-%02u",y,m,d); return out;
+    // Wide enough for the format's largest unsigned values. Valid dates stay YYYY-MM-DD.
+    char out[48]; std::snprintf(out,sizeof(out),"%04u-%02u-%02u",y,m,d); return out;
 }
 // LF/CRLF delimit fields. A lone CR belongs only to a free-text value;
 // it must never turn embedded text into another amount, header or terminator.

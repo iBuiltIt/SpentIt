@@ -19,9 +19,20 @@
 #include <iostream>
 #include <map>
 #include <chrono>
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
+#elif defined(__APPLE__)
 #include <sys/resource.h>
-#ifdef __APPLE__
 #include <mach/mach.h>
+#else
+#include <sys/resource.h>
+#endif
+#if defined(_WIN32)
+#pragma comment(lib, "psapi.lib")
 #endif
 using namespace spentit;
 using Clock=std::chrono::steady_clock;
@@ -30,11 +41,17 @@ static void require(bool ok,const char* message) {if(!ok) throw std::runtime_err
 // Exercise the production gateway directly: a partial decorator can silently
 // fall back to obsolete default repository capabilities.
 static double peakMiB() {
+#if defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS info{};
+    require(GetProcessMemoryInfo(GetCurrentProcess(),&info,sizeof info)!=0,"memory query failed");
+    return static_cast<double>(info.PeakWorkingSetSize)/1048576.;
+#else
     rusage u{};require(getrusage(RUSAGE_SELF,&u)==0,"getrusage failed");
 #ifdef __APPLE__
     return static_cast<double>(u.ru_maxrss)/1048576.;
 #else
     return static_cast<double>(u.ru_maxrss)/1024.;
+#endif
 #endif
 }
 static double residentMiB() {
@@ -82,7 +99,8 @@ int main(int argc,char** argv) {
             auto connection=QObject::connect(&model,&ImportModel::completed,&loop,[&](const QString&,bool ok){success=ok;finished=true;loop.quit();});
             require(!model.busy(),"Benchmark command admission is busy");
             model.command(action,args);const auto expectedOperation=diagnostics::Collector::instance().snapshot().active.id;
-            if(!finished)loop.exec();QObject::disconnect(connection);
+            if(!finished)loop.exec();
+            QObject::disconnect(connection);
             const auto duration=elapsed(start);double interactionReadyMs=-1;
             if(!success || !model.error().isEmpty())throw std::runtime_error("Benchmark command failed: "+action.toStdString()+": "+model.error().toStdString());
             if(model.diagnosticsEnabled()) {
@@ -124,7 +142,7 @@ int main(int argc,char** argv) {
                     const bool transfer=row<perAccount/10;
                     const int units=transfer?(row<2?10:row+10):7;
                     bytes+="D2026-02-01\nT"+QByteArray(account%2==0?"-":"")+QByteArray::number(units)+"\nPSynthetic merchant\nL";
-                    bytes+=transfer?(account%2==0?"[Synthetic "+QByteArray::number(account^1)+"]":"Synthetic "+QByteArray::number(account^1)):"General";
+                    bytes+=transfer?(account%2==0?"[Synthetic "+QByteArray::number(account^1)+"]":"Synthetic "+QByteArray::number(account^1)):QByteArray("General");
                     bytes+="\n^\n";
                 }
                 require(file.write(bytes)==bytes.size(),"Fixture write failed");
@@ -171,6 +189,10 @@ int main(int argc,char** argv) {
             }
         }
         command("import","import",{{"path",dir.path()+"/synthetic.qif"},{"profile","DMY"},{"account",model.state().value("accountId")}});
+        for(const auto& item:model.state().value("importCategoryDecisions").toList()) {
+            const auto decision=item.toMap();
+            command("resolve_categories","resolve_import_categories",{{"source",decision.value("source")},{"selected",decision.value("names")}});
+        }
         const Currency cad("CAD");const auto expected=app::decimal(Money(10000+static_cast<std::int64_t>(count/2)*1000,cad));
         require(model.state().value("projected").toString().toStdString()==expected,"Projected reconciliation failed");
         require(model.state().value("committed").toString()=="100.00" && model.rowCount()==count+1,"Draft isolation/count failed");

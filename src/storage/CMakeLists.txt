@@ -1,6 +1,3 @@
-if(NOT UNIX)
-  message(FATAL_ERROR "Storage prototype uses POSIX exclusive publication and process tests; Windows is not implemented")
-endif()
 set(SPENTIT_SQLCIPHER_SOURCE "" CACHE PATH "Directory containing pinned generated SQLCipher sqlite3.c and sqlite3.h")
 foreach(item IN ITEMS sqlite3.c sqlite3.h)
   if(NOT EXISTS "${SPENTIT_SQLCIPHER_SOURCE}/${item}")
@@ -21,6 +18,9 @@ target_compile_definitions(spentit_sqlcipher PUBLIC SQLITE_HAS_CODEC PRIVATE
   SQLITE_TEMP_STORE=3 SQLITE_THREADSAFE=1 SQLITE_OMIT_LOAD_EXTENSION
   SQLITE_EXTRA_INIT=sqlcipher_extra_init SQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown)
 target_link_libraries(spentit_sqlcipher PRIVATE OpenSSL::Crypto Threads::Threads ${CMAKE_DL_LIBS})
+if(MSVC)
+  target_compile_options(spentit_sqlcipher PRIVATE /W0)
+endif()
 if(SPENTIT_SANITIZERS)
   target_compile_options(spentit_sqlcipher PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
   target_link_options(spentit_sqlcipher PRIVATE -fsanitize=address,undefined)

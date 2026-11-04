@@ -51,7 +51,8 @@ std::optional<imports::Occurrence> ImportStore::imported_original(const imports:
     source.text(1,id.batch);source.integer(2,integer(id.ordinal));source.text(3,id.batch);
     if(source.row())return imports::Occurrence{source.bytes(0),static_cast<std::size_t>(source.integer(1))};
     Statement kind(impl_->db,"SELECT parser FROM batches WHERE id=?");kind.text(1,id.batch);if(!kind.row())fail(SQLITE_NOTFOUND);
-    if(kind.bytes(0)!="manual-v1")return id;return {};
+    if(kind.bytes(0)!="manual-v1")return id;
+    return {};
 }
 
 bool ImportStore::manual_outcome(std::string_view id) const {

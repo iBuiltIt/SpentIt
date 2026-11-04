@@ -2,6 +2,103 @@
 
 Last updated: 2026-11-03
 
+## Native Windows MSVC build and this machine's WSL — 2026-11-03
+
+The rules-enabled Release application configures, compiles, and opens its
+window with MSVC on this Windows host. The same checkout was built with GCC in
+this machine's WSL Ubuntu, in a separate directory. Commands and host versions
+are in [Windows development setup](windows-development-setup.md). The earlier
+owner-reported Linux hosts in the note below are unchanged.
+
+Windows, registry product name `Windows 10 Pro`, display version 26H2 build
+26300.9818, Visual Studio 2026 toolset 14.44 (`cl` 19.44.35229), CMake
+4.3.1-msvc1, Ninja 1.13.2, Qt 6.8.3 `msvc2022_64`, static PCRE2 10.49, vcpkg
+OpenSSL 3.5.2:
+
+- `build\SpentIt.exe` stayed up with window title `SpentIt`. After directory
+  publication used write access, UI tests created, reopened, saved, and
+  committed documents.
+- `ctest` registered 40 tests because `tests/storage` returns immediately on
+  Windows. Those tests call `fork`. **39 passed, 1 failed**, real time 208.00 s.
+  The failure is `import.ui` / `ImportUiTests::accessibilityAndKeyboard`: under
+  `QT_QPA_PLATFORM=offscreen`, the unsaved-changes Save button has no accessible
+  interface. Details are in the setup document.
+- Final first-party `/W4` rebuild logs had no warnings. SQLCipher stays `/W0`.
+  Sanitizer configuration is refused on Windows. Packaging was not run. macOS
+  was not rebuilt. A user-local OpenSSL 3.5.9 was not installed; the linked
+  library is the existing vcpkg 3.5.2.
+
+WSL Ubuntu, checkout on DrvFS (`/mnt/c`), build directory
+`build/wsl-import-ui-rules-release`, Qt 6.8.3 `gcc_64`, Ubuntu OpenSSL 3.0.13.
+Storage-test temporary files were on `/tmp`.
+
+- `build/SpentIt` opened a WSLg Wayland window. Mesa/ZINK lines matched the
+  class already recorded for the Linux guide. The application link was
+  warning-clean.
+- `storage.crashes` passed in 12.97 s, `storage.io` in 22.41 s,
+  `storage.backup_crashes` in 66.91 s, and `storage.backup_failures` in 97.68 s.
+- `transferstore.io` failed in 225.61 s and `transferstore.crashes` in
+  229.37 s, both at `tests/storage/transfer_store_tests.cpp:368` during
+  propose-match fault injection (operation 5), after operations 0–4 had
+  printed their position counts. An isolated rerun had not been done.
+- `import.review_sheet_faults` hit its 1200 s timeout.
+- `accounts.io` passed in 126.98 s and `accounts.mapping_openings` passed in
+  3.11 s. `accounts.basics` failed in 0.57 s with `Choose a category for every
+  rule`. `accounts.validation` (11.54 s) and `accounts.groups` (0.62 s) failed
+  with `Choose the imported categories before accepting transactions`.
+  `accounts.group_io` (305.68 s) and `accounts.group_crashes` (304.19 s)
+  printed that same message on mapped fault sweep kind 4, after group
+  operations 0–3. `accounts.combined` (0.56 s) and `accounts.combined_io`
+  (0.84 s) failed with `Clear categories in the ledger before running rules
+  again`. These are the category-gate checks from `e350ebd`. The account tests
+  still use the earlier save and accept calls. The Windows-session Unix diff
+  is warning line-breaks, identifier renames, and Windows-only branches.
+- `accounts.crashes` passed in 127.76 s and
+  `accounts.mapping_opening_faults` in 657.45 s. The statement suites through
+  `statement.faults` passed, including `statement.generated_faults` (423.24 s),
+  `statement.import_undo_faults` (536.65 s), `statement.reimport_faults`
+  (262.30 s), `statement.rollback_faults` (149.38 s), and
+  `statement.acceptance_faults` (128.11 s).
+- `import.replacement` failed in 0.89 s at `tests/storage/import_tests.cpp:518`.
+  A rejected create through a symlink changed the original file bytes.
+- `import.io` passed in 753.41 s and `import.crashes` in 759.12 s.
+  `import.backup_failures` and `import.backup_crashes` each hit the 2400 s
+  timeout. Backup publication, cancellation, validation, opening, and
+  cancellation then passed. The committed suites through `committed.crashes`
+  passed, including `committed.io` (305.52 s) and `committed.crashes`
+  (314.51 s).
+- `category.setup` failed in 0.43 s at `tests/storage/category_tests.cpp:65`.
+  The test requires 41 starter categories. The starter list in
+  `src/storage/category_store.inc` has 46 names; the five `Utils:` entries are
+  the difference. `category.catalog` through `category.validation` passed.
+- `category.io` passed in 330.65 s and `category.crashes` in 337.06 s. The
+  rule-store cases through `rulestore.io` passed, including
+  `rulestore.category_faults` (158.01 s) and `rulestore.io` (184.22 s).
+- `rulestore.bulk` failed in 1.82 s. `tests/storage/bulk_cases.inc:22` expects
+  a bulk preview of a pending row to fail with text containing `committed`.
+  The failure text was `Select an accepted transaction that has not been deleted.`
+- `rulestore.crashes` passed in 188.32 s, `rulestore.bulk_io` in 312.59 s,
+  `rulestore.bulk_crashes` in 318.52 s, and `rulestore.account_faults` in
+  226.34 s. `rulestore.reapply` and `rulestore.reapply_faults` passed in 2.21 s
+  and 3.14 s. `import.manual_transactions` passed in 72.42 s.
+- `import.navigation` failed in 23.45 s: 18 passed, 2 failed, 1 skipped. Both
+  failures are `QMetaObject::invokeMethod(..., "popup")` in the binary compiled
+  for this suite. Qt 6.8 exposes only `popup(QQmlV4FunctionPtr)`. The current
+  source uses `showPopup`, and the rebuilt Windows `import.navigation` passed.
+- `import.ui` failed in 150.57 s: 80 passed, and
+  `accessibilityAndKeyboard` left `guardAccessible` null at
+  `tests/ui/import_model_tests.cpp:1583` in that binary. That is the same
+  offscreen Save-button failure as Windows. `import.benchmark_smoke` failed in
+  10.65 s because commit still required the imported-category choices. The
+  current benchmark source submits those choices, and the rebuilt Windows test
+  passed. `import.recovery_ui` (2.79 s), `import.committed_ui` (24.32 s),
+  `import.category_ui` (18.98 s), `import.rules_ui` (31.05 s), `import.qml`
+  (0.70 s), and `import.group_benchmark_smoke` (3.40 s) passed.
+- The finished WSL `ctest` was **141 passed, 18 failed, out of 159**, real
+  time 8628.74 s. The WSL test compile warned on Qt `QTRY_*` conversions. The
+  Unix warning flags were not weakened. An isolated rerun of the failures was
+  not done.
+
 ## Alternating uncommitted ledger rows — 2026-11-03
 
 Implemented the owner's follow-up Go: uncommitted rows alternate existing pale
@@ -924,6 +1021,8 @@ and an aarch64 QEMU virtual machine using Qt 6.8.3 `gcc_arm64` (2026-11-03).
 The guide gives separate aqt, configure, and launch paths for those two
 architectures. apt packages, PCRE2, and SQLCipher stay shared. This is a
 developer dependency/build guide, not packaged-application runtime requirements.
+The native MSVC build of this checkout is recorded in
+[Windows development setup](windows-development-setup.md).
 
 The x86_64 host reported warnings; the guide retains the observed Mesa/EGL
 messages. Warning investigation is deferred. Mesa output from the aarch64

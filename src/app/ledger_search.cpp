@@ -18,7 +18,8 @@ std::string literal(std::string_view value) {
 std::string date(int year,unsigned month,unsigned day) {
     const std::chrono::year_month_day value{std::chrono::year(year),std::chrono::month(month),std::chrono::day(day)};
     if(year<1 || year>9999 || !value.ok())invalid("Invalid search date");
-    std::array<char,11> out{};std::snprintf(out.data(),out.size(),"%04d-%02u-%02u",year,month,day);return out.data();
+    // Wide enough for the format's largest int and unsigned values. Valid dates stay YYYY-MM-DD.
+    std::array<char,48> out{};std::snprintf(out.data(),out.size(),"%04d-%02u-%02u",year,month,day);return out.data();
 }
 int number(std::string_view value) {
     int out=0;if(value.empty() || value.size()>4)invalid("Invalid search date");
@@ -112,7 +113,7 @@ bool LedgerSearch::matches(std::string_view effective_date,std::span<const std::
             if(field.size()>256*1024*1024-bytes_ || ++comparisons_>4000000)throw rules::RegexError(rules::RegexFailure::resource_limit,"Search input budget exhausted");
             bytes_+=field.size();
             try {if(term.match(field,poll)){found=true;break;}}
-            catch(const rules::RegexError& e){if(steps_>20000000)throw rules::RegexError(rules::RegexFailure::resource_limit,"Search matching budget exhausted");throw;}
+            catch(const rules::RegexError&){if(steps_>20000000)throw rules::RegexError(rules::RegexFailure::resource_limit,"Search matching budget exhausted");throw;}
         }
         if(!found)return false;
     }

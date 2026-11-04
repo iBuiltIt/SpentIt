@@ -37,19 +37,19 @@ cmake --install build/linux-release --component SpentIt --prefix "$HOME/.local"
 
 The package script itself does not install into the user's home or change desktop settings.
 
-## Windows preparation (blocked by storage port)
+## Windows (packaging not yet run)
 
-The application currently refuses Windows configuration in `src/storage/CMakeLists.txt`. Storage uses POSIX locking/durability/filesystem operations. Removing that guard alone is not a port; equivalent semantics and failure/recovery verification are required separately.
+A native rules-enabled Release build is described in [Windows development setup](../doc/windows-development-setup.md). The package command below has not been run, and `windeployqt` has not been executed.
 
 The executable target has a Windows icon resource, using `assets/images/SpentIt.ico` generated losslessly from the supplied light PNG sizes 16–256. Regenerate it with `python3 tools/generate_windows_icon.py`; Python is not required for normal application builds. Both PNG variants remain embedded for runtime theme changes.
 
-After a Windows application port and native Release build exist:
+When a package is requested:
 
 ```powershell
 python tools/package_local.py --build build/windows-release --output build/packages/windows-local --exe build/windows-release/Release/SpentIt.exe --qt-deploy C:/Qt/6.8.3/msvc2022_64/bin/windeployqt.exe --dll C:/dependencies/bin/libcrypto-3-x64.dll --dll C:/dependencies/bin/pcre2-8.dll
 ```
 
-Paths and DLL names are examples; use the matching compiler/Qt/dependency installation and actual executable location. Repeat `--dll` for every required non-Qt runtime DLL. The script builds the application, stages the executable and supplied DLLs, runs `windeployqt` including QML dependencies, and creates a ZIP. Dependency completeness and Windows execution remain unverified. No installer is produced.
+Paths and DLL names are examples; use the matching compiler/Qt/dependency installation and actual executable location. Repeat `--dll` for every required non-Qt runtime DLL. The script builds the application, stages the executable and supplied DLLs, runs `windeployqt` including QML dependencies, and creates a ZIP. Dependency completeness and execution of that ZIP remain unverified. The development executable is covered in the Windows setup document. No installer is produced.
 
 ## Failure behavior and verification
 

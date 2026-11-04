@@ -185,7 +185,7 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
     while(proposals.row()) {
         const auto request=transfer_codec::request(proposals.bytes(1));
         if((request.action!=app::TransferAction::propose_match && request.action!=app::TransferAction::discard_match) || !request.evidence || (source.empty() && request.evidence->endpoint.account!=owner))continue;
-        Statement source(impl_->db,"SELECT 1 FROM rollback_rows WHERE batch=? AND ordinal=?");source.text(1,request.evidence->endpoint.entry.batch);source.integer(2,integer(request.evidence->endpoint.entry.ordinal));if(!source.row())continue;
+        Statement evidence_row(impl_->db,"SELECT 1 FROM rollback_rows WHERE batch=? AND ordinal=?");evidence_row.text(1,request.evidence->endpoint.entry.batch);evidence_row.integer(2,integer(request.evidence->endpoint.entry.ordinal));if(!evidence_row.row())continue;
         Statement op(impl_->db,"INSERT OR IGNORE INTO rollback_operations VALUES(?)");op.text(1,proposals.bytes(0));op.done();
     }
     Statement unsafe(impl_->db,"SELECT 1 FROM rollback_operations r JOIN ledger_operations l ON l.id=r.id WHERE l.kind!=4 OR l.change!=0 OR EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=l.id AND e.did_commit=1)");if(unsafe.row())fail(SQLITE_CONSTRAINT,"Rollback would affect accepted history");

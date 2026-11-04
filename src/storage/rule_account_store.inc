@@ -56,7 +56,8 @@ bool ImportStore::can_undo_account_rules() const {
 app::ReviewReceipt ImportStore::undo_account_rules(std::string_view operation) {
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT 1 FROM review_undos u JOIN review_answers a ON a.id=u.answer WHERE u.id=? AND a.question='rules-account'");saved.text(1,operation);
-        if(!saved.row())fail(SQLITE_CONSTRAINT,reused_command);return *prior;
+        if(!saved.row())fail(SQLITE_CONSTRAINT,reused_command);
+        return *prior;
     }
     if(!can_undo_account_rules())fail(SQLITE_CONSTRAINT,"Later changes prevent Undo. Check Change history.");
     return undo_review(operation);

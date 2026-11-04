@@ -4,8 +4,10 @@ namespace diag = spentit::diagnostics;
 #include <spentit/statements.hpp>
 #include <spentit/date_format.hpp>
 #include <spentit/rule_regex.hpp>
+#ifndef _WIN32
 #include <sys/file.h>
 #include <sys/stat.h>
+#endif
 #include <set>
 #include <tuple>
 #include <map>
@@ -15,10 +17,14 @@ namespace diag = spentit::diagnostics;
 #include <climits>
 #include <cerrno>
 #include <charconv>
+#ifndef _WIN32
 #include <fcntl.h>
+#include <unistd.h>
+#else
+#include "windows_files.hpp"
+#endif
 #include <limits>
 #include <optional>
-#include <unistd.h>
 #include "verification_cache.hpp"
 #ifdef SPENTIT_RULES_STORAGE
 #include <spentit/rule_preview.hpp>
@@ -138,11 +144,20 @@ void identifier(std::string_view id) {
         fail(SQLITE_MISUSE, "Invalid operation identifier");
 }
 void exclusive_file(const std::filesystem::path& path) {
+#ifdef _WIN32
+    const auto created = win::exclusive_file(path);
+    if (!created) fail(created.code, created.message);
+#else
     int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (fd < 0) fail(SQLITE_CANTOPEN, "Cannot create new storage file exclusively");
     if (::close(fd) != 0) fail(SQLITE_IOERR_CLOSE);
+#endif
 }
 void sync_directory(const std::filesystem::path& path) {
+#ifdef _WIN32
+    const auto synced = win::sync_parent(path);
+    if (!synced) fail(synced.code, synced.message);
+#else
     auto parent = path.parent_path();
     if (parent.empty()) parent = ".";
     const int fd = ::open(parent.c_str(), O_RDONLY | O_DIRECTORY);
@@ -150,6 +165,7 @@ void sync_directory(const std::filesystem::path& path) {
     const int rc = ::fsync(fd);
     const int closed = ::close(fd);
     if (rc || closed) fail(SQLITE_IOERR_FSYNC);
+#endif
 }
 void safe_text(std::string_view s) {
     if (s.size()>qif::max_field || !qif::valid_utf8(s)) fail(SQLITE_MISUSE,"Invalid text field");
@@ -269,7 +285,8 @@ CREATE TABLE entry_heads(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision I
 CREATE TABLE ledger_operations(sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 5),batch TEXT NOT NULL,ordinal INTEGER NOT NULL,prior_revision INTEGER NOT NULL,result_revision INTEGER NOT NULL,before INTEGER NOT NULL,change INTEGER NOT NULL,after INTEGER NOT NULL,undo_of TEXT NOT NULL,preview_sequence INTEGER NOT NULL,catalog_revision INTEGER NOT NULL DEFAULT 0) STRICT;
 CREATE TABLE change_dependencies(operation TEXT NOT NULL REFERENCES ledger_operations(id),batch TEXT NOT NULL REFERENCES batches(id),revision INTEGER NOT NULL,state INTEGER NOT NULL,PRIMARY KEY(operation,batch)) STRICT;
 CREATE TABLE history_order(sequence INTEGER PRIMARY KEY,batch TEXT,event_revision INTEGER,operation TEXT,category_operation TEXT,account_operation TEXT,UNIQUE(batch,event_revision),UNIQUE(operation),UNIQUE(category_operation),UNIQUE(account_operation),FOREIGN KEY(batch,event_revision) REFERENCES events(batch,revision),FOREIGN KEY(operation) REFERENCES ledger_operations(id),FOREIGN KEY(category_operation) REFERENCES category_operations(id),FOREIGN KEY(account_operation) REFERENCES account_operations(id),CHECK((batch IS NOT NULL AND event_revision IS NOT NULL AND operation IS NULL AND category_operation IS NULL AND account_operation IS NULL) OR (batch IS NULL AND event_revision IS NULL AND operation IS NOT NULL AND category_operation IS NULL AND account_operation IS NULL) OR (batch IS NULL AND event_revision IS NULL AND operation IS NULL AND category_operation IS NOT NULL AND account_operation IS NULL) OR (batch IS NULL AND event_revision IS NULL AND operation IS NULL AND category_operation IS NULL AND account_operation IS NOT NULL))) STRICT;
-CREATE TABLE review_stamps(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,target_revision INTEGER NOT NULL,target_active INTEGER NOT NULL CHECK(target_active IN(0,1)),review_revision INTEGER NOT NULL,PRIMARY KEY(batch,ordinal,revision),FOREIGN KEY(batch,ordinal,revision) REFERENCES versions(batch,ordinal,revision),FOREIGN KEY(batch,review_revision) REFERENCES events(batch,revision) DEFERRABLE INITIALLY DEFERRED) STRICT;
+)SQL"
+R"SQL(CREATE TABLE review_stamps(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,target_revision INTEGER NOT NULL,target_active INTEGER NOT NULL CHECK(target_active IN(0,1)),review_revision INTEGER NOT NULL,PRIMARY KEY(batch,ordinal,revision),FOREIGN KEY(batch,ordinal,revision) REFERENCES versions(batch,ordinal,revision),FOREIGN KEY(batch,review_revision) REFERENCES events(batch,revision) DEFERRABLE INITIALLY DEFERRED) STRICT;
 CREATE INDEX retained_references ON versions(duplicate_batch,duplicate_ordinal,batch,revision);
 CREATE TRIGGER history_order_capacity BEFORE INSERT ON history_order WHEN coalesce((SELECT max(sequence) FROM history_order),0)=9223372036854775807 BEGIN SELECT RAISE(ABORT,'History order capacity exhausted'); END;
 CREATE TRIGGER financial_order_capacity BEFORE INSERT ON ledger_operations WHEN coalesce((SELECT max(sequence) FROM ledger_operations),0)=9223372036854775807 BEGIN SELECT RAISE(ABORT,'Financial order capacity exhausted'); END;
@@ -413,7 +430,8 @@ CREATE TRIGGER rule_state_keep BEFORE DELETE ON rule_state BEGIN SELECT RAISE(AB
 CREATE TABLE rule_operations(id TEXT PRIMARY KEY,ruleset_before INTEGER NOT NULL,ruleset_after INTEGER NOT NULL UNIQUE,CHECK(ruleset_after=ruleset_before+1)) STRICT;
 CREATE TRIGGER rule_operations_immutable BEFORE UPDATE ON rule_operations BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER rule_operations_keep BEFORE DELETE ON rule_operations BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TABLE rule_applications(id TEXT PRIMARY KEY,batch TEXT NOT NULL REFERENCES batches(id),batch_before INTEGER NOT NULL,batch_after INTEGER NOT NULL,ruleset_revision INTEGER NOT NULL CHECK(ruleset_revision>=0),catalog_revision INTEGER NOT NULL CHECK(catalog_revision>=0),replace_manual INTEGER NOT NULL CHECK(replace_manual IN(0,1)),evaluated INTEGER NOT NULL CHECK(evaluated>=0),changed_count INTEGER NOT NULL CHECK(changed_count>=0 AND changed_count<=evaluated),CHECK((changed_count=0 AND batch_after=batch_before) OR (changed_count>0 AND batch_after=batch_before+1))) STRICT;
+)SQL"
+R"SQL(CREATE TABLE rule_applications(id TEXT PRIMARY KEY,batch TEXT NOT NULL REFERENCES batches(id),batch_before INTEGER NOT NULL,batch_after INTEGER NOT NULL,ruleset_revision INTEGER NOT NULL CHECK(ruleset_revision>=0),catalog_revision INTEGER NOT NULL CHECK(catalog_revision>=0),replace_manual INTEGER NOT NULL CHECK(replace_manual IN(0,1)),evaluated INTEGER NOT NULL CHECK(evaluated>=0),changed_count INTEGER NOT NULL CHECK(changed_count>=0 AND changed_count<=evaluated),CHECK((changed_count=0 AND batch_after=batch_before) OR (changed_count>0 AND batch_after=batch_before+1))) STRICT;
 CREATE TRIGGER rule_applications_immutable BEFORE UPDATE ON rule_applications WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER rule_applications_keep BEFORE DELETE ON rule_applications WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER rule_applications_revision BEFORE INSERT ON rule_applications WHEN (NEW.ruleset_revision>0 AND NOT EXISTS(SELECT 1 FROM rule_operations WHERE ruleset_after=NEW.ruleset_revision)) OR (NEW.ruleset_revision=0 AND (SELECT revision FROM rule_state WHERE singleton=1)!=0) BEGIN SELECT RAISE(ABORT,'invalid ruleset revision'); END;
@@ -477,7 +495,8 @@ CREATE TRIGGER rule_heads_keep BEFORE DELETE ON rule_heads BEGIN SELECT RAISE(AB
 CREATE TABLE rule_operation_requests(operation TEXT NOT NULL REFERENCES rule_operations(id),position INTEGER NOT NULL,rule TEXT NOT NULL,label TEXT NOT NULL CHECK(length(label)<=256),scope INTEGER NOT NULL CHECK(scope IN(0,1)),input_field INTEGER NOT NULL CHECK(input_field IN(0,1,2)),expression TEXT NOT NULL CHECK(length(expression)<=4096),payee_template TEXT CHECK(payee_template IS NULL OR length(payee_template)<=65536),memo_template TEXT CHECK(memo_template IS NULL OR length(memo_template)<=65536),category_id TEXT CHECK(category_id IS NULL OR (length(category_id) BETWEEN 1 AND 256)),inherit_parent INTEGER NOT NULL CHECK(inherit_parent IN(0,1)),enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),PRIMARY KEY(operation,position),UNIQUE(operation,rule),CHECK(category_id IS NOT NULL),CHECK(inherit_parent=0),CHECK(scope<>1 OR payee_template IS NULL)) STRICT;
 CREATE TRIGGER rule_operation_requests_immutable BEFORE UPDATE ON rule_operation_requests BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER rule_operation_requests_keep BEFORE DELETE ON rule_operation_requests BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TABLE rule_snapshots(ruleset_revision INTEGER NOT NULL REFERENCES rule_operations(ruleset_after),position INTEGER NOT NULL,rule TEXT NOT NULL,version INTEGER NOT NULL,enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),PRIMARY KEY(ruleset_revision,position),UNIQUE(ruleset_revision,rule),FOREIGN KEY(rule,version) REFERENCES rule_definitions(id,version)) STRICT;
+)SQL"
+R"SQL(CREATE TABLE rule_snapshots(ruleset_revision INTEGER NOT NULL REFERENCES rule_operations(ruleset_after),position INTEGER NOT NULL,rule TEXT NOT NULL,version INTEGER NOT NULL,enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),PRIMARY KEY(ruleset_revision,position),UNIQUE(ruleset_revision,rule),FOREIGN KEY(rule,version) REFERENCES rule_definitions(id,version)) STRICT;
 CREATE TRIGGER rule_snapshots_immutable BEFORE UPDATE ON rule_snapshots BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER rule_snapshots_keep BEFORE DELETE ON rule_snapshots BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TABLE draft_rule_fields(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,payee_rule TEXT,payee_version INTEGER,memo_rule TEXT,memo_version INTEGER,ruleset_revision INTEGER NOT NULL CHECK(ruleset_revision>=1),PRIMARY KEY(batch,ordinal,revision),FOREIGN KEY(batch,ordinal,revision) REFERENCES draft_fields(batch,ordinal,revision),FOREIGN KEY(payee_rule,payee_version) REFERENCES rule_definitions(id,version),FOREIGN KEY(memo_rule,memo_version) REFERENCES rule_definitions(id,version),FOREIGN KEY(ruleset_revision) REFERENCES rule_operations(ruleset_after),CHECK((payee_rule IS NULL)=(payee_version IS NULL) AND (memo_rule IS NULL)=(memo_version IS NULL) AND (payee_version IS NULL OR payee_version>=0) AND (memo_version IS NULL OR memo_version>=0))) STRICT;
@@ -892,7 +911,11 @@ struct PreparedImport {
 };
 struct ImportStore::Impl {
     sqlite3* db=nullptr;
+#ifdef _WIN32
+    win::FileLock lock;
+#else
     int lock=-1;
+#endif
     std::filesystem::path path;
     std::int64_t selected_account=1;
     int account_command=0;
@@ -941,7 +964,13 @@ struct ImportStore::Impl {
     mutable std::map<imports::Occurrence,std::set<std::string>> link_occupied;
     sqlite3_int64 review_changes=-1;
     ImportObserver observer;
-    ~Impl() { if (db) sqlite3_close_v2(db); if(lock>=0) ::close(lock); }
+    ~Impl() { if (db) sqlite3_close_v2(db);
+#ifdef _WIN32
+        win::close_lock(lock);
+#else
+        if(lock>=0) ::close(lock);
+#endif
+    }
 
 };
 ImportStore::ImportStore(std::unique_ptr<Impl> p):impl_(std::move(p)){}
@@ -953,8 +982,12 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     if(context) context->checkpoint("Opening file");
     if (password.empty() || password.size() > 1024) fail(SQLITE_MISUSE, "Password length is invalid");
     if (!create) {
+#ifdef _WIN32
+        if (!win::is_single_regular_file(path))
+#else
         struct stat input{};
         if (::lstat(path.c_str(), &input)!=0 || !S_ISREG(input.st_mode) || input.st_nlink!=1)
+#endif
             fail(SQLITE_CANTOPEN, "Dataset file not found, inaccessible, or not a supported regular file");
     }
     auto impl = std::make_unique<Impl>();
@@ -963,12 +996,33 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
     // flock on the database. Never delete the lock file or steal a live lock.
     // An empty leftover file is harmless; kernel ownership ends on process exit.
     auto lock_path=path; lock_path+=".lock";
+#ifdef _WIN32
+    {
+        const auto locked = win::acquire_lock(lock_path, impl->lock);
+        if (!locked) fail(locked.code, locked.message);
+    }
+#else
     impl->lock=::open(lock_path.c_str(),O_RDWR|O_CREAT|O_NOFOLLOW,0600);
     if (impl->lock<0 || ::flock(impl->lock,LOCK_EX|LOCK_NB)!=0) fail(SQLITE_BUSY,"Document is already open or unavailable");
     struct stat owned_lock{};
     if(::fstat(impl->lock,&owned_lock)!=0 || !S_ISREG(owned_lock.st_mode) || owned_lock.st_nlink!=1 || owned_lock.st_uid!=::geteuid())
         fail(SQLITE_CANTOPEN,"Document lock is not a supported regular file");
+#endif
     if(create) {
+#ifdef _WIN32
+        if(overwrite && win::path_exists(path)) {
+            if(!win::is_single_regular_file(path))fail(SQLITE_CANTOPEN,"Dataset is not a supported regular file");
+            // Explicit creation-time replacement discards the old database and its journals.
+            // Keep the document lock throughout so another SpentIt instance cannot use it.
+            for(const auto* suffix:{"-journal","-wal","-shm"}) {
+                auto sidecar=path; sidecar+=suffix;
+                const auto removed=win::remove_if_present(sidecar);
+                if(!removed)fail(removed.code,removed.message);
+            }
+            const auto replaced=win::truncate_owned_regular(path);
+            if(!replaced)fail(replaced.code,replaced.message);
+        } else exclusive_file(path);
+#else
         struct stat previous{};
         if(overwrite && ::lstat(path.c_str(),&previous)==0) {
             if(!S_ISREG(previous.st_mode) || previous.st_nlink!=1)fail(SQLITE_CANTOPEN,"Dataset is not a supported regular file");
@@ -986,13 +1040,23 @@ ImportStore ImportStore::connect(const std::filesystem::path& path, std::string_
             const int synced=::fsync(fd);const int closed=::close(fd);
             if(synced!=0 || closed!=0)fail(SQLITE_IOERR,"Dataset replacement could not be completed");
         } else exclusive_file(path);
+#endif
     }
+#ifdef _WIN32
+    if (!win::is_single_regular_file(path) || !impl->lock.handle || !win::regular_private(static_cast<HANDLE>(impl->lock.handle), true, false, nullptr))
+#else
     struct stat st{}, lock_st{};
     if (::stat(path.c_str(),&st)!=0 || !S_ISREG(st.st_mode) || st.st_nlink!=1 ||
         ::fstat(impl->lock,&lock_st)!=0 || !S_ISREG(lock_st.st_mode) || lock_st.st_nlink!=1 || lock_st.st_uid!=::geteuid())
+#endif
         fail(SQLITE_CANTOPEN,"Document or lock is not a supported regular file");
     const bool clean_input=verification_cache::no_journals(path);
+#ifdef _WIN32
+    const auto filename=win::sqlite_filename(path);
+    ok(sqlite3_open_v2(filename.c_str(), &impl->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW, nullptr));
+#else
     ok(sqlite3_open_v2(path.c_str(), &impl->db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW, nullptr));
+#endif
     sqlite3* db = impl->db;
     ok(sqlite3_create_function_v2(db,"spentit_account",0,SQLITE_UTF8,impl.get(),
         [](sqlite3_context* ctx,int,sqlite3_value**){
@@ -1173,7 +1237,8 @@ void ImportStore::select_account(std::int64_t id) {
 }
 app::Account ImportStore::account_for_batch(std::string_view id) const {
     Statement s(impl_->db,"SELECT account_id FROM batches WHERE id=?");s.text(1,id);
-    if(!s.row())fail(SQLITE_NOTFOUND,"Import does not exist");return account_by_id(s.integer(0));
+    if(!s.row())fail(SQLITE_NOTFOUND,"Import does not exist");
+    return account_by_id(s.integer(0));
 }
 void ImportStore::require_account(std::string_view id) const {
     if(!impl_->verifying && account_for_batch(id).identity!=impl_->selected_account)
@@ -1182,10 +1247,12 @@ void ImportStore::require_account(std::string_view id) const {
 std::optional<app::AccountCreation> ImportStore::account_creation_outcome(std::int64_t id) const {
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement row(impl_->db,"SELECT name,definition,opening_date FROM account_creations WHERE identity=?");row.integer(1,id);
-    if(!row.row())return {};return app::AccountCreation{id,row.bytes(0),Currency::from_definition(row.bytes(1)),row.bytes(2)};
+    if(!row.row())return {};
+    return app::AccountCreation{id,row.bytes(0),Currency::from_definition(row.bytes(1)),row.bytes(2)};
 }
 app::Account ImportStore::create_account(std::int64_t id,std::string_view name,const Currency& currency,std::string_view today) {
-    if(id<=0)fail(SQLITE_MISUSE,"Invalid account identity");safe_text(name);iso_date(today);
+    if(id<=0)fail(SQLITE_MISUSE,"Invalid account identity");
+    safe_text(name);iso_date(today);
     if(name.empty() || Currency(currency.code())!=currency)fail(SQLITE_MISUSE,"Invalid new account definition");
     Atomic transaction(impl_->db);
     Statement prior(impl_->db,"SELECT name,definition,opening_date FROM account_creations WHERE identity=?");prior.integer(1,id);
@@ -1237,7 +1304,8 @@ void ImportStore::opening(std::int64_t expected,std::string_view date,const Mone
 }
 std::vector<app::BatchInfo> ImportStore::batches_for(std::int64_t id) const {
     Statement s(impl_->db,"SELECT id FROM batches WHERE account_id=? ORDER BY rowid");s.integer(1,id);std::vector<app::BatchInfo> result;
-    while(s.row()) result.push_back(batch(impl_->db,s.bytes(0)));return result;
+    while(s.row()) result.push_back(batch(impl_->db,s.bytes(0)));
+    return result;
 }
 std::vector<app::BatchInfo> ImportStore::batches() const {return batches_for(impl_->selected_account);}
 std::string ImportStore::evidence(std::string_view id) const {
@@ -1313,7 +1381,8 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
                     const auto& target=*cached.decision.duplicate_of;
                     Statement stale(impl_->db,"SELECT s.target_revision!=h.revision OR s.target_active!=h.active FROM review_stamps s JOIN review_targets h ON h.batch=? AND h.ordinal=? WHERE s.batch=? AND s.ordinal=? ORDER BY s.revision DESC LIMIT 1");
                     stale.text(1,target.batch);stale.integer(2,integer(target.ordinal));stale.text(3,id.batch);stale.integer(4,integer(id.ordinal));
-                    if(!stale.row())fail(SQLITE_CORRUPT);cached.review_stale=stale.integer(0)!=0;
+                    if(!stale.row())fail(SQLITE_CORRUPT);
+                    cached.review_stale=stale.integer(0)!=0;
                 }
             }
             rows->bytes=rows->bytes-prior_size+VerificationRows::row_size(cached);
@@ -1360,7 +1429,8 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
     if(committed_changes_supported() && out.decision.duplicate_of && !merged) {
         Statement target(impl_->db,"SELECT s.target_revision,s.target_active,h.revision,h.active FROM review_stamps s JOIN review_targets h ON h.batch=? AND h.ordinal=? WHERE s.batch=? AND s.ordinal=? AND s.revision=?");
         target.text(1,out.decision.duplicate_of->batch);target.integer(2,integer(out.decision.duplicate_of->ordinal));target.text(3,id.batch);target.integer(4,integer(id.ordinal));target.integer(5,v.integer(0));
-        if(!target.row())fail(SQLITE_CORRUPT);out.review_stale=target.integer(0)!=target.integer(2) || target.integer(1)!=target.integer(3);
+        if(!target.row())fail(SQLITE_CORRUPT);
+        out.review_stale=target.integer(0)!=target.integer(2) || target.integer(1)!=target.integer(3);
     }
     if (!candidates) {if(rows){rows->remember(out);if(rows->rows.contains(id))impl_->read_stamps[id]=std::move(stamp);}return out;}
     out.candidates=duplicate_candidates(out.source,id.batch,false);
@@ -1625,8 +1695,8 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
         } else if(!r.fitid.empty()) {
             if(const auto target=automatic_target(r)) {
                 decision={imports::Disposition::duplicate,target};
-            } else if(const auto target=exact_target(r)) {
-                decision={imports::Disposition::duplicate,target};
+            } else if(const auto matched=exact_target(r)) {
+                decision={imports::Disposition::duplicate,matched};
             } else { if(!duplicate_candidates(r,id,true).empty()) decision.disposition=imports::Disposition::unresolved; }
         } else if(const auto target=exact_target(r)) {
             decision={imports::Disposition::duplicate,target};
@@ -1855,7 +1925,8 @@ Money ImportStore::committed_balance() const {
     const auto a=account(); std::vector<Money> amounts{a.opening};
     Statement s(impl_->db,"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.state=1 AND v.decision=1 "
         "AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
-    while(s.row()) amounts.emplace_back(s.integer(0),a.currency); return imports::sum(a.currency,amounts);
+    while(s.row()) amounts.emplace_back(s.integer(0),a.currency);
+    return imports::sum(a.currency,amounts);
 }
 std::optional<Money> ImportStore::projected_for(std::int64_t id) const {
     for(const auto& b:batches_for(id)) if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts) {
@@ -2065,7 +2136,8 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
             } while(step==SQLITE_OK);
         } catch (...) { sqlite3_backup_finish(backup); throw; }
         const int finish=sqlite3_backup_finish(backup);
-        if(step!=SQLITE_DONE) fail(step); ok(finish);
+        if(step!=SQLITE_DONE) fail(step);
+        ok(finish);
         if(context) context->checkpoint("Checking backup");
         target.verify(context);
     }
@@ -2073,11 +2145,25 @@ void ImportStore::backup_to(const std::filesystem::path& destination,std::string
     { auto restored=open(candidate,password,context); restored.verify(context); }
     if(observer) observer(BackupPhase::before_publish);
     if(context) { context->checkpoint("Finishing backup"); context->seal(); }
+#ifdef _WIN32
+    {
+        const auto published=win::publish_link(candidate,destination,"Backup publication failed; encrypted candidate retained");
+        if(!published) fail(published.code,published.message);
+    }
+#else
     if(::link(candidate.c_str(),destination.c_str())!=0) fail(SQLITE_CANTOPEN,"Backup publication failed; encrypted candidate retained");
+#endif
     if(observer) observer(BackupPhase::before_publish_sync);
     sync_directory(destination);
     if(observer) observer(BackupPhase::before_cleanup);
+#ifdef _WIN32
+    {
+        const auto removed=win::remove_file(candidate,"Backup published; candidate cleanup failed");
+        if(!removed) fail(removed.code,removed.message);
+    }
+#else
     if(::unlink(candidate.c_str())!=0) fail(SQLITE_IOERR_DELETE,"Backup published; candidate cleanup failed");
+#endif
     if(observer) observer(BackupPhase::before_cleanup_sync);
     sync_directory(destination);
     if(observer) observer(BackupPhase::complete);

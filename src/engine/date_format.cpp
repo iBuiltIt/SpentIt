@@ -35,7 +35,8 @@ std::string display_date(std::string_view iso,std::string_view format){
 std::string parse_display_date(std::string_view value,std::string_view format){
     const auto parsed=parse_format(format);std::string result="0000-00-00";std::size_t pos=0;
     for(unsigned i=0;i<3;++i){char token=parsed.order[i];const std::size_t width=token=='Y'?4:2;if(pos+width>value.size())throw std::invalid_argument("Enter the date using the selected format");result.replace(token=='Y'?0:token=='M'?5:8,width,value.substr(pos,width));pos+=width;if(i<2 && parsed.separator){if(pos>=value.size() || value[pos++]!=parsed.separator)throw std::invalid_argument("Enter the date using the selected format");}}
-    if(pos!=value.size())throw std::invalid_argument("Enter the date using the selected format");validate_iso(result);return result;
+    if(pos!=value.size())throw std::invalid_argument("Enter the date using the selected format");
+    validate_iso(result);return result;
 }
 std::string suggested_date_format(std::string_view currency){
     if(currency=="USD")return "MM/DD/YYYY";

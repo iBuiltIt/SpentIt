@@ -98,7 +98,8 @@ void origin_transfers(const std::filesystem::path& dir) {
         if(!left_imported)rejects([&]{s.apply_transfer("forged",forged);});
         s.preview_transfer(r);s.apply_transfer("link",r);s.apply_transfer("link",r);s.verify();
         check(s.balance().units()==-1000 && s.current_ledger().size()==1,"Linked left counted once");s.select_account(2);check(s.balance().units()==1000 && s.current_ledger().size()==1,"Linked right counted once");s.select_account(1);
-        if(!accepted)s.accept_all("accept-linked");s.verify();
+        if(!accepted)s.accept_all("accept-linked");
+        s.verify();
         for(int account:{1,2}) {
             s.select_account(account);const imports::Occurrence id{account==1?"left":"right",0};
             CategorySelection category{account,s.ledger_edit_generation(),"",{{id,""}}};

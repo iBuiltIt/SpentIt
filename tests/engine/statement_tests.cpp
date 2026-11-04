@@ -218,9 +218,9 @@ void parser() {
     // Synthetic decision table: format and text do not change bank identity;
     // contradictory financial facts and unavailable identities never auto-match.
     for(const auto label:{"ofx","qfx","qbo","aso"}) {
-        const auto original=sgml(bank(txn("STRICT-1","20260201","-4.25","Cafe & Books")));
+        const auto posted=sgml(bank(txn("STRICT-1","20260201","-4.25","Cafe & Books")));
         const auto exported=sgml(bank(txn("STRICT-1","20260201","-4.25","Cafe &amp; Books")));
-        const auto a=statements::parse_mapped(original,statements::inspect(original,"ofx"),0,qif::DateOrder::dmy,cad).records.at(0);
+        const auto a=statements::parse_mapped(posted,statements::inspect(posted,"ofx"),0,qif::DateOrder::dmy,cad).records.at(0);
         auto b=statements::parse_mapped(exported,statements::inspect(exported,label),0,qif::DateOrder::dmy,cad).records.at(0);
         b.payee="Cafe &amp; Books";b.memo="Export description";
         check(imports::same_bank_transaction(a,b));

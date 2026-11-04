@@ -132,11 +132,17 @@ std::vector<StoredHead> stored_heads(sqlite3* db){
 }
 void bind_definition(Statement& row,const app::RuleDefinitionImage& image,std::int64_t version,int first){
     row.text(first,image.identity);row.integer(first+1,version);row.text(first+2,image.label);row.integer(first+3,static_cast<int>(image.scope));row.integer(first+4,static_cast<int>(image.input));row.text(first+5,image.expression);
-    if(image.actions.payee_template)row.text(first+6,*image.actions.payee_template);if(image.actions.memo_template)row.text(first+7,*image.actions.memo_template);if(image.actions.category)row.text(first+8,*image.actions.category);row.integer(first+9,image.actions.inherit_parent?1:0);
+    if(image.actions.payee_template)row.text(first+6,*image.actions.payee_template);
+    if(image.actions.memo_template)row.text(first+7,*image.actions.memo_template);
+    if(image.actions.category)row.text(first+8,*image.actions.category);
+    row.integer(first+9,image.actions.inherit_parent?1:0);
 }
 void bind_request(Statement& row,const app::RuleDefinitionImage& image,int first){
     row.text(first,image.identity);row.text(first+1,image.label);row.integer(first+2,static_cast<int>(image.scope));row.integer(first+3,static_cast<int>(image.input));row.text(first+4,image.expression);
-    if(image.actions.payee_template)row.text(first+5,*image.actions.payee_template);if(image.actions.memo_template)row.text(first+6,*image.actions.memo_template);if(image.actions.category)row.text(first+7,*image.actions.category);row.integer(first+8,image.actions.inherit_parent?1:0);
+    if(image.actions.payee_template)row.text(first+5,*image.actions.payee_template);
+    if(image.actions.memo_template)row.text(first+6,*image.actions.memo_template);
+    if(image.actions.category)row.text(first+7,*image.actions.category);
+    row.integer(first+8,image.actions.inherit_parent?1:0);
 }
 }
 #endif

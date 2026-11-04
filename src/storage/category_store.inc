@@ -18,7 +18,8 @@ bool category_referenced(sqlite3* db,std::string_view id){Statement used(db,"SEL
         Statement labels(db,"SELECT DISTINCT a.category FROM allocations a JOIN draft_allocation_meta m USING(batch,ordinal,revision,position) JOIN import_group_accounts g ON g.batch=a.batch WHERE g.group_id=? AND m.category_owner=1 AND m.category_id IS NULL");labels.text(1,groups.bytes(0));
         while(labels.row()) {try {if(app::category_name_matches(labels.bytes(0),definition.name))return true;}catch(const std::invalid_argument&) {}}
     }
-    if(!rules_format(db))return false;Statement rules(db,"SELECT 1 FROM rule_definitions WHERE category_id=? LIMIT 1");rules.text(1,id);return rules.row();}
+    if(!rules_format(db))return false;
+    Statement rules(db,"SELECT 1 FROM rule_definitions WHERE category_id=? LIMIT 1");rules.text(1,id);return rules.row();}
 bool source_category_equal(const Allocation& allocation,const qif::SourceAllocation* original) {
     if(!original)return false;
     if(!allocation.category_binding)return allocation.category==original->category;
@@ -89,7 +90,8 @@ bool ImportStore::review_draft_undo(const imports::Occurrence& id,std::int64_t r
 }
 bool ImportStore::categories_supported() const{return categories_format(impl_->db);}
 app::CategoryCatalog ImportStore::category_catalog() const {
-    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");app::CategoryCatalog result{catalog_sequence(impl_->db),{}};Statement ids(impl_->db,"SELECT h.id,v.catalog_revision FROM category_heads h LEFT JOIN category_versions v ON v.id=h.id AND v.revision=0 ORDER BY h.id");
+    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");
+    app::CategoryCatalog result{catalog_sequence(impl_->db),{}};Statement ids(impl_->db,"SELECT h.id,v.catalog_revision FROM category_heads h LEFT JOIN category_versions v ON v.id=h.id AND v.revision=0 ORDER BY h.id");
     while(ids.row()) {
         if(ids.null(1))fail(SQLITE_CORRUPT,"Category creation history is missing");
         const auto id=ids.bytes(0);result.categories.push_back(category_at(impl_->db,id));result.creation_order.emplace(id,ids.integer(1));
@@ -111,16 +113,19 @@ app::CategoryPreview ImportStore::preview_category_change(const app::CategoryReq
     case app::CategoryAction::unarchive:after.archived=false;break;
     case app::CategoryAction::erase:{
         for(const auto& category:catalog.categories)if(category.parent==request.identity && !category.deleted)fail(SQLITE_CONSTRAINT,"Delete requires an empty category");
-        if(category_referenced(impl_->db,request.identity))fail(SQLITE_CONSTRAINT,"Transactions use this category. Archive it instead.");after.deleted=true;break;}
+        if(category_referenced(impl_->db,request.identity))fail(SQLITE_CONSTRAINT,"Transactions use this category. Archive it instead.");
+        after.deleted=true;break;}
     default:fail(SQLITE_CONSTRAINT,"Unknown category action");}
     after.name=canonical_category_name(after.name);if(after.kind!=CategoryKind::leaf || !after.parent.empty())fail(SQLITE_CONSTRAINT,"Create an assignable category using one optional colon, without a parent object");
     if(request.action==app::CategoryAction::create || request.action==app::CategoryAction::rename || request.action==app::CategoryAction::unarchive)
         for(const auto& alias:account_aliases())if(app::account_name_matches(alias.name,after.name))fail(SQLITE_CONSTRAINT,"That name belongs to an account or account alias. Select the account as a transfer destination instead.");
     if(!after.deleted)for(const auto& category:catalog.categories)if(!category.deleted && category.identity!=after.identity && app::category_name_matches(category.name,after.name))fail(SQLITE_CONSTRAINT,"That category name already exists (case-insensitive)");
-    if(catalog.revision==INT64_MAX)fail(SQLITE_FULL);return {request,catalog.revision,before,after};
+    if(catalog.revision==INT64_MAX)fail(SQLITE_FULL);
+    return {request,catalog.revision,before,after};
 }
 std::optional<app::CategoryReceipt> ImportStore::category_change_outcome(std::string_view operation) const {
-    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");
+    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement row(impl_->db,"SELECT action,category,name,parent,kind,catalog_before,catalog_after,before_revision,after_revision FROM category_operations WHERE id=?");row.text(1,operation);if(!row.row()){Statement existing(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");existing.text(1,operation);if(existing.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
     std::optional<CategoryDefinition> before;if(!row.null(7)){before=category_at(impl_->db,row.bytes(1),row.integer(5));if(before->revision!=row.integer(7))fail(SQLITE_CORRUPT);}if(category_at(impl_->db,row.bytes(1),row.integer(6)).revision!=row.integer(8))fail(SQLITE_CORRUPT);return app::CategoryReceipt{std::string(operation),{static_cast<app::CategoryAction>(row.integer(0)),row.bytes(1),row.bytes(2),row.bytes(3),static_cast<CategoryKind>(row.integer(4))},row.integer(5),row.integer(6),before,category_at(impl_->db,row.bytes(1),row.integer(6))};
 }
@@ -200,7 +205,8 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
             switch(request.action){case app::CategoryAction::rename:expected.name=request.name;break;case app::CategoryAction::move:fail(SQLITE_CORRUPT);case app::CategoryAction::archive:expected.archived=true;break;case app::CategoryAction::unarchive:expected.archived=false;break;case app::CategoryAction::erase:expected.deleted=true;break;default:fail(SQLITE_CORRUPT);}
         }
         expected.name=canonical_category_name(expected.name);
-        if(expected!=receipt.after)fail(SQLITE_CORRUPT);identifier(expected.identity);validate_category_name(expected.name);
+        if(expected!=receipt.after)fail(SQLITE_CORRUPT);
+        identifier(expected.identity);validate_category_name(expected.name);
         if(expected.kind!=CategoryKind::leaf || !expected.parent.empty())fail(SQLITE_CORRUPT);
         if(!expected.parent.empty()){const auto parent=reconstructed.find(expected.parent);if(expected.kind!=CategoryKind::leaf || parent==reconstructed.end() || parent->second.deleted || parent->second.kind!=CategoryKind::group)fail(SQLITE_CORRUPT);}
         for(const auto& [id,definition]:reconstructed){if(expected.deleted && !definition.deleted && definition.parent==expected.identity)fail(SQLITE_CORRUPT);if(!expected.deleted && !definition.deleted && id!=expected.identity && app::category_name_matches(definition.name,expected.name))fail(SQLITE_CORRUPT);}
@@ -265,7 +271,7 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
                 const bool prior_entry=entry && revision>0;
                 std::optional<std::int64_t> previous_revision=prior_revision;
                 if(entry && revision==0){Statement prior(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");prior.text(1,id.batch);prior.integer(2,integer(id.ordinal));if(!prior.row() || prior.null(0))fail(SQLITE_CORRUPT);previous_revision=prior.integer(0);}
-                if(previous_revision){Statement previous(impl_->db,prior_entry?"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM entry_allocation_meta m JOIN entry_allocation_values a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?":"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM draft_allocation_meta m JOIN allocations a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?");previous.text(1,id.batch);previous.integer(2,integer(id.ordinal));previous.integer(3,*previous_revision);previous.text(4,allocation.identity);if(previous.row()){if(!undo && previous.integer(3)==static_cast<int>(FieldOwnership::manual) && allocation.category_owner==FieldOwnership::source)fail(SQLITE_CORRUPT,"Manual allocation ownership was silently removed");previous_identity=true;carried=allocation.category_binding && !previous.null(0) && previous.bytes(0)==allocation.category_binding->identity && previous.integer(1)==allocation.category_binding->catalog_revision && previous.bytes(2)==allocation.category;}}
+                if(previous_revision){Statement prior_allocation(impl_->db,prior_entry?"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM entry_allocation_meta m JOIN entry_allocation_values a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?":"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM draft_allocation_meta m JOIN allocations a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?");prior_allocation.text(1,id.batch);prior_allocation.integer(2,integer(id.ordinal));prior_allocation.integer(3,*previous_revision);prior_allocation.text(4,allocation.identity);if(prior_allocation.row()){if(!undo && prior_allocation.integer(3)==static_cast<int>(FieldOwnership::manual) && allocation.category_owner==FieldOwnership::source)fail(SQLITE_CORRUPT,"Manual allocation ownership was silently removed");previous_identity=true;carried=allocation.category_binding && !prior_allocation.null(0) && prior_allocation.bytes(0)==allocation.category_binding->identity && prior_allocation.integer(1)==allocation.category_binding->catalog_revision && prior_allocation.bytes(2)==allocation.category;}}
                 if(allocation.source_ordinal && previous_revision && !previous_identity && !undo)fail(SQLITE_CORRUPT,"Source association was recreated without Undo");
                 if(allocation.category_binding){validate_binding(impl_->db,allocation);if(allocation.category_binding->catalog_revision>current_catalog || (!carried && !undo && allocation.category_owner!=FieldOwnership::source && allocation.category_binding->catalog_revision!=current_catalog))fail(SQLITE_CORRUPT,"Category assignment bypassed catalog freshness");}
             }

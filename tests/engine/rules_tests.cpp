@@ -36,7 +36,7 @@ int main() {try {
     auto forged=original;forged.allocations[1].source_ordinal=1;fails(RegexFailure::invalid_input,[&]{rules.evaluate({forged},{"transport","fees"});});
     fails(RegexFailure::invalid_input,[&]{rules.evaluate({original},{"transport"});});
     fails(RegexFailure::cancelled,[&]{rules.evaluate({original},{"transport","fees"},false,[]{return true;});});
-    fails(RegexFailure::internal,[&]{rules.evaluate({original},{"transport","fees"},false,[]{throw std::runtime_error("callback");return false;});});
+    fails(RegexFailure::internal,[&]{rules.evaluate({original},{"transport","fees"},false,[]() -> bool {throw std::runtime_error("callback");});});
     auto invalid_utf=original;invalid_utf.source.memo=std::string("\xff",1);fails(RegexFailure::invalid_input,[&]{none.evaluate({invalid_utf},{});});
     auto huge=original;huge.allocations.clear();huge.source.allocations.clear();
     for(std::size_t i=0;i<4096;++i){huge.allocations.push_back({i,{""},{{"",""}}});huge.source.allocations.push_back({"",""});}

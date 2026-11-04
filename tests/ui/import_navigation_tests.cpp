@@ -8,6 +8,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlComponent>
+#include <QQmlExpression>
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QQuickStyle>
@@ -36,6 +37,15 @@ class NavigationTests : public QObject {
     static bool edit(QObject* root,const char* name,const QString& value) {
         auto* item=object(root,name);
         return item && item->setProperty("text",value) && QMetaObject::invokeMethod(item,"textEdited");
+    }
+    // Qt 6.12 exposes a nullary Menu.popup invokable. Qt 6.8 exposes popup only
+    // as a QML function, so the same call is evaluated there.
+    static bool showPopup(QObject* menu) {
+        if(!menu) return false;
+        if(QMetaObject::invokeMethod(menu,"popup")) return true;
+        QQmlExpression expression(qmlContext(menu),menu,QStringLiteral("popup()"));
+        expression.evaluate();
+        return !expression.hasError();
     }
 private slots:
     void initTestCase() {
@@ -436,8 +446,8 @@ private slots:
             QFile file(dir.filePath("sort.qif"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-1\nPAlpha\n^\nD2/1/2026\nT-2\nPZulu\n^\n");file.close();
             run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Alpha"));
             run(model,"query",{{"sort",1},{"descending",true}});checkSort(model,1,true);QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Zulu"));
-            QSettings settings;settings.sync();const auto keys=settings.allKeys().filter("LedgerSort/");QCOMPARE(keys.size(),1);
-            QCOMPARE(settings.value(keys.first()).toList(),(QVariantList{1,true})); // saved before quitting
+            QSettings preferences;preferences.sync();const auto keys=preferences.allKeys().filter("LedgerSort/");QCOMPARE(keys.size(),1);
+            QCOMPARE(preferences.value(keys.first()).toList(),(QVariantList{1,true})); // saved before quitting
             run(model,"create_account",{{"id","2"},{"name","Second"},{"currency","CAD"},{"date","2026-01-01"}});checkSort(model,0,false);
             run(model,"query",{{"sort",0},{"descending",true}});checkSort(model,0,true);
             run(model,"select_account",{{"id","1"}});checkSort(model,1,true);
@@ -464,7 +474,7 @@ private slots:
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);window->show();QVERIFY(QTest::qWaitForWindowExposed(window));
         QVariantList categories;for(int i=0;i<80;++i)categories.push_back(QVariantMap{{"id",QString::number(i)},{"path",QString("Category %1").arg(i,2,10,QChar('0'))},{"assignable",true}});
         root->setProperty("s",QVariantMap{{"active",true},{"selectionCount",1},{"transfersSupported",true},{"categories",categories}});
-        auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(QMetaObject::invokeMethod(context,"popup"));QTRY_VERIFY(context->property("visible").toBool());
+        auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(showPopup(context));QTRY_VERIFY(context->property("visible").toBool());
         auto* menu=object(root,"ledgerCategoryMenu");QVERIFY(menu);
         // Hover the parent menu entry, as the owner requested.
         auto* content=qvariant_cast<QQuickItem*>(context->property("contentItem"));QVERIFY(content);
@@ -503,7 +513,7 @@ private slots:
         QVERIFY(edit(root,"durablePayee","Manual category test"));
         QVERIFY(QMetaObject::invokeMethod(object(root,"durableTotal"),"accepted"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         const auto manualBatch=model.state().value("selected").toMap().value("batch").toString();QVERIFY(!manualBatch.isEmpty());
-        auto* manualContext=object(root,"ledgerContext");QVERIFY(manualContext);QVERIFY(QMetaObject::invokeMethod(manualContext,"popup"));QTRY_VERIFY(manualContext->property("visible").toBool());
+        auto* manualContext=object(root,"ledgerContext");QVERIFY(manualContext);QVERIFY(showPopup(manualContext));QTRY_VERIFY(manualContext->property("visible").toBool());
         auto* manualMenu=object(root,"ledgerCategoryMenu");QVERIFY(manualMenu);
         QVERIFY(QMetaObject::invokeMethod(manualMenu,"open"));QTRY_VERIFY(manualMenu->property("visible").toBool());
         QObject* beforeChoice=nullptr;
@@ -514,7 +524,7 @@ private slots:
         run(model,"select",{{"row",model.occurrenceIndex(accepted,0)}});run(model,"select",{{"row",model.occurrenceIndex(pending,0)},{"toggle",true}});
         run(model,"select",{{"row",model.occurrenceIndex(manualBatch,0)},{"toggle",true}});
         auto* menu=object(root,"ledgerCategoryMenu");QVERIFY(menu);QVERIFY(menu->property("enabled").toBool());
-        auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(QMetaObject::invokeMethod(context,"popup"));QTRY_VERIFY(context->property("visible").toBool());
+        auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(showPopup(context));QTRY_VERIFY(context->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(menu,"open"));QTRY_VERIFY(menu->property("visible").toBool());
         auto* choice=object(root,"ledgerCategoryChoice_0");QVERIFY(choice);
         QVERIFY(QMetaObject::invokeMethod(choice,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
