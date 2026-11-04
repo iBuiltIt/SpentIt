@@ -5,6 +5,7 @@ import QtQuick.Dialogs
 import QtCore
 ApplicationWindow {
     id: window
+    readonly property var workflowBackend: workflow
     Theme { id: theme; objectName: "applicationTheme" }
     color: theme.window
     palette.window: theme.window
@@ -658,6 +659,7 @@ ApplicationWindow {
         }
     }
     function traverseNavigation(delta) {
+        if(currentPage==="reports" && reportsWorkspace.mode!=="workspace" && delta<0){reportsWorkspace.back();return}
         let destination=navigationIndex+delta
         if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
         guard(function(){
@@ -1009,7 +1011,7 @@ ApplicationWindow {
         else {beginQuit()}
     }
     property bool settingUp: false
-    function guard(action) { if (dirty) { pendingAction=action; if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;showRulesLeave()} else action() }
+    function guard(action) { if (dirty) { pendingAction=action; if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;showRulesLeave()} else if(reportsWorkspace.dirty) {reportsWorkspace.requestLeave(action)} else action() }
     function dismiss(dialog) { guardHandoff=true; dialog.close(); Qt.callLater(function(){guardHandoff=false}) }
     function addTransaction() {guard(function(){editorClosed=false;workflow.command("begin_manual")})}
     function discardEditor(next) {
@@ -2356,6 +2358,7 @@ ApplicationWindow {
                     Button {objectName:"reviewNavigation";text:s.reviewReady===false?"Review":"Review ("+(s.reviewCount||0)+")";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
                     Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.active;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(s.rulesSupported && !rulesDirty)workflow.command("rules_load")})}
+                    Button {objectName:"reportsNavigation";text:"Reports";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="reports";onClicked:guard(function(){navigate("reports");if(!reportsWorkspace.dirty)workflow.command("report_load")})}
                     Button {objectName:"historyNavigation";text:"Change history";Layout.fillWidth:true;visible:!!s.committedChangesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("history");workflow.command("history")})}
                     Button {objectName:"sidebarSettings";text:"Settings";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="settings";onClicked:navigate("settings")}
                 }
@@ -2710,6 +2713,7 @@ ApplicationWindow {
                         }
                     }
                 }
+                ReportsWorkspace {id:reportsWorkspace;anchors.fill:parent;workflow:window.workflowBackend;visible:currentPage==="reports"}
                 UsableScrollView {
                     id:rulesPage;objectName:"rulesPage";anchors.fill:parent;visible:currentPage==="rules";contentWidth:availableWidth;enabled:!workflow.busy
                     ColumnLayout {
@@ -3110,6 +3114,7 @@ ApplicationWindow {
                     visible:!!selected.draft
                     NavigableTextField {id:editDate;KeyNavigation.tab:editPayee;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
+                    CalendarPicker {objectName:"transactionCalendar";workflow:window.workflowBackend;field:editDate;enabled:editEnabled;onSelected:function(value){editDate.text=value;dirty=true}}
                     NavigableTextField {id:editPayee;KeyNavigation.tab:editTotal;KeyNavigation.backtab:editDate;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
                     NavigableTextField {id:editTotal;onEditingFinished:if(selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}

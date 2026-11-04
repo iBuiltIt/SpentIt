@@ -235,6 +235,8 @@ QString phaseFor(const QString& action){
     if(action=="restore_imported_selection")return "Restoring imported values";
     if(action=="preview_change")return "Preparing change preview";
     if(action=="apply_change")return "Saving changes";
+    if(action=="report_show")return "Calculating report";
+    if(action=="report_save")return "Saving reports";
     if(action=="rules_load"||action=="rules_discard"||action=="rules_prefill")return "Loading rules";
     if(action=="rules_preview")return "Evaluating rules";
     if(action=="rules_save")return "Saving rules";
@@ -407,6 +409,75 @@ struct ImportModel::Worker {
         if(settings.status()!=QSettings::NoError)throw std::runtime_error("The account sort order could not be saved. Check that Settings is writable and try again.");
     }
 
+    reports::Catalog reportCatalog;
+    bool reportsLoaded=false;
+    std::optional<reports::Snapshot> reportSnapshot;
+    QVariantMap reportResult,reportDetails;
+    QVariantList reportDefinitions;
+    reports::Definition readReport(const QVariantMap& value) const {
+        reports::Definition d;d.id=str(value.value("id"));d.name=str(value.value("name"));d.graph=str(value.value("graph","bar"));
+        for(const auto& id:value.value("accounts").toList()){bool ok=false;const auto n=id.toString().toLongLong(&ok);if(!ok)throw std::invalid_argument("Invalid account selection.");d.accounts.push_back(n);}
+        for(const auto& id:value.value("categories").toList())d.categories.push_back(str(id));
+        for(const auto& item:value.value("periods").toList()){const auto p=item.toMap();d.periods.push_back({str(p.value("preset")),str(p.value("start")),str(p.value("end"))});}
+        std::sort(d.accounts.begin(),d.accounts.end());std::sort(d.categories.begin(),d.categories.end());
+        reports::validate(d);return d;
+    }
+    QVariantMap reportMap(const reports::Definition& d) const {
+        QVariantList accounts,categories,periods;
+        for(auto id:d.accounts)accounts.push_back(QString::number(id));
+        for(const auto& id:d.categories)categories.push_back(text(id));
+        for(const auto& p:d.periods)periods.push_back(QVariantMap{{"preset",text(p.preset)},{"start",text(p.start)},{"end",text(p.end)}});
+        return {{"id",text(d.id)},{"name",text(d.name)},{"graph",text(d.graph)},{"accounts",accounts},{"categories",categories},{"periods",periods}};
+    }
+    void loadReports(){
+        reportCatalog=gateway->repository().report_catalog();reportDefinitions.clear();
+        for(const auto& d:reportCatalog.definitions)reportDefinitions.push_back(reportMap(d));reportsLoaded=true;
+    }
+    void showReport(const reports::Definition& d,app::OperationContext& context){
+        auto& repo=gateway->repository();
+        auto accounts=repo.accounts();const auto archived=repo.archived_accounts();accounts.insert(accounts.end(),archived.begin(),archived.end());
+        std::vector<Currency> currencies;
+        for(auto id:d.accounts){const auto found=std::find_if(accounts.begin(),accounts.end(),[&](const auto& a){return a.identity==id;});if(found==accounts.end())throw std::invalid_argument("A selected account is no longer available. Edit the report selection.");currencies.push_back(found->currency);}
+        std::vector<reports::Category> labels{{"","Uncategorized"}};
+        for(const auto& category:repo.category_catalog().categories)if(!category.deleted)labels.push_back({category.identity,category.name});
+        auto calculated=reports::calculate(d,QDate::currentDate().toString(Qt::ISODate).toStdString(),repo.report_entries(d.accounts,context),labels,currencies,[&]{context.checkpoint();});
+        QVariantList ranges,results;
+        for(const auto& p:calculated.periods)ranges.push_back(QVariantMap{{"label",text(p.label)},{"start",dateText(p.start)},{"end",dateText(p.end)}});
+        for(const auto& currency:calculated.currencies){
+            QVariantList rows,totals;std::int64_t minimum=0,maximum=0;
+            for(const auto& row:currency.rows){
+                QVariantList cells;
+                for(const auto& cell:row.cells){const auto coordinate=static_cast<double>(cell.amount.units());minimum=std::min(minimum,cell.amount.units());maximum=std::max(maximum,cell.amount.units());cells.push_back(QVariantMap{{"amount",money(cell.amount,amountFormat)},{"value",coordinate},{"count",static_cast<int>(cell.entries.size())}});}
+                // Colour depends on category identity, not ordering or period.
+                const auto hash=QCryptographicHash::hash(text(row.category.id).toUtf8(),QCryptographicHash::Sha256).toHex();
+                const auto hue=hash.left(6).toUInt(nullptr,16)%360;
+                rows.push_back(QVariantMap{{"id",text(row.category.id)},{"name",text(row.category.name)},{"hue",hue},{"cells",cells}});
+            }
+            for(const auto& total:currency.totals)totals.push_back(money(total.amount,amountFormat));
+            results.push_back(QVariantMap{{"currency",text(currency.currency.code())},{"definition",text(currency.currency.definition_id())},{"rows",rows},{"totals",totals},{"minimum",static_cast<double>(minimum)},{"maximum",static_cast<double>(maximum)},{"minimumLabel",money(Money(minimum,currency.currency),amountFormat)},{"maximumLabel",money(Money(maximum,currency.currency),amountFormat)}});
+        }
+        reportSnapshot=std::move(calculated);reportDetails.clear();
+        reportResult={{"id",text(d.id)},{"name",text(d.name)},{"graph",text(d.graph)},{"periods",ranges},{"currencies",results},{"stale",false}};
+    }
+    void reportDrill(const QVariantMap& args){
+        if(!reportSnapshot || reportResult.value("stale").toBool())throw std::invalid_argument("Refresh this report before opening its transactions.");
+        const int currency=args.value("currency",-1).toInt(),period=args.value("period",-1).toInt(),row=args.value("row",-1).toInt();
+        if(currency<0 || static_cast<std::size_t>(currency)>=reportSnapshot->currencies.size() || period<0 || static_cast<std::size_t>(period)>=reportSnapshot->periods.size())throw std::invalid_argument("Choose a report amount.");
+        const auto& c=reportSnapshot->currencies[static_cast<std::size_t>(currency)];
+        if(row< -1 || (row>=0 && static_cast<std::size_t>(row)>=c.rows.size()))throw std::invalid_argument("Choose a report category.");
+        const auto& cell=row<0?c.totals[static_cast<std::size_t>(period)]:c.rows[static_cast<std::size_t>(row)].cells[static_cast<std::size_t>(period)];
+        QVariantList details;
+        for(auto index:cell.entries){const auto& e=reportSnapshot->entries[index];
+            // Negation may overflow even when cancellation makes a cell valid.
+            // Format signed spending directly from the decimal string in that case.
+            auto amount=money(e.amount,amountFormat);if(e.amount.units()<0)amount.remove(0,1);else if(e.amount.units()>0)amount.prepend('-');
+            QString label="Uncategorized";for(const auto& category:c.rows)if(category.category.id==e.category){label=text(category.category.name);break;}
+            details.push_back(QVariantMap{{"date",dateText(e.date)},{"account",text(e.account_name)},{"payee",text(e.payee)},{"memo",text(e.memo)},{"category",label},{"amount",amount},{"accepted",e.committed}});
+        }
+        const auto& range=reportSnapshot->periods[static_cast<std::size_t>(period)];
+        reportDetails={{"title",row<0?QString("Total"):text(c.rows[static_cast<std::size_t>(row)].category.name)},{"period",text(range.label)+" · "+dateText(range.start)+" – "+dateText(range.end)},{"currency",text(c.currency.code())},{"total",money(cell.amount,amountFormat)},{"rows",details}};
+    }
+
     QVariantList categories,categoryHistory;
     QVariantMap categoryById,categorySelected,categoryPreview,categoryReceipt;
     std::optional<app::CategoryPreview> preparedCategory;
@@ -531,7 +602,7 @@ struct ImportModel::Worker {
         try {inspect(id.batch,id.ordinal,context);if(selectedCommittedToken){entryDetails(id);if(historyLoaded)listHistory();}}
         catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();sessionEdits.clear();throw std::runtime_error("Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying.");}
     }
-    void invalidate() {diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
+    void invalidate() {if(!reportResult.isEmpty())reportResult["stale"]=true;reportDetails.clear();diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
     std::size_t selectedOrdinal=0;
     std::int64_t selectedRevision=0;
@@ -899,6 +970,8 @@ struct ImportModel::Worker {
             metadata=state;
             }
         } else state=metadata;
+        if(!reportsLoaded)loadReports();
+        state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         if(!sessionEdits.empty() && !repo.can_undo_transaction_edit(sessionEdits.back().operation))sessionEdits.clear();
         if(!manualUndo.empty() && repo.ledger_edit_generation()!=manualUndoGeneration)manualUndo.clear();
@@ -1045,8 +1118,8 @@ struct ImportModel::Worker {
             catch(const app::UnlockRequired&) {welcomePassword=true;}
             return;
         }
-        if(action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(!action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -1081,6 +1154,24 @@ struct ImportModel::Worker {
         if(action=="cancel_reapply") {preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
         auto& repo=gateway->repository();
+        if(action=="report_load"){loadReports();return;}
+        if(action=="report_save"){
+            reports::Catalog requested;requested.revision=a.value("revision").toString().toLongLong();
+            for(const auto& item:a.value("reports").toList())requested.definitions.push_back(readReport(item.toMap()));
+            try {repo.save_reports(requested);}catch(...){
+                const auto failure=std::current_exception();
+                try{loadReports();}catch(...){gateway->close();active=false;throw std::runtime_error("Reopen the file to check whether the report was saved.");}
+                if(reportCatalog.revision!=requested.revision+1 || reportCatalog.definitions!=requested.definitions)std::rethrow_exception(failure);
+            }
+            observedSaved();loadReports();if(reportSnapshot){const auto found=std::find_if(reportCatalog.definitions.begin(),reportCatalog.definitions.end(),[&](const auto& d){return d.id==reportSnapshot->definition.id;});if(found==reportCatalog.definitions.end() || *found!=reportSnapshot->definition)reportResult["stale"]=true;}return;
+        }
+        if(action=="report_show"){
+            if(!reportsLoaded)loadReports();
+            const auto id=str(a.value("id"));const auto found=std::find_if(reportCatalog.definitions.begin(),reportCatalog.definitions.end(),[&](const auto& d){return d.id==id;});
+            if(found==reportCatalog.definitions.end())throw std::invalid_argument("Save the report before showing it.");
+            reportResult["stale"]=true;reportDetails.clear();showReport(*found,context);return;
+        }
+        if(action=="report_drill"){reportDrill(a);return;}
         if(action=="amount_format") {
             const AmountFormat requested{a.value("enabled").toBool(),str(a.value("style"))};
             validate_amount_format(requested);
@@ -2168,7 +2259,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="restore_imported_selection") operation->seal();
+    if(action!="report_show" && action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="restore_imported_selection") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
@@ -2391,4 +2482,31 @@ int ImportModel::chooseSplitRemainder(const QString& totalText,const QVariantLis
         }
         return best;
     }catch(const std::exception&){return -1;}
+}
+
+QString ImportModel::dateDisplay(const QString& iso) const {
+    try{return text(display_date(str(iso),str(state_.value("dateFormat","YYYY-MM-DD"))));}catch(const std::exception&){return {};}
+}
+QVariantMap ImportModel::calendarPage(const QString& display) const {
+    try{
+        const auto iso=display.isEmpty()?QDate::currentDate().toString(Qt::ISODate):text(parse_display_date(str(display),str(state_.value("dateFormat","YYYY-MM-DD"))));
+        const auto date=QDate::fromString(iso,Qt::ISODate);const QDate first(date.year(),date.month(),1);QVariantList days;
+        for(int i=0;i<42;++i){const auto d=first.addDays(i-first.dayOfWeek()%7);const bool valid=d.year()>=1 && d.year()<=9999;
+            days.push_back(QVariantMap{{"iso",valid?d.toString(Qt::ISODate):QString{}},{"day",d.day()},{"month",d.month()},{"today",d==QDate::currentDate()},{"display",valid?dateDisplay(d.toString(Qt::ISODate)):QString{}}});}
+        return {{"iso",iso},{"year",date.year()},{"month",date.month()},{"day",date.day()},{"days",days},{"today",QDate::currentDate().toString(Qt::ISODate)}};
+    }catch(const std::exception& e){return {{"error",text(e.what())}};}
+}
+QString ImportModel::calendarMove(const QString& iso,int days,int months,int years) const {
+    auto d=QDate::fromString(iso,Qt::ISODate);if(!d.isValid())return {};
+    d=d.addYears(years).addMonths(months).addDays(days);
+    return d.isValid() && d.year()>=1 && d.year()<=9999?d.toString(Qt::ISODate):iso;
+}
+QVariantMap ImportModel::reportPeriod(const QVariantMap& value,const QVariantMap& mainValue) const {
+    try{
+        const auto period=[](const QVariantMap& v){return reports::Period{str(v.value("preset","custom")),str(v.value("start")),str(v.value("end"))};};
+        const auto today=QDate::currentDate().toString(Qt::ISODate).toStdString();
+        std::optional<reports::Range> main;if(!mainValue.isEmpty())main=reports::resolve(period(mainValue),today);
+        const auto r=reports::resolve(period(value),today,main?&*main:nullptr);
+        return {{"start",text(r.start)},{"end",text(r.end)},{"startDisplay",dateDisplay(text(r.start))},{"endDisplay",dateDisplay(text(r.end))},{"label",text(r.label)}};
+    }catch(const std::exception& e){return {{"error",text(e.what())}};}
 }

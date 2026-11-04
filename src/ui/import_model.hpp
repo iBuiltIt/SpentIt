@@ -55,6 +55,10 @@ public:
     Q_INVOKABLE void command(const QString& action,const QVariantMap& args={});
     Q_INVOKABLE QString suggestedDateFormat(const QString&) const;
     Q_INVOKABLE QString todayDisplay() const;
+    Q_INVOKABLE QVariantMap calendarPage(const QString& display) const;
+    Q_INVOKABLE QString calendarMove(const QString& iso,int days,int months=0,int years=0) const;
+    Q_INVOKABLE QString dateDisplay(const QString& iso) const;
+    Q_INVOKABLE QVariantMap reportPeriod(const QVariantMap& period,const QVariantMap& main={}) const;
     Q_INVOKABLE QString dateFormatExample(const QString&) const;
     Q_INVOKABLE bool accountNameMatches(const QString& name,const QString& selected);
     Q_INVOKABLE bool categoryNameMatches(const QString& name,const QString& selected,bool includeChildren=false);

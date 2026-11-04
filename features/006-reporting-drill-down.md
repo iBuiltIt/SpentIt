@@ -1,31 +1,47 @@
 # 006 — Reporting and drill-down
 
 Status: **active**  
-Last updated: 2026-10-28  
-Implementation: none; requirements and proposed design only. On 2026-10-28 the owner said the finished eight-point sequence was the work before this feature. Implementation waits for an explicit Go. The open questions below are unset.
+Last updated: 2026-11-04  
+Implementation: initial report workspace, saved definitions, exact aggregation,
+shared snapshot drill-down, separate Bar/Pie charts and reusable calendar are
+implemented under owner Go (2026-11-04). The [handoff](../doc/reports-calendar-handoff.md)
+records accepted behavior and implementation decisions; [status](../doc/status.md#reports-and-shared-calendar--2026-11-04)
+records verification and platform limits. The feature remains active while the
+remaining native/platform verification is outstanding.
 
 ## Accepted requirements
 
-Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). The bounded catalog and account transfer destinations are implemented. Category reports remain unimplemented.
+Category hierarchy, naming, neutral income/expense classification, and account destinations in the selector are specified in [feature 010 — Categories and selection](010-categories-and-selection.md). The bounded catalog and account transfer destinations are implemented. The initial category report scope is implemented.
 
 - Report spending by time period, including last year, this year, and comparisons between them.
 - Show categories ordered from most costly to least costly.
 - Double-click a category to inspect the transactions included in that category and period.
 - Retain other selected report criteria during drill-down rather than silently broadening the result.
 - Opening balances are excluded from income/spending reports.
-- Saved reports appear in the sidebar; selecting one opens it in the right pane. The Reports `+` button opens a creation dialog. Ask the owner for its contents when that work begins. See [main layout and ledger search totals](005-transaction-sheet-navigation.md); ledger Withdrawal/Deposit totals are distinct from allocation-based category reports.
+- One Reports sidebar entry below Rules opens a report list and selected editor, following the Rules workspace. Show opens a separate result view; Back returns. This supersedes individual saved-report sidebar entries and a creation dialog. See the [handoff](../doc/reports-calendar-handoff.md) for the settled chart and calendar interactions. Ledger Withdrawal/Deposit totals remain distinct from allocation-based category reports.
 
-## Proposed design
+## Implemented design
 
 Aggregate category allocations rather than whole transaction totals. For a transaction with a transport allocation and a fee allocation, each category receives only its relevant amount. Drill-down shows the relevant allocation amount alongside enough parent-transaction context to inspect it without double-counting it.
 
-Define an explicit filter object shared by totals and detail: date boundaries, account set, category/subcategory scope, currency, and committed state, with additional criteria only when supported. Use one consistent data snapshot or refresh totals and details together if edits occur during drill-down.
+The definition and immutable report snapshot share explicit filters: date boundaries, account set, category/subcategory scope, currency, and committed state, with additional criteria only when supported. A result and its drill-down use one immutable snapshot. Dataset changes mark it stale; Refresh replaces the result.
 
-Use committed data by default. Transfers and opening balances do not count as spending; categorized fees do. Keep uncategorized spending visible. Define whether refunds reduce spending and how negative category totals sort. These policies must be visible and tested rather than assumed.
+Financial semantics are now accepted, not proposals: use net spending (outflows
+positive, refunds reduce spending, income negative), current edited values, new
+and committed transactions, no opening balances or transfer principal, and
+included categorized fees. Uncategorized is selected by default in new reports.
+All selects current entries only; future entries do not silently broaden scope.
 
-Separate full-calendar-year comparison from equivalent year-to-date comparison. Resolve inclusive/exclusive boundaries and leap-year behavior explicitly. Transaction dates are financial dates and should not shift because of timezone conversion.
+Saved presets move with the current date; Custom stays fixed. Display resolved
+inclusive boundaries. Use calendar years/quarters, Last 6 complete months, and
+February 28 for a missing comparison February 29. Keep financial dates free of
+timezone shifts. See the handoff for the full accepted preset meanings.
 
-Initially show separate totals per currency. Consolidated home-currency totals require a defined valuation policy, recorded rates, and rounding treatment; missing rates must never become zero or a guessed value.
+Show one direct row per category, without inclusive subtotals, and separate
+currency tables/chart sets without a combined grand total. Bar scales are shared
+across periods within each currency. A period with negative category totals keeps
+its table and explains that Bar can display its amounts; do not draw a pie using
+absolute values or silently omit negative categories.
 
 ## Acceptance criteria
 
@@ -34,18 +50,25 @@ Initially show separate totals per currency. Consolidated home-currency totals r
 - Date/account/category/currency criteria remain identical between totals and detail.
 - Drafts, opening balances, and transfer principal follow explicit inclusion policies.
 - Uncategorized transactions and refunds have tested, visible behavior.
-- Boundary dates, leap years, parent-category rollups, and comparison periods have deterministic fixtures.
+- Boundary dates, leap years, independent colon-category rollups, and comparison periods have deterministic fixtures.
 - Separate currencies are not silently added together; unsupported conversion is clearly reported.
 
-## Open questions
+## Verification limits and deferred scope
 
-- Fiscal versus calendar years, year-to-date defaults, date-boundary conventions, and leap-day comparison.
-- Refund/net-spending and income policy, detailed rollup presentation/filter behavior, account selection, and sorting of credits. Feature 010 accepts one grouping level, non-assignable parents, and descendant rollups; it does not settle refund treatment.
-- Additional criteria such as payee, memo, note, or amount range.
-- Charts, exports, saved-report configuration/creation-dialog details, and consolidated CAD reporting remain unspecified. The sidebar entry point for saved reports is accepted.
+- The renderer uses the existing Qt Quick Canvas dependency; no new graph package
+  is required. Optional Hide zero rows and chart-hover cross-highlighting remain
+  unimplemented refinements. See status for native/platform verification limits.
+- Additional payee/memo/note/amount filters, fiscal reporting, conversion,
+  inclusive group subtotals, printing, exports and time-series charts are deferred.
+- Printing, exports, conversion and other deferred additions require their own
+  scoped authorization; the initial report/calendar implementation Go is complete.
 
 ## Category selection follow-up — accepted 2026-10-28
 
 Categories are [independent assignable names](010-categories-and-selection.md#independent-categories--accepted-2026-10-28), optionally containing one colon. A future report category checklist may include both `Auto` and `Auto: Gas`; selecting Auto checks its matching `Auto:` categories, and the user can deselect any of them individually. A stem without a separately created category is not an assignable parent object.
 
-Presentation remains open. The owner discussed either showing direct Auto spending plus subcategories with a separate total, or showing an inclusive Auto total with subcategory detail. For direct Auto 1000, Gas 50 and Other 25, the inclusive total is 1075; detail and subtotal must not be added twice. This does not authorize report implementation or settle income/refund/currency policies. Starter Income categories are ordinary neutral classifications, not rules for recognizing report income.
+Presentation settled on 2026-11-04: show direct category rows only in the first
+version. Auto 1000, Gas 50 and Other 25 yield total 1075 without an additional
+inclusive Auto subtotal. The checklist shortcut above remains; inclusive group
+subtotals are deferred. Starter Income categories remain ordinary neutral
+classifications, not rules for recognizing report income.

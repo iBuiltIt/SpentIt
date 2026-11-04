@@ -1,5 +1,6 @@
 #pragma once
 #include <spentit/amount_format.hpp>
+#include <spentit/reports.hpp>
 #include <spentit/import_review.hpp>
 #include <spentit/review_commands.hpp>
 #include <spentit/operation_context.hpp>
@@ -172,6 +173,9 @@ struct LedgerRow {
 class ImportRepository {
 public:
     virtual ~ImportRepository() = default;
+    virtual reports::Catalog report_catalog() const { return {}; }
+    virtual void save_reports(const reports::Catalog&) {throw std::logic_error("Reports unavailable");}
+    virtual std::vector<reports::Entry> report_entries(const std::vector<std::int64_t>&,const OperationContext&) const {throw std::logic_error("Reports unavailable");}
     virtual bool transfers_supported() const { return false; }
     virtual std::int64_t transfer_sequence() const { throw std::logic_error("Transfers unavailable"); }
     virtual std::vector<TransferView> transfers() const { return {}; }

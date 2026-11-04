@@ -84,3 +84,8 @@ add_executable(spentit_amount_format_tests amount_format_tests.cpp)
 target_link_libraries(spentit_amount_format_tests PRIVATE SpentIt::engine)
 spentit_compiler_options(spentit_amount_format_tests)
 add_test(NAME engine.amount_format COMMAND spentit_amount_format_tests)
+
+add_executable(spentit_report_tests report_tests.cpp)
+target_link_libraries(spentit_report_tests PRIVATE SpentIt::engine)
+spentit_compiler_options(spentit_report_tests)
+add_test(NAME engine.reports COMMAND spentit_report_tests)

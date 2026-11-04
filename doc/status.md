@@ -2,6 +2,99 @@
 
 Last updated: 2026-11-04
 
+## Reports and shared calendar — 2026-11-04
+
+Implemented under the owner's subsequent Go for the initial reporting/calendar
+scope in the [handoff](reports-calendar-handoff.md). Reports has a searchable list,
+selected editor, current account/category selections, moving presets and fixed
+custom periods, comparison rows, selected Save/Discard, Duplicate, deletion and
+Save/Discard/Stay navigation. Independent drafts survive selecting/showing another
+report. Save-all validates every definition before one atomic save.
+
+Exact C++ allocation aggregation produces direct category rows, per-period totals
+and matching drill-down from one immutable snapshot. It includes current edited
+new/accepted entries, refunds and income, excludes openings and transfer principal,
+and includes ordinary transfer fees. Currency definitions are kept separate.
+Results mark themselves stale after dataset changes and require Refresh before
+new drill-down. Imported records needing repair are visibly identified. Selected
+entries that no longer exist cause an explicit error rather than broader scope.
+
+Results use fixed category/period headers, horizontal scrolling, identity-stable
+colours, separate charts per period, and shared signed bar scales within each
+currency. Negative pie periods retain their table and explain the Bar alternative.
+The renderer uses the existing Qt Quick Canvas dependency; no external chart
+package was adopted. Only graphical coordinates use floating point.
+
+The shared day/month/year calendar supports Sunday-first weeks, today/selection
+markers, keyboard navigation and Enter, two-stage Escape, outside dismissal,
+virtualized years 0001–9999, and date-format-aware text fields. Browsing does not
+change a field; selecting a transaction date changes its unsaved editor only.
+Report date edits switch the stored definition to Custom. The modal Reports leave
+window explicitly restores the application window's focus on dismissal.
+
+New encrypted report tables advance the experimental formats to **54 with rules /
+53 without**. Earlier formats, including 52/51, are rejected unchanged, without
+migration. Revision-checked saves and identical retries are atomic. No existing
+user dataset was opened, migrated or modified by this work.
+
+Verification on macOS arm64, AppleClang, Qt 6.12.0, synthetic fixtures:
+
+- Final rules-enabled Release reporting set: `engine.reports`, `import.reports`,
+  `import.reports_ui`, `import.qml`: **4/4 passed**, 14.34 s. The storage test sweeps
+  **49 write/sync fault positions** with disk-full/I/O failures and verifies whole
+  old/new images plus retries. It also covers pre/post-commit exceptions, process
+  exit on both sides of commit, reopening, backup restore, current edited amounts,
+  accepted/new rows, single/both-account transfer principal, fees and cancellation.
+- Engine tests cover inclusive/overlapping ranges, leap-year comparisons, year
+  bounds, complete-month presets, refund/income signs, direct colon-category rows,
+  separate currencies, zero rows, missing selections, date errors, exact cell
+  reconciliation and overflow with cancelling signed extremes.
+- UI tests cover creation, selected saves with an unrelated incomplete draft,
+  failed save-all atomicity, Stay, persistence after reopening, typed dates becoming
+  Custom, snapshot drill-down, stale refresh, positive/negative pie periods,
+  unsaved transaction calendar selection, keyboard Return/Escape and popup bounds.
+  The offscreen run emitted no QML warnings. Native Cocoa execution of the
+  report/calendar test passed all 3 Qt cases (including setup/cleanup), 2.115 s.
+  Synthetic native screenshots
+  of the workspace, result and calendar were visually inspected. After the final
+  list-label/preset refinements, `import.reports_ui` and `import.qml` passed again
+  (2/2, 3.82 s).
+- Existing Release regressions passed: `import.editor`, `ledger.balance`,
+  `transferstore.basics`, `transferstore.imports`, `transferstore.splits`,
+  `transferstore.manual_evidence`, `rulestore.schema`, `import.manual_transactions`,
+  and `import.navigation`. The combined 13-case run initially exposed a report UI
+  test failure; that test was corrected/fixed and the final report set above passed.
+  Separately, existing `amountFormatting` and `immediateEditor` Qt tests passed
+  (4 Qt cases including setup/cleanup, 3.635 s).
+- Rules-disabled Release builds of the app and report tests succeeded. The engine,
+  storage and old-format rejection gate passed; after the shared UI fixes, final
+  `import.reports_ui` and `import.qml` passed **2/2**, 3.21 s.
+- Final builds emitted no compiler warnings. `git diff --check` and relative
+  Markdown file-link checks passed.
+- ASan/UBSan engine report and date-format tests passed; the final expanded report
+  test passed again without sanitizer diagnostics. This is engine coverage, not
+  a sanitized run of the full storage/UI application.
+
+Linux/Windows builds and interactions, spoken accessibility, long-running report
+workload responsiveness, and the complete application regression suite remain
+unverified. The optional Hide zero rows and chart-hover cross-highlighting are
+not implemented. Printing/exports, fiscal periods, conversion, inclusive group
+subtotals and time-series remain outside the authorized initial scope. Feature 006
+remains active for the remaining platform/verification work.
+
+## Reports and calendar design handoff — 2026-11-04
+
+The owner authorized the [next-agent handoff](reports-calendar-handoff.md).
+It records the accepted Rules-style Reports workspace, one Pie or Bar chart per
+period, and shared day/month/year calendar picker. The owner subsequently accepted
+all five policy groups: net spending/refunds/income, moving and fixed periods,
+direct category rows, separate currency results, and selection/inclusion rules.
+Chart dependency choice remains an investigation.
+Documentation Go does not authorize implementation. No runtime, schema or
+dependency changed. Verification: `git diff --check` and relative Markdown file
+link checks passed for the edited documents. No runtime tests were required or run.
+
+
 ## Private document lock directory — 2026-11-04
 
 Owner-approved session locks now use private application-data storage for

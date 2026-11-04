@@ -1,4 +1,4 @@
-add_library(spentit_engine STATIC date_format.cpp money.cpp amount_expression.cpp amount_format.cpp transaction.cpp split_editor.cpp qif.cpp import_review.cpp category.cpp transfer.cpp statements.cpp)
+add_library(spentit_engine STATIC reports.cpp date_format.cpp money.cpp amount_expression.cpp amount_format.cpp transaction.cpp split_editor.cpp qif.cpp import_review.cpp category.cpp transfer.cpp statements.cpp)
 add_library(SpentIt::engine ALIAS spentit_engine)
 target_include_directories(spentit_engine PUBLIC include)
 target_compile_features(spentit_engine PUBLIC cxx_std_20)

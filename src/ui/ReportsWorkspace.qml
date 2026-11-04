@@ -1,0 +1,300 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Window
+
+Item {
+    id:root;objectName:"reportsWorkspace"
+    required property var workflow
+    readonly property var state:workflow.state
+    property var drafts:[]
+    property var savedDefinitions:[]
+    property int selectedIndex:-1
+    property int generation:0
+    property string mode:"workspace"
+    property string feedback:""
+    property bool savingAll:false
+    property string showAfterSave:""
+    property var leaveAction:null
+    property bool leaving:false
+    readonly property var current:selectedIndex>=0 && selectedIndex<drafts.length?drafts[selectedIndex]:null
+    readonly property bool dirty:{generation;return JSON.stringify(drafts)!==JSON.stringify(savedDefinitions)}
+    readonly property var presetIds:["ytd","this_year","last_year","this_quarter","last_quarter","this_month","last_month","six_months","previous_year","custom"]
+    readonly property var presetNames:["Year to date","This year","Last year","This quarter","Last quarter","This month","Previous calendar month","Last 6 complete months","Same period last year","Custom"]
+    readonly property var accountChoices:(state.accounts||[]).concat(state.archivedAccounts||[])
+    readonly property var categoryChoices:[{id:"",name:"Uncategorized"}].concat((state.categories||[]).filter(c=>!c.deleted && !c.group))
+    readonly property var result:state.reportResult||{}
+    function copy(v){return JSON.parse(JSON.stringify(v))}
+    function changed(index) {generation;return JSON.stringify(drafts[index])!==JSON.stringify(savedDefinitions.find(r=>r.id===drafts[index].id))}
+    function touch(){generation++;feedback=""}
+    function load() {savedDefinitions=copy(state.reports||[]);drafts=copy(savedDefinitions);selectedIndex=Math.min(selectedIndex,drafts.length-1);if(selectedIndex<0 && drafts.length)selectedIndex=0;generation++}
+    function reset(){drafts=[];savedDefinitions=[];selectedIndex=-1;mode="workspace";feedback="";leaving=false;leaveAction=null;showAfterSave="";generation++}
+    function newReport(duplicate) {
+        if(drafts.some(r=>!savedDefinitions.some(b=>b.id===r.id))){feedback="Save or discard the new report first.";return}
+        let value=duplicate && current?copy(current):{name:"New report",graph:"bar",accounts:accountChoices.map(a=>a.id),categories:categoryChoices.map(c=>c.id),periods:[{preset:"ytd",start:"",end:""}]}
+        value.id=workflow.newIdentity();if(duplicate)value.name+=" copy"
+        drafts=drafts.concat([value]);selectedIndex=drafts.length-1;touch()
+    }
+    function updatePeriod(index,value){if(current){current.periods[index]=value;touch()}}
+    function setField(name,value){if(current){current[name]=value;touch()}}
+    function selectAll(field,values){if(current){current[field]=values;touch()}}
+    function check(field,id,enabled) {
+        if(!current)return
+        let values=current[field].slice();const index=values.indexOf(id)
+        if(enabled && index<0)values.push(id);if(!enabled && index>=0)values.splice(index,1)
+        if(field==="categories" && enabled && id){let parent=categoryChoices.find(c=>c.id===id);if(parent)for(const c of categoryChoices)if(workflow.categoryNameMatches(c.name,parent.name,true) && values.indexOf(c.id)<0)values.push(c.id)}
+        current[field]=values;touch()
+    }
+    function save(all,show) {
+        if(workflow.busy)return
+        savingAll=all;showAfterSave=show && current?current.id:""
+        let image=all?copy(drafts):copy(savedDefinitions)
+        if(!all && current){const index=image.findIndex(r=>r.id===current.id);if(index>=0)image[index]=copy(current);else image.push(copy(current))}
+        workflow.command("report_save",{revision:state.reportRevision,reports:image})
+    }
+    function discard() {
+        if(!current)return
+        const id=current.id;const original=savedDefinitions.find(r=>r.id===id);let next=copy(drafts)
+        if(original)next[selectedIndex]=copy(original);else next.splice(selectedIndex,1)
+        drafts=next;selectedIndex=Math.min(selectedIndex,drafts.length-1);touch()
+    }
+    function deleteCurrent(){if(!current)return;drafts=drafts.filter(r=>r.id!==current.id);selectedIndex=Math.min(selectedIndex,drafts.length-1);touch()}
+    function show(index){selectedIndex=index;if(changed(index))save(false,true);else workflow.command("report_show",{id:current.id})}
+    function requestLeave(action){leaveAction=action;leaving=true}
+    function stay(){leaving=false;leaveAction=null}
+    function proceed(){let action=leaveAction;leaveAction=null;leaving=false;if(action)action()}
+    function back(){mode=mode==="detail"?"result":"workspace"}
+    function drill(currency,period,row){workflow.command("report_drill",{currency:currency,period:period,row:row})}
+    Connections {
+        target:root.workflow
+        function onCompleted(action,success){
+            if(["create","open","unlock","close"].indexOf(action)>=0 && success){root.reset();if(root.state.active)root.load()}
+            if(action==="report_load" && success && !root.dirty)root.load()
+            if(action==="report_save"){
+                if(!success){root.showAfterSave="";root.stay();return}
+                const saved=root.copy(root.state.reports||[])
+                let id=root.current?root.current.id:""
+                let merged=root.savingAll?root.copy(saved):root.copy(root.drafts)
+                if(!root.savingAll){const index=merged.findIndex(r=>r.id===id);const stored=saved.find(r=>r.id===id);if(index>=0 && stored)merged[index]=root.copy(stored)}
+                root.drafts=merged;root.savedDefinitions=saved;root.generation++
+                if(root.leaving)root.proceed()
+                else if(root.showAfterSave){let id=root.showAfterSave;root.showAfterSave="";root.workflow.command("report_show",{id:id})}
+            }
+            if(action==="report_show" && success)root.mode="result"
+            if(action==="report_drill" && success)root.mode="detail"
+        }
+    }
+    Window {
+        id:leaveDialog;objectName:"reportsLeaveDialog";visible:root.leaving
+        modality:Qt.ApplicationModal;flags:Qt.Dialog|Qt.WindowTitleHint|Qt.WindowCloseButtonHint
+        title:"Save changes before leaving Reports?";width:460;height:150
+        onVisibleChanged:if(visible){x=root.Window.window.x+(root.Window.window.width-width)/2;y=root.Window.window.y+(root.Window.window.height-height)/2;requestActivate()}else if(root.Window.window)root.Window.window.requestActivate()
+        onClosing:function(event){if(root.leaving){event.accepted=false;if(!root.workflow.busy)root.stay()}}
+        Shortcut {sequence:"Escape";enabled:root.leaving && !root.workflow.busy;onActivated:root.stay()}
+        ColumnLayout {
+            anchors.fill:parent;anchors.margins:20;enabled:!root.workflow.busy
+            Label {textFormat:Text.PlainText;text:"Save your changes to Reports before leaving?";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {Layout.alignment:Qt.AlignRight
+                Button {text:"Save";onClicked:root.save(true,false)}
+                Button {text:"Discard";onClicked:{root.load();root.proceed()}}
+                Button {text:"Stay";onClicked:root.stay()}
+            }
+        }
+    }
+    ColumnLayout {
+        anchors.fill:parent;anchors.margins:12;spacing:8
+        RowLayout {
+            Label {textFormat:Text.PlainText;text:root.mode==="workspace"?"Reports":root.mode==="detail"?"Report transactions":root.result.name||"Report";font.pixelSize:22;Layout.fillWidth:true;Layout.minimumWidth:80;elide:Text.ElideRight}
+            Button {visible:root.mode!=="workspace";text:root.mode==="detail"?"Back to report":"Back to Reports";onClicked:root.back()}
+            Button {visible:root.mode==="result";text:"Refresh";enabled:!root.workflow.busy;onClicked:root.workflow.command("report_show",{id:root.result.id})}
+        }
+        Label {textFormat:Text.PlainText;visible:root.feedback.length>0;text:root.feedback;wrapMode:Text.Wrap;Layout.fillWidth:true}
+        ScrollView {
+            id:editorScroll;visible:root.mode==="workspace";Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth;enabled:!root.workflow.busy
+            ColumnLayout {
+                width:editorScroll.availableWidth;spacing:10
+                RowLayout {
+                    ClearableSearchField {id:reportSearch;placeholderText:"Search reports";Layout.fillWidth:true}
+                    Button {text:"New report";objectName:"newReport";onClicked:root.newReport(false)}
+                    Button {text:"Duplicate";enabled:!!root.current;onClicked:root.newReport(true)}
+                }
+                Repeater {
+                    model:root.drafts
+                    RowLayout {
+                        required property var modelData;required property int index
+                        visible:{root.generation;const item=root.drafts[index];return !!item && (index===root.selectedIndex || item.name.toLowerCase().indexOf(reportSearch.text.toLowerCase())>=0)}
+                        Layout.fillWidth:true
+                        Button {text:{root.generation;return root.drafts[index]?root.drafts[index].name+(root.changed(index)?" *":""):""} highlighted:index===root.selectedIndex;Layout.fillWidth:true;onClicked:root.selectedIndex=index
+                            TapHandler {acceptedButtons:Qt.RightButton;onTapped:{root.selectedIndex=index;reportContext.popup()}}
+                        }
+                        Button {text:"Show";onClicked:root.show(index)}
+                    }
+                }
+                Menu {id:reportContext;MenuItem {text:"Rename";onTriggered:reportName.forceActiveFocus()} MenuItem {text:"Delete";onTriggered:root.deleteCurrent()}}
+                Label {textFormat:Text.PlainText;visible:!root.drafts.length;text:"Create a report to compare your spending across periods.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                ColumnLayout {
+                    visible:!!root.current;Layout.fillWidth:true;spacing:10
+                    Label {textFormat:Text.PlainText;text:"Report details";font.pixelSize:18}
+                    TextField {id:reportName;objectName:"reportName";text:root.current?root.current.name:"";placeholderText:"Report name";Layout.fillWidth:true;onTextEdited:root.setField("name",text)}
+                    RowLayout {
+                        Label {textFormat:Text.PlainText;text:"Graph"}
+                        ComboBox {model:["None","Bar","Pie"];currentIndex:root.current?["none","bar","pie"].indexOf(root.current.graph):0;onActivated:root.setField("graph",["none","bar","pie"][currentIndex])}
+                    }
+                    GridLayout {
+                        Layout.fillWidth:true;columns:root.width<700?1:2
+                        Repeater {
+                            model:[{key:"accounts",label:"Accounts"},{key:"categories",label:"Categories"}]
+                            ColumnLayout {
+                                required property var modelData
+                                readonly property var choices:modelData.key==="accounts"?root.accountChoices:root.categoryChoices
+                                Layout.fillWidth:true;Layout.preferredWidth:300
+                                RowLayout {
+                                    Label {textFormat:Text.PlainText;text:{root.generation;return modelData.label+" ("+(root.current?root.current[modelData.key].length:0)+")"} Layout.fillWidth:true}
+                                    Button {text:"All";onClicked:root.selectAll(modelData.key,choices.map(c=>c.id))}
+                                    Button {text:"None";onClicked:root.selectAll(modelData.key,[])}
+                                }
+                                ClearableSearchField {id:choiceSearch;placeholderText:"Search "+modelData.label.toLowerCase();Layout.fillWidth:true}
+                                ScrollView {Layout.fillWidth:true;Layout.preferredHeight:180;contentWidth:availableWidth
+                                    ColumnLayout {width:parent.width
+                                        Repeater {model:choices
+                                            CheckBox {required property var modelData;text:modelData.name+(modelData.currency?" · "+modelData.currency:"")+(modelData.archived?" (archived)":"");visible:modelData.name.toLowerCase().indexOf(choiceSearch.text.toLowerCase())>=0
+                                                checked:{root.generation;return root.current?root.current[modelData.currency?"accounts":"categories"].indexOf(modelData.id)>=0:false}
+                                                onClicked:root.check(modelData.currency?"accounts":"categories",modelData.id,checked)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Repeater {
+                        model:root.current?root.current.periods:[]
+                        ColumnLayout {
+                            id:periodRow;required property var modelData;required property int index
+                            readonly property var choices:root.presetIds.filter(id=>index>0 || id!=="previous_year")
+                            property var period:{root.generation;return root.current && root.current.periods[index]?root.current.periods[index]:{preset:"ytd",start:"",end:""}}
+                            property var resolved:{root.generation;return root.workflow.reportPeriod(period,root.current?root.current.periods[0]:{})}
+                            Layout.fillWidth:true
+                            function setDate(field,value){
+                                const parsed=value.length?root.workflow.calendarPage(value):{error:"Enter a date."}
+                                let valuePeriod=root.copy(period)
+                                valuePeriod.preset="custom"
+                                valuePeriod.start=resolved.start||period.start;valuePeriod.end=resolved.end||period.end
+                                valuePeriod[field]=parsed.error?"!"+value:parsed.iso
+                                root.updatePeriod(index,valuePeriod)
+                            }
+                            RowLayout {
+                                Label {textFormat:Text.PlainText;text:periodRow.index===0?"Main period":"Comparison "+periodRow.index}
+                                ComboBox {model:periodRow.choices.map(id=>root.presetNames[root.presetIds.indexOf(id)]);currentIndex:periodRow.choices.indexOf(periodRow.period.preset);onActivated:{let value=root.copy(periodRow.period);value.start=periodRow.resolved.start||value.start;value.end=periodRow.resolved.end||value.end;value.preset=periodRow.choices[currentIndex];root.updatePeriod(periodRow.index,value)}}
+                                Button {text:"Remove";visible:periodRow.index>0;onClicked:{let next=root.copy(root.drafts);next[root.selectedIndex].periods.splice(periodRow.index,1);root.drafts=next;root.touch()}}
+                            }
+                            RowLayout {
+                                Label {textFormat:Text.PlainText;text:"From"}
+                                TextField {id:startField;objectName:"reportStartDate"+periodRow.index;text:periodRow.resolved.startDisplay||(periodRow.period.start||"").replace(/^!/, "");placeholderText:root.state.dateFormat||"YYYY-MM-DD";onTextEdited:periodRow.setDate("start",text);Layout.fillWidth:true}
+                                CalendarPicker {workflow:root.workflow;field:startField;onSelected:function(value){periodRow.setDate("start",value)}}
+                                Label {textFormat:Text.PlainText;text:"through"}
+                                TextField {id:endField;objectName:"reportEndDate"+periodRow.index;text:periodRow.resolved.endDisplay||(periodRow.period.end||"").replace(/^!/, "");placeholderText:root.state.dateFormat||"YYYY-MM-DD";onTextEdited:periodRow.setDate("end",text);Layout.fillWidth:true}
+                                CalendarPicker {workflow:root.workflow;field:endField;onSelected:function(value){periodRow.setDate("end",value)}}
+                            }
+                            Label {textFormat:Text.PlainText;visible:!!periodRow.resolved.error;text:periodRow.resolved.error||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        }
+                    }
+                    Button {text:"Add comparison";onClicked:{let next=root.copy(root.drafts);next[root.selectedIndex].periods.push({preset:"previous_year",start:"",end:""});root.drafts=next;root.touch()}}
+                    RowLayout {
+                        Button {text:"Save";objectName:"saveReport";onClicked:root.save(false,false)}
+                        Button {text:"Discard";onClicked:root.discard()}
+                        Button {text:"Save and show";objectName:"showReport";onClicked:root.save(false,true)}
+                        Button {text:"Delete";onClicked:root.deleteCurrent()}
+                    }
+                }
+                Button {visible:root.dirty;text:"Save all changes";onClicked:root.save(true,false)}
+            }
+        }
+        Label {textFormat:Text.PlainText;visible:root.mode!=="workspace";text:"Net spending: outflows are positive; refunds reduce spending; income is negative.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+        Label {textFormat:Text.PlainText;visible:root.mode!=="workspace" && (root.state.importFailures||0)>0;text:"This file has "+(root.state.importFailures||0)+" imported records needing repair. They have no reportable amount. Open Review to repair them.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+        Label {textFormat:Text.PlainText;visible:root.mode!=="workspace" && !!root.result.stale;text:"Transactions changed. Refresh the report to see current amounts.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+        ScrollView {
+            id:resultScroll;visible:root.mode==="result";Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth
+            ColumnLayout {width:resultScroll.availableWidth;spacing:24
+                Label {textFormat:Text.PlainText;visible:!(root.result.currencies||[]).length;text:"No accounts selected. Edit the report to choose accounts."}
+                Repeater {
+                    model:root.result.currencies||[]
+                    ColumnLayout {
+                        id:currencyBlock;required property var modelData;required property int index
+                        Layout.fillWidth:true
+                        Label {textFormat:Text.PlainText;text:currencyBlock.modelData.currency;font.pixelSize:20}
+                        Item {
+                            id:table;Layout.fillWidth:true;Layout.preferredHeight:Math.min(420,64+(currencyBlock.modelData.rows.length+1)*42+16)
+                            Label {textFormat:Text.PlainText;text:"Category";width:220;height:64;verticalAlignment:Text.AlignVCenter}
+                            Flickable {
+                                x:220;width:Math.max(0,parent.width-220);height:64;clip:true;interactive:false
+                                contentWidth:(root.result.periods||[]).length*220;contentX:tableBody.contentX
+                                Row {
+                                    Repeater {model:root.result.periods||[]
+                                        Label {required property var modelData;textFormat:Text.PlainText;text:modelData.label+"\n"+modelData.start+" – "+modelData.end;width:220;height:64;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap}
+                                    }
+                                }
+                            }
+                            Item {
+                                y:64;width:220;height:parent.height-64;clip:true
+                                Column {
+                                    y:-tableBody.contentY;width:220
+                                    Label {textFormat:Text.PlainText;text:"Total";font.bold:true;width:220;height:42;verticalAlignment:Text.AlignVCenter}
+                                    Repeater {model:currencyBlock.modelData.rows
+                                        RowLayout {required property var modelData;width:220;height:42
+                                            Rectangle {visible:root.result.graph!=="none";width:10;height:10;color:Qt.hsla(modelData.hue/360,0.60,0.48,1)}
+                                            Label {textFormat:Text.PlainText;text:modelData.name;elide:Text.ElideRight;Layout.fillWidth:true;ToolTip.visible:categoryHover.hovered;ToolTip.text:text;HoverHandler {id:categoryHover}}
+                                        }
+                                    }
+                                }
+                            }
+                            Flickable {
+                                id:tableBody;x:220;y:64;width:Math.max(0,parent.width-220);height:parent.height-64;clip:true
+                                contentWidth:(root.result.periods||[]).length*220;contentHeight:(currencyBlock.modelData.rows.length+1)*42
+                                ScrollBar.horizontal:ScrollBar {}
+                                ScrollBar.vertical:ScrollBar {}
+                                Row {
+                                    Repeater {model:root.result.periods||[]
+                                        Column {
+                                            id:periodColumn;required property int index;width:220
+                                            Button {text:currencyBlock.modelData.totals[periodColumn.index];flat:true;font.bold:true;width:220;height:42;enabled:!root.workflow.busy && !root.result.stale;onDoubleClicked:root.drill(currencyBlock.index,periodColumn.index,-1);ToolTip.visible:hovered;ToolTip.text:"Double-click to show included transactions"}
+                                            Repeater {model:currencyBlock.modelData.rows
+                                                Button {required property var modelData;required property int index;text:modelData.cells[periodColumn.index].amount;flat:true;width:220;height:42;enabled:!root.workflow.busy && !root.result.stale;onDoubleClicked:root.drill(currencyBlock.index,periodColumn.index,index);ToolTip.visible:hovered;ToolTip.text:"Double-click to show included transactions"}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Flickable {
+                            id:graphs;visible:root.result.graph!=="none";Layout.fillWidth:true;Layout.preferredHeight:Math.min(620,charts.implicitHeight+16);clip:true
+                            contentWidth:charts.implicitWidth;contentHeight:charts.implicitHeight
+                            ScrollBar.horizontal:ScrollBar {}
+                            ScrollBar.vertical:ScrollBar {}
+                            RowLayout {id:charts;spacing:20
+                                Repeater {model:root.result.periods||[];ReportChart {required property var modelData;required property int index;result:currencyBlock.modelData;period:modelData;periodIndex:index;graph:root.result.graph;enabled:!root.workflow.busy && !root.result.stale;onDrill:function(row){root.drill(currencyBlock.index,index,row)}}}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ColumnLayout {
+            visible:root.mode==="detail";Layout.fillWidth:true;Layout.fillHeight:true
+            Label {textFormat:Text.PlainText;text:(root.state.reportDetails||{}).title||"";font.pixelSize:18}
+            Label {textFormat:Text.PlainText;text:(root.state.reportDetails||{}).period||""}
+            Label {textFormat:Text.PlainText;text:"Total: "+((root.state.reportDetails||{}).currency||"")+" "+((root.state.reportDetails||{}).total||"");font.bold:true}
+            ListView {
+                Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:(root.state.reportDetails||{}).rows||[];spacing:6
+                ScrollBar.vertical:ScrollBar {}
+                delegate:Frame {required property var modelData;width:ListView.view.width
+                    ColumnLayout {anchors.fill:parent
+                        Label {textFormat:Text.PlainText;text:modelData.date+" · "+modelData.account+" · "+modelData.payee;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {textFormat:Text.PlainText;text:modelData.category+" · "+modelData.amount+(modelData.accepted?" · Accepted":" · New");font.bold:true}
+                        Label {textFormat:Text.PlainText;visible:!!modelData.memo;text:modelData.memo;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                    }
+                }
+            }
+        }
+    }
+}

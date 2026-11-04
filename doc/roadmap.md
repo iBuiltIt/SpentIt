@@ -1,5 +1,16 @@
 # Coordinated implementation roadmap
 
+## Reports and reusable calendar — owner Go 2026-11-04
+
+Start with the [reports/calendar handoff](reports-calendar-handoff.md).
+The initial workspace, exact allocation reports and shared-snapshot drill-down,
+separate charts per period/currency, and shared calendar are implemented under
+owner Go. Qt Quick Canvas supplies the initial renderer without a new dependency.
+See [status](status.md#reports-and-shared-calendar--2026-11-04) for verification and
+limits. Printing, exports, fiscal periods, conversion and time-series remain
+outside this scope. Older deferred-report notes below are historical.
+
+
 ## Next session: transaction origin cleanup — 2026-11-03
 
 Start with the [transaction-origin handoff](transaction-origin-handoff.md).
