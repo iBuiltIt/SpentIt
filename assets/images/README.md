@@ -1,6 +1,14 @@
 # Application artwork
 
-The owner supplied the light/dark SpentIt artwork. On 2026-10-28 the owner approved making the external corner backgrounds transparent. The 1024 px PNGs are the corrected masters: only alpha changed; their RGB bytes match the original artwork exactly. The opaque light/dark tile backgrounds, coins and lettering remain intact. Smaller PNGs were regenerated with alpha-aware Lanczos resampling; their four extreme corner pixels are explicitly transparent.
+The light artwork was regenerated and geometrically cleaned on 2026-11-04 with owner approval. Its white tile occupies 824 × 824 pixels on the 1024 px canvas, with equal 100 px transparent margins and tangent rounded corners. The coin stacks and black/red wordmark retain the original design. The dark artwork retains the owner's original artwork and the 2026-10-28 alpha-only correction.
+
+The retained intermediate light artwork is `candidates/SpentIt_light_v2.png`; it is not a ready-to-use icon. Its generated outer fringe is excluded by the interior crop and geometric mask in `tools/refine_light_icon.swift`. The script composites onto opaque white inside the mask and renders at 4× resolution before producing all seven PNG sizes. To reproduce on macOS, from the repository root:
+
+```sh
+swift tools/refine_light_icon.swift
+```
+
+Image generation used the built-in imagegen tool, with the original light master as a reference: preserve three descending gold coin stacks and exact black/red “SpentIt”, rebuild the white tile with smooth corners and transparent margins. A second generation requested removal of the ragged fringe; precise deterministic masking was still needed. This replaces the light variant's earlier alpha-only maintenance approach.
 
 Keep alpha when exporting. Do not flatten against white or remove the white interior of the light tile. Inspect exports against both light and dark backgrounds.
 

@@ -1,6 +1,22 @@
 # Project status
 
-Last updated: 2026-11-03
+Last updated: 2026-11-04
+
+## Light icon geometry — 2026-11-04
+
+Owner-approved regeneration and deterministic cleanup replaced the light icon's
+cropped tile with a complete rounded white tile and equal transparent margins.
+All seven light PNG sizes, the light ICNS and Windows ICO were regenerated.
+The dark artwork is unchanged. The retained source and macOS reproduction script
+are documented in [asset maintenance](../assets/images/README.md).
+
+Verification: all seven PNG dimensions, transparent outer margins and opaque
+center pixels passed programmatic checks. Original/new 128 px composites were
+visually inspected against light, dark and blue backgrounds. The rules-enabled
+Release application rebuilt successfully; `import.qml` passed 1/1 (1.66 s).
+All 11 ICNS and five ICO embedded representations exactly match the new PNGs.
+Packaged applications and native Dock
+appearance have not been refreshed or inspected in this checkpoint.
 
 ## Native Windows MSVC build and this machine's WSL — 2026-11-03
 
