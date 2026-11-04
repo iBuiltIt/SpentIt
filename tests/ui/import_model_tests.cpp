@@ -505,6 +505,12 @@ private slots:
         QVERIFY(rowDestination.value("description").toString().contains("Visa"));
         auto* toggle=visualItem(window->contentItem(),"splitToggle_0");
         QVERIFY(toggle->mapToScene(QPointF(0,0)).x()>=rowArrow->mapToScene(QPointF(rowArrow->width(),0)).x());
+        QCOMPARE(toggle->x(),32.0);
+        QTest::mouseMove(window,QPoint(2,2));
+        auto* arrowBackground=rowArrow->property("background").value<QObject*>();QVERIFY(arrowBackground);
+        QTRY_COMPARE(arrowBackground->property("color").value<QColor>().alpha(),0);
+        auto* splitBackground=toggle->property("background").value<QObject*>();QVERIFY(splitBackground);
+        QTRY_COMPARE(splitBackground->property("color").value<QColor>().alpha(),0);
         if(qEnvironmentVariableIsSet("SPENTIT_SPLIT_ARROW_CAPTURE")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_SPLIT_ARROW_CAPTURE")));}
         QVERIFY(QMetaObject::invokeMethod(rowArrow,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
         QCOMPARE(m.state().value("accountId").toString(),QString("2"));

@@ -223,7 +223,26 @@ ApplicationWindow {
         }
         return null
     }
-    component TransferArrow: Button {
+    component LedgerAction: Button {
+        id: action
+        property int textAlignment: Text.AlignHCenter
+        hoverEnabled: true
+        padding: 4
+        contentItem: Label {
+            text: action.text; textFormat: Text.PlainText; font: action.font
+            color: action.enabled ? theme.text : theme.disabled
+            horizontalAlignment: action.textAlignment
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+        background: Rectangle {
+            radius: 3
+            color: action.down ? theme.selectionPressed : action.hovered ? theme.selection : "transparent"
+            border.width: action.visualFocus ? 1 : 0
+            border.color: theme.focus
+        }
+    }
+    component TransferArrow: LedgerAction {
         property var destination: null
         visible: !!destination
         width:28;height:28;padding:2
@@ -2993,7 +3012,7 @@ ApplicationWindow {
                     Component.onDestruction:if(window.ledgerEditorHost===ledgerRow)window.ledgerEditorHost=null
                     property bool viewingSplits: !!window.splitViews[window.splitKey(record)] && record.splits.length>1
                     property alias editorSlot: rowEditorSlot
-                    width:ledger.width-20;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?theme.draft:theme.row
+                    width:ledger.width-20;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?theme.draft:(index%2===0?theme.row:theme.rowAlternate)
                     border.width:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?1:0;border.color:theme.focus
                     MouseArea {width:parent.width;height:34;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){if(!(s.selectionKeys||{})[record.batch+":"+record.ordinal])selectLedgerRow(ledgerRow.index,0);ledgerContext.popup()}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
@@ -3007,9 +3026,10 @@ ApplicationWindow {
                                 required property int index
                                 width:(ledger.width-20)*window.ledgerColumnWeights[index];height:34
                                 TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===2?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===2?window.firstLedgerTransfer(record):null}
-                                Label {anchors.fill:parent;anchors.leftMargin:rowTransfer.visible?32:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>=3?Text.AlignRight:Text.AlignLeft;visible:index!==2 || record.splits.length<2}
-                                Button {
-                                    anchors.fill:parent;anchors.leftMargin:rowTransfer.visible?32:0;visible:index===2 && record.splits.length>1
+                                Label {anchors.fill:parent;anchors.leftMargin:index===2?32:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>=3?Text.AlignRight:Text.AlignLeft;visible:index!==2 || record.splits.length<2}
+                                LedgerAction {
+                                    anchors.fill:parent;anchors.leftMargin:32;visible:index===2 && record.splits.length>1
+                                    textAlignment:Text.AlignLeft
                                     objectName:index===2 && record.batch.length?"splitToggle_"+record.ordinal:""
                                     text:(ledgerRow.viewingSplits?"▾ ":"▸ ")+record.splits.length+" splits"
                                     enabled:!workflow.busy && !ledgerRow.expanded

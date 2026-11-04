@@ -18,7 +18,17 @@ offscreen coverage.
 
 A further owner-approved light-mode adjustment uses `#e6ebf0` for ordinary
 committed ledger rows, making them more distinct from the window background.
-Blue selection, warm draft colours and dark-mode rows retain their existing values.
+Owner follow-up Go (2026-11-03): ordinary ledger rows alternate this blue-grey
+with white in displayed order. Dark mode alternates `#222a33` and `#28323d`.
+Expanded saved splits remain within their transaction's stripe. Blue selection
+and warm draft backgrounds take priority over striping.
+
+Ledger transfer and split controls have transparent resting backgrounds, themed
+hover/pressed surfaces and a visible keyboard-focus outline. The category column
+reserves a fixed 32-pixel arrow slot; split disclosure labels are left-aligned at
+the same position with or without a transfer arrow. Split-preview arrows use the
+same control styling. Sorting/filtering recomputes striping by displayed index;
+expanding a transaction does not change subsequent stripes.
 
 There is no separate appearance preference or document-format change. The older
 standalone synthetic sheet prototype is outside this desktop change.

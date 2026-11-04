@@ -8,6 +8,7 @@ QtObject {
     readonly property color surface: dark ? "#222a33" : "#ffffff"
     readonly property color alternate: dark ? "#28323d" : "#f1f4f6"
     readonly property color row: dark ? "#222a33" : "#e6ebf0"
+    readonly property color rowAlternate: dark ? "#28323d" : "#ffffff"
     readonly property color text: dark ? "#e7edf3" : "#18232d"
     readonly property color muted: dark ? "#acbac8" : "#52636a"
     readonly property color disabled: dark ? "#83909e" : "#707b85"

@@ -2,6 +2,38 @@
 
 Last updated: 2026-11-03
 
+## Alternating ledger rows and aligned controls — 2026-11-03
+
+Implemented the owner's Go for alternating ordinary transaction backgrounds:
+light blue-grey/white and two dark shades, assigned by displayed row index.
+Expanded saved splits share their transaction's stripe; selection and draft
+colours retain priority. Transfer arrows and split controls use transparent
+resting backgrounds, themed hover/pressed surfaces and keyboard-focus outlines.
+A fixed arrow slot and left-aligned split label remove the transfer-dependent
+indent. See [the palette contract](../features/005-transaction-sheet-navigation.md#system-light-and-dark-palettes--owner-go-2026-11-03).
+
+Verification on macOS arm64, Qt 6.12.0, synthetic data:
+
+- Rebuilt rules-enabled Release with `cmake --build build/import-ui-rules-release -j 2`;
+  `build/SpentIt` contains the change.
+- New `ledgerStripes` checks alternating rendered colours through ascending and
+  descending sorting and filtering, fixed split-label alignment, transparent
+  resting background, hover/pressed states, keyboard focus and split expansion.
+- Native `ledgerStripes appearanceSwitching`: **4 passed** including setup/cleanup,
+  2.651 s; both light and dark modes checked and screenshots visually inspected.
+  Contrast checks now include the alternate row colour.
+- Offscreen `qifTransferResolution readOnlySplitViews transferManagementUi`:
+  **5 passed** including setup/cleanup, 5.992 s. Includes transfer-control
+  transparency/non-overlap and existing counterpart navigation and split viewing.
+- CTests `import.navigation` and `import.qml`: **2/2 passed**, 18.89 s.
+- Changed-document relative links and `git diff --check` passed.
+- Initial stripe test needed a single QIF header and an explicit return to the
+  beginning of the virtualized list before inspecting delegates; corrected before
+  the final passing runs.
+
+Windows/Linux, rules-disabled builds and the full suite were not run. Existing
+unrelated linked-split editor changes were preserved.
+
 ## Text-field Home and End — 2026-11-03
 
 Implemented the owner's Go for shared Home/End cursor movement and Shift
