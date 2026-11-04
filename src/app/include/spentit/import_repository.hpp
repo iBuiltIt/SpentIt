@@ -1,4 +1,5 @@
 #pragma once
+#include <spentit/amount_format.hpp>
 #include <spentit/import_review.hpp>
 #include <spentit/review_commands.hpp>
 #include <spentit/operation_context.hpp>
@@ -319,6 +320,8 @@ public:
         return imports::sum(account().currency,amounts);
     }
     virtual std::vector<std::pair<std::int64_t,Money>> balances() const { return {}; }
+    virtual AmountFormat amount_format() const {return {}; }
+    virtual void set_amount_format(const AmountFormat&) {throw std::logic_error("Amount formatting is unsupported by this repository");}
     virtual std::string date_format() const {return "YYYY-MM-DD";}
     virtual bool categories_supported() const { return false; }
     virtual CategoryCatalog category_catalog() const { throw std::logic_error("Categories are not supported by this dataset"); }

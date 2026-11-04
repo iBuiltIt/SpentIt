@@ -273,3 +273,39 @@ save/Undo validation still apply to evaluated amounts. An invalid or unbalanced
 edit cannot change the saved transaction. Bank-file and storage decimal parsing
 remain strict and do not evaluate expressions. See [status](status.md) for tests
 and platform limits.
+
+## Amount formatting — owner Go 2026-11-03
+
+Accepted and implemented: Settings → File settings offers **Use amount formatting**
+and a format selector. New files enable it and derive the initial style from the
+creation-time currency. The saved selection applies to every account in that file;
+changing an account's currency does not reset it. Amounts retain their own currency's
+scale. No currency symbol is added to ledger numbers.
+
+Supported styles are `1,234.56` (`comma-dot`), `1.234,56` (`dot-comma`) and
+`1 234,56` (`space-comma`, ordinary ASCII spaces). Turning formatting off retains
+the chosen style but uses ungrouped decimal-point display and entry (`1234.56`).
+The defaults are product policy, not unique regional rules for each currency:
+EUR, BRL, ARS, CLP, COP, IDR, TRY and DKK use dot/comma; SEK, NOK, PLN, CZK, RUB
+and HUF use space/comma; all others, including CAD and USD, use comma/dot.
+Users may select any supported style.
+
+Display uses exact integer minor units, including signed limits and zero-, three-
+and four-place currencies. Ledger, sidebar balances, split editors, opening
+amounts, Review, rule match amounts and history presentation share the formatter.
+Entry and each numeric literal in a calculation use the active style's decimal
+separator. Grouping is optional; when present, the first group has one to three
+digits and every subsequent group exactly three. Grouping after the decimal
+separator is invalid. No locale guessing, punctuation stripping without validation,
+floating-point conversion or rounding is used. Spaces around arithmetic operators
+remain accepted. Formatting happens on existing field completion/save boundaries,
+not during typing. Existing exact-expression limits and final precision checks
+remain in force. Imported files and canonical stored decimals retain their own
+parsers; only the resulting Money value is stored.
+
+The encrypted singleton preference is updated atomically without changing financial
+rows, account revisions or ledger mutation generation. Failed saves are read back
+before UI success; unknown outcomes require reopening. Preference changes invalidate
+cached presentation. Experimental formats are **52 with rules / 51 without**;
+older formats are rejected unchanged, with no migration. See [status](status.md)
+for actual verification and platform limits.

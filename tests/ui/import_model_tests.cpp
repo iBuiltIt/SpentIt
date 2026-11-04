@@ -241,11 +241,11 @@ private slots:
         QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),2);
         QVERIFY(QMetaObject::invokeMethod(list,"positionViewAtIndex",Q_ARG(int,10),Q_ARG(int,0)));QTest::qWait(50);
         int anchorIndex=-1;QVERIFY(QMetaObject::invokeMethod(list,"indexAt",Q_RETURN_ARG(int,anchorIndex),Q_ARG(qreal,1),Q_ARG(qreal,list->property("contentY").toDouble()+1)));QVERIFY(anchorIndex>=2);const auto anchorKey=m.state().value("reviewQuestions").toList().at(anchorIndex).toMap().value("key");
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"mergeSelectedMatches"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),38);QCOMPARE(m.state().value("balance").toString(),"-1637.00");
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"mergeSelectedMatches"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),38);QCOMPARE(m.state().value("balance").toString(),"-1,637.00");
         QTest::qWait(50);int restoredIndex=-1;QVERIFY(QMetaObject::invokeMethod(list,"indexAt",Q_RETURN_ARG(int,restoredIndex),Q_ARG(qreal,1),Q_ARG(qreal,list->property("contentY").toDouble()+1)));QVERIFY(restoredIndex>=0);QCOMPARE(m.state().value("reviewQuestions").toList().at(restoredIndex).toMap().value("key"),anchorKey);
         QTRY_COMPARE(status->mapToScene(QPointF()),statusPosition);QCOMPARE(list->mapToScene(QPointF()),listPosition);QCOMPARE(list->height(),listHeight);
         if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS")){const auto observed=diagnostics::Collector::instance().snapshot();QCOMPARE(observed.latest.action,diagnostics::Action::review_batch);QCOMPARE(observed.latest.persistence,diagnostics::Persistence::confirmed_saved);qInfo()<<"Batch UI worker_us"<<observed.latest.ended-observed.latest.started<<"delivery_us"<<observed.latest.delivered-observed.latest.ended;}
-        run(m,"review_undo");QCOMPARE(m.state().value("reviewCount").toInt(),40);QCOMPARE(m.state().value("balance").toString(),"-1640.00");
+        run(m,"review_undo");QCOMPARE(m.state().value("reviewCount").toInt(),40);QCOMPARE(m.state().value("balance").toString(),"-1,640.00");
         select(0);QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("reviewSheet"),"close"));QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
         run(m,"review_batch",{{"groups",QVariantList{}}},false);QVERIFY(!m.error().isEmpty());QCOMPARE(status->mapToScene(QPointF()),statusPosition);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"rulesNavigation"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(status->isVisible());QCOMPARE(status->mapToScene(QPointF()),statusPosition);
@@ -2001,6 +2001,61 @@ private slots:
         QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().size(),1);
         run(m,"undo_edit");QCOMPARE(root->property("automaticSplitIndex").toInt(),1);
     }
+    void amountFormatting() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->show();
+        const auto path=dir.path()+"/doc";create(m,path);
+        QVERIFY(m.state().value("amountFormatting").toBool());
+        QCOMPARE(m.state().value("amountStyle").toString(),"comma-dot");
+        const auto definition=QString::fromStdString(Currency("CAD").definition_id());
+        run(m,"correct_opening",{{"date","2025-12-31"},{"amount","16,782.00+1,876.00"}});
+        QCOMPARE(m.state().value("opening").toString(),"18,658.00");
+        QCOMPARE(m.rowRecord(0).value("balance").toString(),"18,658.00");
+        run(m,"amount_format",{{"enabled",true},{"style","dot-comma"}});
+        QCOMPARE(m.state().value("opening").toString(),"18.658,00");
+        QCOMPARE(m.rowRecord(0).value("balance").toString(),"18.658,00");
+        QCOMPARE(m.amountValue("1.000,25+2,75",definition).value("amount").toString(),"1.003,00");
+        QVERIFY(!m.amountValue("1.23",definition).value("valid").toBool());
+        auto result=m.splitAmounts("-10.000,00",{"ignored","-1.876,00"},true,definition,0);
+        QVERIFY(result.value("balanced").toBool());
+        QCOMPARE(result.value("amounts").toList()[0].toString(),"-8.124,00");
+        run(m,"begin_manual");auto manual=selected(m).value("draft").toMap();
+        manual["total"]="-1.000,00-3,00";auto splits=manual.value("splits").toList();auto split=splits[0].toMap();split["amount"]="-1003,00";splits[0]=split;manual["splits"]=splits;
+        run(m,"save_manual",manual);
+        QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"-1.003,00");
+        QCOMPARE(m.state().value("balance").toString(),"17.655,00");run(m,"undo_manual");
+        QCOMPARE(m.state().value("balance").toString(),"18.658,00");
+        run(m,"correct_opening",{{"date","2025-12-31"},{"amount","18.658,00+1"}});
+        QCOMPARE(m.state().value("opening").toString(),"18.659,00");
+        run(m,"close");run(m,"open",{{"path",path}});
+        QCOMPARE(m.state().value("amountStyle").toString(),"dot-comma");
+        QCOMPARE(m.state().value("opening").toString(),"18.659,00");
+        run(m,"amount_format",{{"enabled",false},{"style","dot-comma"}});
+        QCOMPARE(m.state().value("opening").toString(),"18659.00");
+        QCOMPARE(m.amountValue("1000.25+2.75",definition).value("amount").toString(),"1003.00");
+        QVERIFY(!m.amountValue("1,000.25",definition).value("valid").toBool());
+        run(m,"close");run(m,"open",{{"path",path}});
+        QVERIFY(!m.state().value("amountFormatting").toBool());
+        QCOMPARE(m.state().value("amountStyle").toString(),"dot-comma");
+        run(m,"amount_format",{{"enabled",true},{"style","space-comma"}});
+        QCOMPARE(m.state().value("opening").toString(),"18 659,00");
+        QCOMPARE(m.amountValue("1 000,25 + 2,75",definition).value("amount").toString(),"1 003,00");
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"sidebarSettings"),"clicked"));
+        QTRY_COMPARE(window->property("currentPage").toString(),"settings");
+        auto* checkbox=visualItem(window->contentItem(),"amountFormatting");auto* style=visualItem(window->contentItem(),"amountFormatStyle");
+        QVERIFY(checkbox);QVERIFY(style);QVERIFY(checkbox->property("checked").toBool());
+        QCOMPARE(style->property("currentIndex").toInt(),2);
+        if(qEnvironmentVariableIsSet("SPENTIT_AMOUNT_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_AMOUNT_CAPTURE")));}
+        checkbox->setProperty("checked",false);QVERIFY(QMetaObject::invokeMethod(checkbox,"toggled"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(m.error().isEmpty());
+        QVERIFY(!m.state().value("amountFormatting").toBool());QVERIFY(!style->property("enabled").toBool());
+        checkbox->setProperty("checked",true);QVERIFY(QMetaObject::invokeMethod(checkbox,"toggled"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(m.error().isEmpty());
+        style->setProperty("currentIndex",0);QVERIFY(QMetaObject::invokeMethod(style,"activated",Q_ARG(int,0)));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(m.error().isEmpty());
+        QCOMPARE(m.state().value("amountStyle").toString(),"comma-dot");
+    }
     void amountExpressions() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         const auto path=dir.path()+"/doc";create(m,path);
@@ -2059,8 +2114,8 @@ private slots:
         // Closing the editor asks to change the total, then saves and closes it.
         QVERIFY(QMetaObject::invokeMethod(root,"toggleRecord",Q_ARG(QVariant,batch),Q_ARG(QVariant,0)));
         QTRY_VERIFY(dialog->property("visible").toBool());press("splitChangeAmount");QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"1012.00");QCOMPARE(saved(0),"0.20");QVERIFY(root->property("editorClosed").toBool());
-        run(m,"undo_edit");QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"1000.00");QCOMPARE(saved(0),"0.20");QVERIFY(root->property("manualSplitAmounts").toBool());
+        QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"1,012.00");QCOMPARE(saved(0),"0.20");QVERIFY(root->property("editorClosed").toBool());
+        run(m,"undo_edit");QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),"1,000.00");QCOMPARE(saved(0),"0.20");QVERIFY(root->property("manualSplitAmounts").toBool());
         // Exact arithmetic, including a transient sum larger than int64.
         const auto definition=selected(m).value("draft").toMap().value("currencyDefinition").toString();
         auto result=m.splitAmounts("1000",{"0","1100"},true,definition);QVERIFY(result.value("valid").toBool());QCOMPARE(result.value("amounts").toList()[0].toString(),"-100.00");

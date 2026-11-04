@@ -2,6 +2,65 @@
 
 Last updated: 2026-11-03
 
+## Saved amount formatting — 2026-11-03
+
+Implemented the owner's Go for **Settings → File settings → Use amount formatting**
+and the `1,234.56`, `1.234,56`, `1 234,56` selector. New files default on using the
+creation-time currency's product default; the user-selected style applies across
+accounts and persists in the encrypted file. Off retains the choice and uses
+ungrouped decimal-point numbers. Each amount retains its currency scale. Shared
+exact formatting covers the ledger, sidebar, editors, Review, rule match amounts
+and history. Sidebar space-grouped numbers stay together when the label wraps.
+
+User entry and arithmetic accept ungrouped or correctly grouped numeric literals
+in the active style. Invalid grouping, precision and arithmetic errors reject the
+edit. Imported-file and stored-decimal parsing are unchanged. Preference updates
+are atomic and leave financial rows, account revisions and ledger generation
+unchanged. Backups retain the preference. Formats are **52 with rules / 51 without**;
+previous formats reject unchanged without migration. See
+[the contract](ledger-editing.md#amount-formatting--owner-go-2026-11-03).
+
+Verification on macOS arm64 with synthetic data:
+
+- Rebuilt rules-enabled Release `build/SpentIt` with
+  `cmake --build build/import-ui-rules-release -j 2`.
+- Release selected CTests `engine.amount_expression`, `engine.amount_format`,
+  `accounts.lifecycle_formatting`, `accounts.lifecycle_formatting_boundaries`,
+  `rulestore.schema`: **5/5 passed**, 6.66 s.
+- Formatting tests cover signed 64-bit extrema, currency scales 0/2/3/4,
+  grouped/ungrouped arithmetic, malformed grouping, overflow/precision protections,
+  on/off persistence, EUR creation defaults, restored backup and unchanged money,
+  revisions and ledger generation. The preference boundary test counted 13
+  write/sync positions; it injected disk-full/I/O at positions 1, 7 and 13,
+  retried after reopening, and killed processes immediately before/after commit.
+  This is selected fault coverage, not a sweep of all 13 positions.
+- Offscreen focused amount formatting/expression/remainder/split editor checks:
+  **6 passed, 0 failed** including setup/cleanup, 3.412 s. They cover formatted
+  manual-transaction save/Undo, opening edits, exact split balancing, restart,
+  checkbox and selector interaction. The final sidebar-layout check reran
+  `amountFormatting`: **3 passed, 0 failed**, 1.815 s. Visually inspected its
+  rendered Settings capture, including the space-grouped sidebar balance.
+- Full `spentit_import_ui_tests` attempt: **80 passed, 1 failed**, 114.122 s.
+  The sole failure expected the old `-1637.00` Review display. Updated it and its
+  later Undo expectation to grouped text; rebuilt `batchReviewWorkspace` rerun:
+  **3 passed, 0 failed**, 1.842 s. The whole executable was not repeated after
+  that expectation-only correction. An earlier focused split-editor expectation
+  was likewise updated from `1012.00` to `1,012.00` before its passing rerun.
+- Final build after clearing stale formatted preview/receipt text: offscreen
+  `amountFormatting batchReviewWorkspace` **4 passed, 0 failed**, 3.320 s.
+- Release CTests `import.committed_ui`, `import.category_ui`, `import.rules_ui`,
+  `import.qml`: **4/4 passed**, 69.72 s.
+- Rules-disabled Release: preference behavior/boundaries and `import.schema_gate`
+  **3/3 passed**, 10.13 s; rules-disabled GUI was not rebuilt or exercised.
+- ASan/UBSan engine amount-format and expression tests: **2/2 passed**, 0.60 s,
+  with `ASAN_OPTIONS=detect_leaks=0` and
+  `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`; no sanitizer diagnostic.
+- Changed-document relative file links and `git diff --check` passed.
+
+Native mouse interaction, dark theme, full storage fault sweeps, storage/UI
+sanitizers, Linux/Windows and the full project suite were not run for this change.
+Existing uncommitted transaction-origin editor changes were preserved.
+
 ## Transaction and split rule actions — 2026-11-03
 
 Implemented the owner's Go for separate **Create rule…** and **Edit rule…**

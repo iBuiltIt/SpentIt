@@ -421,7 +421,7 @@ ApplicationWindow {
     property string ledgerViewKind: ""
     readonly property var ledgerColumnWeights: [0.14, 0.24, 0.17, 0.15, 0.14, 0.16]
     function sidebarBalanceText(account) {
-        return "Balance "+(account.currency||"")+" "+(account.balance||"")
+        return "Balance "+(account.currency||"")+" "+(account.balance||"").replace(/ /g,"\u00a0")
     }
     function captureLedgerView(kind) {
         if(ledger.count===0) {ledgerViewRestore=null;ledgerViewKind="";return}
@@ -2852,6 +2852,16 @@ ApplicationWindow {
                         Label {text:"File settings";font.bold:true}
                         Label {text:"Current file";font.bold:true}
                         Label {text:"Date format: "+(s.dateFormat||"YYYY-MM-DD")}
+                        RowLayout {
+                            CheckBox {objectName:"amountFormatting";text:"Use amount formatting";checked:s.amountFormatting===undefined?true:s.amountFormatting
+                                onToggled:guard(function(){workflow.command("amount_format",{enabled:checked,style:s.amountStyle||"comma-dot"})})}
+                            ComboBox {objectName:"amountFormatStyle";enabled:!!s.amountFormatting
+                                model:["1,234.56","1.234,56","1 234,56"]
+                                currentIndex:["comma-dot","dot-comma","space-comma"].indexOf(s.amountStyle||"comma-dot")
+                                onActivated:guard(function(){workflow.command("amount_format",{enabled:true,style:["comma-dot","dot-comma","space-comma"][currentIndex]})})}
+                        }
+                        Label {text:"Use this style when entering amounts and calculations. Thousands separators are optional.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+
                         Label {textFormat:Text.PlainText;text:s.path||"";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere}
                         Label {text:"Close this file before opening another.";Layout.fillWidth:true;wrapMode:Text.Wrap}
                         Button {objectName:"closeDataset";text:"Close file…";onClicked:guard(function(){workflow.command("close")})}

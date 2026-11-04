@@ -6,6 +6,15 @@ Implementation: partial; exact in-memory money, validated allocations, and origi
 
 The [account-scoped durable workflow](../doc/accounts.md) adds account creation/selection, independent drafts, ordinary financial histories, and the point-4 account commands below. Allocation-level Merge and unlink are implemented in [feature 008](008-transfer-matching-and-lifecycle.md). New documents now use schema 22 with rules and 21 without. The point-4 paragraph below records schema 20 for that checkpoint. Schema 20 is rejected without migration. Reports and exchange rates remain unfinished. Feature 002 stays **active**.
 
+## Amount formatting — owner Go 2026-11-03
+
+The [amount formatting contract](../doc/ledger-editing.md#amount-formatting--owner-go-2026-11-03)
+adds a saved file-wide style and on/off setting, enabled by default from the
+creation-time currency. Display and user arithmetic entry share exact formatting
+and strict optional grouping. Formats are now 52/51; see
+[verification](../doc/status.md). Currency scale and stored financial values do
+not change when the style changes.
+
 ## Split amount editor follow-up — owner Go 2026-11-03
 
 The [ledger split amount contract](../doc/ledger-editing.md#split-amount-editing--owner-go-2026-11-03)

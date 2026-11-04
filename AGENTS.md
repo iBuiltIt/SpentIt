@@ -1,5 +1,17 @@
 # SpentIt — Where did my money go?
 
+## Amount formatting — owner Go 2026-11-03
+
+Settings offers saved **Use amount formatting** and comma/dot, dot/comma or
+space/comma styles. New files default on using their creation-time currency;
+the selected style applies throughout the file. Off uses ungrouped decimal-point
+numbers. User amounts and expression literals share strict grouping validation
+and exact arithmetic; bank-file parsing remains separate. See
+[the contract](doc/ledger-editing.md#amount-formatting--owner-go-2026-11-03).
+Current experimental formats are **52 with rules / 51 without**; prior formats
+are rejected unchanged without migration. Earlier checkpoints below describe
+their dated formats.
+
 ## Uniform transaction origins — owner Go 2026-11-03
 
 The [transaction-origin contract](doc/transaction-origin-handoff.md) covers ordinary

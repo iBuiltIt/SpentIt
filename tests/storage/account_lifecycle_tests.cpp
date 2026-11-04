@@ -39,6 +39,29 @@ void commit_manual_link(ImportStore& store){
     store.select_account(2);store.opening(0,date,Money(0,cad));store.apply_transfer("accept-destination",transfer_command(store,app::TransferAction::accept));store.apply_transfer("commit-destination",transfer_command(store,app::TransferAction::commit_local));
     store.select_account(1);if(transfers::protected_draft(store.transfers().at(0).link,1))store.apply_transfer("clear-origin",transfer_command(store,app::TransferAction::clear_local));store.apply_transfer("commit-origin",transfer_command(store,app::TransferAction::commit_local));
 }
+void formatting(){
+    Directory dir("spentit-amount-format-XXXXXX");const auto path=dir.path/"doc";
+    {
+        auto store=ImportStore::create(path,password,"Euro",Currency("EUR"),date);
+        check(store.amount_format()==AmountFormat{true,"dot-comma"});
+        store.correct_opening("opening",date,Money(1678200,Currency("EUR")));
+        const auto generation=store.ledger_edit_generation();const auto revision=store.account().revision;
+        store.set_amount_format({true,"space-comma"});
+        check(store.account().opening==Money(1678200,Currency("EUR")));
+        check(store.ledger_edit_generation()==generation && store.account().revision==revision);
+        store.set_amount_format({false,"comma-dot"});
+        rejects([&]{store.set_amount_format({true,"invalid"});},"Choose an available");
+        check(store.amount_format()==AmountFormat{false,"comma-dot"});
+        store.verify();store.backup_to(dir.path/"backup",password);
+    }
+    {
+        auto store=ImportStore::open(path,password);check(store.amount_format()==AmountFormat{false,"comma-dot"});
+        check(store.account().opening==Money(1678200,Currency("EUR")));
+        store.undo_account_operation("undo","opening");check(store.account().opening.units()==0);
+    }
+    {auto restored=ImportStore::open(dir.path/"backup",password);check(restored.amount_format()==AmountFormat{false,"comma-dot"});check(restored.account().opening.units()==1678200);restored.verify();}
+    no_leaks(dir.path);
+}
 void behavior(){
     // An untouched zero opening is usable without an acknowledgement, including
     // both sides of a transfer. Corrections remain historied before/after Commit.
@@ -80,7 +103,7 @@ void behavior(){
     }
     Directory dir("spentit-lifecycle-XXXXXX");const auto path=dir.path/"doc";
     {
-        auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"50":"49"));
+        auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"52":"51"));
         store.create_account(2,"Savings",cad,date);publish(store);const auto balance=store.committed_balance();const auto revision=store.account().revision;const auto evidence=store.evidence("checking");
         rejects([&]{store.rename_account("rename"," ");},"Account name is required");
         rejects([&]{store.rename_account("rename","");},"Account name is required");
@@ -232,6 +255,12 @@ void boundary(const char* name,Prepare prepare,Run run,Done done){
     }
     std::cout<<"Account lifecycle boundary "<<name<<": "<<writes<<" write/sync positions\n";
 }
+void formatting_boundaries(){
+    fault_vfs::install();
+    boundary("amount-format",[](const fs::path& path){auto store=create(path);publish(store);},
+        [](ImportStore& store){store.set_amount_format({false,"space-comma"});},
+        [](ImportStore& store){check(store.committed_balance()==Money(9000,cad));check(store.evidence("checking")==bytes);return store.amount_format()==AmountFormat{false,"space-comma"};});
+}
 void boundaries(){
     fault_vfs::install();
     boundary("rename",[](const fs::path& path){auto store=create(path);store.create_account(2,"Savings",cad,date);},[](ImportStore& store){store.rename_account("op","Renamed");},[](ImportStore& store){return store.account().name=="Renamed" && store.account_command_outcome("op").has_value();});
@@ -246,4 +275,4 @@ void boundaries(){
     boundary("undo-currency",[](const fs::path& path){auto store=create(path);publish(store, "checking", Money(2000,cad));store.reassign_currency("setup",gbp);},[](ImportStore& store){store.undo_account_operation("op","setup");},[](ImportStore& store){return store.account().currency==cad && store.committed_balance()==Money(1000,cad) && store.ledger(false).at(0).draft.transaction.original_imported_amount()==Money(-1000,cad);});
 }
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"behavior";if(mode=="behavior")behavior();else if(mode=="boundaries")boundaries();else return 2;std::cout<<"Account lifecycle "<<mode<<" passed\n";}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"behavior";if(mode=="behavior")behavior();else if(mode=="boundaries")boundaries();else if(mode=="formatting")formatting();else if(mode=="formatting_boundaries")formatting_boundaries();else return 2;std::cout<<"Account lifecycle "<<mode<<" passed\n";}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}

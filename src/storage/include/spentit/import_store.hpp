@@ -38,6 +38,8 @@ public:
     ImportStore(ImportStore&&) noexcept;
     ImportStore& operator=(ImportStore&&) noexcept;
     std::string date_format() const override;
+    AmountFormat amount_format() const override;
+    void set_amount_format(const AmountFormat&) override;
     imports::Occurrence create_manual(std::string_view,const imports::DraftRow&) override;
     bool manual_outcome(std::string_view) const override;
     void undo_manual(std::string_view,std::int64_t) override;
