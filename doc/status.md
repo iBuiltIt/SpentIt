@@ -2,6 +2,19 @@
 
 Last updated: 2026-11-05
 
+## Busy feedback work item documented — 2026-11-05
+
+Added [feature 014](../features/014-busy-feedback-and-progress.md) as a separate
+work item alongside the in-flight Help work. It records the owner's account-switch
+and large-import observations, accepted global busy feedback and progress-dialog
+requirements, current code findings, proposed behavior, open implementation details
+and mandatory verification. The reported delays and input size are owner observations,
+not measured results. Implementation is not authorized by this documentation request
+and has not started. Feature index and roadmap link the work item.
+
+Documentation-only verification: `git diff --check` and relative file-link checks
+for the changed documents passed. No runtime tests were required or run.
+
 ## Workspace titles and ledger defaults — 2026-11-05
 
 Implemented under owner Go. The toolbar title follows the visible workspace,

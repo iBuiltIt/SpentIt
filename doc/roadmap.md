@@ -1,5 +1,13 @@
 # Coordinated implementation roadmap
 
+## Busy feedback and operation progress — separate work item, 2026-11-05
+
+[Feature 014](../features/014-busy-feedback-and-progress.md) records the owner’s
+account-switch and large-import concerns, general busy-state requirements, proposed
+progress transitions and verification obligations. Documentation is authorized;
+implementation awaits Go. This work is independent of the in-flight
+[Help viewer and manual](../features/013-help-system.md), which remains in progress.
+
 ## Reports and reusable calendar — owner Go 2026-11-04
 
 Start with the [reports/calendar handoff](reports-calendar-handoff.md).
