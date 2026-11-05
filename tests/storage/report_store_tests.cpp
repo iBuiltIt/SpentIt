@@ -19,7 +19,7 @@ int main(){std::filesystem::path dir;try{
     {
         auto store=ImportStore::create(path,password,"Checking",cad,"2026-01-01");
         check(store.report_catalog().revision==0);
-        reports::Definition d{"r","Report","bar",{1},{""},{{"this_year",{},{}},{"last_year",{},{}}}};
+        reports::Definition d{"r","Report","grouped_bar",{1},{""},{{"this_year",{},{}},{"last_year",{},{}}}};
         saved={0,{d}};store.save_reports(saved);check(store.report_catalog().revision==1);saved=store.report_catalog();
         auto invalid=saved;invalid.definitions.front().name="";rejects([&]{store.save_reports(invalid);});check(store.report_catalog().revision==1);
         auto retry=saved;retry.revision=0;store.save_reports(retry);check(store.report_catalog().revision==1);

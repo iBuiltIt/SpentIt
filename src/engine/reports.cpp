@@ -46,7 +46,7 @@ void validate(const Definition& d){
     const auto validText=[](const std::string& s,std::size_t limit){return s.size()<=limit && qif::valid_utf8(s) && std::none_of(s.begin(),s.end(),[](unsigned char c){return c<32 || c==127;});};
     if(d.id.empty() || !validText(d.id,128))throw std::invalid_argument("Invalid report identity.");
     if(d.name.find_first_not_of(" \t")==std::string::npos || !validText(d.name,256))throw std::invalid_argument("Enter a report name of up to 256 characters.");
-    if(d.graph!="none" && d.graph!="bar" && d.graph!="pie")throw std::invalid_argument("Choose None, Bar or Pie.");
+    if(d.graph!="none" && d.graph!="bar" && d.graph!="pie" && d.graph!="grouped_bar")throw std::invalid_argument("Choose None, separate or grouped Bar, or Pie.");
     if(d.periods.empty() || d.periods.size()>32)throw std::invalid_argument("Choose a main period and no more than 31 comparisons.");
     if(d.accounts.size()>10000 || d.categories.size()>100000)throw std::invalid_argument("Too many report selections.");
     if(std::set<std::int64_t>(d.accounts.begin(),d.accounts.end()).size()!=d.accounts.size() || std::any_of(d.accounts.begin(),d.accounts.end(),[](auto id){return id<=0;}))throw std::invalid_argument("Invalid account selection.");

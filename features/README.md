@@ -1,7 +1,8 @@
 # Feature discovery
 
 **Next-session handoff (2026-11-04):** [Reports and reusable calendar](../doc/reports-calendar-handoff.md).
-The report workspace, separate-period graphs and calendar interaction are settled.
+The report workspace and calendar interaction are settled; the compact-results
+follow-up adds grouped-period bars and editable ledger drill-down.
 The owner gave implementation Go. The initial scope is implemented; see
 [verification and limits](../doc/status.md#reports-and-shared-calendar--2026-11-04).
 This supersedes the earlier reporting creation-dialog/sidebar proposal.
@@ -86,7 +87,7 @@ financial acceptance or authorize automatic repair.
 | [003 — QIF import and review](003-qif-import-review.md) | active | Immutable source, duplicate recognition, durable drafts, atomic commit; OFX/QFX/QBO/ASO bank and credit-card statements in schema 40/39; remaining QIF product scope stays open |
 | [004 — Rules and explanations](004-rules-and-explanations.md) | active | Accepted rule policy, evaluator, preview adapter, Save/Apply, focused transaction Create/Edit, compact match-only previews and preservation of unmatched fields during Apply, and selected-account committed reapplication; baseline verified in Release and ASan/UBSan; starter catalog and independent colon-category model accepted on 2026-10-28; account aliases protected during rule evaluation |
 | [005 — Transaction sheet and navigation](005-transaction-sheet-navigation.md) | active | Bounded combined search, multiselection, atomic committed bulk changes, and the point 8 session sidebar balances, column ratios, narrow scroll, and viewport retention; multiline notes and the rest of the layout stay open |
-| [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Initial Rules-style workspace, encrypted definitions, exact allocation totals and shared-snapshot drill-down, separate-period Bar/Pie charts and reusable calendar implemented under Go; native/platform verification limits remain |
+| [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Initial Rules-style workspace, encrypted definitions, exact allocation totals and editable ledger drill-down, compact striped results, separate/grouped-period Bar charts, Pie charts and reusable calendar implemented under Go; native/platform verification limits remain |
 | [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | Free-access intent, resale restriction, unresolved project license; theme-aware icons and local packaging with recorded platform limits |
 | [008 — Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) | active | Bounded same-currency durable creation, per-account commit/protection, provisional bank matching, counterpart navigation, allocation-level Merge, unlink, replacement, and a read-only journal implemented; QIF transfer syntax with explicit resolution and confirmed-mapping one-to-one repeated-group matching implemented; committed link edits for the locked 2026-10-27 cases implemented; account moves and source-link rewrite remain open |
 | [009 — First durable import workflow](009-durable-import-milestone.md) | active | Original one-account scope, subsequently extended to independent account workspaces; headless parser/storage/reconciliation, bounded setup/review UI, inline editing/source copying, split previews, filter-return navigation, v3 ordinary profile and nullable-original repairs, controlled backup cancellation and measured durable-UI workloads; whole-source repair progress/Abort, explicit multi-account QIF mapping and staged reported-balance decisions and complete category-catalog publication implemented; selected current-format verification recorded |

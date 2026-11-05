@@ -26,6 +26,12 @@ int main(){try{
     check(snapshot.currencies[0].totals[0].amount.units()==-491700);check(snapshot.currencies[0].totals[1].amount.units()==10300);check(snapshot.currencies[1].totals[0].amount.units()==1200);
     check(snapshot.currencies[0].rows[0].category.id=="food" && snapshot.currencies[0].rows[0].cells[0].amount.units()==8000);
     for(const auto& currency:snapshot.currencies)for(const auto& row:currency.rows)for(const auto& cell:row.cells){std::vector<Money> terms;for(auto index:cell.entries)terms.push_back(-snapshot.entries[index].amount);check(imports::sum(currency.currency,terms)==cell.amount);}
+    d.graph="grouped_bar";auto grouped=calculate(d,"2026-11-04",entries,categories,{cad,usd});
+    check(grouped.periods[0].start==snapshot.periods[0].start && grouped.periods[1].start==snapshot.periods[1].start);
+    for(std::size_t c=0;c<snapshot.currencies.size();++c)for(std::size_t r=0;r<snapshot.currencies[c].rows.size();++r)for(std::size_t p=0;p<snapshot.periods.size();++p){
+        check(grouped.currencies[c].rows[r].category.id==snapshot.currencies[c].rows[r].category.id);
+        check(grouped.currencies[c].rows[r].cells[p].amount==snapshot.currencies[c].rows[r].cells[p].amount);
+    }
     d.categories={"food"};entries.clear();add(1,"food",INT64_MIN,cad,"2026-01-01");rejects([&]{calculate(d,"2026-11-04",entries,categories,{cad});});
     add(1,"food",1,cad,"2026-01-01");check(calculate(d,"2026-11-04",entries,categories,{cad}).currencies[0].totals[0].amount.units()==INT64_MAX);
     add(1,"food",INT64_MAX,cad,"2026-01-01");check(calculate(d,"2026-11-04",entries,categories,{cad}).currencies[0].totals[0].amount.units()==0);

@@ -3,14 +3,15 @@
 ## Reports and calendar — owner Go 2026-11-04
 
 Read the [reports/calendar handoff](doc/reports-calendar-handoff.md) before the
-next report or date-picker work. The Rules-style report workspace, separate chart
-per period and reusable calendar interaction are settled. The owner also accepted
+next report or date-picker work. The Rules-style report workspace and reusable calendar interaction are settled.
+The compact-results/editable-ledger follow-up now also permits grouped-period
+bars; its contract supersedes the initial separate-chart-only layout. The owner also accepted
 net-spending signs, moving presets/fixed custom dates, direct category rows,
 separate currency results and explicit current-entry selection/inclusion policies.
 The owner subsequently gave implementation Go. The initial report workspace,
 exact allocation totals/drill-down, separate-period charts and shared calendar
 are implemented; see [status](doc/status.md) for verification and limits. Current
-experimental formats are **54 with rules / 53 without**; earlier formats are
+experimental formats are **56 with rules / 55 without**; earlier formats are
 rejected unchanged without migration.
 
 
@@ -31,8 +32,8 @@ the selected style applies throughout the file. Off uses ungrouped decimal-point
 numbers. User amounts and expression literals share strict grouping validation
 and exact arithmetic; bank-file parsing remains separate. See
 [the contract](doc/ledger-editing.md#amount-formatting--owner-go-2026-11-03).
-Amount formatting introduced formats 52/51; reporting now uses **54 with rules /
-53 without**. Prior formats are rejected unchanged without migration. Earlier
+Amount formatting introduced formats 52/51; reporting now uses **56 with rules /
+55 without**. Prior formats are rejected unchanged without migration. Earlier
 checkpoints below describe their dated formats.
 
 ## Uniform transaction origins — owner Go 2026-11-03

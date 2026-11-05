@@ -2,6 +2,73 @@
 
 Last updated: 2026-11-04
 
+## Compact reports, grouped bars and editable drill-down — 2026-11-04
+
+Implemented under the owner's follow-up Go. See the
+[updated contract](reports-calendar-handoff.md#compact-results-and-editable-report-ledger--owner-go-2026-11-04).
+Charts now precede one 34-pixel-row category table with ledger-style alternating
+backgrounds and category swatches. All categories extend the report's outer
+vertical scroll; the table/chart areas scroll horizontally only. Repeated chart
+category legends were removed. Saved graph choices add **Bar — grouped periods**,
+with adjacent bars in configured period order, stable category hues, period
+shades, date labels and exact-value hover labels. Pie and separate bars remain.
+
+Report drill-down reuses the actual ledger and its persistent inline editor,
+with Account and In report columns. The opened transaction identity set remains
+fixed, with one row per transaction and marked contributing splits. Current
+allocations determine each included amount. Saved corrections, category changes
+and Undo refresh the report; transactions moved outside its filters remain visible
+as “No longer included”. Search only narrows this fixed set. Back uses the ordinary
+unsaved-edit guard and restores the account filter/sort. Removed transactions
+leave the list until restored by Undo. No opening or running balance is presented
+for this multi-account result.
+
+Existing account-scoped commands retain their financial/history boundaries.
+Individual edits route to the correct account. Bulk corrections/category edits
+require a single account and reject mixed selections before mutation. Merge/Link
+and transaction creation remain in the ordinary account ledger. Automatic report
+refresh failure leaves a visible stale result and recovery instruction; it does
+not retry a saved edit. Large-report responsiveness has not been benchmarked.
+
+The saved graph value changes experimental formats to **56 with rules / 55
+without**. Old formats, including 54/53, are rejected unchanged without migration.
+No private financial dataset was used. Only synthetic fixtures and synthetic UI
+captures were used for verification; supplied private screenshots were not added
+to project files, and their local temporary copies were removed.
+
+Verification on macOS arm64, AppleClang 21, Qt 6.12:
+
+- Release report storage checks pass, including grouped-choice persistence,
+  identical retries, pre/post-commit interruption, restored backups and the
+  existing write/sync fault sweep. Exact report engine checks pass, including
+  equality of grouped/separate values and category/period order.
+- Rules-disabled Release report engine, storage and old-format gate: **3/3
+  passed**, 19.86 s. ASan/UBSan report engine/storage: **2/2 passed**, 26.96 s.
+- Existing Release ledger editor, account lifecycle behavior/boundaries,
+  rules/schema, statement review, navigation, committed UI and QML checks passed
+  across the recorded selections. The 9-case and later 7-case selections each
+  initially had a report UI fixture failure; these are not clean full-suite runs.
+- Expanded synthetic report UI checks exercise cross-account editing of accepted
+  and new entries, retained membership after a date edit, report refresh/Undo,
+  deduplicated split rows, partial-split category changes and Undo, group rejection,
+  unsaved Stay, source/current-value search, long-table height and grouped-choice
+  reopening. Final native Cocoa execution passed **4 Qt cases**, 6.020 s,
+  with no QML warnings. Synthetic native grouped-chart and editable-ledger
+  screenshots were visually inspected. Final offscreen `import.reports_ui` and
+  `import.qml` passed **2/2**, 5.89 s, after the last chart and test refinements.
+- Initial sandboxed storage/UI execution could not access persistent app-data
+  locks. Those checks were rerun with the required access; locking was unchanged.
+  Test refinements corrected an omitted import-account argument, automatic category
+  Apply handling, a QML invocation argument and source-query token spacing. A real
+  refresh-path issue (the completion snapshot has no operation context) and a
+  transient split-marker binding warning were fixed and retested.
+
+`build/SpentIt` was rebuilt. Final build logs had no compiler warnings/errors;
+`git diff --check` and changed-document relative file-link checks passed.
+Linux/Windows, native accessibility and representative
+large-data UI timing remain unverified. No broader storage fault-suite claim is
+made for this follow-up.
+
 ## Imported-category assignment performance — 2026-11-04
 
 Implemented under owner Go after profiling the Apply selected category decision.

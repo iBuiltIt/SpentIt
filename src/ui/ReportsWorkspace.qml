@@ -6,6 +6,9 @@ import QtQuick.Window
 Item {
     id:root;objectName:"reportsWorkspace"
     required property var workflow
+    property var guardAction: function(action) { action() }
+    property alias ledgerHost: detailLedgerHost
+    Theme { id: reportTheme }
     readonly property var state:workflow.state
     property var drafts:[]
     property var savedDefinitions:[]
@@ -63,7 +66,7 @@ Item {
     function requestLeave(action){leaveAction=action;leaving=true}
     function stay(){leaving=false;leaveAction=null}
     function proceed(){let action=leaveAction;leaveAction=null;leaving=false;if(action)action()}
-    function back(){mode=mode==="detail"?"result":"workspace"}
+    function back(){guardAction(function(){if(root.mode==="detail")root.workflow.command("report_leave");else root.mode="workspace"})}
     function drill(currency,period,row){workflow.command("report_drill",{currency:currency,period:period,row:row})}
     Connections {
         target:root.workflow
@@ -82,6 +85,7 @@ Item {
             }
             if(action==="report_show" && success)root.mode="result"
             if(action==="report_drill" && success)root.mode="detail"
+            if(action==="report_leave" && success)root.mode="result"
         }
     }
     Window {
@@ -138,7 +142,7 @@ Item {
                     TextField {id:reportName;objectName:"reportName";text:root.current?root.current.name:"";placeholderText:"Report name";Layout.fillWidth:true;onTextEdited:root.setField("name",text)}
                     RowLayout {
                         Label {textFormat:Text.PlainText;text:"Graph"}
-                        ComboBox {model:["None","Bar","Pie"];currentIndex:root.current?["none","bar","pie"].indexOf(root.current.graph):0;onActivated:root.setField("graph",["none","bar","pie"][currentIndex])}
+                        ComboBox {objectName:"reportGraph";model:["None","Bar — separate periods","Bar — grouped periods","Pie"];currentIndex:root.current?["none","bar","grouped_bar","pie"].indexOf(root.current.graph):0;onActivated:root.setField("graph",["none","bar","grouped_bar","pie"][currentIndex])}
                     }
                     GridLayout {
                         Layout.fillWidth:true;columns:root.width<700?1:2
@@ -223,25 +227,39 @@ Item {
                         id:currencyBlock;required property var modelData;required property int index
                         Layout.fillWidth:true
                         Label {textFormat:Text.PlainText;text:currencyBlock.modelData.currency;font.pixelSize:20}
+                        Flickable {
+                            id:graphs;objectName:"reportGraphs";visible:root.result.graph!=="none";Layout.fillWidth:true;Layout.preferredHeight:visible?charts.implicitHeight+16:0;clip:true
+                            contentWidth:charts.implicitWidth;contentHeight:height;flickableDirection:Flickable.HorizontalFlick
+                            ScrollBar.horizontal:ScrollBar {}
+                            RowLayout {id:charts;spacing:20
+                                Repeater {model:root.result.graph==="grouped_bar"?[root.result.periods[0]]:(root.result.periods||[])
+                                    ReportChart {required property var modelData;required property int index;result:currencyBlock.modelData;period:modelData;viewportWidth:graphs.width;periods:root.result.periods||[];periodIndex:index;graph:root.result.graph;enabled:!root.workflow.busy && !root.result.stale;onDrill:function(row,period){root.drill(currencyBlock.index,period,row)}}
+                                }
+                            }
+                        }
                         Item {
-                            id:table;Layout.fillWidth:true;Layout.preferredHeight:Math.min(420,64+(currencyBlock.modelData.rows.length+1)*42+16)
-                            Label {textFormat:Text.PlainText;text:"Category";width:220;height:64;verticalAlignment:Text.AlignVCenter}
+                            id:table;objectName:"reportCategoryTable";Layout.fillWidth:true;Layout.preferredHeight:64+(currencyBlock.modelData.rows.length+1)*34+16
+                            Rectangle {width:parent.width;height:64;color:reportTheme.surface}
+                            Label {textFormat:Text.PlainText;text:"Category";width:220;height:64;leftPadding:8;verticalAlignment:Text.AlignVCenter}
                             Flickable {
                                 x:220;width:Math.max(0,parent.width-220);height:64;clip:true;interactive:false
                                 contentWidth:(root.result.periods||[]).length*220;contentX:tableBody.contentX
-                                Row {
-                                    Repeater {model:root.result.periods||[]
-                                        Label {required property var modelData;textFormat:Text.PlainText;text:modelData.label+"\n"+modelData.start+" – "+modelData.end;width:220;height:64;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap}
-                                    }
+                                Row {Repeater {model:root.result.periods||[]
+                                    Label {required property var modelData;textFormat:Text.PlainText;text:modelData.label+"\n"+modelData.start+" – "+modelData.end;width:220;height:64;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap}
+                                }}
+                            }
+                            Column {
+                                y:64;width:parent.width
+                                Repeater {model:currencyBlock.modelData.rows.length+1
+                                    Rectangle {required property int index;width:table.width;height:34;color:index%2?reportTheme.row:reportTheme.rowAlternate}
                                 }
                             }
-                            Item {
-                                y:64;width:220;height:parent.height-64;clip:true
-                                Column {
-                                    y:-tableBody.contentY;width:220
-                                    Label {textFormat:Text.PlainText;text:"Total";font.bold:true;width:220;height:42;verticalAlignment:Text.AlignVCenter}
-                                    Repeater {model:currencyBlock.modelData.rows
-                                        RowLayout {required property var modelData;width:220;height:42
+                            Column {
+                                y:64;width:220;spacing:0
+                                Label {text:"Total";font.bold:true;width:220;height:34;leftPadding:8;verticalAlignment:Text.AlignVCenter}
+                                Repeater {model:currencyBlock.modelData.rows
+                                    Item {required property var modelData;width:220;height:34
+                                        RowLayout {anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8
                                             Rectangle {visible:root.result.graph!=="none";width:10;height:10;color:Qt.hsla(modelData.hue/360,0.60,0.48,1)}
                                             Label {textFormat:Text.PlainText;text:modelData.name;elide:Text.ElideRight;Layout.fillWidth:true;ToolTip.visible:categoryHover.hovered;ToolTip.text:text;HoverHandler {id:categoryHover}}
                                         }
@@ -250,29 +268,18 @@ Item {
                             }
                             Flickable {
                                 id:tableBody;x:220;y:64;width:Math.max(0,parent.width-220);height:parent.height-64;clip:true
-                                contentWidth:(root.result.periods||[]).length*220;contentHeight:(currencyBlock.modelData.rows.length+1)*42
+                                contentWidth:(root.result.periods||[]).length*220;contentHeight:height;flickableDirection:Flickable.HorizontalFlick
                                 ScrollBar.horizontal:ScrollBar {}
-                                ScrollBar.vertical:ScrollBar {}
                                 Row {
                                     Repeater {model:root.result.periods||[]
-                                        Column {
-                                            id:periodColumn;required property int index;width:220
-                                            Button {text:currencyBlock.modelData.totals[periodColumn.index];flat:true;font.bold:true;width:220;height:42;enabled:!root.workflow.busy && !root.result.stale;onDoubleClicked:root.drill(currencyBlock.index,periodColumn.index,-1);ToolTip.visible:hovered;ToolTip.text:"Double-click to show included transactions"}
+                                        Column {id:periodColumn;required property int index;width:220;spacing:0
+                                            Button {text:currencyBlock.modelData.totals[periodColumn.index];flat:true;font.bold:true;width:220;height:34;enabled:!root.workflow.busy && !root.result.stale;onDoubleClicked:root.drill(currencyBlock.index,periodColumn.index,-1);ToolTip.visible:hovered;ToolTip.text:"Double-click to edit included transactions"}
                                             Repeater {model:currencyBlock.modelData.rows
-                                                Button {required property var modelData;required property int index;text:modelData.cells[periodColumn.index].amount;flat:true;width:220;height:42;enabled:!root.workflow.busy && !root.result.stale;onDoubleClicked:root.drill(currencyBlock.index,periodColumn.index,index);ToolTip.visible:hovered;ToolTip.text:"Double-click to show included transactions"}
+                                                Button {required property var modelData;required property int index;text:modelData.cells[periodColumn.index].amount;flat:true;width:220;height:34;enabled:!root.workflow.busy && !root.result.stale;onDoubleClicked:root.drill(currencyBlock.index,periodColumn.index,index);ToolTip.visible:hovered;ToolTip.text:"Double-click to edit included transactions"}
                                             }
                                         }
                                     }
                                 }
-                            }
-                        }
-                        Flickable {
-                            id:graphs;visible:root.result.graph!=="none";Layout.fillWidth:true;Layout.preferredHeight:Math.min(620,charts.implicitHeight+16);clip:true
-                            contentWidth:charts.implicitWidth;contentHeight:charts.implicitHeight
-                            ScrollBar.horizontal:ScrollBar {}
-                            ScrollBar.vertical:ScrollBar {}
-                            RowLayout {id:charts;spacing:20
-                                Repeater {model:root.result.periods||[];ReportChart {required property var modelData;required property int index;result:currencyBlock.modelData;period:modelData;periodIndex:index;graph:root.result.graph;enabled:!root.workflow.busy && !root.result.stale;onDrill:function(row){root.drill(currencyBlock.index,index,row)}}}
                             }
                         }
                     }
@@ -284,17 +291,10 @@ Item {
             Label {textFormat:Text.PlainText;text:(root.state.reportDetails||{}).title||"";font.pixelSize:18}
             Label {textFormat:Text.PlainText;text:(root.state.reportDetails||{}).period||""}
             Label {textFormat:Text.PlainText;text:"Total: "+((root.state.reportDetails||{}).currency||"")+" "+((root.state.reportDetails||{}).total||"");font.bold:true}
-            ListView {
-                Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:(root.state.reportDetails||{}).rows||[];spacing:6
-                ScrollBar.vertical:ScrollBar {}
-                delegate:Frame {required property var modelData;width:ListView.view.width
-                    ColumnLayout {anchors.fill:parent
-                        Label {textFormat:Text.PlainText;text:modelData.date+" · "+modelData.account+" · "+modelData.payee;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        Label {textFormat:Text.PlainText;text:modelData.category+" · "+modelData.amount+(modelData.accepted?" · Accepted":" · New");font.bold:true}
-                        Label {textFormat:Text.PlainText;visible:!!modelData.memo;text:modelData.memo;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                    }
-                }
-            }
+            Label {text:"Transactions opened from this report. Saved changes update the report; transactions remain here until you go back.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {visible:!!(root.state.reportDetails||{}).refreshError;text:(root.state.reportDetails||{}).refreshError||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Item {id:detailLedgerHost;Layout.fillWidth:true;Layout.fillHeight:true}
+
         }
     }
 }

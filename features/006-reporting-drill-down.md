@@ -24,7 +24,9 @@ Category hierarchy, naming, neutral income/expense classification, and account d
 
 Aggregate category allocations rather than whole transaction totals. For a transaction with a transport allocation and a fee allocation, each category receives only its relevant amount. Drill-down shows the relevant allocation amount alongside enough parent-transaction context to inspect it without double-counting it.
 
-The definition and immutable report snapshot share explicit filters: date boundaries, account set, category/subcategory scope, currency, and committed state, with additional criteria only when supported. A result and its drill-down use one immutable snapshot. Dataset changes mark it stale; Refresh replaces the result.
+The definition and immutable report snapshot share explicit filters: date boundaries, account set, category/subcategory scope, currency, and committed state, with additional criteria only when supported. A result initially opens drill-down from one immutable snapshot. The editable
+drill-down retains the opened transaction identities and refreshes totals after
+saved edits; other dataset changes mark results stale until Refresh.
 
 Financial semantics are now accepted, not proposals: use net spending (outflows
 positive, refunds reduce spending, income negative), current edited values, new
@@ -72,3 +74,15 @@ version. Auto 1000, Gas 50 and Other 25 yield total 1075 without an additional
 inclusive Auto subtotal. The checklist shortcut above remains; inclusive group
 subtotals are deferred. Starter Income categories remain ordinary neutral
 classifications, not rules for recognizing report income.
+
+## Compact results and editable drill-down — owner Go, 2026-11-04
+
+The [follow-up contract](../doc/reports-calendar-handoff.md#compact-results-and-editable-report-ledger--owner-go-2026-11-04)
+supersedes the initial read-only detail cards and table-first, separate-bar-only
+layout. Charts precede one full-length, striped category table. Grouped-period
+bars are an additional saved choice. Drill-down reuses the ledger editor over a
+fixed set of contributing transaction identities, with account and exact included
+amount columns, contributing-split markers and automatic report refresh after
+saved edits/Undo. Reopening uses current membership. Group edits retain the
+existing one-account boundary; Merge/Link and creation remain in account ledgers.
+Formats are 56/55; see status for verification.

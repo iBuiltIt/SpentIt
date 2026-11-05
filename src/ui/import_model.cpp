@@ -386,6 +386,7 @@ struct ImportModel::Worker {
         return "LedgerSort/"+QString::fromLatin1(QCryptographicHash::hash(location.toUtf8(),QCryptographicHash::Sha256).toHex());
     }
     void restoreAccountSort() {
+        if(reportLedgerActive)return;
         auto& repo=gateway->repository();
         if(!repo.account_selected()){sortAccount.reset();return;}
         const auto account=repo.account().identity;
@@ -414,6 +415,32 @@ struct ImportModel::Worker {
     std::optional<reports::Snapshot> reportSnapshot;
     QVariantMap reportResult,reportDetails;
     QVariantList reportDefinitions;
+    bool reportLedgerActive=false;
+    std::map<imports::Occurrence,std::int64_t> reportMembers;
+    QVariantMap reportRowInfo;
+    std::string reportCategory,reportCurrency;
+    bool reportTotal=false;
+    int reportPeriod=0;
+    QString reportPriorFilter;
+    int reportPriorSort=0;bool reportPriorDescending=false;
+    std::int64_t reportPriorAccount=0;
+    static QString reportKey(const imports::Occurrence& id){return text(id.batch)+":"+QString::number(id.ordinal);}
+    void reportSelectAccount(const imports::Occurrence& id) {
+        const auto found=reportMembers.find(id);
+        if(found==reportMembers.end())throw std::invalid_argument("This transaction is not in the opened report.");
+        auto& repo=gateway->repository();
+        if(repo.account().identity!=found->second){repo.select_account(found->second);metadata.clear();cachedAccount.reset();cachedLedger.reset();}
+    }
+    void reportSelectionAccount(const std::set<imports::Occurrence>& ids) {
+        std::optional<std::int64_t> account;
+        for(const auto& id:ids){const auto found=reportMembers.find(id);
+            if(found==reportMembers.end())throw std::invalid_argument("This transaction is not in the opened report.");
+            if(account && *account!=found->second)throw std::invalid_argument("Select transactions from one account for a group edit.");
+            account=found->second;
+        }
+        if(!ids.empty())reportSelectAccount(*ids.begin());
+    }
+
     reports::Definition readReport(const QVariantMap& value) const {
         reports::Definition d;d.id=str(value.value("id"));d.name=str(value.value("name"));d.graph=str(value.value("graph","bar"));
         for(const auto& id:value.value("accounts").toList()){bool ok=false;const auto n=id.toString().toLongLong(&ok);if(!ok)throw std::invalid_argument("Invalid account selection.");d.accounts.push_back(n);}
@@ -456,7 +483,7 @@ struct ImportModel::Worker {
             for(const auto& total:currency.totals)totals.push_back(money(total.amount,amountFormat));
             results.push_back(QVariantMap{{"currency",text(currency.currency.code())},{"definition",text(currency.currency.definition_id())},{"rows",rows},{"totals",totals},{"minimum",static_cast<double>(minimum)},{"maximum",static_cast<double>(maximum)},{"minimumLabel",money(Money(minimum,currency.currency),amountFormat)},{"maximumLabel",money(Money(maximum,currency.currency),amountFormat)}});
         }
-        reportSnapshot=std::move(calculated);reportDetails.clear();
+        reportSnapshot=std::move(calculated);if(!reportLedgerActive)reportDetails.clear();
         reportResult={{"id",text(d.id)},{"name",text(d.name)},{"graph",text(d.graph)},{"periods",ranges},{"currencies",results},{"stale",false}};
     }
     void reportDrill(const QVariantMap& args){
@@ -466,8 +493,13 @@ struct ImportModel::Worker {
         const auto& c=reportSnapshot->currencies[static_cast<std::size_t>(currency)];
         if(row< -1 || (row>=0 && static_cast<std::size_t>(row)>=c.rows.size()))throw std::invalid_argument("Choose a report category.");
         const auto& cell=row<0?c.totals[static_cast<std::size_t>(period)]:c.rows[static_cast<std::size_t>(row)].cells[static_cast<std::size_t>(period)];
+        if(!reportLedgerActive){reportPriorFilter=filter;reportPriorSort=sort;reportPriorDescending=descending;reportPriorAccount=gateway->repository().account().identity;}
+        reportMembers.clear();reportRowInfo.clear();
+        reportLedgerActive=true;reportPeriod=period;reportTotal=row<0;reportCategory=row<0?"":c.rows[static_cast<std::size_t>(row)].category.id;reportCurrency=c.currency.definition_id();
+        filter.clear();cachedView.reset();selection.clear();selectionAnchor.reset();selectionFocus.reset();selected.clear();selectedBatch.clear();
         QVariantList details;
         for(auto index:cell.entries){const auto& e=reportSnapshot->entries[index];
+            reportMembers.insert_or_assign(imports::Occurrence{e.batch,e.ordinal},e.account);
             // Negation may overflow even when cancellation makes a cell valid.
             // Format signed spending directly from the decimal string in that case.
             auto amount=money(e.amount,amountFormat);if(e.amount.units()<0)amount.remove(0,1);else if(e.amount.units()>0)amount.prepend('-');
@@ -476,6 +508,68 @@ struct ImportModel::Worker {
         }
         const auto& range=reportSnapshot->periods[static_cast<std::size_t>(period)];
         reportDetails={{"title",row<0?QString("Total"):text(c.rows[static_cast<std::size_t>(row)].category.name)},{"period",text(range.label)+" · "+dateText(range.start)+" – "+dateText(range.end)},{"currency",text(c.currency.code())},{"total",money(cell.amount,amountFormat)},{"rows",details}};
+    }
+
+    void buildReportLedger(app::OperationContext* context) {
+        app::OperationContext refreshContext;
+        if(!context)context=&refreshContext;
+        auto& repo=gateway->repository();
+        if(reportResult.value("stale").toBool() && reportSnapshot && context){
+            const auto definition=reportSnapshot->definition;
+            try {showReport(definition,*context);reportDetails.remove("refreshError");}
+            catch(const std::exception&){reportDetails["refreshError"]="The report could not refresh. Return to the report and choose Refresh.";}
+        }
+        if(!reportSnapshot)return;
+        const auto result=std::find_if(reportSnapshot->currencies.begin(),reportSnapshot->currencies.end(),[&](const auto& c){return c.currency.definition_id()==reportCurrency;});
+        if(result==reportSnapshot->currencies.end())throw std::runtime_error("The report currency is no longer available.");
+        const reports::Cell* cell=nullptr;
+        if(reportTotal)cell=&result->totals.at(static_cast<std::size_t>(reportPeriod));
+        else for(const auto& row:result->rows)if(row.category.id==reportCategory)cell=&row.cells.at(static_cast<std::size_t>(reportPeriod));
+        std::map<imports::Occurrence,std::vector<Money>> contributions;
+        std::map<imports::Occurrence,QStringList> allocations;
+        if(cell){reportDetails["total"]=money(cell->amount,amountFormat);
+            for(auto i:cell->entries){const auto& e=reportSnapshot->entries[i];const imports::Occurrence id{e.batch,e.ordinal};contributions[id].push_back(e.amount);allocations[id].push_back(text(e.allocation));}
+        }
+        std::vector<app::LedgerRow> rows;reportRowInfo.clear();
+        std::set<std::int64_t> accounts;for(const auto& [id,account]:reportMembers)accounts.insert(account);
+        AccountRestore restore(repo);
+        for(auto account:accounts){
+            if(context)context->checkpoint();restore.select(account);const auto acct=repo.account();
+            for(auto row:repo.current_ledger()){
+                const auto member=reportMembers.find(row.identity);if(member==reportMembers.end() || member->second!=account)continue;
+                auto values=row.draft.transaction.allocations();
+                for(auto& allocation:values)allocation.category=allocationMap(allocation,categoryById,amountFormat).value("categoryDisplay").toString().toStdString();
+                row.draft.transaction=row.draft.transaction.corrected(row.draft.transaction.effective_total(),std::move(values));
+                const auto amounts=contributions.find(row.identity);QString included="0";
+                if(amounts!=contributions.end()){
+                    const auto total=imports::sum(result->currency,amounts->second);included=money(total,amountFormat);
+                    if(total.units()<0)included.remove(0,1);else if(total.units()>0)included.prepend('-');
+                }
+                reportRowInfo[reportKey(row.identity)]=QVariantMap{{"account",text(acct.name)},{"accountId",QString::number(account)},{"included",included},{"matches",amounts!=contributions.end()},{"allocations",allocations[row.identity]}};
+                rows.push_back(std::move(row));
+            }
+        }
+        restore.restore();
+        auto account=repo.account();account.currency=result->currency;account.opening=Money(0,result->currency);
+        app::LedgerSearch query(filter.toStdString(),QDate::currentDate().year(),dateFormat);
+        std::map<imports::Occurrence,std::string> sources;
+        std::size_t sourceBytes=0;
+        const auto lookup=[&](const imports::Occurrence& id)->std::optional<std::string_view>{
+            if(id.batch.empty())return {};
+            auto found=sources.find(id);
+            if(found==sources.end()){
+                AccountRestore sourceRestore(repo);sourceRestore.select(reportMembers.at(id));
+                const auto original=repo.imported_original(id);if(!original)return {};
+                auto bytes=repo.record_evidence(*original);
+                if(bytes.size()>256*1024*1024-sourceBytes)throw std::runtime_error("Search source budget exceeds 256 MiB");
+                sourceBytes+=bytes.size();found=sources.emplace(id,std::move(bytes)).first;
+                sourceRestore.restore();
+            }
+            return found->second;
+        };
+        auto view=app::search_ledger(account,std::move(rows),query,std::min(sort,4),descending,lookup,[&]{return context && context->state.load()==app::OperationContext::requested;});
+        std::erase_if(view.order,[&](auto i){return view.rows[i].identity.batch.empty();});
+        cachedView=std::make_shared<const app::LedgerView>(std::move(view));
     }
 
     QVariantList categories,categoryHistory;
@@ -602,7 +696,7 @@ struct ImportModel::Worker {
         try {inspect(id.batch,id.ordinal,context);if(selectedCommittedToken){entryDetails(id);if(historyLoaded)listHistory();}}
         catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();sessionEdits.clear();throw std::runtime_error("Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying.");}
     }
-    void invalidate() {if(!reportResult.isEmpty())reportResult["stale"]=true;reportDetails.clear();diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
+    void invalidate() {if(!reportResult.isEmpty())reportResult["stale"]=true;if(!reportLedgerActive)reportDetails.clear();diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
     std::size_t selectedOrdinal=0;
     std::int64_t selectedRevision=0;
@@ -676,6 +770,7 @@ struct ImportModel::Worker {
     void inspect(std::string batch,std::size_t ordinal,app::OperationContext& context) {
         if(newManual && batch==newManualId)return;
         PresentationRead observation{diagnosticPresentationFailed};
+        if(reportLedgerActive)reportSelectAccount({batch,ordinal});
         auto& repo=gateway->repository(); const auto acct=repo.account();catalog();
         if(batch.starts_with("~transfer-")){
             for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.account==acct.identity && side->endpoint.entry==imports::Occurrence{batch,ordinal}){
@@ -970,8 +1065,9 @@ struct ImportModel::Worker {
             metadata=state;
             }
         } else state=metadata;
+        if(reportLedgerActive && !cachedView)buildReportLedger(context);
         if(!reportsLoaded)loadReports();
-        state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;
+        state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;state["reportLedgerActive"]=reportLedgerActive;state["reportRowInfo"]=reportRowInfo;
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         if(!sessionEdits.empty() && !repo.can_undo_transaction_edit(sessionEdits.back().operation))sessionEdits.clear();
         if(!manualUndo.empty() && repo.ledger_edit_generation()!=manualUndoGeneration)manualUndo.clear();
@@ -1119,7 +1215,7 @@ struct ImportModel::Worker {
             return;
         }
         if(!action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -1172,6 +1268,12 @@ struct ImportModel::Worker {
             reportResult["stale"]=true;reportDetails.clear();showReport(*found,context);return;
         }
         if(action=="report_drill"){reportDrill(a);return;}
+        if(reportLedgerActive && action=="begin_manual")throw std::invalid_argument("Open an account ledger to add a transaction.");
+        if(action=="report_leave"){
+            reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportDetails.clear();
+            if(reportPriorAccount)repo.select_account(reportPriorAccount);
+            filter=reportPriorFilter;sort=reportPriorSort;descending=reportPriorDescending;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();return;
+        }
         if(action=="amount_format") {
             const AmountFormat requested{a.value("enabled").toBool(),str(a.value("style"))};
             validate_amount_format(requested);
@@ -1202,6 +1304,7 @@ struct ImportModel::Worker {
             const auto op=identity();try{repo.save_link_exclusion(op,*preparedLinkExclusion,linkExclusionGeneration);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
             preparedLinkExclusion.reset();linkExclusionPreview.clear();return;
         }
+        if(reportLedgerActive && (action=="assign_transfer_batch" || action=="release_transfer_batch"))reportSelectionAccount(selection);
         if(action=="assign_transfer_batch" || action=="release_transfer_batch") {
             if(selection.empty() || selection.size()>4096)throw std::invalid_argument("Select between 1 and 4096 transactions");
             const auto destinationId=a.value("destination").toString().toLongLong();
@@ -1420,6 +1523,11 @@ struct ImportModel::Worker {
             return;
         }
         if(action=="select_account" || action=="create_account") {
+            if(reportLedgerActive){
+                reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportDetails.clear();
+                repo.select_account(reportPriorAccount);filter=reportPriorFilter;sort=reportPriorSort;descending=reportPriorDescending;
+                selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();
+            }
             bool valid=false;const auto id=a.value("id").toString().toLongLong(&valid);
             if(!valid || id<=0)throw std::invalid_argument("Choose a valid account");
             if(action=="create_account") {
@@ -1792,6 +1900,7 @@ struct ImportModel::Worker {
             request.account=a.value("account").toString().toLongLong();request.generation=a.value("generation").toString().toLongLong();
             request.payee=str(a.value("payee"));
             for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
+            if(reportLedgerActive){reportSelectionAccount(std::set<imports::Occurrence>(request.selected.begin(),request.selected.end()));request.account=repo.account().identity;}
             const auto operation=identity();
             try {repo.edit_transactions(operation,request,context);}
             catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;
@@ -1926,7 +2035,7 @@ struct ImportModel::Worker {
             filter=a.value("filter").toString();sort=a.value("sort",0).toInt();descending=a.value("descending",false).toBool();projected=nextProjected;
             if(sort<0 || sort>=6)throw std::invalid_argument("Choose a valid ledger sort column.");
             (void)snapshot(&context);
-            if(sort!=oldSort || descending!=oldDescending)saveAccountSort();
+            if(!reportLedgerActive && (sort!=oldSort || descending!=oldDescending))saveAccountSort();
             } catch(...) {
                 filter=oldFilter;sort=oldSort;descending=oldDescending;projected=oldProjected;cachedView=oldView;cachedLedger=std::move(oldLedger);
                 selected=oldSelected;selectedBatch=oldBatch;selectedOrdinal=oldOrdinal;
@@ -2189,6 +2298,10 @@ QVariant ImportModel::data(const QModelIndex& index,int role) const {
     row["withdrawal"]=amount.units()<0?money(amount,amountFormat).mid(1):"";
     row["deposit"]=amount.units()>=0?money(amount,amountFormat):"";
     row["balance"]=money(rows_->balances[i],amountFormat);
+    if(state_.value("reportLedgerActive").toBool()){
+        const auto info=state_.value("reportRowInfo").toMap().value(text(r.identity.batch)+":"+QString::number(r.identity.ordinal)).toMap();
+        row["reportAccount"]=info.value("account");row["reportIncluded"]=info.value("included");row["reportMatches"]=info.value("matches");row["reportAllocations"]=info.value("allocations");row["balance"]="";
+    }
     return row;
 }
 QHash<int,QByteArray> ImportModel::roleNames() const {return {{Qt::UserRole,"record"}};}

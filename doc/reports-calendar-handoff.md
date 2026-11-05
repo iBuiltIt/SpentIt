@@ -36,7 +36,11 @@ Rules-style list and selected editor, then a separate result view.
 - Printing is wanted later; the first focus is displaying reports. Calendar
   interaction is shared with transaction date editing.
 
-## Accepted result and graph layout
+## Initial result and graph layout — superseded in part
+
+The [compact-results follow-up](#compact-results-and-editable-report-ledger--owner-go-2026-11-04)
+supersedes the chart placement, duplicate legends and separate-bar-only restriction
+in this initial contract. The financial policies remain unchanged.
 
 The table has a category column, one column for the main period, then one per
 comparison in the configured order. Totals appear above category amounts. The
@@ -277,3 +281,43 @@ Optional Hide zero rows, chart-hover cross-highlighting and report export/printi
 are not implemented. Labels and exact-value legends supplement category colours.
 Fiscal periods, currency conversion, group subtotals and time-series remain outside
 this initial scope. Native/platform and workload limits are recorded in status.
+
+## Compact results and editable report ledger — owner Go, 2026-11-04
+
+This follow-up supersedes the initial table-before-chart layout and the prohibition
+on combined bar comparisons. The owner approved the following changes:
+
+- A result has charts first (when enabled), then one compact category table with
+  ledger-style alternating backgrounds and colour swatches. The table is also the
+  category legend. One outer vertical scrollbar exposes every category; neither
+  the category table nor the charts have a nested vertical scrolling area.
+  Horizontal scrolling remains available for wide comparisons.
+- Saved Graph choices are None, Bar — separate periods, Bar — grouped periods,
+  and Pie. Grouped bars place the configured periods next to each other within
+  each category, in period order. Category hues remain stable; period shades,
+  ordered date labels and exact hover values distinguish periods. Currencies
+  remain separate and signed amounts retain the accepted reporting convention.
+- Double-clicking a cell opens the existing ledger/editor over only the original
+  contributing transaction identities. Each transaction appears once, with an
+  Account column and an In report contribution separate from Withdrawal/Deposit.
+  Split markers identify the currently contributing allocations.
+- Successful edits and Undo regenerate the report. The opened identity set stays
+  fixed while editing: recategorized or redated transactions remain visible with
+  “No longer included”. Deleted transactions disappear until restored by Undo.
+  Reopening a cell selects its newly calculated membership. Back preserves the
+  result view and uses the ledger's Save / Discard / Stay guard for unsaved edits.
+- Report search can narrow this fixed identity set, never broaden it. Returning
+  restores the ordinary account's filter and sort. The report has no running
+  account balance or opening-balance row.
+
+Implementation uses existing account-scoped correction, category and Undo
+commands. Individual edits route to the row's account. Group edits require one
+account; mixed-account requests fail before mutation. Merge/Link and creation
+remain in the ordinary account ledger. This restriction is surfaced rather than
+splitting one requested group operation into independently committed commands.
+
+The additional stored graph value introduces experimental formats **56 with
+rules / 55 without**. Earlier formats are rejected unchanged; no migration is
+provided. Automatic refresh failure leaves the result stale and displays a
+refresh message, without undoing or retrying a saved financial change. See
+[status](status.md) for actual verification and limits.

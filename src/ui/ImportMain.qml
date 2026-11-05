@@ -406,11 +406,11 @@ ApplicationWindow {
     Menu {
         id:ledgerContext;objectName:"ledgerContext";popupType:Popup.Item;cascade:true
         delegate:MenuItem {hoverEnabled:true}
-        MenuItem {objectName:"addTransactionContext";text:"Add transaction…";enabled:!s.readOnly && !workflow.busy;onTriggered:addTransaction()}
+        MenuItem {objectName:"addTransactionContext";visible:!window.reportLedger;text:"Add transaction…";enabled:!s.readOnly && !workflow.busy;onTriggered:addTransaction()}
         MenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
         MenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
-        MenuItem {objectName:"duplicateMergeSelection";text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
-        MenuItem {objectName:"mergeSelection";text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
+        MenuItem {objectName:"duplicateMergeSelection";visible:!window.reportLedger;text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
+        MenuItem {objectName:"mergeSelection";visible:!window.reportLedger;text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
         MenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
         Menu {
             id:ledgerCategoryMenu;objectName:"ledgerCategoryMenu";title:"Change category";popupType:Popup.Item;cascade:true
@@ -464,7 +464,8 @@ ApplicationWindow {
     // Viewport restoration is session-only.
     property var ledgerViewRestore: null
     property string ledgerViewKind: ""
-    readonly property var ledgerColumnWeights: [0.14, 0.24, 0.17, 0.15, 0.14, 0.16]
+    readonly property var ledgerColumnWeights: reportLedger?[0.12,0.20,0.18,0.16,0.12,0.10,0.12]:[0.14, 0.24, 0.17, 0.15, 0.14, 0.16]
+    readonly property int ledgerCategoryColumn: reportLedger?3:2
     function sidebarBalanceText(account) {
         return "Balance "+(account.currency||"")+" "+(account.balance||"").replace(/ /g,"\u00a0")
     }
@@ -516,6 +517,8 @@ ApplicationWindow {
         if(clear) {ledgerViewRestore=null;ledgerViewKind=""}
     }
     // Navigation is local to this document; pages stay alive to retain ledger view state.
+    readonly property bool reportLedger: currentPage==="reports" && reportsWorkspace.mode==="detail"
+    property var pendingReportNavigation:null
     property string currentPage: "ledger"
     property var navigation: ["ledger"]
     property int navigationIndex: 0
@@ -608,6 +611,7 @@ ApplicationWindow {
     function navigate(page) {
         if(workflow.busy || !s.active || page===currentPage) return
         guard(function(){
+            if(s.reportLedgerActive){pendingReportNavigation=function(){navigate(page)};workflow.command("report_leave");return}
             rememberAccountViewport()
             let entries=navigation.slice(0,navigationIndex+1)
             entries.push(page);navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage=page
@@ -663,6 +667,7 @@ ApplicationWindow {
         let destination=navigationIndex+delta
         if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
         guard(function(){
+            if(s.reportLedgerActive){pendingReportNavigation=function(){traverseNavigation(delta)};workflow.command("report_leave");return}
             rememberAccountViewport()
             if(navigationAccounts[destination]!==s.accountId) {
                 rememberAccountViewport()
@@ -672,8 +677,8 @@ ApplicationWindow {
         })
     }
     Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
-    Shortcut {objectName:"duplicateMergeShortcut";sequence:"Alt+M";enabled:!!s.active && !workflow.busy && !s.readOnly && (s.selectionCount||0)>=2;onActivated:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
-    Shortcut {objectName:"mergeShortcut";sequence:"Alt+L";enabled:!!s.active && !workflow.busy && !s.readOnly && !!s.transfersSupported;onActivated:mergeSelected()}
+    Shortcut {objectName:"duplicateMergeShortcut";sequence:"Alt+M";enabled:!window.reportLedger && !!s.active && !workflow.busy && !s.readOnly && (s.selectionCount||0)>=2;onActivated:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
+    Shortcut {objectName:"mergeShortcut";sequence:"Alt+L";enabled:!window.reportLedger && !!s.active && !workflow.busy && !s.readOnly && !!s.transfersSupported;onActivated:mergeSelected()}
     Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
     Shortcut {sequences:[StandardKey.Forward];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(1)}
     property bool restoringImportedText: false
@@ -1293,7 +1298,7 @@ ApplicationWindow {
     function rememberEditView() {
         captureLedgerView("edit")
         editView=ledgerViewRestore
-        if(editView && currentPage==="ledger" && workflow.selectedRowIndex()>=0)editView.editorOffset=ledgerEditorHost?ledger.contentY-ledgerEditorHost.y:0
+        if(editView && (currentPage==="ledger" || reportLedger) && workflow.selectedRowIndex()>=0)editView.editorOffset=ledgerEditorHost?ledger.contentY-ledgerEditorHost.y:0
         ledgerViewRestore=null;ledgerViewKind=""
         let field=window.activeFocusItem
         editFocus=field?{name:field.objectName,position:field.cursorPosition}:null
@@ -1408,6 +1413,9 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onChanged() {if(workflow.busy){cancelAccountDrag();captureReviewView()}}
         function onCompleted(action,success) {
+            if(success && action==="report_drill"){search.clearSearch();editorClosed=true}
+            if(success && action==="report_leave"){search.text=s.filter||"";editorClosed=true}
+            if(action==="report_leave" && pendingReportNavigation){let next=pendingReportNavigation;pendingReportNavigation=null;if(success)Qt.callLater(next)}
             if(success && action==="preview_import_undo")importUndoConfirm.open()
             if(success && action==="undo_import"){importUndoConfirm.close();importUndoPicker.close();workspaceFeedback=(s.receipt||{}).summary||"Import undone."}
             if(action==="close" && !success && closingRequested){closingRequested=false;window.show();closeAuditFailure.open()}
@@ -2383,6 +2391,7 @@ ApplicationWindow {
                     }
                 }
                 Item {
+                    id:workspaceBody
                     anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.bottom:workspaceStatus.top;anchors.bottomMargin:4
                 Item {
         id:reviewSheet;objectName:"reviewSheet";anchors.fill:parent;visible:currentPage==="review"
@@ -2713,7 +2722,7 @@ ApplicationWindow {
                         }
                     }
                 }
-                ReportsWorkspace {id:reportsWorkspace;anchors.fill:parent;workflow:window.workflowBackend;visible:currentPage==="reports"}
+                ReportsWorkspace {id:reportsWorkspace;anchors.fill:parent;workflow:window.workflowBackend;guardAction:window.guard;visible:currentPage==="reports"}
                 UsableScrollView {
                     id:rulesPage;objectName:"rulesPage";anchors.fill:parent;visible:currentPage==="rules";contentWidth:availableWidth;enabled:!workflow.busy
                     ColumnLayout {
@@ -2940,7 +2949,7 @@ ApplicationWindow {
                     }
                 }
                 UsableScrollView {
-                    id:ledgerScroll;objectName:"ledgerScroll";anchors.fill:parent;visible:currentPage==="ledger";clip:true
+                    id:ledgerScroll;objectName:"ledgerScroll";parent:window.reportLedger?reportsWorkspace.ledgerHost:workspaceBody;anchors.fill:parent;visible:currentPage==="ledger" || window.reportLedger;clip:true
                     // Keep controls reachable in a narrow window or with a wide sidebar.
                     contentWidth:Math.max(1080,availableWidth);contentHeight:availableHeight
                     ColumnLayout {
@@ -2949,19 +2958,20 @@ ApplicationWindow {
             RowLayout {
                 ClearableSearchField {id:search;objectName:"ledgerSearch";clearObjectName:"clearFilter";hasAppliedFilter:appliedFilter.length>0;onClearRequested:guard(function(){search.clearSearch();query()});placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
-                Button {objectName:"addTransaction";text:"+";enabled:!s.readOnly && !workflow.busy;onClicked:addTransaction();ToolTip.visible:hovered;ToolTip.text:"Add transaction";Accessible.name:"Add transaction"}
+                Button {objectName:"addTransaction";visible:!window.reportLedger;text:"+";enabled:!s.readOnly && !workflow.busy;onClicked:addTransaction();ToolTip.visible:hovered;ToolTip.text:"Add transaction";Accessible.name:"Add transaction"}
                 Button {objectName:"undoEdit";text:s.editUndoLabel||"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo edits from this session. Other changes end this Undo sequence.";ToolTip.visible:hovered}
                 Button {objectName:"undoTransferAssignment";text:"Undo category change";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){captureLedgerView("category");workflow.command("undo_transfer_assignment")})}
             }
             Row {
                 Layout.fillWidth:true;spacing:0
-                Repeater {model:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
+                Repeater {model:window.reportLedger?["Date","Payee","Account","Category","Withdrawal","Deposit","In report"]:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
                     Button {
                         required property string modelData;required property int index
                         objectName:"ledgerColumn_"+index
                         width:(ledger.width-20)*window.ledgerColumnWeights[index]
-                        text:modelData+(index===(s.sort||0)?(s.descending?" ▼":" ▲"):"")
-                        onClicked:guard(function(){query(index,s.sort===index?!s.descending:false)})
+                        readonly property int sortColumn:window.reportLedger?(index===2 || index===6?-1:index>2?index-1:index):index
+                        text:modelData+(sortColumn===(s.sort||0)?(s.descending?" ▼":" ▲"):"")
+                        enabled:sortColumn>=0;onClicked:guard(function(){query(sortColumn,s.sort===sortColumn?!s.descending:false)})
                     }
                 }
             }
@@ -3016,25 +3026,26 @@ ApplicationWindow {
                     Component.onDestruction:if(window.ledgerEditorHost===ledgerRow)window.ledgerEditorHost=null
                     property bool viewingSplits: !!window.splitViews[window.splitKey(record)] && record.splits.length>1
                     property alias editorSlot: rowEditorSlot
-                    width:ledger.width-20;height:34+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?(index%2===0?theme.draft:theme.draftAlternate):(index%2===0?theme.row:theme.rowAlternate)
+                    readonly property int rowHeight:34
+                    width:ledger.width-20;height:rowHeight+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?(index%2===0?theme.draft:theme.draftAlternate):(index%2===0?theme.row:theme.rowAlternate)
                     border.width:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?1:0;border.color:theme.focus
-                    MouseArea {width:parent.width;height:34;acceptedButtons:Qt.LeftButton|Qt.RightButton
+                    MouseArea {width:parent.width;height:ledgerRow.rowHeight;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){if(!(s.selectionKeys||{})[record.batch+":"+record.ordinal])selectLedgerRow(ledgerRow.index,0);ledgerContext.popup()}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
                         onDoubleClicked:function(mouse){if(mouse.button!==Qt.LeftButton)return;if(record.batch.length)toggleRecord(record.batch,record.ordinal);else editOpening()}
                     }
                     Row {
-                        width:parent.width;height:34;spacing:0
-                        Repeater {model:[record.date,record.payee,record.category,record.withdrawal,record.deposit,record.balance]
+                        width:parent.width;height:ledgerRow.rowHeight;spacing:0
+                        Repeater {model:window.reportLedger?[record.date,record.payee,record.reportAccount,record.category,record.withdrawal,record.deposit,record.reportMatches?record.reportIncluded:"No longer included"]:[record.date,record.payee,record.category,record.withdrawal,record.deposit,record.balance]
                             Item {
                                 required property string modelData
                                 required property int index
-                                width:(ledger.width-20)*window.ledgerColumnWeights[index];height:34
-                                TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===2?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===2?window.firstLedgerTransfer(record):null}
-                                Label {anchors.fill:parent;anchors.leftMargin:index===2?32:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>=3?Text.AlignRight:Text.AlignLeft;visible:index!==2 || record.splits.length<2}
+                                width:(ledger.width-20)*window.ledgerColumnWeights[index];height:ledgerRow.rowHeight
+                                TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===window.ledgerCategoryColumn?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===window.ledgerCategoryColumn?window.firstLedgerTransfer(record):null}
+                                Label {anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2}
                                 LedgerAction {
-                                    anchors.fill:parent;anchors.leftMargin:32;visible:index===2 && record.splits.length>1
+                                    anchors.fill:parent;anchors.leftMargin:32;visible:index===window.ledgerCategoryColumn && record.splits.length>1
                                     textAlignment:Text.AlignLeft
-                                    objectName:index===2 && record.batch.length?"splitToggle_"+record.ordinal:""
+                                    objectName:index===window.ledgerCategoryColumn && record.batch.length?"splitToggle_"+record.ordinal:""
                                     text:(ledgerRow.viewingSplits?"▾ ":"▸ ")+record.splits.length+" splits"
                                     enabled:!workflow.busy && !ledgerRow.expanded
                                     Accessible.name:(ledgerRow.viewingSplits?"Hide":"Show")+" saved splits for "+record.payee
@@ -3045,7 +3056,7 @@ ApplicationWindow {
                     }
                     Loader {
                         id:splitPreview;objectName:record.batch.length?"splitPreview_"+record.ordinal:""
-                        x:12;y:34;width:parent.width-24
+                        x:12;y:ledgerRow.rowHeight;width:parent.width-24
                         active:ledgerRow.viewingSplits && !ledgerRow.expanded
                         height:item?Math.min(160,item.contentHeight):0
                         visible:active
@@ -3055,21 +3066,22 @@ ApplicationWindow {
                         header:Label {text:"Saved splits (read-only) · "+(s.currency||"");height:26}
                         delegate:Row {
                             required property var modelData
+                            property bool includedInReport:window.reportLedger && (record.reportAllocations||[]).indexOf(modelData.allocationId)>=0
                             width:splitPreview.width;height:30;spacing:8
                             Item {
                                 width:parent.width*0.25;height:30
                                 TransferArrow {id:splitTransfer;objectName:"splitTransferArrow_"+modelData.allocationId;destination:window.ledgerTransfer(record,modelData)}
-                                Label {anchors.fill:parent;anchors.leftMargin:splitTransfer.visible?32:0;verticalAlignment:Text.AlignVCenter;textFormat:Text.PlainText;text:s.categoriesSupported?modelData.categoryDisplay:(modelData.category || "Uncategorized");elide:Text.ElideRight}
+                                Label {anchors.fill:parent;anchors.leftMargin:splitTransfer.visible?32:0;verticalAlignment:Text.AlignVCenter;textFormat:Text.PlainText;text:(includedInReport?"● ":"")+(s.categoriesSupported?modelData.categoryDisplay:(modelData.category || "Uncategorized"));elide:Text.ElideRight}
                             }
                             Label {textFormat:Text.PlainText;text:modelData.memo;width:parent.width*0.5;elide:Text.ElideRight}
                             Label {textFormat:Text.PlainText;text:modelData.amount;width:parent.width*0.2;horizontalAlignment:Text.AlignRight}
                         }
                     }
                     }
-                    Item {id:rowEditorSlot;y:34;width:parent.width;height:ledgerRow.expanded?editor.height:0}
+                    Item {id:rowEditorSlot;y:ledgerRow.rowHeight;width:parent.width;height:ledgerRow.expanded?editor.height:0}
                 }
             }
-            Label {textFormat:Text.PlainText;text: "Filtered totals · withdrawals (signed): "+(s.withdrawals||"unavailable")+" · deposits: "+(s.deposits||"unavailable")}
+            Label {visible:!window.reportLedger;textFormat:Text.PlainText;text: "Filtered totals · withdrawals (signed): "+(s.withdrawals||"unavailable")+" · deposits: "+(s.deposits||"unavailable")}
             Item {
                 id:reviewPanel;objectName:"reviewPanel"
                 Layout.fillWidth:true;Layout.preferredHeight:editor.visible && !editor.inlineRow?editor.height:0
@@ -3131,6 +3143,7 @@ ApplicationWindow {
                         required property string category
                         required property string memo
                         required property string amount
+                        Label {visible:window.reportLedger;text:index>=0 && index<splitModel.count && (s.reportRowInfo||{})[selected.batch+":"+selected.ordinal] && ((s.reportRowInfo||{})[selected.batch+":"+selected.ordinal].allocations||[]).indexOf(splitModel.get(index).allocationId)>=0?"●":"";Layout.preferredWidth:12;ToolTip.visible:splitReportHover.hovered;ToolTip.text:"Included in this report cell";HoverHandler {id:splitReportHover}}
                         CategoryCompletion {
                             id:categoryInput;objectName:"splitCategory_"+index
                             popupObjectName:"categoryDropdown_"+index

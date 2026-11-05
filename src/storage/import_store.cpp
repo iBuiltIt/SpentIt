@@ -209,7 +209,7 @@ ResolvedTransfers resolved_transfers(const std::vector<app::TransferView>& value
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=53;
+PRAGMA user_version=55;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -348,7 +348,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=54;
+PRAGMA user_version=56;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -626,17 +626,17 @@ CREATE TRIGGER order_account AFTER INSERT ON account_operations BEGIN INSERT INT
 )SQL";
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="17" || version=="19" || version=="53"
+    return version=="3" || version=="4" || version=="17" || version=="19" || version=="55"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="54"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="56"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="17" || version=="19" || version=="53"
+    return version=="4" || version=="17" || version=="19" || version=="55"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="54"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="56"
 #endif
         ;
 }
@@ -706,14 +706,14 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="53"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="55"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16" || version=="18" || version=="20" || version=="54"
+    || version=="6" || version=="16" || version=="18" || version=="20" || version=="56"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="54";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="56";
 #else
     (void)db;return false;
 #endif
@@ -1064,9 +1064,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& requested_path, st
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="54";
+        constexpr const char* expected_format="56";
 #else
-        constexpr const char* expected_format="53";
+        constexpr const char* expected_format="55";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"This dataset format is not supported by this version of SpentIt; the file has not been changed");
@@ -1118,7 +1118,7 @@ ImportStore ImportStore::connect(const std::filesystem::path& requested_path, st
         exec(db,R"SQL(
 CREATE TABLE report_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL CHECK(revision>=0)) STRICT;
 INSERT INTO report_state VALUES(1,0);
-CREATE TABLE reports(id TEXT PRIMARY KEY,name TEXT NOT NULL,graph TEXT NOT NULL CHECK(graph IN('none','bar','pie')),position INTEGER NOT NULL UNIQUE) STRICT;
+CREATE TABLE reports(id TEXT PRIMARY KEY,name TEXT NOT NULL,graph TEXT NOT NULL CHECK(graph IN('none','bar','pie','grouped_bar')),position INTEGER NOT NULL UNIQUE) STRICT;
 CREATE TABLE report_accounts(report TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,account INTEGER NOT NULL REFERENCES account(singleton),PRIMARY KEY(report,account)) STRICT;
 CREATE TABLE report_categories(report TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,category TEXT NOT NULL,PRIMARY KEY(report,category)) STRICT;
 CREATE TABLE report_periods(report TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,position INTEGER NOT NULL,preset TEXT NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,PRIMARY KEY(report,position)) STRICT;
