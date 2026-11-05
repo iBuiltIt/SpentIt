@@ -290,6 +290,9 @@ private slots:
         QTest::newRow("review") << QString("review-duplicates-transfers")
             << QStringList{"review-keep.png", "review-link.png", "review-linked.png", "review-difference.png"}
             << QString("when-the-amounts-differ") << QString("When the amounts differ");
+        QTest::newRow("editing") << QString("add-correct-transactions")
+            << QStringList{"editing-new.png", "editing-calendar.png", "editing-splits.png", "editing-mismatch.png"}
+            << QString("divide-a-purchase-into-splits") << QString("Divide a purchase into splits");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -305,7 +308,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -685,6 +688,90 @@ private slots:
         mouse("navigationForward");
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
         QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void editingChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false},
+            {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        auto mouse = [&](const QString& name) {
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
+            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QTest::qWait(180);
+            QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier,
+                item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
+            wait(session.model);
+        };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(150);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        auto enter = [&](const QString& name) {
+            auto* field = qobject_cast<QQuickItem*>(object(session.root, name)); QVERIFY(field);
+            field->forceActiveFocus(); QTest::keyClick(session.window, Qt::Key_Return); wait(session.model);
+        };
+        mouse("categoryNavigation");
+        createCategory(session.model, session.root, "Household");
+        mouse("accountNavigation");
+        QFile source(session.path("card.qif")); QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nLGroceries\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\n"); source.close();
+        run(session.model, "import", {{"path", source.fileName()}, {"account", "1"}});
+        QTRY_VERIFY(object(session.root, "importCategories")->property("visible").toBool());
+        mouse("applyImportCategories");
+        session.root->setProperty("editorClosed", true);
+        mouse("addTransaction");
+        QVERIFY(edit(session.root, "durableDate", "2026-01-22"));
+        QVERIFY(edit(session.root, "durablePayee", "Corner shop"));
+        QVERIFY(edit(session.root, "durableTotal", "-20.00"));
+        QVERIFY(edit(session.root, "durableMemo", "Groceries and cleaning supplies"));
+        capture("editing-new");
+        mouse("transactionCalendar");
+        QTRY_VERIFY(object(session.root, "calendarPopup")->property("visible").toBool());
+        capture("editing-calendar");
+        auto* keys = qobject_cast<QQuickItem*>(object(session.root, "calendarKeys")); QVERIFY(keys);
+        keys->forceActiveFocus(); QTest::keyClick(session.window, Qt::Key_Right); QTest::keyClick(session.window, Qt::Key_Return);
+        QCOMPARE(object(session.root, "durableDate")->property("text").toString(), QString("2026-01-23"));
+        QVERIFY(edit(session.root, "durableDate", "2026-01-22"));
+        enter("durableTotal");
+        QVERIFY(!session.model.state().value("selected").toMap().value("newManual").toBool());
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
+        mouse("addSplit");
+        QTRY_VERIFY(object(session.root, "editSplitAmount_1"));
+        QVERIFY(edit(session.root, "editSplitAmount_1", "-8.00"));
+        enter("editSplitAmount_1");
+        auto category = [&](int index, const QString& text) {
+            const auto name = "splitCategory_" + QString::number(index);
+            QVERIFY(edit(session.root, name, text)); enter(name);
+        };
+        category(0, "Groceries"); category(1, "Household");
+        auto splits = session.model.state().value("selected").toMap().value("draft").toMap().value("splits").toList();
+        QCOMPARE(splits.size(), 2);
+        QCOMPARE(splits[0].toMap().value("amount").toString(), QString("-12.00"));
+        QCOMPARE(splits[1].toMap().value("amount").toString(), QString("-8.00"));
+        capture("editing-splits");
+        QVERIFY(edit(session.root, "editSplitAmount_0", "-10.00"));
+        mouse("addTransaction");
+        QTRY_VERIFY(object(session.root, "splitMismatchDialog")->property("visible").toBool());
+        capture("editing-mismatch");
+        mouse("splitKeepEditing");
+        QVERIFY(edit(session.root, "editSplitAmount_0", "-12.00")); enter("editSplitAmount_0");
+        QVERIFY(edit(session.root, "durableMemo", "Unfinished note"));
+        mouse("addTransaction");
+        QTRY_VERIFY(object(session.root, "unsavedDialog")->property("visible").toBool());
+        mouse("guardStay");
+        auto* memo = qobject_cast<QQuickItem*>(object(session.root, "durableMemo")); memo->forceActiveFocus();
+        QTest::keyClick(session.window, Qt::Key_Escape); wait(session.model);
+        QCOMPARE(object(session.root, "durableMemo")->property("text").toString(), QString("Groceries and cleaning supplies"));
+        QVERIFY(edit(session.root, "durablePayee", "Corner shop corrected")); enter("durablePayee");
+        run(session.model, "undo_edit");
+        QCOMPARE(session.model.state().value("selected").toMap().value("draft").toMap().value("payee").toString(), QString("Corner shop"));
     }
     void reviewChapterWalkthrough_data() {
         QTest::addColumn<bool>("difference");

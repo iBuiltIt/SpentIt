@@ -21,8 +21,10 @@ its commit (`ec23d60`). Chapter 5,
 [Find your way around transactions](../manual/find-transactions.md), is now bundled
 accepted and committed as `bbd3a8b`. Chapter 6,
 [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
-is bundled under the next Go and is owner-accepted for commit. Sample topics used to check the viewer are in
-`tests/fixtures/help/` and are not shown in Help. Chapter 7, Add and correct transactions, and context
+is accepted and committed as `a8a2739`. Chapter 7,
+[Add and correct transactions](../manual/add-correct-transactions.md), is bundled
+under the owner’s next Go and is owner-accepted for commit. Sample topics used to check the viewer are in
+`tests/fixtures/help/` and are not shown in Help. Chapter 8, Organize spending with categories, and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
@@ -34,6 +36,81 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 7 — 2026-11-05
+
+The owner gave Go for Add and correct transactions using the documented workflow.
+A supporting agent checked implementation and focused tests; the primary writer
+owned prose and native captures; an independent reviewer checked code, continuity,
+brevity and all four images. Review corrected the new-entry category-save exception
+and the refund category in the capture fixture. No financial behavior or Help
+viewer implementation changed. The owner accepted the chapter and requested its commit, then gave Go for
+chapter 8, Organize spending with categories. Context links remain separate.
+
+The chapter covers manual creation, inline correction, calendar, amount expressions,
+splits/remainder, mixed signs, original values, selection rename/restore/deletion,
+transfer restrictions and Undo. The synthetic Credit card opens at zero on
+2026-01-01, with the original Market -42.18 and Groceries refund +6.00. Adding
+Corner shop -20.00 on January 22 gives -56.18; Groceries -12.00 and Household
+-8.00 split that purchase without changing its total. The chapter explicitly
+says not to add another copy if following chapter 5's example.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `editing-new.png` | Unsaved Corner shop date/payee/amount/memo |
+| `editing-calendar.png` | January 2026 picker beside the date |
+| `editing-splits.png` | Saved -12.00/-8.00 split, automatic remainder |
+| `editing-mismatch.png` | Unsaved -10.00/-8.00 versus -20.00 total; choices |
+
+Capture basis: actual ImportMain.qml, macOS Qt 6.12.0 Basic light appearance,
+1440 × 900 logical pixels at 2×. Temporary synthetic Household file and isolated
+settings; no private data. Setup, opening and imports use model commands; field
+text uses Qt properties/signals. Real mouse clicks open creation/calendar, add
+splits, choose Keep editing and Stay; real keys select a calendar day, save fields
+and discard an unfinished memo. Category choices use text/signals and Enter.
+Undo is invoked through its model command. This is a native Qt harness walkthrough,
+not a manual standalone-app session.
+
+```sh
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests editingChapterWalkthrough
+```
+
+The corrected source capture run passed 3/3 including init/cleanup in 4627ms.
+An initial sandbox run had no display; the authorized native run passed. Rebuild
+all three application/Help targets after capture changes.
+
+Supporting offscreen verification passed on macOS Qt 6.12.0:
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_ui_tests inlineSourceRestore qmlEditorNavigation existingSplitRemainder removedInitialRemainder amountExpressions remainderSelection splitAmountEditing immediateEditor
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_navigation_tests manualTransactionEntry
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_committed_ui_tests selectedRenameRestoreAndUndo addThenRemoveEmptySplit correctionGuardsRemovalAndUndo
+```
+
+Results, including init/cleanup: 10/10 in 7004ms, 3/3 in 1771ms and 5/5 in 3953ms.
+These cover Restore/selection Undo, persisted remainder choices, exact arithmetic,
+creation and leave choices, reopening, corrections/removal and blocked history
+reversal. The first sandbox attempt lacked application-data lock access; rerunning
+with authorized access passed.
+
+Final rules-enabled Release verification on macOS Qt 6.12.0:
+
+- Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+  `spentit_help_tests`; `build/SpentIt` bundles seven chapters and 22 images.
+- The documented five-check Help regression passed 5/5 in 127.29s.
+- Native `spentit_help_ui_tests` passed 21/21 including init/cleanup in 30784ms.
+  Chapter 7 checks next/previous, section navigation, all four actual image
+  clicks, loading, Actual size, closing/scroll return, and normal/narrow width
+  at 500 pixels with 150% text.
+- Catalog search for “arithmetic” finds the new chapter. Preparation validates
+  every bundled link and image. Relative file links and `git diff --check` passed.
+- A separate native `createOpenChapterReading:editing` capture run passed 3/3
+  in 22192ms. All four refreshed source images and normal, inline-image and
+  narrow/larger-text rendered views were visually inspected.
+
+Dark chapter appearance, full keyboard-only traversal, screen readers, Linux and
+Windows remain unverified. Restore, deletion and transfer restrictions have code
+and existing offscreen checks rather than new native chapter captures.
 
 ## Chapter 6 — 2026-11-05
 
@@ -710,7 +787,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 6 is accepted by the owner for commit. The next chapter is “Add and correct transactions” in `manual/outline.md`.
+2. Chapter 7 is bundled for owner review. Commit when requested. The next chapter is “Organize spending with categories” in `manual/outline.md`.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.

@@ -2,6 +2,34 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 7 — 2026-11-05
+
+Under the owner's Go, [Add and correct transactions](../manual/add-correct-transactions.md)
+is bundled with four synthetic screenshots and is owner-accepted for commit. Chapter 6
+is accepted and committed as `a8a2739`. The documented workflow used supporting
+verification, one primary writer/capture owner and independent review. Corrections
+clarify category-saving for new versus existing entries, Restore routes, deletion
+confirmations and example continuity. No financial or Help viewer behavior changed.
+
+The three rules-enabled Release application/Help targets rebuilt to `build/SpentIt`.
+The five-check Help regression passed 5/5 in 127.29s. Native Help passed 21/21
+including init/cleanup in 30784ms. Chapter checks exercise creation, calendar
+selection, balanced splits, mismatch Keep editing, unsaved Stay/discard and saved
+correction Undo; image clicks/loading/enlargement/return, section navigation and
+500-pixel width at 150% text also pass. The refreshed source capture run passed
+3/3 in 4627ms. A rendered-reading capture run passed 3/3 in 22192ms. All four
+source screenshots and normal/inline-image/narrow rendered views were visually
+inspected. Focused
+offscreen editing, manual-entry and committed-correction checks passed 10/10,
+3/3 and 5/5, respectively. Relative links and `git diff --check` passed.
+
+The [handoff](help-prototype-handoff.md#chapter-7--2026-11-05) records commands,
+results and capture basis: actual QML in a native Qt harness, isolated synthetic
+files/settings, macOS Qt 6.12.0 Basic light theme, 1440 × 900 logical pixels at 2×.
+This is not a manual standalone-app walkthrough. Dark chapter appearance, complete
+keyboard/screen-reader operation, Linux and Windows remain unverified. Chapter 8,
+Organize spending with categories, and context links need their own Go.
+
 ## Help chapter 6 — 2026-11-05
 
 The owner accepted chapter 5, committed as `bbd3a8b`, and gave Go for chapter 6.
