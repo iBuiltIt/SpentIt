@@ -4,6 +4,7 @@
 #include <QColor>
 #include <QDir>
 #include <QImage>
+#include <QFile>
 #include <QStyleHints>
 #include <QFont>
 #include <QGuiApplication>
@@ -280,6 +281,9 @@ private slots:
         QTest::newRow("accounts") << QString("set-up-accounts")
             << QStringList{"accounts-new.png", "accounts-opening.png", "accounts-menu.png"}
             << QString("choose-the-currency") << QString("Choose the currency");
+        QTest::newRow("imports") << QString("bring-in-transactions")
+            << QStringList{"import-destination.png", "import-mapping.png", "import-categories.png", "import-results.png", "import-undo.png"}
+            << QString("undo-a-mistaken-import") << QString("Undo a mistaken import");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -295,7 +299,8 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
-        if (topic == "set-up-accounts") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
+        if (topic != "create-open-file") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
+        if (topic == "bring-in-transactions") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
         QCOMPARE(help->property("topicId").toString(), topic);
         auto* article = object(help, "helpArticle");
         QVERIFY(article);
@@ -303,7 +308,7 @@ private slots:
         QVERIFY(quick);
         int images = 0;
         QVERIFY(QMetaObject::invokeMethod(&catalog, "imageCount", Q_RETURN_ARG(int, images), Q_ARG(QObject*, quick)));
-        QCOMPARE(images, 3);
+        QCOMPARE(images, pictures.size());
         if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
             QTest::qWait(150);
             QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE")));
@@ -356,7 +361,7 @@ private slots:
             QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".narrow.png"));
         }
         QVERIFY(QMetaObject::invokeMethod(help, "previousTopic"));
-        QCOMPARE(help->property("topicId").toString(), topic == "set-up-accounts" ? QString("create-open-file") : QString("understand-spending"));
+        QCOMPARE(help->property("topicId").toString(), topic == "bring-in-transactions" ? QString("set-up-accounts") : topic == "set-up-accounts" ? QString("create-open-file") : QString("understand-spending"));
         QVERIFY(!session.model.state().value("active").toBool());
     }
     void createOpenChapterWalkthrough() {
@@ -495,6 +500,108 @@ private slots:
         mouse("reactivateAccount");
         wait(session.model);
         QVERIFY(!session.model.state().value("readOnly").toBool());
+        QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void importChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false},
+            {"name", "Chequing"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "1,000.00"}});
+        auto mouse = [&](const QString& name, Qt::MouseButton button = Qt::LeftButton) {
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
+            QVERIFY2(item, qPrintable(name));
+            QVERIFY(item->isVisible());
+            QTest::qWait(180);
+            QTest::mouseClick(session.window, button, Qt::NoModifier,
+                item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
+        };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(150);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        const auto incomePath = session.path("income.qif");
+        QFile income(incomePath); QVERIFY(income.open(QIODevice::WriteOnly));
+        income.write("!Type:Bank\nD2026-01-02\nT1500.00\nPSalary\n^\n"); income.close();
+        // Supply the file-picker result without using the native file picker.
+        run(session.model, "import", {{"path", incomePath}, {"account", ""}});
+        auto* destination = object(session.root, "importDestinationDialog");
+        QTRY_VERIFY(destination->property("visible").toBool());
+        capture("import-destination");
+        QVERIFY(QMetaObject::invokeMethod(destination, "accept"));
+        wait(session.model);
+        QCOMPARE(session.model.state().value("balance").toString(), QString("2,500.00"));
+        auto* salary = qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_0"));
+        QVERIFY(salary);
+        QTest::mouseDClick(session.window, Qt::LeftButton, Qt::NoModifier,
+            salary->mapToScene(QPointF(160, 12)).toPoint());
+        const auto path = session.path("household.qif");
+        QFile source(path); QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("!Account\nNCredit card\nTCCard\n^\n!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nLGroceries\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\n!Account\nNCash\nTCash\nB50.00\n^\n!Type:Cash\nD2026-01-18\nT-5.00\nPBakery\nLGroceries\n^\n"); source.close();
+        run(session.model, "import", {{"path", path}, {"account", ""}});
+        auto* mapping = object(session.root, "importAccountMapping");
+        QTRY_VERIFY(mapping->property("visible").toBool());
+        QCOMPARE(session.model.state().value("importPlan").toList().size(), 2);
+        for (int index = 0; index < 2; ++index) {
+            auto* choice = object(session.root, "sourceAccountChoice_" + QString::number(index));
+            QVERIFY(choice);
+            QVERIFY(choice->setProperty("currentIndex", 1));
+            QVERIFY(QMetaObject::invokeMethod(choice, "activated", Q_ARG(int, 1)));
+        }
+        auto* cashOpening = object(session.root, "sourceOpeningBalance_1");
+        QVERIFY(cashOpening->setProperty("currentIndex", 1));
+        QVERIFY(QMetaObject::invokeMethod(cashOpening, "activated", Q_ARG(int, 1)));
+        capture("import-mapping");
+        mouse("confirmImportMappings");
+        wait(session.model);
+        QCOMPARE(session.model.state().value("accounts").toList().size(), 3);
+        auto* categories = object(session.root, "importCategories");
+        QTRY_VERIFY(categories->property("visible").toBool());
+        capture("import-categories");
+        mouse("applyImportCategories");
+        wait(session.model);
+        QTRY_VERIFY(!categories->property("visible").toBool());
+        QCOMPARE(session.model.state().value("importCategoryDecisions").toList().size(), 0);
+        // Account creation order follows the source sections.
+        run(session.model, "select_account", {{"id", "2"}});
+        QCOMPARE(session.model.state().value("name").toString(), QString("Credit card"));
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
+        auto* purchase = qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_2"));
+        QVERIFY(purchase);
+        QTest::mouseDClick(session.window, Qt::LeftButton, Qt::NoModifier,
+            purchase->mapToScene(QPointF(160, 12)).toPoint());
+        capture("import-results");
+        // Reimport the same file: explicit mappings remain required for multiple accounts.
+        run(session.model, "import", {{"path", path}, {"account", ""}});
+        QTRY_VERIFY(mapping->property("visible").toBool());
+        for (int index = 0; index < 2; ++index) {
+            auto* choice = object(session.root, "sourceAccountChoice_" + QString::number(index));
+            const int choiceIndex = index + 3; // Choose, New, Chequing, Credit card, Cash.
+            QVERIFY(choice->setProperty("currentIndex", choiceIndex));
+            QVERIFY(QMetaObject::invokeMethod(choice, "activated", Q_ARG(int, choiceIndex)));
+        }
+        mouse("confirmImportMappings"); wait(session.model);
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
+        // Undo the duplicate-only import first, then preview the original multi-account import.
+        mouse("accountNavigation", Qt::RightButton); mouse("undoLastImport"); wait(session.model);
+        QTRY_VERIFY(object(session.root, "importUndoConfirm")->property("visible").toBool());
+        mouse("confirmImportUndo"); wait(session.model);
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
+        mouse("accountNavigation", Qt::RightButton); mouse("undoLastImport"); wait(session.model);
+        QTRY_VERIFY(object(session.root, "importUndoConfirm")->property("visible").toBool());
+        QCOMPARE(session.model.state().value("importUndoPreview").toMap().value("transactions").toInt(), 3);
+        capture("import-undo");
+        mouse("confirmImportUndo"); wait(session.model);
+        QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
+        run(session.model, "select_account", {{"id", "1"}});
+        QCOMPARE(session.model.state().value("balance").toString(), QString("2,500.00"));
         QGuiApplication::styleHints()->unsetColorScheme();
     }
     void helpBesideRulesDialog() {

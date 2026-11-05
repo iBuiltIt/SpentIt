@@ -6,9 +6,10 @@ Implementation: the viewer prototype from the 2026-11-05 Go is in the tree.
 The same day's chapter Go added [Understand your spending](../manual/index.md)
 as the opening topic. The subsequent chapter-2 Go adds Create or open your file
 with three screenshots and responsive inline image sizing. Chapter 3, Set up your
-accounts, is now bundled with three screenshots under its subsequent Go and the
-accepted chapter workflow, ready for owner review. Sample topics remain a test
-fixture. Chapters after chapter 3 and context links still need their own Go. macOS checks and limits
+accounts, was accepted and committed. Chapter 4, Bring in transactions, is now
+bundled with five screenshots under the subsequent Go and accepted chapter
+workflow, accepted by the owner for commit. Sample topics remain a test
+fixture. Chapters after chapter 4 and context links still need their own Go. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 
 ## Accepted requirements — owner direction 2026-11-05
@@ -412,7 +413,8 @@ The first real chapter, Understand your spending, is bundled from
 screenshot. Sample topics are prepared from `tests/fixtures/help/` for the
 viewer checks and are not part of the Help window. Chapter 2 is now also bundled, with setup, unlock, and workspace screenshots.
 Chapter 3 is also bundled with account setup and management screenshots.
-Chapters after chapter 3 and application-wide context links need their own Go. Write each chapter against
+Chapter 4 adds import, mapping, category-choice and Undo instructions/screenshots.
+Chapters after chapter 4 and application-wide context links need their own Go. Write each chapter against
 the current application, capture its screenshots only after the instructions
 and the screen agree, and review that chapter before the next one.
 Use the synthetic example and the date, amount, platform and theme rules above.

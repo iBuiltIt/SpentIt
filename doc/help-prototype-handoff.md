@@ -5,7 +5,8 @@ Last updated: 2026-11-05
 The viewer prototype Go on 2026-11-05 does not cover application-wide context
 links. A second Go the same day covered the introduction; a subsequent Go covers
 chapter 2, its screenshots, and checking it in Help. The next Go covers chapter 3
-using the documented verification/writing/review workflow. The design
+using the documented verification/writing/review workflow. The owner then
+requested its commit and gave Go for chapter 4. The design
 is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. Update it when a step changes.
 
@@ -13,8 +14,11 @@ file is the progress record for the next session. Update it when a step changes.
 
 The Help window opens [Understand your spending](../manual/index.md), followed
 by [Create or open your file](../manual/create-open-file.md) and
-[Set up your accounts](../manual/accounts.md). All three are bundled for owner review. Sample topics used to check the viewer are in
-`tests/fixtures/help/` and are not shown in Help. Chapter 4, Bring in transactions, and context
+[Set up your accounts](../manual/accounts.md), and
+[Bring in transactions](../manual/import-transactions.md). Chapter 3 was accepted
+and committed as `467a20e`; the owner also accepted chapter 4 and requested
+its commit. Sample topics used to check the viewer are in
+`tests/fixtures/help/` and are not shown in Help. Chapter 5, Find your way around transactions, and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
@@ -26,6 +30,79 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 4 — 2026-11-05
+
+The owner's “Commit and Go” accepted chapter 3 and authorized Bring in
+transactions using the same workflow. A supporting agent verified current import
+code/tests, the primary writer owned prose and captures, and an independent
+reviewer checked accuracy, continuity and screenshots. Review clarified the
+Use Uncategorized consequence and removed unhelpful refusal wording.
+
+The chapter covers supported exports, account routing/mapping, date-order choices,
+new-account openings, missing categories, transfer destinations, result counts,
+repairs/cancellation, repeated exports, and whole-import Undo versus account-wide
+Discard. It links the prior chapter's opening-balance section. No financial or
+viewer implementation changes or application-wide context links were added.
+
+The synthetic sequence starts Chequing at 1,000.00, imports Salary 1,500.00,
+then maps a second QIF containing Credit card's Market purchase/refund and a
+5.00 Cash bakery purchase. Credit card opens at zero; Cash explicitly uses a
+known reported opening of 50.00. Credit card ends at -36.18 and Cash at 45.00.
+Groceries is created through Apply Selected. The same multi-account import is
+repeated without changing the card balance; Undo first removes that duplicate-only
+import, then the original multi-account import's three new transactions. Earlier
+Salary and account openings remain. No private records or user settings are used.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `import-destination.png` | Unnamed export asks for Chequing as destination |
+| `import-mapping.png` | Create Credit card and Cash, with explicit Cash 50.00 opening |
+| `import-categories.png` | Groceries checked in missing-category decision |
+| `import-results.png` | Saved Credit card purchase/refund, editor closed |
+| `import-undo.png` | Three transactions to remove, Credit card and Cash affected |
+
+Capture basis: actual ImportMain.qml, macOS Qt 6.12.0 Basic, light appearance,
+1440 × 900 logical pixels, 2× source captures, isolated temporary Household file.
+The harness supplies file-picker results through the import command, fills fields
+and combo choices through Qt properties/signals, and accepts the destination
+dialog through its accept method. It uses actual mouse clicks for Import,
+Apply Selected, account context-menu Undo, confirmation, and ledger double-clicks.
+This does not verify native file-picker interaction or an independent person
+following the chapter in the standalone application.
+
+```sh
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests importChapterWalkthrough
+```
+
+Rebuild the three targets in “Build and check” after refreshing the captures.
+The refreshed native walkthrough passed 3/3 including init/cleanup in 5171ms.
+Final verification on macOS, rules-enabled Release, Qt 6.12.0:
+
+- Built `spentit_import_experiment`, `spentit_help_ui_tests`, and
+  `spentit_help_tests`; `build/SpentIt` contains all four chapters and 11 images.
+- The five-check CTest command in “Build and check” passed 5/5 in 35.27s.
+- Native `spentit_help_ui_tests` passed 14/14 including init/cleanup in 72681ms.
+  Chapter 4 reading checks click all five rendered images, verify loading,
+  Actual size and scroll return, navigate previous/next and the Undo section,
+  and check width at normal size and at 500 pixels with 150% text. Search finds
+  the new topic with QFX; build preparation checks every bundled link/image.
+- Focused import tests passed 13/13 including init/cleanup in 11735ms:
+
+  ```sh
+  QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_ui_tests importRoutingAndLedgerCleanup automaticImportDates mappingOpeningChoices mappingOpeningInvalidReport multiAccountImport mappedTransferImport unknownAmountRepair recordRepair groupedCancellationAndMappingPersistence undoSelectedImport importUndoOutcomes
+  ```
+
+- The five-check suite includes the existing missing-category restart test in
+  `import.rules_ui`. Focused import tests cover repair, currency/mapping choices,
+  ambiguous dates, cancellation, Undo selection and unknown/saved outcomes.
+- All five source images and normal/image/narrow rendered chapter captures were
+  visually inspected. Relative file-link checks and `git diff --check` passed.
+
+All five source screenshots were inspected. The existing menu/dialog labels and
+account identifiers are preserved as rendered. Dark appearance, complete keyboard
+traversal, screen readers, Linux and Windows remain unverified. The owner accepted chapter 4 and requested its commit. Do not start chapter 5
+without its Go.
 
 ## Chapter 3 — 2026-11-05
 
@@ -94,7 +171,8 @@ inspected. Long labels in the existing account menu remain truncated; the prose
 supplies their full names. Native testing is a Qt harness walkthrough, not a
 person following the manual in the standalone application. Dark appearance,
 full keyboard-only traversal, screen readers, Linux and Windows remain unverified.
-Chapter 3 is ready for owner review; do not start chapter 4 without its Go.
+Chapter 3 was subsequently accepted and committed as `467a20e`; chapter 4
+received its Go in the same instruction.
 
 ## Chapter 2 — 2026-11-05
 
@@ -462,7 +540,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 3 is bundled for owner review. The next chapter is “Bring in transactions” in `manual/outline.md`.
+2. Chapter 4 is accepted. The next chapter is “Find your way around transactions” in `manual/outline.md`.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.

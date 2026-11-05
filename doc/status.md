@@ -2,6 +2,40 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 4 — 2026-11-05
+
+The owner accepted chapter 3, committed as `467a20e`, and gave Go for chapter 4.
+[Bring in transactions](../manual/import-transactions.md) is now bundled and owner-accepted,
+with five real-screen synthetic screenshots covering destination, account
+mapping, category choices, imported transactions and whole-import Undo.
+Verification and independent review agents supported the primary writer/capture
+owner under the documented chapter workflow. No financial behavior or Help viewer
+implementation changed.
+
+The rules-enabled Release application and Help targets rebuilt to `build/SpentIt`.
+Focused offscreen import checks passed 13/13 including init/cleanup in 11735ms:
+routing, ambiguous dates, opening choices/invalid reported balances, multi-account
+and mapped-transfer imports, amount/record repair, cancellation/mapping persistence,
+selected import Undo and outcome failures. The native synthetic import walkthrough
+passed 3/3 in 5171ms. It checks both a repeated import without balance changes and
+whole-import Undo preserving an earlier salary import and account openings.
+The documented five-check Help regression suite passed 5/5 in 35.27s. Native
+Help passed 14/14 including init/cleanup in 72681ms. All five chapter images
+were clicked, loaded, enlarged and closed with scroll return checked. Navigation,
+section links, QFX search, normal width and 500-pixel width with 150% text passed.
+Source screenshots and normal/image/narrow rendered chapter captures were
+visually inspected. Relative file links and `git diff --check` passed.
+
+The [handoff](help-prototype-handoff.md#chapter-4--2026-11-05) records reproducible
+commands and capture details. Screenshots use macOS Qt 6.12.0 Basic, light theme,
+1440 × 900 logical pixels at 2×, and temporary synthetic data. The native file
+picker is bypassed; mapping fields/choices are supplied through Qt, followed by
+real mouse clicks on Import, Apply Selected and Undo. This is not a manual
+standalone-app walkthrough. Native file-picker use, dark chapter appearance,
+complete keyboard/screen-reader operation, Linux and Windows remain unverified.
+The owner accepted chapter 4 and requested its commit. Chapter 5 and context
+links need their Go.
+
 ## Help chapter 3 — 2026-11-05
 
 Under the owner's chapter-3 Go, [Set up your accounts](../manual/accounts.md)
@@ -29,8 +63,8 @@ images and rendered normal/narrow chapter views were inspected.
 
 This is a native Qt harness walkthrough using temporary synthetic data, not a
 manual standalone-app walkthrough. Dark chapter appearance, complete keyboard-only
-use, screen readers, Linux and Windows remain unverified. Chapter 3 awaits owner
-review; chapter 4 and application-wide context links require their own Go.
+use, screen readers, Linux and Windows remain unverified. Chapter 3 was then
+accepted and committed; chapter 4 received Go, as recorded above.
 
 ## Manual continuation workflow — 2026-11-05
 
