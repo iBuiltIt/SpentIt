@@ -116,6 +116,12 @@ ApplicationWindow {
     Connections {target:discardDialog;function onVisibleChanged(){window.diagnosticModalChanged(27,discardDialog.visible)}}
     // Diagnostics publishes only this explicit semantic allowlist, at <=10 Hz.
     Label {z:1000;anchors.right:parent.right;anchors.top:parent.top;text:"Diagnostics enabled";visible:workflow.diagnosticsEnabled;color:theme.warning}
+    Label {
+        objectName: "helpLoadError"; z: 1000
+        anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 16
+        visible: text.length > 0; text: helpLoadError; color: theme.error
+        background: Rectangle { color: theme.surface; border.color: theme.error; anchors.fill: parent; anchors.margins: -8 }
+    }
     property bool diagnosticSearchValid: true
     Connections {target:workflow;function onCompleted(action,success){if(action==="query")window.diagnosticSearchValid=success}}
     function publishDiagnostics() {
@@ -179,7 +185,12 @@ ApplicationWindow {
                 onTriggered: guard(function(){workflow.command("close")})
             }
         }
+        Menu {
+            title: "Help"
+            MenuItem { objectName: "openHelp"; text: "SpentIt Help"; onTriggered: openHelp() }
+        }
     }
+    Shortcut { sequences: [StandardKey.HelpContents]; context: Qt.ApplicationShortcut; onActivated: openHelp() }
     property var selected: s.selected || ({})
     property bool processingIncomplete: !!s.pending && !!s.pending.processingIncomplete
     // View state belongs to occurrence identities, never recycled delegates.
@@ -699,6 +710,10 @@ ApplicationWindow {
     property string ruleSavingId: ""
     property bool ruleSavingAll: false
     property bool rulesLeaving: false
+    property var helpWindowInstance: null
+    property var helpReturnItem: null
+    property string helpLoadError: ""
+    property bool helpOpening: false
     property var ruleValidationQueue: []
     property bool ruleValidatingAll: false
     property int unsavedRuleCount: {let generation=ruleEditGeneration;return dirtyRuleIndices().length}
@@ -729,14 +744,77 @@ ApplicationWindow {
         }
     }
     function revealRuleEditor() {ruleRevealPasses=2;ruleRevealTimer.restart()}
+    function helpCatalogObject() {
+        try { return helpCatalog } catch (error) { return null }
+    }
+    function helpOwner() {
+        if (rulesLeaving) return rulesLeaveDialog
+        if (reportsWorkspace.leaving) return reportsWorkspace.leaveWindow
+        return null
+    }
+    // Release Help before the dialog hides. A transient child of a closing
+    // dialog can close with it. The dialog stays application-modal.
+    function setRulesLeaving(value) {
+        if (!value && rulesLeaving && helpWindowInstance && helpWindowInstance.modalOwner === rulesLeaveDialog)
+            helpWindowInstance.modalOwner = null
+        rulesLeaving = value
+        if (value && helpWindowInstance) helpWindowInstance.modalOwner = rulesLeaveDialog
+    }
+    function restoreHelpFocus() {
+        const owner = helpOwner() || window
+        const item = helpReturnItem
+        Qt.callLater(function() {
+            if (owner && owner.requestActivate) owner.requestActivate()
+            if (item && item.forceActiveFocus) item.forceActiveFocus()
+        })
+    }
+    function presentHelp() {
+        const owner = helpOwner() || window
+        helpReturnItem = owner.activeFocusItem
+        helpWindowInstance.modalOwner = helpOwner()
+        helpWindowInstance.syncOwner()
+        helpWindowInstance.show()
+        helpWindowInstance.raise()
+        helpWindowInstance.requestActivate()
+    }
+    function openHelp() {
+        const catalog = helpCatalogObject()
+        if (!catalog || !catalog.loaded) { helpLoadError = "Help could not be opened."; return }
+        helpLoadError = ""
+        if (helpWindowInstance) { presentHelp(); return }
+        if (helpOpening) return
+        helpOpening = true
+        const component = Qt.createComponent("qrc:/spentit/HelpWindow.qml")
+        if (component.status !== Component.Ready) {
+            helpOpening = false
+            helpLoadError = "Help could not be opened."
+            console.warn(component.errorString())
+            return
+        }
+        helpWindowInstance = component.createObject(null, {catalog: catalog, mainWindow: window})
+        helpOpening = false
+        if (!helpWindowInstance) {
+            helpLoadError = "Help could not be opened."
+            console.warn(component.errorString())
+            return
+        }
+        helpWindowInstance.helpClosed.connect(restoreHelpFocus)
+        presentHelp()
+    }
     function showRulesLeave() {
         showRulesPage()
         rulesLeaveDialog.x=window.x+(window.width-rulesLeaveDialog.width)/2
         rulesLeaveDialog.y=window.y+(window.height-rulesLeaveDialog.height)/2
-        rulesLeaving=true
+        setRulesLeaving(true)
         rulesLeaveDialog.requestActivate()
     }
-    function stayInRules() {rulesLeaving=false;pendingAction=null}
+    function stayInRules() {setRulesLeaving(false);pendingAction=null}
+    Connections {
+        target: reportsWorkspace
+        function onLeaveShown() { if (helpWindowInstance) helpWindowInstance.modalOwner = reportsWorkspace.leaveWindow }
+        function onLeaveHiding() { if (helpWindowInstance && helpWindowInstance.modalOwner === reportsWorkspace.leaveWindow) helpWindowInstance.modalOwner = null }
+        function onHelpRequested() { openHelp() }
+    }
     Window {
         id:rulesLeaveDialog;objectName:"rulesLeaveDialog"
         transientParent:window
@@ -758,6 +836,7 @@ ApplicationWindow {
             if(!workflow.busy && !ruleValidatingAll)stayInRules()
         }
         Shortcut {sequence:"Escape";enabled:rulesLeaving && !workflow.busy && !ruleValidatingAll;onActivated:stayInRules()}
+        Shortcut {sequences:[StandardKey.HelpContents];context:Qt.WindowShortcut;enabled:rulesLeaving;onActivated:openHelp()}
         ColumnLayout {
             id:rulesLeaveContent;objectName:"rulesLeaveContent"
             anchors.top:parent.top;anchors.left:parent.left;anchors.right:parent.right
@@ -1266,7 +1345,7 @@ ApplicationWindow {
         for(let i=0;i<ruleModel.count;i++)if(ruleModel.get(i).id===selectedId){openRule(i);break}
         updateRulesDirty()
         ruleSavingId="";ruleSavingAll=false
-        if(rulesLeaving && !rulesDirty){rulesLeaving=false;let next=pendingAction;pendingAction=null;if(next)guard(next)}
+        if(rulesLeaving && !rulesDirty){setRulesLeaving(false);let next=pendingAction;pendingAction=null;if(next)guard(next)}
     }
     function createFromSource(kind, allocation) {
         if(workflow.busy || !s.rulesSupported) return
@@ -1459,7 +1538,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save_manual" || action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {if(!rulesLeaving)pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();rulesLeaving=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -1521,7 +1600,7 @@ ApplicationWindow {
                 }
                 if(action==="rules_load" && !rulesDirty) loadRulesForm()
                 if(action==="rules_save")rulesSaved()
-                if(action==="rules_discard"){loadRulesForm();rulesLeaving=false;if(pendingAction){let next=pendingAction;pendingAction=null;guard(next)}}
+                if(action==="rules_discard"){loadRulesForm();setRulesLeaving(false);if(pendingAction){let next=pendingAction;pendingAction=null;guard(next)}}
                 if((action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo") && !dirty) loadEditor()
                 if(action==="rules_save" && ruleApplyAfterSave){ruleApplyAfterSave=false;ruleApplyAfterPreview=true;previewAccountRules()}
                 if(action==="rules_preview" && ruleValidatingAll){validateNextRule()}

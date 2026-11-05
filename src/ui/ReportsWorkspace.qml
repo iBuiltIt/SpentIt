@@ -20,6 +20,10 @@ Item {
     property string showAfterSave:""
     property var leaveAction:null
     property bool leaving:false
+    property alias leaveWindow: leaveDialog
+    signal leaveShown()
+    signal leaveHiding()
+    signal helpRequested()
     readonly property var current:selectedIndex>=0 && selectedIndex<drafts.length?drafts[selectedIndex]:null
     readonly property bool dirty:{generation;return JSON.stringify(drafts)!==JSON.stringify(savedDefinitions)}
     readonly property var presetIds:["ytd","this_year","last_year","this_quarter","last_quarter","this_month","last_month","six_months","previous_year","custom"]
@@ -31,7 +35,7 @@ Item {
     function changed(index) {generation;return JSON.stringify(drafts[index])!==JSON.stringify(savedDefinitions.find(r=>r.id===drafts[index].id))}
     function touch(){generation++;feedback=""}
     function load() {savedDefinitions=copy(state.reports||[]);drafts=copy(savedDefinitions);selectedIndex=Math.min(selectedIndex,drafts.length-1);if(selectedIndex<0 && drafts.length)selectedIndex=0;generation++}
-    function reset(){drafts=[];savedDefinitions=[];selectedIndex=-1;mode="workspace";feedback="";leaving=false;leaveAction=null;showAfterSave="";generation++}
+    function reset(){if(leaving)leaveHiding();drafts=[];savedDefinitions=[];selectedIndex=-1;mode="workspace";feedback="";leaving=false;leaveAction=null;showAfterSave="";generation++}
     function newReport(duplicate) {
         if(drafts.some(r=>!savedDefinitions.some(b=>b.id===r.id))){feedback="Save or discard the new report first.";return}
         let value=duplicate && current?copy(current):{name:"New report",graph:"bar",accounts:accountChoices.map(a=>a.id),categories:categoryChoices.map(c=>c.id),periods:[{preset:"ytd",start:"",end:""}]}
@@ -63,9 +67,9 @@ Item {
     }
     function deleteCurrent(){if(!current)return;drafts=drafts.filter(r=>r.id!==current.id);selectedIndex=Math.min(selectedIndex,drafts.length-1);touch()}
     function show(index){selectedIndex=index;if(changed(index))save(false,true);else workflow.command("report_show",{id:current.id})}
-    function requestLeave(action){leaveAction=action;leaving=true}
-    function stay(){leaving=false;leaveAction=null}
-    function proceed(){let action=leaveAction;leaveAction=null;leaving=false;if(action)action()}
+    function requestLeave(action){leaveAction=action;leaving=true;leaveShown()}
+    function stay(){if(leaving)leaveHiding();leaving=false;leaveAction=null}
+    function proceed(){if(leaving)leaveHiding();let action=leaveAction;leaveAction=null;leaving=false;if(action)action()}
     function back(){guardAction(function(){if(root.mode==="detail")root.workflow.command("report_leave");else root.mode="workspace"})}
     function drill(currency,period,row){workflow.command("report_drill",{currency:currency,period:period,row:row})}
     Connections {
@@ -95,13 +99,14 @@ Item {
         onVisibleChanged:if(visible){x=root.Window.window.x+(root.Window.window.width-width)/2;y=root.Window.window.y+(root.Window.window.height-height)/2;requestActivate()}else if(root.Window.window)root.Window.window.requestActivate()
         onClosing:function(event){if(root.leaving){event.accepted=false;if(!root.workflow.busy)root.stay()}}
         Shortcut {sequence:"Escape";enabled:root.leaving && !root.workflow.busy;onActivated:root.stay()}
+        Shortcut {sequences:[StandardKey.HelpContents];context:Qt.WindowShortcut;enabled:root.leaving;onActivated:root.helpRequested()}
         ColumnLayout {
             anchors.fill:parent;anchors.margins:20;enabled:!root.workflow.busy
             Label {textFormat:Text.PlainText;text:"Save your changes to Reports before leaving?";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {Layout.alignment:Qt.AlignRight
-                Button {text:"Save";onClicked:root.save(true,false)}
-                Button {text:"Discard";onClicked:{root.load();root.proceed()}}
-                Button {text:"Stay";onClicked:root.stay()}
+                Button {objectName:"reportsGuardSave";text:"Save";onClicked:root.save(true,false)}
+                Button {objectName:"reportsGuardDiscard";text:"Discard";onClicked:{root.load();root.proceed()}}
+                Button {objectName:"reportsGuardStay";text:"Stay";onClicked:root.stay()}
             }
         }
     }

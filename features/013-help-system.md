@@ -2,8 +2,9 @@
 
 Status: **active**  
 Last updated: 2026-11-05  
-Implementation: design only. No manual content, help viewer or help packaging has
-been implemented by this work. Implementation awaits explicit owner Go.
+Implementation: the viewer prototype from the 2026-11-05 Go is in the tree.
+Sample topics only. Real chapters and context links still need their own Go.
+macOS checks and limits are in [the handoff](../doc/help-prototype-handoff.md).
 
 ## Accepted requirements — owner direction 2026-11-05
 
@@ -31,13 +32,43 @@ manual and viewer. Engineering choices below are for contributors, not material
 to explain to users. This request authorizes documenting the design, not building
 the viewer or writing the complete manual.
 
+## Accepted refinements — owner direction 2026-11-05
+
+These corrections are part of the design. The first Go covers the viewer
+prototype only. That Go was given on 2026-11-05.
+
+- Help remains usable beside a decision dialog. The dialog’s existing protection
+  against changes elsewhere in SpentIt stays as it is. Modality is not weakened
+  to make Help reachable. The prototype proves this with the Rules
+  Save / Discard / Stay window, including focus returning to that dialog when
+  Help closes. If this cannot work cleanly in one process, report the
+  architectural tradeoff and stop.
+- The prototype uses representative sample content and covers navigation,
+  search with highlighting, image enlargement, keyboard interaction, the
+  dialog case and bundled-link checks. It must run through the normal
+  `./build/SpentIt` launch. Real chapters and application-wide context links
+  are later work.
+- The prototype tests the renderer before any real chapter is written. If Qt
+  Markdown falls short, report the specific failures and a proposed embedded
+  HTML approach before adding a rendering dependency.
+- Chapters are written and reviewed incrementally against the current
+  application, using one stated synthetic example. A final end-to-end review
+  still checks continuity and omissions.
+- Valid targets are bundled topic and section links and bundled images. The
+  build and the running viewer both reject external URLs, arbitrary file paths
+  and paths that escape the bundle.
+
+Search ranking, layout breakpoints and precise chapter divisions remain
+prototype decisions.
+
 ## Proposed reading experience
 
-Use one reusable, nonmodal **SpentIt Help** window. It can sit beside the main
-window while the user follows instructions. Opening help must not navigate away
-from an editor, save/discard an edit, change selection, or mutate a financial
-file. Help remains available at the welcome and unlock screens without an open
-file. Closing help leaves SpentIt where it was.
+Use one reusable **SpentIt Help** window. Help itself does not block the rest of
+SpentIt. It can sit beside the main window while the user follows instructions.
+Opening Help must not navigate away from an editor, save or discard an edit,
+change selection, or mutate a financial file. Help remains available at the
+welcome and unlock screens without an open file. Closing Help leaves SpentIt
+where it was, except when a decision dialog is waiting, as specified below.
 
 The window offers:
 
@@ -61,10 +92,56 @@ session; persistent window size and text-size preferences can use application
 settings, separate from financial files. Clamp restored geometry to available
 screens. Persisting searches or reading history across launches is not proposed.
 
+## Help beside a decision dialog
+
+Opening or using Help must not answer a decision dialog, dismiss it, or let the
+user change the file, selection or workspace that the dialog is protecting.
+Closing Help returns keyboard focus to that dialog. If a control inside the
+dialog had focus, focus returns to that control. The dialog keeps waiting for
+its own answer.
+
+The required prototype case is the Rules leave window, `rulesLeaveDialog`,
+titled “Save changes before leaving Rules?”. It is a separate application-modal
+window with Save, Discard and Stay. Escape and its close control mean Stay
+while that prompt is active, and the Rules workspace underneath stays undimmed
+and unchanged. The Reports leave window is the same kind of window. The
+mechanism has to apply to that class; the prototype demonstration is the Rules
+window.
+
+Both entry orders are required: open Help while the dialog is already open, and
+open the dialog while Help is already open. In either case the user can read,
+search, follow sample links and enlarge an image while Save, Discard and Stay
+remain unanswered. The main window still does not accept input. Help does not
+change the Rules edits, selection, search or scroll position held behind the
+dialog.
+
+While Help or its enlarged-image view is the active window, Escape and the
+window close control affect only that Help surface. They must not run the
+dialog’s Stay action or activate the main window. Help controls must not invoke
+main-window or dialog actions. Closing the image view returns to the same Help
+position; closing Help then returns focus to the dialog.
+
+Do not change this dialog from application-modal to window-modal or nonmodal,
+and do not remove modality to make Help easier to open. Whether Help can sit in
+the dialog’s existing modal group, while every other SpentIt window stays
+blocked, is what the prototype has to find out. If Help cannot receive input
+without weakening that protection, or the result is unstable — a dismissed
+dialog, a lost reading position, focus left in the main window, or a
+platform-specific hole in the block — stop and report the tradeoff before
+proceeding. A second process is not part of the prototype.
+
+Most other decision prompts, including the ledger “Unsaved changes” dialog, are
+modal popups inside the main window rather than separate application-modal
+windows. The prototype does not have to exercise every popup. Help must not
+dismiss those popups or perform the action they protect.
+
 ## Content progression
 
 The following is a proposed editorial outline, not a claim that chapters exist.
-Authors must check the current application before describing each workflow.
+Precise chapter divisions remain a prototype decision. Authors must check the
+current application before describing each workflow. Real chapters are later
+work, written and reviewed one at a time as described in the implementation
+sequence.
 
 | Order | Chapter | What it helps the user understand or do |
 | --- | --- | --- |
@@ -76,7 +153,7 @@ Authors must check the current application before describing each workflow.
 | 6 | Working in the ledger | Read columns, search and select, add a transaction, edit dates/text/amounts, use splits and understand available Undo actions. |
 | 7 | Organizing categories | Create and choose categories, change selected transactions and distinguish an ordinary category from an account destination. |
 | 8 | Using rules | Create a category rule, choose scope, preview matches, save and apply; explain why a transaction may not change. |
-| 9 | Accepting transactions, now or later | Explain what the current Commit/accept action does, what leaving transactions new means, and how that differs from saving edits, discarding or undoing an import. |
+| 9 | Accepting transactions, now or later | Explain what Accept transactions does, what leaving transactions new means, and how that differs from saving edits, discarding or undoing an import. |
 | 10 | Understanding reports | Choose accounts, categories and periods; compare results, interpret signs/currencies/charts and inspect or edit contributing transactions. |
 | 11 | Looking after your work and resolving problems | Backup/restore and supported recovery actions; remaining opening, importing, editing and reporting problems; how to proceed when an operation's outcome is uncertain. |
 
@@ -94,12 +171,21 @@ Describe disabled controls when understanding their prerequisites is useful.
 Explain consequences before destructive choices. Avoid an exhaustive catalogue
 of obvious buttons with no task context.
 
-Use visible application labels exactly. Where the language guide and a current
-label differ, record that discrepancy for UI work rather than silently writing
-instructions for a button that does not exist. Search keywords may include both
-“Commit” and “accept transactions”. Do not turn historical feature contracts or
-status entries directly into manual pages: they contain superseded behavior and
+Use visible application labels exactly. The current acceptance action is labeled
+“Accept transactions”. Where the language guide and a current label differ,
+record that discrepancy for UI work rather than silently writing instructions
+for a button that does not exist. Search keywords may include both “Commit” and
+“accept transactions”. Do not turn historical feature contracts or status
+entries directly into manual pages: they contain superseded behavior and
 unimplemented proposals.
+
+Use one consistent synthetic example for the whole manual. State the date order
+and amount grouping used in that example, and explain that the reader’s own
+file follows the date and amount settings saved for that file. Check a chapter
+against the current application when the chapter is added, and check it again
+when a later change affects its screens, labels, workflows or errors. A final
+read of the finished guide still looks for breaks in continuity and for topics
+the individual chapters never covered.
 
 ## Window layout and accessibility
 
@@ -143,9 +229,10 @@ implementation prototype.
 Use sufficient source resolution for high-density displays, with explicit
 display sizing where necessary. Keep screenshots in their captured theme rather
 than inverting their colors. Put a neutral frame around them where needed in
-the opposite viewer theme. Captions should identify significant platform
-differences; add alternate captures only when those differences affect the task.
-Annotations must use legible labels also explained in the text.
+the opposite viewer theme. One platform and one theme are sufficient where the
+task is unchanged. Add another capture only when the platform or theme
+difference changes the task, and say so in the caption. Annotations must use
+legible labels also explained in the text.
 
 ## Search and context help
 
@@ -156,11 +243,16 @@ current match for in-topic navigation. Regex search is deferred unless a concret
 user need warrants its extra controls and failure cases.
 
 Assign stable topic and section identifiers independently of titles and file
-paths. Help actions from a workspace, dialog or error resolve those identifiers.
-An error-help link opens instructions; it must not repeat or perform the failed
-operation. Pass a topic identifier, not account names, amounts, paths or error
-payloads. Missing targets show a plain explanation with Home and Search available.
-Validate all application-to-help targets at build/test time.
+paths. Application-wide context links are later work and are added only with
+the chapter they open. The prototype may use sample identifiers to prove
+navigation; it does not add Help actions across workspaces, dialogs or errors.
+
+When those links are added, a Help action from a workspace, dialog or error
+resolves a topic identifier. An error-help link opens instructions and must not
+repeat or perform the failed operation. Pass a topic identifier, not account
+names, amounts, paths or error payloads. Missing targets show a plain
+explanation with Home and Search available. Validate every
+application-to-help target at build/test time.
 
 Searchable problem topics include the relevant visible message, what it means
 for the current task, and supported next steps. Distinguish an operation that
@@ -193,74 +285,138 @@ source organization, and need no Markdown tools or local web server.
 
 The preferred implementation is a separate QML window within the existing
 SpentIt process, using Qt's Markdown/rich-text rendering and local resources.
-It does not require a separately installed executable. Keep help independent of
-the document worker, financial engine and storage; reading help needs no SQL or
-file unlock. Resource loading and search must not block normal application use.
+It does not require a separately installed executable. The normal
+`./build/SpentIt` launch loads those resources from the build tree; an install
+step is not required to read Help. Keep help independent of the document worker,
+financial engine and storage; reading help needs no SQL or file unlock.
+Resource loading and search must not block normal application use.
 
-First prove representative rendering, section navigation, highlighting, image
-handling and accessibility. If Qt's renderer cannot meet these requirements,
-evaluate generated HTML in an embedded viewer. That changes the renderer, not the
-Markdown source or the user's experience of an integrated manual. Adding Qt Help,
-WebEngine or a standalone executable requires an explicit design decision based
-on demonstrated benefit and packaging cost. No browser launch is part of the
-manual-reading flow.
+The prototype decides the renderer. It must show captions, section anchors, a
+wide table, selectable highlighted text and working links. If Qt Markdown
+cannot do those, report each specific failure and a proposed embedded-HTML
+approach, then stop. Do not add Qt Help, WebEngine or another rendering
+dependency in that prototype. Generated HTML, if later accepted, changes the
+renderer only. The authored source stays Markdown, and reading stays inside
+SpentIt. No browser launch is part of the manual-reading flow.
 
-All essential content, fonts and images must work offline. Internal links resolve
-only to bundled help content; help links cannot execute financial commands or
-load arbitrary local files. External reference links are unnecessary for the
-initial manual; any later policy for opening them outside the viewer must be
-explicit. No remote content, analytics or automatic online updates are proposed.
+All essential content, fonts and images must work offline. No remote content,
+analytics or automatic online updates are proposed.
 
-## Implementation and editorial sequence — proposed
+Authored links may name only a bundled topic, a section in a bundled topic, or
+a bundled image. Preparation resolves relative links and fails the build when a
+link is an external URL, uses a network, file or script scheme, is an absolute
+or arbitrary local path, escapes the help resources through `..` or another
+link that leaves the bundle, or does not match a known topic, section or image.
 
-1. Review this design and settle any material changes before implementation Go.
-2. Build a representative content fixture and viewer prototype: prose, headings,
-   lists, table, long text, cross-topic/section links, annotated screenshot and
-   enlarged image. This is not the finished manual.
-3. Verify rendering/accessibility and settle the renderer, metadata convention,
-   resource packaging and search implementation from that evidence.
-4. Implement the integrated viewer and context targets, with automated resource
-   checks and interaction tests.
-5. Author the manual in encounter order against the working application; capture
-   screenshots only after the corresponding instructions and UI are checked.
-6. Review the complete guide as both a first-time reader and someone finding a
-   specific error or action. Ship only content matching the bundled version.
+The running viewer enforces the same allowlist when a link or image is
+activated, including links that were rendered from Markdown and any later
+generated HTML. A rejected or missing target shows a plain explanation with
+Home and Search available. It does not open a browser, another program, a file
+outside the bundle, or a financial command. The enlarged-image view loads only
+an allowlisted bundled image. A link that passed the build is still checked at
+activation. No later kind of external link is included unless a separate design
+says how it opens and how the allowlist treats it.
 
-Screenshot naming and a contributor inventory should identify the topic, depicted
-screen/state and capture basis, without exposing those maintenance details in
-the manual. Changes to screens, labels, workflows and errors must include review
-of affected topics, screenshots, search terms and context targets.
+## Implementation sequence
+
+The owner gave implementation Go for the viewer prototype on 2026-11-05.
+Real chapters and application-wide context links still need their own Go.
+Progress, commands, and any modality tradeoff are recorded in
+[the prototype handoff](../doc/help-prototype-handoff.md).
+
+1. Bundle a small sample fixture through `./build/SpentIt`, loaded from the
+   build tree. The Help window identifies it as sample content. It is not a
+   manual chapter and it is not the finished guide.
+2. Show contents, previous/next, Back/Forward, Home, find within the topic,
+   and search. Highlight matches, keep that text selectable, and keep sample
+   links working. Include captions, section anchors, a wide table with its own
+   scrolling region, and an annotated image that opens Fit, actual-size, zoom
+   and pan.
+3. Operate those controls from the keyboard, with visible focus.
+4. Prove the Rules Save / Discard / Stay case in [Help beside a decision dialog](#help-beside-a-decision-dialog).
+5. Fail the build and the running activation path on the disallowed links in
+   the bundled-link rules above. Confirm a permitted topic, section and image
+   still open.
+6. Record the renderer result. On shortfalls, report the failures and the
+   proposed embedded-HTML approach, and stop before adding a dependency.
+   Record the metadata convention, packaging, search ranking and breakpoints
+   the prototype actually used.
+
+Real chapters and application-wide context links need their own Go. Write each
+chapter against the current application, capture its screenshots only after the
+instructions and the screen agree, and review that chapter before the next one.
+Use the synthetic example and the date, amount, platform and theme rules above.
+After the last chapter, read the guide once as a first-time reader and once
+while looking up a specific action and a specific error. Bundle only content
+that matches that application version.
+
+Screenshot naming and a contributor inventory should identify the topic,
+depicted screen or state, and capture basis, without showing those maintenance
+details in the manual. A change to a screen, label, workflow or error includes
+review of the affected topics, screenshots, search terms and context targets.
 
 ## Acceptance and verification obligations
 
-These are future checks, not completed verification:
+The prototype obligations below were exercised on macOS on 2026-11-05, with the
+limits recorded in [the handoff](../doc/help-prototype-handoff.md). Linux,
+Windows, and a person clicking through `./build/SpentIt` were not part of that
+run. Later manual and context-link checks still wait for their own Go.
 
-- Open help without a file and while an unsaved editor is active; no financial
-  state or selection changes, and closing help restores normal interaction.
-- With networking unavailable, navigate every topic, search, follow links and
-  view every image from the installed bundle without a source checkout.
-- Validate unique IDs, navigation order, Markdown syntax in the supported subset,
-  links, anchors, image presence and alternative text, and all context targets.
+Prototype, when its Go is given:
+
+- Launch Help from `./build/SpentIt` with no separate install. Open it with no
+  file. Separately, open it while the Rules leave dialog is holding unsaved
+  rule edits. Sample reading, search, links and image enlargement do not answer
+  the dialog or change those edits, the selection or the file.
+- Closing the image view returns to the same Help position. Closing Help
+  returns keyboard focus to the Rules dialog, and to the control that had focus
+  when one did. Escape and close in Help do not choose Stay.
+- With networking unavailable, navigate the sample topics, search, follow
+  permitted links and open the sample image from the build-tree bundle.
+- The fixture covers captions, section anchors, a wide table, selectable
+  highlighted text and working links. Record any Qt Markdown failure instead of
+  silently switching renderers.
+- Keyboard-only use reaches navigation, search, find, text size and the image
+  controls, with focus restored as above.
+- The build rejects an external URL, an absolute or arbitrary file path, and a
+  path that escapes the bundle. Runtime activation of those same links shows
+  the missing-target explanation and does not open anything outside Help.
+- A missing sample image fails visibly and leaves Contents, Home and Search
+  usable. Search and the large sample image do not block the Rules dialog.
+
+Later manual and context-link work:
+
+- Open Help without a file and while an unsaved editor is active; no financial
+  state or selection changes, and closing Help restores the prior interaction.
+- With networking unavailable, navigate every shipped topic, search, follow
+  links and view every image from the bundle that `./build/SpentIt` loads,
+  without a source checkout.
+- Validate unique IDs, navigation order, the supported Markdown subset, links,
+  anchors, image presence and alternative text, and every context target.
 - Check wide and narrow windows, increased text size, high-density displays,
   both themes and display changes; no clipped controls or page-wide overflow.
 - Check keyboard-only use, focus restoration, screen-reader reading order and
   image alternatives on each supported platform before claiming accessibility.
-- Verify search ordering, empty/no-match queries, excerpts, highlighting and
-  navigation restoration with a representative full-manual-sized fixture.
-- Verify missing topics/images fail visibly with usable navigation; bounded
-  search and large-image handling keep the app responsive.
-- Walk through the current app using synthetic data and the manual alone; check
-  each described control, consequence, error and recovery instruction.
-- Test installed macOS, Linux and Windows packages before claiming portability;
-  record unavailable checks as unverified in project status.
+- Verify search ordering, empty and no-match queries, excerpts, highlighting
+  and navigation restoration with a full-manual-sized fixture.
+- Walk through the current application with synthetic data and the manual
+  alone. Check each described control, consequence, error and recovery
+  instruction, including the stated date and amount example against a file
+  whose saved settings differ.
+- Test installed macOS, Linux and Windows packages before claiming portability.
+  Record unavailable checks as unverified in project status.
 
 ## Remaining decisions and exclusions
 
 Exact window defaults, responsive breakpoints, topic granularity and search
-ranking are prototype choices. The renderer and metadata convention remain
-proposed. The chapter sequence may change where application walkthroughs reveal
-a clearer order, while retaining the accepted high-level introduction and
-encounter-based progression.
+ranking are prototype choices. The metadata convention remains a prototype
+choice. The renderer stays Qt Markdown unless the prototype reports specific
+shortfalls and a later decision accepts embedded HTML. How Help receives input
+beside an application-modal dialog is likewise settled by that prototype
+evidence, or by the tradeoff report if it does not work cleanly. The chapter
+sequence may change where application walkthroughs reveal a clearer order,
+while retaining the accepted high-level introduction and encounter-based
+progression.
 
 Initial scope excludes a public documentation website, platform-specific native
 manuals, printing/PDF export, translations, interactive tours, executable examples,

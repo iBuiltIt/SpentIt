@@ -2,6 +2,46 @@
 
 Last updated: 2026-11-05
 
+## Help viewer prototype — 2026-11-05
+
+The owner gave Go for the viewer prototype only. Sample topics, the Help
+window, bundled-link checks, and Help beside the Rules and Reports leave
+dialogs are in the rules-enabled Release build launched as `./build/SpentIt`.
+Real chapters and application-wide context links were not started. The dialogs
+stay `Qt.ApplicationModal`. Help is a transient child of the open dialog and
+returns to the main window before that dialog hides. Escape on the Rules
+dialog still means Stay.
+
+macOS Qt 6.12.0, rules-enabled Release:
+
+- `ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure` passed all 5 tests (26.31s). `import.help_ui` is offscreen.
+- `./build/import-ui-rules-release/src/ui/spentit_help_ui_tests` with no `QT_QPA_PLATFORM` passed 7 checks (2.26s). Before the Rules dialog, a Z key appended `z` to the rule expression. With the dialog open, the same key left `^Sample help$` unchanged. A click on Larger text changed the Help text scale. Closing Help left the dialog open and returned Qt focus to Stay. Stay left Help open.
+
+Qt Markdown still has no heading anchors; the viewer scrolls to heading text.
+Wide sample tables wrap inside the article. Linux, Windows, and a person
+clicking through the running application were not checked. Details and the
+next-agent notes are in [the handoff](help-prototype-handoff.md).
+
+## Help system design refinements — 2026-11-05
+
+Incorporated the owner's corrections into the
+[help-system design](../features/013-help-system.md). Help must stay usable beside
+the application-modal Rules Save / Discard / Stay window, return focus there
+when it closes, and leave that dialog's block on the rest of SpentIt unchanged.
+If that cannot work cleanly in one process, the prototype stops and reports the
+tradeoff. The first Go, given later the same day and recorded above, is a viewer prototype only:
+sample content, navigation, search and highlighting, image enlargement, keyboard
+use, that dialog, and build-time plus runtime bundled-link checks, launched with
+`./build/SpentIt`. Real chapters are written and reviewed incrementally from one
+stated synthetic example. Qt Markdown is tested before any real chapter; a
+shortfall is reported with a proposed embedded-HTML approach before a new
+renderer is added. This section records that design incorporation. The viewer
+prototype section above supersedes the earlier statement that no viewer had
+been implemented. Verification for this documentation pass: `git diff --check`
+and relative file-link checks for the feature, feature index and status
+document passed. No runtime tests were required or run for this
+documentation-only change.
+
 ## Help system design — 2026-11-05
 
 Added the [help-system proposal](../features/013-help-system.md) under the owner's
@@ -9,8 +49,10 @@ request for a design document. It records the embedded/offline reading experienc
 nontechnical introduction and encounter-based manual, responsive layout, images,
 search, context links and proposed QML implementation. Authored content belongs
 in `manual/`, with `manual/images/`; viewer code is proposed under `src/ui/help/`.
-No manual chapters, screenshots, viewer or packaging were implemented. The
-renderer and detailed implementation remain proposals awaiting owner Go.
+No manual chapters, screenshots, viewer or packaging were implemented when this
+design note was written. The viewer prototype section above records the later
+implementation. The renderer limits remain in the handoff. The refinements
+above supersede the earlier “awaiting owner Go” scope for the first prototype.
 Verification: `git diff --check` and relative file-link checks for the new feature,
 feature index and status document passed. No runtime tests were required or run
 for this documentation-only change.

@@ -5,6 +5,7 @@
 #include "diagnostic_transport.hpp"
 #endif
 #include "import_model.hpp"
+#include "help/help_catalog.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -52,7 +53,11 @@ int main(int argc,char** argv) {
         QSettings().setValue("datasetPath",smokeSettings->path()+"/missing.spentit");
     }
     ImportModel model(spentit::storage::document_gateway((QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/verification").toStdString()));
-    QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);
+    HelpCatalog helpCatalog;
+    helpCatalog.load(QStringLiteral(":/spentit/help/manifest.json"));
+    QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty("workflow",&model);
+    engine.rootContext()->setContextProperty("helpCatalog",&helpCatalog);
     {spentit::diagnostics::Span qmlSpan(spentit::diagnostics::Code::qml_creation);
     engine.load(QUrl("qrc:/spentit/ImportMain.qml"));if(engine.rootObjects().isEmpty())return 1;}
     if(diagnosticsRequested) {
