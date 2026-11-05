@@ -17,8 +17,10 @@ by [Create or open your file](../manual/create-open-file.md) and
 [Set up your accounts](../manual/accounts.md), and
 [Bring in transactions](../manual/import-transactions.md). Chapter 3 was accepted
 and committed as `467a20e`; the owner also accepted chapter 4 and requested
-its commit. Sample topics used to check the viewer are in
-`tests/fixtures/help/` and are not shown in Help. Chapter 5, Find your way around transactions, and context
+its commit (`ec23d60`). Chapter 5,
+[Find your way around transactions](../manual/find-transactions.md), is now bundled
+under its Go and accepted by the owner for commit. Sample topics used to check the viewer are in
+`tests/fixtures/help/` and are not shown in Help. Chapter 6, Review duplicates and link transfers, and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
@@ -30,6 +32,87 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 5 — 2026-11-05
+
+The owner gave Go for Find your way around transactions using the documented
+chapter workflow. A verification agent checked implementation and focused
+existing tests; the primary writer owned prose, native interaction and captures;
+a separate reviewer checked accuracy, continuity and all three source images.
+Findings corrected the missing-entry advice, the visible × clear control,
+opening chronology, and the possible-duplicate balance explanation.
+
+The chapter covers ledger columns/signs/balances, memo inspection, accepted
+transaction History, selection versus editing, split previews, transfer arrows,
+search/clear/errors, sorting, scrolling, Back/Forward and Review orientation.
+There is no ordinary visible acceptance badge in the current ledger; the chapter
+uses the existing History control. No financial or viewer behavior changed.
+Chapter 6 decisions and application-wide context links remain separate work.
+
+The synthetic Credit card opens on 2026-01-01 at zero. Market -42.18 and refund
+6.00 are followed by Corner shop -20.00, split into Groceries -12.00 and Household
+-8.00. These entries are accepted for the History check. Searching Market shows
+two rows while the account balance remains -56.18. A later differently named
+Market groceries -42.18 import produces a possible-duplicate question; both rows
+remain, so the balance is -98.36. No question is answered in this walkthrough.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `transactions-ledger.png` | Market selected, Corner shop saved splits expanded |
+| `transactions-search.png` | Market results, unchanged sidebar balance |
+| `transactions-review.png` | One Credit card duplicate question, both entries retained |
+
+Capture basis: actual ImportMain.qml, macOS Qt 6.12.0 Basic, light appearance,
+1440 × 900 logical pixels at 2×, temporary synthetic Household file. Setup,
+imports, opening correction and acceptance use model commands; search text uses
+Qt properties/signals. Real mouse events exercise row selection, Shift/Ctrl
+selection, double-click editor, saved splits, Apply, sort, clear, Review and
+Back/Forward. The test checks memo/History and that selection leaves the editor
+closed. It bypasses the native file picker and is not a standalone-app manual
+walkthrough. An initial harness run lacked an explicit import destination; a
+subsequent run tried acceptance before the category dialog was ready and failed,
+then crashed during continued test execution. The final harness supplies the
+account, waits for the category decision, and sets the January opening explicitly.
+
+Reproduce source captures, then rebuild the three Help/application targets:
+
+```sh
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests transactionsChapterWalkthrough
+```
+
+The standalone native capture walkthrough passed 3/3 including init/cleanup,
+5115ms. Supporting offscreen checks passed:
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_ui_tests combinedSearchAndSelection searchReturnNavigation readOnlySplitViews selectionDoesNotFlash unifiedReviewSheet
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_navigation_tests firstSplitTransferNavigation accountSortSurvivesRestart ledgerViewportSurvivesCategoryNavigation guardedNavigationAndIsolation
+```
+
+Results: 7/7 in 6539ms and 6/6 in 5994ms, including init/cleanup. These checks
+include search-result selection restoration, failed queries, account return
+positions and per-account sort persistence. An initial sandbox attempt lacked
+application-data lock access; the authorized rerun passed.
+
+Final rules-enabled Release verification on macOS Qt 6.12.0:
+
+- The three targets in “Build and check” rebuilt; `build/SpentIt` contains five
+  chapters and 14 images.
+- The documented five-check Help regression passed 5/5 in 38.95s.
+- Native `spentit_help_ui_tests` passed 16/16 including init/cleanup in 73435ms.
+  The new reading row checks next/previous navigation, the Find a purchase
+  section, all three actual image clicks, image loading, Actual size, close and
+  scroll return, and width at normal size and 500 pixels with 150% text.
+- A separate native `createOpenChapterReading:transactions` capture run passed
+  3/3 in 21484ms. All three source screenshots and the rendered normal,
+  inline-image and narrow/larger-text chapter views were visually inspected.
+- Catalog lookup for “ledger” selects chapter 5. The preparer validates all
+  bundled links, sections and images. Relative file-link checks and
+  `git diff --check` passed.
+
+Dark chapter appearance, complete keyboard traversal, screen readers, Linux and
+Windows remain unverified. Native transfer-arrow traversal is not part of this
+new walkthrough; related existing offscreen tests and code were reviewed.
+The owner accepted chapter 5 and requested its commit, then gave Go for chapter 6.
 
 ## Chapter 4 — 2026-11-05
 
@@ -540,7 +623,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 4 is accepted. The next chapter is “Find your way around transactions” in `manual/outline.md`.
+2. Chapter 5 is ready for owner review. The next chapter is “Review duplicates and link transfers” in `manual/outline.md`.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.

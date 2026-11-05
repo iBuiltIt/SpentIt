@@ -2,6 +2,33 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 5 — 2026-11-05
+
+Under the owner's Go, [Find your way around transactions](../manual/find-transactions.md)
+is bundled with three synthetic screenshots. The documented workflow used a
+verification agent, one primary writer/capture owner, and an independent reviewer.
+The chapter covers ledger reading, signs and balances, selection versus editing,
+search/sort/clear, splits, navigation and Review orientation. No financial behavior
+or Help viewer implementation changed. The owner accepted chapter 5 and requested its commit, then gave Go for
+chapter 6. Context links remain separate.
+
+The rules-enabled Release application and Help targets rebuilt to `build/SpentIt`.
+The five-check Help regression passed 5/5 in 38.95s. Native Help passed 16/16
+including init/cleanup in 73435ms, including Chapter 5's three real image clicks,
+image loading/enlargement/return, section navigation, and 500-pixel width at 150%
+text. Source images and normal/narrow rendered chapter views were visually
+inspected. The standalone synthetic capture walkthrough passed 3/3 in 5115ms. Focused
+offscreen search/selection/Review checks passed 7/7 in 6539ms, and navigation
+checks passed 6/6 in 5994ms. Counts include init/cleanup. Relative file links and
+`git diff --check` passed.
+
+See the [handoff](help-prototype-handoff.md#chapter-5--2026-11-05) for commands,
+initial harness failures, capture basis and limits. Captures use real QML in a
+native Qt harness with temporary synthetic data: macOS Qt 6.12.0 Basic, light,
+1440 × 900 logical pixels at 2×. This is not a manual standalone-app walkthrough.
+Dark chapter appearance, complete keyboard/screen-reader operation, Linux and
+Windows remain unverified.
+
 ## Help chapter 4 — 2026-11-05
 
 The owner accepted chapter 3, committed as `467a20e`, and gave Go for chapter 4.

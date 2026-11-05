@@ -284,6 +284,9 @@ private slots:
         QTest::newRow("imports") << QString("bring-in-transactions")
             << QStringList{"import-destination.png", "import-mapping.png", "import-categories.png", "import-results.png", "import-undo.png"}
             << QString("undo-a-mistaken-import") << QString("Undo a mistaken import");
+        QTest::newRow("transactions") << QString("find-transactions")
+            << QStringList{"transactions-ledger.png", "transactions-search.png", "transactions-review.png"}
+            << QString("find-a-purchase") << QString("Find a purchase");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -300,7 +303,8 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(help));
         QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
         if (topic != "create-open-file") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
-        if (topic == "bring-in-transactions") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
+        if (topic == "bring-in-transactions" || topic == "find-transactions") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
+        if (topic == "find-transactions") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
         QCOMPARE(help->property("topicId").toString(), topic);
         auto* article = object(help, "helpArticle");
         QVERIFY(article);
@@ -361,7 +365,7 @@ private slots:
             QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".narrow.png"));
         }
         QVERIFY(QMetaObject::invokeMethod(help, "previousTopic"));
-        QCOMPARE(help->property("topicId").toString(), topic == "bring-in-transactions" ? QString("set-up-accounts") : topic == "set-up-accounts" ? QString("create-open-file") : QString("understand-spending"));
+        QCOMPARE(help->property("topicId").toString(), topic == "find-transactions" ? QString("bring-in-transactions") : topic == "bring-in-transactions" ? QString("set-up-accounts") : topic == "set-up-accounts" ? QString("create-open-file") : QString("understand-spending"));
         QVERIFY(!session.model.state().value("active").toBool());
     }
     void createOpenChapterWalkthrough() {
@@ -602,6 +606,79 @@ private slots:
         QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
         run(session.model, "select_account", {{"id", "1"}});
         QCOMPARE(session.model.state().value("balance").toString(), QString("2,500.00"));
+        QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void transactionsChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false},
+            {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        auto mouse = [&](const QString& name, Qt::KeyboardModifiers modifiers = Qt::NoModifier, bool twice = false) {
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
+            QVERIFY2(item, qPrintable(name));
+            QVERIFY(item->isVisible());
+            QTest::qWait(180);
+            const auto point = item->mapToScene(QPointF(100 < item->width() ? 100 : item->width()/2, 12)).toPoint();
+            if (twice) QTest::mouseDClick(session.window, Qt::LeftButton, modifiers, point);
+            else QTest::mouseClick(session.window, Qt::LeftButton, modifiers, point);
+            wait(session.model);
+        };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(150);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        QFile source(session.path("card.qif")); QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nMGroceries for the week\nLGroceries\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\nD2026-01-22\nT-20.00\nPCorner shop\nSGroceries\n$-12.00\nSHousehold\n$-8.00\n^\n"); source.close();
+        run(session.model, "import", {{"path", source.fileName()}, {"account", "1"}});
+        QTRY_VERIFY(object(session.root, "importCategories")->property("visible").toBool());
+        mouse("applyImportCategories");
+        QTRY_VERIFY(!object(session.root, "importCategories")->property("visible").toBool());
+        run(session.model, "commit", {{"ignoreWarnings", true}});
+        session.root->setProperty("editorClosed", true);
+        run(session.model, "query", {{"sort", 0}, {"descending", false}});
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
+        mouse("ledgerRow_1");
+        QCOMPARE(session.model.state().value("selectionCount").toInt(), 1);
+        QVERIFY(session.root->property("editorClosed").toBool());
+        mouse("ledgerRow_2", Qt::ShiftModifier);
+        QCOMPARE(session.model.state().value("selectionCount").toInt(), 2);
+        mouse("ledgerRow_2", Qt::ControlModifier);
+        QCOMPARE(session.model.state().value("selectionCount").toInt(), 1);
+        mouse("ledgerRow_1", Qt::NoModifier, true);
+        QTRY_VERIFY(object(session.root, "showEntryHistory")->property("visible").toBool());
+        QVERIFY(object(session.root, "durableMemo")->property("text").toString().contains("Groceries for the week"));
+        mouse("ledgerRow_1", Qt::NoModifier, true);
+        mouse("splitToggle_2");
+        capture("transactions-ledger");
+        QVERIFY(edit(session.root, "ledgerSearch", "Market"));
+        mouse("applyFilter");
+        QCOMPARE(session.model.rowCount(), 2);
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
+        capture("transactions-search");
+        mouse("ledgerColumn_1");
+        QCOMPARE(session.model.state().value("sort").toInt(), 1);
+        mouse("clearFilter");
+        QCOMPARE(session.model.rowCount(), 4);
+        QFile duplicate(session.path("possible-repeat.qif")); QVERIFY(duplicate.open(QIODevice::WriteOnly));
+        duplicate.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket groceries\nLGroceries\n^\n"); duplicate.close();
+        run(session.model, "import", {{"path", duplicate.fileName()}, {"account", "1"}});
+        session.root->setProperty("editorClosed", true);
+        mouse("reviewNavigation");
+        QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
+        QTRY_VERIFY(session.model.state().value("reviewCount").toInt() > 0);
+        capture("transactions-review");
+        mouse("navigationBack");
+        QTRY_COMPARE(session.root->property("currentPage").toString(), QString("ledger"));
+        mouse("navigationForward");
+        QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
         QGuiApplication::styleHints()->unsetColorScheme();
     }
     void helpBesideRulesDialog() {

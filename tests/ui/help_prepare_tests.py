@@ -29,7 +29,7 @@ class PrepareHelpTests(unittest.TestCase):
             manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
             self.assertFalse(manifest["sample"])
             self.assertEqual(manifest["banner"], "")
-            self.assertEqual([topic["id"] for topic in manifest["topics"]], ["understand-spending", "create-open-file", "set-up-accounts", "bring-in-transactions"])
+            self.assertEqual([topic["id"] for topic in manifest["topics"]], ["understand-spending", "create-open-file", "set-up-accounts", "bring-in-transactions", "find-transactions"])
             self.assertEqual(manifest["topics"][0]["title"], "Understand your spending")
             text = manifest["topics"][0]["markdown"]
             self.assertIn("42.18", text)
@@ -39,7 +39,7 @@ class PrepareHelpTests(unittest.TestCase):
             self.assertIn("2026-01-15", text)
             self.assertNotIn("sample-", text)
             self.assertNotIn("https://", text)
-            self.assertEqual(len(manifest["images"]), 11)
+            self.assertEqual(len(manifest["images"]), 14)
             setup = manifest["topics"][1]["markdown"]
             self.assertIn("help:create-open-file#open-your-file", setup)
             self.assertIn("help-image:create-file-setup.png", setup)
