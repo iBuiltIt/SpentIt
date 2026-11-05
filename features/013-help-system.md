@@ -4,8 +4,8 @@ Status: **active**
 Last updated: 2026-11-05  
 Implementation: the viewer prototype from the 2026-11-05 Go is in the tree.
 The same day's chapter Go added [Understand your spending](../manual/index.md)
-as the only topic Help opens. Sample topics remain a test fixture. Further
-chapters and context links still need their own Go. macOS checks and limits
+as the opening topic. The subsequent chapter-2 Go adds Create or open your file
+with three screenshots and responsive inline image sizing. Sample topics remain a test fixture. Chapters after chapter 2 and context links still need their own Go. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 
 ## Accepted requirements — owner direction 2026-11-05
@@ -35,6 +35,14 @@ at a time. The voice is plain and human: it can start from why someone wants
 to know where the money went. It stays accurate. Engineering choices below are
 for contributors, not material to explain to users. This request authorizes
 documenting the design, not building the viewer or writing the complete manual.
+
+## Chapter 2 Go and writing direction — 2026-11-05
+
+The owner authorized Create or open your file, its screenshots, and verification
+in Help. Keep the chapter-1 plain-English voice while using no more words than
+needed: users need concise, accessible pieces, not a long compulsory read.
+The chapter and its verification are recorded in [the handoff](../doc/help-prototype-handoff.md#chapter-2--2026-11-05).
+Later chapters and application-wide context links remain separate work.
 
 ## Accepted refinements — owner direction 2026-11-05
 
@@ -350,8 +358,8 @@ and any modality tradeoff are recorded in
 The first real chapter, Understand your spending, is bundled from
 `manual/index.md`. It uses the household example and has no application
 screenshot. Sample topics are prepared from `tests/fixtures/help/` for the
-viewer checks and are not part of the Help window. Further chapters and
-application-wide context links need their own Go. Write each chapter against
+viewer checks and are not part of the Help window. Chapter 2 is now also bundled, with setup, unlock, and workspace screenshots.
+Chapters after chapter 2 and application-wide context links need their own Go. Write each chapter against
 the current application, capture its screenshots only after the instructions
 and the screen agree, and review that chapter before the next one.
 Use the synthetic example and the date, amount, platform and theme rules above.

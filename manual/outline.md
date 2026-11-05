@@ -1,7 +1,7 @@
 # SpentIt help and user manual — proposed outline
 
 Date: 2026-11-05  
-Status: proposed content outline for review. Chapter 1 is written. Later chapters and screenshots are not yet written.
+Status: proposed content outline for review. Chapters 1 and 2 are written; chapter 2 includes setup, unlock, and workspace screenshots. Later chapters are not yet written.
 
 ## Purpose and reading order
 
@@ -308,6 +308,9 @@ choices, and how to recognize the result. Add related problems and a natural
 next step. Explain disabled controls, empty screens, progress and cancellation
 when they change what the reader can do. Avoid a button inventory detached from tasks.
 
+Owner refinement, 2026-11-05: respect the reader’s time. Use no more words than
+the task needs, while keeping plain English and an approachable voice.
+
 Write in short pieces, with room between them. Use plain words, and start from
 why a person wants to know. The reader should be able to take one piece at a
 time. Do not stack definitions or steps into a single block.
@@ -357,6 +360,7 @@ choices. Also test lookup reading: someone arriving at a single topic from an
 error or search should have enough context to act.
 
 Chapter 1 is written in [index.md](index.md) and is the topic Help opens.
-Further chapters, screenshots, and context links are separate work. The sample
+Chapter 2, [Create or open your file](create-open-file.md), is also bundled,
+with three screenshots. Later chapters and context links are separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.

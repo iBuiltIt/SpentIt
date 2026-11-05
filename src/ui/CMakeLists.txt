@@ -41,7 +41,10 @@ if(SPENTIT_IMPORT_UI)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   set(SPENTIT_HELP_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/help-bundle")
   set(SPENTIT_HELP_SAMPLE_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/help-sample-bundle")
+  file(GLOB_RECURSE SPENTIT_HELP_SOURCES CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/manual/*.md" "${PROJECT_SOURCE_DIR}/manual/images/*.png")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${SPENTIT_HELP_SOURCES}
     "${PROJECT_SOURCE_DIR}/tools/prepare_help.py"
     "${PROJECT_SOURCE_DIR}/manual/index.md"
     "${PROJECT_SOURCE_DIR}/tests/fixtures/help/sample/start.md"
@@ -138,6 +141,8 @@ if(SPENTIT_IMPORT_UI)
       qt_add_resources(spentit_help_ui_tests "help_ui" PREFIX "/spentit" FILES ImportMain.qml ClearableSearchField.qml NavigableTextField.qml CategoryCompletion.qml Theme.qml CalendarPicker.qml ReportsWorkspace.qml ReportChart.qml help/HelpWindow.qml)
       qt_add_resources(spentit_help_ui_tests "help_ui_bundle" PREFIX "/spentit/help" BASE "${SPENTIT_HELP_SAMPLE_BUNDLE}" FILES ${SPENTIT_HELP_SAMPLE_BUNDLE_FILES})
       qt_add_resources(spentit_help_ui_tests "help_ui_manual" PREFIX "/spentit/help-manual" BASE "${SPENTIT_HELP_BUNDLE}" FILES ${SPENTIT_HELP_BUNDLE_FILES})
+      file(GLOB SPENTIT_HELP_MANUAL_IMAGES CONFIGURE_DEPENDS "${SPENTIT_HELP_BUNDLE}/images/*.png")
+      qt_add_resources(spentit_help_ui_tests "help_ui_manual_images" PREFIX "/spentit/help" BASE "${SPENTIT_HELP_BUNDLE}" FILES ${SPENTIT_HELP_MANUAL_IMAGES})
       spentit_compiler_options(spentit_help_ui_tests)
       add_test(NAME import.help_ui COMMAND spentit_help_ui_tests)
       set_tests_properties(import.help_ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)

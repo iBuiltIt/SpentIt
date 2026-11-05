@@ -22,14 +22,14 @@ def topic(text: str) -> str:
 
 
 class PrepareHelpTests(unittest.TestCase):
-    def test_manual_bundle_is_the_introduction(self):
+    def test_manual_bundle_contains_reviewed_chapters(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             prepare_help.build(MANUAL, output)
             manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
             self.assertFalse(manifest["sample"])
             self.assertEqual(manifest["banner"], "")
-            self.assertEqual([topic["id"] for topic in manifest["topics"]], ["understand-spending"])
+            self.assertEqual([topic["id"] for topic in manifest["topics"]], ["understand-spending", "create-open-file"])
             self.assertEqual(manifest["topics"][0]["title"], "Understand your spending")
             text = manifest["topics"][0]["markdown"]
             self.assertIn("42.18", text)
@@ -39,7 +39,10 @@ class PrepareHelpTests(unittest.TestCase):
             self.assertIn("2026-01-15", text)
             self.assertNotIn("sample-", text)
             self.assertNotIn("https://", text)
-            self.assertEqual(manifest["images"], [])
+            self.assertEqual(len(manifest["images"]), 3)
+            setup = manifest["topics"][1]["markdown"]
+            self.assertIn("help:create-open-file#open-your-file", setup)
+            self.assertIn("help-image:create-file-setup.png", setup)
 
     def test_sample_bundle_rewrites_internal_links(self):
         with tempfile.TemporaryDirectory() as directory:

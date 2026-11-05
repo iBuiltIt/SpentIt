@@ -14,6 +14,13 @@ action and its relevant consequences. Do not narrate storage, tracking or
 implementation details. Engineering documentation and internal identifiers may
 retain precise technical terminology.
 
+## Help chapter length — owner direction 2026-11-05
+
+Keep the approachable voice of the approved introduction, while respecting the
+reader's time. Use no more words than the task needs. Shorten repetition and
+unnecessary explanation, without sacrificing plain English or the consequences
+a reader needs to understand. Break the material into easy-to-digest pieces.
+
 ## Writing rules
 
 Use familiar financial words and direct verbs. An opening balance editor needs

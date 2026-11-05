@@ -2,6 +2,9 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QColor>
+#include <QDir>
+#include <QImage>
+#include <QStyleHints>
 #include <QFont>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -13,6 +16,10 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTextDocument>
+#include <QAbstractTextDocumentLayout>
+#include <QTextBlock>
+#include <QTextFragment>
 #include <QWindow>
 using namespace spentit;
 
@@ -261,6 +268,138 @@ private slots:
         QTRY_VERIFY(article->property("width").toDouble() + 80 < flick->property("width").toDouble());
         help->setWidth(wide);
         QVERIFY(!session.model.state().value("active").toBool());
+    }
+    void createOpenChapterReading() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        auto* help = openHelp(session.root);
+        QVERIFY(help);
+        QVERIFY(QTest::qWaitForWindowExposed(help));
+        QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
+        QCOMPARE(help->property("topicId").toString(), QString("create-open-file"));
+        auto* article = object(help, "helpArticle");
+        QVERIFY(article);
+        auto* quick = qobject_cast<QQuickTextDocument*>(textDocument(article));
+        QVERIFY(quick);
+        int images = 0;
+        QVERIFY(QMetaObject::invokeMethod(&catalog, "imageCount", Q_RETURN_ARG(int, images), Q_ARG(QObject*, quick)));
+        QCOMPARE(images, 3);
+        if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
+            QTest::qWait(150);
+            QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE")));
+        }
+        QTRY_VERIFY2(quick->textDocument()->idealWidth() <= article->property("width").toDouble() + 1,
+                     qPrintable(QString("Document width %1 exceeds article %2").arg(quick->textDocument()->idealWidth()).arg(article->property("width").toDouble())));
+        QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:create-open-file#open-your-file"))));
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Open your file"));
+        auto* flick = object(help, "helpArticleFlick");
+        for (const auto& name : {"create-file-setup.png", "create-file-workspace.png", "create-file-unlock.png"}) {
+            QTextBlock imageBlock;
+            for (auto block = quick->textDocument()->begin(); block != quick->textDocument()->end(); block = block.next()) {
+                for (auto it = block.begin(); !it.atEnd(); ++it) {
+                    const auto format = it.fragment().charFormat();
+                    if (format.isImageFormat() && format.toImageFormat().name().endsWith(name)) {
+                        imageBlock = block;
+                        QVERIFY(format.isAnchor());
+                        QCOMPARE(format.anchorHref(), QString("help-image:") + name);
+                    }
+                }
+            }
+            QVERIFY(imageBlock.isValid());
+            const auto rect = quick->textDocument()->documentLayout()->blockBoundingRect(imageBlock);
+            flick->setProperty("contentY", rect.top());
+            QTest::qWait(50);
+            const auto before = flick->property("contentY").toDouble();
+            auto* articleItem = qobject_cast<QQuickItem*>(article);
+            QVERIFY(articleItem);
+            QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,
+                             articleItem->mapToScene(QPointF(80, rect.top() + 40)).toPoint());
+            auto* picture = namedWindow("helpImageWindow");
+            QTRY_VERIFY(picture && picture->isVisible());
+            auto* image = object(picture, "helpImage");
+            QTRY_COMPARE(image->property("status").toInt(), 1);
+            QVERIFY(click(picture, "helpImageActual"));
+            QCOMPARE(help->property("imageZoom").toDouble(), 1.0);
+            QVERIFY(click(picture, "helpImageClose"));
+            QTRY_VERIFY(!picture->isVisible());
+            QCOMPARE(flick->property("contentY").toDouble(), before);
+        }
+        if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
+            QTest::qWait(150);
+            QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".images.png"));
+        }
+        help->resize(500, 680);
+        help->setProperty("textScale", 1.5);
+        QTRY_VERIFY(quick->textDocument()->idealWidth() <= article->property("width").toDouble() + 1);
+        if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
+            QTest::qWait(150);
+            QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".narrow.png"));
+        }
+        QVERIFY(QMetaObject::invokeMethod(help, "previousTopic"));
+        QCOMPARE(help->property("topicId").toString(), QString("understand-spending"));
+        QVERIFY(!session.model.state().value("active").toBool());
+    }
+    void createOpenChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        QTemporaryDir guide("/tmp/SpentIt-guide-XXXXXX");
+        QVERIFY(guide.isValid());
+        const auto path = guide.filePath("Household.spentit");
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1100, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(150);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        QVERIFY(click(session.root, "newDataset"));
+        wait(session.model);
+        QVERIFY(object(session.root, "datasetPath")->setProperty("text", path));
+        run(session.model, "prepare_create", {{"path", path}});
+        QVERIFY(object(session.root, "initialAccountName")->setProperty("text", "Chequing"));
+        QCOMPARE(object(session.root, "setupCurrency")->property("currentText").toString(), QString("CAD"));
+        QCOMPARE(object(session.root, "setupDateFormat")->property("currentText").toString(), QString("YYYY-MM-DD"));
+        QVERIFY(object(session.root, "defaultCategories")->property("checked").toBool());
+        QVERIFY(object(session.root, "passwordProtection")->property("checked").toBool());
+        auto* flick = object(session.root, "welcomeScreen")->property("contentItem").value<QObject*>();
+        QVERIFY(flick);
+        QTest::qWait(100);
+        flick->setProperty("contentY", qMax(0.0, flick->property("contentHeight").toDouble() - flick->property("height").toDouble()));
+        capture("create-file-setup");
+        QVERIFY(object(session.root, "newDatasetPassword")->setProperty("text", "guide-example"));
+        QVERIFY(object(session.root, "confirmDatasetPassword")->setProperty("text", "guide-example"));
+        QVERIFY(click(session.root, "createDataset"));
+        wait(session.model);
+        QVERIFY(session.model.state().value("active").toBool());
+        QCOMPARE(session.model.state().value("name").toString(), QString("Chequing"));
+        session.window->resize(1440, 900);
+        capture("create-file-workspace");
+        session.window->resize(1100, 900);
+        // The chapter's File > Close file route, followed by reopening the same file.
+        QVERIFY(QMetaObject::invokeMethod(object(session.root, "fileCloseDataset"), "triggered"));
+        wait(session.model);
+        QTRY_VERIFY(session.model.state().value("unlockRequired").toBool());
+        QTRY_VERIFY(object(session.root, "openProtectedDataset")->property("visible").toBool());
+        flick->setProperty("contentY", 0);
+        capture("create-file-unlock");
+        QVERIFY(object(session.root, "unlockPassword")->setProperty("text", "wrong-example"));
+        QVERIFY(click(session.root, "openProtectedDataset"));
+        wait(session.model, false);
+        QVERIFY(!session.model.state().value("active").toBool());
+        QVERIFY(object(session.root, "welcomeError")->property("visible").toBool());
+        QVERIFY(object(session.root, "unlockPassword")->setProperty("text", "guide-example"));
+        QVERIFY(click(session.root, "openProtectedDataset"));
+        wait(session.model);
+        QVERIFY(session.model.state().value("active").toBool());
+        QCOMPARE(session.model.state().value("name").toString(), QString("Chequing"));
+        QGuiApplication::styleHints()->unsetColorScheme();
     }
     void helpBesideRulesDialog() {
         HelpCatalog catalog;

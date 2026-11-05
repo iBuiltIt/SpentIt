@@ -3,14 +3,15 @@
 Last updated: 2026-11-05
 
 The viewer prototype Go on 2026-11-05 does not cover application-wide context
-links. A second Go the same day covers the first real chapter only. The design
+links. A second Go the same day covered the introduction; a subsequent Go covers
+chapter 2, its screenshots, and checking it in Help. The design
 is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. Update it when a step changes.
 
 ## Current step
 
-The Help window opens [Understand your spending](../manual/index.md). That is
-the only shipped topic. Sample topics used to check the viewer are in
+The Help window opens [Understand your spending](../manual/index.md), followed
+by [Create or open your file](../manual/create-open-file.md). Both are shipped. Sample topics used to check the viewer are in
 `tests/fixtures/help/` and are not shown in Help. Further chapters and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
@@ -23,6 +24,95 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 2 — 2026-11-05
+
+The owner gave Go for [Create or open your file](../manual/create-open-file.md),
+its screenshots, and verification in Help, with explicit direction to keep the
+plain-English voice concise. The chapter covers creation choices, password and
+overwrite consequences, initial orientation, opening/unlocking, common opening
+problems, closing/switching, and saved versus unfinished work. It is the second
+bundled topic; chapter 1 remains the opening topic.
+
+Three screenshots show the real `ImportMain.qml` through the native Qt test
+harness, using an isolated temporary Household file, Chequing, CAD, and light
+appearance. No private data or user settings were used. Computer-use attachment
+to the standalone executable was unavailable; this is a test-harness walkthrough,
+not a person clicking through `./build/SpentIt` or the native file picker.
+
+| Asset under `manual/images/` | Captured state | Capture basis |
+| --- | --- | --- |
+| `create-file-setup.png` | Setup scrolled to the creation controls; password fields empty | macOS, Qt 6.12.0 Basic, 1100 × 900 logical pixels, 2× capture |
+| `create-file-workspace.png` | Newly created Chequing account and zero Opening Balance row | Same harness, 1440 × 900 logical pixels, 2× capture |
+| `create-file-unlock.png` | Closed protected file waiting for its password | Same harness, 1100 × 900 logical pixels, 2× capture |
+
+Reproduce captures in the rules-enabled Release tree with:
+
+```sh
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests createOpenChapterWalkthrough
+```
+
+Then rebuild the application and Help tests to embed the refreshed assets. The
+walkthrough creates and removes only its own temporary synthetic file. Capture
+paths are not required to understand or use the manual.
+
+Full-resolution screenshots revealed inline overflow (2880-pixel image in a
+576-pixel article). The existing Qt Markdown renderer is retained; inline image
+formats now fit the column with their aspect ratios preserved, recomputing on
+width/text changes. Full-size sources remain available in the image viewer.
+The selected Contents topic also now uses explicit readable selection colors.
+CMake watches all manual Markdown/PNG inputs so adding or editing a chapter or
+screenshot regenerates the bundle. Test-only sample images remain separate.
+
+Verification on macOS, rules-enabled Release, Qt 6.12.0:
+
+- Built `spentit_import_experiment`, `spentit_help_ui_tests`, and
+  `spentit_help_tests`; `build/SpentIt` contains both chapters and all three images.
+- The five-check CTest command in “Build and check” passed 5/5 in 27.90s.
+- Native `spentit_help_ui_tests` passed 10/10 including init/cleanup in 24211ms.
+- The new walkthrough exercised the visible creation controls, File → Close
+  file, a rejected password, and successful reopening with the correct password.
+- Reading checks cover Next/Previous topic, the opening-section link, all three
+  image sources, Actual size and Close/scroll return, and no horizontal overflow
+  at normal width and at 500 pixels with 150% text. Existing modal-dialog Help
+  checks continue to pass.
+- Source captures and rendered normal/narrow chapter captures were visually
+  inspected. The selected Contents title is legible after the color correction.
+- Initial checks caught a test-resource alias error and the image overflow;
+  both were corrected before these final runs.
+
+Native Browse dialogs, complete keyboard-only traversal, screen readers, dark
+appearance for the new chapter, Linux, and Windows remain unverified. Some setup
+labels still say “dataset” (group heading, file-picker titles, password
+placeholder, overwrite title); the chapter uses actual action labels and the
+screenshots preserve those existing labels. This chapter did not change setup UI
+copy. Later chapters and application-wide context links need their own Go.
+
+## Picture-click correction — 2026-11-05
+
+The owner reported that selecting a chapter screenshot did not enlarge it.
+The previous image checks invoked `followLink` directly, so they verified the
+viewer but not the clickable image. A native mouse-click regression reproduced
+the failure: the rendered image fragment had `isAnchor == false` and an empty
+href, and clicking it left the image viewer closed.
+
+Qt Markdown drops the anchor around the linked image. The existing document
+formatting pass now restores the corresponding `help-image:` anchor only for
+images in the loaded catalog's bundled-image allowlist. Normal runtime link
+validation still applies. No renderer or dependency change was needed.
+
+The chapter-reading test now locates and scrolls to each of the three rendered
+images and sends a mouse click to its visible area. It requires the viewer to
+open and load the image, then checks Actual size and return to the same scroll
+position. These clicks replace the direct `followLink` calls for this test.
+The first native click reproduction failed; the same test passed after the fix.
+
+Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests`, and
+`spentit_help_tests` in rules-enabled Release, updating `build/SpentIt`.
+The five-check Help regression suite passed 5/5 in 27.77s; native Help UI tests
+passed 10/10 including init/cleanup in 24346ms. `git diff --check` passed.
+Native testing used macOS Qt 6.12.0; Linux/Windows and a manual application
+walkthrough remain unverified.
 
 ## Approved wording follow-up — 2026-11-05
 
@@ -275,7 +365,7 @@ every control with Tab only.
 ## Next agent
 
 1. Read this file and the design section “Implementation sequence”.
-2. The next chapter is “Create or open your file” in `manual/outline.md`.
+2. The next chapter is “Set up your accounts” in `manual/outline.md`.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.

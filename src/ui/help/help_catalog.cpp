@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QImageReader>
 #include <QQuickTextDocument>
 #include <QRegularExpression>
 #include <QSet>
@@ -345,7 +346,7 @@ qreal HelpCatalog::headingGap(QObject* documentObject, const QString& title) con
     return 0;
 }
 
-void HelpCatalog::relaxReading(QObject* documentObject) {
+void HelpCatalog::relaxReading(QObject* documentObject, qreal availableWidth) {
     // Qt Markdown keeps every block margin at zero, so paragraphs and headings
     // sit on top of each other. Give the article room without changing its words.
     if (relaxing_) return;
@@ -380,6 +381,39 @@ void HelpCatalog::relaxReading(QObject* documentObject) {
         }
         if (!empty) format.setLineHeight(138, QTextBlockFormat::ProportionalHeight);
         cursor.setBlockFormat(format);
+    }
+    // Keep the bundled source intact for the enlarged view; only size its
+    // inline QTextDocument presentation. Recompute when the column changes.
+    const qreal imageSpace = availableWidth - 2 * document->documentMargin();
+    if (imageSpace > 0) {
+        for (const QTextBlock& block : blocks) {
+            for (auto it = block.begin(); !it.atEnd(); ++it) {
+                const auto fragment = it.fragment();
+                if (!fragment.charFormat().isImageFormat()) continue;
+                auto format = fragment.charFormat().toImageFormat();
+                const auto source = format.name();
+                const QString prefix = QStringLiteral("qrc:/spentit/help/images/");
+                if (!source.startsWith(prefix) || !images_.contains(source.mid(prefix.size()))) continue;
+                QImageReader reader(source.mid(3));
+                const auto natural = reader.size();
+                if (!natural.isValid()) continue;
+                const qreal width = std::min(imageSpace, qreal(natural.width()));
+                const qreal height = width * natural.height() / natural.width();
+                // Qt's Markdown importer drops the surrounding anchor on an
+                // image. Restore only the allowlisted picture's own viewer link.
+                const QString href = QStringLiteral("help-image:") + source.mid(prefix.size());
+                if (format.width() == width && format.height() == height &&
+                    format.isAnchor() && format.anchorHref() == href) continue;
+                format.setAnchor(true);
+                format.setAnchorHref(href);
+                format.setWidth(width);
+                format.setHeight(height);
+                QTextCursor cursor(document);
+                cursor.setPosition(fragment.position());
+                cursor.setPosition(fragment.position() + fragment.length(), QTextCursor::KeepAnchor);
+                cursor.setCharFormat(format);
+            }
+        }
     }
     relaxing_ = false;
 }

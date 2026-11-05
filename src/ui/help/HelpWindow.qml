@@ -326,7 +326,13 @@ Window {
                         clip: true
                         model: root.catalog ? root.catalog.topics : []
                         delegate: ItemDelegate {
+                            id: topicDelegate
                             width: ListView.view.width
+                            palette.highlightedText: theme.text
+                            background: Rectangle {
+                                color: topicDelegate.highlighted ? theme.selection : topicDelegate.hovered ? theme.alternate : "transparent"
+                                border.color: topicDelegate.activeFocus ? theme.focus : "transparent"
+                            }
                             text: modelData.title
                             highlighted: modelData.id === root.topicId
                             objectName: "helpTopic_" + modelData.id
@@ -398,8 +404,9 @@ Window {
                         Accessible.name: "Help article"
                         activeFocusOnTab: true
                         onLinkActivated: function(link) { root.followLink(link) }
-                        onTextChanged: if (root.catalog) root.catalog.relaxReading(textDocument)
-                        onFontChanged: if (root.catalog && length > 0) root.catalog.relaxReading(textDocument)
+                        onWidthChanged: if (root.catalog && length > 0) root.catalog.relaxReading(textDocument, width)
+                        onTextChanged: if (root.catalog) root.catalog.relaxReading(textDocument, width)
+                        onFontChanged: if (root.catalog && length > 0) root.catalog.relaxReading(textDocument, width)
                     }
                 }
                 RowLayout {

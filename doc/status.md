@@ -2,6 +2,45 @@
 
 Last updated: 2026-11-05
 
+## Help picture clicks — 2026-11-05
+
+Fixed the owner's report that chapter screenshots did not open when clicked.
+Qt Markdown had dropped the image anchor; the document formatting pass now
+restores each allowlisted image's `help-image:` link. The previous tests called
+the viewer function directly and did not establish mouse-click behavior.
+The replacement regression reproduced the failure and now clicks all three
+rendered chapter screenshots, verifies image loading, and checks return position.
+
+Rebuilt `build/SpentIt` and Help tests in rules-enabled Release on macOS,
+Qt 6.12.0. The five-check regression suite passed 5/5 in 27.77s; native Help UI
+tests passed 10/10 including init/cleanup in 24346ms. `git diff --check` passed.
+Linux, Windows, and a manual application walkthrough remain unverified.
+See [the correction](help-prototype-handoff.md#picture-click-correction--2026-11-05).
+
+## Help chapter 2 — 2026-11-05
+
+The owner's Go for the next chapter is implemented. Help now bundles
+[Create or open your file](../manual/create-open-file.md) after the introduction,
+with three synthetic screenshots of setup, the first workspace, and unlocking.
+The owner's concise/plain-English writing direction is recorded in the language
+guide. Full-size screenshots exposed inline overflow; images now fit the article
+without stretching or losing their full-size source. Contents selection colors
+are explicit so the selected chapter remains readable. Manual source/image
+changes regenerate the bundle during the build.
+
+Rules-enabled Release on macOS, Qt 6.12.0: application and Help targets rebuilt
+successfully to `build/SpentIt`. The five-check Help regression command passed
+5/5 in 27.90s; native Help UI tests passed 10/10 including init/cleanup in
+24211ms. New checks exercise create/close/wrong-password/reopen and chapter
+navigation, section linking, three image sources, image-view return, and narrow
+reading at larger text sizes. Source screenshots and normal/narrow rendered
+captures were visually inspected. `git diff --check` passed.
+
+The walkthrough uses the real QML screens in the Qt harness with isolated
+synthetic data. Native file-picker interaction, a manual `./build/SpentIt`
+walkthrough, full keyboard/screen-reader checks, dark chapter appearance, Linux,
+and Windows remain unverified. See [the chapter record and image inventory](help-prototype-handoff.md#chapter-2--2026-11-05).
+
 ## Approved Help introduction voice — 2026-11-05
 
 The owner approved the replacement chapter and requested installation in
