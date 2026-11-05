@@ -1,6 +1,19 @@
 # Project status
 
-Last updated: 2026-11-04
+Last updated: 2026-11-05
+
+## Help system design — 2026-11-05
+
+Added the [help-system proposal](../features/013-help-system.md) under the owner's
+request for a design document. It records the embedded/offline reading experience,
+nontechnical introduction and encounter-based manual, responsive layout, images,
+search, context links and proposed QML implementation. Authored content belongs
+in `manual/`, with `manual/images/`; viewer code is proposed under `src/ui/help/`.
+No manual chapters, screenshots, viewer or packaging were implemented. The
+renderer and detailed implementation remain proposals awaiting owner Go.
+Verification: `git diff --check` and relative file-link checks for the new feature,
+feature index and status document passed. No runtime tests were required or run
+for this documentation-only change.
 
 ## Compact reports, grouped bars and editable drill-down — 2026-11-04
 
