@@ -37,6 +37,8 @@ void ImportStore::stage_import_categories(std::string_view source,const app::Ope
     if(names.empty())finish_import_categories(source,context);
 }
 void ImportStore::resolve_import_categories(std::string_view source,const std::vector<std::string>& selected,app::OperationContext& context) {
+    diag::Span phase(diag::Code::import_category_resolution);
+    ScopedStatements plans(impl_->db);
     Atomic transaction(impl_->db);
     Statement state(impl_->db,"SELECT d.resolved,g.state FROM import_category_decisions d JOIN import_groups g ON g.id=d.source WHERE d.source=?");state.text(1,source);
     if(!state.row() || state.integer(1)==3)fail(SQLITE_CONSTRAINT,"This import is no longer awaiting categories");
@@ -66,6 +68,8 @@ void ImportStore::resolve_import_categories(std::string_view source,const std::v
     context.seal();finish([&]{transaction.commit();});
 }
 void ImportStore::finish_import_categories(std::string_view source,const app::OperationContext& context) {
+    // Also cover automatic resolution when preparation finds no missing names.
+    ScopedStatements plans(impl_->db);
     const auto original_account=impl_->selected_account;
     struct Restore {std::int64_t& target;std::int64_t value;~Restore(){target=value;}} restore{impl_->selected_account,original_account};
     const auto catalog=category_catalog();
@@ -76,28 +80,32 @@ void ImportStore::finish_import_categories(std::string_view source,const app::Op
     while(members.row()) {
         const auto batch_id=members.bytes(0);impl_->selected_account=members.integer(1);
         const auto before=batch(impl_->db,batch_id);bool changed=false;
-        for(std::size_t i=0;i<before.count;++i) {
-            context.checkpoint("Assigning imported categories");
-            const imports::Occurrence id{batch_id,i};const auto row=load_row(id,false);if(!row.draft || transaction_accepted(id) || row.matched_generated)continue;
-            auto draft=*row.draft;auto allocations=draft.transaction.allocations();bool row_changed=false;
-            for(auto& a:allocations) {
-                if(a.category_owner!=FieldOwnership::source || a.category_binding || a.category.empty() || qif::transfer_destination(a.category) || resolve_account_name(a.category))continue;
-                const auto same=[&](std::string_view other){try{return app::category_name_matches(other,a.category);}catch(const std::invalid_argument&){return other==a.category;}};
-                if(std::any_of(cleared.begin(),cleared.end(),same)) {a.category.clear();a.category_owner=FieldOwnership::manual;a.category_rule.reset();row_changed=true;continue;}
-                const auto found=std::find_if(catalog.categories.begin(),catalog.categories.end(),[&](const auto& c){return !c.deleted && same(c.name);});
-                if(found==catalog.categories.end())fail(SQLITE_CONSTRAINT,"Choose how to use every imported category");
-                if(found->archived)fail(SQLITE_CONSTRAINT,"Reactivate the imported category before using it");
-                a.category=found->name;a.category_binding=CategoryBinding{found->identity,catalog.revision};row_changed=true;
+        {
+            diag::Span assignment(diag::Code::import_category_assign);
+            for(std::size_t i=0;i<before.count;++i) {
+                context.checkpoint("Assigning imported categories");
+                const imports::Occurrence id{batch_id,i};const auto row=load_row(id,false);if(!row.draft || transaction_accepted(id) || row.matched_generated)continue;
+                auto draft=*row.draft;auto allocations=draft.transaction.allocations();bool row_changed=false;
+                for(auto& a:allocations) {
+                    if(a.category_owner!=FieldOwnership::source || a.category_binding || a.category.empty() || qif::transfer_destination(a.category) || resolve_account_name(a.category))continue;
+                    const auto same=[&](std::string_view other){try{return app::category_name_matches(other,a.category);}catch(const std::invalid_argument&){return other==a.category;}};
+                    if(std::any_of(cleared.begin(),cleared.end(),same)) {a.category.clear();a.category_owner=FieldOwnership::manual;a.category_rule.reset();row_changed=true;continue;}
+                    const auto found=std::find_if(catalog.categories.begin(),catalog.categories.end(),[&](const auto& c){return !c.deleted && same(c.name);});
+                    if(found==catalog.categories.end())fail(SQLITE_CONSTRAINT,"Choose how to use every imported category");
+                    if(found->archived)fail(SQLITE_CONSTRAINT,"Reactivate the imported category before using it");
+                    a.category=found->name;a.category_binding=CategoryBinding{found->identity,catalog.revision};row_changed=true;
+                }
+                if(row_changed) {
+                    if(before.revision==INT64_MAX)fail(SQLITE_FULL);
+                    draft.transaction=draft.transaction.corrected(draft.transaction.effective_total(),std::move(allocations));
+                    version(impl_->db,id,before.revision+1,draft,row.decision,false);changed=true;
+                }
             }
-            if(row_changed) {
-                if(before.revision==INT64_MAX)fail(SQLITE_FULL);
-                draft.transaction=draft.transaction.corrected(draft.transaction.effective_total(),std::move(allocations));
-                version(impl_->db,id,before.revision+1,draft,row.decision,false);changed=true;
-            }
+            if(changed)advance(impl_->db,batch_id,before.revision,"save");
         }
-        if(changed)advance(impl_->db,batch_id,before.revision,"save");
 #ifdef SPENTIT_RULES_STORAGE
         if(rules_supported()) {
+            diag::Span evaluation(diag::Code::import_category_rules);
             const auto revision=ruleset_revision(impl_->db);rules::RuleSet ruleset(rules_at(impl_->db,revision));
             const auto prepared=batch(impl_->db,batch_id);std::size_t evaluated=0,modified=0;
             for(std::size_t i=0;i<prepared.count;++i) {

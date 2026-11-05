@@ -1,6 +1,6 @@
 # Local application diagnostics
 
-Last updated: 2026-10-31
+Last updated: 2026-11-04
 
 Diagnostics is opt-in, read-only, process-local observation. It does not change the document format, validation, commands, matching policy, encryption or durable boundaries. It contains workload metadata and should be treated as local sensitive information. There is no telemetry, automatic export, screenshot, MCP server or action interface.
 
@@ -73,6 +73,18 @@ compare children, never add their inclusive durations to the parent.
 The UI publisher preserves the removed projected-toggle index as an empty slot.
 It no longer references the removed QML object, which previously prevented all
 semantic UI snapshots with a `ReferenceError`.
+
+### Imported-category resolution timings — 2026-11-04
+
+`resolve_import_categories` now has a fixed action ID, so Apply selected reports
+its own execution, saved outcome, delivered model and readiness rather than
+leaving the previous import operation visible. New enum values append to schema 1;
+existing values retain their indices. `import_category_resolution` includes the
+explicit resolution command and its final review/commit; `import_category_assign`
+and `import_category_rules` measure each account's assignment and automatic-rule
+passes. Assignment/rules spans also cover automatic resolution during preparation.
+These spans nest: do not add their inclusive times to their parent. They expose
+no category names, account names, source text or financial values.
 
 ### Review operation timings — 2026-10-31
 

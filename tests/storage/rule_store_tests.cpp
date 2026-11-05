@@ -1,4 +1,5 @@
 #include <spentit/import_store.hpp>
+#include <spentit/diagnostics.hpp>
 #include "fault_vfs.hpp"
 #include "import_legacy_schema.hpp"
 #include "import_schema3_fixture.hpp"
@@ -362,6 +363,56 @@ void category_multi(){
     }
     {auto s=ImportStore::open(path,password);s.select_account(2);s.verify();check(s.row({"multi-account-1",1}).draft->transaction.allocations()[0].category.empty());}
 }
+// Synthetic multi-account workload; never accepts a user file or dataset path.
+void category_scale(std::size_t count) {
+    check(count>=12 && count<=10000);
+    auto& collector=diagnostics::Collector::instance();collector.enable();
+    Directory dir("spentit-category-scale-XXXXXX");const auto path=dir.path/"doc";
+    {
+        auto s=create(path);s.create_account(2,"Second",cad,"2026-01-01");
+        save_rules(s,"automatic",{rule_of("auto","Automatic",rules::Scope::transaction,rules::InputField::payee,"^Synthetic",{{},{},"rule-default",false})},0);
+        std::string source;
+        for(const auto name:{"Synthetic account","Second"}) {
+            source+="!Account\nN"+std::string(name)+"\nTBank\n^\n!Type:Bank\n";
+            for(std::size_t i=0;i<count;++i)
+                source+="D1/8/2026\nT-1.25\nPSynthetic "+std::to_string(i)+"\nL"+(i%3==0?"Clear this":"Imported category")+"\n^\n";
+        }
+        const auto start=std::chrono::steady_clock::now();
+        app::OperationContext capture;s.prepare_import_group("scale",source,qif::DateOrder::dmy,{{0,1,{}},{1,2,{}}},capture);
+        app::OperationContext prepare;s.resume_import_group("scale",prepare);
+        check(s.missing_import_categories().size()==1);
+        const auto before=collector.snapshot();const auto ready=std::chrono::steady_clock::now();
+        app::OperationContext resolve;s.resolve_import_categories("scale",{"Imported category"},resolve);
+        const auto ended=std::chrono::steady_clock::now();const auto after=collector.snapshot();
+        const auto metric=[&](diagnostics::Code code){return after.metrics[static_cast<unsigned>(code)].calls-before.metrics[static_cast<unsigned>(code)].calls;};
+        std::cout<<"category_scale rows="<<2*count<<" prepare_ms="<<std::chrono::duration_cast<std::chrono::milliseconds>(ready-start).count()
+                 <<" resolve_ms="<<std::chrono::duration_cast<std::chrono::milliseconds>(ended-ready).count()
+                 <<" prepares="<<metric(diagnostics::Code::statement_prepare)<<" reuses="<<metric(diagnostics::Code::statement_reuse)<<'\n';
+        if(after.enabled) {
+            // A count bound avoids flaky wall-clock assertions and catches loss
+            // of operation-scoped plan/alias reuse as the workload grows.
+            check(metric(diagnostics::Code::statement_prepare)<1000);
+            check(metric(diagnostics::Code::statement_reuse)>2*count);
+            check(metric(diagnostics::Code::import_category_assign)==2);
+            check(metric(diagnostics::Code::import_category_rules)==2);
+        }
+        check(s.missing_import_categories().empty());
+        for(int account=0;account<2;++account) {
+            s.select_account(account+1);
+            for(std::size_t i=0;i<count;++i) {
+                const auto row=s.row({"scale-account-"+std::to_string(account),i});check(row.draft.has_value());
+                check(row.draft->transaction.effective_total()==Money(-125,cad));
+                const auto& a=row.draft->transaction.allocations();check(a.size()==1 && a[0].amount==Money(-125,cad));
+                check(a[0].category==(i%3==0?"Rule category":"Imported category"));check(a[0].category_binding.has_value());
+                check(a[0].category_rule.has_value()==(i%3==0));
+            }
+        }
+        app::OperationContext retry;s.resolve_import_categories("scale",{"Imported category"},retry);
+        check(s.accept_all("accept",true).transactions==2*count);s.verify();
+    }
+    {auto s=ImportStore::open(path,password);s.verify();check(s.missing_import_categories().empty());}
+    no_leaks(dir.path);
+}
 void category_fault_setup(const fs::path& path) {
     auto s=create(path);save_rules(s,"automatic-rule",{rule_of("auto","Automatic",rules::Scope::transaction,rules::InputField::payee,"Automatic",{{},{},"rule-default",false})},0);
     const std::string source="!Type:Bank\nD1/8/2026\nT-1\nPSynthetic\nLMissing category\n^\nD2/8/2026\nT-2\nPAutomatic\n^\n";
@@ -393,6 +444,22 @@ void category_faults() {
         {auto s=ImportStore::open(path,password);check(s.missing_import_categories().empty()==(phase==ImportPhase::after_commit));}category_fault_recover(path);
     }
     {Directory dir("spentit-category-cancel-XXXXXX");const auto path=dir.path/"doc";category_fault_setup(path);auto s=ImportStore::open(path,password);app::OperationContext c;c.progress=[&](std::string_view phase){if(phase=="Assigning imported categories")c.request();};rejects_text([&]{s.resolve_import_categories("source",{"Missing category"},c);},"cancel");check(s.missing_import_categories().size()==1);s.verify();}
+    // Cancel after a category version was written, then retry on this connection.
+    // This exercises cache destruction after rollback, not only clean reopen.
+    {
+        Directory dir("spentit-category-retry-XXXXXX");const auto path=dir.path/"doc";category_fault_setup(path);
+        auto s=ImportStore::open(path,password);std::size_t assignments=0;
+        app::OperationContext cancel;cancel.progress=[&](std::string_view phase){if(phase=="Assigning imported categories" && ++assignments==2)cancel.request();};
+        rejects_text([&]{s.resolve_import_categories("source",{"Missing category"},cancel);},"cancel");
+        check(assignments==2 && s.missing_import_categories().size()==1);
+        check(!s.row({"source-account-0",0}).draft->transaction.allocations()[0].category_binding);
+        check(!s.resolve_account_name("Missing category"));
+        app::OperationContext retry;s.resolve_import_categories("source",{"Missing category"},retry);
+        check(s.missing_import_categories().empty());
+        check(s.row({"source-account-0",0}).draft->transaction.allocations()[0].category_binding.has_value());
+        check(s.row({"source-account-0",1}).draft->transaction.allocations()[0].category_rule->identity=="auto");
+        s.verify();
+    }
     std::cout<<"Import category resolution: "<<positions<<" write/sync faults, cancellation and both commit boundaries passed\n";
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

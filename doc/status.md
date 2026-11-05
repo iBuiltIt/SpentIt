@@ -2,6 +2,74 @@
 
 Last updated: 2026-11-04
 
+## Imported-category assignment performance — 2026-11-04
+
+Implemented under owner Go after profiling the Apply selected category decision.
+`resolve_import_categories` now creates the existing bounded `ScopedStatements`
+operation scope before its transaction; `finish_import_categories` also establishes
+that scope for automatic completion during import preparation. Nested scopes reuse
+the outer cache. This avoids rebuilding account aliases and reparsing grouped
+source files for every allocation, and reuses SQL plans. Existing alias-signature
+invalidation and per-operation destruction remain unchanged. No financial policy,
+transaction boundary, verification step, format or migration changed.
+
+Diagnostics appends the `resolve_import_categories` action and three fixed timing
+codes for total resolution, assignment and automatic rules. The UI now reports this
+command's own saved outcome and delivered generation. No financial text is added.
+
+Synthetic benchmark: macOS arm64, AppleClang 21, rules-enabled Release storage,
+diagnostics enabled in both binaries, encrypted temporary datasets, two accounts,
+one automatic rule, ordinary imported and deliberately cleared categories. Three
+serial before/after pairs per size; no competing builds/tests during measurements.
+Each process creates a new dataset; OS caches were not flushed. Correctness checks
+cover every row's exact amount, selected category/rule result, retry, acceptance,
+full verification and reopening. These are storage timings, not native UI latency
+or a prediction for the owner's private dataset.
+
+| Total rows | Before resolution median (range) | After median (range) | SQL preparations before → after |
+|---|---|---|---|
+| 1,000 | 2.219 s (2.156–2.284) | 0.554 s (0.544–0.562) | 67,456 → 71 |
+| 4,000 | 14.259 s (13.810–15.369) | 2.185 s (2.180–2.268) | 269,456 → 71 |
+
+Reproduce with `tests/storage/spentit_rule_store_tests category_scale 500` or
+`category_scale 2000` under the configured build directory (argument is rows per
+account); each invocation creates and removes its own synthetic dataset.
+
+Measured binary SHA-256: before
+`6f6dae0d0e181c5e0993afd4f1b0db799b72273e5c9fb89eb6f7c21fcb52d793`;
+after `e5cf42da90703790e2cc18238bbe3e7942df9b6ce3084d0b24cb5cf77120f396`.
+The final test binary adds deterministic preparation-count and timing-span
+assertions, plus same-connection retry after cancellation following a written row;
+production behavior is unchanged from the measured revision.
+
+Verification on the final code, synthetic fixtures only:
+
+- Rules-enabled Release: **10/10 CTest checks passed**, 181.06 s, with
+  `SPENTIT_TEST_DIAGNOSTICS=1 QT_QPA_PLATFORM=offscreen`. Selection:
+  `diagnostics.collector`, `transferstore.basics/imports/qif`,
+  `rulestore.category_scale/category_gate/category_multi/category_faults/application`,
+  and `import.ui`. The UI runner passed 80 Qt cases, skipped its existing
+  unavailable `bulkInteractions` format case, and reported no failures. Its new
+  assertions verify the category command's own successful saved outcome, GUI
+  delivery and resolution span.
+- Category fault sweep: **185 write/sync positions**, alternating disk-full/I/O
+  errors, pre/post-commit process interruption, cancellation, reopen/retry and
+  same-connection retry after a written row was rolled back; Release 80.07 s.
+- Rules-enabled Debug ASan/UBSan (`build/category-sanitized`): **5/5 passed**,
+  213.73 s: diagnostics collector and category scale/gate/multi/faults. Fault sweep
+  202.46 s; no sanitizer diagnostic. Environment:
+  `ASAN_OPTIONS=quarantine_size_mb=8:malloc_context_size=0:halt_on_error=1`,
+  `UBSAN_OPTIONS=halt_on_error=1`. This is storage/collector coverage, not a
+  sanitized Qt application run.
+- Rules-disabled, diagnostics-disabled Release (`build/category-rules-off`):
+  storage/schema-gate and collector targets built; **2/2 passed**, 8.43 s.
+  This is not a rules-disabled UI or full import-suite claim.
+- Final rules-enabled Release application and diagnostics reader rebuilt.
+  `git diff --check` and edited-document relative file-link checks passed.
+  The full application suite was not run.
+The existing private-data application session was not restarted or used as a test
+fixture. Linux/Windows and native UI retiming remain unverified.
+
 ## Reports and shared calendar — 2026-11-04
 
 Implemented under the owner's subsequent Go for the initial reporting/calendar

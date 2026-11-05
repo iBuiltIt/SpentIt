@@ -171,6 +171,14 @@ class ImportUiTests : public QObject {
     void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {
         auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
         QVERIFY2(model.error().isEmpty()==success,qPrintable(action+": "+model.error()));
+        if(success && action=="resolve_import_categories" && model.diagnosticsEnabled()) {
+            const auto observed=diagnostics::Collector::instance().snapshot();
+            QCOMPARE(observed.latest.action,diagnostics::Action::resolve_import_categories);
+            QCOMPARE(observed.latest.result,diagnostics::Result::succeeded);
+            QCOMPARE(observed.latest.persistence,diagnostics::Persistence::confirmed_saved);
+            QVERIFY(observed.latest.delivered!=0);
+            QVERIFY(observed.metrics[static_cast<unsigned>(diagnostics::Code::import_category_resolution)].calls>0);
+        }
         if(success && (action=="import" || action=="map_import"))for(const auto& item:model.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(model,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}
     }
     void create(ImportModel& m,const QString& path) {

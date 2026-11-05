@@ -1,7 +1,7 @@
 # 004 — Rules and explanations
 
 Status: **active**  
-Last updated: 2026-11-03  
+Last updated: 2026-11-04  
 Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 42; rules-off documents use schema 41. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
 
 ## Shared category completion — owner Go 2026-11-02
@@ -27,6 +27,16 @@ does not own financial commands. See [status](../doc/status.md) for verification
 The split-first policy and import-wide decision below supersede the earlier
 per-field evaluator and isolated selected-rule Preview/Apply. Formats 42/41
 reject earlier experimental files without migration.
+
+### Category-resolution performance follow-up — owner Go 2026-11-04
+
+Apply selected and automatic completion now use the existing bounded
+operation-scoped statement and account-alias caches. This avoids reconstructing
+account aliases (including reparsing grouped source files) for each allocation.
+Existing alias-signature invalidation, category gates, transfer protection,
+transaction boundaries and rollback behavior remain authoritative. Diagnostics
+identify this command and separate category assignment from automatic rules.
+See [status](../doc/status.md) for synthetic measurements and failure verification.
 
 ### Why this changes
 

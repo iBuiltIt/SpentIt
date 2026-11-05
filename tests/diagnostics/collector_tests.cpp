@@ -45,6 +45,8 @@ int main(){
     return 0;
 #else
     check(c.enable());
+    check(action("resolve_import_categories")==Action::resolve_import_categories);
+    check(name(Code::import_category_assign)=="import_category_assign");
     check(action("CANARY-payee-/private/password-1234")==Action::unclassified);
     check(name(static_cast<Action>(9000))=="unclassified");
     auto id=c.admit(Action::open);
