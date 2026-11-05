@@ -2,6 +2,34 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 6 — 2026-11-05
+
+The owner accepted chapter 5, committed as `bbd3a8b`, and gave Go for chapter 6.
+[Review duplicates and link transfers](../manual/review-duplicates-transfers.md)
+is bundled with four synthetic screenshots, accepted by the owner for commit. The accepted
+workflow used supporting verification, one primary writer/capture owner and an
+independent reviewer. No financial behavior or Help viewer implementation changed.
+The chapter explains Merge versus Link, survivor/manual-entry choices, batch
+selection, generated counterparts, differences, exclusions and eligible Undo.
+
+The three rules-enabled Release application/Help targets rebuilt to `build/SpentIt`.
+The documented five-check Help regression passed 5/5 in 103.21s. Native Help passed
+19/19 including init/cleanup in 45829ms. New checks exercise actual Merge/No/Undo,
+exact Link, transfer-arrow navigation, amount-difference Cancel/Link/Undo, all four
+image clicks/loading/enlargement/return, section navigation and narrow reading at
+150% text. The initial native capture walkthrough passed 4/4 in 7326ms; a separate
+rendered-reading capture passed 3/3 in 2542ms. Source images and normal/narrow Help
+captures were visually inspected. Focused offscreen Review checks passed 12/12 in
+9929ms, and policy/state/manual-transaction checks passed 3/3 in 42.62s. Relative
+file-link checks and `git diff --check` passed.
+
+The [handoff](help-prototype-handoff.md#chapter-6--2026-11-05) records commands,
+scenarios and limits. Captures use actual QML in a native Qt harness, isolated
+synthetic files, macOS Qt 6.12.0 Basic light theme, 1440 × 900 logical pixels at 2×.
+This is not a manual standalone-app walkthrough. Dark chapter appearance, full
+keyboard/screen-reader operation, Linux and Windows remain unverified. Chapter 6
+is owner-accepted for commit; chapter 7 and context links need Go.
+
 ## Help chapter 5 — 2026-11-05
 
 Under the owner's Go, [Find your way around transactions](../manual/find-transactions.md)

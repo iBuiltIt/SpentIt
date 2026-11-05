@@ -10,8 +10,9 @@ accounts, was accepted and committed. Chapter 4, Bring in transactions, is now
 bundled with five screenshots under the subsequent Go and accepted chapter
 workflow, accepted by the owner for commit. Sample topics remain a test
 fixture. Chapter 5, Find your way around transactions, is bundled under its
-subsequent Go with three screenshots, accepted by the owner for commit. Chapters after
-chapter 5 and context links still need their own Go. macOS checks and limits
+subsequent Go with three screenshots, accepted and committed. Chapter 6, Review duplicates and link transfers, is
+bundled with four screenshots under the next Go, accepted by the owner for commit. Chapters after
+chapter 6 and context links still need their own Go. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 
 ## Accepted requirements — owner direction 2026-11-05

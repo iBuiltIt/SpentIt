@@ -287,6 +287,9 @@ private slots:
         QTest::newRow("transactions") << QString("find-transactions")
             << QStringList{"transactions-ledger.png", "transactions-search.png", "transactions-review.png"}
             << QString("find-a-purchase") << QString("Find a purchase");
+        QTest::newRow("review") << QString("review-duplicates-transfers")
+            << QStringList{"review-keep.png", "review-link.png", "review-linked.png", "review-difference.png"}
+            << QString("when-the-amounts-differ") << QString("When the amounts differ");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -301,10 +304,12 @@ private slots:
         auto* help = openHelp(session.root);
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
-        QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
-        if (topic != "create-open-file") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
-        if (topic == "bring-in-transactions" || topic == "find-transactions") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
-        if (topic == "find-transactions") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
+        const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers"};
+        const auto topicIndex = order.indexOf(topic);
+        QVERIFY(topicIndex > 0);
+        for (int index = 0; index < topicIndex; ++index)
+            QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
         QCOMPARE(help->property("topicId").toString(), topic);
         auto* article = object(help, "helpArticle");
         QVERIFY(article);
@@ -365,7 +370,7 @@ private slots:
             QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".narrow.png"));
         }
         QVERIFY(QMetaObject::invokeMethod(help, "previousTopic"));
-        QCOMPARE(help->property("topicId").toString(), topic == "find-transactions" ? QString("bring-in-transactions") : topic == "bring-in-transactions" ? QString("set-up-accounts") : topic == "set-up-accounts" ? QString("create-open-file") : QString("understand-spending"));
+        QCOMPARE(help->property("topicId").toString(), order.at(topicIndex - 1));
         QVERIFY(!session.model.state().value("active").toBool());
     }
     void createOpenChapterWalkthrough() {
@@ -679,6 +684,103 @@ private slots:
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("ledger"));
         mouse("navigationForward");
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
+        QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void reviewChapterWalkthrough_data() {
+        QTest::addColumn<bool>("difference");
+        QTest::newRow("merge-link") << false;
+        QTest::newRow("difference") << true;
+    }
+    void reviewChapterWalkthrough() {
+        QFETCH(bool, difference);
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false},
+            {"name", difference ? "Chequing" : "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        auto mouse = [&](const QString& name) {
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
+            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QTest::qWait(180);
+            QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier,
+                item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
+            wait(session.model);
+        };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(150);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        int sequence = 0;
+        auto import = [&](const QByteArray& bytes, const QString& account) {
+            QFile file(session.path("review-" + QString::number(++sequence) + ".qif"));
+            QVERIFY(file.open(QIODevice::WriteOnly)); file.write(bytes); file.close();
+            run(session.model, "import", {{"path", file.fileName()}, {"account", account}});
+        };
+        if (!difference) {
+            import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\n^\nD2026-01-20\nT6.00\nPMarket refund\n^\n", "1");
+            import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket groceries\n^\n", "1");
+            QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
+            mouse("reviewNavigation");
+            QTRY_VERIFY(object(session.root, "reviewYes")); mouse("reviewYes");
+            QTRY_VERIFY(object(session.root, "reviewSurvivor")->property("visible").toBool());
+            capture("review-keep");
+            mouse("reviewKeep_0");
+            QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
+            mouse("reviewUndo");
+            QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
+            QTRY_VERIFY(object(session.root, "reviewNo")); mouse("reviewNo");
+            QCOMPARE(session.model.state().value("reviewCount").toInt(), 0);
+            QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
+            mouse("reviewUndo");
+            QTRY_VERIFY(object(session.root, "reviewYes")); mouse("reviewYes");
+            QTRY_VERIFY(object(session.root, "reviewSurvivor")->property("visible").toBool()); mouse("reviewKeep_0");
+            run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+            run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "1,000.00"}});
+            import("!Type:Bank\nD2026-01-28\nT-36.18\nPCredit card payment\n^\n", "2");
+            run(session.model, "select_account", {{"id", "1"}});
+            import("!Type:CCard\nD2026-01-29\nT36.18\nPPayment received\n^\n", "1");
+            mouse("reviewNavigation");
+            QTRY_VERIFY(object(session.root, "reviewLinkCandidate_1"));
+            capture("review-link");
+            mouse("reviewYes");
+            QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
+            QCOMPARE(session.model.state().value("transfers").toList().size(), 1);
+            mouse("accountNavigation");
+            session.root->setProperty("editorClosed", true);
+            run(session.model, "query", {{"sort", 0}, {"descending", false}});
+            QTRY_VERIFY(object(session.root, "ledgerTransferArrow_3"));
+            capture("review-linked");
+            mouse("ledgerTransferArrow_3");
+            QTRY_COMPARE(session.model.state().value("name").toString(), QString("Chequing"));
+            QCOMPARE(session.model.state().value("balance").toString(), QString("963.82"));
+        } else {
+            import("!Type:Bank\nD2026-01-28\nT-37.18\nPCredit card payment\nL[Credit card]\n^\n", "1");
+            run(session.model, "create_account", {{"id", "2"}, {"name", "Credit card"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+            import("!Type:CCard\nD2026-01-29\nT36.18\nPPayment received\n^\n", "2");
+            mouse("reviewNavigation");
+            QTRY_VERIFY(object(session.root, "reviewYes")); mouse("reviewYes");
+            QTRY_VERIFY(object(session.root, "reviewDifference")->property("visible").toBool());
+            QCOMPARE(session.model.state().value("reviewLinkPreview").toMap().value("common").toString(), QString("36.18"));
+            QCOMPARE(session.model.state().value("reviewLinkPreview").toMap().value("remainder").toString(), QString("1.00"));
+            capture("review-difference");
+            mouse("reviewDifferenceNo");
+            QTRY_VERIFY(!object(session.root, "reviewDifference")->property("visible").toBool());
+            QCOMPARE(session.model.state().value("reviewCount").toInt(), 1);
+            mouse("reviewYes");
+            QTRY_VERIFY(object(session.root, "reviewDifference")->property("visible").toBool());
+            mouse("reviewDifferenceYes");
+            QCOMPARE(session.model.state().value("balance").toString(), QString("36.18"));
+            QCOMPARE(session.model.state().value("reviewCount").toInt(), 0);
+            mouse("reviewUndo");
+            QCOMPARE(session.model.state().value("reviewCount").toInt(), 1);
+        }
         QGuiApplication::styleHints()->unsetColorScheme();
     }
     void helpBesideRulesDialog() {

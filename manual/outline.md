@@ -1,7 +1,7 @@
 # SpentIt help and user manual — proposed outline
 
 Date: 2026-11-05  
-Status: proposed content outline for review. Chapters 1–5 are written, with screenshots in chapters 2–5. Chapter 4 is owner-accepted; chapter 5 is owner-accepted. Later chapters are not yet written.
+Status: proposed content outline for review. Chapters 1–6 are written, with screenshots in chapters 2–6. Chapter 5 is owner-accepted; chapter 6 is owner-accepted for commit. Later chapters are not yet written.
 
 ## Purpose and reading order
 
@@ -366,7 +366,10 @@ account creation, opening, and menu screenshots. Chapter 4,
 [Bring in transactions](import-transactions.md), adds import destination, mapping,
 category-choice, ledger-result, and Undo screenshots. Chapter 5,
 [Find your way around transactions](find-transactions.md), adds ledger, search
-and Review screenshots. Later chapters and context links
+and Review screenshots. Chapter 6,
+[Review duplicates and link transfers](review-duplicates-transfers.md), adds
+keep-choice, transfer-question, linked-ledger and amount-difference screenshots.
+Later chapters and context links
 are separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.

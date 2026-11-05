@@ -19,8 +19,10 @@ by [Create or open your file](../manual/create-open-file.md) and
 and committed as `467a20e`; the owner also accepted chapter 4 and requested
 its commit (`ec23d60`). Chapter 5,
 [Find your way around transactions](../manual/find-transactions.md), is now bundled
-under its Go and accepted by the owner for commit. Sample topics used to check the viewer are in
-`tests/fixtures/help/` and are not shown in Help. Chapter 6, Review duplicates and link transfers, and context
+accepted and committed as `bbd3a8b`. Chapter 6,
+[Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
+is bundled under the next Go and is owner-accepted for commit. Sample topics used to check the viewer are in
+`tests/fixtures/help/` and are not shown in Help. Chapter 7, Add and correct transactions, and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
@@ -32,6 +34,91 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 6 — 2026-11-05
+
+The owner accepted chapter 5, committed as `bbd3a8b`, and gave Go for the next
+chapter using the documented workflow. Chapter 6, Review duplicates and link
+transfers, is bundled with four screenshots and is owner-accepted for commit. Supporting
+verification checked current code and existing tests; one primary writer owned
+prose/captures; an independent reviewer inspected accuracy and all four images.
+Corrections distinguish imported transaction totals from account balances when a
+generated counterpart is removed, specify whole-field exclusion matching, and
+limit the short ledger Link route to single-split entries. No dedicated Unlink
+control is exposed, so the chapter covers eligible Review Undo without inventing
+an Unlink workflow. No financial behavior or Help viewer implementation changed.
+
+The chapter covers same-account Merge, survivor choices/manual entries, No and
+Selected yes, batch group versus row selection, cross-account Link and split
+selection, generated counterparts, amount differences, explicit ledger routes,
+exclusions and Undo restrictions. Later editing topics remain chapter 7.
+
+The examples explicitly return to the original purchase/refund, without chapter
+5's extra Corner shop purchase. Credit card opens at zero on 2026-01-01. Two
+Market purchases of -42.18 and a 6.00 refund total -78.36; keeping one purchase
+restores -36.18. The native walkthrough merges, undoes, answers No (keeping both),
+undoes again and merges. Chequing opens at 1,000.00; its January 28 payment of
+-36.18 is linked to the card's January 29 +36.18. Balances remain 963.82 and zero.
+A real click on the card's transfer arrow visits Chequing.
+
+A separate amount-difference scenario imports an explicit -37.18 Chequing
+transfer and +36.18 card posting. The generated counterpart makes the pre-link
+card balance 73.36. Link replaces it, preserves the two imported totals, and
+leaves the card at 36.18 with a 1.00 Uncategorized remainder on the outgoing
+transaction. Cancel keeps the question; Link resolves it; Undo restores it.
+The chapter says to choose a suitable category only after confirming the fee.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `review-keep.png` | Both purchase copies new; choose the transaction to keep |
+| `review-link.png` | Opposite payment postings one day apart, candidate selected |
+| `review-linked.png` | Card payment linked to Chequing, arrow visible, zero balance |
+| `review-difference.png` | Link 36.18 and categorize 1.00; Link and Cancel |
+
+Capture basis: actual ImportMain.qml, macOS Qt 6.12.0 Basic, light appearance,
+1440 × 900 logical pixels at 2×, isolated temporary Household files. Setup,
+opening/account creation and imports use model commands. Real mouse events
+exercise Review Yes/No, survivor choice, Undo, account navigation, transfer arrow,
+and difference Link/Cancel. Captures are not a manual standalone-app walkthrough;
+no private data or user settings are used.
+
+```sh
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests reviewChapterWalkthrough
+```
+
+The initial native capture walkthrough passed 4/4 including init/cleanup in
+7326ms. Rebuild the three application/Help targets after refreshing images.
+Supporting verification passed:
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_ui_tests batchReviewSurvivorSelection batchReviewWorkspace unifiedReviewSheet linkExclusions reviewMultipleLinkCandidates unifiedReviewLinkDifference transferManagementUi
+ctest --test-dir build/import-ui-rules-release -R '^(import\.review_policy|import\.review_state|import\.manual_transactions)$' --output-on-failure
+```
+
+The offscreen selection passed 12/12 including init/cleanup in 9929ms. The three
+storage/policy selections passed 3/3 in 42.62s. These cover multiple candidates,
+survivor/batch choices, rejection persistence, exclusions, amount-difference
+Cancel/Link/Undo, explicit ledger linking and manual/import matches.
+
+Final rules-enabled Release verification on macOS Qt 6.12.0:
+
+- All three application/Help targets rebuilt; `build/SpentIt` contains six
+  chapters and 18 images.
+- The documented five-check Help regression passed 5/5 in 103.21s.
+- Native `spentit_help_ui_tests` passed 19/19 including init/cleanup in 45829ms.
+  Chapter 6 checks next/previous and section navigation, all four actual image
+  clicks, image loading, Actual size, close/scroll return, normal width and
+  500-pixel width at 150% text.
+- A separate native `createOpenChapterReading:review` capture run passed 3/3 in
+  2542ms. All four source images and rendered normal, inline-image and narrow
+  larger-text views were visually inspected.
+- Search for “unlink” finds the new chapter. The preparer validates every
+  bundled link/image. Relative file links and `git diff --check` passed.
+
+Dark chapter appearance, full keyboard-only traversal, screen readers, Linux and
+Windows remain unverified. Batch selection, exclusions and manual/import matching
+have existing offscreen coverage rather than new native chapter captures.
+The owner accepted chapter 6 and requested its commit; chapter 7 and context links need Go.
 
 ## Chapter 5 — 2026-11-05
 
@@ -623,7 +710,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 5 is ready for owner review. The next chapter is “Review duplicates and link transfers” in `manual/outline.md`.
+2. Chapter 6 is accepted by the owner for commit. The next chapter is “Add and correct transactions” in `manual/outline.md`.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
