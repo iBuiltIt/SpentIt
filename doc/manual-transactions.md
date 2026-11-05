@@ -12,7 +12,7 @@ Status: implemented under owner Go, 2026-11-03; see [verification](status.md).
 
 ## Accepted interaction
 
-The ledger context menu offers **Add transaction…**. A **+** button immediately
+The ledger context menu offers **Add transaction…**. A **+ New transaction** button (owner follow-up Go, 2026-11-05) immediately
 right of search **Apply** offers the same action, with an Add transaction tooltip.
 An existing unsaved editor uses Save / Discard / Stay before starting another.
 Save must succeed before continuing.

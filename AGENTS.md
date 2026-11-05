@@ -47,7 +47,7 @@ rejected unchanged, without migration. See [status](doc/status.md) for verificat
 
 ## Manual transactions — owner Go 2026-11-03
 
-Ledger **Add transaction…** and the **+** beside search Apply share an unsaved
+Ledger **Add transaction…** and **+ New transaction** beside search Apply share an unsaved
 inline creation flow, with Save / Discard / Stay, focused-selection date or today,
 zero amount and blank text. Enter saves; Escape cancels. Manual entries have no
 imported original until an explicit Review Merge attaches one. Same-date/exact

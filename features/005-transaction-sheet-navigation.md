@@ -95,7 +95,8 @@ See [verification](../doc/status.md).
 Accepted and implemented: remember the ledger sort column and direction for each
 account, writing local application settings immediately after a successful sort
 change. No separate Settings control. Accounts without a valid saved choice use
-date ascending. Account navigation, reopening and a new application instance
+date descending (newest first), under the owner’s 2026-11-05 follow-up Go.
+Existing saved choices, including ascending dates, remain unchanged. Account navigation, reopening and a new application instance
 restore the preference; renaming an account does not change it.
 
 Preferences use the canonical document location (hashed in the settings key) and
@@ -761,3 +762,9 @@ position recovery and quit capture. Native full-screen Spaces transitions, actua
 monitor removal and other OSes remain unverified. See [status](../doc/status.md)
 for full regression (63 cases passed) and additional offscreen full-screen-state
 verification (3 cases passed including init/cleanup).
+
+## Workspace title — owner Go 2026-11-05
+
+The toolbar title follows the visible workspace, including Back/Forward navigation:
+Review, Categories, Rules, Reports, Change history or Settings. The account ledger
+shows its account name and currency.

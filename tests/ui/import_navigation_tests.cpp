@@ -442,13 +442,14 @@ private slots:
         const auto checkSort=[](ImportModel& model,int column,bool descending){QCOMPARE(model.state().value("sort").toInt(),column);QCOMPARE(model.state().value("descending").toBool(),descending);};
         {
             ImportModel model(spentit::storage::document_gateway());
-            run(model,"create",{{"path",path},{"protected",false},{"name","First"},{"currency","CAD"}});checkSort(model,0,false);
+            run(model,"create",{{"path",path},{"protected",false},{"name","First"},{"currency","CAD"}});checkSort(model,0,true);
+            run(model,"opening",{{"date","2025-12-31"},{"amount","0.00"}});
             QFile file(dir.filePath("sort.qif"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-1\nPAlpha\n^\nD2/1/2026\nT-2\nPZulu\n^\n");file.close();
-            run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Alpha"));
+            run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Zulu"));
             run(model,"query",{{"sort",1},{"descending",true}});checkSort(model,1,true);QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Zulu"));
             QSettings preferences;preferences.sync();const auto keys=preferences.allKeys().filter("LedgerSort/");QCOMPARE(keys.size(),1);
             QCOMPARE(preferences.value(keys.first()).toList(),(QVariantList{1,true})); // saved before quitting
-            run(model,"create_account",{{"id","2"},{"name","Second"},{"currency","CAD"},{"date","2026-01-01"}});checkSort(model,0,false);
+            run(model,"create_account",{{"id","2"},{"name","Second"},{"currency","CAD"},{"date","2026-01-01"}});checkSort(model,0,true);
             run(model,"query",{{"sort",0},{"descending",true}});checkSort(model,0,true);
             run(model,"select_account",{{"id","1"}});checkSort(model,1,true);
             run(model,"select_account",{{"id","2"}});checkSort(model,0,true);
@@ -461,11 +462,11 @@ private slots:
             run(model,"rename_account",{{"name","Renamed"}});checkSort(model,1,true);
             run(model,"select_account",{{"id","2"}});checkSort(model,0,false);
             run(model,"query",{{"sort",4},{"descending",true}});run(model,"close");
-            run(model,"create",{{"path",dir.filePath("other")},{"protected",false},{"name","Other"},{"currency","CAD"}});checkSort(model,0,false);run(model,"close");
+            run(model,"create",{{"path",dir.filePath("other")},{"protected",false},{"name","Other"},{"currency","CAD"}});checkSort(model,0,true);run(model,"close");
             run(model,"open",{{"path",path}});run(model,"select_account",{{"id","2"}});checkSort(model,4,true);
             run(model,"close");
             // Replacing a file is a new set of accounts, not an old preference.
-            run(model,"create",{{"path",path},{"overwrite",true},{"protected",false},{"name","Replacement"},{"currency","CAD"}});checkSort(model,0,false);run(model,"close");
+            run(model,"create",{{"path",path},{"overwrite",true},{"protected",false},{"name","Replacement"},{"currency","CAD"}});checkSort(model,0,true);run(model,"close");
         }
     }
     void categorySubmenuScrolls() {
@@ -633,14 +634,18 @@ private slots:
         }
         const auto identity=model.rowIdentity(model.selectedRowIndex());
         QCOMPARE(root->property("currentPage").toString(),"ledger");
+        const auto title=[&]{return root->findChild<QObject*>("workspaceTitle")->property("text").toString();};
+        const auto ledgerTitle=model.state().value("name").toString()+" · "+model.state().value("currency").toString();
+        QCOMPARE(title(),ledgerTitle);
+        QCOMPARE(root->findChild<QObject*>("addTransaction")->property("text").toString(),QString("+ New transaction"));
         auto* toggle=root->findChild<QQuickItem*>("sidebarToggle");QVERIFY(toggle);
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene(QPointF(toggle->width()/2,toggle->height()/2)).toPoint());
         QTRY_VERIFY(!root->property("sidebarVisible").toBool());
         QVERIFY(click(root,"sidebarToggle"));QVERIFY(root->property("sidebarVisible").toBool());
-        QVERIFY(click(root,"sidebarSettings"));QCOMPARE(root->property("currentPage").toString(),"settings");
+        QVERIFY(click(root,"sidebarSettings"));QCOMPARE(root->property("currentPage").toString(),"settings");QCOMPARE(title(),QString("Settings"));
         QCOMPARE(model.rowIdentity(model.selectedRowIndex()),identity);
-        QVERIFY(click(root,"navigationBack"));QCOMPARE(root->property("currentPage").toString(),"ledger");
-        QVERIFY(click(root,"navigationForward"));QCOMPARE(root->property("currentPage").toString(),"settings");
+        QVERIFY(click(root,"navigationBack"));QCOMPARE(root->property("currentPage").toString(),"ledger");QCOMPARE(title(),ledgerTitle);
+        QVERIFY(click(root,"navigationForward"));QCOMPARE(root->property("currentPage").toString(),"settings");QCOMPARE(title(),QString("Settings"));
         QVERIFY(click(root,"navigationBack"));
         window->resize(1100,750);QTest::qWait(100);
         auto* sidebar=root->findChild<QQuickItem*>("accountSidebar");QVERIFY(sidebar);
@@ -660,12 +665,12 @@ private slots:
         QTRY_VERIFY(!model.busy());QVERIFY(!root->property("splitEditMessage").toString().isEmpty());
         QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(root->property("dirty").toBool());
         QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardDiscard"));
-        QCOMPARE(root->property("currentPage").toString(),"settings");QVERIFY(!root->property("dirty").toBool());
+        QCOMPARE(root->property("currentPage").toString(),"settings");QCOMPARE(title(),QString("Settings"));QVERIFY(!root->property("dirty").toBool());
         QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("payee").toString(),"Original");
         QVERIFY(click(root,"navigationBack"));
         QVERIFY(edit(root,"durablePayee","Saved navigation"));QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardSave"));
         QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
-        QCOMPARE(root->property("currentPage").toString(),"settings");
+        QCOMPARE(root->property("currentPage").toString(),"settings");QCOMPARE(title(),QString("Settings"));
         QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("payee").toString(),"Saved navigation");
         QVERIFY(click(root,"closeDataset"));QTRY_VERIFY(!model.busy());QVERIFY(!model.state().value("active").toBool());
         QCOMPARE(root->property("currentPage").toString(),"ledger");QCOMPARE(root->property("navigationIndex").toInt(),0);

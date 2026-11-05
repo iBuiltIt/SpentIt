@@ -2,6 +2,32 @@
 
 Last updated: 2026-11-05
 
+## Workspace titles and ledger defaults — 2026-11-05
+
+Implemented under owner Go. The toolbar title follows the visible workspace,
+including Back/Forward, and shows account/currency on the ledger. The ledger
+creation button now reads **+ New transaction**. Accounts without a valid saved
+sort choice default to date descending (newest first); existing saved choices,
+including ascending dates, remain unchanged. Chronological balance calculation
+is unchanged. See [navigation](../features/005-transaction-sheet-navigation.md)
+and [manual transactions](manual-transactions.md).
+
+Rules-enabled Release on macOS: rebuilt `build/SpentIt` and both UI test binaries
+without compiler warnings/errors. CTest selection `import.ledger`, `import.search`,
+`import.ui`, `import.navigation`, `import.qml` passed **5/5**, 117.04 s.
+Offscreen UI checks passed 80 cases with the existing bulk-format skip; navigation
+passed 20 cases with its opt-in diagnostics skip. Coverage includes newest-first
+ordering, saved ascending choices after reopening, independent account settings,
+Back/Forward titles, button copy, search restoration and unchanged balances under
+sorting. Earlier fixture failures assumed ascending positions; those interaction
+fixtures now request that order explicitly, while the default-sort fixture uses
+an opening date before its sample transactions.
+
+The initial sandboxed run could not access application-data locks; verification
+was rerun with that access. No private dataset was used. Native visual inspection,
+Linux and Windows were not checked for this change. `git diff --check` and changed
+document relative-link checks passed.
+
 ## Help viewer prototype — 2026-11-05
 
 The owner gave Go for the viewer prototype only. Sample topics, the Help

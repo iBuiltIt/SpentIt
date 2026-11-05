@@ -353,7 +353,7 @@ struct ImportModel::Worker {
     bool active=false,projected=true;
     QString path,filter;
     bool canOpen=false, welcomePassword=false, overwriteRequired=false;
-    int sort=0; bool descending=false;
+    int sort=0; bool descending=true;
     QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt,transferMergePreview;
     QVariantMap reviewLinkPreview, linkExclusionPreview;
     std::optional<app::LinkExclusion> preparedLinkExclusion;
@@ -391,7 +391,7 @@ struct ImportModel::Worker {
         if(!repo.account_selected()){sortAccount.reset();return;}
         const auto account=repo.account().identity;
         if(sortAccount==account)return;
-        sort=0;descending=false;
+        sort=0;descending=true;
         if(const auto view=accountViews.find(account);view!=accountViews.end()) {
             sort=view->second.sort;descending=view->second.descending;
         } else {
@@ -1245,7 +1245,7 @@ struct ImportModel::Worker {
             if(settings.status()!=QSettings::NoError) throw std::runtime_error("Dataset is open, but the startup path could not be saved in Settings");
             return;
         }
-        if(action=="close") {if(a.value("skipAudit").toBool())gateway->close();else gateway->close_verified(context);clearChanges();active=false;selected.clear();receipt.clear();selectedBatch.clear();filter.clear();projected=true;sort=0;descending=false;return;}
+        if(action=="close") {if(a.value("skipAudit").toBool())gateway->close();else gateway->close_verified(context);clearChanges();active=false;selected.clear();receipt.clear();selectedBatch.clear();filter.clear();projected=true;sort=0;descending=true;return;}
         if(action=="cancel_merge") {preparedMerge.reset();mergeOperation.clear();transferMergePreview.clear();return;}
         if(action=="cancel_reapply") {preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
@@ -1556,7 +1556,7 @@ struct ImportModel::Worker {
                 throw std::runtime_error("Account was created, but could not be selected. Reopen and inspect the account list before retrying.");
             }
             selected.clear();selectedBatch.clear();receipt.clear();clearChanges();
-            selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;sort=0;descending=false;
+            selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;sort=0;descending=true;
             if(priorAccount) accountViews.insert_or_assign(*priorAccount,std::move(*priorView));
             if(const auto saved=accountViews.find(id);saved!=accountViews.end()){
                 const auto& view=saved->second;filter=view.filter;projected=view.projected;sort=view.sort;descending=view.descending;selection=view.selection;selectionAnchor=view.anchor;selectionFocus=view.focus;

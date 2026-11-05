@@ -1536,6 +1536,8 @@ private slots:
         QByteArray bytes;
         for(int i=0;i<80;++i) bytes+="D1/1/2026\nT-1\nPRow "+QByteArray::number(i)+"\n^\n";
         run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        // This interaction fixture uses chronological row positions.
+        run(m,"query",{{"sort",0},{"descending",false}});
         auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
         auto* editor=root->findChild<QQuickItem*>("transactionEditor");QVERIFY(editor);
         auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
@@ -1561,6 +1563,8 @@ private slots:
         auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
         create(m,dir.path()+"/doc");run(m,"opening",{{"date","2025-12-31"},{"amount","0.00"}});
         run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT-10\nPAccessible first\nSFood\n$-12\nSRefund\n$2\n^\nD2/1/2026\nT20\nPAccessible second\n^\n")},{"profile","DMY"}});
+        // This interaction fixture uses chronological row positions.
+        run(m,"query",{{"sort",0},{"descending",false}});
         QVERIFY(QTest::qWaitForWindowExposed(window));
         auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
         auto* search=root->findChild<QQuickItem*>("ledgerSearch");QVERIFY(search);
@@ -1625,7 +1629,7 @@ private slots:
         run(m,"evidence",{{"batch",batch}});
         QVERIFY(click("clearFilter"));QTRY_VERIFY(!m.busy());QTest::qWait(100);
         QCOMPARE(selected(m).value("ordinal").toInt(),0);QCOMPARE(m.rowCount(),81);
-        QCOMPARE(m.state().value("sort").toInt(),0);QVERIFY(!m.state().value("descending").toBool());
+        QCOMPARE(m.state().value("sort").toInt(),0);QVERIFY(m.state().value("descending").toBool());
         int afterIndex=-1;
         QVERIFY(QMetaObject::invokeMethod(ledger,"indexAt",Q_RETURN_ARG(int,afterIndex),Q_ARG(qreal,1),Q_ARG(qreal,ledger->property("contentY").toDouble()+1)));
         QCOMPARE(m.rowIdentity(afterIndex),beforeIdentity);
@@ -1672,6 +1676,8 @@ private slots:
         QByteArray bytes;
         for(int i=0;i<80;++i) bytes+="D1/1/2026\nT-10\nPRow "+QByteArray::number(i)+"\nSExpense\nECharge\n$-12\nSRefund\nEAdjustment\n$2\n^\n";
         run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        // This interaction fixture uses chronological row positions.
+        run(m,"query",{{"sort",0},{"descending",false}});
         const auto batch=selected(m).value("batch");
         QVERIFY(QTest::qWaitForWindowExposed(window));
         // Keep the editor offscreen so several other split rows are visible.
@@ -1707,6 +1713,7 @@ private slots:
         QTRY_COMPARE(item("splitPreview_1")->height(),0);
         // Closing clears view-only identities, including when the next dataset uses the same ordinals.
         run(m,"close");create(m,dir.path()+"/other");
+        run(m,"query",{{"sort",0},{"descending",false}});
         run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
         run(m,"inspect",{{"batch",selected(m).value("batch")},{"ordinal",79}});
         QTest::qWait(100);QVERIFY(QMetaObject::invokeMethod(ledger,"positionViewAtBeginning"));QTest::qWait(100);
@@ -2222,6 +2229,8 @@ private slots:
         run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
         const auto source=fixture(dir.path(),"D1/5/2026\nT-10.00\nPSynthetic\n^\n");
         run(m,"import",{{"path",source},{"profile","DMY"}});
+        // This interaction fixture uses chronological row positions.
+        run(m,"query",{{"sort",0},{"descending",false}});
         const auto batch=selected(m).value("batch").toString();
         QCOMPARE(m.state().value("committed").toString(),QString("100.00"));
         QCOMPARE(m.state().value("projected").toString(),QString("90.00"));
