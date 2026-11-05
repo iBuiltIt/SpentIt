@@ -1,7 +1,7 @@
 # SpentIt help and user manual — proposed outline
 
 Date: 2026-11-05  
-Status: proposed content outline for review. Chapters 1–7 are written, with screenshots in chapters 2–7. Chapter 6 is accepted and committed; chapter 7 is owner-accepted for commit. Later chapters are not yet written.
+Status: proposed content outline for review. Chapters 1–8 are written, with screenshots in chapters 2–8. Chapter 7 is accepted and committed; chapter 8 is owner-accepted for commit. Later chapters are not yet written.
 
 ## Purpose and reading order
 

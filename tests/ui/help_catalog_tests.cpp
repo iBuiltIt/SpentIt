@@ -40,11 +40,11 @@ private slots:
         QVERIFY(catalog.loaded());
         QVERIFY(!catalog.sample());
         QVERIFY(catalog.banner().isEmpty());
-        QCOMPARE(catalog.topics().size(), 7);
+        QCOMPARE(catalog.topics().size(), 8);
         QCOMPARE(catalog.topics().front().toMap().value("id").toString(), QStringLiteral("understand-spending"));
         QCOMPARE(catalog.topics().front().toMap().value("title").toString(), QStringLiteral("Understand your spending"));
         const auto refund = catalog.search(QStringLiteral("refund"));
-        QCOMPARE(refund.size(), 5);
+        QCOMPARE(refund.size(), 6);
         QCOMPARE(refund.front().toMap().value("topicId").toString(), QStringLiteral("understand-spending"));
         const auto commit = catalog.search(QStringLiteral("commit"));
         QCOMPARE(commit.size(), 1);
@@ -66,6 +66,9 @@ private slots:
         QCOMPARE(linking.front().toMap().value("topicId").toString(), QStringLiteral("review-duplicates-transfers"));
         const auto arithmetic = catalog.search(QStringLiteral("arithmetic"));
         QCOMPARE(arithmetic.front().toMap().value("topicId").toString(), QStringLiteral("add-correct-transactions"));
+        const auto unarchive = catalog.search(QStringLiteral("unarchive"));
+        QVERIFY(!unarchive.isEmpty());
+        QCOMPARE(unarchive.front().toMap().value("topicId").toString(), QStringLiteral("organize-categories"));
         QVERIFY(catalog.search(QStringLiteral("sample content")).isEmpty());
     }
 };

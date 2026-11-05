@@ -2,6 +2,43 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 8 — 2026-11-05
+
+The owner accepted chapter 7, committed as `2b9c41e`, and gave Go for chapter 8.
+[Organize spending with categories](../manual/categories.md) is bundled with
+four screenshots and is owner-accepted for commit. The documented workflow used supporting
+verification, one primary writer/capture owner and independent review. The chapter
+covers independent category names, management, inline completion, selected/split
+assignment, account destinations and eligible Undo. Review corrected a report
+selection claim and the synthetic opening balance. No financial or Help viewer
+implementation changed.
+
+The three application/Help targets rebuilt to `build/SpentIt`, with eight chapters
+and 26 images. The five-check Help regression passed 5/5 in 55.79s; native Help
+passed 23/23 including init/cleanup in 184933ms with no further crashes. Chapter 8
+checks cover all four image clicks/loading/enlargement/return, navigation and
+500-pixel reading at 150% text. Search and bundled links/images passed; relative
+file links and `git diff --check` passed.
+
+The source capture walkthrough passed 3/3 in 6578ms; the repaired harness first
+passed offscreen 3/3 in 5194ms. Initial test-harness failures caused macOS crash
+dialogs noticed by the owner: incorrect account-selection setup, missing dropdown
+lookup and reading a selection cleared by saving. The harness assumptions were
+corrected and checked offscreen before native captures resumed. All runs used
+isolated synthetic files/settings. All four final source images and normal/inline-image/narrow rendered views were
+inspected. The separate native reading capture passed 3/3 in 23703ms.
+
+Supporting category UI, navigation/assignment and storage checks passed 6/6
+in 13951ms, 5/5 in 2623ms and 5/5 in 10.40s. QtTest counts include init/cleanup;
+the scrolling test retained two mouse-outside-window warnings. See the
+[handoff](help-prototype-handoff.md#chapter-8--2026-11-05) for exact commands,
+results and capture basis: actual QML in a native macOS Qt 6.12.0 Basic light
+harness, 1440 × 900 logical pixels at 2×, not a manual standalone-app walkthrough.
+The existing “subcategory” hint and source-0/source-1 split labels are recorded
+presentation issues, preserved in screenshots. Dark appearance, full keyboard
+and screen-reader use, Linux and Windows remain unverified. Chapter 9 and context
+links need their own Go.
+
 ## Help chapter 7 — 2026-11-05
 
 Under the owner's Go, [Add and correct transactions](../manual/add-correct-transactions.md)

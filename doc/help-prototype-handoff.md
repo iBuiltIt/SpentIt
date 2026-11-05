@@ -22,9 +22,11 @@ its commit (`ec23d60`). Chapter 5,
 accepted and committed as `bbd3a8b`. Chapter 6,
 [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
 is accepted and committed as `a8a2739`. Chapter 7,
-[Add and correct transactions](../manual/add-correct-transactions.md), is bundled
-under the owner’s next Go and is owner-accepted for commit. Sample topics used to check the viewer are in
-`tests/fixtures/help/` and are not shown in Help. Chapter 8, Organize spending with categories, and context
+[Add and correct transactions](../manual/add-correct-transactions.md), is accepted
+and committed as `2b9c41e`. Chapter 8,
+[Organize spending with categories](../manual/categories.md), is bundled under
+the owner’s next Go and is owner-accepted for commit. Sample topics used to check the viewer are in
+`tests/fixtures/help/` and are not shown in Help. Chapter 9, Use rules for repeated categorization, and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
@@ -36,6 +38,93 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 8 — 2026-11-05
+
+The owner accepted chapter 7, committed as `2b9c41e`, and gave Go for the next
+chapter under the documented workflow. Organize spending with categories is
+bundled with four screenshots and is owner-accepted for commit. Supporting verification
+checked current code/tests; one primary writer owned prose and captures; an
+independent reviewer checked accuracy, continuity and images. Review removed an
+incorrect report-selection claim and corrected Chequing's opening in the fixture.
+No financial or Help viewer behavior changed.
+
+The chapter covers independent colon names, creation/rename/archive/unarchive,
+unused deletion, inline completion, selected-row assignment, split choice,
+Uncategorized, account destinations, transfer consequences and eligible Undo.
+The existing workspace says “subcategory”; the chapter clarifies independent
+names. The Choose split screenshot retains the existing source-0/source-1 labels.
+Those copy issues are recorded, not changed in this Help scope.
+
+The synthetic Household file has Credit card opened at zero and Chequing at
+1,000.00 on January 1. The card uses Market -42.18, its Groceries refund +6.00,
+and Corner shop -20.00 split -12.00 Groceries/-8.00 Household, ending -56.18.
+Food: Meals out is created, archived/unarchived and renamed Food: Eating out.
+Market starts Uncategorized, is assigned Groceries through completion, then
+cleared through the category menu and restored with Undo. The Household split
+is likewise cleared and undone; the account total remains -56.18.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `categories-workspace.png` | Three categories and the two read-only account rows |
+| `categories-completion.png` | “gro” matches Groceries in the Market editor |
+| `categories-menu.png` | Ordinary categories and account destinations |
+| `categories-split.png` | Choose split for Corner shop |
+
+Capture basis: actual ImportMain.qml, macOS Qt 6.12.0 Basic light, 1440 × 900
+logical pixels at 2×, temporary synthetic file/settings. Setup/openings/imports
+use model commands; text uses Qt properties/signals. Real mouse clicks exercise
+workspace navigation, sorting, row context menus, archive/unarchive/rename,
+ledger double-click, category choice, split choice and Undo. Category creation
+and completion save through Enter. The submenu opens through its Qt method after
+a real row right-click. This is not a manual standalone-app walkthrough.
+
+```sh
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests categoriesChapterWalkthrough
+```
+
+The corrected native capture run passed 3/3 including init/cleanup in 6578ms;
+the preceding offscreen walkthrough passed 3/3 in 5194ms. Initial harness runs
+used an invalid account-selection key, dereferenced a dropdown outside its
+owning item, and read a cleared selection after a menu save. These caused test
+process crashes and macOS crash dialogs noticed by the owner. The harness now
+uses the correct account key, resolves the popup from its field, checks split
+list presence and verifies the available Undo after menu assignment. It was
+checked offscreen before resuming native captures. These failures used only
+temporary synthetic files, not the owner's data. An intermediate build correctly
+rejected the draft's not-yet-captured images; it was bundled after captures existed.
+
+Supporting checks passed on macOS Qt 6.12.0:
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_category_ui_tests inlineCategoryCompletion catalogPickerCurrentNamesAndArchive explicitSortingAndRetainedSelection inlineEditingAndScroll
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_navigation_tests categorySubmenuScrolls acceptedManualTransferAssignment categoryMenuSavesMixedRowsAndReopens
+ctest --test-dir build/import-ui-rules-release -R '^(category\.(names|assignments|history|validation)|import\.transfer_assignment)$' --output-on-failure
+```
+
+Results: 6/6 in 13951ms and 5/5 in 2623ms including init/cleanup; storage selection
+5/5 in 10.40s. The scrolling test emitted two existing mouse-outside-window warnings
+but passed. The first sandbox attempt lacked application-data lock access; the
+authorized rerun passed. Bulk, transfer and deletion constraints have focused
+existing checks rather than new native chapter screenshots.
+
+Final rules-enabled Release checks on macOS Qt 6.12.0:
+
+- Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+  `spentit_help_tests`; `build/SpentIt` bundles eight chapters and 26 images.
+- The documented five-check Help regression passed 5/5 in 55.79s.
+- Native `spentit_help_ui_tests` passed 23/23 including init/cleanup in 184933ms,
+  without further crashes. Chapter 8 checks previous/next and section navigation,
+  all four actual image clicks/loading/Actual size/close/scroll return, and
+  500-pixel reading width at 150% text.
+- A separate native `createOpenChapterReading:categories` capture run passed
+  3/3 in 23703ms. All four source images and normal, inline-image and narrow
+  larger-text rendered views were visually inspected.
+- Search for “unarchive” finds chapter 8; preparation checks every bundled
+  link/image. Relative file links and `git diff --check` passed.
+
+Dark appearance, full keyboard-only traversal, screen readers, Linux and Windows
+remain unverified. Chapter 9 and context links require their own Go.
 
 ## Chapter 7 — 2026-11-05
 
@@ -787,7 +876,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 7 is bundled for owner review. Commit when requested. The next chapter is “Organize spending with categories” in `manual/outline.md`.
+2. Chapter 8 is owner-accepted for commit. The recommended next session starts chapter 9, “Use rules for repeated categorization” in `manual/outline.md`, after its Go.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.

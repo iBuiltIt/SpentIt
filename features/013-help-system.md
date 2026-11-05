@@ -13,7 +13,9 @@ fixture. Chapter 5, Find your way around transactions, is bundled under its
 subsequent Go with three screenshots, accepted and committed. Chapter 6, Review duplicates and link transfers, is
 bundled with four screenshots and committed after owner acceptance. Chapter 7,
 Add and correct transactions, is bundled with four screenshots under its Go and
-is owner-accepted for commit. Chapters after chapter 7 and context links need their own Go. macOS checks and limits
+is accepted and committed. Chapter 8, Organize spending with categories, is bundled
+with four screenshots under the next Go and is owner-accepted for commit. Chapters after
+chapter 8 and context links need their own Go. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 
 ## Accepted requirements — owner direction 2026-11-05

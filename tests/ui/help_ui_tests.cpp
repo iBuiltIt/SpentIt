@@ -293,6 +293,9 @@ private slots:
         QTest::newRow("editing") << QString("add-correct-transactions")
             << QStringList{"editing-new.png", "editing-calendar.png", "editing-splits.png", "editing-mismatch.png"}
             << QString("divide-a-purchase-into-splits") << QString("Divide a purchase into splits");
+        QTest::newRow("categories") << QString("organize-categories")
+            << QStringList{"categories-workspace.png", "categories-completion.png", "categories-menu.png", "categories-split.png"}
+            << QString("change-selected-transactions") << QString("Change selected transactions");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -308,7 +311,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -688,6 +691,89 @@ private slots:
         mouse("navigationForward");
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
         QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void categoriesChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false},
+            {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "1,000.00"}});
+        run(session.model, "select_account", {{"id", "1"}});
+        auto mouse = [&](const QString& name, Qt::MouseButton button = Qt::LeftButton, bool twice = false) {
+            QTest::qWait(180);
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
+            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            const auto point = item->mapToScene(QPointF(qMin(100.0, item->width()/2), qMin(15.0, item->height()/2))).toPoint();
+            if(twice) QTest::mouseDClick(session.window, button, Qt::NoModifier, point);
+            else QTest::mouseClick(session.window, button, Qt::NoModifier, point);
+            wait(session.model);
+        };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if(output.isEmpty())return;
+            QTest::qWait(150);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        auto enter = [&](const QString& name) {
+            auto* field=qobject_cast<QQuickItem*>(object(session.root,name)); QVERIFY(field);
+            field->forceActiveFocus(); QTest::keyClick(session.window,Qt::Key_Return);wait(session.model);
+        };
+        mouse("categoryNavigation");
+        createCategory(session.model,session.root,"Groceries");
+        createCategory(session.model,session.root,"Household");
+        createCategory(session.model,session.root,"Food: Meals out");
+        mouse("categorySortAscending");
+        capture("categories-workspace");
+        // Manage a category through its real row context menu.
+        QVERIFY(edit(session.root,"catalogSearch","Food: Meals out"));
+        mouse("catalogList",Qt::RightButton);
+        QTRY_VERIFY(object(session.root,"categoryContextMenu")->property("visible").toBool());
+        mouse("archiveCategory");
+        mouse("showArchivedCategories");
+        mouse("catalogList",Qt::RightButton);
+        QVERIFY(object(session.root,"archiveCategory"));
+        QTRY_COMPARE(object(session.root,"archiveCategory")->property("text").toString(),QString("Unarchive"));
+        mouse("archiveCategory");
+        mouse("catalogList",Qt::RightButton);mouse("renameCategory");
+        QVERIFY(edit(session.root,"categoryName","Food: Eating out"));enter("categoryName");
+        mouse("accountNavigation");
+        QFile source(session.path("card.qif"));QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\nD2026-01-22\nT-20.00\nPCorner shop\nSGroceries\n$-12.00\nSHousehold\n$-8.00\n^\n");source.close();
+        run(session.model,"import",{{"path",source.fileName()},{"account","1"}});
+        session.root->setProperty("editorClosed",true);
+        run(session.model,"query",{{"sort",0},{"descending",false}});
+        mouse("ledgerRow_1",Qt::LeftButton,true);
+        auto* category=qobject_cast<QQuickItem*>(object(session.root,"splitCategory_0"));QVERIFY(category);
+        category->forceActiveFocus();QVERIFY(edit(session.root,"splitCategory_0","gro"));
+        QTRY_VERIFY(category->findChild<QObject*>("categoryDropdown_0"));
+        QTRY_VERIFY(category->findChild<QObject*>("categoryDropdown_0")->property("visible").toBool());
+        capture("categories-completion");enter("splitCategory_0");
+        const auto savedSplits=session.model.state().value("selected").toMap().value("draft").toMap().value("splits").toList();
+        QVERIFY(!savedSplits.isEmpty());
+        QCOMPARE(savedSplits.front().toMap().value("category").toString(),QString("Groceries"));
+        mouse("ledgerRow_1",Qt::LeftButton,true);
+        mouse("ledgerRow_1",Qt::RightButton);
+        QTRY_VERIFY(object(session.root,"ledgerContext")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object(session.root,"ledgerCategoryMenu"),"open"));
+        QTRY_VERIFY(object(session.root,"ledgerCategoryMenu")->property("visible").toBool());
+        capture("categories-menu");
+        mouse("ledgerCategoryChoice_0");
+        QVERIFY(session.model.state().value("canUndoTransferAssignment").toBool());
+        mouse("undoTransferAssignment");
+        mouse("ledgerRow_3",Qt::RightButton);
+        QTRY_VERIFY(object(session.root,"ledgerContext")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object(session.root,"ledgerCategoryMenu"),"open"));
+        mouse("ledgerCategoryChoice_0");
+        QTRY_VERIFY(object(session.root,"bulkCategoryDialog")->property("visible").toBool());
+        capture("categories-split");mouse("ledgerCategorySplit_1");
+        mouse("undoTransferAssignment");
+        QCOMPARE(session.model.state().value("balance").toString(),QString("-56.18"));
     }
     void editingChapterWalkthrough() {
         HelpCatalog catalog;
