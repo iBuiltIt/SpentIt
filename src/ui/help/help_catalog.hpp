@@ -34,6 +34,10 @@ public:
     Q_INVOKABLE int sectionPosition(QObject* document, const QString& title) const;
     Q_INVOKABLE int tableCount(QObject* document) const;
     Q_INVOKABLE int imageCount(QObject* document) const;
+    Q_INVOKABLE int listCount(QObject* document) const;
+    Q_INVOKABLE qreal readingGap(QObject* document, const QString& phrase) const;
+    Q_INVOKABLE qreal headingGap(QObject* document, const QString& title) const;
+    Q_INVOKABLE void relaxReading(QObject* document);
     Q_INVOKABLE bool containsHref(QObject* document, const QString& href) const;
 signals:
     void catalogChanged();
@@ -71,4 +75,5 @@ private:
     QHash<QString, Image> images_;
     QTextDocument* markedDocument_ = nullptr;
     QList<QPair<int, int>> marks_;
+    bool relaxing_ = false;
 };

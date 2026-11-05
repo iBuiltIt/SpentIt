@@ -40,11 +40,13 @@ endif()
 if(SPENTIT_IMPORT_UI)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   set(SPENTIT_HELP_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/help-bundle")
+  set(SPENTIT_HELP_SAMPLE_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/help-sample-bundle")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/tools/prepare_help.py"
-    "${PROJECT_SOURCE_DIR}/manual/sample/start.md"
-    "${PROJECT_SOURCE_DIR}/manual/sample/details.md"
-    "${PROJECT_SOURCE_DIR}/manual/images/sample-mark.png")
+    "${PROJECT_SOURCE_DIR}/manual/index.md"
+    "${PROJECT_SOURCE_DIR}/tests/fixtures/help/sample/start.md"
+    "${PROJECT_SOURCE_DIR}/tests/fixtures/help/sample/details.md"
+    "${PROJECT_SOURCE_DIR}/tests/fixtures/help/images/sample-mark.png")
   execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/prepare_help.py"
             --manual "${PROJECT_SOURCE_DIR}/manual" --output "${SPENTIT_HELP_BUNDLE}"
@@ -53,7 +55,16 @@ if(SPENTIT_IMPORT_UI)
   if(NOT spentit_help_prepare_result EQUAL 0)
     message(FATAL_ERROR "Help bundle failed (${spentit_help_prepare_result}): ${spentit_help_prepare_error}")
   endif()
+  execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/prepare_help.py"
+            --manual "${PROJECT_SOURCE_DIR}/tests/fixtures/help" --output "${SPENTIT_HELP_SAMPLE_BUNDLE}"
+    RESULT_VARIABLE spentit_help_sample_prepare_result
+    ERROR_VARIABLE spentit_help_sample_prepare_error)
+  if(NOT spentit_help_sample_prepare_result EQUAL 0)
+    message(FATAL_ERROR "Help sample bundle failed (${spentit_help_sample_prepare_result}): ${spentit_help_sample_prepare_error}")
+  endif()
   file(GLOB_RECURSE SPENTIT_HELP_BUNDLE_FILES CONFIGURE_DEPENDS "${SPENTIT_HELP_BUNDLE}/*")
+  file(GLOB_RECURSE SPENTIT_HELP_SAMPLE_BUNDLE_FILES CONFIGURE_DEPENDS "${SPENTIT_HELP_SAMPLE_BUNDLE}/*")
   set_source_files_properties(help/HelpWindow.qml PROPERTIES QT_RESOURCE_ALIAS "HelpWindow.qml")
   qt_add_library(spentit_help STATIC help/help_catalog.cpp help/help_catalog.hpp)
   target_include_directories(spentit_help PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -125,7 +136,8 @@ if(SPENTIT_IMPORT_UI)
       qt_add_executable(spentit_help_ui_tests ../../tests/ui/help_ui_tests.cpp)
       target_link_libraries(spentit_help_ui_tests PRIVATE spentit_import_model spentit_import_store spentit_sqlcipher spentit_help Qt6::Quick Qt6::QuickControls2 Qt6::Test)
       qt_add_resources(spentit_help_ui_tests "help_ui" PREFIX "/spentit" FILES ImportMain.qml ClearableSearchField.qml NavigableTextField.qml CategoryCompletion.qml Theme.qml CalendarPicker.qml ReportsWorkspace.qml ReportChart.qml help/HelpWindow.qml)
-      qt_add_resources(spentit_help_ui_tests "help_ui_bundle" PREFIX "/spentit/help" BASE "${SPENTIT_HELP_BUNDLE}" FILES ${SPENTIT_HELP_BUNDLE_FILES})
+      qt_add_resources(spentit_help_ui_tests "help_ui_bundle" PREFIX "/spentit/help" BASE "${SPENTIT_HELP_SAMPLE_BUNDLE}" FILES ${SPENTIT_HELP_SAMPLE_BUNDLE_FILES})
+      qt_add_resources(spentit_help_ui_tests "help_ui_manual" PREFIX "/spentit/help-manual" BASE "${SPENTIT_HELP_BUNDLE}" FILES ${SPENTIT_HELP_BUNDLE_FILES})
       spentit_compiler_options(spentit_help_ui_tests)
       add_test(NAME import.help_ui COMMAND spentit_help_ui_tests)
       set_tests_properties(import.help_ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
@@ -133,7 +145,9 @@ if(SPENTIT_IMPORT_UI)
     add_test(NAME help.prepare COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/ui/help_prepare_tests.py")
     qt_add_executable(spentit_help_tests ../../tests/ui/help_catalog_tests.cpp)
     target_link_libraries(spentit_help_tests PRIVATE spentit_help Qt6::Test)
-    target_compile_definitions(spentit_help_tests PRIVATE "SPENTIT_HELP_MANIFEST=\"${SPENTIT_HELP_BUNDLE}/manifest.json\"")
+    target_compile_definitions(spentit_help_tests PRIVATE
+      "SPENTIT_HELP_MANIFEST=\"${SPENTIT_HELP_SAMPLE_BUNDLE}/manifest.json\""
+      "SPENTIT_HELP_MANUAL_MANIFEST=\"${SPENTIT_HELP_BUNDLE}/manifest.json\"")
     spentit_compiler_options(spentit_help_tests)
     add_test(NAME help.catalog COMMAND spentit_help_tests)
     add_test(NAME import.qml COMMAND spentit_import_experiment --smoke)

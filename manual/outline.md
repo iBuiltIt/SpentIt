@@ -1,7 +1,7 @@
 # SpentIt help and user manual — proposed outline
 
 Date: 2026-11-05  
-Status: proposed content outline for review; chapters and screenshots are not yet written.
+Status: proposed content outline for review. Chapter 1 is written. Later chapters and screenshots are not yet written.
 
 ## Purpose and reading order
 
@@ -308,6 +308,10 @@ choices, and how to recognize the result. Add related problems and a natural
 next step. Explain disabled controls, empty screens, progress and cancellation
 when they change what the reader can do. Avoid a button inventory detached from tasks.
 
+Write in short pieces, with room between them. Use plain words, and start from
+why a person wants to know. The reader should be able to take one piece at a
+time. Do not stack definitions or steps into a single block.
+
 Introduce a concept at first encounter, even if its full chapter comes later.
 In particular, imports need brief explanations of categories, transfers and
 saved new transactions immediately. Put destructive consequences before the
@@ -315,12 +319,16 @@ confirmation step. Use the actual on-screen labels, with everyday wording in
 explanations. No storage internals, engineering terminology or implementation
 history belongs in the user chapters.
 
-Use one invented household example throughout: a bank account, a credit-card
-account and cash; income, groceries, a mixed-category purchase, a refund and a
-card payment. Include an overlapping import and a manual entry later found in
-an import. Keep initial examples in one currency; introduce another only when
-explaining separate report results. State the example's date and amount style.
-Do not use private accounts, statements, filenames or screenshots.
+Use one invented household example throughout. The accounts are Chequing, a
+credit card, and Cash. Chapter 1 uses a Market grocery purchase of 42.18 on
+2026-01-15, a 6.00 refund on 2026-01-20, and a 36.18 credit-card payment from
+Chequing on 2026-01-28. Later chapters add income, a mixed-category purchase,
+an overlapping import, and a manual entry later found in an import. Keep the
+example in one currency until a chapter explains separate report results.
+Dates are year-month-day. Amounts use a comma for thousands and a dot for
+cents, as in 2026-01-15 and 1,234.56. The guide says the reader's own file
+follows the date and amount settings saved for that file. Do not use private
+accounts, statements, filenames or screenshots.
 
 Capture the actual application when each chapter is written. Use an overview
 when orientation matters and focused crops when a small control matters. Every
@@ -348,5 +356,7 @@ continuity, cross-references, terminology, screenshot consistency and missing
 choices. Also test lookup reading: someone arriving at a single topic from an
 error or search should have enough context to act.
 
-Only this outline is being delivered now. Full chapter prose, screenshots and
-help-system implementation are separate work.
+Chapter 1 is written in [index.md](index.md) and is the topic Help opens.
+Further chapters, screenshots, and context links are separate work. The sample
+pages used to check the viewer live under `tests/fixtures/help/` and are not
+shown in Help.

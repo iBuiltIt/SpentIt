@@ -34,6 +34,23 @@ private slots:
             QVERIFY(!result.value("message").toString().isEmpty());
         }
     }
+    void introductionIsTheShippedTopic() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(SPENTIT_HELP_MANUAL_MANIFEST)));
+        QVERIFY(catalog.loaded());
+        QVERIFY(!catalog.sample());
+        QVERIFY(catalog.banner().isEmpty());
+        QCOMPARE(catalog.topics().size(), 1);
+        QCOMPARE(catalog.topics().front().toMap().value("id").toString(), QStringLiteral("understand-spending"));
+        QCOMPARE(catalog.topics().front().toMap().value("title").toString(), QStringLiteral("Understand your spending"));
+        const auto refund = catalog.search(QStringLiteral("refund"));
+        QCOMPARE(refund.size(), 1);
+        QCOMPARE(refund.front().toMap().value("topicId").toString(), QStringLiteral("understand-spending"));
+        const auto commit = catalog.search(QStringLiteral("commit"));
+        QCOMPARE(commit.size(), 1);
+        QCOMPARE(commit.front().toMap().value("topicId").toString(), QStringLiteral("understand-spending"));
+        QVERIFY(catalog.search(QStringLiteral("sample content")).isEmpty());
+    }
 };
 
 QTEST_GUILESS_MAIN(HelpCatalogTests)

@@ -223,6 +223,45 @@ private slots:
         QTRY_VERIFY(namedWindow("helpWindow") == help);
         QCOMPARE(help->property("topicId").toString(), QString("sample-details"));
     }
+    void introductionBeforeAFileIsOpen() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        QVERIFY(!catalog.sample());
+        QVERIFY(catalog.banner().isEmpty());
+        Session session(&catalog);
+        QVERIFY(session.window);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QVERIFY(!session.model.state().value("active").toBool());
+        auto* help = openHelp(session.root);
+        QVERIFY2(help, qPrintable(session.root->property("helpLoadError").toString()));
+        QCOMPARE(help->modality(), Qt::NonModal);
+        QCOMPARE(help->property("topicId").toString(), QString("understand-spending"));
+        auto* banner = object(help, "helpBanner");
+        QVERIFY(banner);
+        QCOMPARE(banner->property("visible").toBool(), false);
+        auto* article = object(help, "helpArticle");
+        QVERIFY(article);
+        QTRY_VERIFY(article->property("text").toString().contains("42.18"));
+        QVERIFY(article->property("text").toString().simplified().contains("where did it all go?"));
+        QVERIFY(article->property("text").toString().contains("Accept transactions"));
+        QVERIFY(article->property("text").toString().contains("1,234.56"));
+        qreal gap = 0;
+        QVERIFY(QMetaObject::invokeMethod(&catalog, "readingGap", Q_RETURN_ARG(qreal, gap), Q_ARG(QObject*, textDocument(article)), Q_ARG(QString, QString("42.18"))));
+        QVERIFY2(gap > 4.0, qPrintable(QString("paragraph gap %1").arg(gap)));
+        qreal heading = 0;
+        QVERIFY(QMetaObject::invokeMethod(&catalog, "headingGap", Q_RETURN_ARG(qreal, heading), Q_ARG(QObject*, textDocument(article)), Q_ARG(QString, QString("Start with your own accounts"))));
+        QVERIFY2(heading > gap, qPrintable(QString("heading gap %1 paragraph gap %2").arg(heading).arg(gap)));
+        int lists = 0;
+        QVERIFY(QMetaObject::invokeMethod(&catalog, "listCount", Q_RETURN_ARG(int, lists), Q_ARG(QObject*, textDocument(article))));
+        QVERIFY(lists >= 1);
+        const auto wide = help->width();
+        help->setWidth(1400);
+        auto* flick = object(help, "helpArticleFlick");
+        QVERIFY(flick);
+        QTRY_VERIFY(article->property("width").toDouble() + 80 < flick->property("width").toDouble());
+        help->setWidth(wide);
+        QVERIFY(!session.model.state().value("active").toBool());
+    }
     void helpBesideRulesDialog() {
         HelpCatalog catalog;
         QVERIFY(catalog.load(QStringLiteral(":/spentit/help/manifest.json")));

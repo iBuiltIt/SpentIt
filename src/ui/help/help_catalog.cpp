@@ -7,9 +7,12 @@
 #include <QJsonObject>
 #include <QQuickTextDocument>
 #include <QRegularExpression>
+#include <QSet>
+#include <QTextBlockFormat>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextFrame>
+#include <QTextList>
 #include <QTextTable>
 #include <algorithm>
 
@@ -315,6 +318,70 @@ int HelpCatalog::tableCount(QObject* documentObject) const {
             if (auto* nested = child.currentFrame()) frames.push_back(nested);
     }
     return tables;
+}
+
+int HelpCatalog::listCount(QObject* documentObject) const {
+    QTextDocument* document = textDocument(documentObject);
+    if (!document) return 0;
+    QSet<QTextList*> lists;
+    for (auto block = document->begin(); block != document->end(); block = block.next())
+        if (auto* list = block.textList()) lists.insert(list);
+    return static_cast<int>(lists.size());
+}
+
+qreal HelpCatalog::readingGap(QObject* documentObject, const QString& phrase) const {
+    QTextDocument* document = textDocument(documentObject);
+    if (!document || phrase.isEmpty()) return 0;
+    for (auto block = document->begin(); block != document->end(); block = block.next())
+        if (block.text().contains(phrase)) return block.blockFormat().bottomMargin();
+    return 0;
+}
+
+qreal HelpCatalog::headingGap(QObject* documentObject, const QString& title) const {
+    QTextDocument* document = textDocument(documentObject);
+    if (!document || title.isEmpty()) return 0;
+    for (auto block = document->begin(); block != document->end(); block = block.next())
+        if (block.text().trimmed() == title) return block.blockFormat().topMargin();
+    return 0;
+}
+
+void HelpCatalog::relaxReading(QObject* documentObject) {
+    // Qt Markdown keeps every block margin at zero, so paragraphs and headings
+    // sit on top of each other. Give the article room without changing its words.
+    if (relaxing_) return;
+    QTextDocument* document = textDocument(documentObject);
+    if (!document) return;
+    relaxing_ = true;
+    qreal size = document->defaultFont().pixelSize();
+    if (size <= 0) size = 16;
+    QList<QTextBlock> blocks;
+    for (auto block = document->begin(); block != document->end(); block = block.next()) blocks.push_back(block);
+    for (const QTextBlock& block : blocks) {
+        QTextCursor cursor(document);
+        cursor.setPosition(block.position());
+        QTextBlockFormat format = block.blockFormat();
+        const bool empty = block.text().trimmed().isEmpty() && !block.textList();
+        const int heading = format.headingLevel();
+        if (empty) {
+            format.setTopMargin(0);
+            format.setBottomMargin(0);
+        } else if (heading == 1) {
+            format.setTopMargin(size * 0.85);
+            format.setBottomMargin(size * 0.45);
+        } else if (heading > 1) {
+            format.setTopMargin(size * 1.2);
+            format.setBottomMargin(size * 0.4);
+        } else if (block.textList()) {
+            format.setTopMargin(size * 0.2);
+            format.setBottomMargin(size * 0.35);
+        } else {
+            format.setTopMargin(0);
+            format.setBottomMargin(size * 0.9);
+        }
+        if (!empty) format.setLineHeight(138, QTextBlockFormat::ProportionalHeight);
+        cursor.setBlockFormat(format);
+    }
+    relaxing_ = false;
 }
 
 int HelpCatalog::imageCount(QObject* documentObject) const {

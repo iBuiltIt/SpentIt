@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""The Help preparer accepts the sample bundle and rejects links that leave it."""
+"""The Help preparer accepts the manual and the sample fixture, and rejects links that leave them."""
 
 import importlib.util
+import json
 import shutil
 import tempfile
 import unittest
@@ -9,6 +10,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+MANUAL = ROOT / "manual"
+FIXTURE = ROOT / "tests" / "fixtures" / "help"
 SPEC = importlib.util.spec_from_file_location("prepare_help", ROOT / "tools" / "prepare_help.py")
 prepare_help = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(prepare_help)
@@ -19,10 +22,29 @@ def topic(text: str) -> str:
 
 
 class PrepareHelpTests(unittest.TestCase):
+    def test_manual_bundle_is_the_introduction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            prepare_help.build(MANUAL, output)
+            manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+            self.assertFalse(manifest["sample"])
+            self.assertEqual(manifest["banner"], "")
+            self.assertEqual([topic["id"] for topic in manifest["topics"]], ["understand-spending"])
+            self.assertEqual(manifest["topics"][0]["title"], "Understand your spending")
+            text = manifest["topics"][0]["markdown"]
+            self.assertIn("42.18", text)
+            self.assertIn("6.00", text)
+            self.assertIn("36.18", text)
+            self.assertIn("Accept transactions", text)
+            self.assertIn("2026-01-15", text)
+            self.assertNotIn("sample-", text)
+            self.assertNotIn("https://", text)
+            self.assertEqual(manifest["images"], [])
+
     def test_sample_bundle_rewrites_internal_links(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            prepare_help.build(ROOT / "manual", output)
+            prepare_help.build(FIXTURE, output)
             manifest = (output / "manifest.json").read_text(encoding="utf-8")
             self.assertIn("sample-start", manifest)
             self.assertIn("help:sample-details#wide-table", manifest)
@@ -33,7 +55,7 @@ class PrepareHelpTests(unittest.TestCase):
     def rejected(self, body: str):
         with tempfile.TemporaryDirectory() as directory:
             manual = Path(directory) / "manual"
-            shutil.copytree(ROOT / "manual", manual)
+            shutil.copytree(FIXTURE, manual)
             (manual / "sample" / "extra.md").write_text(topic(body), encoding="utf-8")
             with self.assertRaises(prepare_help.PrepareError):
                 prepare_help.build(manual, Path(directory) / "out")
@@ -51,7 +73,7 @@ class PrepareHelpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manual = root / "manual"
-            shutil.copytree(ROOT / "manual", manual)
+            shutil.copytree(FIXTURE, manual)
             outside = root / "outside.md"
             outside.write_text("# Outside\n", encoding="utf-8")
             (manual / "sample" / "extra.md").write_text(topic("See [outside](../../outside.md)."), encoding="utf-8")

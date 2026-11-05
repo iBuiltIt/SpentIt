@@ -2,6 +2,75 @@
 
 Last updated: 2026-11-05
 
+## Approved Help introduction voice — 2026-11-05
+
+The owner approved the replacement chapter and requested installation in
+`manual/index.md` and a rebuilt application. The chapter now begins with a
+familiar end-of-month question, walks through purchase/refund/card-payment
+sections, and introduces categories and reports through the reader's questions.
+The approved text is bundled into `./build/SpentIt`; viewer behavior is unchanged.
+Existing introduction checks now use the new heading, one list, and
+whitespace-normalized opening text to tolerate Qt Markdown line wrapping.
+
+Verification on macOS, rules-enabled Release, Qt 6.12.0:
+
+- Built `spentit_import_experiment`, `spentit_help_ui_tests`, and
+  `spentit_help_tests`; the application linked to `build/SpentIt`.
+- The five-check Help regression command documented in
+  [the handoff](help-prototype-handoff.md#build-and-check) passed 5/5 in 26.45s.
+- Native `spentit_help_ui_tests` passed 8/8 including init/cleanup in 2764ms.
+- Initial sandbox runs could not access the display or application-data lock
+  directory; reruns with that access passed. The opening-text assertion also
+  needed whitespace normalization before the final passing runs.
+
+No manual visual walkthrough, Linux, or Windows check was performed. Restart
+an already-running application to load the new bundled chapter.
+
+## Help introduction reading — 2026-11-05
+
+After reading the rendered introduction, the owner asked for space between
+pieces and for plainer, more human wording. Qt Markdown was leaving every
+block margin at zero, so paragraphs and headings sat together. The viewer now
+adds paragraph, list, and heading space, opens the line height slightly, and
+stops the article line at 36 times the text size. The chapter was rewritten in
+short pieces, starting from “Where did the money go?” The same facts remain:
+the household example, Import…, + New transaction, Accept transactions,
+transactions not yet accepted, and a recorded transfer left out of report
+spending.
+
+Rules-enabled Release on macOS, Qt 6.12.0. Rebuilt `./build/SpentIt`.
+
+- `ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure` passed 5/5, 26.01s. `import.help_ui` is offscreen and passed in 1.98s.
+- `./build/import-ui-rules-release/src/ui/spentit_help_ui_tests` with no `QT_QPA_PLATFORM` passed. QtTest reported 8 passed, 0 failed, 2878ms, including init and cleanup. The introduction check requires a gap after the 42.18 line, a larger gap before “Two ways to begin”, two lists, and a shorter article line in a 1400-pixel window. The sample viewer check and the Rules and Reports leave-dialog checks still passed.
+
+Linux, Windows, and a person looking at the rewritten page in `./build/SpentIt`
+were not part of this run. Reopen the application to see it. Details are in
+[the handoff](help-prototype-handoff.md).
+
+## Help introduction — 2026-11-05
+
+The owner gave Go for the first real chapter after the viewer prototype. Help
+now opens **Understand your spending** from `manual/index.md`. Sample topics
+moved to `tests/fixtures/help/` and stay out of the Help window. The chapter
+uses one household example: Chequing, a credit card, and Cash; a 42.18 Market
+purchase on 2026-01-15; a 6.00 refund on 2026-01-20; and a 36.18 card payment
+from Chequing on 2026-01-28. It names Import…, + New transaction, and Accept
+transactions. It states that transactions not yet accepted stay in the file and
+count in balances and reports, and that a recorded transfer is left out of
+report spending. No application screenshot and no context-help actions were
+added. Further chapters still need their own Go. The Rules and Reports leave
+dialogs stay `Qt.ApplicationModal`.
+
+Rules-enabled Release on macOS, Qt 6.12.0. Reconfigured
+`build/import-ui-rules-release` and linked `./build/SpentIt`.
+
+- `ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure` passed 5/5, 26.24s. `import.help_ui` is offscreen and passed in 2.21s.
+- `./build/import-ui-rules-release/src/ui/spentit_help_ui_tests` with no `QT_QPA_PLATFORM` passed. QtTest reported 8 passed, 0 failed, 2615ms, including init and cleanup. The new check opens the introduction with no file, hides the sample banner, and shows `42.18` and Accept transactions. The sample viewer check and the Rules and Reports leave-dialog checks still passed.
+
+Linux, Windows, and a person clicking through `./build/SpentIt` were not
+checked. The Cocoa test calls `openHelp()` and does not click the Help menu
+item. Details are in [the handoff](help-prototype-handoff.md).
+
 ## Busy feedback work item documented — 2026-11-05
 
 Added [feature 014](../features/014-busy-feedback-and-progress.md) as a separate

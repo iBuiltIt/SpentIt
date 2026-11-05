@@ -2,18 +2,71 @@
 
 Last updated: 2026-11-05
 
-Owner Go on 2026-11-05 covers the viewer prototype only. It does not cover real
-chapters or application-wide context links. The design is
-[013 — Help system and user manual](../features/013-help-system.md). This file
-is the progress record for the next session. Update it when a step changes.
+The viewer prototype Go on 2026-11-05 does not cover application-wide context
+links. A second Go the same day covers the first real chapter only. The design
+is [013 — Help system and user manual](../features/013-help-system.md). This
+file is the progress record for the next session. Update it when a step changes.
 
 ## Current step
 
-The viewer prototype is implemented and the macOS checks below passed. Stop
-here. Real chapters and context links need their own Go. Leave
-`rulesLeaveDialog` at `Qt.ApplicationModal`.
+The Help window opens [Understand your spending](../manual/index.md). That is
+the only shipped topic. Sample topics used to check the viewer are in
+`tests/fixtures/help/` and are not shown in Help. Further chapters and context
+links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
-## Scope of this Go
+The introduction follows a grocery purchase through Chequing and a credit card;
+a Market purchase of 42.18 on 2026-01-15; a 6.00 refund on 2026-01-20; and a
+36.18 credit-card payment from Chequing on 2026-01-28. Dates in the guide are
+year-month-day. Amounts use a comma for thousands and a dot for cents. The
+chapter says the reader's file follows the date and amount settings saved for
+that file. It has no application screenshot. It names Import…, + New
+transaction, and Accept transactions. It says transactions that are not yet
+accepted stay in the file and count in balances and reports, and that a
+recorded transfer is left out of report spending.
+
+## Approved wording follow-up — 2026-11-05
+
+The owner approved a new chapter draft and explicitly requested writing it to
+`manual/index.md` and rebuilding the application. That exact draft is now bundled
+in `./build/SpentIt`. It opens with “You remember the groceries” and uses separate
+purchase, refund, and card-payment sections, followed by getting started,
+categories/reports, and acceptance at the reader's pace.
+
+The existing introduction test checks the new opening question with whitespace
+normalized, spacing before “Start with your own accounts”, and at least one list.
+The paragraph-gap and readable-width checks remain. The earlier text and two-list
+observations below describe the preceding draft.
+
+The three build targets in “Build and check” succeeded. The same five-check
+CTest command passed 5/5 in 26.45s; native Help UI tests passed 8/8 including
+init/cleanup in 2764ms. Sandbox attempts lacked display/application-data access;
+rerunning with access passed. No manual visual walkthrough or Linux/Windows
+verification was performed. Restart the application to see the updated Help.
+
+## Scope of the chapter Go
+
+In:
+
+- `manual/index.md` bundled into `./build/SpentIt` as the Help introduction.
+- The sample banner hidden, because this topic is not sample content.
+- The household example named above, checked against the current application
+  before the sentences about accepting, balances, reports, and transfers were
+  written.
+- Viewer checks still load the sample fixture, including Help beside the Rules
+  and Reports leave dialogs.
+
+Out:
+
+- Any chapter after the introduction.
+- Screenshots of the application.
+- Help actions on workspaces, dialogs, and errors.
+- A new renderer.
+
+## Scope of the prototype Go
+
+This records the prototype Go. The chapter Go replaced the sample topics in
+`./build/SpentIt` with the introduction. The checks below still use the sample
+fixture.
 
 In:
 
@@ -123,6 +176,10 @@ decision says the rich-text path failed too.
   matches, which rank above body matches. Ties follow topic order.
 - Below 720 pixels, Contents collapses behind a Contents button. The article
   keeps its scroll position.
+- Qt Markdown leaves block margins at zero, so paragraphs and headings sit
+  together. After the text loads, the viewer sets paragraph, list, and heading
+  spacing, and a slightly opener line height. The article width stops growing
+  at 36 times the text size, so a wide window keeps a readable line.
 - Help geometry and text scale are stored in application `QSettings` under
   `help/`. The open topic and search are kept only for the session.
 - The sample banner stays while every topic id starts with `sample-`. The
@@ -137,23 +194,40 @@ decision says the rich-text path failed too.
 The rules-enabled Release tree is `build/import-ui-rules-release`. The
 executable copied for normal use is `./build/SpentIt`. Qt is 6.12.0. The last
 app link in this session was
-`cmake --build build/import-ui-rules-release --target spentit_import_experiment -j 2`.
+`cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests -j 2`.
 
-Commands that passed on this Mac, 2026-11-05:
+Commands that passed on this Mac, 2026-11-05, after the introduction was
+bundled:
 
 ```
 ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
 ```
 
-5 tests passed, 26.31s. `import.help_ui` runs with `QT_QPA_PLATFORM=offscreen`
-and passed in 1.75s. `import.rules_ui` passed in 23.68s. `import.qml` passed
-in 0.76s. `help.prepare` and `help.catalog` passed.
+5 tests passed, 26.01s, after the reading-spacing change. `import.help_ui`
+runs with `QT_QPA_PLATFORM=offscreen` and passed in 1.98s. `import.rules_ui`
+passed in 23.12s. `import.qml` passed in 0.76s. `help.prepare` passed in
+0.11s. `help.catalog` passed in 0.04s. The same command passed in 26.24s
+before that spacing change.
 
 ```
 ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
 ```
 
-No `QT_QPA_PLATFORM` was set, so this used Cocoa. 7 checks passed, 2.26s:
+No `QT_QPA_PLATFORM` was set, so this used Cocoa. QtTest reported 8 passed,
+0 failed, 2878ms. That count includes init and cleanup. The six Help checks
+passed, including `introductionBeforeAFileIsOpen`. The same binary passed in
+2615ms before the spacing change.
+
+The introduction check opens Help with no file, shows no sample banner, and
+shows `understand-spending` with “Where did the money go?”, `42.18`,
+`Accept transactions`, and `1,234.56`. The 42.18 line has space under it. The
+heading “Two ways to begin” has a larger gap above it. The page has two lists.
+At a window width of 1400, the article line is shorter than the page. The file
+stays closed.
+
+The earlier same-day prototype run passed the same two commands in 26.31s and
+2.26s, before this chapter replaced the shipped sample topics. The sample
+checks below still describe that viewer behavior:
 
 - Help opens with no file, shows the sample banner and `1,234.56`, loads the
   sample image, follows the sample section link, selects the highlighted word
@@ -177,16 +251,20 @@ Help window and the same Rules dialog. The test calls `openHelp()`. It does
 not click the Help menu item. The menu item is wired to that function.
 
 `help.prepare` rejects an external URL, a `file:` URL, an absolute path, a
-path that leaves `manual/`, and an unknown section. The running viewer’s
-`https://example.com` check shows “That link is not part of Help.” A missing
-sample image in the window was not given its own check.
+path that leaves the prepared directory, and an unknown section. It also
+checks that the shipped bundle is only `understand-spending`, with no sample
+banner. The running viewer’s `https://example.com` check shows “That link is
+not part of Help.” A missing sample image in the window was not given its own
+check.
 
 Keyboard checks use `forceActiveFocus` and `QTest::keyClick`. They do not walk
 every control with Tab only.
 
 ## Files
 
-- `manual/sample/*.md`, `manual/images/sample-mark.png` — sample only.
+- `manual/index.md` — Understand your spending, the topic Help opens.
+- `manual/outline.md` — the remaining chapter plan and the shared example.
+- `tests/fixtures/help/` — sample topics and the sample image, for checks only.
 - `tools/prepare_help.py` — builds the help bundle and rejects unsafe links.
 - `src/ui/help/help_catalog.*` — manifest, search, allowlist, highlight.
 - `src/ui/help/HelpWindow.qml` — the Help window and image view.
@@ -197,11 +275,13 @@ every control with Tab only.
 ## Next agent
 
 1. Read this file and the design section “Implementation sequence”.
-2. Do not author real chapters or context links unless the owner gives that Go.
+2. The next chapter is “Create or open your file” in `manual/outline.md`.
+   Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
 4. If you change Help, rerun the two commands in “Build and check” and write
-   the new result here before calling the prototype done.
+   the new result here. The shipped bundle is `manual/`. The sample checks
+   read `tests/fixtures/help/`.
 
 ## Tradeoff
 

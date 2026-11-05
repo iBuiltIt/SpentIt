@@ -3,8 +3,10 @@
 Status: **active**  
 Last updated: 2026-11-05  
 Implementation: the viewer prototype from the 2026-11-05 Go is in the tree.
-Sample topics only. Real chapters and context links still need their own Go.
-macOS checks and limits are in [the handoff](../doc/help-prototype-handoff.md).
+The same day's chapter Go added [Understand your spending](../manual/index.md)
+as the only topic Help opens. Sample topics remain a test fixture. Further
+chapters and context links still need their own Go. macOS checks and limits
+are in [the handoff](../doc/help-prototype-handoff.md).
 
 ## Accepted requirements — owner direction 2026-11-05
 
@@ -28,9 +30,11 @@ The owner proposed repository directories `manual/` for Markdown and
 belongs under `src/`, following the existing dependency boundaries.
 
 The [user-facing language guide](../doc/user-facing-language.md) applies to the
-manual and viewer. Engineering choices below are for contributors, not material
-to explain to users. This request authorizes documenting the design, not building
-the viewer or writing the complete manual.
+manual and viewer. Help is also written in short pieces a reader can take one
+at a time. The voice is plain and human: it can start from why someone wants
+to know where the money went. It stays accurate. Engineering choices below are
+for contributors, not material to explain to users. This request authorizes
+documenting the design, not building the viewer or writing the complete manual.
 
 ## Accepted refinements — owner direction 2026-11-05
 
@@ -319,9 +323,10 @@ says how it opens and how the allowlist treats it.
 
 ## Implementation sequence
 
-The owner gave implementation Go for the viewer prototype on 2026-11-05.
-Real chapters and application-wide context links still need their own Go.
-Progress, commands, and any modality tradeoff are recorded in
+The owner gave implementation Go for the viewer prototype on 2026-11-05, and
+Go the same day for the first real chapter. Further chapters and
+application-wide context links still need their own Go. Progress, commands,
+and any modality tradeoff are recorded in
 [the prototype handoff](../doc/help-prototype-handoff.md).
 
 1. Bundle a small sample fixture through `./build/SpentIt`, loaded from the
@@ -342,9 +347,13 @@ Progress, commands, and any modality tradeoff are recorded in
    Record the metadata convention, packaging, search ranking and breakpoints
    the prototype actually used.
 
-Real chapters and application-wide context links need their own Go. Write each
-chapter against the current application, capture its screenshots only after the
-instructions and the screen agree, and review that chapter before the next one.
+The first real chapter, Understand your spending, is bundled from
+`manual/index.md`. It uses the household example and has no application
+screenshot. Sample topics are prepared from `tests/fixtures/help/` for the
+viewer checks and are not part of the Help window. Further chapters and
+application-wide context links need their own Go. Write each chapter against
+the current application, capture its screenshots only after the instructions
+and the screen agree, and review that chapter before the next one.
 Use the synthetic example and the date, amount, platform and theme rules above.
 After the last chapter, read the guide once as a first-time reader and once
 while looking up a specific action and a specific error. Bundle only content
@@ -358,9 +367,11 @@ review of the affected topics, screenshots, search terms and context targets.
 ## Acceptance and verification obligations
 
 The prototype obligations below were exercised on macOS on 2026-11-05, with the
-limits recorded in [the handoff](../doc/help-prototype-handoff.md). Linux,
-Windows, and a person clicking through `./build/SpentIt` were not part of that
-run. Later manual and context-link checks still wait for their own Go.
+limits recorded in [the handoff](../doc/help-prototype-handoff.md). The same
+day's introduction check opened Understand your spending with no file and with
+no sample banner. Linux, Windows, and a person clicking through
+`./build/SpentIt` were not part of that run. Further chapters and context-link
+checks still wait for their own Go.
 
 Prototype, when its Go is given:
 

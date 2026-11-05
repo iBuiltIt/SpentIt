@@ -383,7 +383,10 @@ Window {
                     TextEdit {
                         id: article
                         objectName: "helpArticle"
-                        width: articleFlick.width
+                        // Keep a reading line short enough to take in one piece,
+                        // even when the window is wide. Qt Markdown also leaves
+                        // paragraph margins at zero; relaxReading puts them back.
+                        width: Math.min(articleFlick.width, Math.max(240, Math.round(font.pixelSize * 36)))
                         readOnly: true
                         selectByMouse: true
                         textFormat: TextEdit.MarkdownText
@@ -395,6 +398,8 @@ Window {
                         Accessible.name: "Help article"
                         activeFocusOnTab: true
                         onLinkActivated: function(link) { root.followLink(link) }
+                        onTextChanged: if (root.catalog) root.catalog.relaxReading(textDocument)
+                        onFontChanged: if (root.catalog && length > 0) root.catalog.relaxReading(textDocument)
                     }
                 }
                 RowLayout {
