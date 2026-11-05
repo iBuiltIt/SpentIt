@@ -2,6 +2,47 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 3 — 2026-11-05
+
+Under the owner's chapter-3 Go, [Set up your accounts](../manual/accounts.md)
+is bundled after chapters 1 and 2, with three real-screen synthetic screenshots.
+The accepted workflow used a verification agent, one writer/capture owner, and
+an independent review agent. The review's deletion and archive guidance findings
+were resolved. Account behavior and the Help viewer implementation are unchanged.
+
+The chapter covers creation, opening balances, account selection/balances,
+reordering, retained names, rename/archive/reactivate/delete, currency reassignment,
+and eligible Undo. `build/SpentIt` was rebuilt with the new chapter for owner
+review. The [handoff](help-prototype-handoff.md#chapter-3--2026-11-05) records the
+capture inventory, reproducible commands, workflow and verification limits.
+
+The documented five-check Help regression selection plus `import.ui`,
+`import.navigation`, and `import.category_ui` passed 8/8 in 162.87s.
+The three application/Help build targets succeeded. Relative file-link checks
+and `git diff --check` passed.
+Native Help passed 12/12 including init/cleanup in 49542ms on macOS Qt 6.12.0.
+Real mouse and keyboard events exercised account creation, switching, opening
+editing, menus, currency reassignment/Undo and archive/reactivation. Help checks
+cover navigation, section links, actual image clicks, loaded images, Actual size,
+scroll return, normal width and 500-pixel width with 150% text. All three source
+images and rendered normal/narrow chapter views were inspected.
+
+This is a native Qt harness walkthrough using temporary synthetic data, not a
+manual standalone-app walkthrough. Dark chapter appearance, complete keyboard-only
+use, screen readers, Linux and Windows remain unverified. Chapter 3 awaits owner
+review; chapter 4 and application-wide context links require their own Go.
+
+## Manual continuation workflow — 2026-11-05
+
+Documented the owner's accepted approach: sequential chapters with one primary
+writer, supporting verification and independent review agents, real interaction
+checks, and owner review before continuing. Chapter 3, Set up your accounts, is
+the next fresh-session task at that handoff; its subsequent Go and implementation
+are recorded above. The
+[handoff](help-prototype-handoff.md#continuing-the-manual--2026-11-05) lists the
+reading context and links to the full workflow. This is documentation-only work;
+relative file links and `git diff --check` were checked, with no runtime changes.
+
 ## Help picture clicks — 2026-11-05
 
 Fixed the owner's report that chapter screenshots did not open when clicked.

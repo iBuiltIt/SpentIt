@@ -4,15 +4,17 @@ Last updated: 2026-11-05
 
 The viewer prototype Go on 2026-11-05 does not cover application-wide context
 links. A second Go the same day covered the introduction; a subsequent Go covers
-chapter 2, its screenshots, and checking it in Help. The design
+chapter 2, its screenshots, and checking it in Help. The next Go covers chapter 3
+using the documented verification/writing/review workflow. The design
 is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. Update it when a step changes.
 
 ## Current step
 
 The Help window opens [Understand your spending](../manual/index.md), followed
-by [Create or open your file](../manual/create-open-file.md). Both are shipped. Sample topics used to check the viewer are in
-`tests/fixtures/help/` and are not shown in Help. Further chapters and context
+by [Create or open your file](../manual/create-open-file.md) and
+[Set up your accounts](../manual/accounts.md). All three are bundled for owner review. Sample topics used to check the viewer are in
+`tests/fixtures/help/` and are not shown in Help. Chapter 4, Bring in transactions, and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
@@ -24,6 +26,75 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 3 — 2026-11-05
+
+The owner gave Go for Set up your accounts using the accepted chapter workflow.
+A supporting agent checked current UI/storage code and existing tests; the primary
+writer authored the chapter and owned interaction/captures; a separate agent
+reviewed accuracy, brevity, continuity, and screenshots. Review corrections clarify
+that manual transactions also prevent deletion and that reviewing pending imports
+alone does not permit archiving; acceptance applies across accounts.
+
+The chapter covers inline account creation, home-currency defaults, opening
+balances (including credit-card debt), switching and reading balances, reordering,
+retained names, rename/archive/reactivate/delete, currency reassignment and
+conditional Undo. Later management is a separate section in the same topic.
+No financial behavior, viewer implementation, or context links changed.
+
+Three screenshots use the real ImportMain.qml in the native Qt harness, with
+an isolated temporary Household file, Chequing and Credit card, CAD, light
+appearance, Qt 6.12.0 Basic on macOS, 1440 × 900 logical pixels and 2× capture.
+No private financial data or user settings were used.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `accounts-new.png` | Credit card typed in the inline account-name field, before Enter |
+| `accounts-opening.png` | Chequing opening editor with 2026-01-01 and 1,000.00, before saving |
+| `accounts-menu.png` | Chequing right-click menu after saving that opening |
+
+Reproduce the source captures with:
+
+```sh
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests accountsChapterWalkthrough
+```
+
+Rebuild the three targets in “Build and check” afterward to embed refreshed
+images. The walkthrough creates/removes only its temporary synthetic file.
+It uses real mouse clicks for creation entry, switching, context menus, currency
+reassignment/Undo and archive/reactivation, a double-click for the opening row,
+and Enter for creation/opening saving. Fields are populated through Qt properties.
+An initial native run clicked before a menu transition finished; the harness now
+waits for popup transitions before mouse hit testing, and the walkthrough passes.
+The first sandboxed attempt had no display; native runs used display access.
+
+Verification on macOS, rules-enabled Release, Qt 6.12.0:
+
+- Built `spentit_import_experiment`, `spentit_help_ui_tests`, and
+  `spentit_help_tests`; the application linked to `build/SpentIt`.
+- The five checks in “Build and check”, plus `import.ui`, `import.navigation`,
+  and `import.category_ui`, passed 8/8 in 162.87s:
+
+  ```sh
+  ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui|import\.ui|import\.navigation|import\.category_ui)$' --output-on-failure
+  ```
+
+- Native `./build/import-ui-rules-release/src/ui/spentit_help_ui_tests` passed
+  12/12 including init/cleanup in 49542ms after the final prose corrections.
+- Chapter reading checks cover previous/next, the currency section link, all
+  three real image clicks/loading/Actual size/scroll return, and no horizontal
+  overflow at normal width and 500 pixels with 150% text. Catalog search finds
+  the chapter by “reassign”; preparation validates its metadata, links and images.
+- Existing account/navigation checks also passed, including rename/delete menu
+  behavior, keyboard dialogs, opening correction and account drag ordering.
+- Relative file-link checks and `git diff --check` passed.
+
+The source images and normal/narrow rendered chapter captures were visually
+inspected. Long labels in the existing account menu remain truncated; the prose
+supplies their full names. Native testing is a Qt harness walkthrough, not a
+person following the manual in the standalone application. Dark appearance,
+full keyboard-only traversal, screen readers, Linux and Windows remain unverified.
+Chapter 3 is ready for owner review; do not start chapter 4 without its Go.
 
 ## Chapter 2 — 2026-11-05
 
@@ -362,10 +433,36 @@ every control with Tab only.
 - `src/ui/ReportsWorkspace.qml` — the same parent hook for the Reports leave window.
 - `tests/ui/help_prepare_tests.py`, `help_catalog_tests.cpp`, `help_ui_tests.cpp`.
 
+## Continuing the manual — 2026-11-05
+
+Chapters 1 and 2 are committed; the latest implementation commit is `34e2662`
+(chapter 2 and the clickable-picture fix). The owner requested documentation of
+[the accepted chapter workflow](../features/013-help-system.md#accepted-chapter-workflow--2026-11-05):
+sequential chapters, one primary writer, supporting verification and independent
+review agents, actual interaction checks, then owner review and a requested commit.
+The primary writer owns UI interaction/captures and integrates all findings.
+
+The original continuation handoff nominated **chapter 3, Set up your accounts**
+for a fresh session. Its subsequent Go and results are recorded above. Before
+continuing with another approved chapter, read:
+
+- `AGENTS.md` and [status](status.md).
+- This handoff and the accepted workflow linked above.
+- [The chapter-3 outline](../manual/outline.md#3-set-up-your-accounts).
+- [The language guide](user-facing-language.md), including the brevity direction.
+- [Chapter 1](../manual/index.md) and [chapter 2](../manual/create-open-file.md)
+  for voice, terminology, and what the reader already knows.
+
+Chapter 3's planned scope is accounts, currencies, opening dates/balances,
+switching accounts, and later account management. Verify actual controls and
+consequences before writing; do not repeat chapter 2's file-creation walkthrough.
+Use the existing synthetic household example. Later chapters and application-wide
+context links remain separate work requiring their own Go.
+
 ## Next agent
 
-1. Read this file and the design section “Implementation sequence”.
-2. The next chapter is “Set up your accounts” in `manual/outline.md`.
+1. Read the “Continuing the manual” section above and its linked workflow and sources.
+2. Chapter 3 is bundled for owner review. The next chapter is “Bring in transactions” in `manual/outline.md`.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.

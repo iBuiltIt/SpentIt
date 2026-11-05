@@ -40,7 +40,7 @@ private slots:
         QVERIFY(catalog.loaded());
         QVERIFY(!catalog.sample());
         QVERIFY(catalog.banner().isEmpty());
-        QCOMPARE(catalog.topics().size(), 2);
+        QCOMPARE(catalog.topics().size(), 3);
         QCOMPARE(catalog.topics().front().toMap().value("id").toString(), QStringLiteral("understand-spending"));
         QCOMPARE(catalog.topics().front().toMap().value("title").toString(), QStringLiteral("Understand your spending"));
         const auto refund = catalog.search(QStringLiteral("refund"));
@@ -52,6 +52,9 @@ private slots:
         const auto setup = catalog.search(QStringLiteral("unlock"));
         QCOMPARE(setup.size(), 1);
         QCOMPARE(setup.front().toMap().value("topicId").toString(), QStringLiteral("create-open-file"));
+        const auto accounts = catalog.search(QStringLiteral("reassign"));
+        QCOMPARE(accounts.size(), 1);
+        QCOMPARE(accounts.front().toMap().value("topicId").toString(), QStringLiteral("set-up-accounts"));
         QVERIFY(catalog.search(QStringLiteral("sample content")).isEmpty());
     }
 };

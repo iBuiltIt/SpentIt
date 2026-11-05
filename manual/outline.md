@@ -1,7 +1,7 @@
 # SpentIt help and user manual — proposed outline
 
 Date: 2026-11-05  
-Status: proposed content outline for review. Chapters 1 and 2 are written; chapter 2 includes setup, unlock, and workspace screenshots. Later chapters are not yet written.
+Status: proposed content outline for review. Chapters 1–3 are written, with screenshots in chapters 2 and 3. Chapter 3 awaits owner review. Later chapters are not yet written.
 
 ## Purpose and reading order
 
@@ -361,6 +361,8 @@ error or search should have enough context to act.
 
 Chapter 1 is written in [index.md](index.md) and is the topic Help opens.
 Chapter 2, [Create or open your file](create-open-file.md), is also bundled,
-with three screenshots. Later chapters and context links are separate work. The sample
+with three screenshots. Chapter 3, [Set up your accounts](accounts.md), adds
+account creation, opening, and menu screenshots. Later chapters and context links
+are separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.

@@ -269,7 +269,23 @@ private slots:
         help->setWidth(wide);
         QVERIFY(!session.model.state().value("active").toBool());
     }
+    void createOpenChapterReading_data() {
+        QTest::addColumn<QString>("topic");
+        QTest::addColumn<QStringList>("pictures");
+        QTest::addColumn<QString>("section");
+        QTest::addColumn<QString>("sectionTitle");
+        QTest::newRow("create-open") << QString("create-open-file")
+            << QStringList{"create-file-setup.png", "create-file-workspace.png", "create-file-unlock.png"}
+            << QString("open-your-file") << QString("Open your file");
+        QTest::newRow("accounts") << QString("set-up-accounts")
+            << QStringList{"accounts-new.png", "accounts-opening.png", "accounts-menu.png"}
+            << QString("choose-the-currency") << QString("Choose the currency");
+    }
     void createOpenChapterReading() {
+        QFETCH(QString, topic);
+        QFETCH(QStringList, pictures);
+        QFETCH(QString, section);
+        QFETCH(QString, sectionTitle);
         HelpCatalog catalog;
         QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
         Session session(&catalog);
@@ -279,7 +295,8 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
-        QCOMPARE(help->property("topicId").toString(), QString("create-open-file"));
+        if (topic == "set-up-accounts") QVERIFY(QMetaObject::invokeMethod(help, "nextTopic"));
+        QCOMPARE(help->property("topicId").toString(), topic);
         auto* article = object(help, "helpArticle");
         QVERIFY(article);
         auto* quick = qobject_cast<QQuickTextDocument*>(textDocument(article));
@@ -293,10 +310,10 @@ private slots:
         }
         QTRY_VERIFY2(quick->textDocument()->idealWidth() <= article->property("width").toDouble() + 1,
                      qPrintable(QString("Document width %1 exceeds article %2").arg(quick->textDocument()->idealWidth()).arg(article->property("width").toDouble())));
-        QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:create-open-file#open-your-file"))));
-        QTRY_COMPARE(help->property("currentSection").toString(), QString("Open your file"));
+        QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:" + topic + "#" + section))));
+        QTRY_COMPARE(help->property("currentSection").toString(), sectionTitle);
         auto* flick = object(help, "helpArticleFlick");
-        for (const auto& name : {"create-file-setup.png", "create-file-workspace.png", "create-file-unlock.png"}) {
+        for (const auto& name : pictures) {
             QTextBlock imageBlock;
             for (auto block = quick->textDocument()->begin(); block != quick->textDocument()->end(); block = block.next()) {
                 for (auto it = block.begin(); !it.atEnd(); ++it) {
@@ -339,7 +356,7 @@ private slots:
             QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".narrow.png"));
         }
         QVERIFY(QMetaObject::invokeMethod(help, "previousTopic"));
-        QCOMPARE(help->property("topicId").toString(), QString("understand-spending"));
+        QCOMPARE(help->property("topicId").toString(), topic == "set-up-accounts" ? QString("create-open-file") : QString("understand-spending"));
         QVERIFY(!session.model.state().value("active").toBool());
     }
     void createOpenChapterWalkthrough() {
@@ -399,6 +416,85 @@ private slots:
         wait(session.model);
         QVERIFY(session.model.state().value("active").toBool());
         QCOMPARE(session.model.state().value("name").toString(), QString("Chequing"));
+        QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void accountsChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false}, {"name", "Chequing"}, {"currency", "CAD"}});
+        auto mouse = [&](const QString& name, Qt::MouseButton button = Qt::LeftButton) {
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
+            QVERIFY2(item, qPrintable(name));
+            QVERIFY(item->isVisible());
+            QTest::qWait(180); // Allow the popup transition to finish before hit testing.
+            QTest::mouseClick(session.window, button, Qt::NoModifier,
+                             item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
+        };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(150);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        mouse("newAccount");
+        QVERIFY(object(session.root, "newAccountName")->setProperty("text", "Credit card"));
+        capture("accounts-new");
+        auto* field = qobject_cast<QQuickItem*>(object(session.root, "newAccountName"));
+        field->forceActiveFocus();
+        QTest::keyClick(session.window, Qt::Key_Return);
+        wait(session.model);
+        QCOMPARE(session.model.state().value("name").toString(), QString("Credit card"));
+        QCOMPARE(session.model.state().value("currency").toString(), QString("CAD"));
+        QCOMPARE(session.model.state().value("opening").toString(), QString("0.00"));
+        mouse("accountNavigation_1");
+        wait(session.model);
+        QCOMPARE(session.model.state().value("name").toString(), QString("Chequing"));
+        QTest::qWait(100);
+        auto* row = qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_0"));
+        QVERIFY(row);
+        QTest::mouseDClick(session.window, Qt::LeftButton, Qt::NoModifier,
+                          row->mapToScene(QPointF(160, row->height()/2)).toPoint());
+        QTRY_VERIFY(object(session.root, "correctOpeningDialog")->property("visible").toBool());
+        QVERIFY(object(session.root, "correctOpeningDate")->setProperty("text", "2026-01-01"));
+        QVERIFY(object(session.root, "correctOpeningAmount")->setProperty("text", "1,000.00"));
+        capture("accounts-opening");
+        auto* amount = qobject_cast<QQuickItem*>(object(session.root, "correctOpeningAmount"));
+        amount->forceActiveFocus();
+        QTest::keyClick(session.window, Qt::Key_Return);
+        wait(session.model);
+        QCOMPARE(session.model.state().value("opening").toString(), QString("1,000.00"));
+        QCOMPARE(session.model.state().value("openingDate").toString(), QString("2026-01-01"));
+        mouse("accountNavigation", Qt::RightButton);
+        QTRY_VERIFY(object(session.root, "accountContextMenu")->property("visible").toBool());
+        capture("accounts-menu");
+        mouse("reassignCurrency");
+        QTRY_VERIFY(object(session.root, "currencyDialog")->property("visible").toBool());
+        QVERIFY(object(session.root, "currencyWarning")->property("visible").toBool());
+        QVERIFY(edit(session.root, "currencySearch", "USD"));
+        mouse("confirmCurrency");
+        wait(session.model);
+        QCOMPARE(session.model.state().value("currency").toString(), QString("USD"));
+        QCOMPARE(session.model.state().value("opening").toString(), QString("1,000.00"));
+        mouse("accountNavigation", Qt::RightButton);
+        mouse("undoAccountCommand");
+        wait(session.model);
+        QCOMPARE(session.model.state().value("currency").toString(), QString("CAD"));
+        mouse("accountNavigation", Qt::RightButton);
+        mouse("archiveAccount");
+        wait(session.model);
+        QCOMPARE(session.model.state().value("name").toString(), QString("Credit card"));
+        mouse("archivedAccount_1");
+        wait(session.model);
+        QVERIFY(session.model.state().value("readOnly").toBool());
+        mouse("archivedAccount_1", Qt::RightButton);
+        mouse("reactivateAccount");
+        wait(session.model);
+        QVERIFY(!session.model.state().value("readOnly").toBool());
         QGuiApplication::styleHints()->unsetColorScheme();
     }
     void helpBesideRulesDialog() {

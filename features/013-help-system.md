@@ -5,7 +5,10 @@ Last updated: 2026-11-05
 Implementation: the viewer prototype from the 2026-11-05 Go is in the tree.
 The same day's chapter Go added [Understand your spending](../manual/index.md)
 as the opening topic. The subsequent chapter-2 Go adds Create or open your file
-with three screenshots and responsive inline image sizing. Sample topics remain a test fixture. Chapters after chapter 2 and context links still need their own Go. macOS checks and limits
+with three screenshots and responsive inline image sizing. Chapter 3, Set up your
+accounts, is now bundled with three screenshots under its subsequent Go and the
+accepted chapter workflow, ready for owner review. Sample topics remain a test
+fixture. Chapters after chapter 3 and context links still need their own Go. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 
 ## Accepted requirements — owner direction 2026-11-05
@@ -35,6 +38,55 @@ at a time. The voice is plain and human: it can start from why someone wants
 to know where the money went. It stays accurate. Engineering choices below are
 for contributors, not material to explain to users. This request authorizes
 documenting the design, not building the viewer or writing the complete manual.
+
+## Accepted chapter workflow — 2026-11-05
+
+Develop chapters sequentially, using one primary writer for continuity and
+sub-agents for verification and independent review. The owner asked to record
+this approach after reviewing chapters 1 and 2. This authorizes the supporting
+agent roles within an approved chapter; it does not authorize writing all
+remaining chapters at once. Retain the per-chapter Go and owner review.
+
+For each approved chapter:
+
+1. **Verify the task.** A supporting agent checks the current implementation
+   and relevant tests for labels, prerequisites, choices, results, restrictions,
+   and common errors. Distinguish observed behavior from code-only findings and
+   unresolved questions. Historical requirements are not proof of current UI.
+2. **Write and illustrate.** The primary agent owns the chapter and edits it
+   into the established voice. Use chapters 1 and 2 and the language guide as
+   references: warm, plain English, short pieces, no unnecessary words. Continue
+   the shared synthetic household example. Capture only useful real screens,
+   with captions and alternative text; keep instructions usable without images.
+3. **Review independently.** A separate supporting agent reviews accuracy,
+   omissions, repetition, verbosity, and continuity with earlier chapters.
+   Return concrete findings to the primary writer, who resolves them before
+   delivery. Keep one agent responsible for UI interaction and screenshot
+   capture; reviewers use code and captured results without competing for the UI.
+4. **Verify the reader's experience.** Build the bundled manual, check links,
+   search, navigation, image sizing, narrow windows and larger text, and exercise
+   the chapter's workflow. Test actual user interactions where promised: clicking
+   an image must open it; calling the viewer function directly is insufficient.
+   Record the commands, results, capture basis, and unavailable checks honestly.
+5. **Review with the owner.** Rebuild `build/SpentIt` for reading in Help,
+   address feedback, and commit when requested. Update the handoff after each
+   chapter with what shipped, verification, limitations, unresolved questions,
+   and the next chapter. Do not proceed to the next chapter without its Go.
+
+Sub-agents should receive bounded verification/review tasks, not separate
+assignments to draft the rest of the manual in parallel. The primary writer
+remains responsible for the final prose and for reconciling findings.
+
+A fresh session is useful at a chapter boundary but is not required for every
+chapter. For the present handoff, start chapter 3 in a new session. Read the
+handoff, this workflow, the outline, the language guide, and the two shipped
+chapters before proceeding; do not rely on this chat to recover the voice or
+accepted decisions. The owner's next-session Go starts chapter 3 implementation.
+
+After the last chapter, follow the complete synthetic example from an empty
+file through reports. Separately test lookup use through Contents and Search,
+including entry from a particular problem. Check continuity, terminology,
+cross-references, screenshots, and missing decisions across the whole manual.
 
 ## Chapter 2 Go and writing direction — 2026-11-05
 
@@ -359,7 +411,8 @@ The first real chapter, Understand your spending, is bundled from
 `manual/index.md`. It uses the household example and has no application
 screenshot. Sample topics are prepared from `tests/fixtures/help/` for the
 viewer checks and are not part of the Help window. Chapter 2 is now also bundled, with setup, unlock, and workspace screenshots.
-Chapters after chapter 2 and application-wide context links need their own Go. Write each chapter against
+Chapter 3 is also bundled with account setup and management screenshots.
+Chapters after chapter 3 and application-wide context links need their own Go. Write each chapter against
 the current application, capture its screenshots only after the instructions
 and the screen agree, and review that chapter before the next one.
 Use the synthetic example and the date, amount, platform and theme rules above.
