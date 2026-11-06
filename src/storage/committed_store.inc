@@ -277,7 +277,25 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
                     const imports::Occurrence target{members.bytes(3),static_cast<std::size_t>(members.integer(4))};
                     if(!heads.contains(target)) {
                         Statement match(impl_->db,"SELECT 1 FROM generated_source_matches g JOIN ledger_operations l ON l.sequence=g.sequence JOIN history_order h ON h.operation=l.id WHERE g.batch=? AND g.ordinal=? AND h.sequence<?");match.text(1,target.batch);match.integer(2,integer(target.ordinal));match.integer(3,order);
-                        if(!match.row())fail(SQLITE_CORRUPT,"Acceptance precedes its duplicate target");
+                        if(!match.row()) {
+                            // A publication and a dataset acceptance are atomic. A
+                            // duplicate may precede its included target in row/batch
+                            // replay order within that boundary, but never in a
+                            // separate later acceptance. The target still receives
+                            // its normal initial-snapshot/reference checks on replay.
+                            Statement together(impl_->db,R"SQL(
+SELECT 1 FROM accepted_transactions a
+JOIN operations o ON o.id=a.operation AND o.batch=a.batch
+JOIN acceptance_members m ON m.operation=a.operation AND m.ordinal=a.ordinal
+WHERE a.batch=?1 AND a.ordinal=?2 AND m.decision=1
+AND (a.operation=?3 OR EXISTS(
+    SELECT 1 FROM acceptance_operations target
+    JOIN acceptance_operations current ON current.parent=target.parent
+    WHERE target.operation=a.operation AND current.operation=?3))
+)SQL");
+                            together.text(1,target.batch);together.integer(2,integer(target.ordinal));together.text(3,operation);
+                            if(!together.row())fail(SQLITE_CORRUPT,"Acceptance precedes its duplicate target");
+                        }
                     }
                 }
             }

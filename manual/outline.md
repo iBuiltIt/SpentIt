@@ -1,7 +1,10 @@
 # SpentIt help and user manual — proposed outline
 
-Date: 2026-11-05  
-Status: proposed content outline for review. Chapters 1–12 are written, with screenshots in chapters 2–12. Chapter 12 is owner-accepted for commit; quick references and context links remain separate work.
+Date: 2026-11-06  
+Status: chapters 1–12 and all five quick references are bundled, with screenshots
+in chapters 2–12. The whole-manual audit and continuous walkthrough are verified in
+[the handoff](../doc/help-prototype-handoff.md#whole-manual-continuity-and-acceptance-replay--2026-11-06);
+application-wide context links remain separate work.
 
 ## Purpose and reading order
 
@@ -377,13 +380,13 @@ remaining import problems and quit choices. Chapter 11,
 [Answer questions with reports](reports.md), adds report setup, comparisons,
 charts and contributing-transaction editing. Chapter 12,
 [Look after your work and resolve remaining problems](backup-recovery.md), covers
-backup/recovery, Settings and a linked problem index. The final continuity review
+backup/recovery, Settings and a linked problem index. The chapter-12 review
 clarified chapter 10’s pre-payment example. The first quick reference,
 [Where do I find…?](where-to-find.md), is also bundled.
 [Keyboard and mouse](keyboard-mouse.md) is committed as `8c3c830`.
 [Search examples](search-examples.md) is bundled under its Go, including the
 shared pattern table moved from Rules. [Words used in SpentIt](words.md) is
-now bundled under its Go. The messages reference and context links remain
-separate work. The sample
+now bundled under its Go. [Messages and problems](messages-problems.md) is
+committed as `7524c64`. Context links remain separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.

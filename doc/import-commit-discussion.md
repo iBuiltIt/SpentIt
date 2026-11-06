@@ -154,6 +154,23 @@ That change removed only the date-choice prerequisite and mistakenly retained th
 - No routine confirmation is needed for an explicit Commit with no issues. If there are review concerns, explain them, let the user navigate to affected transactions, and offer **Ignore and commit** for overridable concerns. Do not treat an uncertain application judgment as more authoritative than the user.
 - On quit with new/uncommitted transactions, ask whether to commit them now. Yes commits before quitting; No quits with everything still saved and uncommitted. Reopening restores that status. A Cancel option returns to the application. A failed commit must not be presented as successful or silently lose pending work.
 
+## Atomic acceptance replay — correction 2026-11-06
+
+The whole-manual walkthrough exposed an audit error after merging into a later
+unaccepted import and then accepting all transactions. An earlier batch can
+retain another included transaction while its duplicate points to a survivor
+published later within the same dataset acceptance. The same ordering can occur
+between rows in one publication, or in both directions between two batches.
+
+Under the owner’s follow-up Go, replay recognizes the existing atomic boundary:
+a duplicate target may be an included transaction in the same publication or
+in a publication with the same dataset-acceptance parent. It is not inserted
+into the replayed heads early; its initial snapshot, financial reference and
+balances still undergo normal replay and final checks. A separate future
+acceptance does not qualify. This corrects verification of current-format data;
+it does not change stored transactions, acceptance ordering, matching policy or
+the schema. See [status](status.md) for regression and recovery results.
+
 ## Import errors and retained material
 
 The owner rejects a required separate permanent “import evidence” archive. Loaded transactions, before and after acceptance, are the working records. Creation/matching ownership needed for correct rollback is not a requirement to preserve original files forever.

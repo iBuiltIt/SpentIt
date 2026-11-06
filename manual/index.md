@@ -57,6 +57,9 @@ those entries fit together helps you make sense of the total.
 thousands and a dot for cents, as in 1,234.56. Your own file follows
 your chosen date and amount settings. This example uses one currency.*
 
+Pictures show different stages of the example. Keep your correct entries;
+you don’t need to change them to match a picture.
+
 ## Start with your own accounts
 
 Your SpentIt **file** keeps your accounts and transactions together.

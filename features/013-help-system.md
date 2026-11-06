@@ -31,6 +31,10 @@ are in [the handoff](../doc/help-prototype-handoff.md).
 [Messages and problems](../manual/messages-problems.md) is bundled under the
 next Go and was accepted for commit on 2026-11-06. It links verified message excerpts to supported
 next steps; application-wide context links remain separate work.
+The 2026-11-06 whole-manual Go adds a continuous synthetic file walkthrough
+under both guide and alternate date/amount settings, problem-driven lookups,
+and a complete prose/screenshot audit. A discovered acceptance replay defect
+received a separate implementation Go; see [status](../doc/status.md) for results.
 
 The chapter-9 table follow-up reproduced missing text on reverse scrolling in
 Qt 6.12. Help now keeps the complete scene graph for table articles and batches

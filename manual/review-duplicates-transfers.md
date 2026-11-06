@@ -47,7 +47,9 @@ import arrives.
 For these examples, we return to the original Market purchase and
 refund, without the extra Corner shop purchase from the previous
 chapter. Keeping one 42.18 purchase and the 6.00 refund leaves the
-card balance at **-36.18**.
+card balance at **-36.18**. If you kept Corner shop too, the balance is
+**-56.18** before the payment and **-20.00** afterward. Keep that purchase;
+these pictures show only the Market example.
 
 ### Merge several matches
 

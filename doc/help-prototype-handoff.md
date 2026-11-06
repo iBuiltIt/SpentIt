@@ -10,6 +10,104 @@ requested its commit and gave Go for chapter 4. The design
 is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. Update it when a step changes.
 
+## Whole-manual continuity and acceptance replay — 2026-11-06
+
+Under the owner’s Go, all seventeen topics were audited for continuity,
+terminology, links, decisions and screenshot consistency. Independent review
+visually checked all 38 shipped screenshots against their captions and nearby
+instructions; no amount/caption mismatch was found. The introduction and Review
+now explain that pictures show different stages, so a reader keeps correct
+entries rather than changing them to match a picture. Reports specifies the two
+February purchases and links to entry instructions. The outline no longer says
+the quick references are pending. No shipped screenshots changed.
+
+The new continuous QML walkthrough starts with an empty password-protected file
+and starter categories. It creates accounts/openings, imports the purchase and
+refund, explicitly keeps the later-imported duplicate during Merge, links the
+payment, adds and categorizes the Corner shop split, checks search/error
+retention, saves a rule with no eligible existing matches, accepts January work,
+and imports February work to exercise that saved rule. It verifies January
+56.18 and February 70.00, the 12.00 split contribution, date-edit/Undo changes,
+and a restored backup with exact balances, saved reports and two new entries.
+Both YYYY-MM-DD/comma-dot and DD/MM/YYYY/dot-comma cases are covered. Additional
+lookup rows click from backup, split and stale-report messages to their tasks.
+
+This uses actual QML forms, pointer clicks, Enter keys and injected text/combo
+values. File-picker paths are submitted through model commands; native chooser
+typing and a manual standalone-app session are not claimed. Initial harness
+failures were corrected: delayed category-editor creation, selected-account
+control naming and updating the welcome path to match the submitted backup.
+
+The walkthrough exposed a real current-format verification defect: Merge can
+point an earlier batch’s duplicate at a later unaccepted survivor, then dataset
+acceptance publishes both atomically. Replay wrongly required the target to
+have appeared earlier in row/batch order. The owner separately gave Go to fix
+and verify it. Replay now accepts an included target from the same publication
+or dataset-acceptance parent, retaining normal snapshot/reference/financial
+checks and rejecting a target from an independent future acceptance. No stored
+transactions, schema, matching policy or acceptance ordering changed. See the
+[atomic acceptance explanation](import-commit-discussion.md#atomic-acceptance-replay--correction-2026-11-06).
+
+The deterministic storage regression first failed with “Acceptance precedes its
+duplicate target” (0.33s), then passed after the correction. It covers a later
+batch survivor, a later same-batch ordinal through explicit ledger Merge, and
+crossed batch dependencies. Each checks verify/reopen/restored backup, idempotent
+retry, write/sync failures and abrupt exits before/after durable commit. A
+separate future legacy publication still fails verification. An initial
+same-batch fixture incorrectly expected an automatic suggestion; it was changed
+to explicit Merge without widening matching.
+
+Release results: the focused continuous offscreen walkthrough passed
+4/4 including init/cleanup in 22844ms. The storage Review/acceptance selection
+passed 3/3 in 139.52s, with acceptance-order checks taking 133.21s and sweeping
+165 write/sync failure positions in each of three scenarios. Related review
+state, committed basics/history/review/dependencies/exact/backup/validation,
+Help preparation and catalog checks passed 10/10 in 17.42s. Rules-disabled
+Release acceptance-order checks passed 1/1 in 117.95s, with 157 failure positions
+per scenario.
+ASan/UBSan Debug acceptance-order checks passed 1/1 in 336.77s, with 165
+failure positions per scenario and no sanitizer diagnostics.
+
+The first full native Help run passed 47 cases and failed two new lookup cases
+in 543267ms. Both continuous scenarios, all existing chapter walkthroughs,
+reading, scrolling and Rules/Reports modal Help passed. The failures were test
+clicks below the Search viewport. The helper now scrolls Search with wheel events, waits for movement to stop,
+checks click bounds, and sends the actual click; Contents is positioned at the
+intended row. Intermediate reruns exposed delegate-layout changes and a click
+consumed while the list was still moving. A diagnostic capture and moving=true
+trace confirmed the latter; the final focused native pair passed 4/4 including
+init/cleanup in 6974ms; the same offscreen pair passed 4/4 in 41693ms.
+Final verification passed all five CTest checks (Help UI, Rules UI, QML smoke,
+Help preparation and catalog). The full offscreen Help suite passed 49/49 in
+89152ms. All nine native lookup cases then passed, 11/11 including init/cleanup
+in 13688ms.
+The expanded 49-case offscreen suite has a 600-second timeout instead of the
+old 120-second prototype allowance; no application timing or behavior changed.
+Native report/restored-backup captures for both formats were inspected and
+independently reviewed. They preserve balances and all four category amounts.
+
+Reproduction commands (the targets were rebuilt in several invocations):
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests spentit_rule_ui_tests spentit_review_sheet_tests spentit_import_review_state_tests spentit_committed_tests -j 2
+ctest --test-dir build/import-ui-rules-release -R '^import\.(acceptance_order|review_sheet|review_batch)$' --output-on-failure
+ctest --test-dir build/import-ui-rules-release -R '^(import\.review_state|committed\.(basics|history|review|dependencies|exact|backup|validation)|help\.(prepare|catalog))$' --output-on-failure
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests quickReferenceLookup
+ctest --test-dir build/category-rules-off -R '^import\.acceptance_order$' --output-on-failure
+ctest --test-dir build/category-sanitized -R '^import\.acceptance_order$' --output-on-failure
+```
+
+The rules-off and sanitized test targets were rebuilt before those runs.
+Temporary walkthrough captures used `SPENTIT_GUIDE_CAPTURE`; none were bundled.
+
+No private data was used. Full keyboard-only/screen-reader, dark appearance,
+standalone-app and Linux/Windows verification remain unclaimed. Application-wide
+context links remain separate work requiring their own Go. Search excerpts can
+still show Markdown markers or start/end mid-word; this existing presentation
+roughness was observed during lookup capture and is a separate polish item.
+
 ## Messages and problems quick reference — 2026-11-05
 
 The glossary is committed as `4c12a06`. Under the owner’s next Go,
@@ -1656,7 +1754,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. “Where do I find…?” is committed as `2ef8158`. Keyboard and mouse is committed as `8c3c830`. Search examples is committed as `6b1333c`. Words used in SpentIt is committed as `4c12a06`. Messages and problems is bundled under its Go and was accepted for commit on 2026-11-06. The next proposed step is the complete synthetic-example walkthrough and whole-manual consistency check. Application-wide context links require their own Go.
+2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. “Where do I find…?” is committed as `2ef8158`. Keyboard and mouse is committed as `8c3c830`. Search examples is committed as `6b1333c`. Words used in SpentIt is committed as `4c12a06`. Messages and problems is bundled under its Go and was accepted for commit on 2026-11-06. The whole-manual audit and continuous walkthrough are complete under the 2026-11-06 Go; see the current checkpoint above for verification and remaining platform/accessibility limits. Application-wide context links require their own Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
 4. If you change Help, rerun the two commands in “Build and check” and write

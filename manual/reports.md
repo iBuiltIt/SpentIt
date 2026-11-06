@@ -31,9 +31,12 @@ Choose **Reports** in the sidebar, then **New report**.
 *Choose the accounts, categories and dates that answer your question.*
 
 The screenshots use the earlier Market purchase and refund, plus Corner shop’s
-12.00 Groceries / 8.00 Household split. February adds 55.00 of groceries and
-15.00 of household supplies. Other transactions can stay in your file; only
-the chosen categories and periods enter this report.
+12.00 Groceries / 8.00 Household split. To try the February comparison,
+[add](add-correct-transactions.md#add-a-missing-purchase) or import a **Market**
+purchase on **2026-02-15** for **-55.00** in Groceries and **Home supplies**
+on **2026-02-22** for **-15.00** in Household, both in Credit card. Add each
+only if it is not already there. Other transactions can stay in your file;
+only the chosen categories and periods enter this report.
 
 ### Choose what belongs
 

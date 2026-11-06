@@ -572,9 +572,85 @@ void editor_faults(const std::filesystem::path& dir){
         for(auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){const auto trial=dir/"editor-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto p){if(p==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Edit crash boundary reached");auto s=ImportStore::open(trial,"test");verify(s,phase==storage::ImportPhase::after_commit);apply(s);verify(s,true);}
     }
 }
+// Forward duplicate references are valid only inside one atomic acceptance.
+void acceptance_order_tests(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const auto prepare=[&](const std::filesystem::path& path,int mode) {
+        auto s=ImportStore::create(path,"test","Visa",cad,"2026-01-01");
+        s.opening(0,"2026-01-01",Money(0,cad));
+        const auto purchase=source("Market","-42.18"),refund=source("Refund","6.00");
+        if(mode==1) {
+            s.ingest("first",purchase+source("Market groceries","-42.18").substr(11)+refund.substr(11),qif::DateOrder::dmy);
+            ReviewAnswer merge;merge.generation=s.review_sheet().generation;merge.question="selected";merge.action=ReviewAction::merge;
+            merge.selected={{"first",0},{"first",1}};merge.survivor=imports::Occurrence{"first",1};s.answer_review("merge",merge);
+        } else {
+            s.ingest("first",purchase+(mode==2?source("Household first","-20.00"):refund).substr(11),qif::DateOrder::dmy);
+            s.ingest("second",source("Market groceries","-42.18")+(mode==2?source("Household second","-20.00").substr(11):""),qif::DateOrder::dmy);
+            answer(s,"merge",ReviewAction::merge,{{"first",0},{"second",0}},imports::Occurrence{"second",0});
+            if(mode==2)answer(s,"merge-reverse",ReviewAction::merge,{{"first",1},{"second",1}},imports::Occurrence{"first",1});
+        }
+        s.verify();check(s.acceptance_review().transactions==2,"Two survivors awaiting acceptance");
+    };
+    const auto inspect=[&](ImportStore& s,int mode,bool accepted) {
+        s.verify();check(s.balance().units()==(mode==2?-6218:-3618),"Merge keeps exact balance");
+        check(s.current_ledger().size()==2,"Two retained transactions");
+        check(s.committed_balance().units()==(accepted?(mode==2?-6218:-3618):0),"Acceptance is all or nothing");
+        check(s.acceptance_outcome("accept-order").has_value()==accepted,"Acceptance receipt agrees with financial state");
+        check(s.acceptance_review().transactions==(accepted?0U:2U),"New count agrees with durable acceptance");
+    };
+    const auto apply=[&](ImportStore& s) {
+        const auto receipt=s.accept_all("accept-order");
+        check(receipt.transactions==2 && receipt.failed_records==0 && !receipt.ignored_warnings,"Acceptance receipt counts survivors");
+        const auto again=s.accept_all("accept-order");
+        check(again.operation==receipt.operation && again.transactions==receipt.transactions && again.failed_records==receipt.failed_records && again.ignored_warnings==receipt.ignored_warnings,"Acceptance retry returns original receipt");
+    };
+    fault_vfs::install();
+    for(int mode=0;mode<3;++mode) {
+        std::cout<<"Acceptance ordering mode "<<mode<<std::endl;
+        const auto base=dir/("acceptance-base-"+std::to_string(mode));prepare(base,mode);
+        const auto completed=dir/("acceptance-complete-"+std::to_string(mode));
+        std::filesystem::copy_file(base,completed);
+        const auto backup=dir/("acceptance-backup-"+std::to_string(mode));
+        {auto s=ImportStore::open(completed,"test");apply(s);inspect(s,mode,true);s.backup_to(backup,"test");}
+        for(const auto& path:{completed,backup}){auto s=ImportStore::open(path,"test");inspect(s,mode,true);apply(s);inspect(s,mode,true);}
+        int positions=0;
+        for(int nth=1;nth<2000;++nth) {
+            const auto trial=dir/"acceptance-fault";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.accept_all("accept-order");}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
+            {auto s=ImportStore::open(trial,"test");inspect(s,mode,s.acceptance_outcome("accept-order").has_value());apply(s);inspect(s,mode,true);}
+            if(!fired){positions=nth-1;break;}
+        }
+        check(positions>0,"Acceptance write failure sweep completed");
+        std::cout<<"Acceptance ordering fault mode "<<mode<<": "<<positions<<" positions"<<std::endl;
+        for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}) {
+            const auto trial=dir/"acceptance-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
+            const auto child=fork();check(child>=0,"fork");
+            if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto point){if(point==phase)_exit(71);});s.accept_all("accept-order");_exit(72);}catch(...){_exit(73);}}
+            int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Acceptance interruption reached durable boundary");
+            auto s=ImportStore::open(trial,"test");inspect(s,mode,phase==storage::ImportPhase::after_commit);apply(s);inspect(s,mode,true);
+        }
+    }
+    // Two independent legacy publications must not gain the atomic-group
+    // exception merely because the duplicate target is eventually accepted.
+    const auto separate=dir/"acceptance-separate";prepare(separate,0);
+    {
+        auto s=ImportStore::open(separate,"test");
+        for(const auto& id:{"first","second"}) {
+            const auto batches=s.batches();
+            const auto found=std::find_if(batches.begin(),batches.end(),[&](const auto& b){return b.id==id;});
+            check(found!=batches.end(),"Separate publication batch exists");
+            s.commit(id,found->revision,std::string("separate-")+id);
+        }
+        bool rejected=false;try{s.verify();}catch(const storage::ImportError& error){rejected=std::string(error.what()).find("Acceptance precedes its duplicate target")!=std::string::npos;}
+        check(rejected,"Independent future acceptance cannot validate an earlier duplicate");
+    }
+    std::cout<<"Acceptance ordering passed\n";
+}
+
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
+        if(argc>1 && std::string(argv[1])=="acceptance_order"){acceptance_order_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="selection"){selection_edit_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="selection_faults"){selection_edit_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="editor"){editor_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
