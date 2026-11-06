@@ -40,14 +40,14 @@ private slots:
         QVERIFY(catalog.loaded());
         QVERIFY(!catalog.sample());
         QVERIFY(catalog.banner().isEmpty());
-        QCOMPARE(catalog.topics().size(), 9);
+        QCOMPARE(catalog.topics().size(), 10);
         QCOMPARE(catalog.topics().front().toMap().value("id").toString(), QStringLiteral("understand-spending"));
         QCOMPARE(catalog.topics().front().toMap().value("title").toString(), QStringLiteral("Understand your spending"));
         const auto refund = catalog.search(QStringLiteral("refund"));
-        QCOMPARE(refund.size(), 6);
+        QCOMPARE(refund.size(), 7);
         QCOMPARE(refund.front().toMap().value("topicId").toString(), QStringLiteral("understand-spending"));
         const auto commit = catalog.search(QStringLiteral("commit"));
-        QCOMPARE(commit.size(), 1);
+        QCOMPARE(commit.size(), 2);
         QCOMPARE(commit.front().toMap().value("topicId").toString(), QStringLiteral("understand-spending"));
         const auto setup = catalog.search(QStringLiteral("unlock"));
         QCOMPARE(setup.size(), 1);
@@ -72,6 +72,9 @@ private slots:
         const auto patterns = catalog.search(QStringLiteral("regular expression"));
         QVERIFY(!patterns.isEmpty());
         QCOMPARE(patterns.front().toMap().value("topicId").toString(), QStringLiteral("use-rules"));
+        const auto acceptance = catalog.search(QStringLiteral("acceptance"));
+        QVERIFY(!acceptance.isEmpty());
+        QCOMPARE(acceptance.front().toMap().value("topicId").toString(), QStringLiteral("accept-transactions"));
         QVERIFY(catalog.search(QStringLiteral("sample content")).isEmpty());
     }
 };

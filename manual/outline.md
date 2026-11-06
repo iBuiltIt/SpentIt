@@ -1,7 +1,7 @@
 # SpentIt help and user manual — proposed outline
 
 Date: 2026-11-05  
-Status: proposed content outline for review. Chapters 1–8 are written, with screenshots in chapters 2–8. Chapter 7 is accepted and committed; chapter 8 is owner-accepted for commit. Later chapters are not yet written.
+Status: proposed content outline for review. Chapters 1–10 are written, with screenshots in chapters 2–10. Chapter 10 is owner-accepted for commit. Later chapters are not yet written.
 
 ## Purpose and reading order
 
@@ -234,7 +234,7 @@ matching behavior before explaining original versus edited text.
 - Compare saving, accepting, undoing an import, deleting selected transactions and
   account-wide Discard in a small action/consequence table.
 
-**Screenshots:** Acceptance entry point, review/blocking state and quit prompt.
+**Screenshots:** Acceptance entry point, failed imported record with valid-entry acceptance, and quit prompt.
 **Problems here:** Nothing to accept, unresolved issues and acceptance that cannot complete.
 
 ## 11. Answer questions with reports
@@ -369,7 +369,9 @@ category-choice, ledger-result, and Undo screenshots. Chapter 5,
 and Review screenshots. Chapter 6,
 [Review duplicates and link transfers](review-duplicates-transfers.md), adds
 keep-choice, transfer-question, linked-ledger and amount-difference screenshots.
-Later chapters and context links
+Chapters 7–9 cover editing, categories and rules. Chapter 10,
+[Accept transactions — now or later](accept-transactions.md), covers acceptance,
+remaining import problems and quit choices. Later chapters and context links
 are separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.

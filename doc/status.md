@@ -2,6 +2,38 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 10 — 2026-11-05
+
+Under the owner's Go, [Accept transactions — now or later](../manual/accept-transactions.md)
+is bundled with three synthetic screenshots and owner-accepted for commit. The
+accepted workflow used supporting implementation/test verification, one primary
+writer/capture owner and independent review. The chapter covers all-account
+acceptance, warnings/blockers, failed imported records, quit choices, saved new
+transactions and the differences between accepting, editing and removal.
+No financial or Help viewer behavior changed.
+
+Rebuilt the three application/Help targets; `build/SpentIt` contains ten chapters
+and 32 images. Final full native Help passed 28/28 including init/cleanup in
+242679ms. Chapter 10 checks navigation, actual image clicks/enlargement/return,
+and its comparison table at 500-pixel width and 150% text. Source screenshots
+and normal/inline/table/narrow rendered views were visually inspected.
+The focused source walkthrough passed offscreen 3/3 in 3054ms and native capture
+3/3 in 4070ms. Supporting acceptance/outcome UI checks passed 5/5 in 3816ms;
+storage acceptance/rollback/import-Undo/manual selection passed 4/4 in 50.55s.
+
+The documented CTest selection passed rules UI, catalog and QML, but full
+offscreen Help hit its existing 120-second limit. Preparation initially found
+an outdated chapter/image count; after correction, preparation/catalog passed
+2/2 in 0.37s. The full offscreen timing limit remains unresolved. Relative file
+links and `git diff --check` passed. The existing quit dialog shortens the
+“Quit without accepting” label; the chapter states its full text.
+
+The [handoff](help-prototype-handoff.md#chapter-10--2026-11-05) records commands,
+capture basis, harness corrections and verification limits. All data was
+synthetic; no manual standalone-app walkthrough, full financial fault sweep,
+dark-mode, complete keyboard/screen-reader or Linux/Windows verification is
+claimed. Chapter 11 and context links require their own Go; the owner accepted chapter 10 and requested its commit.
+
 ## Help regex wording clarification — 2026-11-05
 
 The owner's three approved cheat-sheet clarifications are bundled in

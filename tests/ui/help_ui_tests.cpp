@@ -301,6 +301,9 @@ private slots:
         QTest::newRow("rules") << QString("use-rules")
             << QStringList{"rules-editor.png", "rules-preview.png", "rules-leave.png"}
             << QString("preview-save-and-apply") << QString("Preview, save and apply");
+        QTest::newRow("acceptance") << QString("accept-transactions")
+            << QStringList{"accept-ready.png", "accept-review.png", "accept-quit.png"}
+            << QString("leave-them-new-and-return-later") << QString("Leave them new and return later");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -316,7 +319,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -382,8 +385,20 @@ private slots:
                 QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".regex.png"));
             }
         }
+        if (topic == "accept-transactions") {
+            QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:accept-transactions#choose-the-action-you-mean"))));
+            QTRY_COMPARE(help->property("currentSection").toString(), QString("Choose the action you mean"));
+            if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
+                QTest::qWait(150);
+                QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".table.png"));
+            }
+        }
         help->resize(500, 680);
         help->setProperty("textScale", 1.5);
+        if (topic == "accept-transactions") {
+            QTest::qWait(150);
+            QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:accept-transactions#choose-the-action-you-mean"))));
+        }
         if (topic == "use-rules") {
             QTest::qWait(150);
             QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:use-rules#common-pattern-pieces"))));
@@ -802,6 +817,90 @@ private slots:
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
         QGuiApplication::styleHints()->unsetColorScheme();
     }
+    void acceptanceChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        const auto path = session.path("Household.spentit");
+        run(session.model, "create", {{"path", path}, {"protected", false},
+            {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        auto mouse = [&](const QString& name) {
+            QTest::qWait(120);
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
+            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            const auto point = item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint();
+            QVERIFY(session.window->contentItem()->contains(point));
+            QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier, point);
+            wait(session.model);
+        };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(180);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        mouse("categoryNavigation");
+        createCategory(session.model, session.root, "Groceries");
+        createCategory(session.model, session.root, "Household");
+        mouse("accountNavigation");
+        QFile card(session.path("card.qif")); QVERIFY(card.open(QIODevice::WriteOnly));
+        card.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nLGroceries\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\nD2026-01-22\nT-20.00\nPCorner shop\nSGroceries\n$-12.00\nSHousehold\n$-8.00\n^\n"); card.close();
+        run(session.model, "import", {{"path", card.fileName()}, {"account", "1"}});
+        run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "1,000.00"}});
+        QFile income(session.path("income.qif")); QVERIFY(income.open(QIODevice::WriteOnly));
+        income.write("!Type:Bank\nD2026-01-10\nT2000.00\nPPayday\n^\n"); income.close();
+        run(session.model, "import", {{"path", income.fileName()}, {"account", "2"}});
+        QCOMPARE(session.model.state().value("newTransactions").toInt(), 4);
+        mouse("reviewNavigation");
+        QCOMPARE(session.model.state().value("reviewCount").toInt(), 0);
+        capture("accept-ready");
+        mouse("commitImport");
+        QCOMPARE(session.model.state().value("newTransactions").toInt(), 0);
+        QCOMPARE(session.model.state().value("balance").toString(), QString("3,000.00"));
+        run(session.model, "select_account", {{"id", "1"}});
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
+        QCOMPARE(session.model.state().value("committed").toString(), QString("-56.18"));
+        // A later export has one valid purchase and one unreadable amount.
+        QFile later(session.path("later.qif")); QVERIFY(later.open(QIODevice::WriteOnly));
+        later.write("!Type:CCard\nD2026-01-23\nT-5.00\nPCoffee\n^\nD2026-01-24\nTbad\nPAmount to check\n^\n"); later.close();
+        run(session.model, "import", {{"path", later.fileName()}, {"account", "1"}});
+        QCOMPARE(session.model.state().value("importFailures").toInt(), 1);
+        mouse("reviewNavigation");
+        mouse("commitImport");
+        QVERIFY(session.model.state().value("canIgnoreWarnings").toBool());
+        QCOMPARE(object(session.root, "reviewIgnoreCommit")->property("text").toString(), QString("Accept valid transactions"));
+        capture("accept-review");
+        mouse("reviewIgnoreCommit");
+        QCOMPARE(session.model.state().value("newTransactions").toInt(), 0);
+        QCOMPARE(session.model.state().value("importFailures").toInt(), 1);
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-61.18"));
+        // Keep another saved purchase new through quitting and reopening.
+        QFile next(session.path("next.qif")); QVERIFY(next.open(QIODevice::WriteOnly));
+        next.write("!Type:CCard\nD2026-01-25\nT-3.00\nPBus fare\n^\n"); next.close();
+        run(session.model, "import", {{"path", next.fileName()}, {"account", "1"}});
+        session.window->close();
+        QTRY_VERIFY(object(session.root, "quitCommitDialog")->property("visible").toBool());
+        capture("accept-quit");
+        mouse("quitCommitCancel");
+        QVERIFY(session.model.state().value("active").toBool());
+        session.window->close();
+        QTRY_VERIFY(object(session.root, "quitCommitDialog")->property("visible").toBool());
+        mouse("quitCommitNo");
+        QTRY_VERIFY(!session.model.state().value("active").toBool());
+        ImportModel reopened(storage::document_gateway());
+        run(reopened, "open", {{"path", path}});
+        QCOMPARE(reopened.state().value("newTransactions").toInt(), 1);
+        run(reopened, "select_account", {{"id", "1"}});
+        QCOMPARE(reopened.state().value("balance").toString(), QString("-64.18"));
+        QCOMPARE(reopened.state().value("importFailures").toInt(), 1);
+    }
+
     void rulesChapterWalkthrough() {
         HelpCatalog catalog;
         QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));

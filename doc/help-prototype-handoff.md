@@ -27,7 +27,9 @@ and committed as `2b9c41e`. Chapter 8,
 [Organize spending with categories](../manual/categories.md), is bundled under
 the owner’s next Go and is owner-accepted for commit. Sample topics used to check the viewer are in
 `tests/fixtures/help/` and are not shown in Help. Chapter 9, [Use rules for repeated categorization](../manual/rules.md), is now
-bundled under the owner’s Go and owner-accepted for commit. Chapter 10 and context
+bundled under the owner’s Go and owner-accepted for commit. Chapter 10,
+[Accept transactions — now or later](../manual/accept-transactions.md), is bundled
+under the next Go and owner-accepted for commit. Chapter 11 and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
@@ -39,6 +41,98 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 10 — 2026-11-05
+
+The owner gave Go for [Accept transactions — now or later](../manual/accept-transactions.md)
+using the documented workflow. The chapter is bundled with three screenshots
+and owner-accepted for commit. Supporting verification checked implementation and
+focused tests; the primary writer owned prose and captures; an independent
+reviewer checked accuracy, continuity, brevity, images and tests. Review clarified
+the payday example and the bottom-of-Review action location and corrected a
+search-count expectation and a walkthrough comment. No financial or Help viewer
+behavior changed. Chapter 11 and context links need their own Go.
+
+The chapter covers all-account acceptance, unchanged inclusive balances,
+remaining warnings versus blockers and failed imported records, quit choices,
+accepted corrections, import Undo eligibility and the difference between saving,
+accepting and removal commands. It uses the current action labels rather than
+historical Yes/No wording. Existing UI discrepancies remain: the quit prompt
+elides “Quit without accepting” at its fixed width, and Review still says
+“What’s blocking commit?”. The manual uses the full quit label and does not
+retouch the captured application.
+
+The temporary Household file has Credit card opening zero and Chequing
+1,000.00 on January 1. The card’s Market -42.18, refund +6.00 and Corner shop
+-20.00 split total -56.18; Chequing has a 2,000.00 payday. One click accepts all
+four entries without changing either balance. A later export has Coffee -5.00
+and an unreadable amount; Accept valid transactions accepts Coffee and leaves
+one failed record. Bus fare -3.00 is left new through quitting and reopening,
+with the card balance -64.18 and the failed record still present.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `accept-ready.png` | Review with no questions, before acceptance across both accounts |
+| `accept-review.png` | Unreadable amount remaining and enabled Accept valid transactions |
+| `accept-quit.png` | Quit choice with a saved new Bus fare entry |
+
+Capture basis: actual ImportMain.qml in a native macOS Qt 6.12.0 Basic light
+harness, 1440 × 900 logical pixels at 2×, temporary synthetic data/settings.
+Setup, categories, openings and imports use model commands or existing test
+helpers. Real mouse clicks exercise Review, both acceptance actions, quit Cancel
+and Quit without accepting; the window close request opens the quit prompt.
+A fresh model reopens the file to verify persistence. This is not a manual
+standalone-app walkthrough. All three source images were visually inspected
+and independently reviewed.
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests acceptanceChapterWalkthrough
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests acceptanceChapterWalkthrough
+```
+
+The final offscreen walkthrough passed 3/3 including init/cleanup in 3054ms;
+native capture passed 3/3 in 4070ms. An earlier harness incorrectly reused a
+window after completing its quit lifecycle, so a second quit prompt did not
+open. The corrected test reopens through a fresh model. Native Accept and quit
+is not claimed by this walkthrough; the focused existing UI test covers that
+choice and its failure path.
+
+Supporting checks:
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_ui_tests datasetAcceptanceAndRollback warningAndQuitAcceptance commitOutcomeRecovery
+ctest --test-dir build/import-ui-rules-release -R '^(statement\.(overlap|rollback|import_undo)|import\.manual_transactions)$' --output-on-failure
+```
+
+Results: 5/5 including init/cleanup in 3816ms; storage selection 4/4 in 50.55s.
+These cover valid acceptance with failures retained, warnings, both linked
+postings, accepted corrections, quit/reopen, failed or uncertain outcomes,
+rollback and import Undo. Initial restricted supporting UI execution could not
+create application-data locks and crashed after the failed fixture setup;
+the authorized rerun passed. No private data was used.
+
+Final rules-enabled Release verification on macOS Qt 6.12.0:
+
+- Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+  `spentit_help_tests`; `build/SpentIt` bundles ten chapters and 32 images.
+- The documented five-check CTest selection passed rules UI, catalog and QML;
+  Help again reached its 120-second offscreen limit (during Rules reading).
+  Preparation initially failed its old nine-chapter/29-image inventory, which
+  was updated. Final preparation/catalog rerun passed 2/2 in 0.37s.
+  The full offscreen suite remains unverified beyond its recorded timeout.
+- Final full native Help, with `SPENTIT_GUIDE_READING_CAPTURE` set to a temporary
+  path, passed 28/28 including init/cleanup in 242679ms. Chapter 10 checks
+  previous/next and section navigation, actual clicks on all three images,
+  image loading/Actual size/close/scroll return, the comparison-table section,
+  and 500-pixel reading at 150% text. Normal, inline-image, table and narrow
+  rendered views were visually inspected; the table wraps within the article.
+- Catalog search for “acceptance” finds chapter 10. Preparation checks all
+  bundled links/images. Relative file links and `git diff --check` passed.
+
+An initial bundle build rejected a multiline caption; it was shortened to the
+supported one-line italic caption before successful preparation. Dark appearance,
+complete keyboard-only/screen-reader use, Linux and Windows remain unverified.
+The owner accepted chapter 10 and requested its commit.
 
 ## Regex wording clarification — 2026-11-05
 
@@ -1050,7 +1144,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 9, its cheat-sheet and rendering correction are owner-accepted for commit. The next chapter is chapter 10, “Accept transactions — now or later” in `manual/outline.md`, after its Go.
+2. Chapter 10, “Accept transactions — now or later”, is owner-accepted for commit. Commit when requested. The next chapter is chapter 11, “Answer questions with reports” in `manual/outline.md`, after its Go.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
