@@ -1,5 +1,13 @@
 # SpentIt — Where did my money go?
 
+## Deferred manual updates — owner direction 2026-11-06
+
+Record manual work caused by user-visible application changes in the
+[manual update backlog](doc/manual-update-backlog.md). Keep affected chapters,
+pictures and already-completed text changes explicit. Accumulate these items for
+one later owner-authorized manual update pass; do not update manual text or
+screenshots as part of feature work unless the owner explicitly requests it.
+
 ## Category income grouping — owner Go 2026-11-06
 
 Categories now has a saved Income checkbox. Default workspace/picker order is

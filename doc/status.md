@@ -2,6 +2,15 @@
 
 Last updated: 2026-11-06
 
+## Manual update backlog — 2026-11-06
+
+The owner requested deferred, accumulated manual maintenance. The
+[manual update backlog](manual-update-backlog.md) records outstanding Income
+grouping screenshots, picker/example checks and the Saving… explanation, while
+distinguishing the prose already updated in `90d4a73`. AGENTS and the Help handoff
+link to it and direct future feature work to log manual impacts for a later batch.
+No manual content or screenshots changed in this documentation-only step.
+
 ## Income checkbox refresh correction — 2026-11-06
 
 Owner reported an unchecked intermediate row and a roughly four-second delay.

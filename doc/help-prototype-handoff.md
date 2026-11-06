@@ -2,6 +2,10 @@
 
 Last updated: 2026-11-06
 
+**Deferred manual upkeep:** collect application-driven text and screenshot work
+in the [manual update backlog](manual-update-backlog.md). The owner wants one
+later batch update; maintain the log now rather than editing the manual piecemeal.
+
 The viewer prototype Go on 2026-11-05 does not cover application-wide context
 links. A second Go the same day covered the introduction; a subsequent Go covers
 chapter 2, its screenshots, and checking it in Help. The next Go covers chapter 3
