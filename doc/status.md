@@ -2,6 +2,49 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 12 — 2026-11-05
+
+Under the owner's Go, [Look after your work and resolve remaining problems](../manual/backup-recovery.md)
+is bundled with two screenshots and is owner-accepted for commit. Supporting verification,
+one primary writer/capture owner and independent review followed the accepted
+workflow. The chapter covers backup creation/completion, checking and recovering
+through a fresh working copy, Settings, password/format limits, opening/write/
+uncertain-outcome problems, interrupted imports, quit-check choices and a linked
+problem index. The final continuity review clarified chapter 10's pre-payment
+example. No application or financial behavior changed.
+
+A new protected-file walkthrough follows Market -42.18, refund +6.00 and the
+36.18 payment from an empty file through a 36.18 spending report and recovery.
+It verifies balances 963.82 / 0.00, new transfer entries, the same password,
+existing-destination refusal, unchanged current-file path after saving copies,
+and the restored report. Focused offscreen passed 3/3 including init/cleanup in
+5371ms; native capture passed 3/3 in 7266ms. Both source images were visually
+inspected and independently reviewed.
+
+Supporting backup/cancellation/recovery checks passed 3/3 in 10.81s; focused
+model recovery/outcome/formatting/window checks passed 8/8 in 10851ms including
+init/cleanup. The initial restricted recovery run could not create required
+application-data locks; the authorized rerun passed. These are selected checks,
+not a full new financial fault sweep. The documented Help regression passed
+5/5 in 81.77s, including full offscreen Help in 56.59s. Earlier intermittent
+offscreen timeouts did not recur in this run; no viewer timing change was made.
+
+Rebuilt `build/SpentIt` and both Help test targets: twelve chapters and 38 images.
+Full native Help passed **32/32 including init/cleanup in 280850ms**, including
+all chapter walkthroughs, image clicks, navigation, reverse scrolling and modal
+Help. Chapter 12's normal, inline-image and 500-pixel/150% text views were
+visually inspected and independently reviewed. Actual Search and Contents
+clicks reach the new chapter. Preparation validates bundled links/images;
+changed-document relative file links and `git diff --check` passed.
+
+The [handoff](help-prototype-handoff.md#chapter-12--2026-11-05) records commands,
+harness corrections and capture basis. This uses real QML with synthetic data;
+the OS backup picker is opened/cancelled, with destination submission through
+the model. No manual standalone-app walkthrough, full keyboard/screen-reader,
+dark-mode or Linux/Windows verification is claimed. The main twelve chapters
+are written; chapter 12 is owner-accepted for commit. Quick
+references and application-wide context links still require their own Go.
+
 ## Help chapter 11 — 2026-11-05
 
 The owner accepted chapter 10, committed as `b1c55fc`, and gave Go for

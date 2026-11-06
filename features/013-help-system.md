@@ -18,8 +18,9 @@ with four screenshots under the next Go and is owner-accepted for commit. Chapte
 under its Go and owner-accepted for commit. Chapter 10, Accept transactions — now or later,
 is accepted and committed as `b1c55fc`. Chapter 11, Answer questions with reports,
 is bundled with four screenshots under its Go and owner-accepted for commit.
-Chapters after chapter 11 and context links
-need their own Go. macOS checks and limits
+Chapter 12, [Look after your work and resolve remaining problems](../manual/backup-recovery.md),
+is bundled with two screenshots under the next Go and is owner-accepted for commit.
+Quick references and context links need their own Go. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 
 The chapter-9 table follow-up reproduced missing text on reverse scrolling in

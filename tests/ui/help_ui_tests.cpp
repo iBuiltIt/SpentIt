@@ -308,6 +308,9 @@ private slots:
         QTest::newRow("reports") << QString("answer-with-reports")
             << QStringList{"reports-editor.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png"}
             << QString("open-the-transactions-behind-an-amount") << QString("Open the transactions behind an amount");
+        QTest::newRow("recovery") << QString("look-after-your-work")
+            << QStringList{"recovery-backup.png", "recovery-existing.png"}
+            << QString("check-a-backup-or-recover-your-work") << QString("Check a backup or recover your work");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -323,7 +326,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -820,6 +823,130 @@ private slots:
         mouse("navigationForward");
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
         QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void recoveryChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        const auto original = session.path("Household.spentit");
+        const auto backup = session.path("Household-backup-2026-02-28.spentit");
+        const auto recovered = session.path("Household-recovered.spentit");
+        run(session.model, "create", {{"path", original}, {"protected", true},
+            {"password", "synthetic-guide-password"}, {"confirmation", "synthetic-guide-password"},
+            {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        auto mouse = [&](const QString& name) {
+            QTest::qWait(120);
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
+            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            const auto point = item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint();
+            QVERIFY(session.window->contentItem()->contains(point));
+            QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier, point);
+            QTRY_VERIFY_WITH_TIMEOUT(!session.model.busy(), 30000);
+        };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(180);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        mouse("categoryNavigation");
+        createCategory(session.model, session.root, "Groceries");
+        mouse("accountNavigation");
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        QFile source(session.path("card.qif")); QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nLGroceries\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\n"); source.close();
+        run(session.model, "import", {{"path", source.fileName()}, {"account", "1"}});
+        run(session.model, "commit");
+        run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "1,000.00"}});
+        run(session.model, "transfer_manual", {{"link", "guide-payment"}, {"operation", "guide-payment-create"},
+            {"sequence", session.model.state().value("transferSequence")}, {"destination", "1"},
+            {"date", "2026-01-28"}, {"amount", "-36.18"}, {"payee", "Credit card payment"}});
+        QCOMPARE(session.model.state().value("balance").toString(), QString("963.82"));
+        const auto newCount = session.model.state().value("newTransactions").toInt();
+        QVERIFY(newCount > 0);
+        mouse("reportsNavigation"); mouse("newReport");
+        QVERIFY(edit(session.root, "reportName", "Household spending"));
+        QVERIFY(edit(session.root, "reportStartDate0", "2026-01-01"));
+        QVERIFY(edit(session.root, "reportEndDate0", "2026-01-31"));
+        // The report form can extend below the viewport; its existing helper emits clicked.
+        QVERIFY(click(session.root, "showReport")); wait(session.model);
+        const auto totals = session.model.state().value("reportResult").toMap().value("currencies").toList();
+        QCOMPARE(totals.size(), 1);
+        QCOMPARE(totals.front().toMap().value("totals").toList(), (QVariantList{"36.18"}));
+        mouse("sidebarSettings");
+        mouse("amountFormatting");
+        QVERIFY(!session.model.state().value("amountFormatting").toBool());
+        mouse("amountFormatting");
+        QVERIFY(session.model.state().value("amountFormatting").toBool());
+        mouse("rememberWindowPosition");
+        // Open and cancel the real picker before submitting a synthetic path below.
+        QObject* picker = nullptr;
+        for (auto* child : session.root->findChildren<QObject*>())
+            if (child->property("title").toString() == "Save a backup to a new file") picker = child;
+        QVERIFY(picker);
+        mouse("settingsBackup");
+        QTRY_VERIFY(picker->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(picker, "reject"));
+        QTRY_VERIFY(!picker->property("visible").toBool());
+        // Destination submission is a model command: no OS file-picker typing is claimed.
+        run(session.model, "backup", {{"path", backup}});
+        QVERIFY(QFile::exists(backup));
+        QCOMPARE(session.model.state().value("path").toString(), original);
+        QTRY_COMPARE(object(session.root, "operationPhase")->property("text").toString(), QString("Ready"));
+        capture("recovery-backup");
+        run(session.model, "backup", {{"path", backup}}, false);
+        QVERIFY(session.model.error().contains("Backup publication failed"));
+        capture("recovery-existing");
+        mouse("statusDetailsButton");
+        // Inspect and dismiss the actual status popup before closing the file.
+        auto* details = object(session.root, "statusDetails"); QVERIFY(details);
+        QTRY_VERIFY(details->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(details, "close"));
+        QTRY_VERIFY(!details->property("visible").toBool());
+        QTest::qWait(200);
+        mouse("closeDataset");
+        QVERIFY(!session.model.state().value("active").toBool());
+        run(session.model, "open", {{"path", backup}}, false);
+        QVERIFY(session.model.state().value("unlockRequired").toBool());
+        run(session.model, "unlock", {{"path", backup}, {"password", "synthetic-guide-password"}});
+        QCOMPARE(session.model.state().value("newTransactions").toInt(), newCount);
+        run(session.model, "select_account", {{"id", "2"}});
+        QCOMPARE(session.model.state().value("balance").toString(), QString("963.82"));
+        run(session.model, "select_account", {{"id", "1"}});
+        QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
+        mouse("sidebarSettings");
+        run(session.model, "backup", {{"path", recovered}});
+        QCOMPARE(session.model.state().value("path").toString(), backup);
+        mouse("closeDataset");
+        run(session.model, "unlock", {{"path", recovered}, {"password", "synthetic-guide-password"}});
+        QCOMPARE(session.model.state().value("path").toString(), recovered);
+        QCOMPARE(session.model.state().value("newTransactions").toInt(), newCount);
+        mouse("reportsNavigation");
+        QVERIFY(click(session.root, "showReport")); wait(session.model);
+        QCOMPARE(session.model.state().value("reportResult").toMap().value("currencies").toList(), totals);
+        // Lookup entry from a problem, followed by a linked task-specific explanation.
+        auto* help = openHelp(session.root); QVERIFY(help);
+        QVERIFY(edit(help, "helpSearch", "disk full"));
+        QTRY_VERIFY(object(help, "helpResult_look-after-your-work"));
+        QTest::qWait(150);
+        auto* result = qobject_cast<QQuickItem*>(object(help, "helpResult_look-after-your-work")); QVERIFY(result);
+        QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier, result->mapToScene(QPointF(result->width()/2, 12)).toPoint());
+        QTRY_COMPARE(help->property("topicId").toString(), QString("look-after-your-work"));
+        QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:bring-in-transactions#when-something-needs-attention"))));
+        QCOMPARE(help->property("topicId").toString(), QString("bring-in-transactions"));
+        QVERIFY(edit(help, "helpSearch", ""));
+        help->setProperty("contentsOpen", true);
+        auto* contents = object(help, "helpContents"); QVERIFY(contents);
+        QVERIFY(QMetaObject::invokeMethod(contents, "positionViewAtEnd"));
+        QTest::qWait(150);
+        auto* topic = qobject_cast<QQuickItem*>(object(help, "helpTopic_look-after-your-work")); QVERIFY(topic);
+        QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier, topic->mapToScene(QPointF(topic->width()/2, topic->height()/2)).toPoint());
+        QTRY_COMPARE(help->property("topicId").toString(), QString("look-after-your-work"));
     }
     void reportsChapterWalkthrough() {
         HelpCatalog catalog;

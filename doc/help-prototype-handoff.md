@@ -31,7 +31,10 @@ bundled under the owner’s Go and owner-accepted for commit. Chapter 10,
 [Accept transactions — now or later](../manual/accept-transactions.md), is bundled
 accepted and committed as `b1c55fc`. Chapter 11,
 [Answer questions with reports](../manual/reports.md), is bundled under the next
-Go and owner-accepted for commit. Chapter 12 and context links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
+Go and owner-accepted for commit. Chapter 12,
+[Look after your work and resolve remaining problems](../manual/backup-recovery.md),
+is bundled under the next Go and is owner-accepted for commit. Quick references and
+context links require their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
 a Market purchase of 42.18 on 2026-01-15; a 6.00 refund on 2026-01-20; and a
@@ -42,6 +45,114 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 12 — 2026-11-05
+
+The owner gave Go for [Look after your work and resolve remaining problems](../manual/backup-recovery.md)
+using the documented workflow. It is bundled with two screenshots and is owner-accepted for commit. A supporting agent verified current implementation and focused
+checks; the primary writer owned prose, interaction and captures; a separate
+reviewer checked accuracy, brevity, whole-manual continuity, tests and images.
+No application or financial behavior changed.
+
+The chapter covers new-name backups, completion at Ready, password retention,
+checking a backup and restoring through a fresh working copy, current-file
+identification, amount/window settings, fixed date/password limitations,
+unsupported/opening/write/uncertain-outcome problems, interrupted imports,
+quit-check choices and a linked symptom index. It does not invent repair,
+upgrade, password-change or support-contact facilities. Review clarified the
+generic backup-publication error and chapter 10's pre-payment screenshot basis.
+
+The new walkthrough starts with an empty protected Household file. Credit card
+has Market -42.18 and refund +6.00, categorized Groceries and accepted; Chequing
+opens at 1,000.00. The January 28 payment is -36.18 with its generated counterpart,
+left new. Balances are 963.82 / 0.00, and the January report is 36.18. The test
+saves a backup, refuses its existing destination, opens Details, closes and
+unlocks the backup with the original password, checks balances/new entries,
+saves and opens a fresh recovery copy and checks the saved report's exact
+result. Saving either copy leaves the current path unchanged until reopening.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `recovery-backup.png` | Settings, source path, amount style and Ready after backup |
+| `recovery-existing.png` | Same Settings with refused destination and Details |
+
+Capture basis: actual ImportMain.qml in a native macOS Qt 6.12.0 Basic light
+harness, 1440 × 900 logical pixels at 2×, temporary synthetic files/settings.
+Real mouse clicks exercise Settings, amount formatting, window preference,
+Save backup, Details, Close file and Help Search/Contents results. The actual
+OS backup picker opens and is cancelled through its public API; destination
+submission and unlock use model commands, not OS picker typing. Account setup,
+imports, transfer and acceptance use model commands; category entry uses the
+existing helper/Enter. Report fields use textEdited; Save and show emits the
+control's clicked signal. Status details is inspected then closed through its
+public API. Source images are unretouched and visually inspected by writer and
+reviewer. This is not a manual standalone-app walkthrough.
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests recoveryChapterWalkthrough
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests recoveryChapterWalkthrough
+```
+
+Focused offscreen walkthrough passed 3/3 including init/cleanup in 5371ms;
+native capture passed 3/3 in 7266ms. Early harness failures were corrected:
+UI-only Details clicks retain the previous error, the popup needs a closing
+settle before the next click, and select_account takes `id`, not `account`.
+The Help preparer also rejected two initial apostrophe-derived section slugs;
+those links were corrected before capture. No application code changed.
+
+Supporting checks, with authorized application-data lock access:
+
+```sh
+ctest --test-dir build/import-ui-rules-release -R '^(import\.backup|import\.backup_cancellation|import\.recovery_ui)$' --output-on-failure
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_import_ui_tests backupCancellation publicRecoveryAndSeparation commitOutcomeRecovery groupOutcomeRecovery amountFormatting windowPositionPreference
+```
+
+Passed 3/3 in 10.81s and 8/8 including init/cleanup in 10851ms. These cover
+backup/restoration, existing-destination refusal, cancellation/retry,
+incomplete-import cleanup, independent no-password recovery, unsupported
+formats, uncertain outcomes, formatting persistence and window preference.
+The initial restricted CTest run failed because application-data locks were
+inaccessible; the recovery fixture aborted after failed setup. The authorized
+rerun passed. This is selected existing coverage, not a new full fault sweep.
+
+The documented five-check CTest selection passed **5/5 in 81.77s**: Rules UI
+23.77s, full offscreen Help 56.59s, preparation 0.12s, catalog 0.22s and QML
+1.06s. Earlier chapters recorded intermittent 120-second offscreen timeouts;
+this run passed without a timeout or viewer change.
+
+The final chapter review also checked continuity across the twelve chapters.
+The full native suite exercises each chapter's separate synthetic scenario;
+the new recovery case follows the original purchase/refund/payment example
+from an empty file through reports and recovery in one file. Chapter 11's
+walkthrough separately covers the extended January/February split example.
+Search for “disk full” and actual Search/Contents clicks reach chapter 12; its
+problem link reaches the import repair section. Preparation checks every
+bundled link and image. Quick-reference expansion and application-wide context
+links remain separate work requiring Go.
+
+Final rules-enabled Release verification on macOS Qt 6.12.0:
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests -j 2
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+SPENTIT_GUIDE_READING_CAPTURE=/tmp/ch12-reading.png ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
+```
+
+The rebuilt `build/SpentIt` bundles twelve chapters and 38 images. Full native
+Help passed **32/32 including init/cleanup in 280850ms**, covering all chapter
+reading/walkthrough cases, reverse scrolling and modal Help. Chapter 12 checks
+previous/section navigation, actual clicks on both images, loading/Actual size/
+close/scroll return and 500-pixel reading at 150% text. Normal, inline-image and
+narrow rendered views were visually inspected and independently reviewed, with
+no remaining blocking findings. Search, bundled links/images, changed-document
+relative file links and `git diff --check` passed.
+
+The full offscreen and native suites ran concurrently; no performance comparison
+is claimed. Dark appearance, full keyboard-only/screen-reader use, Linux and
+Windows remain unverified. Quit-audit error choices were checked in code, not
+injected into the new native walkthrough. The main chapter sequence is complete
+as authored content, with chapter 12 owner-accepted for commit; feature 013 remains
+active because context links and broader verification are separate scope.
 
 ## Chapter 11 — 2026-11-05
 
@@ -1243,8 +1354,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 11, “Answer questions with reports”, is owner-accepted for commit. Commit when requested. The next chapter is chapter 12, “Look after your work and resolve remaining problems” in `manual/outline.md`, after its Go.
-   Do not write it, and do not add context links, unless the owner gives that Go.
+2. Chapter 12, “Look after your work and resolve remaining problems”, is bundled and is owner-accepted for commit. The owner accepted it and requested its commit. The main twelve-chapter sequence is written; quick references and context links remain separate work requiring Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
 4. If you change Help, rerun the two commands in “Build and check” and write

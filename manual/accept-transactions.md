@@ -23,7 +23,8 @@ choose **Accept transactions** at the top.
 ![Review with no remaining questions and the Accept transactions button at the top.](images/accept-ready.png)
 *Accept transactions covers the new entries in both Chequing and Credit card.*
 
-In our example, the Market purchase, refund and Corner shop split leave the
+These screenshots show the purchases and refund before recording the card payment.
+The Market purchase, refund and Corner shop split leave the
 card balance at **-56.18**. Accepting them leaves that balance unchanged.
 The example file also contains a **2,000.00** payday in Chequing; that entry is accepted
 at the same time.
