@@ -26,7 +26,8 @@ is accepted and committed as `a8a2739`. Chapter 7,
 and committed as `2b9c41e`. Chapter 8,
 [Organize spending with categories](../manual/categories.md), is bundled under
 the owner’s next Go and is owner-accepted for commit. Sample topics used to check the viewer are in
-`tests/fixtures/help/` and are not shown in Help. Chapter 9, Use rules for repeated categorization, and context
+`tests/fixtures/help/` and are not shown in Help. Chapter 9, [Use rules for repeated categorization](../manual/rules.md), is now
+bundled under the owner’s Go and owner-accepted for commit. Chapter 10 and context
 links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
@@ -38,6 +39,168 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Long Help chapter rendering correction — 2026-11-05
+
+The owner reported perceptible chapter opening, missing prose when scrolling
+backwards past the regex table, and a blank next chapter. The earlier image/link
+checks did not compare rendered pixels after reverse scrolling. A native
+`longChapterScrollRendering` reproduction confirmed the missing heading and
+paragraph above the table, with 2.28% of viewport pixels changing after the
+round trip. The before/after images were visually inspected. An initial exact
+pixel comparison also caught insignificant raster differences; the regression
+now tolerates at most 0.5% of pixels changing by more than 24 channel levels.
+
+Qt 6.12 enables viewport-limited text rendering above 10,000 source characters;
+the expanded Rules chapter crosses that threshold. Its table-frame traversal
+loses surrounding text on reverse scrolling. See the upstream
+[TextEdit implementation](https://github.com/qt/qtdeclarative/blob/v6.12.0/src/quick/items/qquicktextedit.cpp)
+for `setText`, `transformChanged` and `updatePaintNode`. Help now clears the
+public `ItemObservesViewport` flag for table-containing articles, after each
+text replacement. The Flickable still clips the article; short/plain articles
+retain Qt's normal behavior. This keeps the whole table article's scene graph
+in memory, a deliberate cost for this finite bundled manual. No private Qt APIs,
+renderer replacement, second process or modal-dialog change was introduced.
+
+Paragraph formatting now skips identical formats and batches changes with
+layout disabled, restoring its prior state. Deferred layout is completed on
+the GUI thread before rendering. The first batching attempt emitted Qt timer
+thread warnings; completing document layout before returning removed those
+warnings in the subsequent native reproduction.
+
+The same native harness reported Rules selection at 283ms before and 153–161ms
+after, including an intentional 100ms settling wait. Thus the measured work
+fell from about 183ms to 53–61ms in these local runs; this is not a broad
+performance benchmark. The expanded regression checks visible initial text,
+full downward/upward pixel sweeps, real wheel events, actual Contents clicks,
+category chapter rendering and restored nonzero Rules scroll positions at both
+880-pixel/100% and 500-pixel/150% sizes. It uses no financial file. Independent
+review found no blocking issue and prompted the initial-visible-text assertion.
+
+Verification: rebuilt `spentit_import_experiment`, `spentit_help_ui_tests`
+and `spentit_help_tests`, including `build/SpentIt`. The expanded native scrolling
+case passed 3/3 including init/cleanup in 21370ms before the final visible-baseline
+assertion; the final focused offscreen case passed 3/3 in 23312ms. The documented
+five-check CTest selection passed rules UI, preparation, catalog and QML (4/5),
+but full offscreen Help hit the existing 120-second limit after chapter reading
+passed (145.69s total). The isolated new scrolling case passed, so that timeout
+is not evidence of a failing pixel assertion. The final full native suite passed 26/26 including init/cleanup in 253250ms,
+including the visible-baseline assertion, repeated scroll/chapter restoration,
+all chapter images, search, text resizing and modal Help checks. No timer-thread
+warning appeared. In that longer suite the Rules selection measurements were
+197–220ms including the same 100ms settling wait, showing the local timing
+variation. Full offscreen timing remains an unresolved limit, rather than a
+claimed full pass. Linux/Windows and screen-reader
+checks remain unavailable.
+
+## Chapter 9 regex cheat-sheet follow-up — 2026-11-05
+
+The owner requested and gave Go for a fuller optional regex reference at the
+bottom of chapter 9. It now includes a common-pattern lookup table, repetition
+and bracket explanations, a worked PAYPAL *EBAY Jewellery capture/template,
+a bank-reference example and a template lookup table. The eBay example produces
+Jewellery from eBay using `${1} from eBay`; it explains specific-before-broad
+rule ordering and the need for a suitable category. No application behavior or
+source screenshots changed.
+
+Supporting verification compiled temporary probes against the actual built
+SpentIt regex wrapper and PCRE2 10.49. Both capture/template examples and the
+listed syntax passed, including literal punctuation, whitespace/digits,
+quantifiers, ranges/negation and quoted text. The probe also confirmed Unicode
+digits, whitespace including newlines, dot excluding newline by default and
+`$` permitting a final newline. The manual uses conventional “end of field”
+wording for `$`. Independent review corrected “word” to “text” for an unanchored
+Market match, which can also occur within a longer word.
+
+Rebuilt all three application/Help targets. Native Help passed 25/25 including
+init/cleanup in 66837ms, with `SPENTIT_GUIDE_READING_CAPTURE` set to a temporary
+path. Chapter 9 additionally checks navigation to Common pattern pieces and the
+capture-template text; its normal table and 500-pixel/150% text views were captured
+and visually inspected. Tables wrap within the reading width; narrow rows become
+taller rather than extending past the article. The combined CTest run passed regex, rules UI, preparation, catalog and QML
+checks (5/6), but offscreen Help reached its 120-second timeout after the chapter
+reading checks passed (144.85s total). It ran alongside native Help; this does
+not establish that concurrency caused the timeout. An isolated rerun also timed
+out at 120 seconds, after all chapter-reading cases passed and before the next
+walkthrough completed. The offscreen full-suite timing issue remains unresolved;
+the full native suite passed. Relative file links and
+`git diff --check` passed. The owner accepted the chapter, cheat-sheet and rendering correction and
+requested their commit. Existing platform/accessibility limits still apply.
+
+## Chapter 9 — 2026-11-05
+
+The owner gave Go for Use rules for repeated categorization under the documented
+workflow. [The chapter](../manual/rules.md) is bundled with three screenshots and
+owner-accepted for commit. A supporting agent verified code and focused tests; the
+primary writer owned prose and captures; an independent reviewer checked both.
+Review clarified scenario continuity, eligible preview rows, automatic import
+application and selecting a rule before saving its changes. No financial or Help
+viewer behavior changed; `rulesLeaveDialog` remains application-modal.
+
+The chapter covers creation, matching fields/patterns, explicit category and
+Uncategorized gate, original imported versus current manual text, split-first
+ordering, selected-rule Save/Apply, account/new-only scope, Undo, maintenance and
+leave choices. The current UI has no all-enabled Apply action. Optional pattern
+and template examples stay at the end. Later chapters and context links remain
+separate work.
+
+The temporary Household example uses Credit card opening zero and Chequing
+1,000.00 on January 1. Market -42.18 starts Uncategorized; the +6.00 refund has
+Groceries and Corner shop -20.00 has -12.00 Groceries/-8.00 Household. The card
+balance stays -56.18. Market groceries matches the whole original payee Market.
+Preview lists one eligible entry; Save and apply categorizes it; Undo restores
+eligibility; applying again leaves zero eligible matches. An unfinished name
+change exercises Stay and Discard on leaving.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `rules-editor.png` | New Market groceries rule, whole-field pattern and category |
+| `rules-preview.png` | Eligible Market row, date/amount and preview summary |
+| `rules-leave.png` | Unsaved-rule Save / Discard / Stay window content |
+
+Capture basis: actual ImportMain.qml in a native macOS Qt 6.12.0 Basic light
+harness, 1440 × 900 logical pixels at 2× (dialog captured separately), temporary
+synthetic file and isolated settings. Setup/openings/import use model commands;
+field text uses Qt properties/signals. Mouse clicks exercise Rules/New rule,
+Whole field, preview, both Apply labels, Undo, navigation and Stay/Discard.
+Category selection uses Enter; preview scroll uses its Qt property. This is not
+a manual standalone-app walkthrough. No private data is used.
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests rulesChapterWalkthrough
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests rulesChapterWalkthrough
+```
+
+Offscreen passed 3/3 including init/cleanup in 3246ms before native capture.
+Final native capture passed 3/3 in 4842ms. The first capture passed but clipped
+the preview row; visual review caught it. The final harness waits for layout and
+asserts the match row is on screen before capture. All three final images were
+visually inspected and independently reviewed; no crashes occurred.
+
+Supporting checks:
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_rule_ui_tests accountScopeSaveAndApplyUndo focusedCreationPreviewAndAttribution independentDraftAndSelectedSaveApply simplePatternsAndWholeFieldKey appliedSplitAndTransactionTargets removedRuleKeepsEarlierAssignments
+ctest --test-dir build/import-ui-rules-release -R '^(rules\.(regex|evaluation)|rulestore\.(category_gate|category_multi|account_apply|validation))$' --output-on-failure
+```
+
+Results: 8/8 including init/cleanup in 6330ms and 6/6 in 5.05s. These cover
+matching, category gates, split-first import, durable missing-category choices,
+multi-account resolution, selected Save/Apply and Undo. Initial supporting test
+sandbox access to application-data locks failed; the authorized rerun passed.
+
+The three application/Help targets rebuilt to `build/SpentIt`, bundling nine
+chapters and 29 images. The documented five-check Help regression passed 5/5 in
+60.71s. Native Help passed 25/25 including init/cleanup in 194615ms.
+Chapter 9 checks previous/next and section navigation, all three actual image
+clicks/loading/Actual size/close/scroll return, and 500-pixel reading at 150% text.
+A separate native `createOpenChapterReading:rules` capture run passed 3/3 in
+21650ms; normal, inline-image and narrow/larger-text rendered views were visually
+inspected. Catalog search for “regular expression” finds chapter 9; preparation checks
+all bundled links/images. Relative file links and `git diff --check` passed.
+
+Dark appearance, complete keyboard-only/screen-reader use, Linux and Windows
+remain unverified. Chapter 10, Accept transactions — now or later, needs its own Go.
 
 ## Chapter 8 — 2026-11-05
 
@@ -876,7 +1039,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 8 is owner-accepted for commit. The recommended next session starts chapter 9, “Use rules for repeated categorization” in `manual/outline.md`, after its Go.
+2. Chapter 9, its cheat-sheet and rendering correction are owner-accepted for commit. The next chapter is chapter 10, “Accept transactions — now or later” in `manual/outline.md`, after its Go.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.

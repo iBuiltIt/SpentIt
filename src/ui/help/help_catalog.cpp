@@ -1,13 +1,16 @@
 #include "help/help_catalog.hpp"
 
 #include <QFile>
+#include <QAbstractTextDocumentLayout>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QImageReader>
 #include <QQuickTextDocument>
+#include <QQuickItem>
 #include <QRegularExpression>
+#include <QScopedValueRollback>
 #include <QSet>
 #include <QTextBlockFormat>
 #include <QTextCursor>
@@ -346,13 +349,27 @@ qreal HelpCatalog::headingGap(QObject* documentObject, const QString& title) con
     return 0;
 }
 
+void HelpCatalog::prepareArticleRendering(QObject* article, QObject* documentObject) {
+    // Qt 6.12's large-TextEdit viewport bookkeeping loses surrounding text
+    // when scrolling backwards across table frames. Keep the complete scene
+    // graph for these bounded bundled articles; the Flickable still clips it.
+    // setText sets this flag, so call after assigning each topic, not from the
+    // synchronous textChanged handler. Leave Qt's choice alone for plain topics.
+    if (auto* item = qobject_cast<QQuickItem*>(article); item && tableCount(documentObject) > 0)
+        item->setFlag(QQuickItem::ItemObservesViewport, false);
+}
+
 void HelpCatalog::relaxReading(QObject* documentObject, qreal availableWidth) {
     // Qt Markdown keeps every block margin at zero, so paragraphs and headings
     // sit on top of each other. Give the article room without changing its words.
     if (relaxing_) return;
     QTextDocument* document = textDocument(documentObject);
     if (!document) return;
-    relaxing_ = true;
+    QScopedValueRollback<bool> formatting(relaxing_, true);
+    const bool layoutEnabled = document->isLayoutEnabled();
+    document->setLayoutEnabled(false);
+    QTextCursor batch(document);
+    batch.beginEditBlock();
     qreal size = document->defaultFont().pixelSize();
     if (size <= 0) size = 16;
     QList<QTextBlock> blocks;
@@ -380,7 +397,7 @@ void HelpCatalog::relaxReading(QObject* documentObject, qreal availableWidth) {
             format.setBottomMargin(size * 0.9);
         }
         if (!empty) format.setLineHeight(138, QTextBlockFormat::ProportionalHeight);
-        cursor.setBlockFormat(format);
+        if (format != block.blockFormat()) cursor.setBlockFormat(format);
     }
     // Keep the bundled source intact for the enlarged view; only size its
     // inline QTextDocument presentation. Recompute when the column changes.
@@ -415,7 +432,11 @@ void HelpCatalog::relaxReading(QObject* documentObject, qreal availableWidth) {
             }
         }
     }
-    relaxing_ = false;
+    batch.endEditBlock();
+    document->setLayoutEnabled(layoutEnabled);
+    // Complete deferred table layout on the GUI thread before the scene graph
+    // reads it. QTextDocumentLayout's incremental layout uses GUI timers.
+    if (layoutEnabled) (void)document->documentLayout()->documentSize();
 }
 
 int HelpCatalog::imageCount(QObject* documentObject) const {

@@ -2,6 +2,7 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QColor>
+#include <QElapsedTimer>
 #include <QDir>
 #include <QImage>
 #include <QFile>
@@ -17,6 +18,7 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QtTest/qtestwheel.h>
 #include <QTextDocument>
 #include <QAbstractTextDocumentLayout>
 #include <QTextBlock>
@@ -296,6 +298,9 @@ private slots:
         QTest::newRow("categories") << QString("organize-categories")
             << QStringList{"categories-workspace.png", "categories-completion.png", "categories-menu.png", "categories-split.png"}
             << QString("change-selected-transactions") << QString("Change selected transactions");
+        QTest::newRow("rules") << QString("use-rules")
+            << QStringList{"rules-editor.png", "rules-preview.png", "rules-leave.png"}
+            << QString("preview-save-and-apply") << QString("Preview, save and apply");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -311,7 +316,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -368,8 +373,21 @@ private slots:
             QTest::qWait(150);
             QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".images.png"));
         }
+        if (topic == "use-rules") {
+            QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:use-rules#common-pattern-pieces"))));
+            QTRY_COMPARE(help->property("currentSection").toString(), QString("Common pattern pieces"));
+            QVERIFY(quick->textDocument()->toPlainText().contains("${1} from eBay"));
+            if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
+                QTest::qWait(150);
+                QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".regex.png"));
+            }
+        }
         help->resize(500, 680);
         help->setProperty("textScale", 1.5);
+        if (topic == "use-rules") {
+            QTest::qWait(150);
+            QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:use-rules#common-pattern-pieces"))));
+        }
         QTRY_VERIFY(quick->textDocument()->idealWidth() <= article->property("width").toDouble() + 1);
         if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
             QTest::qWait(150);
@@ -379,6 +397,98 @@ private slots:
         QCOMPARE(help->property("topicId").toString(), order.at(topicIndex - 1));
         QVERIFY(!session.model.state().value("active").toBool());
     }
+    void longChapterScrollRendering() {
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        auto* help = openHelp(session.root); QVERIFY(help);
+        help->resize(880, 680);
+        QVERIFY(QTest::qWaitForWindowExposed(help));
+        auto* article = qobject_cast<QQuickItem*>(object(help, "helpArticle")); QVERIFY(article);
+        auto* flick = qobject_cast<QQuickItem*>(object(help, "helpArticleFlick")); QVERIFY(flick);
+        auto choose = [&](const QString& id) {
+            if (help->width() < 720) { help->setProperty("contentsOpen", true); QTest::qWait(40); }
+            auto* button = qobject_cast<QQuickItem*>(object(help, "helpTopic_" + id)); QVERIFY(button);
+            QElapsedTimer elapsed; elapsed.start();
+            QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,
+                             button->mapToScene(QPointF(button->width()/2, button->height()/2)).toPoint());
+            QTRY_COMPARE(help->property("topicId").toString(), id);
+            QTest::qWait(100);
+            qInfo() << "Help topic" << id << "ready in" << elapsed.elapsed() << "ms";
+        };
+        auto snapshot = [&]() {
+            QTest::qWait(40);
+            const QImage screen = help->grabWindow();
+            const qreal scale = screen.devicePixelRatio();
+            const auto top = flick->mapToScene(QPointF(2, 2));
+            return screen.copy(QRect(qRound(top.x()*scale), qRound(top.y()*scale),
+                qRound((qMin(article->width(), flick->width())-16)*scale), qRound((flick->height()-4)*scale)));
+        };
+        auto assertPainted = [&](const QImage& pixels) {
+            QVERIFY(!pixels.isNull());
+            qsizetype ink = 0;
+            for (int y = 0; y < pixels.height(); ++y) for (int x = 0; x < pixels.width(); ++x)
+                if (qGray(pixels.pixel(x,y)) < 128) ++ink;
+            QVERIFY2(ink > pixels.width()*pixels.height()/100, "The chapter's initial viewport must visibly contain text");
+        };
+        auto comparePixels = [&](const QImage& actual, const QImage& expected) {
+            QCOMPARE(actual.size(), expected.size());
+            qsizetype changed = 0;
+            for (int y = 0; y < actual.height(); ++y) for (int x = 0; x < actual.width(); ++x) {
+                const auto a = actual.pixelColor(x,y), b = expected.pixelColor(x,y);
+                if (qMax(qMax(qAbs(a.red()-b.red()), qAbs(a.green()-b.green())), qAbs(a.blue()-b.blue())) > 24) ++changed;
+            }
+            const double fraction = double(changed)/(actual.width()*actual.height());
+            if (fraction > 0.005) {
+                expected.save("/tmp/spentit-scroll-before.png"); actual.save("/tmp/spentit-scroll-after.png");
+            }
+            // Permit minor glyph raster changes, but not missing paragraphs.
+            QVERIFY2(fraction <= 0.005, qPrintable(QString("%1% article pixels changed").arg(fraction*100)));
+        };
+        for (int cycle = 0; cycle < 2; ++cycle) {
+            help->resize(cycle ? 500 : 880, 680);
+            help->setProperty("textScale", cycle ? 1.5 : 1.0);
+            choose("organize-categories");
+            flick->setProperty("contentY", 0);
+            const auto categories = snapshot();
+            assertPainted(categories);
+            choose("use-rules");
+            flick->setProperty("contentY", 0);
+            assertPainted(snapshot());
+            const qreal maximum = qMax(0.0, flick->property("contentHeight").toDouble()-flick->height());
+            QList<qreal> positions;
+            QList<QImage> down;
+            for (qreal y = 0; y < maximum; y += flick->height()*0.8) positions.push_back(y);
+            positions.push_back(maximum);
+            for (qreal y : positions) { flick->setProperty("contentY", y); down.push_back(snapshot()); }
+            for (qsizetype i = positions.size()-1; i >= 0; --i) {
+                flick->setProperty("contentY", positions[i]);
+                comparePixels(snapshot(), down[i]);
+                if (QTest::currentTestFailed()) return;
+            }
+            // Exercise actual wheel delivery in both directions as well as the
+            // deterministic viewport sweep, then leave from a nonzero position.
+            const auto center = flick->mapToScene(QPointF(flick->width()/2, flick->height()/2));
+            QTest::wheelEvent(help, center, QPoint(0,-120));
+            QTRY_VERIFY(flick->property("contentY").toDouble() > 0);
+            QTest::wheelEvent(help, center, QPoint(0,120));
+            QTRY_VERIFY(flick->property("contentY").toDouble() < 1);
+            flick->setProperty("contentY", positions[positions.size()/2]);
+            const auto savedY = flick->property("contentY").toDouble();
+            const auto middle = snapshot();
+            choose("organize-categories");
+            comparePixels(snapshot(), categories);
+            if (QTest::currentTestFailed()) return;
+            choose("use-rules");
+            QTRY_COMPARE(flick->property("contentY").toDouble(), savedY);
+            comparePixels(snapshot(), middle);
+            if (QTest::currentTestFailed()) return;
+        }
+    }
+
     void createOpenChapterWalkthrough() {
         HelpCatalog catalog;
         QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
@@ -691,6 +801,89 @@ private slots:
         mouse("navigationForward");
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
         QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void rulesChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false},
+            {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "1,000.00"}});
+        run(session.model, "select_account", {{"id", "1"}});
+        auto mouse = [&](QObject* root, QQuickWindow* window, const QString& name) {
+            QTest::qWait(120);
+            auto* item = qobject_cast<QQuickItem*>(object(root, name));
+            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            const auto point = item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint();
+            QVERIFY(window->contentItem()->contains(point));
+            QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
+            wait(session.model);
+        };
+        auto mainClick = [&](const QString& name) { mouse(session.root, session.window, name); };
+        auto capture = [&](QQuickWindow* window, const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if(output.isEmpty()) return;
+            QTest::qWait(180);
+            QVERIFY(window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        mainClick("categoryNavigation");
+        createCategory(session.model, session.root, "Groceries");
+        createCategory(session.model, session.root, "Household");
+        mainClick("accountNavigation");
+        QFile source(session.path("card.qif")); QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\nD2026-01-22\nT-20.00\nPCorner shop\nSGroceries\n$-12.00\nSHousehold\n$-8.00\n^\n"); source.close();
+        run(session.model, "import", {{"path", source.fileName()}, {"account", "1"}});
+        mainClick("rulesNavigation"); mainClick("newRule");
+        QVERIFY(edit(session.root, "ruleLabel", "Market groceries"));
+        QVERIFY(edit(session.root, "ruleExpression", "Market"));
+        mainClick("ruleWholeField");
+        auto* category = qobject_cast<QQuickItem*>(object(session.root, "ruleCategory")); QVERIFY(category);
+        category->forceActiveFocus(); QVERIFY(edit(session.root, "ruleCategory", "Groceries"));
+        QTest::keyClick(session.window, Qt::Key_Return); wait(session.model);
+        QCOMPARE(session.root->property("ruleCategoryId").toString().isEmpty(), false);
+        capture(session.window, "rules-editor");
+        mainClick("previewThisRule");
+        QCOMPARE(session.model.state().value("rulePreview").toMap().value("records").toList().size(), 1);
+        auto* scroll = object(session.root, "rulesPage"); QVERIFY(scroll);
+        auto* flick = scroll->property("contentItem").value<QObject*>(); QVERIFY(flick);
+        QTRY_VERIFY(object(session.root, "ruleMatchPayee_0"));
+        QTest::qWait(200); // Let the preview rows participate in the ScrollView layout.
+        flick->setProperty("contentY", qMax(0.0, flick->property("contentHeight").toDouble() - flick->property("height").toDouble()));
+        auto* match = qobject_cast<QQuickItem*>(object(session.root, "ruleMatchPayee_0")); QVERIFY(match);
+        QTRY_VERIFY(match->mapToScene(QPointF(0, match->height())).y() < session.window->height() - 40);
+        capture(session.window, "rules-preview");
+        mainClick("applyRules");
+        QVERIFY(!session.root->property("rulesDirty").toBool());
+        QVERIFY(session.model.state().value("canUndoRules").toBool());
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
+        mainClick("undoRules");
+        QVERIFY(!session.model.state().value("canUndoRules").toBool());
+        mainClick("previewThisRule");
+        QCOMPARE(session.model.state().value("rulePreview").toMap().value("records").toList().size(), 1);
+        mainClick("applyRules");
+        mainClick("previewThisRule");
+        QCOMPARE(session.model.state().value("rulePreview").toMap().value("records").toList().size(), 0);
+        flick->setProperty("contentY", 0);
+        QVERIFY(edit(session.root, "ruleLabel", "Market groceries revised"));
+        mainClick("accountNavigation");
+        auto* leave = namedWindow("rulesLeaveDialog"); QVERIFY(leave);
+        QTRY_VERIFY(leave->isVisible());
+        QCOMPARE(leave->modality(), Qt::ApplicationModal);
+        capture(leave, "rules-leave");
+        mouse(leave, leave, "rulesGuardStay");
+        QTRY_VERIFY(!leave->isVisible());
+        QVERIFY(session.root->property("rulesDirty").toBool());
+        mainClick("accountNavigation");
+        QTRY_VERIFY(leave->isVisible());
+        mouse(leave, leave, "rulesGuardDiscard");
+        QTRY_COMPARE(session.root->property("currentPage").toString(), QString("ledger"));
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
     }
     void categoriesChapterWalkthrough() {
         HelpCatalog catalog;

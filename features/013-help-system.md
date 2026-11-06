@@ -14,9 +14,15 @@ subsequent Go with three screenshots, accepted and committed. Chapter 6, Review 
 bundled with four screenshots and committed after owner acceptance. Chapter 7,
 Add and correct transactions, is bundled with four screenshots under its Go and
 is accepted and committed. Chapter 8, Organize spending with categories, is bundled
-with four screenshots under the next Go and is owner-accepted for commit. Chapters after
-chapter 8 and context links need their own Go. macOS checks and limits
+with four screenshots under the next Go and is owner-accepted for commit. Chapter 9, Use rules for repeated categorization, is bundled with three screenshots
+under its Go and owner-accepted for commit. Chapters after chapter 9 and context links
+need their own Go. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
+
+The chapter-9 table follow-up reproduced missing text on reverse scrolling in
+Qt 6.12. Help now keeps the complete scene graph for table articles and batches
+paragraph formatting; native pixel/scroll/navigation checks and limits are
+recorded in the [rendering correction](../doc/help-prototype-handoff.md#long-help-chapter-rendering-correction--2026-11-05).
 
 ## Accepted requirements — owner direction 2026-11-05
 

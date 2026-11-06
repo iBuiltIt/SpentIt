@@ -158,6 +158,8 @@ Window {
         matchStatus = ""
         catalog.forgetMarks()
         article.text = topic.markdown
+        // Run after setText: Qt chooses its viewport optimization there.
+        catalog.prepareArticleRendering(article, article.textDocument)
         Qt.callLater(restoreScroll)
     }
     function restoreScroll() {

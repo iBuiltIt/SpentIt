@@ -2,6 +2,80 @@
 
 Last updated: 2026-11-05
 
+## Help long-chapter rendering correction — 2026-11-05
+
+The owner's reverse-scroll blank-text report was reproduced with native pixel
+comparisons. Help bypasses Qt 6.12's viewport-limited text rendering for articles
+containing tables, retaining Flickable clipping. Paragraph formatting is batched,
+unchanged formats are skipped, and deferred layout finishes on the GUI thread.
+The tradeoff is a complete scene graph for the finite table article. No financial
+behavior, manual content or modal-dialog protection changed.
+
+The local Rules selection measurement improved from 283ms to 153–161ms including
+a fixed 100ms settling wait. The new regression checks visible initial text,
+reverse-scroll pixels, wheel input, Contents navigation and saved nonzero scroll
+at normal and narrow/larger-text sizes. See the
+[reproduction and correction record](help-prototype-handoff.md#long-help-chapter-rendering-correction--2026-11-05).
+
+Rebuilt `build/SpentIt` and Help tests. Final full native Help passed 26/26
+including init/cleanup in 253250ms; the final focused offscreen pixel test passed
+3/3 in 23312ms. The five-check regression passed rules UI, preparation, catalog
+and QML, but the full offscreen Help test again exceeded 120 seconds after the
+chapter-reading checks. That suite timing limit remains unresolved. Full-native
+Rules selection timings varied to 197–220ms including the fixed settling wait;
+the earlier focused timing is not a general latency guarantee. Independent review,
+relative file links and `git diff --check` passed. Linux/Windows and screen readers
+remain unverified.
+
+## Help chapter 9 regex reference — 2026-11-05
+
+Under the owner's follow-up Go, the chapter now ends with a common-pattern
+cheat-sheet, worked PayPal/eBay capture cleanup and bank-reference/template
+examples. Temporary probes against the actual regex library verified all example
+patterns and results. Independent review checked accuracy and novice wording.
+All three application/Help targets rebuilt. Native Help passed 25/25 in 66837ms
+including init/cleanup; normal and narrow/larger-text table captures were visually
+inspected. CTest passed regex, rules UI, preparation, catalog and QML checks,
+but full offscreen Help timed out at 120 seconds both alongside the native run
+and on an isolated retry; all chapter-reading cases passed before each timeout.
+That offscreen suite timing issue remains unresolved. No financial/viewer behavior
+or source screenshots changed. See the
+[follow-up record](help-prototype-handoff.md#chapter-9-regex-cheat-sheet-follow-up--2026-11-05).
+
+## Help chapter 9 — 2026-11-05
+
+Under the owner's Go, [Use rules for repeated categorization](../manual/rules.md)
+is bundled with three synthetic screenshots and owner-accepted for commit. The
+accepted workflow used supporting verification, one primary writer/capture owner
+and independent review. It covers category-gated rules, original imported/current
+manual matching, split-first order, selected Save/Apply, scope, automatic import
+use, Undo and leave choices. Review corrected the preview capture and clarified
+eligible matches, scenario continuity and selection before saving. No financial
+or Help viewer implementation changed.
+
+The three rules-enabled Release application/Help targets rebuilt to `build/SpentIt`,
+with nine chapters and 29 images. The five-check Help regression passed 5/5 in
+60.71s. Native Help passed 25/25 including init/cleanup in 194615ms.
+Chapter 9 checks previous/next and section navigation, all three actual image
+clicks/loading/Actual size/close/scroll return, and 500-pixel reading at 150% text.
+A separate native `createOpenChapterReading:rules` capture run passed 3/3 in
+21650ms; normal, inline-image and narrow/larger-text rendered views were visually
+inspected. Focused Rules UI passed 8/8 including init/cleanup in 6330ms; engine/storage
+selection passed 6/6 in 5.05s. The source walkthrough first passed offscreen 3/3
+in 3246ms; the final native capture passed 3/3 in 4842ms. It checks preview,
+Save and apply, Undo, saved-rule Apply, category eligibility and leave Stay/Discard.
+The first preview capture clipped the matching row despite a passing walkthrough;
+visual review caught it and the corrected harness asserts row visibility.
+All three final images were inspected and independently reviewed.
+
+The [handoff](help-prototype-handoff.md#chapter-9--2026-11-05) records commands,
+synthetic examples and capture basis: actual QML in a native macOS Qt 6.12.0 Basic
+light harness, temporary files/settings, 1440 × 900 logical pixels at 2×, dialog
+captured separately. This is not a manual standalone-app walkthrough. Search and
+bundled links/images passed; relative file links and `git diff --check` passed.
+Dark appearance, full keyboard/screen-reader use, Linux and Windows remain
+unverified. Chapter 10 and application-wide context links require their own Go.
+
 ## Help chapter 8 — 2026-11-05
 
 The owner accepted chapter 7, committed as `2b9c41e`, and gave Go for chapter 8.
