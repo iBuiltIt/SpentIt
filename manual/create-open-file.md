@@ -63,8 +63,11 @@ The **left sidebar** holds your accounts and balances. Below them are
 **Settings**. You’ll meet these as you need them.
 
 The **transaction list** on the right belongs to the selected account.
-**Back** and **Forward** return to places you’ve visited. The status
-line at the bottom tells you when SpentIt is busy or ready.
+**Back** and **Forward** return to places you’ve visited.
+
+Some actions take a little time. A spinning arc at the top right shows
+when SpentIt is busy. The status line at the bottom tells you what it’s
+doing. Wait for the action to finish before trying it again.
 
 ## Open your file
 

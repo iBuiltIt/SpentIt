@@ -2,6 +2,21 @@
 
 Last updated: 2026-11-05
 
+## Busy indicator manual note — 2026-11-05
+
+Under the owner's Go, chapter 2's [Find your bearings](../manual/create-open-file.md#find-your-bearings)
+now explains that some actions take time, the spinning arc at the top right
+shows when SpentIt is busy, the bottom status line describes the activity, and
+the reader should wait before retrying. This replaces the shorter status-line
+sentence; no screenshots or application behavior changed.
+
+Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+`spentit_help_tests`; `build/SpentIt` includes the approved paragraph.
+`ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog)$' --output-on-failure`
+passed 2/2 in 0.30s, validating the bundle, links/images and catalog.
+`git diff --check` passed. Native interaction checks were not repeated for this
+wording-only change.
+
 ## More noticeable activity indicator — 2026-11-05
 
 Implemented under the owner's narrow visual-first Go. The title-row indicator
