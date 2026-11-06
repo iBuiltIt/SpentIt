@@ -10,6 +10,54 @@ requested its commit and gave Go for chapter 4. The design
 is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. Update it when a step changes.
 
+## Where do I find…? quick reference — 2026-11-05
+
+The owner gave Go for the first quick reference. [Where do I find…?](../manual/where-to-find.md)
+is bundled after the twelve main chapters and is owner-accepted for commit. It groups
+file/settings, account, transaction/category, Review/rules/report and Undo/problem
+entry points, with links to the existing task instructions. No new screenshots
+or application behavior changes were needed. Supporting code verification and
+independent prose/render review followed the accepted Help workflow.
+
+Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+`spentit_help_tests`; `build/SpentIt` bundles thirteen topics and 38 images.
+Native focused reading/lookup passed 4/4 including init/cleanup in 40840ms.
+Normal and 500-pixel/150% text captures were visually inspected and independently
+reviewed. Search and an actual article-link click reached the reference and
+backup instructions, with Back returning to the reference. Full native Help
+passed 34/34 including init/cleanup in 71257ms, including the existing walkthroughs,
+reverse scrolling and modal Help. After that run, review strengthened the
+Contents check to navigate from Home before clicking the reference; its focused
+offscreen rerun passed 3/3 in 901ms and native rerun passed 3/3 in 1100ms.
+
+The initial restricted native run had no available screens. The first restricted
+CTest run passed preparation/catalog/QML but failed Rules and Help walkthroughs
+because application-data locks were unavailable, with subsequent test aborts.
+These attempts are not passing verification. With the required access, the
+five-check CTest selection passed preparation, catalog, QML and Rules (4/5,
+144.26s total), but full offscreen Help hit its existing 120-second timeout
+during Rules reading. This known intermittent limit remains unresolved; no
+viewer timing changes were made. The new focused lookup and full native passes
+above do not turn that timeout into a passing offscreen suite. No private file was opened. Full keyboard/screen-reader,
+dark-mode, standalone-app and Linux/Windows verification remain unclaimed.
+The next proposed reference is Keyboard and mouse; remaining references and
+application-wide context links require their own Go. The owner accepted the reference and requested its commit.
+
+Commands used the rules-enabled Release tree:
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests -j 2
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests createOpenChapterReading:where-to-find quickReferenceLookup
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests quickReferenceLookup
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests quickReferenceLookup
+```
+
+The focused reading run used `SPENTIT_GUIDE_READING_CAPTURE` for temporary
+normal/narrow captures; none were added to the manual. `git diff --check` and
+changed-document relative file-link checks passed.
+
 ## Busy indicator manual note — 2026-11-05
 
 Under the owner's Go, chapter 2's [Find your bearings](../manual/create-open-file.md#find-your-bearings)
@@ -48,8 +96,10 @@ accepted and committed as `b1c55fc`. Chapter 11,
 [Answer questions with reports](../manual/reports.md), is bundled under the next
 Go and owner-accepted for commit. Chapter 12,
 [Look after your work and resolve remaining problems](../manual/backup-recovery.md),
-is bundled under the next Go and is owner-accepted for commit. Quick references and
-context links require their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
+is committed as `7583f61`. The first quick reference,
+[Where do I find…?](../manual/where-to-find.md), is bundled under the subsequent
+Go and is owner-accepted for commit. Remaining quick references and context links require
+their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
 a Market purchase of 42.18 on 2026-01-15; a 6.00 refund on 2026-01-20; and a
@@ -1369,7 +1419,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 12, “Look after your work and resolve remaining problems”, is bundled and is owner-accepted for commit. The owner accepted it and requested its commit. The main twelve-chapter sequence is written; quick references and context links remain separate work requiring Go.
+2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. The first quick reference, “Where do I find…?”, is bundled under its Go and is owner-accepted for commit. The owner accepted it and requested its commit. The next proposed reference is Keyboard and mouse; it and the remaining references/context links require their own Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
 4. If you change Help, rerun the two commands in “Build and check” and write

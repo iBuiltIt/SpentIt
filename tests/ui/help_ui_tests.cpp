@@ -24,6 +24,7 @@
 #include <QAbstractTextDocumentLayout>
 #include <QTextBlock>
 #include <QTextFragment>
+#include <QTextLayout>
 #include <QWindow>
 using namespace spentit;
 
@@ -311,6 +312,9 @@ private slots:
         QTest::newRow("recovery") << QString("look-after-your-work")
             << QStringList{"recovery-backup.png", "recovery-existing.png"}
             << QString("check-a-backup-or-recover-your-work") << QString("Check a backup or recover your work");
+        QTest::newRow("where-to-find") << QString("where-to-find")
+            << QStringList{}
+            << QString("undo-and-problems") << QString("Undo and problems");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -326,7 +330,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -417,6 +421,59 @@ private slots:
         }
         QVERIFY(QMetaObject::invokeMethod(help, "previousTopic"));
         QCOMPARE(help->property("topicId").toString(), order.at(topicIndex - 1));
+        QVERIFY(!session.model.state().value("active").toBool());
+    }
+    void quickReferenceLookup() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        auto* help = openHelp(session.root); QVERIFY(help);
+        QVERIFY(QTest::qWaitForWindowExposed(help));
+        QVERIFY(edit(help, "helpSearch", "quick reference"));
+        QTRY_VERIFY(object(help, "helpResult_where-to-find"));
+        QTest::qWait(150);
+        auto* result = qobject_cast<QQuickItem*>(object(help, "helpResult_where-to-find"));
+        QVERIFY(result);
+        QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,
+                         result->mapToScene(QPointF(result->width()/2, 12)).toPoint());
+        QTRY_COMPARE(help->property("topicId").toString(), QString("where-to-find"));
+        QVERIFY(edit(help, "helpSearch", ""));
+        auto* article = qobject_cast<QQuickItem*>(object(help, "helpArticle")); QVERIFY(article);
+        auto* quick = qobject_cast<QQuickTextDocument*>(textDocument(article)); QVERIFY(quick);
+        auto* document = quick->textDocument();
+        const QString target("help:look-after-your-work#save-a-backup");
+        int position = -1;
+        for (auto block = document->begin(); block != document->end(); block = block.next())
+            for (auto it = block.begin(); !it.atEnd(); ++it)
+                if (it.fragment().charFormat().anchorHref() == target)
+                    position = it.fragment().position() + 1;
+        QVERIFY(position >= 0);
+        const auto block = document->findBlock(position);
+        const auto line = block.layout()->lineForTextPosition(position - block.position());
+        QVERIFY(line.isValid());
+        const auto rect = document->documentLayout()->blockBoundingRect(block);
+        const QPointF point(rect.left() + line.cursorToX(position - block.position()),
+                            rect.top() + line.y() + line.height()/2);
+        auto* flick = object(help, "helpArticleFlick"); QVERIFY(flick);
+        flick->setProperty("contentY", qMax(0.0, point.y() - 100));
+        QTest::qWait(150);
+        QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier, article->mapToScene(point).toPoint());
+        QTRY_COMPARE(help->property("topicId").toString(), QString("look-after-your-work"));
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Save a backup"));
+        QVERIFY(click(help, "helpBack"));
+        QTRY_COMPARE(help->property("topicId").toString(), QString("where-to-find"));
+        QVERIFY(click(help, "helpHome"));
+        QTRY_COMPARE(help->property("topicId").toString(), QString("understand-spending"));
+        help->setProperty("contentsOpen", true);
+        auto* contents = object(help, "helpContents"); QVERIFY(contents);
+        QVERIFY(QMetaObject::invokeMethod(contents, "positionViewAtEnd"));
+        QTest::qWait(150);
+        auto* topic = qobject_cast<QQuickItem*>(object(help, "helpTopic_where-to-find")); QVERIFY(topic);
+        QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,
+                         topic->mapToScene(QPointF(topic->width()/2, topic->height()/2)).toPoint());
+        QTRY_COMPARE(help->property("topicId").toString(), QString("where-to-find"));
         QVERIFY(!session.model.state().value("active").toBool());
     }
     void longChapterScrollRendering() {

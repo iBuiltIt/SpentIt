@@ -292,7 +292,8 @@ Do not repeat those instructions here or collect every common error at the end.
 
 These are alternate entry points into the same manual, not another walkthrough.
 
-- **Where do I find…?** Screens, menus and important buttons, linked to their tasks.
+- [**Where do I find…?**](where-to-find.md) Screens, menus and important buttons,
+  linked to their tasks; now bundled under the owner’s Go.
 - **Keyboard and mouse reference:** Verified shortcuts, selection, editing,
   navigation and calendar controls, with platform differences where needed.
 - **Search examples:** Common searches first; advanced syntax separately.
@@ -376,7 +377,8 @@ remaining import problems and quit choices. Chapter 11,
 charts and contributing-transaction editing. Chapter 12,
 [Look after your work and resolve remaining problems](backup-recovery.md), covers
 backup/recovery, Settings and a linked problem index. The final continuity review
-clarified chapter 10’s pre-payment example. Quick references and context links
-are separate work. The sample
+clarified chapter 10’s pre-payment example. The first quick reference,
+[Where do I find…?](where-to-find.md), is also bundled. The keyboard/mouse,
+search, glossary and messages references and context links remain separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.

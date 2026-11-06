@@ -2,6 +2,41 @@
 
 Last updated: 2026-11-05
 
+## Where do I find…? quick reference — 2026-11-05
+
+The owner gave Go for the first quick reference. [Where do I find…?](../manual/where-to-find.md)
+is bundled after the twelve main chapters and is owner-accepted for commit. It groups
+file/settings, account, transaction/category, Review/rules/report and Undo/problem
+entry points, with links to the existing task instructions. No new screenshots
+or application behavior changes were needed. Supporting code verification and
+independent prose/render review followed the accepted Help workflow.
+
+Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+`spentit_help_tests`; `build/SpentIt` bundles thirteen topics and 38 images.
+Native focused reading/lookup passed 4/4 including init/cleanup in 40840ms.
+Normal and 500-pixel/150% text captures were visually inspected and independently
+reviewed. Search and an actual article-link click reached the reference and
+backup instructions, with Back returning to the reference. Full native Help
+passed 34/34 including init/cleanup in 71257ms, including the existing walkthroughs,
+reverse scrolling and modal Help. After that run, review strengthened the
+Contents check to navigate from Home before clicking the reference; its focused
+offscreen rerun passed 3/3 in 901ms and native rerun passed 3/3 in 1100ms.
+
+The initial restricted native run had no available screens. The first restricted
+CTest run passed preparation/catalog/QML but failed Rules and Help walkthroughs
+because application-data locks were unavailable, with subsequent test aborts.
+These attempts are not passing verification. With the required access, the
+five-check CTest selection passed preparation, catalog, QML and Rules (4/5,
+144.26s total), but full offscreen Help hit its existing 120-second timeout
+during Rules reading. This known intermittent limit remains unresolved; no
+viewer timing changes were made. The new focused lookup and full native passes
+above do not turn that timeout into a passing offscreen suite. No private file was opened. Full keyboard/screen-reader,
+dark-mode, standalone-app and Linux/Windows verification remain unclaimed.
+The next proposed reference is Keyboard and mouse; remaining references and
+application-wide context links require their own Go. The owner accepted the reference and requested its commit.
+
+See the [Help handoff](help-prototype-handoff.md) for the continuation workflow.
+
 ## Busy indicator manual note — 2026-11-05
 
 Under the owner's Go, chapter 2's [Find your bearings](../manual/create-open-file.md#find-your-bearings)
