@@ -40,6 +40,17 @@ transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
 
+## Regex wording clarification — 2026-11-05
+
+After accepting chapter 9 and its rendering fix (commit `5ca3e3d`), the owner
+gave Go for three table clarifications: “0 through 9”, a concrete Market 1234
+example that names the matched trailing space, and `CARD[0-9]{4}$` without an
+unexplained whitespace requirement. Only those three manual rows changed.
+Rebuilt the application and both Help test targets; `build/SpentIt` includes
+the corrected wording. Help preparation/catalog checks passed 2/2 in 0.23s;
+preparation validates bundled links/images. `git diff --check` passed. Native
+interaction checks were not repeated for this wording-only update. The owner accepted these clarifications and requested their commit.
+
 ## Long Help chapter rendering correction — 2026-11-05
 
 The owner reported perceptible chapter opening, missing prose when scrolling

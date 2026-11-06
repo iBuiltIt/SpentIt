@@ -2,6 +2,14 @@
 
 Last updated: 2026-11-05
 
+## Help regex wording clarification — 2026-11-05
+
+The owner's three approved cheat-sheet clarifications are bundled in
+`build/SpentIt`: “0 through 9”, the explicit Market-and-space match in
+Market 1234, and the simpler `CARD[0-9]{4}$` example. Application/Help targets
+rebuilt; preparation/catalog passed 2/2 in 0.23s and `git diff --check` passed.
+This is a wording-only update; native interaction tests were not repeated.
+
 ## Help long-chapter rendering correction — 2026-11-05
 
 The owner's reverse-scroll blank-text report was reproduced with native pixel

@@ -167,9 +167,9 @@ These go in **Pattern (regular expression)**, not in the payee template.
 | `\s` | One whitespace character: a space, tab or line break. | `PAYPAL\s+EBAY` allows one or more spaces between the words. |
 | `\d` | One digit, including digits from other writing systems. | `REF\s*\d+` matches REF123 or REF 123. |
 | `[ABC]` | One character from the brackets. | `SHOP[ -]123` allows a space or hyphen. |
-| `[0-9]` | One character in a range. | `[0-9]+` matches a run of digits from 0 to 9. |
-| `[^0-9]` | One character outside that range. | `^[^0-9]+` takes the starting text up to the first digit. |
-| `{4}` | Exactly four of the preceding piece. | `CARD\s+[0-9]{4}$` ends with CARD and four digits. |
+| `[0-9]` | One character from 0 through 9. | `[0-9]+` matches one or more digits from 0 through 9. |
+| `[^0-9]` | One character other than 0 through 9. | `^[^0-9]+` matches **Market** and its following space in **Market 1234**, stopping before the first digit. |
+| `{4}` | Exactly four of the preceding piece. | `CARD[0-9]{4}$` matches an ending such as **CARD1234**, with exactly four digits after CARD. |
 | `(…)` | Capture the matched piece for use in a template. | `SHOP\s+(.+)` captures the text after SHOP and its spaces. |
 | `\` before punctuation | Treat a special character literally. | `\*` matches an actual asterisk; `\.` matches a dot. |
 | `\Q…\E` | Treat everything between these markers literally. | `\QMarket (Downtown)\E` includes the parentheses as ordinary text. |
