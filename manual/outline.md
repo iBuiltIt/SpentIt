@@ -294,7 +294,7 @@ These are alternate entry points into the same manual, not another walkthrough.
 
 - [**Where do I find…?**](where-to-find.md) Screens, menus and important buttons,
   linked to their tasks; now bundled under the owner’s Go.
-- **Keyboard and mouse reference:** Verified shortcuts, selection, editing,
+- [**Keyboard and mouse**](keyboard-mouse.md): Verified shortcuts, selection, editing,
   navigation and calendar controls, with platform differences where needed.
 - **Search examples:** Common searches first; advanced syntax separately.
 - **Words used in SpentIt:** Short definitions, including Merge versus Link,
@@ -378,7 +378,8 @@ charts and contributing-transaction editing. Chapter 12,
 [Look after your work and resolve remaining problems](backup-recovery.md), covers
 backup/recovery, Settings and a linked problem index. The final continuity review
 clarified chapter 10’s pre-payment example. The first quick reference,
-[Where do I find…?](where-to-find.md), is also bundled. The keyboard/mouse,
+[Where do I find…?](where-to-find.md), is also bundled.
+[Keyboard and mouse](keyboard-mouse.md) is now bundled under its Go. The
 search, glossary and messages references and context links remain separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.

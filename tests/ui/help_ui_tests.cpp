@@ -315,6 +315,9 @@ private slots:
         QTest::newRow("where-to-find") << QString("where-to-find")
             << QStringList{}
             << QString("undo-and-problems") << QString("Undo and problems");
+        QTest::newRow("keyboard-mouse") << QString("keyboard-mouse")
+            << QStringList{}
+            << QString("read-help") << QString("Read Help");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -330,7 +333,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find", "keyboard-mouse"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -423,7 +426,23 @@ private slots:
         QCOMPARE(help->property("topicId").toString(), order.at(topicIndex - 1));
         QVERIFY(!session.model.state().value("active").toBool());
     }
+    void quickReferenceLookup_data() {
+        QTest::addColumn<QString>("reference");
+        QTest::addColumn<QString>("query");
+        QTest::addColumn<QString>("destination");
+        QTest::addColumn<QString>("section");
+        QTest::addColumn<QString>("heading");
+        QTest::newRow("where-to-find") << QString("where-to-find") << QString("quick reference")
+            << QString("look-after-your-work") << QString("save-a-backup") << QString("Save a backup");
+        QTest::newRow("keyboard-mouse") << QString("keyboard-mouse") << QString("keyboard")
+            << QString("find-transactions") << QString("select-without-editing") << QString("Select without editing");
+    }
     void quickReferenceLookup() {
+        QFETCH(QString, reference);
+        QFETCH(QString, query);
+        QFETCH(QString, destination);
+        QFETCH(QString, section);
+        QFETCH(QString, heading);
         HelpCatalog catalog;
         QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
         Session session(&catalog);
@@ -431,19 +450,19 @@ private slots:
         QVERIFY(QTest::qWaitForWindowExposed(session.window));
         auto* help = openHelp(session.root); QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
-        QVERIFY(edit(help, "helpSearch", "quick reference"));
-        QTRY_VERIFY(object(help, "helpResult_where-to-find"));
+        QVERIFY(edit(help, "helpSearch", query));
+        QTRY_VERIFY(object(help, "helpResult_" + reference));
         QTest::qWait(150);
-        auto* result = qobject_cast<QQuickItem*>(object(help, "helpResult_where-to-find"));
+        auto* result = qobject_cast<QQuickItem*>(object(help, "helpResult_" + reference));
         QVERIFY(result);
         QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,
                          result->mapToScene(QPointF(result->width()/2, 12)).toPoint());
-        QTRY_COMPARE(help->property("topicId").toString(), QString("where-to-find"));
+        QTRY_COMPARE(help->property("topicId").toString(), reference);
         QVERIFY(edit(help, "helpSearch", ""));
         auto* article = qobject_cast<QQuickItem*>(object(help, "helpArticle")); QVERIFY(article);
         auto* quick = qobject_cast<QQuickTextDocument*>(textDocument(article)); QVERIFY(quick);
         auto* document = quick->textDocument();
-        const QString target("help:look-after-your-work#save-a-backup");
+        const QString target("help:" + destination + "#" + section);
         int position = -1;
         for (auto block = document->begin(); block != document->end(); block = block.next())
             for (auto it = block.begin(); !it.atEnd(); ++it)
@@ -460,20 +479,20 @@ private slots:
         flick->setProperty("contentY", qMax(0.0, point.y() - 100));
         QTest::qWait(150);
         QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier, article->mapToScene(point).toPoint());
-        QTRY_COMPARE(help->property("topicId").toString(), QString("look-after-your-work"));
-        QTRY_COMPARE(help->property("currentSection").toString(), QString("Save a backup"));
+        QTRY_COMPARE(help->property("topicId").toString(), destination);
+        QTRY_COMPARE(help->property("currentSection").toString(), heading);
         QVERIFY(click(help, "helpBack"));
-        QTRY_COMPARE(help->property("topicId").toString(), QString("where-to-find"));
+        QTRY_COMPARE(help->property("topicId").toString(), reference);
         QVERIFY(click(help, "helpHome"));
         QTRY_COMPARE(help->property("topicId").toString(), QString("understand-spending"));
         help->setProperty("contentsOpen", true);
         auto* contents = object(help, "helpContents"); QVERIFY(contents);
         QVERIFY(QMetaObject::invokeMethod(contents, "positionViewAtEnd"));
         QTest::qWait(150);
-        auto* topic = qobject_cast<QQuickItem*>(object(help, "helpTopic_where-to-find")); QVERIFY(topic);
+        auto* topic = qobject_cast<QQuickItem*>(object(help, "helpTopic_" + reference)); QVERIFY(topic);
         QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,
                          topic->mapToScene(QPointF(topic->width()/2, topic->height()/2)).toPoint());
-        QTRY_COMPARE(help->property("topicId").toString(), QString("where-to-find"));
+        QTRY_COMPARE(help->property("topicId").toString(), reference);
         QVERIFY(!session.model.state().value("active").toBool());
     }
     void longChapterScrollRendering() {

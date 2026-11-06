@@ -29,7 +29,7 @@ class PrepareHelpTests(unittest.TestCase):
             manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
             self.assertFalse(manifest["sample"])
             self.assertEqual(manifest["banner"], "")
-            self.assertEqual([topic["id"] for topic in manifest["topics"]], ["understand-spending", "create-open-file", "set-up-accounts", "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find"])
+            self.assertEqual([topic["id"] for topic in manifest["topics"]], ["understand-spending", "create-open-file", "set-up-accounts", "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find", "keyboard-mouse"])
             self.assertEqual(manifest["topics"][0]["title"], "Understand your spending")
             text = manifest["topics"][0]["markdown"]
             self.assertIn("42.18", text)

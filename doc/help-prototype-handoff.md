@@ -10,6 +10,62 @@ requested its commit and gave Go for chapter 4. The design
 is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. Update it when a step changes.
 
+## Keyboard and mouse quick reference — 2026-11-05
+
+Under the owner's Go, [Keyboard and mouse](../manual/keyboard-mouse.md) is
+bundled after Where do I find…? and is owner-accepted for commit. It covers selection,
+editing and category completion, calendar keys, search/navigation and Help.
+Supporting implementation verification and independent prose/render review
+followed the accepted workflow. Review added the category Shift+Tab caveat.
+No application behavior or screenshots changed; the bundle now has fourteen
+topics and 38 images. Where do I find…? is committed as `2ef8158`.
+
+Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+`spentit_help_tests`, updating `build/SpentIt`. Focused native reference
+reading and actual Search/article-link/Contents clicks passed 5/5 including
+init/cleanup in 63069ms. The final wording's focused offscreen rerun passed
+5/5 in 2470ms. Normal and 500-pixel/150% views were visually inspected and
+independently reviewed. The first captures preceded the one-sentence category
+clarification.
+
+The five-check CTest selection initially passed Rules UI, full offscreen Help,
+catalog and QML (4/5, 85.46s); preparation failed because its expected topic
+inventory still had thirteen entries. After updating that inventory,
+preparation/catalog/QML passed 3/3 in 1.00s. Full offscreen Help passed in
+61.20s; the previously recorded intermittent timeout did not recur in this run.
+
+Supporting existing offscreen checks passed: navigation `textBoundaries`
+5/5 in 184ms; import UI `accessibilityAndKeyboard qmlEditorNavigation` 4/4 in
+1526ms; reports `reportsAndCalendar` 3/3 in 1722ms (counts include init/cleanup).
+The first restricted import test failed application-data lock setup; the
+rerun with required access passed. These are focused synthetic checks, not
+full keyboard-only or accessibility verification.
+
+The final full native Help suite passed **36/36 including init/cleanup in
+366517ms**, covering all chapter walkthroughs, reverse scrolling and Rules/Reports
+modal Help. Final normal/narrow reference captures were inspected after the
+wording change. These checks use actual QML in a native macOS Qt 6.12.0 harness,
+not a manual standalone-app walkthrough. `git diff --check` and 275 relative
+file-link target checks passed; preparation validates bundled anchors/images.
+
+Commands used the rules-enabled Release tree:
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests -j 2
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests createOpenChapterReading:keyboard-mouse quickReferenceLookup
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
+```
+
+Native runs used `SPENTIT_GUIDE_READING_CAPTURE` for temporary reading captures;
+none were added to the manual. After correcting the preparation inventory,
+the targeted CTest rerun selected `help.prepare`, `help.catalog` and `import.qml`.
+
+No private file was opened. Full keyboard/screen-reader, dark appearance,
+standalone-app and Linux/Windows verification remain unclaimed. The next
+proposed reference is Search examples; remaining references and application-wide
+context links require their own Go.
+
 ## Where do I find…? quick reference — 2026-11-05
 
 The owner gave Go for the first quick reference. [Where do I find…?](../manual/where-to-find.md)
@@ -1419,7 +1475,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. The first quick reference, “Where do I find…?”, is bundled under its Go and is owner-accepted for commit. The owner accepted it and requested its commit. The next proposed reference is Keyboard and mouse; it and the remaining references/context links require their own Go.
+2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. “Where do I find…?” is committed as `2ef8158`. Keyboard and mouse is bundled under its Go and is owner-accepted for commit. The next proposed reference is Search examples; remaining references/context links require their own Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
 4. If you change Help, rerun the two commands in “Build and check” and write

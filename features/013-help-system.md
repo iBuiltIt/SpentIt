@@ -22,7 +22,8 @@ Chapter 12, [Look after your work and resolve remaining problems](../manual/back
 is bundled with two screenshots under the next Go and is owner-accepted for commit.
 The first quick reference, [Where do I find…?](../manual/where-to-find.md), is
 bundled under the subsequent Go and is owner-accepted for commit. Remaining quick
-references and context links need their own Go. macOS checks and limits
+references and context links need their own Go. [Keyboard and mouse](../manual/keyboard-mouse.md)
+is now bundled under its own Go and is owner-accepted for commit. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 
 The chapter-9 table follow-up reproduced missing text on reverse scrolling in
