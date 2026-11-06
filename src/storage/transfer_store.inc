@@ -43,6 +43,9 @@ app::TransferView transition_transfer(app::TransferView value,const app::Transfe
     const auto& current=value.link.origin.endpoint.account==account?value.link.origin:value.link.destination;
     if(current.endpoint.account!=account)fail(SQLITE_CONSTRAINT,"Transfer belongs to another account");
     switch(request.action){
+    case app::TransferAction::delete_selection:
+        if(request.destination<0 || request.destination>3)fail(SQLITE_CONSTRAINT,"Invalid linked deletion choice");
+        value.link=transfers::unlink_for_deletion(value.link,(request.destination&1)!=0,(request.destination&2)!=0);break;
     case app::TransferAction::release_generated:value.link=transfers::release_generated(value.link);break;
     case app::TransferAction::resize_generated:
         if(!request.amount)fail(SQLITE_CONSTRAINT,"Missing generated allocation amount");
@@ -80,6 +83,7 @@ const char* transfer_action_name(const app::TransferRequest& request) {
     case app::TransferAction::relink: return "Relink";
     case app::TransferAction::restore: return "Restore";
     case app::TransferAction::review_undo: return "Undo Review";
+    case app::TransferAction::delete_selection: return "Unlink for deletion";
     case app::TransferAction::release_generated: return "Replace generated transfer relationship";
     case app::TransferAction::resize_generated: return "Adjust generated transfer after fee split";
     }
@@ -255,7 +259,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     Statement collision(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");collision.text(1,operation);if(collision.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
     require_writable_account(impl_->db,impl_->selected_account);
     if(request.action==app::TransferAction::manual || request.action==app::TransferAction::from_draft)require_writable_account(impl_->db,request.destination);
-    if((request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated) && !impl_->composing_review)fail(SQLITE_CONSTRAINT,"Generated amount adjustment belongs to a Review split");
+    if((request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated || request.action==app::TransferAction::delete_selection) && !impl_->composing_review)fail(SQLITE_CONSTRAINT,"Generated amount adjustment belongs to a Review split");
     if(request.expected_sequence!=transfer_sequence() || request.expected_sequence==INT64_MAX)fail(SQLITE_CONSTRAINT,"Transfer preview changed; refresh before applying");
     std::unique_ptr<Atomic> transaction;
     if(!impl_->composing_review)transaction=std::make_unique<Atomic>(impl_->db);
@@ -385,7 +389,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     validate_transfer_set(values);
     const bool committing_local=request.action==app::TransferAction::commit_local;
     const auto change=local_total(values,account.identity,account.currency,false)-local_before;const auto after=before+change;
-    const bool did_commit=committing_local || ((request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated) && change.units()!=0);
+    const bool did_commit=committing_local || ((request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated || request.action==app::TransferAction::delete_selection) && change.units()!=0);
     Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,operation);event.integer(2,account.identity);event.blob(3,encoded);event.integer(4,did_commit?1:0);event.integer(5,change.units());event.done();
     store_transfer(impl_->db,*found,sequence,create);
     append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,after,"",request.expected_sequence,catalog_sequence(impl_->db));
@@ -469,7 +473,7 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
         else if(request.action==app::TransferAction::relink){if(kind!=static_cast<int>(app::ChangeKind::correct) && kind!=static_cast<int>(app::ChangeKind::remove))fail(SQLITE_CORRUPT,"Transfer history does not replay");expected_kind=kind;}
         else if(request.action==app::TransferAction::restore)expected_kind=static_cast<int>(app::ChangeKind::undo);
         else if(committed_category)expected_kind=static_cast<int>(app::ChangeKind::correct);
-        const bool posts_money=request.action==app::TransferAction::commit_local || request.action==app::TransferAction::import_commit || ((request.action==app::TransferAction::merge || request.action==app::TransferAction::review_undo || request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated) && events.integer(6)!=0);
+        const bool posts_money=request.action==app::TransferAction::commit_local || request.action==app::TransferAction::import_commit || ((request.action==app::TransferAction::merge || request.action==app::TransferAction::review_undo || request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated || request.action==app::TransferAction::delete_selection) && events.integer(6)!=0);
         if(kind!=expected_kind || request.expected_sequence!=sequence-1 || (request.action!=app::TransferAction::import_commit && events.integer(7)!=sequence-1) || (events.integer(3)!=0)!=posts_money)fail(SQLITE_CORRUPT);
         if(append_only && request.action==app::TransferAction::merge && !request.kept.empty() && request.left && request.right &&
            request.left->imported && request.right->imported && !request.left->generated && !request.right->generated &&

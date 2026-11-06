@@ -83,8 +83,8 @@ choices seed that remainder; the same engine comparison still decides its edges.
 A later explicit answer retires the remainder, and Undo restores it. This does
 not seed suggestions in a fresh clean base import without a prior partial decision.
 
-The repository command accepts at most 2048 distinct groups / 4096 selected rows,
-rechecks their generation, membership, amounts, survivor and relationship protections,
+Under the 2026-11-06 owner Go, the repository command has no fixed group or
+selected-row count ceiling (including the Undo reader). It rechecks their generation, membership, amounts, survivor and relationship protections,
 and saves all or none. Cancellation is available while staging, with a final atomic
 seal immediately before COMMIT. Cancellation that wins that race rolls back all
 staged work; a sealed commit completes and is reversed through Undo instead.

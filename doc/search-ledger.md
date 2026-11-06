@@ -1,8 +1,42 @@
 # Search, selection, and bulk ledger changes
 
-Last updated: 2026-10-31
+Last updated: 2026-11-06
 
 This is the bounded durable QIF experiment; search and bulk actions operate within the selected [account workspace](accounts.md). Requirements and owner decisions are in [feature 005](../features/005-transaction-sheet-navigation.md). The owner confirmed that experimental formats are disposable until an explicitly announced release; migration and backward-compatibility work are not required during this phase. This work introduces no migration.
+
+## Selection size — owner Go, 2026-11-06
+
+Current ledger range/toggle selection and selection restoration have no fixed row
+count ceiling. Rename, Restore imported values, Delete, category/account assignment,
+and Review decisions/batch Merge likewise have no fixed selection count ceiling.
+Batch Merge's former 2,048-group ceiling and matching Undo-reader limit are removed.
+Nonempty/unique selections, account ownership, stale-generation checks, relationship
+protections, atomic commit, cancellation before the commit seal, retry receipts and
+group Undo remain enforced. Preparation loops check cancellation too.
+
+This changes command validation only; formats remain 58/57. The inactive legacy
+`preview_bulk`/`apply_bulk` API (gated to format 52, which opening rejects) and its
+schema/preview bounds remain unchanged. Historical bulk descriptions below describe
+that earlier API. Unrelated parser, regex and duplicate/transfer candidate-search
+resource limits are unchanged. Removing a row ceiling is not a claim of constant
+memory use or responsiveness at arbitrary sizes. See [verification](status.md).
+
+## Selection shortcuts — owner Go, 2026-11-06
+
+With the transaction list or a transaction row focused, the platform Select All
+shortcut selects every transaction in the current filtered view, including rows
+outside the viewport, and excludes Opening Balance. This is Command+A on macOS
+and Ctrl+A on Windows/Linux. Deselect uses the platform binding when available,
+with Command+Shift+A on macOS / Ctrl+Shift+A elsewhere as an explicit fallback.
+Both are explicit search-result choices: clearing search keeps the resulting
+selection, including an intentionally empty one. Empty views are valid no-ops.
+Select All retains a selected focus identity where possible, otherwise the first
+displayed transaction; Deselect clears the range anchor and selection focus.
+
+These commands only change selection. They retain the open editor and unsaved
+text, and do not end session Undo. Text fields keep their own shortcuts; modal
+controls retain keyboard ownership. No financial commands or schema changes.
+Manual updates remain deferred; see [MAN-005](manual-update-backlog.md#man-005--selection-keyboard-shortcuts).
 
 ## Search contract
 
@@ -20,7 +54,7 @@ The reusable PCRE2 adapter now has its own `spentit_regex` target. Import-workfl
 
 ## Selection and interactions
 
-Click selects a row; Shift selects a displayed range; Cmd/Ctrl toggles individual rows. Arrow/Home/End keys move selection, and Enter opens the focused record. Double-click still opens the inline editor. Identity-based selection survives sorting and delegate recycling. Searches remember pre-search multiselection; clearing without an explicit result choice restores it, while choosing results retains those choices. Removed identities drop from selection. Dataset changes clear it. Selection is bounded at 4,096 rows with an explicit error, not silent truncation.
+Click selects a row; Shift selects a displayed range; Cmd/Ctrl toggles individual rows. Arrow/Home/End keys move selection, and Enter opens the focused record. Double-click still opens the inline editor. Identity-based selection survives sorting and delegate recycling. Searches remember pre-search multiselection; clearing without an explicit result choice restores it, while choosing results retains those choices. Removed identities drop from selection. Dataset changes clear it. Selection has no fixed row count ceiling under the 2026-11-06 follow-up above.
 
 Delete and Change category are available from the ledger context menu; Change category opens a separate category-list dialog; Delete also has a keyboard action. Opening Balance and draft/mixed selections are refused by the repository, regardless of UI selection. Dirty-editor navigation retains Save / Discard / Stay guards.
 

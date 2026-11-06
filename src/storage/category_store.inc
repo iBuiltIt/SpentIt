@@ -81,6 +81,22 @@ bool ImportStore::review_draft_undo(const imports::Occurrence& id,std::int64_t r
     Statement predecessor(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=? AND revision<?");predecessor.text(1,id.batch);predecessor.integer(2,integer(id.ordinal));predecessor.integer(3,revision);
     if(!predecessor.row() || predecessor.null(0))return false;
     const auto previous=review_draft(id,predecessor.integer(0));
+    if(auto* cache=impl_->audit_restores) {
+        if(!cache->loaded){
+            cache->loaded=true;cache->complete=true;std::size_t count=0,bytes=0;
+            Statement all(impl_->db,"SELECT m.batch,m.ordinal,m.prior,m.result FROM review_members m JOIN review_undos u ON u.answer=m.answer WHERE m.committed=0");
+            while(all.row()){
+                auto batch=all.bytes(0);bytes+=batch.size()+128;
+                if(++count>65536 || bytes>16*1024*1024){cache->rows.clear();cache->complete=false;break;}
+                cache->rows[{std::move(batch),static_cast<std::size_t>(all.integer(1))}].emplace_back(all.integer(2),all.integer(3));
+            }
+        }
+        if(cache->complete){
+            const auto found=cache->rows.find(id);if(found==cache->rows.end())return false;
+            for(const auto& [prior,result]:found->second)if(result<revision && same_draft(draft,review_draft(id,prior)) && same_draft(previous,review_draft(id,result)))return true;
+            return false;
+        }
+    }
     Statement restored(impl_->db,"SELECT m.prior,m.result FROM review_members m JOIN review_undos u ON u.answer=m.answer WHERE m.batch=? AND m.ordinal=? AND m.committed=0 AND m.result<?");
     restored.text(1,id.batch);restored.integer(2,integer(id.ordinal));restored.integer(3,revision);
     // Like committed Review Undo, compare exact snapshots: a later group Undo
@@ -273,7 +289,7 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
                 if(!prior_mode.row() || (prior_mode.integer(0)!=0 && !draft.manual_split_amounts))fail(SQLITE_CORRUPT,"Manual split amount editing mode was removed without Undo");
                 if(!prior_mode.bytes(1).empty() && prior_mode.bytes(1)!=draft.remainder_allocation)fail(SQLITE_CORRUPT,"Balancing split changed without Undo");
             }
-            Statement epoch(impl_->db,"SELECT coalesce(max(o.catalog_after),0) FROM category_operations o JOIN history_order h ON h.category_operation=o.id WHERE h.sequence<?");epoch.integer(1,order);if(!epoch.row())fail(SQLITE_CORRUPT);const auto current_catalog=epoch.integer(0);
+            Statement epoch(impl_->db,"SELECT coalesce(max(o.catalog_after),0) FROM category_operations o CROSS JOIN history_order h ON h.category_operation=o.id WHERE h.sequence<?");epoch.integer(1,order);if(!epoch.row())fail(SQLITE_CORRUPT);const auto current_catalog=epoch.integer(0);
             if(source.format=="manual") {
                 if(draft.payee_owner==FieldOwnership::source || draft.memo_owner==FieldOwnership::source)fail(SQLITE_CORRUPT,"Manual text has imported ownership");
                 for(const auto& a:draft.transaction.allocations())if(a.source_ordinal || a.category_owner==FieldOwnership::source || a.memo_owner==FieldOwnership::source)fail(SQLITE_CORRUPT,"Manual split has imported ownership");

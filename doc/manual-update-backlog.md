@@ -92,9 +92,62 @@ No manual text or pictures changed during implementation.
 
 - Update [Look after your work](../manual/backup-recovery.md) and [Accept transactions](../manual/accept-transactions.md):
   windows stay visible with the busy indicator and current checking/closing messages
-  until shutdown completes. Failed checking leaves the window visible for Return
+  until shutdown completes. Describe the **Closing SpentIt…** modal, shared
+  spinner/current phase, and absence of buttons or Escape/outside dismissal. Failed checking leaves the window visible for Return
   or Quit anyway; remove descriptions of hiding and restoring the window.
 - Review `manual/images/accept-quit.png` and its caption for consistency; the
   decision prompt is unchanged. No shutdown-progress picture currently exists;
   add one with synthetic data only if useful to the walkthrough.
 - Verify the eventual text and pictures in bundled Help.
+
+### MAN-004 — Larger transaction selections
+
+Recorded: 2026-11-06. Status: **pending**.
+Source: [selection-size contract](search-ledger.md#selection-size--owner-go-2026-11-06).
+
+No manual text or pictures changed during implementation.
+
+- Review [Find transactions](../manual/find-transactions.md),
+  [Add/correct transactions](../manual/add-correct-transactions.md),
+  [Categories](../manual/categories.md), and Review's batch Merge guidance for
+  selections above 4,096 rows. Describe one operation and group Undo; do not
+  promise unlimited resources or a fixed processing time.
+- Audit selection/context-menu and Review pictures/captions; no new control was
+  added, so recapture only pictures whose accompanying example needs changing.
+- Verify eventual chapter links and bundled Help in the owner-authorized pass.
+
+### MAN-005 — Selection keyboard shortcuts
+
+Recorded: 2026-11-06. Status: **pending**.
+Source: [selection shortcut contract](search-ledger.md#selection-shortcuts--owner-go-2026-11-06).
+
+No manual text or pictures changed during implementation.
+
+- Update [Find transactions](../manual/find-transactions.md) and
+  [Keyboard and mouse](../manual/keyboard-mouse.md) with Command+A / Command+Shift+A
+  on macOS and Ctrl+A / Ctrl+Shift+A elsewhere. Explain that Select All includes
+  all filtered transaction rows, including offscreen rows, excluding Opening
+  Balance; Deselect clears the selection.
+- State the focus distinction: transaction-list shortcuts select rows, while
+  text-field shortcuts select text. Selection leaves unsaved editor text intact.
+- Review selection illustrations/captions; no visible control was added, so no
+  new screenshot is required unless the eventual example changes. Verify links
+  and bundled Help during the later owner-authorized manual pass.
+
+### MAN-006 — Delete linked selections
+
+Recorded: 2026-11-06. Status: **pending**.
+Source: [linked-deletion contract](ledger-editing.md#linked-selection-deletion-and-large-operation-performance--owner-go-2026-11-06).
+
+No manual text or pictures changed during implementation.
+
+- Update [Add/correct transactions](../manual/add-correct-transactions.md),
+  [Review duplicates/transfers](../manual/review-duplicates-transfers.md), and relevant selection/Undo guidance:
+  Delete selected only is the default, kept linked splits become Uncategorized,
+  Delete linked entries too preserves unrelated counterpart splits, and the
+  preview shows each account's exact balance change. Describe generated-draft
+  disposal, cancellation, group Undo and unresolved import-match restrictions.
+- Replace or add the deletion-confirmation picture using synthetic linked and
+  split transactions. Review transfer and selection captions for obsolete manual
+  unlink instructions. Capture both choice summaries if useful.
+- Check eventual bundled Help targets and links during the owner-authorized pass.

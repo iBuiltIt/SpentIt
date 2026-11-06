@@ -61,7 +61,7 @@ public:
     bool failReviewRefresh=false;
     bool delayClose=false;
     void close_verified(const app::OperationContext& context) override {
-        if(delayClose){context.checkpoint("Checking file");QThread::msleep(350);}
+        if(delayClose){context.checkpoint("Checking file");QThread::msleep(1000);}
         inner->close_verified(context);
     }
     app::ReviewSheet review_sheet() const override {if(failReviewRefresh && attempted)throw std::runtime_error("Injected Review refresh failure");return repo().review_sheet();}
@@ -844,6 +844,82 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(name,"accepted"));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("accounts").toList().size(),3);QCOMPARE(m.state().value("currency").toString(),QString("CAD"));QCOMPARE(m.state().value("opening").toString(),QString("0.00"));QVERIFY(!m.state().value("confirmed").toBool());
     }
+    void linkedDeletionDialog() {
+        QTemporaryDir dir;const auto path=dir.path()+"/doc";
+        {const Currency cad("CAD");auto seed=storage::document_gateway();seed->create(path.toStdString(),true,"test","Checking",cad,"2026-01-01");auto& store=seed->repository();store.create_account(2,"Savings",cad,"2026-01-01");store.ingest("out","!Type:Bank\nD01/01/2026\nT-10\nPPayment\n^\n",qif::DateOrder::dmy);
+        const auto row=store.row({"out",0});app::TransferRequest r{};r.action=app::TransferAction::retarget;r.mode=1;r.link="link";r.kept="kept";r.expected_sequence=store.transfer_sequence();r.batch_revision=store.batches().front().revision;
+        r.left=transfers::AllocationFact{{1,{"out",0},row.draft->transaction.allocations().front().identity},Money(-1000,cad),row.draft->date,transfers::State::draft,true};r.generated=transfers::Endpoint{2,{"~transfer-link",0},"generated"};r.generated_currency=cad.definition_id();app::OperationContext c;store.assign_transfer_batch("assign",{r},c);store.accept_all("accept",true);}
+        ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        run(m,"unlock",{{"path",path},{"password","test"}});run(m,"select",{{"mode","all"}});
+        auto* dialog=root->findChild<QObject*>("deleteSelectionDialog");auto* keep=root->findChild<QObject*>("keepDeletionCounterparts");auto* both=root->findChild<QObject*>("removeDeletionCounterparts");auto* confirm=root->findChild<QObject*>("confirmDeleteSelection");QVERIFY(dialog && keep && both && confirm);
+        const auto preview=[&]{QVERIFY(QMetaObject::invokeMethod(root,"removeSelected"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(keep->property("checked").toBool());QCOMPARE(m.state().value("deletionPreview").toMap().value("links").toInt(),1);};
+        preview();QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QCOMPARE(m.state().value("balance").toString(),QString("-10.00"));
+        preview();QVERIFY(QMetaObject::invokeMethod(confirm,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),QString("0.00"));run(m,"undo_edit");QCOMPARE(m.state().value("balance").toString(),QString("-10.00"));
+        run(m,"select_account",{{"id","1"}});run(m,"select",{{"mode","all"}});preview();both->setProperty("checked",true);QVERIFY(!keep->property("checked").toBool());QVERIFY(QMetaObject::invokeMethod(confirm,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),QString("0.00"));run(m,"undo_edit");QCOMPARE(m.state().value("balance").toString(),QString("-10.00"));run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("balance").toString(),QString("10.00"));run(m,"close");
+    }
+    void selectionShortcuts() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        const auto keys=[&](bool clear){QSignalSpy completed(&m,&ImportModel::completed);ledger->forceActiveFocus();if(auto* row=visualItem(window->contentItem(),"ledgerRow_0"))row->forceActiveFocus();QTRY_VERIFY(window->activeFocusItem()==ledger || (window->activeFocusItem() && window->activeFocusItem()->property("ledgerSelectionRow").toBool()));QTest::keyClick(window,Qt::Key_A,clear?Qt::ControlModifier|Qt::ShiftModifier:Qt::ControlModifier);QTRY_VERIFY(!completed.empty());QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());};
+        keys(false);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),0); // Opening only.
+        run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT-1\nPKeep one\n^\nD2/1/2026\nT-2\nPKeep two\n^\nD3/1/2026\nT-3\nPOther\n^\n")},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch").toString();
+        keys(false);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),3);
+        for(const auto& id:m.state().value("selection").toList())QVERIFY(!id.toMap().value("batch").toString().isEmpty());
+        auto* search=root->findChild<QQuickItem*>("ledgerSearch");auto* apply=root->findChild<QObject*>("applyFilter");auto* clear=root->findChild<QObject*>("clearFilter");QVERIFY(search && apply && clear);
+        search->setProperty("text","Keep");QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!m.busy());
+        keys(false);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        QVERIFY(QMetaObject::invokeMethod(clear,"clicked"));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        search->setProperty("text","Other");QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!m.busy());
+        keys(true);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        QVERIFY(QMetaObject::invokeMethod(clear,"clicked"));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        search->setProperty("text","No matches");QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!m.busy());
+        keys(false);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        QVERIFY(QMetaObject::invokeMethod(clear,"clicked"));QTRY_VERIFY(!m.busy());
+        run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
+        payee->setProperty("text","Unsaved name");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));QVERIFY(root->property("dirty").toBool());
+        keys(false);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),3);
+        keys(true);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        QCOMPARE(payee->property("text").toString(),"Unsaved name");QVERIFY(root->property("dirty").toBool());QCOMPARE(selected(m).value("ordinal").toInt(),0);
+        auto* unsaved=root->findChild<QObject*>("unsavedDialog");QVERIFY(unsaved);QVERIFY(!unsaved->property("visible").toBool());
+        payee->forceActiveFocus();QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);
+        QCOMPARE(payee->property("selectedText").toString(),"Unsaved name");QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier|Qt::ShiftModifier);QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        search->forceActiveFocus();search->setProperty("text","Search text");QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);
+        QCOMPARE(search->property("selectedText").toString(),"Search text");QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        ledger->forceActiveFocus();QVERIFY(QMetaObject::invokeMethod(unsaved,"open"));QTRY_VERIFY(unsaved->property("visible").toBool());
+        QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        QVERIFY(QMetaObject::invokeMethod(unsaved,"close"));QTRY_VERIFY(!unsaved->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(root,"discardEditor",Q_ARG(QVariant,QVariant())));
+        payee->setProperty("text","Saved name");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY(m.state().value("canUndoEdit").toBool());
+        keys(false);keys(true);QVERIFY(m.state().value("canUndoEdit").toBool());run(m,"undo_edit");QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Keep one");run(m,"close");
+    }
+    void largeSelection() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        create(m,dir.path()+"/doc");QVERIFY(QTest::qWaitForWindowExposed(window));
+        QByteArray rows="!Type:Bank\n";
+        for(int i=0;i<4100;++i)rows+="D1/1/2026\nT-"+QByteArray::number(i+1)+"\nPRow "+QByteArray::number(i)+"\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),rows)},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch").toString();
+        run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});
+        run(m,"select",{{"row",m.occurrenceIndex(batch,4098)},{"range",true}});
+        QCOMPARE(m.state().value("selectionCount").toInt(),4099);
+        run(m,"select",{{"row",m.occurrenceIndex(batch,4099)},{"toggle",true}});
+        QCOMPARE(m.state().value("selectionCount").toInt(),4100);
+        const auto ids=m.state().value("selection").toList();
+        run(m,"query",{{"filter","Row 4099"},{"projected",true}});
+        run(m,"query",{{"filter",""},{"projected",true},{"restoreSelectionIds",ids},{"sort",1},{"descending",true}});
+        QCOMPARE(m.state().value("selectionCount").toInt(),4100);
+        auto* ledger=window->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);ledger->forceActiveFocus();QTRY_VERIFY(window->activeFocusItem()==ledger || (window->activeFocusItem() && window->activeFocusItem()->property("ledgerSelectionRow").toBool()));
+        QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier|Qt::ShiftModifier);QTRY_COMPARE(m.state().value("selectionCount").toInt(),0);QTRY_VERIFY(!m.busy());
+        ledger->forceActiveFocus();QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);QTRY_COMPARE(m.state().value("selectionCount").toInt(),4100);QTRY_VERIFY(!m.busy());
+        run(m,"close");
+    }
     void bulkInteractions() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
@@ -964,14 +1040,32 @@ private slots:
         ImportModel m(std::move(gateway));create(m,dir.path()+"/doc");
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* dialog=window->findChild<QObject*>("shutdownProgressDialog");QVERIFY(dialog);
+        QVERIFY(!dialog->property("visible").toBool());
         QSignalSpy completed(&m,&ImportModel::completed);
         window->close();QVERIFY(window->isVisible());QVERIFY(m.busy());
+        QVERIFY(dialog->property("visible").toBool());QVERIFY(dialog->property("modal").toBool());
+        QCOMPARE(dialog->property("title").toString(),QString("Closing SpentIt…"));
+        QCOMPARE(dialog->property("standardButtons").toInt(),0);
         auto* phase=window->findChild<QObject*>("operationPhase");QVERIFY(phase);
         QTRY_COMPARE(phase->property("text").toString(),QString("Checking file"));
         QVERIFY(window->isVisible());QVERIFY(m.busy());
         auto* indicator=window->findChild<QObject*>("activityIndicator");QVERIFY(indicator);
         QVERIFY(indicator->property("running").toBool());QVERIFY(indicator->property("visible").toBool());
         QVERIFY(!window->findChild<QObject*>("importStatement")->property("enabled").toBool());
+        QCOMPARE(window->findChild<QObject*>("shutdownProgressMessage")->property("text").toString(),phase->property("text").toString());
+        auto* spinner=window->findChild<QQuickItem*>("shutdownActivityIndicator");QVERIFY(spinner);
+        QVERIFY(spinner->property("running").toBool());QVERIFY(spinner->isVisible());
+        QTest::keyClick(window,Qt::Key_Escape);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,QPoint(8,8));
+        QVERIFY(dialog->property("visible").toBool());
+        if(QGuiApplication::platformName()!=QStringLiteral("offscreen")) {
+            QTest::qWait(100);
+            const auto frame=[&]{const auto image=window->grabWindow();const auto scale=image.devicePixelRatio();const auto pos=spinner->mapToScene(QPointF());return image.copy(QRectF(pos.x()*scale,pos.y()*scale,spinner->width()*scale,spinner->height()*scale).toAlignedRect());};
+            const auto first=frame();QVERIFY(!first.isNull());QTest::qWait(150);
+            QVERIFY(first!=frame());
+        }
         window->close();QVERIFY(window->isVisible());QCOMPARE(completed.count(),0);
         QTRY_VERIFY(!m.busy());QTRY_VERIFY(!window->isVisible());QCOMPARE(completed.count(),1);
         QVERIFY(!m.state().value("active").toBool());
@@ -1005,8 +1099,11 @@ private slots:
         QCOMPARE(window->findChild<QObject*>("operationPhase")->property("text").toString(),QString("Closing file…"));
         window->close();QVERIFY(window->isVisible());
         QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QVERIFY(m.state().value("active").toBool());QVERIFY(window->isVisible());
+        QTRY_VERIFY(!window->findChild<QObject*>("shutdownProgressDialog")->property("visible").toBool());
+        QVERIFY(window->findChild<QObject*>("closeAuditFailure")->property("visible").toBool());
         auto* quit=window->findChild<QObject*>("closeAuditQuitAnyway");QVERIFY(quit);
         QVERIFY(QMetaObject::invokeMethod(quit,"clicked"));QVERIFY(window->isVisible());QVERIFY(m.busy());
+        QVERIFY(window->findChild<QObject*>("shutdownProgressDialog")->property("visible").toBool());
         QTRY_VERIFY(!m.busy() && !m.state().value("active").toBool());QTRY_VERIFY(!window->isVisible());
     }
     void startupDataset_data() {

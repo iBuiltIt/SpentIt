@@ -211,6 +211,20 @@ Link commit(const Link& link,std::int64_t account) {
     (account==result.origin.endpoint.account?result.origin:result.destination).state=State::committed;
     validate(result);return result;
 }
+Link unlink_for_deletion(const Link& link,bool remove_origin,bool remove_destination) {
+    validate(link);
+    if(link.origin.proposed_evidence || link.destination.proposed_evidence)
+        throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match before deleting this transfer.");
+    if(link.origin.attached_evidence || link.destination.attached_evidence)
+        throw TransferError(Error::unresolved_policy,"This transfer has attached import records. Unlink it in Review before deleting it.");
+    auto result=link;
+    if(remove_origin || !counts_locally(result.origin))result.origin.state=State::removed;
+    if(remove_destination || !counts_locally(result.destination))result.destination.state=State::removed;
+    result.origin_category.clear();
+    result.destination_released=result.origin.state!=State::removed;
+    result.unresolved=!result.destination_released;
+    validate(result);return result;
+}
 Link release_generated(const Link& link) {
     validate(link);
     if(link.unresolved || link.destination_released || (!link.origin.independent_evidence && !link.origin.ledger_entry) || link.origin.state==State::removed || link.destination.state==State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.manually_entered || link.destination.attached_evidence || link.destination.proposed_evidence)invalid();

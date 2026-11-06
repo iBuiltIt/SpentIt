@@ -936,6 +936,11 @@ struct ImportStore::Impl {
         std::size_t bytes=0;
     };
     mutable AuditEntries* audit_entries=nullptr;
+    struct AuditRestores {
+        bool loaded=false,complete=false;
+        std::map<imports::Occurrence,std::vector<std::pair<std::int64_t,std::int64_t>>> rows;
+    };
+    mutable AuditRestores* audit_restores=nullptr;
     mutable VerificationRows read_rows;
     mutable sqlite3_int64 read_rows_changes=-1;
     mutable std::map<imports::Occurrence,std::string> read_stamps;
@@ -2032,6 +2037,9 @@ void ImportStore::verify(const app::OperationContext* context) const {
     impl_->verifying=true;
     impl_->read_rows=VerificationRows{};impl_->read_rows_changes=-1;impl_->read_stamps.clear();
     VerificationRows verified_rows;
+    Impl::AuditRestores restores;
+    struct RestoresGuard {Impl& state;Impl::AuditRestores* prior;~RestoresGuard(){state.audit_restores=prior;}} restores_guard{*impl_,impl_->audit_restores};
+    impl_->audit_restores=&restores;
     Impl::AuditEntries entries;
     struct EntriesGuard {
         Impl& state;Impl::AuditEntries* prior;

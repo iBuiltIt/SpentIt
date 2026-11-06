@@ -2,7 +2,7 @@
 #include <spentit/transfer.hpp>
 
 namespace spentit::app {
-enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard, merge, retarget, relink, restore, review_undo, resize_generated, release_generated };
+enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard, merge, retarget, relink, restore, review_undo, resize_generated, release_generated, delete_selection };
 struct TransferRequest {
     TransferAction action;
     std::string link;

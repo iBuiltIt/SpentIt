@@ -110,7 +110,7 @@ std::optional<app::ChangeReceipt> ImportStore::committed_change_outcome(std::str
     Statement dd(impl_->db,"SELECT batch,revision,state FROM change_dependencies WHERE operation=? ORDER BY batch");dd.text(1,operation);while(dd.row())deps.push_back({dd.bytes(0),dd.integer(1),static_cast<app::BatchState>(dd.integer(2))});
     return app::ChangeReceipt{std::string(operation),static_cast<app::ChangeKind>(row.integer(0)),id,entry_snapshot(id,row.integer(3)),entry_snapshot(id,row.integer(4)),Money(row.integer(5),currency),Money(row.integer(6),currency),Money(row.integer(7),currency),row.bytes(8),{id,row.integer(4),std::move(deps)},row.integer(9)};
 }
-app::ChangePreview ImportStore::preview_change(const app::ChangeRequest& request,bool links) const {
+app::ChangePreview ImportStore::preview_change(const app::ChangeRequest& request,bool links,std::optional<Money> known_balance) const {
     if(request.kind==app::ChangeKind::undo){Statement rules(impl_->db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.child=? AND a.question='rules-account'");rules.text(1,request.undo_of);if(rules.row())fail(SQLITE_CONSTRAINT,"Use Undo rule application on the Rules screen to undo the whole operation.");}
     if(request.kind==app::ChangeKind::undo){Statement group(impl_->db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.child=?1 AND a.question IN('ledger-edit-batch','ledger-delete') UNION ALL SELECT 1 FROM review_undo_members m JOIN review_undos u ON u.id=m.undo_id JOIN review_answers a ON a.id=u.answer WHERE m.child=?1 AND a.question IN('ledger-edit-batch','ledger-delete')");group.text(1,request.undo_of);if(group.row())fail(SQLITE_CONSTRAINT,"This change belongs to a selection edit and cannot be undone individually.");}
     if(request.kind==app::ChangeKind::undo){Statement member(impl_->db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.child=?1 AND a.question!='ledger-edit' UNION ALL SELECT 1 FROM review_undo_members m JOIN review_undos u ON u.id=m.undo_id JOIN review_answers a ON a.id=u.answer WHERE m.child=?1 AND a.question!='ledger-edit'");member.text(1,request.undo_of);if(member.row())fail(SQLITE_CONSTRAINT,"Use Review Undo to reverse this entire decision");}
@@ -130,7 +130,7 @@ app::ChangePreview ImportStore::preview_change(const app::ChangeRequest& request
         }catch(const transfers::TransferError& error){fail(SQLITE_CONSTRAINT,error.what());}
     }
     const auto currency=account().currency;const Money zero(0,currency);const auto delta=(after.active?after.draft.transaction.effective_total():zero)-(current.current.active?current.current.draft.transaction.effective_total():zero);
-    const auto before=committed_balance();auto canonical=request;if(canonical.correction)canonical.correction=after.draft;return {canonical,current.current,std::move(after),before,delta,before+delta,current.token,financial_sequence(impl_->db),categories_supported()?catalog_sequence(impl_->db):0,std::move(relationship),std::move(link_stamp)};
+    const auto before=known_balance?*known_balance:committed_balance();auto canonical=request;if(canonical.correction)canonical.correction=after.draft;return {canonical,current.current,std::move(after),before,delta,before+delta,current.token,financial_sequence(impl_->db),categories_supported()?catalog_sequence(impl_->db):0,std::move(relationship),std::move(link_stamp)};
 }
 app::ChangePreview ImportStore::preview_committed_change(const app::ChangeRequest& request) const {
     return preview_change(request,true);
@@ -241,7 +241,7 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
         const auto operation=operations.bytes(0);const auto sequence=operations.integer(11),order=operations.integer(12);
         if(operations.integer(1)==5){
             const auto account=operations.integer(3);apply_openings(account,order);auto found=balances.find(account);if(found==balances.end())fail(SQLITE_CORRUPT,"Financial timeline names a retired account");
-            if(categories_supported()){Statement epoch(impl_->db,"SELECT o.catalog_revision,(SELECT coalesce(max(c.catalog_after),0) FROM category_operations c JOIN history_order h ON h.category_operation=c.id WHERE h.sequence<?) FROM ledger_operations o WHERE o.id=?");epoch.integer(1,order);epoch.text(2,operation);if(!epoch.row() || epoch.integer(0)!=epoch.integer(1))fail(SQLITE_CORRUPT,"Financial catalog preview does not match history");}
+            if(categories_supported()){Statement epoch(impl_->db,"SELECT o.catalog_revision,(SELECT coalesce(max(c.catalog_after),0) FROM category_operations c CROSS JOIN history_order h ON h.category_operation=c.id WHERE h.sequence<?) FROM ledger_operations o WHERE o.id=?");epoch.integer(1,order);epoch.text(2,operation);if(!epoch.row() || epoch.integer(0)!=epoch.integer(1))fail(SQLITE_CORRUPT,"Financial catalog preview does not match history");}
             Statement command(impl_->db,"SELECT prior_definition,definition FROM account_operations WHERE id=?");command.text(1,operations.bytes(9));if(!command.row() || operations.integer(7)!=0 || !operations.bytes(2).empty())fail(SQLITE_CORRUPT,"Currency command is missing its financial anchor");
             const auto before_currency=Currency::from_definition(command.bytes(0));const auto after_currency=Currency::from_definition(command.bytes(1));
             if(order<=prior_order || sequence<=prior_sequence || found->second.currency()!=before_currency || found->second.units()!=operations.integer(6))fail(SQLITE_CORRUPT,"Financial timeline does not reconcile");
@@ -252,7 +252,7 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
         if(operations.integer(1)==4){Statement t(impl_->db,"SELECT account,did_commit FROM transfer_events WHERE operation=?");t.text(1,operations.bytes(0));if(!t.row())fail(SQLITE_CORRUPT);transfer_owner=account_by_id(t.integer(0));transfer_nonfinancial=t.integer(1)==0;}
         const auto owner=transfer_owner?*transfer_owner:account_for_batch(operations.bytes(2));apply_openings(owner.identity,order);auto balance_found=balances.find(owner.identity);if(balance_found==balances.end())fail(SQLITE_CORRUPT,"Financial timeline names a retired account");auto& balance=balance_found->second;const auto currency=currency_as_of(impl_->db,owner.identity,order);
         const auto kind=static_cast<app::ChangeKind>(operations.integer(1));
-        if(categories_supported()){Statement epoch(impl_->db,"SELECT o.catalog_revision,(SELECT coalesce(max(c.catalog_after),0) FROM category_operations c JOIN history_order h ON h.category_operation=c.id WHERE h.sequence<?) FROM ledger_operations o WHERE o.id=?");epoch.integer(1,order);epoch.text(2,operation);if(!epoch.row() || epoch.integer(0)!=epoch.integer(1))fail(SQLITE_CORRUPT,"Financial catalog preview does not match history");}
+        if(categories_supported()){Statement epoch(impl_->db,"SELECT o.catalog_revision,(SELECT coalesce(max(c.catalog_after),0) FROM category_operations c CROSS JOIN history_order h ON h.category_operation=c.id WHERE h.sequence<?) FROM ledger_operations o WHERE o.id=?");epoch.integer(1,order);epoch.text(2,operation);if(!epoch.row() || epoch.integer(0)!=epoch.integer(1))fail(SQLITE_CORRUPT,"Financial catalog preview does not match history");}
         if(order<=prior_order || sequence<=prior_sequence || (!transfer_nonfinancial && (Money(operations.integer(6),currency)!=balance || balance+Money(operations.integer(7),currency)!=Money(operations.integer(8),currency))))fail(SQLITE_CORRUPT,"Financial timeline does not reconcile");
         if(kind==app::ChangeKind::transfer){
             if(operations.bytes(2)!="" || operations.integer(3)!=0 || operations.integer(4)!=-1 || operations.integer(5)!=0 || !operations.bytes(9).empty() || (operations.integer(10)<prior_sequence || operations.integer(10)>=sequence) || (transfer_nonfinancial && (operations.integer(7)!=0 || operations.integer(6)!=operations.integer(8))))fail(SQLITE_CORRUPT);
@@ -314,7 +314,7 @@ AND (a.operation=?3 OR EXISTS(
                         member.text(1,operation);
                         if(member.row()){if(member.integer(1)==0)fail(SQLITE_CORRUPT,"Rule reapply Undo used a correction");reapply=true;replace_manual=member.integer(0)!=0;}
                     }
-                    Statement account_apply(impl_->db,"SELECT substr(a.request,1,1) FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.child=? AND m.committed=1 AND a.question='rules-account'");account_apply.text(1,operation);
+                    Statement account_apply(impl_->db,"SELECT substr(a.request,1,1) FROM review_answers a CROSS JOIN review_members m ON m.answer=a.id WHERE m.child=? AND m.committed=1 AND a.question='rules-account'");account_apply.text(1,operation);
                     if(account_apply.row()){reapply=true;replace_manual=account_apply.bytes(0)=="1";}
                     check_rule_transition(before.draft,after.draft,reapply,replace_manual);
                 }
@@ -323,7 +323,7 @@ AND (a.operation=?3 OR EXISTS(
             else if(kind==app::ChangeKind::remove){if(!before.active || after.active || !same_draft(before.draft,after.draft) || !receipt->undo_of.empty())fail(SQLITE_CORRUPT);}
             else if(kind==app::ChangeKind::undo){
                 const auto original=committed_change_outcome(receipt->undo_of);
-                Statement grouped(impl_->db,"SELECT 1 FROM review_undo_members m JOIN review_undos u ON u.id=m.undo_id JOIN review_members a ON a.answer=u.answer AND a.child=m.original_child WHERE m.child=? AND m.original_child=?");grouped.text(1,operation);grouped.text(2,receipt->undo_of);const bool review_undo=grouped.row();
+                Statement grouped(impl_->db,"SELECT 1 FROM review_undo_members m JOIN review_undos u ON u.id=m.undo_id JOIN review_members a ON a.answer=u.answer AND a.child=m.original_child WHERE m.child=? AND m.original_child=? AND a.batch=? AND a.ordinal=?");grouped.text(1,operation);grouped.text(2,receipt->undo_of);grouped.text(3,receipt->identity.batch);grouped.integer(4,integer(receipt->identity.ordinal));const bool review_undo=grouped.row();
                 if(!original || original->sequence>=sequence || original->identity!=receipt->identity || original->before_entry.active!=after.active || !same_draft(original->before_entry.draft,after.draft) ||
                    (review_undo?(original->after_entry.active!=before.active || !same_draft(original->after_entry.draft,before.draft)):(original->after_entry.revision!=before.revision || original->result_token.dependencies!=receipt->result_token.dependencies)))fail(SQLITE_CORRUPT,"Invalid strict Undo history");
             }

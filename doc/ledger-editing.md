@@ -22,7 +22,8 @@ and explicit committed-edit opt-in presentation.
   Follow-up Go (2026-11-01): ordinary single-click selection does not enter the
   global busy state or flash the editor/sidebar disabled styles. An unchanged
   selection is a no-op. Plain selection uses the published ledger and cached
-  transfer flags; range/toggle selection retains the existing bounded worker path.
+  transfer flags; range/toggle selection uses the worker path, without a fixed row ceiling
+  under the [2026-11-06 follow-up](search-ledger.md#selection-size--owner-go-2026-11-06).
   Actual operations continue to disable controls while running.
 - Enter accepts the complete valid edit durably and retains its viewport and field
   focus. Ordinary category-picker choices also accept the edit. There are no
@@ -323,3 +324,51 @@ Escape and Undo handling remain in their field-specific handlers.
 The implementation uses shared Qt Quick code on all platforms. macOS verification
 is recorded in [status](status.md); Windows/Linux behavior remains unverified.
 Read-only multiline displays retain Qt's existing navigation.
+
+## Linked selection deletion and large-operation performance — owner Go 2026-11-06
+
+Accepted: Delete offers **Delete selected only** (default), **Delete linked entries
+too**, and Cancel when selected rows participate in transfers. The preview shows affected
+accounts, numbers of deleted/changed transactions, and exact balance changes in
+each account's currency. It never combines currencies. Read-only planning and the
+final command both derive changes from retained rows and reject stale selection
+revisions.
+
+- Selected rows are removed in full. Keeping an independent counterpart preserves
+  its total and unrelated splits; only its former linked allocations become
+  Uncategorized with manual category ownership.
+- Deleting counterparts removes only allocations linked to the original selection.
+  Remaining splits retain their identities, amounts, text and provenance; the
+  effective total decreases by the exact removed amount. A counterpart with no
+  remaining allocations is deleted. This does not recursively follow unrelated
+  transfers on a surviving counterpart. Original imported totals remain retained.
+- Generated drafts are disposed of when their origin is deleted. Accepted
+  generated counterparts are kept by the default choice. Manual transfer postings
+  and generated entries use the same preview and group Undo. Previously unlinked
+  retained local postings can subsequently be deleted too.
+- A pending import-match proposal or attached legacy import relationship still
+  requires resolution before deletion; no implicit decision about source ownership
+  is made. Archived accounts and invalid/unavailable members reject the whole
+  command.
+- All affected rows, link transitions, receipts and the session Undo stack commit
+  in one transaction. Cancellation before the final commit gate rolls everything
+  back. The request records the counterpart policy, so retry with a different
+  choice is rejected. Undo restores counterpart splits, ownership, amounts and
+  relationships together and respects the existing later-mutation barrier.
+
+Implementation: deletion extends the existing transfer journal with an explicit,
+replayed unlink transition. Local postings in two accounts use separate monetary
+history entries inside the same transaction. Retained counterparts and earlier
+unlink stages have child receipts, reversed with their parent deletion. Existing
+history encodings are unchanged; the experimental schema remains 58/57. Older
+journal decoders reject the new event tag; the verifier source hash also
+invalidates startup approval across this implementation change.
+
+Bulk edits/deletion and Undo reuse bounded prepared statements for the operation.
+Committed-row writes maintain exact running balances initialized once per account;
+transfer Undo reuses its current relationship set and account balances. Full audit
+still replays and checks all history. Currency/category history queries start from
+the relevant operation tables, strict Undo uses the complete member key, and draft
+Undo uses an audit-local lookup capped at 65,536 members / 16 MiB, falling back to
+the original query above that budget. No integrity/durability check is disabled.
+See [verification and measured limits](status.md).

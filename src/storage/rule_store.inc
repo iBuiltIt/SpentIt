@@ -422,7 +422,7 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
         if(before!=revision || after!=revision+1) fail(SQLITE_CORRUPT);
         Statement ordering(impl_->db,"SELECT sequence FROM history_order WHERE rule_operation=?");ordering.text(1,operation);if(!ordering.row() || ordering.integer(0)<=previous_order)fail(SQLITE_CORRUPT);
         const auto sequence=ordering.integer(0);previous_order=sequence;
-        Statement epoch(impl_->db,"SELECT coalesce(max(o.catalog_after),0) FROM category_operations o JOIN history_order h ON h.category_operation=o.id WHERE h.sequence<?");epoch.integer(1,sequence);if(!epoch.row())fail(SQLITE_CORRUPT);
+        Statement epoch(impl_->db,"SELECT coalesce(max(o.catalog_after),0) FROM category_operations o CROSS JOIN history_order h ON h.category_operation=o.id WHERE h.sequence<?");epoch.integer(1,sequence);if(!epoch.row())fail(SQLITE_CORRUPT);
         const auto catalog=epoch.integer(0);
         struct Member { std::string rule; RuleBody body; std::int64_t version=0; bool enabled=false; };
         std::vector<Member> requests,snapshots;

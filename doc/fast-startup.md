@@ -74,6 +74,11 @@ hashes before and after must agree before
 publishing approval. Publication uses an owner-only temporary file, file sync,
 atomic rename and directory sync. Windows remain visible while quit-time work runs,
 with the animated busy indicator and actual worker phases in the status line.
+Owner follow-up Go (2026-11-06): a compact modal **Closing SpentIt…** also
+shows the same rotating indicator and current worker message. It starts after
+unsaved-edit and acceptance decisions have been resolved, has no buttons and
+cannot be dismissed by Escape or an outside click. A checking failure dismisses
+progress and presents the existing Return / Quit anyway decision.
 Repeated close requests are ignored while closing. The process exits and closes
 its windows only after successful close and queued ledger-snapshot cleanup,
 including the explicit Quit anyway path. A second process cannot open the

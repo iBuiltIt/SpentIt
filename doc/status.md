@@ -1,5 +1,209 @@
 # Project status
 
+## Linked deletion and large-selection performance — 2026-11-06
+
+Implemented under owner Go with the accepted defaults. Ledger Delete now prepares
+both choices on the worker and shows per-account counts and exact currency-specific
+balance changes. **Delete selected only** is the default and clears kept independent
+counterpart allocations to Uncategorized. **Delete linked entries too** removes
+only linked allocations from split counterparts; unrelated splits survive with
+an exactly adjusted effective total. Generated drafts follow existing disposal
+policy. Manual/generated postings, including subsequently deleted retained local
+postings, use the same atomic command and group Undo. Cancellation remains enabled
+until the durable commit gate. See the [contract](ledger-editing.md#linked-selection-deletion-and-large-operation-performance--owner-go-2026-11-06).
+
+Deletion records explicit replayable transfer transitions. A transfer with local
+money in two accounts uses two monetary history entries in one database transaction;
+Undo reverses both stages and counterpart row changes. Retry compares the selection,
+generation and counterpart policy. Pending match proposals and legacy attached-import
+relationships remain guarded rather than silently deciding source ownership.
+Experimental schema remains 58 with rules / 57 without; no migration or existing
+history reinterpretation was introduced.
+
+Performance changes: reuse bounded statement preparation across bulk commands and
+Undo; initialize an exact running balance once per account instead of summing its
+ledger for each row; reuse transfer Undo's relationship set/balances; start historical
+currency/category lookups from their sparse operation tables; use complete Review
+member keys for strict Undo; and cache draft-Undo membership only within an audit,
+with a 65,536-member / 16 MiB bound and a query fallback. Full history, transfer,
+provenance and financial validation remain enabled.
+
+Measured on synthetic macOS Release data (wall times are workload measurements,
+not UI-response guarantees; some runs overlapped other checks/builds):
+
+- The same 4,100-row mixed accepted/new selection regression, including cancellation,
+  retries, rename/restore/category/delete, Undo and a reopened full audit, completed
+  in **147.39 s**, versus the earlier **465.11 s** measurement recorded below.
+- A separate 15,000-row accepted-account workload completed deletion in **9.00 s**,
+  Undo in **18.06 s**, and full audit after both operations in **59.10 s**. Every row
+  and the exact balance were checked before/after Undo. This workload has ordinary
+  transactions; linked-deletion correctness is covered separately. The audit still
+  takes substantial time and is not advertised as instantaneous.
+- An intermediate 15,000-row build before operation-scoped statement reuse measured
+  22.73 / 86.48 / 63.88 s for deletion / Undo / audit; this is an intermediate
+  comparison, not an untouched pre-change baseline.
+
+Verification:
+
+- Rules-enabled and rules-disabled linked-deletion tests passed: both choices,
+  accepted/new independent postings, unrelated counterpart splits, manual/generated
+  postings from either side, deleting a retained local posting later, stale requests,
+  cancellation after link writes, durable retry, exact balances and reopened Undo.
+- The same linked-deletion suite passed ASan/UBSan with
+  `ASAN_OPTIONS=quarantine_size_mb=8:malloc_context_size=0:halt_on_error=1:abort_on_error=1`
+  and `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`, with no diagnostic.
+- The focused dialog test passed offscreen (3/3, 1233 ms) and native cocoa
+  (3/3, 1611 ms): default, preview, Cancel, both choices and session Undo.
+- The final selected Release CTest run passed **21/21 in 304.26 s**: linked
+  deletion/recovery, selection edit/recovery, editor, Review and batch Review,
+  transfer assignment/release, transfer storage basics/management/splits/manual
+  evidence/validation, account lifecycle behavior/boundaries, category history,
+  rule account Apply/recovery, full import UI and QML. The UI suite reported
+  **84 passed, 0 failed, 1 skipped** (`bulkInteractions`: the legacy bulk format is not enabled).
+- The final linked-deletion recovery sweep covered **153 / 155 / 147 / 145**
+  injected write positions for keep/delete-counterparts and their Undo cases
+  (600 total), alternating disk-full and I/O write errors. Each trial reopened,
+  checked both accounts and receipt state, retried twice, and passed full audit.
+  All eight before/after durable-commit crash cases passed. Existing selection
+  fault sweeps also passed all four modes, 193 positions each.
+- `git diff --check` passed. The full Release build completed and rebuilt
+  `build/SpentIt`. No personal dataset
+  was used. Linux/Windows interaction and performance remain unverified.
+
+Manual text/screenshots were deferred to [MAN-006](manual-update-backlog.md#man-006--delete-linked-selections).
+
+## Transaction selection shortcuts — 2026-11-06
+
+Implemented under owner Go: platform Select All selects every transaction in the
+current filtered ledger, including offscreen rows, excluding Opening Balance.
+Command+A / Command+Shift+A work on macOS; Ctrl+A / Ctrl+Shift+A are the corresponding
+Windows/Linux bindings. Deselect also accepts Qt's platform binding where present.
+Keys are handled only with the list or one of its row delegates focused, including
+when Deselect has cleared the current index. Text inputs and modals keep their own
+keyboard handling. Selection preserves unsaved editor text and session Undo;
+Select All and Deselect count as explicit search-result choices when clearing search.
+
+The existing `select` command now accepts `mode: all` / `mode: none`; these operate
+on the worker's filtered identity list, retain inspection independently and use
+existing presentation/diagnostic paths. No financial/storage or schema changes.
+See the [contract](search-ledger.md#selection-shortcuts--owner-go-2026-11-06).
+Manual text and pictures remain deferred under
+[MAN-005](manual-update-backlog.md#man-005--selection-keyboard-shortcuts).
+
+Verification: synthetic data, macOS arm64, Qt 6.12.0, rules-enabled Release.
+
+- Rebuilt `spentit_import_ui_tests` and `spentit_import_experiment`; `build/SpentIt`
+  includes the shortcuts.
+- `QT_QPA_PLATFORM=offscreen spentit_import_ui_tests selectionShortcuts largeSelection`:
+  **4/4 including setup/cleanup, 8526ms**.
+- Same tests with `QT_QPA_PLATFORM=cocoa`: **4/4, 9269ms**. Uses real Qt key events
+  to check list/row focus, select/deselect with 4,100 rows, filtered-result choices,
+  empty/opening-only lists, exclusion of Opening Balance, search/payee text
+  selection, unsaved edits, modal focus and retained session Undo.
+- Full Release `ctest --test-dir build/import-ui-rules-release -R
+  '^import\.(ui|qml)$' --output-on-failure -j 2`: **2/2 passed, 107.30s**.
+- `git diff --check` and 312 relative documentation file targets passed.
+
+Initial focused tests exposed ListView focus landing on a delegate rather than
+on the list itself, and retaining row focus after clearing the current index;
+these cases are fixed and covered by the final passing runs. Windows/Linux,
+rules-disabled UI and sanitizer checks were not run for this presentation change.
+
+
+## Larger transaction selections — 2026-11-06
+
+Implemented under owner Go: removed the 4,096-row ceiling from ledger range/toggle
+selection and search-selection restoration, selected rename/restore/delete,
+category/account transfer assignment, and Review decisions/batch Merge. Removed
+Review's related 2,048-group command and Undo-reader ceilings. Nonempty/duplicate,
+account, revision and relationship checks remain. Existing atomic transaction and
+commit-seal boundaries, retry receipts and group Undo are unchanged; command
+preparation now also checks cancellation while encoding large selections.
+
+Formats remain **58/57**. The inactive format-52 legacy bulk API and its schema
+bounds are untouched; current documents use the selection commands above.
+Unrelated parsing, regex and duplicate/transfer candidate-search limits remain.
+See [contract](search-ledger.md#selection-size--owner-go-2026-11-06).
+Manual text/screenshots are deferred under [MAN-004](manual-update-backlog.md#man-004--larger-transaction-selections).
+
+Verification (synthetic files, macOS arm64, Qt 6.12.0):
+
+- Rebuilt rules-enabled Release `spentit_review_sheet_tests`,
+  `spentit_import_ui_tests`, and `spentit_import_experiment`; `build/SpentIt`
+  includes the change.
+- Offscreen `spentit_import_ui_tests largeSelection`: **3/3 including
+  setup/cleanup, 5881ms**. Selects 4,099 rows by range, toggles the 4,100th,
+  and restores all identities after search with a changed sort.
+- Release `ctest -R '^import\.(ui|qml)$'`: **2/2 passed, 117.37s**. UI
+  reports **82 passed, 0 failed, 1 skipped** (inactive legacy bulk format).
+- Release `import.large_review_batch`: **passed, 72.87s**. Covers 2,050 groups /
+  4,100 rows, cancellation before the final group, exact balances, retry,
+  restored backup reopening and complete group Undo.
+- Release `ctest -R '^import\.(large_review_batch|selection_edit|selection_edit_faults|transfer_assignment|transfer_assignment_faults|review_batch)$'`:
+  **6/6 passed, 226.13s**. Includes existing disk-full/I/O sweeps and process
+  interruptions before/after the durable commit boundary for selected edits,
+  their Undo, and transfer assignment.
+- Final Release `ctest -R '^import.large_selection$' -V`: **1/1 passed,
+  465.11s**. Uses 4,100 rows (2,050 accepted / 2,050 new); checks cancellation
+  after 4,096 writes, unchanged rows/receipts on rollback, identical retry,
+  invalid-last-member rejection, rename/restore, category ownership rollback and
+  Undo, delete/Undo, exact balance and row counts, then closes/reopens for a full
+  history audit. The test timeout is 1,800s for this deliberate stress workload.
+- Rebuilt rules-disabled Release `spentit_review_sheet_tests`. Final
+  `import.large_selection`: **1/1 passed, 427.93s**; `large_review_batch`,
+  `selection_edit`, `transfer_assignment`, and `review_batch` separately passed
+  (75.72s, 1.38s, 1.35s, 2.72s). Initial large mixed runs were intentionally
+  terminated while simplifying redundant full test audits; the final test keeps
+  all mutation checks and one full reopen audit. Production auditing is unchanged.
+- `git diff --check` and changed-document relative file-target checks passed.
+
+The first sandboxed UI/storage attempts could not access application-data locks;
+authorized reruns use that directory. No private data was used. Sanitizers and
+Windows/Linux checks were not run for this change. Large account-transfer creation
+and arbitrarily large responsiveness are not established by these tests. Native
+sampling of these synthetic test processes observed expensive large Undo
+(`restore_review_answer` / `write_review_row` / `committed_for`) and full category /
+committed-history auditing. The seven-to-eight-minute stress-test durations cover
+many commands plus reopening, not one UI operation. This change removes fixed
+selection ceilings; it does not optimize those existing paths.
+
+
+## Shutdown progress modal — 2026-11-06
+
+Implemented the owner's follow-up Go: **Closing SpentIt…** is a compact modal
+with the shared high-contrast rotating indicator and current shutdown phase.
+It appears after unsaved-edit and acceptance decisions, leaves the main window
+and status feedback visible, has no buttons, and blocks Escape/outside dismissal.
+Checking failure replaces it with Return / Quit anyway; Quit anyway shows
+progress again. Successful shutdown retains the existing check/cleanup boundary.
+The toolbar and dialog now share one inline spinner component with unchanged
+colours and animation. Financial/storage behavior is unchanged.
+
+See [feature 014](../features/014-busy-feedback-and-progress.md#shutdown-progress-dialog--owner-go-2026-11-06)
+and the [close contract](fast-startup.md). Manual text and images remain deferred
+under [MAN-003](manual-update-backlog.md#man-003--visible-shutdown-progress).
+
+Verification: macOS arm64, Qt 6.12.0, rules-enabled Release, synthetic files only.
+
+- Rebuilt `spentit_import_experiment`, `spentit_import_ui_tests` and
+  `spentit_import_navigation_tests`; `build/SpentIt` includes the dialog.
+- Native `spentit_import_ui_tests visibleShutdownProgress cachedStartupReviewAndQuit
+  closingApprovalFailure windowPositionSettingsAndQuit warningAndQuitAcceptance`:
+  **7/7 including setup/cleanup, 4585ms**. The delayed-close case verifies modality,
+  matching status text, no buttons, Escape/outside blocking, repeated-close
+  suppression, final exit and differing rendered spinner frames. Recovery checks
+  verify progress dismissal on failure and reappearance on Quit anyway.
+- The same focused offscreen tests passed **7/7 in 3939ms**.
+- Native `spentit_import_navigation_tests activityAnimation` passed **4/4 in
+  33697ms**, including rendered animation in light and dark themes.
+- QML smoke and `git diff --check` passed; changed-document relative file targets
+  were checked. The build retains pre-existing float-conversion warnings in the
+  navigation animation test; the new frame crop uses explicit rectangle rounding.
+
+The focused presentation checks do not establish responsiveness on a large real
+file. No private data was used. The full UI suite, sanitizers and Windows/Linux
+checks were not repeated for this modal-only follow-up.
+
 ## Visible shutdown progress — 2026-11-06
 
 Implemented the owner's correction and Go: keep windows visible until graceful

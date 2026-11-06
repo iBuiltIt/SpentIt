@@ -232,6 +232,8 @@ QString phaseFor(const QString& action){
     if(action=="create")return "Creating file";
     if(action=="save" || action=="accept_edit")return "Accepting edit";
     if(action=="undo_edit")return "Undoing edit";
+    if(action=="preview_deletion")return "Checking transactions to delete";
+    if(action=="delete_selection")return "Deleting selected transactions";
     if(action=="rename_payee_selection")return "Renaming selected payees";
     if(action=="restore_imported_selection")return "Restoring imported values";
     if(action=="preview_change")return "Preparing change preview";
@@ -362,7 +364,7 @@ struct ImportModel::Worker {
     std::optional<app::TransferRequest> preparedMerge;
     std::string mergeOperation;
     QVariantList transferCandidates;QString candidateLink;
-    QVariantMap bulkPreview,bulkReceipt;
+    QVariantMap bulkPreview,bulkReceipt,deletionPreview;
     struct PreparedImport {std::string id,bytes,label;statements::Index document;qif::DateOrder profile;};
     std::optional<PreparedImport> preparedImport, dateImport;
     QVariantMap importUndoPreview;
@@ -642,7 +644,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {newManual.reset();newManualId.clear();manualUndo.clear();revealManual.reset();sessionEdits.clear();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {newManual.reset();newManualId.clear();manualUndo.clear();revealManual.reset();sessionEdits.clear();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository();
@@ -1085,7 +1087,7 @@ struct ImportModel::Worker {
         state["rulesSupported"]=repo.rules_supported();state["rules"]=rules;state["ruleTombstones"]=ruleTombstones;state["ruleRevision"]=QString::number(ruleRevision);
         state["canUndoRules"]=repo.can_undo_account_rules();state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;
         state["selected"]=selected;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
-        state["bulkSupported"]=repo.bulk_supported();state["bulkPreview"]=bulkPreview;state["bulkReceipt"]=bulkReceipt;
+        state["deletionPreview"]=deletionPreview;state["bulkSupported"]=repo.bulk_supported();state["bulkPreview"]=bulkPreview;state["bulkReceipt"]=bulkReceipt;
         state["reapplyPreview"]=reapplyPreview;state["reapplyReceipt"]=reapplyReceipt;
         state["history"]=history;state["entryHistory"]=entryHistory;state["historyTitle"]=historyTitle;state["historyMore"]=historyMore;state["historyCursor"]=historyCursor;
         state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
@@ -1310,7 +1312,7 @@ struct ImportModel::Worker {
         }
         if(reportLedgerActive && (action=="assign_transfer_batch" || action=="release_transfer_batch"))reportSelectionAccount(selection);
         if(action=="assign_transfer_batch" || action=="release_transfer_batch") {
-            if(selection.empty() || selection.size()>4096)throw std::invalid_argument("Select between 1 and 4096 transactions");
+            if(selection.empty())throw std::invalid_argument("Select at least one transaction");
             const auto destinationId=a.value("destination").toString().toLongLong();
             const auto accounts=repo.accounts();const auto destination=std::find_if(accounts.begin(),accounts.end(),[&](const auto& account){return account.identity==destinationId;});
             const bool release=action=="release_transfer_batch";
@@ -1901,6 +1903,21 @@ struct ImportModel::Worker {
             selectedBatch.clear();selected={{"batch",a.value("batch")},{"editable",false},{"source",evidencePreview(repo.evidence(str(a.value("batch"))))}};
         } else if(action=="select") {
             if(!cachedView)throw std::invalid_argument("No ledger is available for selection");
+            if(a.contains("mode")) {
+                const auto mode=a.value("mode").toString();
+                if(mode!="all" && mode!="none")throw std::invalid_argument("Unknown selection action");
+                std::set<imports::Occurrence> next;std::optional<imports::Occurrence> first;
+                if(mode=="all")for(const auto index:cachedView->order) {
+                    const auto& id=cachedView->rows[index].identity;
+                    if(id.batch.empty())continue; // Opening Balance is not a transaction.
+                    if(!first)first=id;
+                    next.insert(id);
+                }
+                selection=std::move(next);
+                if(!selectionFocus || !selection.contains(*selectionFocus))selectionFocus=first;
+                selectionAnchor=selectionFocus;
+                return;
+            }
             const int index=a.value("row",-1).toInt();
             if(index<0 || static_cast<std::size_t>(index)>=cachedView->order.size())throw std::invalid_argument("Selection row is unavailable");
             const auto id=cachedView->rows[cachedView->order[static_cast<std::size_t>(index)]].identity;
@@ -1909,21 +1926,28 @@ struct ImportModel::Worker {
                 std::size_t anchor=static_cast<std::size_t>(index);
                 for(std::size_t i=0;i<cachedView->order.size();++i)if(cachedView->rows[cachedView->order[i]].identity==*selectionAnchor){anchor=i;break;}
                 const auto first=std::min(anchor,static_cast<std::size_t>(index)),last=std::max(anchor,static_cast<std::size_t>(index));
-                if(last-first>=4096)throw std::invalid_argument("Select at most 4096 transactions per operation");
                 if(!a.value("toggle").toBool())next.clear();
                 for(auto i=first;i<=last;++i)next.insert(cachedView->rows[cachedView->order[i]].identity);
             } else {
                 if(a.value("toggle").toBool()){if(!next.erase(id))next.insert(id);}
                 else {next.clear();next.insert(id);}
             }
-            if(next.size()>4096)throw std::invalid_argument("Select at most 4096 transactions per operation");
             selection=std::move(next);selectionFocus=id;if(!a.value("range").toBool())selectionAnchor=id;
         } else if(action=="inspect") {inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);selection={{selectedBatch,selectedOrdinal}};selectionAnchor=imports::Occurrence{selectedBatch,selectedOrdinal};selectionFocus=selectionAnchor;}
+        else if(action=="preview_deletion") {
+            app::LedgerSelectionEdit request;request.action=app::LedgerSelectionAction::remove;
+            request.account=a.value("account").toString().toLongLong();request.generation=a.value("generation").toString().toLongLong();
+            for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
+            if(reportLedgerActive){reportSelectionAccount(std::set<imports::Occurrence>(request.selected.begin(),request.selected.end()));request.account=repo.account().identity;}
+            const auto describe=[&](const app::DeletionPreview& preview){QStringList lines;for(const auto& impact:preview.accounts)lines.push_back(text(impact.name)+": delete "+QString::number(impact.removed)+", change "+QString::number(impact.changed)+"; balance change "+text(impact.change.currency().code())+" "+money(impact.change,amountFormat));return lines.join("\n");};
+            const auto keep=repo.preview_deletion(request,context);request.delete_counterparts=true;const auto both=repo.preview_deletion(request,context);
+            deletionPreview={{"links",static_cast<int>(keep.links)},{"keep",describe(keep)},{"both",describe(both)}};
+        }
         else if(action=="rename_payee_selection" || action=="restore_imported_selection" || action=="delete_selection") {
             app::LedgerSelectionEdit request;
             request.action=action=="delete_selection"?app::LedgerSelectionAction::remove:action=="rename_payee_selection"?app::LedgerSelectionAction::rename_payee:app::LedgerSelectionAction::restore_imported;
             request.account=a.value("account").toString().toLongLong();request.generation=a.value("generation").toString().toLongLong();
-            request.payee=str(a.value("payee"));
+            request.payee=str(a.value("payee"));request.delete_counterparts=a.value("deleteCounterparts").toBool();
             for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
             if(reportLedgerActive){reportSelectionAccount(std::set<imports::Occurrence>(request.selected.begin(),request.selected.end()));request.account=repo.account().identity;}
             const auto operation=identity();
@@ -2044,7 +2068,7 @@ struct ImportModel::Worker {
             try {
             cachedLedger=oldLedger;
             if(a.contains("restoreSelectionIds")){
-                const auto ids=a.value("restoreSelectionIds").toList();if(ids.size()>4096)throw std::invalid_argument("Selection limit exceeded");selection.clear();
+                const auto ids=a.value("restoreSelectionIds").toList();selection.clear();
                 for(const auto& value:ids){const auto id=value.toMap();selection.insert({str(id.value("batch")),id.value("ordinal").toUInt()});}
                 selectionAnchor=selection.empty()?std::optional<imports::Occurrence>{}:*selection.begin();
                 selectionFocus=selectionAnchor;
@@ -2373,7 +2397,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     // relationship flags. With no command in flight, the worker's selection
     // identities can be updated here without SQL, a model reset, or global busy
     // presentation. Range/toggle selection retains the bounded worker path.
-    if(action=="select" && !args.value("range").toBool() && !args.value("toggle").toBool()) {
+    if(action=="select" && !args.contains("mode") && !args.value("range").toBool() && !args.value("toggle").toBool()) {
         diag::Scope scope(diagnosticId);observer.start(diagnosticId);
         try {
             const int row=args.value("row",-1).toInt();
@@ -2397,7 +2421,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="report_show" && action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="restore_imported_selection") operation->seal();
+    if(action!="report_show" && action!="probe" && action!="backup" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();

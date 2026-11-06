@@ -500,12 +500,144 @@ void selection_edit_tests(const std::filesystem::path& dir){
     // Full reopening, rather than only inspecting the current connection.
     {auto copy=dir/"selection-backup";s.backup_to(copy,"test");auto reopened=ImportStore::open(copy,"test");reopened.verify();check(edit_row(reopened,ids[0]).payee=="APPLE.COM","Restored values survive reopen");reopened.undo_transaction_edit("reopen-undo","final");reopened.verify();check(edit_row(reopened,ids[0]).payee=="Edited","Durable group can be reversed exactly");}
     auto linked=ImportStore::create(dir/"selection-links","test","Checking",cad,"2026-01-01");assignment_setup(linked);OperationContext assign;linked.assign_transfer_batch("assign",assignment_requests(linked),assign);
-    OperationContext removal;refused=false;try{linked.edit_transactions("delete-linked",selection_request(linked,LedgerSelectionAction::remove,{{"out",1},{"out",0}}),removal);}catch(const std::exception& e){refused=std::string(e.what())=="Unlink this transfer before deleting it.";}
-    check(refused && !linked.review_outcome("delete-linked"),"Linked new deletion is refused atomically");assignment_check(linked,true);linked.verify();
+    OperationContext removal;linked.edit_transactions("delete-linked",selection_request(linked,LedgerSelectionAction::remove,{{"out",1},{"out",0}}),removal);
+    check(linked.current_ledger().size()==1,"Linked new deletion removes selected rows");linked.verify();linked.undo_transaction_edit("undo-delete-linked","delete-linked");assignment_check(linked,true);
     linked.accept_all("accept",true);
     const std::vector<imports::Occurrence> linkedIds{{"out",0},{"out",1}};OperationContext linkContext;
     linked.edit_transactions("rename",selection_request(linked,LedgerSelectionAction::rename_payee,linkedIds,"Renamed transfer"),linkContext);assignment_check(linked,true);linked.verify();
     OperationContext linkRestore;linked.edit_transactions("restore",selection_request(linked,LedgerSelectionAction::restore_imported,linkedIds),linkRestore);linked.verify();linked.undo_transaction_edit("undo-restore","restore");assignment_check(linked,true);linked.verify();
+}
+void deletion_faults(const std::filesystem::path& dir){
+    fault_vfs::install();const Currency cad("CAD");
+    for(int mode=0;mode<4;++mode){
+        const bool both=mode&1,undo=mode&2;const auto base=dir/("deletion-base-"+std::to_string(mode));LedgerSelectionEdit request;
+        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");assignment_setup(s);OperationContext assign;s.assign_transfer_batch("assign",assignment_requests(s),assign);s.accept_all("accept",true);
+            request=selection_request(s,LedgerSelectionAction::remove,{{"out",0},{"out",1}});request.delete_counterparts=both;
+            if(undo){OperationContext c;s.edit_transactions("delete",request,c);}}
+        const auto apply=[&](ImportStore& s){s.select_account(1);if(undo)s.undo_transaction_edit("operation","delete");else{OperationContext c;s.edit_transactions("operation",request,c);}};
+        const auto verify=[&](ImportStore& s,bool saved){s.verify();const bool deleted=undo?!saved:saved;s.select_account(1);check(s.balance().units()==(deleted?-188918:-425639),"Deletion fault origin is atomic");s.select_account(2);check(s.balance().units()==(deleted && both?188918:425639),"Deletion fault counterpart is atomic");s.select_account(1);};
+        int positions=0;
+        for(int nth=1;nth<600;++nth){const auto trial=dir/"deletion-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired=false;
+            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(...){if(!fault_vfs::fired)throw;}fired=fault_vfs::fired;fault_vfs::disarm();}
+            {auto s=ImportStore::open(trial,"test");verify(s,s.review_outcome("operation").has_value());apply(s);apply(s);verify(s,true);}
+            if(!fired){positions=nth-1;break;}}
+        check(positions>0,"Deletion fault sweep completed");std::cout<<"Deletion fault mode "<<mode<<": "<<positions<<" positions"<<std::endl;
+        for(auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){const auto trial=dir/"deletion-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto p){if(p==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Deletion crash boundary reached");auto s=ImportStore::open(trial,"test");verify(s,phase==storage::ImportPhase::after_commit);apply(s);verify(s,true);}
+    }
+}
+
+void deletion_benchmark(const std::filesystem::path& dir,int count){
+    const Currency cad("CAD");auto s=ImportStore::create(dir/"delete-benchmark","test","Checking",cad,"2026-01-01");
+    std::string records="!Type:Bank\n";std::vector<imports::Occurrence> ids;
+    for(int i=0;i<count;++i){records+="D01/01/2026\nT-"+std::to_string(i+1)+"\nPTransaction "+std::to_string(i)+"\n^\n";ids.push_back({"rows",static_cast<std::size_t>(i)});}
+    s.ingest("rows",records,qif::DateOrder::dmy);s.accept_all("accept",false);const auto balance=s.balance();
+    const auto timed=[&](const char* label,auto action){const auto start=std::chrono::steady_clock::now();action();std::cout<<count<<" rows "<<label<<" "<<std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count()<<" s"<<std::endl;};
+    OperationContext apply;timed("delete",[&]{s.edit_transactions("delete",selection_request(s,LedgerSelectionAction::remove,ids),apply);});check(s.balance().units()==0 && s.current_ledger().empty(),"All benchmark rows deleted");
+    timed("Undo",[&]{s.undo_transaction_edit("undo","delete");});check(s.balance()==balance && s.current_ledger().size()==ids.size(),"Benchmark Undo restores all rows and balance");
+    timed("full audit",[&]{s.verify();});
+}
+void linked_deletion_tests(const std::filesystem::path& dir){
+    const Currency cad("CAD");
+    for(int mode=0;mode<8;++mode){
+        const bool accepted=mode&1,both=mode&2,split=mode&4;
+        auto s=ImportStore::create(dir/("deletion-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");
+        s.create_account(2,"Savings",cad,"2026-01-01");
+        s.ingest("out",source("Outgoing"),qif::DateOrder::dmy);
+        s.select_account(2);s.ingest("in",split?"!Type:Bank\nD01/01/2026\nT12\nPIncoming\nS\n$10\nS\n$2\n^\n":source("Incoming","10"),qif::DateOrder::dmy);
+        s.select_account(1);TransferRequest link{};link.action=TransferAction::merge;link.link="linked";link.kept="kept";link.expected_sequence=s.transfer_sequence();link.batch_revision=edit_revision(s,{"out",0});s.select_account(2);link.right_revision=edit_revision(s,{"in",0});s.select_account(1);
+        link.left=transfers::AllocationFact{{1,{"out",0},"source-0"},Money(-1000,cad),"2026-01-01",transfers::State::draft,true};
+        link.right=transfers::AllocationFact{{2,{"in",0},"source-0"},Money(1000,cad),"2026-01-01",transfers::State::draft,true};s.apply_transfer("link",link);
+        if(accepted)s.accept_all("accept",true);
+        auto request=selection_request(s,LedgerSelectionAction::remove,{{"out",0}});request.delete_counterparts=both;
+        OperationContext preview;auto stale=request;--stale.generation;bool rejected=false;try{s.edit_transactions("stale",stale,preview);}catch(const storage::ImportError&){rejected=true;}check(rejected && !s.review_outcome("stale"),"Stale deletion rejects all changes");
+        const auto summary=s.preview_deletion(request,preview);check(summary.links==1 && summary.accounts.size()==2,"Both accounts in deletion preview");
+        OperationContext cancelled;int writes=0;cancelled.progress=[&](auto phase){if(phase=="Deleting selected transactions" && ++writes==2)cancelled.request();};
+        bool stopped=false;try{s.edit_transactions("delete",request,cancelled);}catch(const OperationCancelled&){stopped=true;}check(stopped && !s.review_outcome("delete") && !s.transfers().front().link.unresolved,"Linked cancellation rolls back rows and links");s.verify();
+        OperationContext apply;s.edit_transactions("delete",request,apply);s.edit_transactions("delete",request,apply);
+        check(s.current_ledger().empty() && s.balance().units()==0,"Selected origin deleted");s.select_account(2);
+        check(s.balance().units()==(both?(split?200:0):(split?1200:1000)),"Counterpart exact balance");
+        if(!both || split){auto draft=edit_row(s,{"in",0});check(draft.transaction.allocations().size()==(both?1:(split?2:1)),"Unrelated splits preserved");check(draft.transaction.allocations().front().category.empty(),"Kept linked split is Uncategorized");}
+        s.verify();s.select_account(1);s.backup_to(dir/("deletion-copy-"+std::to_string(mode)),"test");
+        auto reopened=ImportStore::open(dir/("deletion-copy-"+std::to_string(mode)),"test");reopened.undo_transaction_edit("undo","delete");reopened.verify();
+        reopened.select_account(1);check(reopened.balance().units()==-1000 && !reopened.transfers().front().link.unresolved,"Undo restores origin and link");reopened.select_account(2);check(reopened.balance().units()==(split?1200:1000) && edit_row(reopened,{"in",0}).transaction.allocations().size()==(split?2:1),"Undo restores counterpart splits");
+    }
+    for(int mode=0;mode<8;++mode){
+        const bool accepted=mode&1,both=mode&2,destination=mode&4;
+        auto s=ImportStore::create(dir/("manual-deletion-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");s.create_account(2,"Savings",cad,"2026-01-01");
+        TransferRequest manual{};manual.action=TransferAction::manual;manual.link="manual";manual.destination=2;manual.expected_sequence=s.transfer_sequence();manual.amount=Money(-1000,cad);manual.date="2026-01-01";s.apply_transfer("manual",manual);
+        if(accepted)s.accept_all("accept",true);
+        s.select_account(destination?2:1);const auto id=s.current_ledger().front().identity;auto request=selection_request(s,LedgerSelectionAction::remove,{id});request.delete_counterparts=both;
+        OperationContext c;s.edit_transactions("delete",request,c);s.verify();
+        s.select_account(1);check(s.balance().units()==(destination && !both?-1000:0),"Manual origin deletion policy");s.select_account(2);check(s.balance().units()==(!destination && !both && accepted?1000:0),"Generated counterpart deletion policy");
+        if(accepted && !both && !destination){
+            auto retained=selection_request(s,LedgerSelectionAction::remove,{s.current_ledger().front().identity});OperationContext second;
+            check(s.preview_deletion(retained,second).links==0,"Kept generated posting is now independent");s.edit_transactions("delete-retained",retained,second);s.verify();check(s.balance().units()==0,"Kept generated posting can be deleted later");s.undo_transaction_edit("undo-retained","delete-retained");s.verify();check(s.balance().units()==1000,"Undo restores retained generated posting");
+        }
+        s.undo_transaction_edit("undo","delete");s.verify();s.select_account(1);check(s.balance().units()==-1000,"Undo restores manual origin");s.select_account(2);check(s.balance().units()==1000,"Undo restores generated counterpart");
+    }
+    std::cout<<"Linked deletion choices, split preservation, cancellation, retry and reopened Undo passed\n";
+}
+// Cross the former ceiling with both accepted and new transactions in one command.
+void large_review_batch_tests(const std::filesystem::path& dir){
+    constexpr int groups=2050;const Currency cad("CAD");
+    auto s=ImportStore::create(dir/"large-review","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+    for(const auto* batchId:{"a","b"}){std::string rows="!Type:Bank\n";
+        for(int i=0;i<groups;++i)rows+="D01/01/2026\nT-"+std::to_string(i+1)+"\nP"+batchId+std::to_string(i)+"\n^\n";
+        s.ingest(batchId,rows,qif::DateOrder::dmy);}
+    auto answers=batch_answers(s);check(answers.size()==groups,"2050 independent duplicate groups");const auto balance=s.balance();
+    OperationContext cancel;int merged=0;cancel.progress=[&](auto phase){if(phase=="Merging selected matches" && ++merged==groups)cancel.request();};
+    bool stopped=false;try{s.merge_review_batch("merge",answers,cancel);}catch(const OperationCancelled&){stopped=true;}
+    check(stopped && merged==groups && !s.review_outcome("merge") && s.current_ledger().size()==2*groups && s.balance()==balance,"Large cancelled merge rolls back all groups");
+    OperationContext apply;s.merge_review_batch("merge",answers,apply);s.merge_review_batch("merge",answers,apply);
+    check(s.current_ledger().size()==groups && s.balance().units()*2==balance.units(),"Large batch merges exactly once");
+    s.backup_to(dir/"large-review-backup","test");auto reopened=ImportStore::open(dir/"large-review-backup","test");reopened.undo_review("undo");reopened.verify();
+    check(reopened.current_ledger().size()==2*groups && reopened.balance()==balance,"2050-group Undo survives reopen");
+    std::cout<<"2050-group / 4100-row Review cancellation, retry and reopened Undo passed\n";
+}
+void large_selection_tests(const std::filesystem::path& dir){
+    constexpr std::size_t count=4100;const Currency cad("CAD");
+    const auto path=dir/"large-selection";Money balance(0,cad);
+    {auto s=ImportStore::create(path,"test","Checking",cad,"2026-01-01");
+    s.opening(0,"2026-01-01",Money(0,cad));
+    std::vector<imports::Occurrence> ids;
+    for(std::size_t part=0;part<2;++part){
+        std::string rows="!Type:Bank\n";const auto batchId=part==0?"old":"new";
+        for(std::size_t i=0;i<count/2;++i){const auto n=part*(count/2)+i;
+            rows+="D01/01/2026\nT-"+std::to_string(n+1)+"\nPOriginal "+std::to_string(n)+"\n^\n";ids.push_back({batchId,i});}
+        s.ingest(batchId,rows,qif::DateOrder::dmy);if(part==0)s.accept_all("accept",false);
+    }
+    balance=s.balance();
+    const auto checkPayees=[&](bool renamed){for(std::size_t i=0;i<count;++i)check(edit_row(s,ids[i]).payee==(renamed?"Renamed":"Original "+std::to_string(i)),"Every selected payee matches");check(s.balance()==balance,"Exact balance preserved");};
+    auto request=selection_request(s,LedgerSelectionAction::rename_payee,ids,"Renamed");
+    OperationContext cancel;int writes=0;cancel.progress=[&](auto phase){if(phase=="Updating selected transactions" && ++writes==4097)cancel.request();};
+    bool cancelled=false;try{s.edit_transactions("rename",request,cancel);}catch(const OperationCancelled&){cancelled=true;}
+    check(cancelled && writes==4097 && !s.review_outcome("rename"),"Cancellation beyond old limit rolls back receipt and rows");checkPayees(false);
+    OperationContext apply;s.edit_transactions("rename",request,apply);s.edit_transactions("rename",request,apply);checkPayees(true);
+    auto bad=selection_request(s,LedgerSelectionAction::rename_payee,ids,"Invalid");bad.selected.push_back({"missing",0});
+    bool refused=false;try{OperationContext c;s.edit_transactions("invalid",bad,c);}catch(const storage::ImportError&){refused=true;}
+    check(refused && !s.review_outcome("invalid"),"Invalid last member rejects entire large command");checkPayees(true);
+    OperationContext restore;s.edit_transactions("restore",selection_request(s,LedgerSelectionAction::restore_imported,ids),restore);checkPayees(false);
+    s.undo_transaction_edit("undo-restore","restore");checkPayees(true);
+    s.undo_transaction_edit("undo-rename","rename");checkPayees(false);
+    std::vector<FieldOwnership> owners;for(const auto& id:ids)owners.push_back(edit_row(s,id).transaction.allocations().front().category_owner);
+    const auto checkOwners=[&]{for(std::size_t i=0;i<count;++i)check(edit_row(s,ids[i]).transaction.allocations().front().category_owner==owners[i],"Category ownership restored for every row");};
+    CategorySelection categories{s.account().identity,s.ledger_edit_generation(),"",{}};
+    for(const auto& id:ids)categories.selected.push_back({id,{}});
+    OperationContext categoryCancel;int assigned=0;categoryCancel.progress=[&](auto phase){if(phase=="Assigning transfers" && ++assigned==4097)categoryCancel.request();};
+    cancelled=false;try{s.assign_categories("categories",categories,categoryCancel);}catch(const OperationCancelled&){cancelled=true;}
+    check(cancelled && assigned==4097 && !s.review_outcome("categories"),"Large category cancellation rolls back");checkOwners();
+    OperationContext categoryApply;s.assign_categories("categories",categories,categoryApply);s.assign_categories("categories",categories,categoryApply);
+    for(const auto& id:ids)check(edit_row(s,id).transaction.allocations().front().category_owner==FieldOwnership::manual,"All categories assigned");
+    s.undo_review("undo-categories");checkPayees(false);checkOwners();
+    OperationContext remove;s.edit_transactions("remove",selection_request(s,LedgerSelectionAction::remove,ids),remove);
+    check(s.current_ledger().empty() && s.balance().units()==0,"Large delete removes every row atomically");
+    s.undo_transaction_edit("undo-remove","remove");check(s.current_ledger().size()==count,"Large delete Undo restores every row");checkPayees(false);
+    std::cout<<"4100-row mutations, cancellation, retries and Undo checked; reopening for full history audit"<<std::endl;
+    }
+    OperationContext audit;std::string lastPhase;audit.progress=[&](auto phase){if(phase!=lastPhase){lastPhase=phase;std::cout<<"Reopen: "<<phase<<std::endl;}};
+    auto reopened=ImportStore::open(path,"test",&audit);
+    check(reopened.current_ledger().size()==count && reopened.balance()==balance,"Large command history survives reopen");
+    std::cout<<"4100-row selection, cancellation, retry, restore, category, delete and Undo passed\n";
 }
 void selection_edit_faults(const std::filesystem::path& dir){
     fault_vfs::install();const Currency cad("CAD");const std::vector<imports::Occurrence> ids{{"old",0},{"new",0}};
@@ -651,6 +783,11 @@ int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
         if(argc>1 && std::string(argv[1])=="acceptance_order"){acceptance_order_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="deletion_faults"){deletion_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="deletion_benchmark"){deletion_benchmark(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):15000);std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="deletion"){linked_deletion_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="large_review"){large_review_batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="large_selection"){large_selection_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="selection"){selection_edit_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="selection_faults"){selection_edit_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="editor"){editor_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

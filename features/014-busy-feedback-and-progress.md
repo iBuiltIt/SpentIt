@@ -4,9 +4,23 @@ Status: **active**
 Last updated: 2026-11-06  
 Implementation: the owner gave a narrow Go on 2026-11-05 for a more noticeable
 animated indicator without added text. That visual first pass is implemented;
-the import progress-dialog follow-up received Go on 2026-11-06 and is implemented.
+the import and shutdown progress-dialog follow-ups received Go on 2026-11-06
+and are implemented.
 The broader operation-state/readiness audit below still needs Go. This work does not
 replace or complete the in-flight [help viewer and manual](013-help-system.md).
+
+## Shutdown progress dialog — owner Go 2026-11-06
+
+Graceful quit shows a compact modal **Closing SpentIt…**, with the shared rotating
+indicator and the current worker message. The main window remains visible and its
+status line continues updating. The modal starts only after unsaved-edit and
+acceptance choices are resolved. There are no buttons; Escape and outside clicks
+cannot dismiss it. Success closes the application after checks and queued cleanup;
+checking failure replaces progress with the existing Return / Quit anyway choices.
+Quit anyway uses the same progress presentation while closing without a new audit.
+This is a narrow presentation follow-up; shutdown, financial and cancellation
+policies remain unchanged. See the [close contract](../doc/fast-startup.md),
+[verification](../doc/status.md) and [manual backlog](../doc/manual-update-backlog.md).
 
 ## Import progress dialogs and remaining date pickers — owner Go 2026-11-06
 

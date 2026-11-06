@@ -43,7 +43,7 @@ Currency currency_as_of(sqlite3* db,std::int64_t account,std::int64_t sequence) 
     Statement created(db,"SELECT definition FROM account_creations WHERE identity=?");created.integer(1,account);
     if(!created.row()) fail(SQLITE_CORRUPT);
     auto id=created.bytes(0);
-    Statement rows(db,"SELECT o.definition FROM account_operations o JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND h.sequence<=? AND (o.kind=5 OR (o.kind=6 AND EXISTS(SELECT 1 FROM account_operations u WHERE u.id=o.undo_of AND u.kind=5))) ORDER BY h.sequence");
+    Statement rows(db,"SELECT o.definition FROM account_operations o CROSS JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND h.sequence<=? AND (o.kind=5 OR (o.kind=6 AND EXISTS(SELECT 1 FROM account_operations u WHERE u.id=o.undo_of AND u.kind=5))) ORDER BY h.sequence");
     rows.integer(1,account);rows.integer(2,sequence);
     while(rows.row()) id=rows.bytes(0);
     return Currency::from_definition(id);
@@ -89,7 +89,7 @@ std::optional<app::AccountCommandReceipt> matching_account_command(sqlite3* db,s
 Money opening_at_start(sqlite3* db,std::int64_t account) {
     Statement current(db,"SELECT opening,definition FROM account WHERE singleton=?");current.integer(1,account);if(!current.row()) fail(SQLITE_CORRUPT);
     auto units=current.integer(0);auto currency=Currency::from_definition(current.bytes(1));
-    Statement rows(db,"SELECT o.kind,o.prior_opening,o.prior_definition,o.undo_of FROM account_operations o JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(4,5,6) ORDER BY h.sequence DESC");
+    Statement rows(db,"SELECT o.kind,o.prior_opening,o.prior_definition,o.undo_of FROM account_operations o CROSS JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(4,5,6) ORDER BY h.sequence DESC");
     rows.integer(1,account);
     while(rows.row()) {
         auto target=static_cast<int>(rows.integer(0));
@@ -102,7 +102,7 @@ Money opening_at_start(sqlite3* db,std::int64_t account) {
 struct OpeningDelta {std::int64_t sequence; Money prior; Money next;};
 std::vector<OpeningDelta> opening_deltas(sqlite3* db,std::int64_t account) {
     std::vector<OpeningDelta> out;
-    Statement rows(db,"SELECT o.opening,o.prior_opening,h.sequence FROM account_operations o JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND (o.kind=4 OR (o.kind=6 AND EXISTS(SELECT 1 FROM account_operations u WHERE u.id=o.undo_of AND u.kind=4))) ORDER BY h.sequence");
+    Statement rows(db,"SELECT o.opening,o.prior_opening,h.sequence FROM account_operations o CROSS JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND (o.kind=4 OR (o.kind=6 AND EXISTS(SELECT 1 FROM account_operations u WHERE u.id=o.undo_of AND u.kind=4))) ORDER BY h.sequence");
     rows.integer(1,account);
     while(rows.row()) {const auto sequence=rows.integer(2);const auto currency=currency_as_of(db,account,sequence);out.push_back({sequence,Money(rows.integer(1),currency),Money(rows.integer(0),currency)});}
     return out;
@@ -145,7 +145,7 @@ imports::DraftRow draft_at(sqlite3* db,const imports::Occurrence& id,std::int64_
 bool reassignment_authorizes(sqlite3* db,std::int64_t account,const Currency& effective,const Currency& source) {
     if(effective==source) return false;
     Statement current(db,"SELECT definition FROM account WHERE singleton=?");current.integer(1,account);if(!current.row() || current.bytes(0)!=effective.definition_id()) return false;
-    Statement latest(db,"SELECT o.definition FROM account_operations o JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(5,6) ORDER BY h.sequence DESC LIMIT 1");
+    Statement latest(db,"SELECT o.definition FROM account_operations o CROSS JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(5,6) ORDER BY h.sequence DESC LIMIT 1");
     latest.integer(1,account);return latest.row() && latest.bytes(0)==effective.definition_id();
 }
 void record_amount(sqlite3* db,std::string_view operation,int kind,std::string_view batch,std::int64_t ordinal,std::int64_t revision,std::int64_t position,std::int64_t prior_units,std::int64_t units) {
@@ -166,7 +166,7 @@ bool transfer_participation(sqlite3* db,std::int64_t account) {
     return false;
 }
 bool later_financial(sqlite3* db,std::int64_t account,std::int64_t anchor) {
-    Statement ops(db,"SELECT 1 FROM account_operations o JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(3,4,5,6) AND h.sequence>? LIMIT 1");
+    Statement ops(db,"SELECT 1 FROM account_operations o CROSS JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(3,4,5,6) AND h.sequence>? LIMIT 1");
     ops.integer(1,account);ops.integer(2,anchor);if(ops.row()) return true;
     Statement ledger(db,"SELECT 1 FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE h.sequence>? AND (o.batch IN(SELECT id FROM batches WHERE account_id=?) OR (o.kind=5 AND o.ordinal=?) OR EXISTS(SELECT 1 FROM transfer_events t WHERE t.operation=o.id AND t.account=?)) LIMIT 1");
     ledger.integer(1,anchor);ledger.integer(2,account);ledger.integer(3,account);ledger.integer(4,account);if(ledger.row()) return true;

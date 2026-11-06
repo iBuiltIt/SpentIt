@@ -19,7 +19,10 @@ struct LedgerSelectionEdit {
     std::int64_t account=0, generation=0;
     std::vector<imports::Occurrence> selected;
     std::string payee;
+    bool delete_counterparts=false;
 };
+struct DeletionImpact {std::int64_t account;std::string name;Money change;std::size_t removed=0,changed=0;};
+struct DeletionPreview {std::size_t links=0;std::vector<DeletionImpact> accounts;};
 struct CategoryTarget { imports::Occurrence identity; std::string allocation; };
 struct CategorySelection {
     std::int64_t account=0,generation=0;
@@ -301,6 +304,7 @@ public:
     // Complete editor acceptance and exact, stacked reversal. The UI owns the
     // session capability; the durable journal owns snapshots and mutation gates.
     virtual std::int64_t ledger_edit_generation() const {return 0;}
+    virtual DeletionPreview preview_deletion(const LedgerSelectionEdit&,const OperationContext&) {throw std::logic_error("Deletion preview unavailable");}
     virtual ReviewReceipt edit_transactions(std::string_view,const LedgerSelectionEdit&,const OperationContext&) {throw std::logic_error("Selected transaction editing unavailable");}
     virtual ReviewReceipt edit_transaction(std::string_view,const imports::Occurrence&,std::int64_t,const std::optional<EntryToken>&,const imports::DraftRow&) {throw std::logic_error("Transaction editing unavailable");}
     virtual bool can_undo_transaction_edit(std::string_view) const {return false;}

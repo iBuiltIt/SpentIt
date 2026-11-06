@@ -358,7 +358,7 @@ imports::DraftRow ImportStore::review_draft(const imports::Occurrence& id,std::i
     imports::DraftRow draft{s.bytes(0),s.bytes(1),s.bytes(2),Transaction::repaired_import(original.original_amount,Money(s.integer(3),currency),std::move(allocations),original.source_currency && *original.source_currency!=currency)};
     load_metadata(impl_->db,id,revision,draft,false);return draft;
 }
-void ImportStore::write_review_row(std::string_view answer,std::string_view child,const imports::Occurrence& id,const imports::DraftRow& draft,const imports::Decision& decision,bool active,bool undoing,bool fresh_review,std::optional<std::int64_t> applied_ruleset,std::optional<Money> unchanged_balance) {
+void ImportStore::write_review_row(std::string_view answer,std::string_view child,const imports::Occurrence& id,const imports::DraftRow& draft,const imports::Decision& decision,bool active,bool undoing,bool fresh_review,std::optional<std::int64_t> applied_ruleset,std::optional<Money> unchanged_balance,Money* running_balance) {
     impl_->selected_account=account_for_batch(id.batch).identity;require_writable_account(impl_->db,impl_->selected_account);
     const auto source=load_row(id,false).source;imports::validate_draft(source,draft,source.source_currency && *source.source_currency!=draft.transaction.effective_total().currency());
     const bool committed=transaction_accepted(id);std::int64_t prior,result;
@@ -366,7 +366,7 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
         const auto current=committed_entry(id);prior=current.current.revision;if(prior==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");result=prior+1;
         if(undoing){Statement saved(impl_->db,"SELECT result FROM review_members WHERE answer=? AND batch=? AND ordinal=?");saved.text(1,answer);saved.text(2,id.batch);saved.integer(3,integer(id.ordinal));if(!saved.row())fail(SQLITE_CORRUPT);const auto expected=entry_snapshot(id,saved.integer(0));if(expected.active!=current.current.active || !same_draft(expected.draft,current.current.draft))fail(SQLITE_CONSTRAINT,"Later transaction changes prevent Review Undo");}
         auto after=current.current;after.revision=result;after.active=active;after.draft=draft;
-        const auto before=unchanged_balance?*unchanged_balance:committed_balance();const Money zero(0,before.currency());
+        const auto before=running_balance?*running_balance:unchanged_balance?*unchanged_balance:committed_balance();const Money zero(0,before.currency());
         const auto delta=(active?draft.transaction.effective_total():zero)-(current.current.active?current.current.draft.transaction.effective_total():zero);
         if(unchanged_balance && delta.units()!=0)fail(SQLITE_CONSTRAINT,"Rule application cannot change the account balance");
         std::optional<std::int64_t> ruleset;
@@ -380,6 +380,7 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
         std::string undo_of;
         if(undoing){Statement old(impl_->db,"SELECT child FROM review_members WHERE answer=? AND batch=? AND ordinal=?");old.text(1,answer);old.text(2,id.batch);old.integer(3,integer(id.ordinal));if(!old.row())fail(SQLITE_CORRUPT);undo_of=old.bytes(0);}
         append_financial(impl_->db,child,undoing?app::ChangeKind::undo:active?app::ChangeKind::correct:app::ChangeKind::remove,id,prior,result,before,delta,before+delta,undo_of,financial_sequence(impl_->db),catalog_sequence(impl_->db));
+        if(running_balance)*running_balance=before+delta;
         if(undoing){Statement member(impl_->db,"INSERT INTO review_undo_members SELECT id,?1,?2 FROM review_undos WHERE answer=?3");member.text(1,child);member.text(2,undo_of);member.text(3,answer);member.done();}
         for(const auto& dependency:current.token.dependencies){Statement d(impl_->db,"INSERT INTO change_dependencies VALUES(?,?,?,?)");d.text(1,child);d.text(2,dependency.batch);d.integer(3,dependency.revision);d.integer(4,static_cast<int>(dependency.state));d.done();}
     }else{
@@ -433,7 +434,6 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
     std::set<imports::Occurrence> selected(answer.selected.begin(),answer.selected.end());
     if(selected.size()!=answer.selected.size())fail(SQLITE_CONSTRAINT,"Select each transaction only once");
     if(answer.action==app::ReviewAction::separate || answer.action==app::ReviewAction::not_linked)for(const auto& row:question->rows)selected.insert(row.identity);
-    if(selected.size()>4096)fail(SQLITE_TOOBIG,"Resolve at most 4096 transactions in one Review decision");
     if(selected.size()<2)fail(SQLITE_CONSTRAINT,"Select at least two transactions");
     std::vector<app::ReviewTransaction> chosen;
     for(const auto& id:selected){const auto row=std::find_if(question->rows.begin(),question->rows.end(),[&](const auto& r){return r.identity==id;});if(row==question->rows.end())fail(SQLITE_CONSTRAINT,"Select transactions in this question");chosen.push_back(*row);}
@@ -537,6 +537,7 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
     return {std::string(operation)};
 }
 app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
+    ScopedStatements statements(impl_->db);
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE);if(const auto prior=review_outcome(operation)){Statement saved(impl_->db,"SELECT 1 FROM review_undos WHERE id=?");saved.text(1,operation);if(!saved.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another Review command");return *prior;}
     Statement top(impl_->db,"SELECT answer,generation FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1");
     if(!top.row())fail(SQLITE_CONSTRAINT,"There is no Review decision to undo");
@@ -549,11 +550,25 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     std::vector<std::string> ids;std::string encoded="batch:";
     while(children.row()){
         ids.push_back(children.bytes(0));const auto request=children.bytes(1);encoded+=std::to_string(request.size())+":"+request;
-        if(ids.size()>2048 || ids.back()!=answer+"-group-"+std::to_string(ids.size()))fail(SQLITE_CORRUPT,"Batch Review history is inconsistent");
+        if(ids.back()!=answer+"-group-"+std::to_string(ids.size()))fail(SQLITE_CORRUPT,"Batch Review history is inconsistent");
     }
     if(parent.bytes(0)=="batch"?(ids.empty() || encoded!=parent.bytes(1)):!ids.empty())fail(SQLITE_CORRUPT,"Batch Review history is incomplete");
     std::reverse(ids.begin(),ids.end());
     restore_review_answer(operation,answer);
+    if(parent.bytes(0)=="ledger-delete"){
+        Statement unlink(impl_->db,"SELECT id,request FROM review_answers WHERE question=?");unlink.text(1,"ledger-delete-links:"+answer);
+        if(unlink.row()){
+            if(unlink.bytes(0)!=answer+"-unlink" || unlink.bytes(1)!=parent.bytes(1))fail(SQLITE_CORRUPT,"Deletion history is inconsistent");
+            restore_review_answer(std::string(operation)+"-unlink",unlink.bytes(0));
+            if(unlink.row())fail(SQLITE_CORRUPT,"Deletion history is inconsistent");
+        }
+        Statement kept(impl_->db,"SELECT id,request FROM review_answers WHERE question=?");kept.text(1,"ledger-delete-kept:"+answer);
+        if(kept.row()){
+            if(kept.bytes(0)!=answer+"-kept" || kept.bytes(1)!=parent.bytes(1))fail(SQLITE_CORRUPT,"Deletion history is inconsistent");
+            restore_review_answer(std::string(operation)+"-kept",kept.bytes(0));
+            if(kept.row())fail(SQLITE_CORRUPT,"Deletion history is inconsistent");
+        }
+    }
     std::size_t child=0;for(const auto& id:ids)restore_review_answer(std::string(operation)+"-group-"+std::to_string(++child),id);
     Statement pop(impl_->db,"DELETE FROM review_stack WHERE answer=?");pop.text(1,answer);pop.done();
     // Reversing the top decision makes the preceding stack entry current again.
@@ -576,15 +591,24 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
     }
     if(!restored.empty()){
         const auto current=all_transfers();
+        auto working=current;std::map<std::int64_t,Money> link_balances;
         const auto active_count=[&](const app::TransferView& value){const auto found=std::find_if(current.begin(),current.end(),[&](const auto& v){return v.link.identity==value.link.identity;});if(found==current.end())fail(SQLITE_CORRUPT);return int(found->link.origin.state!=transfers::State::removed)+int(found->link.destination.state!=transfers::State::removed);};
         std::stable_sort(restored.begin(),restored.end(),[&](const auto& a,const auto& b){return active_count(a)>active_count(b);});
         std::size_t link_serial=0;
         for(const auto& view:restored){
-            impl_->selected_account=view.link.destination.endpoint.account;
-            const auto before=committed_balance();const auto old=all_transfers();auto after=old;
-            for(auto& value:after)if(value.link.identity==view.link.identity)value=view;
-            validate_transfer_set(after);
-            const auto delta=local_total(after,impl_->selected_account,before.currency(),false)-local_total(old,impl_->selected_account,before.currency(),false);
+            const auto old=std::find_if(working.begin(),working.end(),[&](const auto& v){return v.link.identity==view.link.identity;});if(old==working.end())fail(SQLITE_CORRUPT);
+            const auto origin=view.link.origin.endpoint.account,destination=view.link.destination.endpoint.account;
+            const auto origin_currency=account_by_id(origin).currency;
+            const auto origin_delta=local_total({view},origin,origin_currency,false)-local_total({*old},origin,origin_currency,false);
+            impl_->selected_account=origin_delta.units()!=0?origin:destination;
+            if(origin_delta.units()!=0 && (local_total({view},destination,account_by_id(destination).currency,false)-local_total({*old},destination,account_by_id(destination).currency,false)).units()!=0)fail(SQLITE_CORRUPT,"A transfer Undo changes two account balances at once");
+            auto balance=link_balances.find(impl_->selected_account);if(balance==link_balances.end())balance=link_balances.emplace(impl_->selected_account,committed_balance()).first;
+            const auto before=balance->second;
+            const auto prior_local=local_total(working,impl_->selected_account,before.currency(),false);
+            for(auto& value:working)if(value.link.identity==view.link.identity)value=view;
+            validate_transfer_set(working);
+            const auto delta=local_total(working,impl_->selected_account,before.currency(),false)-prior_local;
+            balance->second=before+delta;
             const auto previous_sequence=financial_sequence(impl_->db);if(previous_sequence==INT64_MAX)fail(SQLITE_FULL,"History capacity exhausted");const auto sequence=previous_sequence+1;
             const auto child=std::string(operation)+"-links-"+std::to_string(++link_serial);
             app::TransferRequest request{};request.action=app::TransferAction::review_undo;request.link=answer;request.allocation=view.link.identity;request.expected_sequence=sequence-1;
@@ -593,9 +617,9 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             append_financial(impl_->db,child,app::ChangeKind::transfer,{"",0},-1,0,before,delta,before+delta,"",sequence-1,catalog_sequence(impl_->db));
         }
     }
-    Statement edit(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question IN('ledger-edit','ledger-edit-batch','ledger-delete','rules-account')");edit.text(1,answer);const bool editor_undo=edit.row();
+    Statement edit(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND (question IN('ledger-edit','ledger-edit-batch','ledger-delete','rules-account') OR question LIKE 'ledger-delete-kept:%')");edit.text(1,answer);const bool editor_undo=edit.row();
     Statement rules_group(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question='rules-account'");rules_group.text(1,answer);const bool rules_undo=rules_group.row();
-    std::map<std::int64_t,Money> rule_balances;
+    std::map<std::int64_t,Money> rule_balances, balances;
     std::size_t serial=0;
     Statement members(impl_->db,"SELECT batch,ordinal,committed,prior,result FROM review_members WHERE answer=? ORDER BY rowid DESC");members.text(1,answer);
     while(members.row()){
@@ -604,7 +628,9 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             const auto before=entry_snapshot(id,members.integer(3));
             std::optional<Money> unchanged;
             if(rules_undo){auto it=rule_balances.find(impl_->selected_account);if(it==rule_balances.end())it=rule_balances.emplace(impl_->selected_account,committed_balance()).first;unchanged=it->second;}
-            write_review_row(answer,std::string(operation)+"-"+std::to_string(++serial),id,before.draft,{imports::Disposition::include,{}},before.active,true,true,{},unchanged);
+            auto balance=balances.find(impl_->selected_account);
+            if(balance==balances.end())balance=balances.emplace(impl_->selected_account,committed_balance()).first;
+            write_review_row(answer,std::string(operation)+"-"+std::to_string(++serial),id,before.draft,{imports::Disposition::include,{}},before.active,true,true,{},unchanged,&balance->second);
         }else{
             Statement decision(impl_->db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? AND revision=?");decision.text(1,id.batch);decision.integer(2,integer(id.ordinal));decision.integer(3,members.integer(3));if(!decision.row())fail(SQLITE_CORRUPT);
             imports::Decision value{static_cast<imports::Disposition>(decision.integer(0)),{}};if(value.disposition==imports::Disposition::duplicate)value.duplicate_of=imports::Occurrence{decision.bytes(1),static_cast<std::size_t>(decision.integer(2))};
@@ -624,16 +650,16 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
 app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) {
     diag::Span span(diag::Code::review_write);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
-    if(answers.empty() || answers.size()>2048)fail(SQLITE_CONSTRAINT,"Select between 1 and 2048 match groups");
+    if(answers.empty())fail(SQLITE_CONSTRAINT,"Select at least one match group");
     std::string encoded="batch:";
     std::set<std::string> questions;std::set<imports::Occurrence> selected;
     for(const auto& answer:answers){
+        context.checkpoint("Checking selected matches");
         if(answer.action!=app::ReviewAction::merge || answer.question=="selected")fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
         if(!questions.insert(answer.question).second)fail(SQLITE_CONSTRAINT,"Select each match group only once");
         for(const auto& id:answer.selected)if(!selected.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once in a batch");
         const auto request=review_request(answer);encoded+=std::to_string(request.size())+":"+request;
     }
-    if(selected.size()>4096)fail(SQLITE_TOOBIG,"Merge at most 4096 transactions in one batch");
     if(const auto prior=review_outcome(operation)){Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=?");saved.text(1,operation);if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Batch retry changed its selections");return *prior;}
     context.checkpoint("Checking selected matches");
     const auto sheet=review_sheet();if(sheet.generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
@@ -659,8 +685,8 @@ bool ImportStore::can_undo_transfer_assignment() const {
 }
 app::ReviewReceipt ImportStore::assign_categories(std::string_view operation,const app::CategorySelection& selection,const app::OperationContext& context) {
     identifier(operation);
-    if(selection.account!=impl_->selected_account || selection.selected.empty() || selection.selected.size()>4096)
-        fail(SQLITE_CONSTRAINT,"Select between 1 and 4096 transactions in this account");
+    if(selection.account!=impl_->selected_account || selection.selected.empty())
+        fail(SQLITE_CONSTRAINT,"Select at least one transaction in this account");
     // Compare retries with the saved command, without rereading now-changed rows.
     if(const auto receipt=review_outcome(operation)) {
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='transfer-assignment'");saved.text(1,operation);
@@ -702,13 +728,15 @@ app::ReviewReceipt ImportStore::assign_categories(std::string_view operation,con
 }
 
 app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation,const std::vector<app::TransferRequest>& requests,const app::OperationContext& context) {
+    ScopedStatements statements(impl_->db);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
-    if(requests.empty() || requests.size()>4096)fail(SQLITE_CONSTRAINT,"Select between 1 and 4096 transactions");
+    if(requests.empty())fail(SQLITE_CONSTRAINT,"Select at least one transaction");
     std::string encoded="transfer-assignment:";
     std::set<imports::Occurrence> entries;
     std::set<std::string> link_ids;
     const auto sequence=requests.front().expected_sequence;
     for(const auto& request:requests){
+        context.checkpoint("Checking transfer assignments");
         if(request.action!=app::TransferAction::retarget || (request.mode!=0 && request.mode!=1) || !request.left || (request.mode==1 && !request.generated) || request.mode!=requests.front().mode || request.left->endpoint.account!=impl_->selected_account || request.expected_sequence!=sequence)
             fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
         if(!entries.insert(request.left->endpoint.entry).second || !link_ids.insert(request.link).second)fail(SQLITE_CONSTRAINT,"Select each transaction and relationship only once");

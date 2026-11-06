@@ -90,6 +90,7 @@ bool protected_draft(const Link&,std::int64_t account);
 Link commit(const Link&,std::int64_t account);
 // Acceptance is a review decision, never a commit or a bank match.
 // Adjust only a purely generated counterpart after an explicit allocation split.
+Link unlink_for_deletion(const Link&, bool remove_origin, bool remove_destination);
 Link release_generated(const Link&);
 Link resize_generated(const Link&,const Money& origin_amount);
 Link accept_unmatched(const Link&,std::int64_t account);

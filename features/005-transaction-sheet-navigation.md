@@ -1,5 +1,24 @@
 # 005 — Transaction sheet and navigation
 
+## Selection shortcuts — owner Go, 2026-11-06
+
+Accepted: platform Select All and Deselect for the focused transaction list,
+with Command+Shift+A / Ctrl+Shift+A supplied where Qt has no default Deselect
+binding. Select all filtered transactions, including offscreen rows, excluding
+Opening Balance; preserve text-field selection, decision modality, unsaved edits
+and session Undo. See the [contract](../doc/search-ledger.md#selection-shortcuts--owner-go-2026-11-06)
+and [verification](../doc/status.md). Manual updates are deferred.
+
+## Larger selections — owner Go, 2026-11-06
+
+The ledger and current selection-based commands have no fixed 4,096-row ceiling.
+Review batch Merge also removes its related 2,048-group ceiling, including Undo
+reading. Preserve all-or-none writes, cancellation before the commit seal, retry
+validation and complete group Undo. See the [current contract](../doc/search-ledger.md#selection-size--owner-go-2026-11-06)
+and [verification](../doc/status.md). Unrelated input and candidate-search resource
+limits remain separate.
+
+
 ## System light and dark palettes — owner Go 2026-11-03
 
 Accepted and implemented: the desktop UI follows the system appearance at startup
@@ -145,7 +164,7 @@ See [current verification and limits](../doc/status.md); older Resume and toolba
 descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-11-03  
+Last updated: 2026-11-06  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Next tasks: Review responsiveness and batch decisions — 2026-10-31

@@ -1089,24 +1089,31 @@ ApplicationWindow {
         mergeHint="Select one or two splits, then select Link"
     }
     function removeSelected() {
-        let rows=s.selection||[]
-        if(rows.length===1 && rows[0].batch && rows[0].batch.indexOf("~transfer-")===0)
-            transferCommand("transfer_clear_row",{batch:rows[0].batch,ordinal:rows[0].ordinal})
-        else if(rows.length && rows.every(r=>r.committed))guardedPreview("preview_bulk",{kind:"remove"})
-        else guard(function(){
+        guard(function(){
             if(!(s.selectionCount>0))return
-            deleteSelectionRequest={selected:(s.selection||[]).map(r=>({batch:r.batch,ordinal:r.ordinal})),account:s.accountId,generation:s.ledgerEditGeneration}
-            ledgerContext.close();deleteSelectionDialog.open()
+            deleteSelectionRequest={selected:(s.selection||[]).map(r=>({batch:r.batch,ordinal:r.ordinal})),account:s.accountId,generation:s.ledgerEditGeneration,deleteCounterparts:false}
+            ledgerContext.close();workflow.command("preview_deletion",deleteSelectionRequest)
         })
     }
     property var deleteSelectionRequest:null
     HelpDialog {
         helpTarget: "help:add-correct-transactions#change-a-selection-or-delete-entries"
-        id:deleteSelectionDialog;objectName:"deleteSelectionDialog";title:"Delete selected transactions?";modal:true;anchors.centerIn:parent;width:Math.min(520,window.width-40)
-        contentItem:Label {wrapMode:Text.Wrap;text:deleteSelectionRequest && deleteSelectionRequest.selected.length===1?"Delete this transaction? This changes the account balance.":"Delete these "+(deleteSelectionRequest?deleteSelectionRequest.selected.length:0)+" transactions? This changes the account balance."}
+        id:deleteSelectionDialog;objectName:"deleteSelectionDialog";title:"Delete selected transactions?";modal:true;anchors.centerIn:parent;width:Math.min(640,window.width-40)
+        contentItem:ColumnLayout {
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:"Delete "+(deleteSelectionRequest?deleteSelectionRequest.selected.length:0)+" selected transactions?"}
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.deletionPreview||{}).links>0;text:"Some selected transactions are linked to other accounts. Choose what happens to their counterparts."}
+            RadioButton {id:keepDeletionCounterparts;objectName:"keepDeletionCounterparts";text:"Delete selected only";checked:true;visible:(s.deletionPreview||{}).links>0}
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.deletionPreview||{}).links>0 && keepDeletionCounterparts.checked;text:"Break the links and keep independent counterparts. Their linked splits become Uncategorized. Generated drafts are removed."}
+            RadioButton {objectName:"removeDeletionCounterparts";text:"Delete linked entries too";visible:(s.deletionPreview||{}).links>0}
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.deletionPreview||{}).links>0 && !keepDeletionCounterparts.checked;text:"Remove linked splits from counterparts, preserving their other splits. Delete counterparts that have no remaining splits."}
+            ScrollView {
+                id:deleteImpactScroll;Layout.fillWidth:true;Layout.preferredHeight:Math.min(180,deletionImpacts.implicitHeight);clip:true
+                Label {id:deletionImpacts;objectName:"deletionImpacts";width:deleteImpactScroll.availableWidth;wrapMode:Text.Wrap;text:(s.deletionPreview||{})[keepDeletionCounterparts.checked?"keep":"both"]||""}
+            }
+        }
         footer:DialogButtonBox {
             Button {text:"Cancel";onClicked:deleteSelectionDialog.close()}
-            Button {objectName:"confirmDeleteSelection";text:"Delete";enabled:!workflow.busy;onClicked:{captureLedgerView("selected-edit");deleteSelectionDialog.close();workflow.command("delete_selection",deleteSelectionRequest)}}
+            Button {objectName:"confirmDeleteSelection";text:"Delete";enabled:!workflow.busy;onClicked:{deleteSelectionRequest.deleteCounterparts=!keepDeletionCounterparts.checked;captureLedgerView("selected-edit");deleteSelectionDialog.close();workflow.command("delete_selection",deleteSelectionRequest)}}
         }
     }
     function accountForName(name) {
@@ -1670,6 +1677,7 @@ ApplicationWindow {
                     if(currentPage==="history")Qt.callLater(function(){workflow.command("history")})
                 }
                 if(action.indexOf("transfer_")===0 || action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment")loadEditor()
+                if(action==="preview_deletion"){keepDeletionCounterparts.checked=true;deleteSelectionDialog.open()}
                 if(action==="preview_bulk")bulkDialog.open()
                 if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
                 if(action==="rules_reapply_preview")reapplyDialog.open()
@@ -1755,6 +1763,56 @@ ApplicationWindow {
     }
     FileDialog { id:createDialog; fileMode:FileDialog.SaveFile; title:"New SpentIt dataset";currentFolder:workflow.documentsFolder;selectedFile:workflow.suggestedFile;defaultSuffix:"spentit";options:FileDialog.DontConfirmOverwrite
         onAccepted:location.text=workflow.datasetFilename(workflow.localPath(selectedFile))
+    }
+    component ActivitySpinner: BusyIndicator {
+        id:spinner
+        visible:running
+        implicitWidth:36;implicitHeight:36;padding:0
+        Accessible.name:"Working";Accessible.role:Accessible.Indicator
+        contentItem:Canvas {
+            id:activityArc
+            property color arcColor:theme.focus
+            property color trackColor:theme.divider
+            onArcColorChanged:requestPaint()
+            onTrackColorChanged:requestPaint()
+            onPaint:{
+                let ctx=getContext("2d")
+                ctx.reset();ctx.lineWidth=5;ctx.lineCap="round"
+                let radius=Math.min(width,height)/2-3
+                ctx.beginPath();ctx.strokeStyle=trackColor
+                ctx.arc(width/2,height/2,radius,0,2*Math.PI);ctx.stroke()
+                ctx.beginPath();ctx.strokeStyle=arcColor
+                ctx.arc(width/2,height/2,radius,-Math.PI/2,Math.PI);ctx.stroke()
+            }
+            // Render-thread rotation keeps the painted arc moving without
+            // a JavaScript repaint for each animation frame.
+            RotationAnimator on rotation {
+                from:0;to:360;duration:850;loops:Animation.Infinite
+                running:spinner.running && spinner.visible
+            }
+        }
+    }
+    Dialog {
+        id:shutdownProgress;objectName:"shutdownProgressDialog"
+        title:"Closing SpentIt…"
+        modal:true;focus:true;closePolicy:Popup.NoAutoClose;anchors.centerIn:parent
+        visible:closingRequested
+        width:Math.min(window.width-48,380)
+        standardButtons:Dialog.NoButton
+        contentItem:RowLayout {
+            spacing:16
+            ActivitySpinner {
+                objectName:"shutdownActivityIndicator"
+                running:shutdownProgress.visible
+                Layout.alignment:Qt.AlignVCenter
+            }
+            Label {
+                objectName:"shutdownProgressMessage"
+                text:workflow.phase || "Closing file…"
+                textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true
+                Accessible.name:text
+            }
+        }
     }
     // Keep submitted choices alive while a separate modal owns processing.
     property string importProgressAction: ""
@@ -2385,33 +2443,9 @@ ApplicationWindow {
             Button {objectName:"navigationForward";text:"Forward";visible:!!s.active;enabled:!workflow.busy && navigationIndex+1<navigation.length;onClicked:traverseNavigation(1)}
             Button {objectName:"workspaceHelp";text:"Help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp(screenHelpTarget())}
             Label {objectName:"workspaceTitle";textFormat:Text.PlainText;text:!s.active ? "Open or create a file" : currentPage==="ledger" ? s.name+" · "+s.currency : ({review:"Review",categories:"Categories",rules:"Rules",reports:"Reports",history:"Change history",settings:"Settings"})[currentPage] || "SpentIt";font.pixelSize:20;elide:Text.ElideRight;Layout.fillWidth:true}
-            BusyIndicator {
+            ActivitySpinner {
                 id:activityIndicator;objectName:"activityIndicator"
-                running:workflow.busy;visible:running
-                implicitWidth:36;implicitHeight:36;padding:0
-                Accessible.name:"Working";Accessible.role:Accessible.Indicator
-                contentItem:Canvas {
-                    id:activityArc
-                    property color arcColor:theme.focus
-                    property color trackColor:theme.divider
-                    onArcColorChanged:requestPaint()
-                    onTrackColorChanged:requestPaint()
-                    onPaint:{
-                        let ctx=getContext("2d")
-                        ctx.reset();ctx.lineWidth=5;ctx.lineCap="round"
-                        let radius=Math.min(width,height)/2-3
-                        ctx.beginPath();ctx.strokeStyle=trackColor
-                        ctx.arc(width/2,height/2,radius,0,2*Math.PI);ctx.stroke()
-                        ctx.beginPath();ctx.strokeStyle=arcColor
-                        ctx.arc(width/2,height/2,radius,-Math.PI/2,Math.PI);ctx.stroke()
-                    }
-                    // Render-thread rotation keeps the painted arc moving without
-                    // a JavaScript repaint for each animation frame.
-                    RotationAnimator on rotation {
-                        from:0;to:360;duration:850;loops:Animation.Infinite
-                        running:activityIndicator.running && activityIndicator.visible
-                    }
-                }
+                running:workflow.busy
             }
         }
         Item {visible:!s.active && (startupPending || workflow.openingDocument);Layout.fillWidth:true;Layout.fillHeight:true
@@ -3263,6 +3297,17 @@ ApplicationWindow {
                 Accessible.description:"Use Up and Down to select, Shift to extend selection, and Enter to review a transaction."
                 activeFocusOnTab:true
                 Keys.onPressed: function(event) {
+                    // Keep text fields and modal dialogs in charge of their own keys.
+                    if((window.activeFocusItem===ledger || (window.activeFocusItem && window.activeFocusItem.ledgerSelectionRow===true)) && !workflow.busy) {
+                        if(event.matches(StandardKey.SelectAll)) {
+                            workflow.command("select",{mode:"all"});event.accepted=true;return
+                        }
+                        // Qt maps ControlModifier to Command on macOS. Deselect has
+                        // no native Qt binding there or on Windows, so supply one.
+                        if(event.matches(StandardKey.Deselect) || (event.key===Qt.Key_A && event.modifiers===(Qt.ControlModifier|Qt.ShiftModifier))) {
+                            workflow.command("select",{mode:"none"});event.accepted=true;return
+                        }
+                    }
                     if(event.key===Qt.Key_Up || event.key===Qt.Key_Down || event.key===Qt.Key_Home || event.key===Qt.Key_End) {
                         let current=s.selectionIndex===undefined?-1:s.selectionIndex
                         let next=event.key===Qt.Key_Home?0:event.key===Qt.Key_End?count-1:Math.max(0,Math.min(count-1,current+(event.key===Qt.Key_Down?1:-1)))
@@ -3281,6 +3326,7 @@ ApplicationWindow {
                     x:ledgerScroll.width-width;y:ledger.y+ledgerPage.y;height:ledger.height
                 }
                 delegate:Rectangle {
+                    readonly property bool ledgerSelectionRow:true
                     required property var record
                     required property int index
                     id: ledgerRow
