@@ -15,6 +15,22 @@ Qt 6.12. Help now keeps the complete scene graph for table articles and batches
 paragraph formatting; native pixel/scroll/navigation checks and limits are
 recorded in the [rendering correction](../doc/help-prototype-handoff.md#long-help-chapter-rendering-correction--2026-11-05).
 
+## Keyboard and appearance closeout — owner Go 2026-11-06
+
+Implemented: Tab-reachable contents/results, visible focus, article link/picture
+selection with Tab/Shift+Tab and Enter, keyboard article scrolling and picture
+controls, narrow Contents dismissal/return focus, and **Close Help** beside decision
+dialogs. The keyboard reference documents the interactions. Tests cover native
+light/dark, wide/narrow and both Rules/Reports return-focus cases; exact outcomes
+and limits are in the [closeout checkpoint](../doc/help-prototype-handoff.md#help-keyboard-and-appearance-closeout--2026-11-06).
+
+## Closeout verification scope — owner direction 2026-11-06
+
+The owner closed the standalone walkthrough and screen-reader verification as
+skipped, not passed. Linux/Windows remain unavailable and unverified. The subsequent Go covers
+keyboard-only navigation and dark-appearance closeout, recorded above. See the
+[closeout record](../doc/help-prototype-handoff.md#help-closeout-scope--owner-direction-2026-11-06).
+
 ## Search excerpts — owner Go 2026-11-06
 
 Accepted and implemented: search excerpts show readable text without Markdown

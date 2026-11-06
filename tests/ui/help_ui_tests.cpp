@@ -2,6 +2,7 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QColor>
+#include <QScopeGuard>
 #include <functional>
 #include <QElapsedTimer>
 #include <QDir>
@@ -121,6 +122,22 @@ class HelpUiTests : public QObject {
         (void)QTest::qWaitForWindowActive(window, 200);
         QTest::keyClick(window, Qt::Key_Escape);
     }
+    static QString focusName(QQuickWindow* window) {
+        const auto* item = window->activeFocusItem();
+        return item ? item->objectName() : QString();
+    }
+    static bool tabTo(QQuickWindow* window, const QString& name, bool reverse = false) {
+        for (int i = 0; i < 100; ++i) {
+            auto* focus = window->activeFocusItem();
+            if (focus && focus->objectName() == name) {
+                QTest::qWait(30); // Let a newly created ListView delegate finish layout.
+                if (window->activeFocusItem() == focus) return true;
+            }
+            QTest::keyClick(window, reverse ? Qt::Key_Backtab : Qt::Key_Tab);
+            QTest::qWait(5);
+        }
+        return false;
+    }
 private slots:
     void initTestCase() {
         QQuickStyle::setStyle("Basic");
@@ -131,6 +148,224 @@ private slots:
         QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settings.path());
     }
     void init() { QSettings().clear(); }
+    void keyboardHelp_data() {
+        QTest::addColumn<bool>("dark");
+        QTest::addColumn<int>("width");
+        QTest::newRow("light-wide") << false << 880;
+        QTest::newRow("light-narrow") << false << 520;
+        QTest::newRow("dark-wide") << true << 880;
+        QTest::newRow("dark-narrow") << true << 520;
+    }
+    void keyboardHelp() {
+        QFETCH(bool, dark); QFETCH(int, width);
+        const auto originalScheme = QGuiApplication::styleHints()->colorScheme();
+        QGuiApplication::styleHints()->setColorScheme(dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+        const auto restore = qScopeGuard([&] { QGuiApplication::styleHints()->setColorScheme(originalScheme); });
+        if (dark && QGuiApplication::platformName() == "offscreen")
+            QSKIP("The offscreen platform does not implement color-scheme overrides; dark cases run natively.");
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help/manifest.json")));
+        QSettings().setValue("datasetPath", settings.filePath("keyboard-missing.spentit"));
+        Session session(&catalog);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        // Opening is setup; every interaction inside Help below uses keys only.
+        auto* help = openHelp(session.root); QVERIFY(help);
+        help->setWidth(width);
+        help->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(help));
+        QTRY_COMPARE(help->color(), QColor(dark ? "#171c22" : "#f6f7f9"));
+        QVERIFY(tabTo(help, "helpNext"));
+        QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-details"));
+        QVERIFY(tabTo(help, "helpBack", true));
+        QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-start"));
+        QVERIFY(tabTo(help, "helpForward")); QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-details"));
+        QVERIFY(tabTo(help, "helpHome")); QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-start"));
+        QVERIFY(tabTo(help, "helpNext")); QTest::keyClick(help, Qt::Key_Space);
+        QVERIFY(tabTo(help, "helpPrevious", true)); QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-start"));
+        QVERIFY(tabTo(help, "helpTextSmaller")); QTest::keyClick(help, Qt::Key_Space);
+        QVERIFY(help->property("textScale").toDouble() < 1);
+        QVERIFY(tabTo(help, "helpTextReset")); QTest::keyClick(help, Qt::Key_Space);
+        QVERIFY(tabTo(help, "helpTextLarger")); QTest::keyClick(help, Qt::Key_Space);
+        QVERIFY(help->property("textScale").toDouble() > 1);
+        QVERIFY(tabTo(help, "helpTextReset")); QTest::keyClick(help, Qt::Key_Space);
+        QCOMPARE(help->property("textScale").toDouble(), 1.0);
+        if (width < 720) {
+            QVERIFY(tabTo(help, "helpContentsButton")); QTest::keyClick(help, Qt::Key_Space);
+            QTRY_VERIFY(help->property("contentsOpen").toBool());
+        }
+        QVERIFY(tabTo(help, "helpTopic_sample-details")); QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-details"));
+        if (width < 720) {
+            QVERIFY(tabTo(help, "helpContentsButton")); QTest::keyClick(help, Qt::Key_Space);
+            QTest::keyClick(help, Qt::Key_Escape);
+            QTRY_VERIFY(!help->property("contentsOpen").toBool());
+            QVERIFY(help->isVisible());
+            QVERIFY(tabTo(help, "helpContentsButton")); QTest::keyClick(help, Qt::Key_Space);
+        }
+        QVERIFY(tabTo(help, "helpHome")); QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-start"));
+        QVERIFY(tabTo(help, "helpSearch"));
+        for (char key : QByteArray("second row")) QTest::keyClick(help, key);
+        QTRY_COMPARE(help->property("results").toList().size(), 1);
+        QTRY_COMPARE(object(help, "helpSearchResults")->property("count").toInt(), 1);
+        QTest::qWait(100);
+        QVERIFY(tabTo(help, "helpResult_sample-details"));
+        QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-details"));
+        if (width < 720) QTRY_VERIFY(!help->property("contentsOpen").toBool());
+        QVERIFY(tabTo(help, "helpHome")); QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-start"));
+        if (width < 720) {
+            QVERIFY(tabTo(help, "helpContentsButton")); QTest::keyClick(help, Qt::Key_Space);
+        }
+        QVERIFY(tabTo(help, "helpSearch")); QTest::keyClick(help, Qt::Key_Return);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-details"));
+        if (width < 720) QTRY_VERIFY(!help->property("contentsOpen").toBool());
+        QTest::keySequence(help, QKeySequence(QKeySequence::Find));
+        QTRY_COMPARE(focusName(help), QString("helpFind"));
+        for (char key : QByteArray("sample")) QTest::keyClick(help, key); QTest::keyClick(help, Qt::Key_Return);
+        QVERIFY(help->property("findCount").toInt() > 1);
+        QVERIFY(tabTo(help, "helpFindNext")); QTest::keyClick(help, Qt::Key_Space);
+        QCOMPARE(help->property("findOccurrence").toInt(), 1);
+        QVERIFY(tabTo(help, "helpFindPrevious", true)); QTest::keyClick(help, Qt::Key_Space);
+        QCOMPARE(help->property("findOccurrence").toInt(), 0);
+        QVERIFY(tabTo(help, "helpArticle"));
+        auto* article = object(help, "helpArticle");
+        auto* flick = object(help, "helpArticleFlick");
+        QTest::keyClick(help, Qt::Key_Home);
+        QCOMPARE(flick->property("contentY").toDouble(), 0.0);
+        QTest::keyClick(help, Qt::Key_PageDown);
+        QVERIFY(flick->property("contentY").toDouble() > 0);
+        QTest::keyClick(help, Qt::Key_End);
+        const auto bottom = flick->property("contentY").toDouble();
+        QTest::keyClick(help, Qt::Key_PageUp);
+        QVERIFY(flick->property("contentY").toDouble() < bottom);
+        const auto captureDir = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+        if (!captureDir.isEmpty()) {
+            QTest::qWait(100);
+            QVERIFY(help->grabWindow().save(QDir(captureDir).filePath(QString("keyboard-table-%1-%2.png").arg(dark ? "dark" : "light").arg(width))));
+        }
+        QTest::keyClick(help, Qt::Key_Home);
+        QTest::keyClick(help, Qt::Key_Tab);
+        QCOMPARE(focusName(help), QString("helpArticle"));
+        QCOMPARE(article->property("keyboardLink").toInt(), 0);
+        QTest::keyClick(help, Qt::Key_Tab);
+        QCOMPARE(article->property("keyboardLink").toInt(), 1);
+        QTest::keyClick(help, Qt::Key_Backtab);
+        QCOMPARE(article->property("keyboardLink").toInt(), 0);
+        QTest::keyClick(help, Qt::Key_Tab);
+        QTest::keyClick(help, Qt::Key_Return);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("sample-start"));
+        QVERIFY(tabTo(help, "helpArticle"));
+        QTest::keyClick(help, Qt::Key_Home);
+        QTest::keyClick(help, Qt::Key_Tab);
+        QTest::keyClick(help, Qt::Key_Return);
+        auto* picture = namedWindow("helpImageWindow");
+        QTRY_VERIFY(picture && picture->isVisible());
+        QVERIFY(QTest::qWaitForWindowActive(picture));
+        QVERIFY(tabTo(picture, "helpImageActual")); QTest::keyClick(picture, Qt::Key_Space);
+        QCOMPARE(help->property("imageZoom").toDouble(), 1.0);
+        QVERIFY(tabTo(picture, "helpImageZoomIn")); QTest::keyClick(picture, Qt::Key_Space);
+        QVERIFY(help->property("imageZoom").toDouble() > 1);
+        QVERIFY(tabTo(picture, "helpImageFlick"));
+        QTest::keyClick(picture, Qt::Key_Right);
+        QVERIFY(object(picture, "helpImageFlick")->property("contentX").toDouble() > 0);
+        QVERIFY(tabTo(picture, "helpImageZoomOut")); QTest::keyClick(picture, Qt::Key_Space);
+        QVERIFY(tabTo(picture, "helpImageFit", true)); QTest::keyClick(picture, Qt::Key_Space);
+        QVERIFY(tabTo(picture, "helpImageFlick"));
+        if (!captureDir.isEmpty()) {
+            QTest::qWait(100);
+            QVERIFY(picture->grabWindow().save(QDir(captureDir).filePath(QString("keyboard-picture-%1-%2.png").arg(dark ? "dark" : "light").arg(width))));
+        }
+        QTest::keyClick(picture, Qt::Key_Escape);
+        QTRY_VERIFY(!picture->isVisible());
+        QTRY_COMPARE(focusName(help), QString("helpArticle"));
+        QVERIFY(QTest::qWaitForWindowActive(help));
+        QTest::keyClick(help, Qt::Key_Return);
+        QTRY_VERIFY(picture->isVisible());
+        QVERIFY(QTest::qWaitForWindowActive(picture));
+        QVERIFY(tabTo(picture, "helpImageClose")); QTest::keyClick(picture, Qt::Key_Space);
+        QTRY_VERIFY(!picture->isVisible());
+        QTRY_COMPARE(focusName(help), QString("helpArticle"));
+        QVERIFY(QTest::qWaitForWindowActive(help));
+        const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+        if (!output.isEmpty()) {
+            QTest::qWait(100);
+            QVERIFY(help->grabWindow().save(QDir(output).filePath(QString("keyboard-%1-%2.png").arg(dark ? "dark" : "light").arg(width))));
+        }
+        QTest::keyClick(help, Qt::Key_Escape);
+        QTRY_VERIFY(!help->isVisible());
+        QVERIFY(!session.model.state().value("active").toBool());
+    }
+    void keyboardContextAndModal_data() {
+        QTest::addColumn<bool>("reports");
+        QTest::newRow("rules") << false;
+        QTest::newRow("reports") << true;
+    }
+    void keyboardContextAndModal() {
+        QFETCH(bool, reports);
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        QSettings().setValue("datasetPath", settings.filePath("keyboard-missing.spentit"));
+        Session session(&catalog);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        session.window->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(session.window));
+        // The welcome screen starts its file probe on a 350ms timer; wait
+        // before starting keyboard interaction with its temporarily disabled row.
+        QTest::qWait(450);
+        QTRY_VERIFY_WITH_TIMEOUT(!session.model.busy(), 30000);
+        QVERIFY(tabTo(session.window, "welcomeHelp"));
+        QTest::keyClick(session.window, Qt::Key_Space);
+        auto* help = namedWindow("helpWindow"); QTRY_VERIFY(help && help->isVisible());
+        QTRY_COMPARE(help->property("topicId").toString(), QString("create-open-file"));
+        QVERIFY(QTest::qWaitForWindowActive(help));
+        QVERIFY(tabTo(help, "helpTopic_messages-problems"));
+        QTest::keyClick(help, Qt::Key_Space);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("messages-problems"));
+        QVERIFY(tabTo(help, "helpClose")); QTest::keyClick(help, Qt::Key_Space);
+        QTRY_VERIFY(!help->isVisible());
+        QTRY_COMPARE(focusName(session.window), QString("welcomeHelp"));
+        // Synthetic setup only; the Help/decision interaction below is keyboard-only.
+        createDocument(session, "Keyboard Help");
+        if (reports) {
+            QVERIFY(click(session.root, "reportsNavigation")); wait(session.model);
+            QVERIFY(click(session.root, "newReport"));
+        } else {
+            QVERIFY(click(session.root, "rulesNavigation")); wait(session.model);
+            QVERIFY(click(session.root, "newRule"));
+            QVERIFY(edit(session.root, "ruleExpression", "^Keyboard help$"));
+        }
+        const QString stayName = reports ? "reportsGuardStay" : "rulesGuardStay";
+        QVERIFY(click(session.root, "accountNavigation"));
+        auto* dialog = qobject_cast<QQuickWindow*>(object(session.root, reports ? "reportsLeaveDialog" : "rulesLeaveDialog"));
+        QVERIFY(dialog); QTRY_VERIFY(dialog->isVisible());
+        dialog->requestActivate(); QVERIFY(QTest::qWaitForWindowActive(dialog));
+        QVERIFY(tabTo(dialog, stayName));
+        const auto before = session.model.state();
+        QTest::keySequence(dialog, QKeySequence(QKeySequence::HelpContents));
+        QTRY_VERIFY(help->isVisible());
+        QVERIFY(QTest::qWaitForWindowActive(help));
+        QTRY_COMPARE(help->property("topicId").toString(), QString(reports ? "answer-with-reports" : "use-rules"));
+        QVERIFY(tabTo(help, "helpTextLarger")); QTest::keyClick(help, Qt::Key_Space);
+        QVERIFY(tabTo(help, "helpClose")); QTest::keyClick(help, Qt::Key_Space);
+        QTRY_VERIFY(!help->isVisible());
+        QVERIFY(dialog->isVisible());
+        QCOMPARE(dialog->modality(), Qt::ApplicationModal);
+        if (!reports) {
+            QVERIFY(session.root->property("rulesDirty").toBool());
+            QCOMPARE(object(session.root, "ruleExpression")->property("text").toString(), QString("^Keyboard help$"));
+        } else {
+            QVERIFY(object(session.root, "reportsWorkspace")->property("leaving").toBool());
+        }
+        QCOMPARE(session.model.state(), before);
+        QTRY_COMPARE(focusName(dialog), stayName);
+    }
     void missingCatalogStillLoadsTheWindow() {
         Session session(nullptr);
         QVERIFY(session.root);

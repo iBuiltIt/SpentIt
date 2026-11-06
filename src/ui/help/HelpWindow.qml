@@ -99,6 +99,10 @@ Window {
         visible = false
         helpHiding = false
     }
+    function escapeHelp() {
+        if (narrow && contentsOpen) { contentsOpen = false; article.forceActiveFocus(); return }
+        dismiss()
+    }
     function rememberPlacement() {
         settings.textScale = textScale
         settings.windowWidth = Math.round(width)
@@ -117,9 +121,9 @@ Window {
         sequences: ["Escape"]
         context: Qt.WindowShortcut
         enabled: !imageWindow.visible
-        onActivated: root.dismiss()
+        onActivated: root.escapeHelp()
     }
-    Shortcut { sequences: [StandardKey.Find]; context: Qt.WindowShortcut; onActivated: findField.forceActiveFocus() }
+    Shortcut { sequences: [StandardKey.Find]; context: Qt.WindowShortcut; onActivated: { if (root.narrow) root.contentsOpen = false; findField.forceActiveFocus() } }
 
     function topicIndex() {
         if (!catalog) return -1
@@ -158,6 +162,7 @@ Window {
         findCount = 0
         matchStatus = ""
         catalog.forgetMarks()
+        article.keyboardLink = -1
         article.text = topic.markdown
         // Run after setText: Qt chooses its viewport optimization there.
         catalog.prepareArticleRendering(article, article.textDocument)
@@ -188,6 +193,10 @@ Window {
         if (rect.y < articleFlick.contentY || rect.y + 24 > articleFlick.contentY + articleFlick.height)
             articleFlick.contentY = Math.max(0, rect.y - 24)
     }
+    function chooseTopic(id) {
+        showTopic(id, true)
+        if (narrow) { contentsOpen = false; article.forceActiveFocus(Qt.TabFocusReason) }
+    }
     function followLink(url) {
         const result = catalog.resolveLink(topicId, url)
         if (!result.ok) { linkMessage = result.message; return }
@@ -206,6 +215,7 @@ Window {
         imageWindow.transientParent = owner()
         imageWindow.show()
         imageWindow.requestActivate()
+        imageFlick.forceActiveFocus(Qt.TabFocusReason)
         Qt.callLater(fitImage)
     }
     function findStep(step) {
@@ -261,7 +271,7 @@ Window {
         // Escape reaches the focused control even when this window is not the
         // key window. Close the picture first. A decision dialog keeps its own
         // Escape, which means Stay.
-        Keys.onEscapePressed: imageWindow.visible ? imageWindow.dismiss() : root.dismiss()
+        Keys.onEscapePressed: imageWindow.visible ? imageWindow.dismiss() : root.escapeHelp()
         Flow {
             Layout.fillWidth: true
             spacing: 6
@@ -274,6 +284,7 @@ Window {
             HelpButton { objectName: "helpTextSmaller"; text: "Smaller text"; onClicked: root.changeTextScale(root.textScale - 0.1); Accessible.name: "Smaller text" }
             HelpButton { objectName: "helpTextLarger"; text: "Larger text"; onClicked: root.changeTextScale(root.textScale + 0.1); Accessible.name: "Larger text" }
             HelpButton { objectName: "helpTextReset"; text: "Reset text size"; onClicked: root.changeTextScale(1); Accessible.name: "Reset text size" }
+            HelpButton { objectName: "helpClose"; text: "Close Help"; onClicked: root.dismiss(); Accessible.name: "Close Help" }
         }
         Label {
             objectName: "helpBanner"
@@ -318,7 +329,7 @@ Window {
                         Layout.fillWidth: true
                         selectByMouse: true
                         onTextChanged: root.query = text
-                        onAccepted: if (root.results.length > 0) root.showTopic(root.results[0].topicId, true)
+                        onAccepted: if (root.results.length > 0) root.chooseTopic(root.results[0].topicId)
                     }
                     Label {
                         objectName: "helpNoMatches"
@@ -337,6 +348,8 @@ Window {
                         model: root.catalog ? root.catalog.topics : []
                         delegate: ItemDelegate {
                             id: topicDelegate
+                            focusPolicy: Qt.StrongFocus
+                            onActiveFocusChanged: if (activeFocus) ListView.view.positionViewAtIndex(index, ListView.Contain)
                             width: ListView.view.width
                             palette.highlightedText: theme.text
                             background: Rectangle {
@@ -347,7 +360,7 @@ Window {
                             highlighted: modelData.id === root.topicId
                             objectName: "helpTopic_" + modelData.id
                             Accessible.name: modelData.title
-                            onClicked: { root.showTopic(modelData.id, true); if (root.narrow) root.contentsOpen = false }
+                            onClicked: root.chooseTopic(modelData.id)
                         }
                     }
                     ListView {
@@ -358,10 +371,18 @@ Window {
                         clip: true
                         model: root.results
                         delegate: ItemDelegate {
+                            id: resultDelegate
+                            focusPolicy: Qt.StrongFocus
+                            onActiveFocusChanged: if (activeFocus) ListView.view.positionViewAtIndex(index, ListView.Contain)
+                            background: Rectangle {
+                                color: resultDelegate.hovered ? theme.alternate : theme.surface
+                                border.color: resultDelegate.activeFocus ? theme.focus : "transparent"
+                                border.width: resultDelegate.activeFocus ? 2 : 1
+                            }
                             width: ListView.view.width
                             objectName: "helpResult_" + modelData.topicId
                             Accessible.name: modelData.title
-                            onClicked: { root.showTopic(modelData.topicId, true); if (root.narrow) root.contentsOpen = false }
+                            onClicked: root.chooseTopic(modelData.topicId)
                             contentItem: Column {
                                 spacing: 2
                                 Label { text: modelData.title; color: theme.text; font.bold: true; width: parent.width; wrapMode: Text.Wrap }
@@ -396,6 +417,14 @@ Window {
                     contentHeight: article.contentHeight
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    Rectangle {
+                        parent: articleFlick
+                        anchors.fill: parent
+                        z: 1
+                        color: "transparent"
+                        border.color: article.activeFocus ? theme.focus : "transparent"
+                        border.width: 2
+                    }
                     TextEdit {
                         id: article
                         objectName: "helpArticle"
@@ -413,6 +442,48 @@ Window {
                         selectedTextColor: theme.highlightedText
                         Accessible.name: "Help article"
                         activeFocusOnTab: true
+                        property int keyboardLink: -1
+                        function selectKeyboardLink(index) {
+                            const links = root.catalog.articleLinks(textDocument)
+                            if (index < 0 || index >= links.length) { keyboardLink = -1; deselect(); return false }
+                            keyboardLink = index
+                            const link = links[index]
+                            select(link.start, link.end)
+                            const rect = positionToRectangle(link.start)
+                            articleFlick.contentY = Math.max(0, Math.min(articleFlick.contentHeight - articleFlick.height, rect.y - 24))
+                            return true
+                        }
+                        function stepLink(reverse) {
+                            const links = root.catalog.articleLinks(textDocument)
+                            const next = keyboardLink < 0 ? (reverse ? links.length - 1 : 0) : keyboardLink + (reverse ? -1 : 1)
+                            return selectKeyboardLink(next)
+                        }
+                        function activateKeyboardLink() {
+                            const links = root.catalog.articleLinks(textDocument)
+                            if (keyboardLink >= 0 && keyboardLink < links.length) {
+                                const link = links[keyboardLink]
+                                if (selectionStart === link.start && selectionEnd === link.end) root.followLink(link.href)
+                            }
+                        }
+                        Keys.onTabPressed: event => { event.accepted = stepLink(false) }
+                        Keys.onBacktabPressed: event => { event.accepted = stepLink(true) }
+                        Keys.onReturnPressed: activateKeyboardLink()
+                        Keys.onEnterPressed: activateKeyboardLink()
+                        Keys.onPressed: event => {
+                            if (event.modifiers !== Qt.NoModifier) return
+                            let delta = 0
+                            if (event.key === Qt.Key_Down) delta = 40
+                            else if (event.key === Qt.Key_Up) delta = -40
+                            else if (event.key === Qt.Key_PageDown) delta = articleFlick.height * 0.8
+                            else if (event.key === Qt.Key_PageUp) delta = -articleFlick.height * 0.8
+                            else if (event.key === Qt.Key_Home) delta = -articleFlick.contentHeight
+                            else if (event.key === Qt.Key_End) delta = articleFlick.contentHeight
+                            else return
+                            articleFlick.contentY = Math.max(0, Math.min(Math.max(0, articleFlick.contentHeight - articleFlick.height), articleFlick.contentY + delta))
+                            keyboardLink = -1
+                            deselect()
+                            event.accepted = true
+                        }
                         onLinkActivated: function(link) { root.followLink(link) }
                         onWidthChanged: if (root.catalog && length > 0) root.catalog.relaxReading(textDocument, width)
                         onTextChanged: if (root.catalog) root.catalog.relaxReading(textDocument, width)
@@ -428,6 +499,10 @@ Window {
                         Accessible.name: "Find in this topic"
                         Layout.fillWidth: true
                         selectByMouse: true
+                        Keys.onBacktabPressed: {
+                            article.forceActiveFocus(Qt.BacktabFocusReason)
+                            article.selectKeyboardLink(root.catalog.articleLinks(article.textDocument).length - 1)
+                        }
                         onAccepted: root.findStep(1)
                     }
                     HelpButton { objectName: "helpFindPrevious"; text: "Previous match"; onClicked: root.findStep(-1); Accessible.name: "Previous match" }
@@ -471,6 +546,8 @@ Window {
             transientParent = null
             visible = false
             imageHiding = false
+            root.requestActivate()
+            article.forceActiveFocus(Qt.OtherFocusReason)
         }
         Shortcut { sequences: ["Escape"]; context: Qt.WindowShortcut; onActivated: imageWindow.dismiss() }
         onClosing: function(close) { close.accepted = true; imageWindow.dismiss() }
@@ -493,12 +570,21 @@ Window {
                 contentHeight: Math.max(height, image.height)
                 boundsBehavior: Flickable.StopAtBounds
                 focus: true
+                activeFocusOnTab: true
                 Accessible.name: "Picture view"
                 Keys.onEscapePressed: imageWindow.dismiss()
                 Keys.onLeftPressed: contentX = Math.max(0, contentX - 40)
                 Keys.onRightPressed: contentX = Math.min(contentWidth - width, contentX + 40)
                 Keys.onUpPressed: contentY = Math.max(0, contentY - 40)
                 Keys.onDownPressed: contentY = Math.min(contentHeight - height, contentY + 40)
+                Rectangle {
+                    parent: imageFlick
+                    anchors.fill: parent
+                    z: 1
+                    color: "transparent"
+                    border.color: imageFlick.activeFocus ? theme.focus : "transparent"
+                    border.width: 2
+                }
                 Image {
                     id: image
                     objectName: "helpImage"

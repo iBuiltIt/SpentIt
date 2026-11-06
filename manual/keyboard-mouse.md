@@ -87,8 +87,14 @@ click **Help** on the screen or dialog. **Search help** beside ledger search
 opens examples. In a narrow Help window, **Contents** reveals the topic list
 and search.
 
-- Type in **Search Help**, then click a result. **Enter** opens the
-  first result.
+- **Tab / Shift+Tab** moves between controls. Use **Space** to activate a
+  focused button, topic or search result.
+- Type in **Search Help**, then click a result or Tab to it and press
+  **Space**. **Enter** in the search box opens the first result.
+- In the article, **Tab / Shift+Tab** selects links and pictures;
+  **Enter** opens the selected one. **Up/Down**, **Page Up/Page Down** and
+  **Home/End** scroll the article.
+- In a narrow window, **Escape** closes Contents and returns to the article.
 - Use **Command+F** on macOS or **Ctrl+F** on other platforms to focus
   **Find in this topic**. Enter advances to the next match; **Previous
   match** goes back.
@@ -96,8 +102,8 @@ and search.
   **Back / Forward** follows your visits.
 - **Larger text / Smaller text** adjusts the article text.
 - Click a picture to enlarge it. Use **Fit**, **Actual size**, or the
-  zoom buttons; drag to pan a large picture. **Close** returns to your
-  reading position.
+  zoom buttons; drag to pan a large picture. With the picture view focused,
+  arrow keys pan it. **Close** or **Escape** returns to your reading position.
 
-When a Save / Discard / Stay dialog is open behind Help, close Help with
-its window close control. Escape in that dialog means Stay.
+Use **Close Help** to return to your work, including when a Save / Discard /
+Stay dialog is waiting behind Help. Escape in that dialog means Stay.

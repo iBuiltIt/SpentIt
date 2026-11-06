@@ -453,6 +453,32 @@ int HelpCatalog::imageCount(QObject* documentObject) const {
     return images;
 }
 
+QVariantList HelpCatalog::articleLinks(QObject* documentObject) const {
+    QVariantList links;
+    const auto* document = textDocument(documentObject);
+    if (!document) return links;
+    for (auto block = document->begin(); block != document->end(); block = block.next()) {
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            const auto fragment = it.fragment();
+            const auto href = fragment.charFormat().anchorHref();
+            if (href.isEmpty()) continue;
+            const int start = fragment.position();
+            const int end = start + fragment.length();
+            // Formatting can split one visible link into adjacent fragments.
+            if (!links.isEmpty()) {
+                auto previous = links.last().toMap();
+                if (previous.value("href").toString() == href && previous.value("end").toInt() == start) {
+                    previous.insert("end", end);
+                    links.last() = previous;
+                    continue;
+                }
+            }
+            links.push_back(QVariantMap{{"href", href}, {"start", start}, {"end", end}});
+        }
+    }
+    return links;
+}
+
 bool HelpCatalog::containsHref(QObject* documentObject, const QString& href) const {
     QTextDocument* document = textDocument(documentObject);
     if (!document) return false;

@@ -2,6 +2,99 @@
 
 Last updated: 2026-11-06
 
+## Help keyboard and appearance closeout — 2026-11-06
+
+Under the owner's Go, Help now has an explicitly tested keyboard path through
+navigation, contents/search results, text sizing, find, article links and pictures.
+The pass found unreachable topic/result delegates; they now accept Tab focus,
+show a focus border and scroll the focused row into view. Article Tab/Shift+Tab
+selects links and pictures; Enter activates them through the existing allowlist.
+Unmodified arrow/Page/Home/End keys scroll the article. Picture controls and the
+pan viewport participate in Tab navigation; closing a picture restores article
+focus. Both reading and picture viewports show focus borders.
+
+Narrow Contents closes on Escape or topic/result selection and returns focus to
+the article. Find reveals its field when Contents is open. A **Close Help** button
+provides a keyboard path back to work, including beside Rules/Reports decision
+dialogs without using those dialogs' Escape action. The keyboard reference now
+explains these controls. No financial command, storage, schema or theme colors
+changed.
+
+The new tests use actual key events after setup, without programmatically moving
+focus between Help controls. They cover wide/narrow windows in light/dark modes,
+forward/reverse traversal, topic/result activation, history, all text-size
+controls, find next/previous, article scrolling, forward/reverse links, picture
+opening/zoom/fit/pan/closing, welcome-screen entry, traversal to the last of
+seventeen Contents topics, and return to the focused Stay button beside both
+Rules and Reports. Setup uses a nonexistent temporary welcome path and synthetic
+documents. Dark mode is requested only in the test process; system settings are
+unchanged. Offscreen Qt does not implement color-scheme overrides, so its two
+dark cases explicitly skip and run separately on native Cocoa.
+
+Verification on macOS, rules-enabled Release, Qt 6.12.0:
+
+- Rebuilt the application and Help/catalog/Rules test targets; `build/SpentIt`
+  contains the keyboard changes and updated reference.
+- Final native `keyboardHelp keyboardContextAndModal` passed **8/8 including
+  init/cleanup in 19011ms**, with light/dark wide/narrow cases and both decision
+  dialogs. Native fixture captures of articles, search, tables, links, focus and
+  pictures were visually inspected. No capture was added to the shipped manual.
+- Full preparation/catalog/QML/Help UI/Rules UI CTest regression passed **5/5
+  in 499.44s**. Help UI reported **56 passed, 0 failed, 2 skipped in 473811ms**;
+  the skips are the two explicitly native-only dark rows. Rules UI passed
+  27/27 including init/cleanup. This full run precedes final test-only
+  null-focus guards and stronger result/Enter assertions; application code was
+  unchanged, and the refined focused tests were then rerun separately.
+- Final refined focused offscreen checks passed **6 with 2 expected dark-mode
+  skips in 9357ms**; the refined native pass above covered all eight checks.
+- `git diff --check` and 272 relative file-link target checks passed.
+
+Initial checks exposed the missing delegate keyboard focus. Test refinements
+wait for ListView layout, initial welcome probing and native window activation;
+the temporary welcome path avoids probing a default user location. A first
+broad run overlapped a rebuild and was stopped rather than counted. A concurrent
+native attempt failed and crashed in the test process; its cause is not proven.
+Subsequent assertions guard temporarily absent focus items rather than
+null-dereferencing them. Final verification runs are serial against unchanged
+executables; the test-process crash is not reported as a user-file failure.
+
+Reproduction:
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests spentit_rule_ui_tests -j 2
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests keyboardHelp keyboardContextAndModal
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+```
+
+The standalone walkthrough and screen-reader checks remain closed as skipped by
+the owner's decision. Linux/Windows remain unavailable and unverified. This is
+bounded native/offscreen keyboard and visual verification, not a claim of
+screen-reader accessibility or all-platform support. No private financial data
+was logged or captured; visual checks use only bundled synthetic Help fixtures.
+
+## Help closeout scope — owner direction 2026-11-06
+
+The owner closed the standalone-app walkthrough item by choosing to skip it.
+The app was launched, but the computer-use tool could not attach to the standalone
+executable and native Accessibility access was unavailable. This item is closed
+as **skipped by owner**, not a passing standalone verification. No financial data
+was read, logged or captured during that attempt.
+
+The owner also chose to skip screen-reader verification. Linux/Windows checks
+remain unverified and unavailable in this environment. These limits do not imply
+verified accessibility or portability.
+
+A source audit of `tests/ui/help_ui_tests.cpp` confirms only partial keyboard
+coverage: image arrow/Escape behavior, Help Escape, a dialog Help shortcut,
+focus return and modal protection. Existing tests also use pointer clicks,
+programmatically assigned focus/text and direct navigation calls. They do not
+establish an end-to-end keyboard-only path through all Help controls. Full Tab/
+Shift+Tab traversal, keyboard result/link/image activation, scrolling, find,
+narrow navigation and return focus still need a focused test pass. Dark styling
+exists in the shared theme, but the Help suite has no explicit dark-appearance
+case. Keyboard-only and dark-appearance verification are the remaining proposed
+local closeout checks. No new runtime verification was performed for this audit.
+
 ## Help search excerpts — 2026-11-06
 
 Under the owner's Go, bundled search text now removes heading, emphasis, list,

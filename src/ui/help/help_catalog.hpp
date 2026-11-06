@@ -39,6 +39,7 @@ public:
     Q_INVOKABLE qreal headingGap(QObject* document, const QString& title) const;
     Q_INVOKABLE void relaxReading(QObject* document, qreal availableWidth);
     Q_INVOKABLE void prepareArticleRendering(QObject* article, QObject* document);
+    Q_INVOKABLE QVariantList articleLinks(QObject* document) const;
     Q_INVOKABLE bool containsHref(QObject* document, const QString& href) const;
 signals:
     void catalogChanged();
