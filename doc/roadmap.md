@@ -4,8 +4,9 @@
 
 [Feature 014](../features/014-busy-feedback-and-progress.md) records the owner’s
 account-switch and large-import concerns, general busy-state requirements, proposed
-progress transitions and verification obligations. Documentation is authorized;
-implementation awaits Go. This work is independent of the in-flight
+progress transitions and verification obligations. A narrow follow-up Go implements
+the more noticeable animated indicator without extra text. Broader busy-state and
+progress-dialog implementation still awaits Go. This work is independent of the in-flight
 [Help viewer and manual](../features/013-help-system.md), which remains in progress.
 
 ## Reports and reusable calendar — owner Go 2026-11-04

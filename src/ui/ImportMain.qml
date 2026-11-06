@@ -2238,7 +2238,34 @@ ApplicationWindow {
             Button {objectName:"navigationBack";text:"Back";visible:!!s.active;enabled:!workflow.busy && navigationIndex>0;onClicked:traverseNavigation(-1)}
             Button {objectName:"navigationForward";text:"Forward";visible:!!s.active;enabled:!workflow.busy && navigationIndex+1<navigation.length;onClicked:traverseNavigation(1)}
             Label {objectName:"workspaceTitle";textFormat:Text.PlainText;text:!s.active ? "Open or create a file" : currentPage==="ledger" ? s.name+" · "+s.currency : ({review:"Review",categories:"Categories",rules:"Rules",reports:"Reports",history:"Change history",settings:"Settings"})[currentPage] || "SpentIt";font.pixelSize:20;elide:Text.ElideRight;Layout.fillWidth:true}
-            BusyIndicator {running:workflow.busy;visible:running;implicitHeight:30}
+            BusyIndicator {
+                id:activityIndicator;objectName:"activityIndicator"
+                running:workflow.busy;visible:running
+                implicitWidth:36;implicitHeight:36;padding:0
+                Accessible.name:"Working";Accessible.role:Accessible.Indicator
+                contentItem:Canvas {
+                    id:activityArc
+                    property color arcColor:theme.focus
+                    property color trackColor:theme.divider
+                    onArcColorChanged:requestPaint()
+                    onTrackColorChanged:requestPaint()
+                    onPaint:{
+                        let ctx=getContext("2d")
+                        ctx.reset();ctx.lineWidth=5;ctx.lineCap="round"
+                        let radius=Math.min(width,height)/2-3
+                        ctx.beginPath();ctx.strokeStyle=trackColor
+                        ctx.arc(width/2,height/2,radius,0,2*Math.PI);ctx.stroke()
+                        ctx.beginPath();ctx.strokeStyle=arcColor
+                        ctx.arc(width/2,height/2,radius,-Math.PI/2,Math.PI);ctx.stroke()
+                    }
+                    // Render-thread rotation keeps the painted arc moving without
+                    // a JavaScript repaint for each animation frame.
+                    RotationAnimator on rotation {
+                        from:0;to:360;duration:850;loops:Animation.Infinite
+                        running:activityIndicator.running && activityIndicator.visible
+                    }
+                }
+            }
         }
         Item {visible:!s.active && (startupPending || workflow.openingDocument);Layout.fillWidth:true;Layout.fillHeight:true
             ColumnLayout {anchors.centerIn:parent;spacing:24

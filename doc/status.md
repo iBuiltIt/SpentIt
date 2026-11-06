@@ -2,6 +2,30 @@
 
 Last updated: 2026-11-05
 
+## More noticeable activity indicator — 2026-11-05
+
+Implemented under the owner's narrow visual-first Go. The title-row indicator
+is now a 36-pixel ring with a five-pixel blue arc, continuously rotating every
+850 ms using a render-thread animator. Light/dark theme colours provide stronger
+contrast than the previous pale dots. No extra activity text was added. It retains
+the current worker busy binding; broader readiness and import-dialog work in
+[feature 014](../features/014-busy-feedback-and-progress.md) remains outstanding.
+
+Rebuilt rules-enabled Release `build/SpentIt` and navigation tests without compiler
+warnings/errors. Native macOS `spentit_import_navigation_tests activityAnimation`
+passed 4/4 including init/cleanup, 39.817 s. Tests isolate the actual toolbar
+control with sustained running state, compare three rendered frames per theme,
+and check idle/stopped hiding. Captured light/dark frames were visually inspected.
+This proves actual rendered movement in the synthetic test, not uninterrupted
+animation during the owner's large account/import workload.
+
+Offscreen `import.navigation` and `import.qml` passed 2/2, 59.31 s. The navigation
+timeout was raised from 60 to 90 seconds to accommodate the two new rendered-frame
+cases (the expanded suite took 57.76 s). The first sandboxed native attempt had
+no available screens; the rerun used macOS window access. No private file was
+opened. Linux/Windows and heavy-workload busy-state coverage remain unverified.
+`git diff --check` and changed-document relative file-link checks passed.
+
 ## Help chapter 12 — 2026-11-05
 
 Under the owner's Go, [Look after your work and resolve remaining problems](../manual/backup-recovery.md)

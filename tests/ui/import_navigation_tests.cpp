@@ -56,6 +56,37 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());QSettings().clear();
     }
     void init() { QSettings().clear(); } // Never reopen a previous test's removed temporary dataset.
+    void activityAnimation_data() {
+        QTest::addColumn<bool>("dark");
+        QTest::newRow("light")<<false;QTest::newRow("dark")<<true;
+    }
+    void activityAnimation() {
+        QFETCH(bool,dark);
+        QGuiApplication::styleHints()->setColorScheme(dark?Qt::ColorScheme::Dark:Qt::ColorScheme::Light);
+        ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        auto* indicator=window->findChild<QQuickItem*>("activityIndicator");QVERIFY(indicator);
+        QVERIFY(!indicator->property("running").toBool());QVERIFY(!indicator->isVisible());
+        // Isolate the real toolbar control for a sustained visual animation test.
+        // No document or simulated financial operation is needed.
+        indicator->setParentItem(window->contentItem());indicator->setPosition(QPointF(40,40));
+        indicator->setSize(QSizeF(36,36));indicator->setProperty("running",true);
+        window->show();QVERIFY(QTest::qWaitForWindowExposed(window));
+        QTRY_VERIFY(indicator->isVisible());QTest::qWait(120);
+        const auto frame=[&]{const auto image=window->grabWindow();const auto scale=image.devicePixelRatio();return image.copy(QRect(40*scale,40*scale,36*scale,36*scale));};
+        const auto first=frame();QVERIFY(!first.isNull());
+        QTest::qWait(220);const auto second=frame();QVERIFY(first!=second);
+        QTest::qWait(220);const auto third=frame();QVERIFY(second!=third);
+        if(qEnvironmentVariableIsSet("SPENTIT_ACTIVITY_CAPTURE")) {
+            QVERIFY(first.save(QString("/tmp/spentit-activity-%1-1.png").arg(dark?"dark":"light")));
+            QVERIFY(second.save(QString("/tmp/spentit-activity-%1-2.png").arg(dark?"dark":"light")));
+        }
+        indicator->setProperty("running",false);QTRY_VERIFY(!indicator->isVisible());
+        QGuiApplication::styleHints()->unsetColorScheme();
+    }
     void textBoundaries_data() {
         QTest::addColumn<QString>("type");
         for(const auto* type:{"NavigableTextField","ClearableSearchField","CategoryCompletion"})

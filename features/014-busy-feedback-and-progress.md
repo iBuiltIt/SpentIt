@@ -2,9 +2,26 @@
 
 Status: **active**  
 Last updated: 2026-11-05  
-Implementation: requirements and proposed design only. The owner authorized this
-separate work-item document; implementation still needs Go. This work does not
+Implementation: the owner gave a narrow Go on 2026-11-05 for a more noticeable
+animated indicator without added text. That visual first pass is implemented;
+the broader operation-state and progress-dialog work below still needs Go. This work does not
 replace or complete the in-flight [help viewer and manual](013-help-system.md).
+
+## Indicator visual first pass — owner Go 2026-11-05
+
+The owner found the pale dotted indicator too subtle and asked to try a clearly
+animated, more noticeable treatment first, without additional activity text.
+The title-row indicator now uses a 36-pixel ring with a five-pixel, high-contrast
+blue arc and an 850 ms continuous rotation. Theme colours cover light and dark
+appearances; a render-thread RotationAnimator rotates the painted arc. The
+accessible name is Working. Existing worker busy timing is unchanged.
+
+Native synthetic tests compare successive rendered frames in both themes and
+check hidden idle state and hiding after stopping. This verifies the visual
+control's animation, not responsiveness during the owner's heavy workload.
+The broader readiness, progress-dialog and cancellation requirements remain open.
+See [status](../doc/status.md) for verification. Extra title-row text is not part
+of this first pass and must not be added solely from the earlier proposal below.
 
 ## Problem and owner observations
 
@@ -64,8 +81,9 @@ checklist presentation. Both need explicit choice-to-progress transitions.
 
 ## Proposed interaction and implementation
 
-Use one shared presentation of operation state, with concise activity text beside
-the top indicator, such as **Opening Visa…**. Preserve the existing bottom status
+Use one shared presentation of operation state. The initial proposal included
+activity text beside the top indicator, such as **Opening Visa…**; the owner’s
+subsequent visual-first direction above defers that addition. Preserve the existing bottom status
 line and keep its message consistent with the top indicator and progress dialog.
 Use indeterminate animation unless a meaningful total and completed count exist;
 never invent percentages or estimated time remaining.
