@@ -194,6 +194,9 @@ requirements. No weaker audit mode or background-success shortcut is proposed.
 - Repeat cancellation, disk-full/I/O sweeps, before/after-commit crashes, retries,
   reopened Undo and sanitizer coverage. Read-only audit must leave data unchanged.
 
+The subsequent [50k profiling report](audit-50k-profile.md) measures cache saturation
+and proposes the next improvements after commit `0edf528`.
+
 ## Implementation follow-up — owner Go 2026-11-06
 
 The first two improvements are implemented without a format change (58/57).

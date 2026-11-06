@@ -1,5 +1,20 @@
 # Project status
 
+## 50k audit profiling — 2026-11-06
+
+The prior improvements are committed as `0edf528`. A committed-build synthetic
+50k run reproduced the full audit at 74.41 s: committed replay 29.76 s and
+category/provenance 27.99 s (78% combined). Observation-only instrumentation
+confirmed source-row and snapshot caches saturate their byte budgets: 268,192
+source reconstructions for 50k rows and 360,564 snapshot reconstructions for 150k
+distinct revisions. Full-scan work scaled with rows; repeated targeted reads
+drove most of the excess work. All profiled financial assertions passed.
+
+The [50k profiling report](audit-50k-profile.md) proposes bounded transaction-local
+working sets/rolling audit caches, ordered snapshot/metadata reads, and reuse of
+audited currency timelines. These preserve validation and remain proposals pending
+owner Go. No application behavior changed during this investigation.
+
 ## Undo/audit performance follow-up — 2026-11-06
 
 Implemented the first two proposed improvements under owner Go: one bounded,
