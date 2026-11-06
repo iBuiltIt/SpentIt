@@ -2,6 +2,54 @@
 
 Last updated: 2026-11-06
 
+## Import progress dialogs and date pickers — 2026-11-06
+
+Implemented under owner Go. Submitting account mappings hides the mapping form
+and shows a compact **Importing transactions…** modal. Apply Selected and Use
+Uncategorized hide the category checklist and show **Applying imported categories…**.
+Both expose the existing Cancel operation, disable repeat requests while Cancelling,
+and show Finishing when cancellation is unavailable. Escape/outside dismissal is
+blocked. Existing bottom status and title-row animation bindings are unchanged.
+Still-pending mapping/category choices survive failure/cancellation; successful
+completion advances to the next decision. Financial commands and cancellation
+boundaries are unchanged; formats remain **58/57**.
+
+The shared calendar now covers import opening dates, opening corrections, legacy
+reported-balance review and manual transfers as well as existing transaction/report
+fields. Calendar choices update editable values without submitting commands.
+Date-format pattern settings remain text-only. Manual prose and images are
+unchanged; [MAN-002](manual-update-backlog.md#man-002--import-progress-and-date-calendars)
+records the deferred work. The broader busy/readiness audit remains pending.
+
+Verification on macOS arm64, Qt 6.12.0, rules-enabled Release, synthetic files only:
+
+- Rebuilt `spentit_import_experiment` and `spentit_report_ui_tests`; `build/SpentIt`
+  contains the change.
+- Final `ctest --test-dir build/import-ui-rules-release -R
+  '^(import.reports_ui|import.qml)$' --output-on-failure` passed **2/2 in 8.23s**.
+  UI cases cover immediate form-to-progress transitions, invalid-date failure
+  with retained mappings, cancellation at admission for mapping and both category
+  actions, cancellation feedback, successful retry, completion, and leap-day
+  propagation through all added calendars without starting a command. Existing
+  report/calendar tests also pass. No QML warnings in the new cases.
+- Native `spentit_report_ui_tests importProgress reportsAndCalendar` passed
+  **5/5 including init/cleanup in 3554ms**. Existing calendar keyboard tests cover
+  day selection and Escape navigation. The new calendar checks exercise signal
+  integration, not full keyboard/pointer interaction in every enclosing dialog.
+- `git diff --check` and relative Markdown file-target checks passed.
+
+Initial sandboxed tests could not create application-data locks; authorized reruns
+used temporary synthetic documents. An initial tiny-fixture cancellation raced
+with completed work; the test now requests cancellation synchronously at admission
+before worker execution. A subsequent full run exposed test-settings leakage of a
+removed temporary startup path; per-test settings reset fixed fixture isolation.
+The final checks above ran after those test corrections.
+
+No new storage/financial behavior or schema changes, private-data tests, broad
+busy-state audit, large-import animation/latency measurements, dark-theme checks,
+Linux/Windows checks or full-suite runs are claimed. Existing rotating-indicator
+verification remains as recorded in the earlier visual-first checkpoint.
+
 ## Manual update backlog — 2026-11-06
 
 The owner requested deferred, accumulated manual maintenance. The

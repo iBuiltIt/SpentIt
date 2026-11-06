@@ -1,11 +1,37 @@
 # 014 — Busy feedback and operation progress
 
 Status: **active**  
-Last updated: 2026-11-05  
+Last updated: 2026-11-06  
 Implementation: the owner gave a narrow Go on 2026-11-05 for a more noticeable
 animated indicator without added text. That visual first pass is implemented;
-the broader operation-state and progress-dialog work below still needs Go. This work does not
+the import progress-dialog follow-up received Go on 2026-11-06 and is implemented.
+The broader operation-state/readiness audit below still needs Go. This work does not
 replace or complete the in-flight [help viewer and manual](013-help-system.md).
+
+## Import progress dialogs and remaining date pickers — owner Go 2026-11-06
+
+The account-mapping Import action replaces its choice dialog with a compact modal
+**Importing transactions…**. Apply Selected and Use Uncategorized replace the
+category checklist with **Applying imported categories…**. The existing bottom
+status messages and title-row rotating indicator remain active during processing.
+Both use the existing operation cancellation gate: Cancel requests cancellation,
+**Cancelling…** disables repeated requests, and **Finishing…** replaces the control
+when cancellation is no longer available. Escape/outside clicks cannot dismiss
+processing. Completion closes progress and presents the next required decision.
+Recoverable failures restore still-pending choices without resetting them. A saved
+operation whose refresh failed retains the existing recovery message, not a retry.
+No cancellation, retention, financial, storage or schema behavior changes.
+
+The existing shared calendar is now also beside opening dates in import mapping,
+opening-balance corrections, legacy reported-balance review, and manual transfers.
+Transaction and report date pickers remain in place. Date-format pattern settings
+are not calendar dates. Selecting a date updates only the editable field/mapping;
+it does not submit the enclosing operation. Direct typing remains available.
+
+This is the narrow owner-authorized follow-up, not completion of the broader
+busy/readiness audit or its representative-workload requirements below. See
+[status](../doc/status.md) for actual checks and remaining limits, and the
+[manual backlog](../doc/manual-update-backlog.md) for deferred manual work.
 
 ## Indicator visual first pass — owner Go 2026-11-05
 

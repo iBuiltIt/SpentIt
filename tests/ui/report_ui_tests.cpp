@@ -23,6 +23,54 @@ class ReportUiTests:public QObject {
     static QVariant value(const QVariant& v){return v.metaType()==QMetaType::fromType<QJSValue>()?v.value<QJSValue>().toVariant():v;}
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItReportsTests");QCoreApplication::setApplicationName("Reports");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());}
+    void init(){QSettings().clear();}
+    void importProgress_data(){QTest::addColumn<bool>("uncategorized");QTest::newRow("selected")<<false;QTest::newRow("uncategorized")<<true;}
+    void importProgress(){
+        QFETCH(bool,uncategorized);
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("doc")},{"protected",false},{"name","Checking"},{"currency","CAD"},{"dateFormat","YYYY-MM-DD"}});
+        QFile file(dir.filePath("import.qif"));QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("!Account\nNCard\nTCCard\n^\n!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nLNovel category\n^\n!Account\nNCash\nTCash\n^\n!Type:Cash\nD2026-01-18\nT-5.00\nPBakery\nLNovel category\n^\n");file.close();
+        run(model,"import",{{"path",file.fileName()},{"account",""}});
+        auto* mapping=object(root,"importAccountMapping");QVERIFY(mapping);QTRY_VERIFY(mapping->property("visible").toBool());
+        for(const char* name:{"sourceAccountChoice_0","sourceAccountChoice_1"}){QTRY_VERIFY(object(root,name));auto* choice=object(root,name);choice->setProperty("currentIndex",1);QVERIFY(QMetaObject::invokeMethod(choice,"activated",Q_ARG(int,1)));}
+        auto* calendar=object(root,"sourceOpeningCalendar_0");QVERIFY(calendar);
+        QVERIFY(QMetaObject::invokeMethod(calendar,"choose",Q_ARG(QVariant,QVariant("2024-02-29"))));
+        auto mappings=[&]{return value(mapping->property("mappings")).toList();};
+        QCOMPARE(mappings()[0].toMap().value("date").toString(),QString("2024-02-29"));QVERIFY(!model.busy());
+        QVERIFY(QMetaObject::invokeMethod(mapping,"update",Q_ARG(QVariant,0),Q_ARG(QVariant,"date"),Q_ARG(QVariant,"bad-date")));
+        auto* progress=object(root,"importProgressDialog");QVERIFY(progress);
+        QVERIFY(click(root,"confirmImportMappings"));QVERIFY(model.busy());QVERIFY(progress->property("visible").toBool());QVERIFY(!mapping->property("visible").toBool());
+        QTRY_VERIFY(!model.busy());QVERIFY(!model.error().isEmpty());QTRY_VERIFY(mapping->property("visible").toBool());QVERIFY(!progress->property("visible").toBool());
+        QCOMPARE(mappings()[0].toMap().value("date").toString(),QString("bad-date"));QVERIFY(mappings()[1].toMap().value("create").toBool());
+        QVERIFY(QMetaObject::invokeMethod(calendar,"choose",Q_ARG(QVariant,QVariant("2024-02-29"))));
+        bool cancelMapping=true;
+        const auto mappingCancelConnection=connect(&model,&ImportModel::changed,this,[&]{if(cancelMapping && model.busy()){cancelMapping=false;click(root,"cancelImportProgress");}});
+        QVERIFY(click(root,"confirmImportMappings"));QVERIFY(progress->property("visible").toBool());
+        disconnect(mappingCancelConnection);QVERIFY(model.cancellationRequested());
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QTRY_VERIFY(mapping->property("visible").toBool());
+        QCOMPARE(mappings()[0].toMap().value("date").toString(),QString("2024-02-29"));
+        QCOMPARE(model.state().value("accounts").toList().size(),1);
+        QVERIFY(click(root,"confirmImportMappings"));QVERIFY(progress->property("visible").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        auto* categories=object(root,"importCategories");QTRY_VERIFY(categories->property("visible").toBool());QVERIFY(!progress->property("visible").toBool());
+        // Request at admission, before the worker starts, to exercise rollback deterministically.
+        bool cancelOnce=true;
+        const auto cancelConnection=connect(&model,&ImportModel::changed,this,[&]{if(cancelOnce && model.busy()){cancelOnce=false;click(root,"cancelImportProgress");}});
+        QVERIFY(click(root,uncategorized?"uncategorizedImport":"applyImportCategories"));QVERIFY(progress->property("visible").toBool());QVERIFY(!categories->property("visible").toBool());
+        disconnect(cancelConnection);
+        QVERIFY(model.cancellationRequested());QVERIFY(!object(root,"cancelImportProgress")->property("enabled").toBool());
+        QTest::keyClick(window,Qt::Key_Escape);
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QTRY_VERIFY(!progress->property("visible").toBool());
+        QVERIFY(!model.state().value("importCategoryDecisions").toList().isEmpty());QTRY_VERIFY(categories->property("visible").toBool());
+        QVERIFY(click(root,uncategorized?"uncategorizedImport":"applyImportCategories"));QVERIFY(progress->property("visible").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));QVERIFY(model.state().value("importCategoryDecisions").toList().isEmpty());QVERIFY(!progress->property("visible").toBool());
+        for(const char* name:{"correctOpeningCalendar","groupOpeningDateCalendar","transferDateCalendar"}){auto* picker=object(root,name);QVERIFY(picker);auto* field=picker->property("field").value<QObject*>();QVERIFY(field);QVERIFY(QMetaObject::invokeMethod(picker,"choose",Q_ARG(QVariant,QVariant("2024-02-29"))));QCOMPARE(field->property("text").toString(),QString("2024-02-29"));QVERIFY(!model.busy());}
+        for(const auto& warning:warnings)qWarning()<<warning;QCOMPARE(warnings.size(),0);
+    }
     void incomeGroups(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         QSignalSpy warnings(&engine,&QQmlEngine::warnings);

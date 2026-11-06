@@ -1576,6 +1576,11 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onChanged() {if(workflow.busy){cancelAccountDrag();captureReviewView()}}
         function onCompleted(action,success) {
+            if(action===importProgressAction) {
+                importProgressAction=""
+                if(action==="map_import" && !(s.importPlan||[]).length)importMapping.retainChoices=false
+                if(!success && action==="resolve_import_categories" && (s.importCategoryDecisions||[]).some(function(d){return d.source===importCategories.source}))importCategories.open()
+            }
             if(success && action==="report_drill"){search.clearSearch();editorClosed=true}
             if(success && action==="report_leave"){search.text=s.filter||"";editorClosed=true}
             if(action==="report_leave" && pendingReportNavigation){let next=pendingReportNavigation;pendingReportNavigation=null;if(success)Qt.callLater(next)}
@@ -1751,6 +1756,26 @@ ApplicationWindow {
     FileDialog { id:createDialog; fileMode:FileDialog.SaveFile; title:"New SpentIt dataset";currentFolder:workflow.documentsFolder;selectedFile:workflow.suggestedFile;defaultSuffix:"spentit";options:FileDialog.DontConfirmOverwrite
         onAccepted:location.text=workflow.datasetFilename(workflow.localPath(selectedFile))
     }
+    // Keep submitted choices alive while a separate modal owns processing.
+    property string importProgressAction: ""
+    function submitImportOperation(action, args) {
+        if(workflow.busy || importProgressAction.length)return
+        if(action === "map_import")importMapping.retainChoices=true
+        importProgressAction=action
+        importCategories.close()
+        workflow.command(action,args)
+    }
+    Dialog {
+        id:importProgress;objectName:"importProgressDialog"
+        title:importProgressAction === "map_import" ? "Importing transactions…" : "Applying imported categories…"
+        modal:true;closePolicy:Popup.NoAutoClose;anchors.centerIn:parent
+        visible:importProgressAction.length>0
+        width:Math.min(window.width-48,380)
+        contentItem:ColumnLayout {
+            Label {text:workflow.cancellationRequested?"Cancelling…":workflow.canCancel?"Please wait…":"Finishing…";Layout.fillWidth:true;wrapMode:Text.Wrap;Accessible.name:text}
+            Button {objectName:"cancelImportProgress";text:workflow.cancellationRequested?"Cancelling…":"Cancel";visible:workflow.canCancel || workflow.cancellationRequested;enabled:workflow.canCancel && !workflow.cancellationRequested;Layout.alignment:Qt.AlignRight;onClicked:workflow.requestCancel()}
+        }
+    }
     ListModel {id:importCategoryModel}
     function showImportCategories() {
         let pending=s.importCategoryDecisions||[]
@@ -1782,8 +1807,8 @@ ApplicationWindow {
                 }
             }
             RowLayout {
-                Button {objectName:"applyImportCategories";text:"Apply Selected";enabled:!workflow.busy;onClicked:{let names=[];for(let i=0;i<importCategoryModel.count;i++)if(importCategoryModel.get(i).selected)names.push(importCategoryModel.get(i).categoryName);workflow.command("resolve_import_categories",{source:importCategories.source,selected:names})}}
-                Button {objectName:"uncategorizedImport";text:"Use Uncategorized";enabled:!workflow.busy;onClicked:workflow.command("resolve_import_categories",{source:importCategories.source,selected:[]})}
+                Button {objectName:"applyImportCategories";text:"Apply Selected";enabled:!workflow.busy;onClicked:{let names=[];for(let i=0;i<importCategoryModel.count;i++)if(importCategoryModel.get(i).selected)names.push(importCategoryModel.get(i).categoryName);submitImportOperation("resolve_import_categories",{source:importCategories.source,selected:names})}}
+                Button {objectName:"uncategorizedImport";text:"Use Uncategorized";enabled:!workflow.busy;onClicked:submitImportOperation("resolve_import_categories",{source:importCategories.source,selected:[]})}
                 Button {text:"Close";enabled:!workflow.busy;onClicked:importCategories.close()}
             }
         }
@@ -1792,10 +1817,12 @@ ApplicationWindow {
         helpTarget: "help:bring-in-transactions#match-the-accounts"
         id:importMapping;objectName:"importAccountMapping";title:"Choose accounts for this import";modal:true;closePolicy:Popup.NoAutoClose
         anchors.centerIn:parent;width:Math.min(window.width-40,800);height:Math.min(window.height-40,620)
-        visible:(s.importPlan||[]).length>0
+        visible:(s.importPlan||[]).length>0 && importProgressAction!=="map_import"
+        property bool retainChoices:false
         property var mappings:[]
         property var choices:[]
         onOpened:{
+            if(retainChoices){retainChoices=false;return}
             let options=[{id:"",label:"Choose an account"},{id:"new",label:"Create a new account"}]
             for(let a of (s.accounts||[])) options.push({id:a.id,label:a.name+" · "+a.currency+" · #"+a.id})
             choices=options
@@ -1817,7 +1844,8 @@ ApplicationWindow {
                         Label {text:"Currency"}
                         UsableComboBox {objectName:"sourceCurrency_"+index;model:workflow.currencies;currentIndex:workflow.currencies.indexOf((importMapping.mappings[mappingDelegate.index]||{}).currency);Accessible.name:"Currency for "+modelData.name;onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"currency",currentText)}}
                         Label {text:"Opening date"}
-                        NavigableTextField {objectName:"sourceOpeningDate_"+index;Layout.fillWidth:true;text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
+                        NavigableTextField {id:sourceOpeningDate;objectName:"sourceOpeningDate_"+index;Layout.fillWidth:true;text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
+                        CalendarPicker {objectName:"sourceOpeningCalendar_"+index;workflow:window.workflowBackend;field:sourceOpeningDate;onSelected:function(value){importMapping.update(mappingDelegate.index,"date",value)}}
                     }
                     RowLayout {
                         visible:!!importMapping.mappings[index] && importMapping.mappings[index].create
@@ -1831,9 +1859,8 @@ ApplicationWindow {
                 }
             }
             RowLayout {
-                Button {objectName:"confirmImportMappings";text:"Import";enabled:!workflow.busy && importMapping.mappings.length>0 && importMapping.mappings.every(function(a){return a.account!==""});onClicked:workflow.command("map_import",{mappings:importMapping.mappings})}
+                Button {objectName:"confirmImportMappings";text:"Import";enabled:!workflow.busy && importMapping.mappings.length>0 && importMapping.mappings.every(function(a){return a.account!==""});onClicked:submitImportOperation("map_import",{mappings:importMapping.mappings})}
                 Button {text:"Cancel";enabled:!workflow.busy;onClicked:workflow.command("cancel_import_mapping")}
-                Button {text:"Cancel processing";visible:workflow.busy;enabled:workflow.canCancel;onClicked:workflow.requestCancel()}
             }
             Label {text:errorDialog===importMapping?workflow.error:"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
         }
@@ -2076,7 +2103,10 @@ ApplicationWindow {
         ColumnLayout {
             width:correctOpeningDialog.availableWidth
             Label {text:"Update the opening date and/or balance.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            NavigableTextField {id:correctDate;objectName:"correctOpeningDate";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Corrected opening date";onAccepted:acceptDialog(correctOpeningDialog)}
+            RowLayout {
+            NavigableTextField {id:correctDate;Layout.fillWidth:true;objectName:"correctOpeningDate";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Corrected opening date";onAccepted:acceptDialog(correctOpeningDialog)}
+                CalendarPicker {objectName:"correctOpeningCalendar";workflow:window.workflowBackend;field:correctDate;onSelected:function(value){correctDate.text=value}}
+            }
             NavigableTextField {id:correctAmount;onEditingFinished:if(!window.helpFocusSuspended)resolveAmount(correctAmount);objectName:"correctOpeningAmount";placeholderText:"Amount";Accessible.name:"Corrected opening amount";onAccepted:acceptDialog(correctOpeningDialog)}
         }
         onAccepted:workflow.command("correct_opening",{operation:workflow.newIdentity(),date:correctDate.text,amount:correctAmount.text})
@@ -2656,6 +2686,7 @@ ApplicationWindow {
                 RowLayout {
                     UsableComboBox {id:balanceMeaning;objectName:"groupBalanceMeaning";Layout.preferredWidth:330;model:["Choose balance meaning","Zero opening (balance agrees)","Treat as opening balance","Treat as closing balance","Ignore reported balance"] ;Accessible.name:"Reported balance meaning"}
                     NavigableTextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
+                    CalendarPicker {objectName:"groupOpeningDateCalendar";workflow:window.workflowBackend;field:groupOpeningDate;onSelected:function(value){groupOpeningDate.text=value}}
                     Button {objectName:"confirmGroupOpening";text:"Calculate opening balance";enabled:!s.readOnly && !!s.groupCanReviewBalance && balanceMeaning.currentIndex>0;onClicked:guard(function(){workflow.command("group_balance",{group:s.importGroup.id,source:s.importGroup.sourceAccount,revision:s.pending.revision,choice:balanceMeaning.currentIndex,date:groupOpeningDate.text})})}
                 }
                 Label {text:"The opening stays staged until this account first commits. Existing mapped account openings are never replaced.";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -2813,6 +2844,7 @@ ApplicationWindow {
                         }
                         RowLayout {
                             NavigableTextField {id:transferDate;objectName:"transferDate";text:workflow.todayDisplay();placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
+                            CalendarPicker {objectName:"transferDateCalendar";workflow:window.workflowBackend;field:transferDate;onSelected:function(value){transferDate.text=value}}
                             NavigableTextField {id:transferAmount;onEditingFinished:if(!window.helpFocusSuspended)resolveAmount(transferAmount);objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
                             NavigableTextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
                             Button {objectName:"createManualTransfer";text:"Add transfer";enabled:!s.readOnly && transferDestination.currentIndex>0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}

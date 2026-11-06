@@ -59,6 +59,26 @@ Remaining work:
 - Verify the revised chapters, pictures, links and context targets in bundled
   Help after the batch. Record the actual checks here and in project status.
 
+### MAN-002 — Import progress and date calendars
+
+Recorded: 2026-11-06. Status: **pending**.
+Source: [owner-approved import progress follow-up](../features/014-busy-feedback-and-progress.md#import-progress-dialogs-and-remaining-date-pickers--owner-go-2026-11-06).
+
+No manual text or pictures were changed during implementation.
+
+- Update [Importing](../manual/import-transactions.md) to describe mapping/category choices
+  being replaced by progress, Cancel availability, Cancelling/Finishing, and
+  restoration of still-pending choices after failure or cancellation. Distinguish
+  category cancellation from undoing already prepared imported transactions.
+- Recapture `manual/images/import-mapping.png` for the Opening date calendar;
+  review `import-categories.png` and `import-results.png` captions/sequence.
+  Add a synthetic progress picture only if useful to the eventual walkthrough.
+- Check account opening-correction and manual-transfer chapters and their pictures
+  for the added calendar buttons. Explain that date selection changes the field
+  without saving. Audit other date-entry examples for consistent picker guidance.
+- Verify revised chapters, pictures and context targets in bundled Help during
+  the later owner-authorized manual pass.
+
 ## Completed
 
 None yet.
