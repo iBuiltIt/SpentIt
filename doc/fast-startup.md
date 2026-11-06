@@ -7,14 +7,15 @@ atomic cleanup of incomplete preparation. Completed uncommitted imports remain
 durable. See [current verification and limits](status.md); earlier Resume,
 source-retention and toolbar descriptions below are historical.
 
-Last updated: 2026-10-31
+Last updated: 2026-11-06
 
 ## Accepted behavior
 
 Owner Go (2026-10-31): make normal startup as close to instantaneous as practical.
 A previous successful audit may be reused when a full-file cryptographic hash
 proves the dataset bytes are unchanged. Move expensive auditing to graceful close;
-hide the window during quit-time work. Missing/stale approval means unchecked,
+keep the windows visible during quit-time work (owner correction and Go,
+2026-11-06). Missing/stale approval means unchecked,
 not corrupt. Never repair or discard financial data automatically.
 
 ## Implementation
@@ -71,14 +72,17 @@ lock and a SQLite read lock. An unchanged approved file can reuse its approval.
 Otherwise a matching session approval is reused or the complete audit runs; full
 hashes before and after must agree before
 publishing approval. Publication uses an owner-only temporary file, file sync,
-atomic rename and directory sync. The window hides before quit-time work begins,
-and the process exits after successful close. A second process cannot open the
+atomic rename and directory sync. Windows remain visible while quit-time work runs,
+with the animated busy indicator and actual worker phases in the status line.
+Repeated close requests are ignored while closing. The process exits and closes
+its windows only after successful close and queued ledger-snapshot cleanup,
+including the explicit Quit anyway path. A second process cannot open the
 locked document while the first finishes its audit; it receives the existing
 already-open/unavailable error. Forced exit and emergency error cleanup do not
 attempt an audit or publish approval. A prior approval remains useful only if the
 complete file still matches it.
 
-A failed close-time audit or approval write restores the window and displays the
+A failed close-time audit or approval write keeps the window visible and displays the
 error, retaining the open document. The user may return or quit without new
 approval. Subsequent opening uses the normal hash gate/full verification fallback;
 there is no automatic repair or claim that an I/O error proves corruption.

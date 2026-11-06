@@ -27,6 +27,7 @@ public:
     bool lazy_review() const override {return !cache_.empty();}
     void close_verified(const app::OperationContext& context) override {
         if(store_)store_->certify(cache_,&context);
+        context.checkpoint("Closing file…");
         close();
     }
     ~Gateway() override { close(); }

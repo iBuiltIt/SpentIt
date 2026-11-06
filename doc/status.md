@@ -1,5 +1,46 @@
 # Project status
 
+## Visible shutdown progress — 2026-11-06
+
+Implemented the owner's correction and Go: keep windows visible until graceful
+shutdown finishes. Quit and Quit anyway retain the main window, rotating busy
+indicator and worker status messages. Close starts with **Closing file…**, reports
+existing verification phases and returns to closing before releasing the file.
+Repeated close requests are ignored while closing. Checking failure leaves the
+window visible with the existing Return / Quit anyway decision. Successful close
+now waits asynchronously for queued ledger-snapshot destruction on the serial
+worker pool before clearing busy and allowing the windows to close.
+
+Existing unsaved-edit/acceptance decisions and storage verification remain in
+place. No schema or financial-command change. The [startup/close contract](fast-startup.md)
+supersedes its earlier hide-first direction. Manual text/pictures were left alone;
+[MAN-003](manual-update-backlog.md#man-003--visible-shutdown-progress) records the
+later manual pass.
+
+Verification: macOS arm64, Qt 6.12.0, rules-enabled Release, synthetic data only.
+
+- Rebuilt `spentit_import_experiment` and `spentit_import_ui_tests`; `build/SpentIt`
+  contains the change.
+- Final `ctest --test-dir build/import-ui-rules-release -R
+  '^(import.ui|import.qml)$' --output-on-failure`: **2/2 passed in 97.72s**.
+  Import UI reported **81 passed, 0 failed, 1 skipped** (disabled bulk format).
+- Native `spentit_import_ui_tests visibleShutdownProgress cachedStartupReviewAndQuit
+  closingApprovalFailure windowPositionSettingsAndQuit`: **6/6 including
+  setup/cleanup in 2500ms**. The controlled delayed-close case checks ongoing
+  visible progress, active/visible indicator, disabled import, repeated close
+  suppression and final close. Other cases cover approval publication, checking
+  failure, Quit anyway and saved window position.
+- `git diff --check` and changed-document relative file-target checks passed.
+
+Initial sandbox tests could not create application-data locks; authorized reruns
+used the required lock directory. The first broader run passed shutdown cases but
+failed `repeatedSplitRestoreEnter(committed)` with a date-validation error; the
+final complete rerun passed without a split-editor change. No claim of fixing
+that intermittent test is made. These checks verify native window/progress state,
+not frame-by-frame animation under a large real dataset. Windows/Linux and
+sanitizer runs were not performed for this change.
+
+
 Last updated: 2026-11-06
 
 ## Import progress dialogs and date pickers — 2026-11-06

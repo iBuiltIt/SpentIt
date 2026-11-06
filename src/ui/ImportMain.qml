@@ -1168,11 +1168,11 @@ ApplicationWindow {
         if((s.reviewCount||0)>0)reviewSheet.open()
         else workflow.command("commit")
     }
-    function beginQuit() {
+    function beginQuit(skipAudit) {
+        if(closingRequested || workflow.busy)return
         if(!workflow.saveWindowPosition(window))return
         closingRequested=true
-        window.hide()
-        workflow.command("close")
+        workflow.command("close",{skipAudit:skipAudit===true})
     }
     function requestQuit() {
         if((s.newTransactions||0)>0)quitCommit.open()
@@ -1566,7 +1566,7 @@ ApplicationWindow {
     onClosing: function(close) {
         if(allowClose) return
         close.accepted=false
-        if(workflow.busy) return
+        if(workflow.busy || closingRequested) return
         guard(requestQuit)
     }
     Connections {
@@ -1586,7 +1586,7 @@ ApplicationWindow {
             if(action==="report_leave" && pendingReportNavigation){let next=pendingReportNavigation;pendingReportNavigation=null;if(success)Qt.callLater(next)}
             if(success && action==="preview_import_undo")importUndoConfirm.open()
             if(success && action==="undo_import"){importUndoConfirm.close();importUndoPicker.close();workspaceFeedback=(s.receipt||{}).summary||"Import undone."}
-            if(action==="close" && !success && closingRequested){closingRequested=false;window.show();closeAuditFailure.open()}
+            if(action==="close" && !success && closingRequested){closingRequested=false;closeAuditFailure.open()}
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
 
             if(success && (action==="inspect" || action==="undo_edit" || action==="import"))editorClosed=false
@@ -2215,7 +2215,7 @@ ApplicationWindow {
             Label {Layout.fillWidth:true;text:"SpentIt couldn’t finish checking the file. It will check again next time you open it.";wrapMode:Text.Wrap}
             RowLayout {
                 Button {text:"Return";onClicked:closeAuditFailure.close()}
-                Button {text:"Quit anyway";onClicked:{if(!workflow.saveWindowPosition(window))return;closeAuditFailure.close();closingRequested=true;window.hide();workflow.command("close",{skipAudit:true})}}
+                Button {objectName:"closeAuditQuitAnyway";text:"Quit anyway";onClicked:{closeAuditFailure.close();beginQuit(true)}}
             }
         }
     }

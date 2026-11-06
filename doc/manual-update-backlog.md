@@ -82,3 +82,19 @@ No manual text or pictures were changed during implementation.
 ## Completed
 
 None yet.
+
+### MAN-003 — Visible shutdown progress
+
+Recorded: 2026-11-06. Status: **pending**.
+Source: [shutdown contract](fast-startup.md), owner correction and Go.
+
+No manual text or pictures changed during implementation.
+
+- Update [Look after your work](../manual/backup-recovery.md) and [Accept transactions](../manual/accept-transactions.md):
+  windows stay visible with the busy indicator and current checking/closing messages
+  until shutdown completes. Failed checking leaves the window visible for Return
+  or Quit anyway; remove descriptions of hiding and restoring the window.
+- Review `manual/images/accept-quit.png` and its caption for consistency; the
+  decision prompt is unchanged. No shutdown-progress picture currently exists;
+  add one with synthetic data only if useful to the walkthrough.
+- Verify the eventual text and pictures in bundled Help.

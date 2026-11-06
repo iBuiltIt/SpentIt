@@ -1,4 +1,5 @@
 #include <QElapsedTimer>
+#include <QThread>
 #include <QScreen>
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
@@ -58,6 +59,11 @@ public:
     QString groupFaultAction;bool groupInjected=false,cancelGroupResume=false;
     app::ImportRepository& repo() const { return inner->repository(); }
     bool failReviewRefresh=false;
+    bool delayClose=false;
+    void close_verified(const app::OperationContext& context) override {
+        if(delayClose){context.checkpoint("Checking file");QThread::msleep(350);}
+        inner->close_verified(context);
+    }
     app::ReviewSheet review_sheet() const override {if(failReviewRefresh && attempted)throw std::runtime_error("Injected Review refresh failure");return repo().review_sheet();}
     app::ReviewReceipt merge_review_batch(std::string_view id,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) override {const bool lose=groupBefore("review_batch");auto result=repo().merge_review_batch(id,answers,context);if(lose)throw std::runtime_error("Injected lost batch acknowledgement");return result;}
     std::optional<app::ReviewReceipt> review_outcome(std::string_view id) const override {if(attempted && fault==unknown && groupFaultAction=="review_batch")throw app::OperationOutcomeUnknown();return repo().review_outcome(id);}
@@ -938,7 +944,7 @@ private slots:
         window->setProperty("currentPage","settings");auto* option=visualItem(window->contentItem(),"rememberWindowPosition");QVERIFY(option);QVERIFY(!option->property("checked").toBool());
         option->setProperty("checked",true);QVERIFY(QMetaObject::invokeMethod(option,"toggled"));QVERIFY(m.rememberWindowPosition());
         const QPoint position=window->screen()->availableGeometry().topLeft()+QPoint(15,20);window->setFramePosition(position);QTRY_COMPARE(window->framePosition(),position);
-        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit"));QCOMPARE(QSettings().value("Window/position").toPoint(),position);QVERIFY(!window->isVisible());QTRY_VERIFY(!m.busy() && !m.state().value("active").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit",Q_ARG(QVariant,QVariant(false))));QCOMPARE(QSettings().value("Window/position").toPoint(),position);QVERIFY(window->isVisible());QTRY_VERIFY(!m.busy() && !m.state().value("active").toBool());
     }
     void cachedStartupTiming() {
         QTemporaryDir dir;const auto path=dir.path()+"/doc";int count=qEnvironmentVariableIntValue("SPENTIT_STARTUP_ROWS");if(count<=0)count=120;
@@ -953,6 +959,23 @@ private slots:
         qInfo()<<"Startup synthetic rows"<<count<<"bytes"<<QFileInfo(path).size()<<"full-open-ms"<<first<<"audit-close-ms"<<closing<<"approved-open-ms"<<cached<<"deferred-review-ms"<<review;
         run(m,"close");
     }
+    void visibleShutdownProgress() {
+        QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();gateway->delayClose=true;
+        ImportModel m(std::move(gateway));create(m,dir.path()+"/doc");
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        QSignalSpy completed(&m,&ImportModel::completed);
+        window->close();QVERIFY(window->isVisible());QVERIFY(m.busy());
+        auto* phase=window->findChild<QObject*>("operationPhase");QVERIFY(phase);
+        QTRY_COMPARE(phase->property("text").toString(),QString("Checking file"));
+        QVERIFY(window->isVisible());QVERIFY(m.busy());
+        auto* indicator=window->findChild<QObject*>("activityIndicator");QVERIFY(indicator);
+        QVERIFY(indicator->property("running").toBool());QVERIFY(indicator->property("visible").toBool());
+        QVERIFY(!window->findChild<QObject*>("importStatement")->property("enabled").toBool());
+        window->close();QVERIFY(window->isVisible());QCOMPARE(completed.count(),0);
+        QTRY_VERIFY(!m.busy());QTRY_VERIFY(!window->isVisible());QCOMPARE(completed.count(),1);
+        QVERIFY(!m.state().value("active").toBool());
+    }
     void cachedStartupReviewAndQuit() {
         QTemporaryDir dir;const auto path=dir.path()+"/doc";
         ImportModel m(storage::document_gateway((dir.path()+"/approval").toStdString()));
@@ -966,7 +989,10 @@ private slots:
         QTRY_COMPARE(window->property("currentPage").toString(),QString("review"));QCOMPARE(m.state().value("reviewCount").toInt(),1);QCOMPARE(m.state().value("newTransactions").toInt(),1);
         run(m,"close");run(m,"open",{{"path",path}});QVERIFY(!m.state().value("reviewReady").toBool());
         auto* review=visualItem(window->contentItem(),"reviewNavigation");QVERIFY(review);QVERIFY(QMetaObject::invokeMethod(review,"clicked"));QTRY_VERIFY(!m.busy() && m.state().value("reviewReady").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),1);
-        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit"));QVERIFY(!window->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit",Q_ARG(QVariant,QVariant(false))));QVERIFY(window->isVisible());
+        QVERIFY(m.busy());QVERIFY(window->findChild<QObject*>("activityIndicator")->property("running").toBool());
+        QCOMPARE(window->findChild<QObject*>("operationPhase")->property("text").toString(),QString("Closing file…"));
+        window->close();QVERIFY(window->isVisible());
         QTRY_VERIFY_WITH_TIMEOUT(!m.busy() && !m.state().value("active").toBool(),30000);
         QVERIFY(QDir(dir.path()+"/approval").entryList({"*.verified"},QDir::Files).size()==1);
     }
@@ -974,9 +1000,14 @@ private slots:
         QTemporaryDir dir;const auto cache=dir.path()+"/blocked";QFile file(cache);QVERIFY(file.open(QIODevice::WriteOnly));file.write("occupied");file.close();
         ImportModel m(storage::document_gateway(cache.toStdString()));create(m,dir.path()+"/doc");
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
-        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit"));QVERIFY(!window->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(window,"beginQuit",Q_ARG(QVariant,QVariant(false))));QVERIFY(window->isVisible());
+        QVERIFY(m.busy());QVERIFY(window->findChild<QObject*>("activityIndicator")->property("running").toBool());
+        QCOMPARE(window->findChild<QObject*>("operationPhase")->property("text").toString(),QString("Closing file…"));
+        window->close();QVERIFY(window->isVisible());
         QTRY_VERIFY(!m.busy());QVERIFY(!m.error().isEmpty());QVERIFY(m.state().value("active").toBool());QVERIFY(window->isVisible());
-        run(m,"close",{{"skipAudit",true}});QVERIFY(!m.state().value("active").toBool());
+        auto* quit=window->findChild<QObject*>("closeAuditQuitAnyway");QVERIFY(quit);
+        QVERIFY(QMetaObject::invokeMethod(quit,"clicked"));QVERIFY(window->isVisible());QVERIFY(m.busy());
+        QTRY_VERIFY(!m.busy() && !m.state().value("active").toBool());QTRY_VERIFY(!window->isVisible());
     }
     void startupDataset_data() {
         QTest::addColumn<QString>("kind");
