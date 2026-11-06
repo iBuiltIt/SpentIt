@@ -119,9 +119,43 @@ def resolve_inside(source: Path, raw: str, root: Path) -> Path:
 
 
 def plain_text(markdown: str) -> str:
-    without_images = IMAGE_RE.sub(lambda match: match.group(1), markdown)
-    without_links = LINK_RE.sub(lambda match: match.group(1), without_images)
-    return re.sub(r"\s+", " ", without_links).strip()
+    """Readable text for the bundled Markdown subset; code keeps literal symbols."""
+    literals: list[str] = []
+
+    def keep(text: str) -> str:
+        literals.append(text)
+        return f"\x00LITERAL{len(literals) - 1}\x00"
+
+    # Protect code and escaped punctuation before removing formatting. In
+    # particular, the search reference teaches literal *, _, | and backslashes.
+    text = re.sub(r"(?m)^(`{3,}|~{3,})[^\n]*\n(.*?)^\1[ \t]*$",
+                  lambda m: keep(m[2]), markdown, flags=re.DOTALL)
+    text = re.sub(r"(`+)(.+?)\1(?!`)", lambda m: keep(m[2]), text, flags=re.DOTALL)
+    text = re.sub(r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])",
+                  lambda m: keep(m[1]), text)
+    text = IMAGE_RE.sub(lambda m: m[1], text)
+    text = LINK_RE.sub(lambda m: m[1], text)
+    lines = []
+    for line in text.splitlines():
+        # Table separators and thematic breaks have no spoken content.
+        if re.fullmatch(r"\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*", line):
+            continue
+        if re.fullmatch(r"\s*(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})", line):
+            continue
+        line = re.sub(r"^\s{0,3}(?:>\s*)+", "", line)
+        line = re.sub(r"^\s{0,3}#{1,6}\s+", "", line)
+        line = re.sub(r"^\s*(?:[-+*]|[0-9]+[.)])\s+", "", line)
+        if line.strip().startswith("|"):
+            line = line.replace("|", " ")
+        lines.append(line)
+    text = "\n".join(lines)
+    # Paired delimiters only: do not erase literal arithmetic or intraword '_'.
+    for delimiter in ("**", "__", "~~", "*", "_"):
+        escaped = re.escape(delimiter)
+        text = re.sub(r"(?<!\w)" + escaped + r"(?=\S)(.+?)(?<=\S)" + escaped + r"(?!\w)",
+                      lambda m: m[1], text, flags=re.DOTALL)
+    text = re.sub(r"\x00LITERAL(\d+)\x00", lambda m: literals[int(m[1])], text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def caption_follows(body: str, image_end: int, source: Path) -> None:

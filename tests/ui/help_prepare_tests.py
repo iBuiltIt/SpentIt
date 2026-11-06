@@ -22,6 +22,31 @@ def topic(text: str) -> str:
 
 
 class PrepareHelpTests(unittest.TestCase):
+    def test_plain_search_text_preserves_words_and_literal_symbols(self):
+        source = r"""# Heading
+
+Choose **Apply**, *then* __Save__ or _Stay_; ~~old~~.
+- First item
+1. Second item
+> A quotation with [a link](help:topic).
+[![Picture description](qrc:/spentit/help/images/picture.png)](help-image:picture.png)
+
+| Pattern | Meaning |
+| :--- | ---: |
+| `A*B_` | `a|b` and `\d+` |
+
+Literal `**`, `*`, `\*`, escaped \*, and file_name.
+
+---
+```text
+**literal code** with | and _
+```
+"""
+        self.assertEqual(prepare_help.plain_text(source),
+                         r"Heading Choose Apply, then Save or Stay; old. First item Second item "
+                         r"A quotation with a link. Picture description Pattern Meaning A*B_ a|b and \d+ "
+                         r"Literal **, *, \*, escaped *, and file_name. **literal code** with | and _")
+
     def test_context_targets_reject_missing_topics_sections_and_paths(self):
         topics = [{"id": "sample-start", "sections": [{"id": "overview"}]}]
         with tempfile.TemporaryDirectory() as directory:

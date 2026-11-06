@@ -15,6 +15,17 @@ Qt 6.12. Help now keeps the complete scene graph for table articles and batches
 paragraph formatting; native pixel/scroll/navigation checks and limits are
 recorded in the [rendering correction](../doc/help-prototype-handoff.md#long-help-chapter-rendering-correction--2026-11-05).
 
+## Search excerpts — owner Go 2026-11-06
+
+Accepted and implemented: search excerpts show readable text without Markdown
+formatting markers and retain whole words at both ends. Keep literal punctuation
+in code/search examples, link labels and image descriptions. Retain the existing
+match highlighting, title/keyword preference and navigation. Context extends
+outward to whitespace boundaries, including an entire long token when needed.
+Article rendering and financial behavior are unchanged. See the
+[handoff](../doc/help-prototype-handoff.md#help-search-excerpts--2026-11-06)
+for verification and limits.
+
 ## Contextual Help — owner Go 2026-11-06
 
 The owner authorized application-wide contextual Help after the completed manual

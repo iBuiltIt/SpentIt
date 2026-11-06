@@ -213,8 +213,12 @@ QVariantList HelpCatalog::search(const QString& query) const {
         QString after;
         if (at >= 0) {
             const int length = static_cast<int>(terms.front().size());
-            const int start = std::max(0, at - 40);
-            const int end = std::min(static_cast<int>(topic.plain.size()), at + length + 40);
+            int start = std::max(0, at - 40);
+            int end = std::min(static_cast<int>(topic.plain.size()), at + length + 40);
+            // Expand to whitespace boundaries, retaining punctuation, combining
+            // characters and even a long unbroken token instead of cutting it.
+            while (start > 0 && !topic.plain.at(start - 1).isSpace()) --start;
+            while (end < topic.plain.size() && !topic.plain.at(end).isSpace()) ++end;
             before = topic.plain.mid(start, at - start);
             match = topic.plain.mid(at, length);
             after = topic.plain.mid(at + length, end - (at + length));

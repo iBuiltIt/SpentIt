@@ -2,6 +2,45 @@
 
 Last updated: 2026-11-06
 
+## Help search excerpts — 2026-11-06
+
+Under the owner's Go, bundled search text now removes heading, emphasis, list,
+quote and table formatting while retaining link labels and image descriptions.
+Code examples and escaped punctuation retain their literal symbols, including
+regex asterisks, underscores, pipes and backslashes. Article Markdown is unchanged.
+Excerpts extend the existing 40-character context on each side to whitespace
+boundaries, so long words, punctuation and combining characters stay together.
+The matching text remains highlighted by the existing escaped-text UI; title and
+keyword ranking and topic navigation are unchanged.
+
+Verification on macOS, rules-enabled Release, Qt 6.12.0:
+
+- Rebuilt `spentit_import_experiment`, `spentit_help_tests` and
+  `spentit_help_ui_tests`; `build/SpentIt` contains the change.
+- `python3 tests/ui/help_prepare_tests.py` passed 9/9. The added case checks
+  formatting removal, linked image descriptions and preservation of code symbols.
+- Preparation, catalog and QML CTest checks passed 3/3 in 1.70s. New catalog
+  coverage checks both excerpt edges, long tokens, accented/combining text,
+  case-insensitive matching and keyword-only fallback.
+- Focused offscreen Help passed 12/12 including init/cleanup in 9772ms: sample
+  search/highlighting and all nine quick-reference lookup/navigation cases.
+- The same focused native Cocoa tests passed 12/12 in 184829ms with desktop
+  access. The initial sandboxed attempt aborted before showing a window because
+  Qt reported no screens available; the authorized native rerun passed.
+- `git diff --check` and 265 relative file-link target checks passed.
+
+No private data was used. Full Help/Rules suites, standalone-app walkthrough,
+accessibility, dark appearance and Linux/Windows were not rerun for this change;
+viewer focus and modality code were not changed.
+
+Reproduction:
+
+```sh
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.qml)$' --output-on-failure
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests sampleViewerBeforeAFileIsOpen quickReferenceLookup
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests sampleViewerBeforeAFileIsOpen quickReferenceLookup
+```
+
 ## Contextual Help — 2026-11-06
 
 Under the owner's Go, Help now opens the existing manual from the welcome
@@ -76,8 +115,8 @@ ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog
 
 No private data was used. Native chooser interaction, standalone-app walkthrough,
 complete keyboard-only/screen-reader use, dark appearance and Linux/Windows
-remain unverified. Search excerpts can still expose Markdown markers or cut words;
-that separate polish item remains the next proposed Help change.
+remain unverified. The search-excerpt roughness observed at this checkpoint is
+addressed by the subsequent search-excerpt change above.
 
 ## Whole-manual continuity and acceptance replay — 2026-11-06
 

@@ -1,9 +1,44 @@
 #include "help/help_catalog.hpp"
 #include <QTest>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QTemporaryDir>
 
 class HelpCatalogTests : public QObject {
     Q_OBJECT
 private slots:
+    void excerptsKeepWholeTokens() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString prefix = QStringLiteral("Earlier omitted words ");
+        const QString left = QString(65, QLatin1Char('a')) + QString::fromUtf8("é");
+        const QString right = QString::fromUtf8("e\u0301") + QString(65, QLatin1Char('z'));
+        const QString body = prefix + left + " needle " + right + " Later omitted words";
+        QJsonObject topic{{"id", "test"}, {"title", "Title"}, {"plain", body}, {"order", 1},
+                          {"keywords", QJsonArray{"alias"}}};
+        QFile file(directory.filePath("manifest.json"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(QJsonDocument(QJsonObject{{"topics", QJsonArray{topic}}}).toJson());
+        file.close();
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(file.fileName()));
+        auto hit = catalog.search("NEEDLE").front().toMap();
+        QCOMPARE(hit.value("before").toString(), left + " ");
+        QCOMPARE(hit.value("match").toString(), QString("needle"));
+        QCOMPARE(hit.value("after").toString(), " " + right);
+        hit = catalog.search("Earlier").front().toMap();
+        QVERIFY(hit.value("before").toString().isEmpty());
+        QVERIFY(hit.value("after").toString().endsWith(left));
+        hit = catalog.search("words").front().toMap();
+        QCOMPARE(hit.value("match").toString(), QString("words"));
+        hit = catalog.search("Later omitted").front().toMap();
+        QCOMPARE(hit.value("after").toString(), QString(" omitted words"));
+        hit = catalog.search("alias").front().toMap();
+        QCOMPARE(hit.value("before").toString(), QString("Title"));
+        QVERIFY(hit.value("match").toString().isEmpty());
+    }
     void searchPrefersTitlesAndRejectsOutsideLinks() {
         HelpCatalog catalog;
         QVERIFY(catalog.load(QStringLiteral(SPENTIT_HELP_MANIFEST)));
