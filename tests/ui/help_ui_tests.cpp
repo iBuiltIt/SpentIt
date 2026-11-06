@@ -322,6 +322,8 @@ private slots:
             << QString("common-pattern-pieces") << QString("Common pattern pieces");
         QTest::newRow("words-used") << QString("words-used") << QStringList{}
             << QString("merge-and-link") << QString("Merge and Link");
+        QTest::newRow("messages-problems") << QString("messages-problems") << QStringList{}
+            << QString("search-and-rules") << QString("Search and rules");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -337,7 +339,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find", "keyboard-mouse", "search-examples", "words-used"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find", "keyboard-mouse", "search-examples", "words-used", "messages-problems"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -447,6 +449,8 @@ private slots:
             << QString("search-examples") << QString("common-pattern-pieces") << QString("Common pattern pieces");
         QTest::newRow("words-used") << QString("words-used") << QString("glossary")
             << QString("set-up-accounts") << QString("set-the-starting-balance") << QString("Set the starting balance");
+        QTest::newRow("messages-problems") << QString("messages-problems") << QString("Unclosed search quote")
+            << QString("search-examples") << QString("clear-a-search-or-fix-it") << QString("Clear a search or fix it");
     }
     void quickReferenceLookup() {
         QFETCH(QString, reference);

@@ -40,7 +40,7 @@ private slots:
         QVERIFY(catalog.loaded());
         QVERIFY(!catalog.sample());
         QVERIFY(catalog.banner().isEmpty());
-        QCOMPARE(catalog.topics().size(), 16);
+        QCOMPARE(catalog.topics().size(), 17);
         QCOMPARE(catalog.topics().front().toMap().value("id").toString(), QStringLiteral("understand-spending"));
         QCOMPARE(catalog.topics().front().toMap().value("title").toString(), QStringLiteral("Understand your spending"));
         const auto refund = catalog.search(QStringLiteral("refund"));
@@ -50,7 +50,7 @@ private slots:
         QCOMPARE(commit.size(), 2);
         QCOMPARE(commit.front().toMap().value("topicId").toString(), QStringLiteral("understand-spending"));
         const auto setup = catalog.search(QStringLiteral("unlock"));
-        QCOMPARE(setup.size(), 1);
+        QCOMPARE(setup.size(), 2);
         QCOMPARE(setup.front().toMap().value("topicId").toString(), QStringLiteral("create-open-file"));
         const auto accounts = catalog.search(QStringLiteral("reassign"));
         QCOMPARE(accounts.size(), 1);
@@ -81,6 +81,9 @@ private slots:
         const auto recovery = catalog.search(QStringLiteral("disk full"));
         QVERIFY(!recovery.isEmpty());
         QCOMPARE(recovery.front().toMap().value("topicId").toString(), QStringLiteral("look-after-your-work"));
+        const auto problem = catalog.search(QStringLiteral("Unclosed search quote"));
+        QCOMPARE(problem.size(), 1);
+        QCOMPARE(problem.front().toMap().value("topicId").toString(), QStringLiteral("messages-problems"));
         QVERIFY(catalog.search(QStringLiteral("sample content")).isEmpty());
     }
 };

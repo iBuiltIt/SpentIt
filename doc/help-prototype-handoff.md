@@ -1,6 +1,6 @@
 # Help viewer prototype handoff
 
-Last updated: 2026-11-05
+Last updated: 2026-11-06
 
 The viewer prototype Go on 2026-11-05 does not cover application-wide context
 links. A second Go the same day covered the introduction; a subsequent Go covers
@@ -9,6 +9,62 @@ using the documented verification/writing/review workflow. The owner then
 requested its commit and gave Go for chapter 4. The design
 is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. Update it when a step changes.
+
+## Messages and problems quick reference — 2026-11-05
+
+The glossary is committed as `4c12a06`. Under the owner’s next Go,
+[Messages and problems](../manual/messages-problems.md) is bundled and was accepted for commit on 2026-11-06. It covers file access and backups, imported records, split totals,
+search/rules, stale reports and saved/uncertain changes, with exact message
+excerpts and links to supported next steps. Recovery links back to the reference.
+Help now bundles seventeen topics and 38 images; no application behavior or
+screenshots changed.
+
+A supporting agent checked the current message sources and existing tests;
+`import.search` passed 1/1 in 0.01s. Independent prose review clarified that
+quoted text can be an excerpt and confirmed the actions and linked instructions.
+The catalog check now expects both topics containing “unlock” and checks lookup
+of “Unclosed search quote”. The shared reader checks cover the new topic and
+actual Search-result/article-link/Back/Contents clicks.
+
+Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+`spentit_help_tests`; `build/SpentIt` includes the reference. Focused native
+reading/lookup passed **4/4 including init/cleanup in 43345ms**. Normal, section
+and 500-pixel/150% captures were visually inspected and independently reviewed.
+Those captures precede the small “excerpt” wording correction; final regression
+uses the rebuilt text. The initial restricted native launch failed because the
+window server exposed no screens; the run with required access passed.
+
+The final full native Help suite passed **44/44 including init/cleanup in
+415871ms**, covering all reading/lookup cases, synthetic chapter walkthroughs,
+reverse scrolling and Rules/Reports modal Help.
+
+The five-check CTest selection passed Rules, preparation, catalog and QML
+(4/5, 146.54s total). Full offscreen Help hit the previously recorded 120-second
+timeout during the existing acceptance reading case, after earlier reading
+cases passed; no assertion failure preceded the timeout. The final focused
+offscreen reading/lookup rerun passed **4/4 including init/cleanup in 20732ms**.
+
+Commands used the rules-enabled Release tree:
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests -j 2
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests createOpenChapterReading:messages-problems quickReferenceLookup:messages-problems
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests createOpenChapterReading:messages-problems quickReferenceLookup:messages-problems
+```
+
+Focused reading used `SPENTIT_GUIDE_READING_CAPTURE` for temporary captures;
+none were added to the manual. Preparation validates bundled links, anchors
+and images. `git diff --check` and 319 relative file-link target checks across
+the touched documentation passed.
+
+No private file was opened. These checks use the actual QML in a synthetic
+native harness, not a standalone-app walkthrough. Full keyboard-only,
+screen-reader, dark appearance and Linux/Windows verification remain unclaimed.
+The next proposed step is the complete synthetic-example
+walkthrough and whole-manual consistency check. Application-wide context links
+remain separate work requiring their own Go.
 
 ## Words used in SpentIt glossary — 2026-11-05
 
@@ -1600,7 +1656,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. “Where do I find…?” is committed as `2ef8158`. Keyboard and mouse is committed as `8c3c830`. Search examples is committed as `6b1333c`. Words used in SpentIt is bundled under its Go and is owner-accepted for commit. The next proposed reference is Messages and problems; remaining references/context links require their own Go.
+2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. “Where do I find…?” is committed as `2ef8158`. Keyboard and mouse is committed as `8c3c830`. Search examples is committed as `6b1333c`. Words used in SpentIt is committed as `4c12a06`. Messages and problems is bundled under its Go and was accepted for commit on 2026-11-06. The next proposed step is the complete synthetic-example walkthrough and whole-manual consistency check. Application-wide context links require their own Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
 4. If you change Help, rerun the two commands in “Build and check” and write

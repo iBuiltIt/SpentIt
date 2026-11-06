@@ -1,7 +1,7 @@
 # 013 — Help system and user manual
 
 Status: **active**  
-Last updated: 2026-11-05  
+Last updated: 2026-11-06  
 Implementation: the viewer prototype from the 2026-11-05 Go is in the tree.
 The same day's chapter Go added [Understand your spending](../manual/index.md)
 as the opening topic. The subsequent chapter-2 Go adds Create or open your file
@@ -28,6 +28,9 @@ committed as `6b1333c`, with the shared pattern table moved from Rules under
 the owner’s follow-up permission. [Words used in SpentIt](../manual/words.md)
 is bundled under the next Go and is owner-accepted for commit. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
+[Messages and problems](../manual/messages-problems.md) is bundled under the
+next Go and was accepted for commit on 2026-11-06. It links verified message excerpts to supported
+next steps; application-wide context links remain separate work.
 
 The chapter-9 table follow-up reproduced missing text on reverse scrolling in
 Qt 6.12. Help now keeps the complete scene graph for table articles and batches

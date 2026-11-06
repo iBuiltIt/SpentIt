@@ -300,7 +300,7 @@ These are alternate entry points into the same manual, not another walkthrough.
   and the shared regular-expression pattern table separately.
 - [**Words used in SpentIt**](words.md): Short definitions, including Merge versus Link,
   new versus accepted, opening balance, split, refund and transfer.
-- **Messages and problems:** Searchable exact message wording, plain-language
+- [**Messages and problems**](messages-problems.md): Searchable exact message wording, plain-language
   meaning and links to supported next steps.
 
 ## Writing and screenshot plan

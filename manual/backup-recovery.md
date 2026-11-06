@@ -134,6 +134,8 @@ share; do not send passwords, your financial file or bank exports.
 
 ## Find a particular problem
 
+For an error or status message, see [Messages and problems](messages-problems.md).
+
 - [Missing transaction or unexpected balance](find-transactions.md#if-something-looks-missing-or-wrong)
 - [Unreadable imported dates or amounts](import-transactions.md#when-something-needs-attention)
 - [Undo a mistaken import](import-transactions.md#undo-a-mistaken-import)

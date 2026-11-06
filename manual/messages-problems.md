@@ -1,0 +1,129 @@
+---
+id: messages-problems
+title: Messages and problems
+order: 17
+keywords: messages, problems, errors, troubleshooting, failed, unavailable, mismatch
+---
+
+# Messages and problems
+
+Search Help for words from the message, or find it below. Choose **Details**
+if the bottom status line cuts it short. Quoted text is the message or an
+excerpt; a split total varies with your entry.
+
+For a missing transaction or unexpected balance without an error, start with
+[Find a particular problem](backup-recovery.md#find-a-particular-problem).
+
+## Opening a file and making backups
+
+**“Passwords do not match”**
+
+When creating a file, enter the same password in both fields.
+[Choose password protection](create-open-file.md#choose-password-protection).
+
+**“Unable to unlock.”**
+
+Check the selected file and retype its password. Damage can produce the same
+message; it does not prove the password is wrong. There is no password reset.
+[If the file won’t open](create-open-file.md#if-it-won-t-open).
+
+**“File is already open or unavailable.”**
+
+Close the file in its other SpentIt window. If it is still unavailable,
+check the drive and access to the location. Do not delete lock files.
+[Opening checks](backup-recovery.md#the-file-will-not-open).
+
+**“This dataset format is not supported by this version of SpentIt; the file has not been changed”**
+
+Keep the original. This version has no upgrade or conversion command;
+a backup in the same format has the same limit.
+[Unsupported files](backup-recovery.md#the-file-will-not-open).
+
+**“Backup publication failed; encrypted candidate retained”**
+
+The backup did not finish. An existing destination is one possible cause.
+Choose a new filename; check the drive, free space and permission to save there.
+[Backup problems](backup-recovery.md#if-the-backup-does-not-finish).
+
+## Importing transactions
+
+**“The transaction date or amount is missing.”**
+
+Check the bank export or statement. In **Review**, use **Correct** where
+available to enter the missing value.
+[Repair an imported record](import-transactions.md#when-something-needs-attention).
+
+**“The split amounts must add up to the transaction amount.”**
+
+The imported parts do not match the total. Check the actual amounts before
+correcting the record; do not guess a value just to make it pass.
+[Check imported amounts](import-transactions.md#when-something-needs-attention).
+
+**“Currency does not match the target account; no conversion was applied”**
+
+Choose an account with the export’s currency. Changing a currency label does
+not convert the money.
+[Check the import destination](import-transactions.md#when-something-needs-attention).
+
+**“Incomplete import preparation was removed; you can import the file again.”**
+
+An interrupted preparation was removed. You can import that export again.
+[Check the import result](import-transactions.md#check-the-result).
+
+## Editing transactions
+
+**“Splits add up to …”**
+
+The message shows their current sum. Adjust the split amounts to match the
+total. If you leave the editor, **Change amount** changes the transaction total
+to their sum; **Keep editing** lets you correct the splits instead.
+[Balance the splits](add-correct-transactions.md#divide-a-purchase-into-splits).
+
+## Search and rules
+
+**“Unclosed search quote”**
+
+Close the quotation mark, then apply the search again, or clear it. The previous
+results stay on screen after a failed search; they are not the new query’s results.
+[Fix or clear a search](search-examples.md#clear-a-search-or-fix-it).
+
+**“Use one period filter per query”** / **“Use one category filter per query”**
+
+Use one date range and one category condition in a search.
+[Search examples](search-examples.md#narrow-by-category-or-date).
+
+**“Choose a category for every rule”**
+
+Choose an ordinary category in the rule’s editor. Rules cannot create transfers.
+[Set up a rule](rules.md#make-a-market-rule).
+
+## Reports
+
+**“Transactions changed. Refresh the report to see current amounts.”**
+
+Choose **Refresh** before opening another amount.
+[Check report results](reports.md#if-the-result-needs-attention).
+
+## Saved changes and uncertain results
+
+**“Your change was saved, but the screen could not update.”**
+
+Reopen the file and check the transaction before making more changes.
+Do not repeat the edit just to refresh the screen. Rules can show a similar
+message naming the saved rules or rule changes.
+[Check a saved change](backup-recovery.md#a-change-failed-or-its-result-is-unclear).
+
+**“SpentIt could not confirm whether the import was saved.”** /
+**“SpentIt could not confirm whether your change was saved.”**
+
+It may already have completed. Reopen the file and check the affected
+transactions before trying again.
+[Check an uncertain result](backup-recovery.md#a-change-failed-or-its-result-is-unclear).
+
+**“Couldn’t finish checking the file”**
+
+Choose **Return** to go back to the app. **Quit anyway** closes it;
+SpentIt checks again next time you open the file. Neither choice repairs damage.
+[Checking on quit](backup-recovery.md#checking-could-not-finish-on-quit).
+
+If your message is not listed, read [When a file or change needs attention](backup-recovery.md#when-a-file-or-change-needs-attention).
