@@ -2,6 +2,7 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QColor>
+#include <functional>
 #include <QElapsedTimer>
 #include <QDir>
 #include <QImage>
@@ -304,6 +305,9 @@ private slots:
         QTest::newRow("acceptance") << QString("accept-transactions")
             << QStringList{"accept-ready.png", "accept-review.png", "accept-quit.png"}
             << QString("leave-them-new-and-return-later") << QString("Leave them new and return later");
+        QTest::newRow("reports") << QString("answer-with-reports")
+            << QStringList{"reports-editor.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png"}
+            << QString("open-the-transactions-behind-an-amount") << QString("Open the transactions behind an amount");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -319,7 +323,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -816,6 +820,127 @@ private slots:
         mouse("navigationForward");
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
         QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void reportsChapterWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false},
+            {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        auto* workspace = qobject_cast<QQuickItem*>(object(session.root, "reportsWorkspace")); QVERIFY(workspace);
+        std::function<QQuickItem*(QQuickItem*, const QString&)> byText = [&](QQuickItem* parent, const QString& text) -> QQuickItem* {
+            if (parent->isVisible() && parent->property("text").toString() == text && parent->metaObject()->indexOfSignal("clicked()") >= 0) return parent;
+            for (auto* child : parent->childItems()) if (auto* found = byText(child, text)) return found;
+            return nullptr;
+        };
+        auto mouseItem = [&](QQuickItem* item, bool twice = false) {
+            QVERIFY(item); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            for (auto* parent = item->parentItem(); parent; parent = parent->parentItem()) {
+                if (!parent->property("contentY").isValid() || parent->property("contentHeight").toDouble() <= parent->height()) continue;
+                const auto y = item->mapToItem(parent, QPointF(0, item->height()/2)).y();
+                if (y < 0 || y > parent->height()) parent->setProperty("contentY", qBound(0.0,
+                    parent->property("contentY").toDouble() + y - parent->height()/2,
+                    parent->property("contentHeight").toDouble() - parent->height()));
+            }
+            QTest::qWait(150);
+            const auto point = item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint();
+            QVERIFY(session.window->contentItem()->contains(point));
+            if (twice) QTest::mouseDClick(session.window, Qt::LeftButton, Qt::NoModifier, point);
+            else QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier, point);
+            wait(session.model);
+        };
+        auto mouse = [&](const QString& name) { mouseItem(qobject_cast<QQuickItem*>(object(session.root, name))); };
+        auto textClick = [&](const QString& text, bool twice = false) { mouseItem(byText(workspace, text), twice); };
+        auto capture = [&](const QString& name) {
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (output.isEmpty()) return;
+            QTest::qWait(200);
+            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
+        };
+        mouse("categoryNavigation");
+        for (const auto& name : {"Groceries", "Household", "Income"}) createCategory(session.model, session.root, name);
+        mouse("accountNavigation");
+        QFile card(session.path("card.qif")); QVERIFY(card.open(QIODevice::WriteOnly));
+        card.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nLGroceries\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\nD2026-01-22\nT-20.00\nPCorner shop\nSGroceries\n$-12.00\nSHousehold\n$-8.00\n^\nD2026-02-15\nT-55.00\nPMarket\nLGroceries\n^\nD2026-02-22\nT-15.00\nPHome supplies\nLHousehold\n^\n"); card.close();
+        run(session.model, "import", {{"path", card.fileName()}, {"account", "1"}});
+        const auto cardBatch = session.model.state().value("selected").toMap().value("batch");
+        run(session.model, "commit");
+        run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "1,000.00"}});
+        QFile income(session.path("income.qif")); QVERIFY(income.open(QIODevice::WriteOnly));
+        income.write("!Type:Bank\nD2026-01-10\nT2000.00\nPPayday\nLIncome\n^\n"); income.close();
+        run(session.model, "import", {{"path", income.fileName()}, {"account", "2"}});
+        run(session.model, "transfer_manual", {{"link", "guide-card-payment"}, {"operation", "guide-create-payment"},
+            {"sequence", session.model.state().value("transferSequence")}, {"destination", "1"},
+            {"date", "2026-01-28"}, {"amount", "-36.18"}, {"payee", "Credit card payment"}});
+        mouse("reportsNavigation"); mouse("newReport");
+        QVERIFY(edit(session.root, "reportName", "Household spending"));
+        textClick("Uncategorized"); textClick("Income");
+        QVERIFY(edit(session.root, "reportStartDate0", "2026-01-01"));
+        QVERIFY(edit(session.root, "reportEndDate0", "2026-01-31"));
+        // Exercise the actual shared picker beside the report's From field.
+        auto* date = qobject_cast<QQuickItem*>(object(session.root, "reportStartDate0")); QVERIFY(date);
+        QQuickItem* picker = nullptr;
+        for (auto* sibling : date->parentItem()->childItems())
+            if (sibling->property("field").value<QObject*>() == date) picker = sibling;
+        QVERIFY(picker); mouseItem(picker);
+        // Resolve the keys from this picker, not the ledger's separate calendar.
+        auto* keys = qobject_cast<QQuickItem*>(picker->findChild<QObject*>("calendarKeys")); QVERIFY(keys);
+        keys->forceActiveFocus(); QTest::keyClick(session.window, Qt::Key_Right); QTest::keyClick(session.window, Qt::Key_Return);
+        QCOMPARE(date->property("text").toString(), QString("2026-01-02"));
+        QVERIFY(edit(session.root, "reportStartDate0", "2026-01-01"));
+        textClick("Add comparison");
+        QTRY_VERIFY(object(session.root, "reportStartDate1"));
+        QVERIFY(edit(session.root, "reportStartDate1", "2026-02-01"));
+        QVERIFY(edit(session.root, "reportEndDate1", "2026-02-28"));
+        auto* graph = qobject_cast<QQuickItem*>(object(session.root, "reportGraph")); QVERIFY(graph);
+        mouseItem(graph); QTest::keyClick(session.window, Qt::Key_Home); QTest::keyClick(session.window, Qt::Key_Down); QTest::keyClick(session.window, Qt::Key_Down); QTest::keyClick(session.window, Qt::Key_Return);
+        QCOMPARE(graph->property("currentIndex").toInt(), 2);
+        capture("reports-editor");
+        mouse("showReport");
+        QTRY_COMPARE(workspace->property("mode").toString(), QString("result"));
+        auto currency = [&]() { return session.model.state().value("reportResult").toMap().value("currencies").toList().front().toMap(); };
+        QCOMPARE(currency().value("totals").toList(), (QVariantList{"56.18", "70.00"}));
+        capture("reports-comparison");
+        textClick("48.18", true);
+        QTRY_VERIFY(session.model.state().value("reportLedgerActive").toBool());
+        QCOMPARE(session.model.rowCount(), 3);
+        const auto splitIndex = session.model.occurrenceIndex(cardBatch.toString(), 2);
+        QVERIFY(splitIndex >= 0);
+        QCOMPARE(session.model.rowRecord(splitIndex).value("reportIncluded").toString(), QString("12.00"));
+        QCOMPARE(session.model.rowRecord(splitIndex).value("reportAllocations").toStringList().size(), 1);
+        run(session.model, "inspect", {{"batch", cardBatch}, {"ordinal", 2}});
+        QTRY_VERIFY(object(session.root, "editSplitAmount_1"));
+        capture("reports-transactions");
+        QVERIFY(edit(session.root, "durableDate", "2026-02-22"));
+        auto* dateEdit = qobject_cast<QQuickItem*>(object(session.root, "durableDate")); QVERIFY(dateEdit);
+        dateEdit->forceActiveFocus(); QTest::keyClick(session.window, Qt::Key_Return); wait(session.model);
+        QVERIFY(!session.model.rowRecord(session.model.occurrenceIndex(cardBatch.toString(), 2)).value("reportMatches").toBool());
+        QCOMPARE(currency().value("totals").toList(), (QVariantList{"36.18", "90.00"}));
+        run(session.model, "undo_edit");
+        QCOMPARE(currency().value("totals").toList(), (QVariantList{"56.18", "70.00"}));
+        textClick("Back to report"); textClick("Back to Reports");
+        mouseItem(graph); QTest::keyClick(session.window, Qt::Key_End); QTest::keyClick(session.window, Qt::Key_Return);
+        QCOMPARE(graph->property("currentIndex").toInt(), 3);
+        mouse("showReport");
+        QTRY_COMPARE(workspace->property("mode").toString(), QString("result"));
+        QCOMPARE(currency().value("totals").toList(), (QVariantList{"56.18", "70.00"}));
+        capture("reports-pie");
+        textClick("Back to Reports");
+        QVERIFY(edit(session.root, "reportName", "Unfinished report name"));
+        mouse("accountNavigation");
+        auto* leave = namedWindow("reportsLeaveDialog"); QVERIFY(leave);
+        QTRY_VERIFY(leave->isVisible());
+        QVERIFY(click(leave, "reportsGuardStay"));
+        QVERIFY(workspace->property("dirty").toBool());
+        mouse("accountNavigation");
+        QVERIFY(click(leave, "reportsGuardDiscard"));
+        QTRY_COMPARE(session.root->property("currentPage").toString(), QString("ledger"));
     }
     void acceptanceChapterWalkthrough() {
         HelpCatalog catalog;

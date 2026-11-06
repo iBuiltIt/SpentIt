@@ -16,8 +16,9 @@ Add and correct transactions, is bundled with four screenshots under its Go and
 is accepted and committed. Chapter 8, Organize spending with categories, is bundled
 with four screenshots under the next Go and is owner-accepted for commit. Chapter 9, Use rules for repeated categorization, is bundled with three screenshots
 under its Go and owner-accepted for commit. Chapter 10, Accept transactions — now or later,
-is bundled with three screenshots under its Go and owner-accepted for commit.
-Chapters after chapter 10 and context links
+is accepted and committed as `b1c55fc`. Chapter 11, Answer questions with reports,
+is bundled with four screenshots under its Go and owner-accepted for commit.
+Chapters after chapter 11 and context links
 need their own Go. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 

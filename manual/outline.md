@@ -1,7 +1,7 @@
 # SpentIt help and user manual — proposed outline
 
 Date: 2026-11-05  
-Status: proposed content outline for review. Chapters 1–10 are written, with screenshots in chapters 2–10. Chapter 10 is owner-accepted for commit. Later chapters are not yet written.
+Status: proposed content outline for review. Chapters 1–11 are written, with screenshots in chapters 2–11. Chapter 10 is accepted and committed; chapter 11 is owner-accepted for commit. Later chapters are not yet written.
 
 ## Purpose and reading order
 
@@ -371,7 +371,9 @@ and Review screenshots. Chapter 6,
 keep-choice, transfer-question, linked-ledger and amount-difference screenshots.
 Chapters 7–9 cover editing, categories and rules. Chapter 10,
 [Accept transactions — now or later](accept-transactions.md), covers acceptance,
-remaining import problems and quit choices. Later chapters and context links
+remaining import problems and quit choices. Chapter 11,
+[Answer questions with reports](reports.md), adds report setup, comparisons,
+charts and contributing-transaction editing. Later chapters and context links
 are separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.

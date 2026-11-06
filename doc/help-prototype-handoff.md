@@ -29,8 +29,9 @@ the owner’s next Go and is owner-accepted for commit. Sample topics used to ch
 `tests/fixtures/help/` and are not shown in Help. Chapter 9, [Use rules for repeated categorization](../manual/rules.md), is now
 bundled under the owner’s Go and owner-accepted for commit. Chapter 10,
 [Accept transactions — now or later](../manual/accept-transactions.md), is bundled
-under the next Go and owner-accepted for commit. Chapter 11 and context
-links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
+accepted and committed as `b1c55fc`. Chapter 11,
+[Answer questions with reports](../manual/reports.md), is bundled under the next
+Go and owner-accepted for commit. Chapter 12 and context links need their own Go. Leave `rulesLeaveDialog` at `Qt.ApplicationModal`.
 
 The introduction follows a grocery purchase through Chequing and a credit card;
 a Market purchase of 42.18 on 2026-01-15; a 6.00 refund on 2026-01-20; and a
@@ -41,6 +42,104 @@ that file. It has no application screenshot. It names Import…, + New
 transaction, and Accept transactions. It says transactions that are not yet
 accepted stay in the file and count in balances and reports, and that a
 recorded transfer is left out of report spending.
+
+## Chapter 11 — 2026-11-05
+
+The owner accepted chapter 10 and requested its commit (`b1c55fc`), then gave Go
+for [Answer questions with reports](../manual/reports.md). Chapter 11 is bundled
+with four screenshots and owner-accepted for commit. Supporting verification checked
+current engine/storage/UI behavior; the primary writer owned prose and captures;
+an independent reviewer checked accuracy, scope, brevity, continuity, images and
+test inventories. Review clarified descending category order and capture basis.
+No financial or Help viewer behavior changed.
+
+The chapter covers report creation and selection, moving presets/fixed dates,
+calendar interaction, ordered comparisons, signed net spending, direct category
+rows, separate currencies, all four graph choices, partial-split contributions,
+editing/Undo/refresh, saved report maintenance and remaining problems. It names
+the distinct selected Save and all-draft leave Save behaviors, including saving
+a deletion with Save all changes. Printing/export remain unavailable.
+
+The temporary Household file uses Credit card opening zero and Chequing
+1,000.00 on January 1. January card purchases are Market -42.18, refund +6.00
+and Corner shop -20.00 split Groceries -12.00 / Household -8.00. February adds
+Groceries -55.00 and Household -15.00. Chequing has Income +2,000.00 and the
+January 28 card payment -36.18 with its generated counterpart. Selecting
+Groceries/Household across both accounts yields January 56.18 and February
+70.00, excluding income, opening balances and transfer principal. The card
+purchases are accepted; income/transfer postings remain new.
+
+Double-clicking January Groceries opens three transactions totalling 48.18.
+Corner shop contributes only 12.00 despite its 20.00 full withdrawal. Saving its
+date in February retains the opened row as no longer included and updates the
+period totals to 36.18 / 90.00; Undo restores 56.18 / 70.00. The walkthrough
+also changes grouped bars to Pie and exercises unsaved-report Stay/Discard.
+
+| Asset under `manual/images/` | Captured state |
+| --- | --- |
+| `reports-editor.png` | Two account/category selections and January/February custom dates |
+| `reports-comparison.png` | Grouped bars and exact 56.18 / 70.00 table |
+| `reports-pie.png` | Separate equal-sized pies with period totals |
+| `reports-transactions.png` | Groceries detail with Corner shop's included split marked |
+
+Capture basis: actual ImportMain.qml in a native macOS Qt 6.12.0 Basic light
+harness, 1440 × 900 logical pixels at 2×, temporary synthetic file/settings.
+Setup, categories, openings, imports, transfer creation, accepted-state setup,
+transaction inspection and Undo use model commands or existing helpers. Real
+mouse clicks exercise Reports/New report, category checkboxes, graph selection,
+Add comparison, Save and show, amount double-click and Back buttons. Text fields
+use Qt properties/textEdited signals. Calendar and graph selection use real key
+events; transaction Enter saves through the editor. Report leave choices emit
+the controls' clicked signals. Scrolling brings controls into view through Qt
+properties. This is not a manual standalone-app walkthrough. All four source
+images were visually inspected and independently reviewed.
+
+The Graph combo currently clips the long choice text, and the editor's bottom
+Save controls require scrolling at this size. These existing UI limitations
+are captured honestly; no screenshot retouching or UI change was made.
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests reportsChapterWalkthrough
+SPENTIT_GUIDE_CAPTURE="$PWD/manual/images" ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests reportsChapterWalkthrough
+ctest --test-dir build/import-ui-rules-release -R '^(engine\.reports|import\.reports|import\.reports_ui)$' --output-on-failure
+```
+
+The focused offscreen walkthrough passed 3/3 including init/cleanup in 4549ms;
+native capture passed 3/3 in 6244ms. An initial fixture omitted the transfer
+operation identifier and sequence and failed; supplying the existing command's
+required arguments corrected it. An earlier test invocation ran before linking
+finished and reported an unknown test function; it was rerun after the build.
+No private data or application behavior was changed for these harness corrections.
+
+Supporting checks passed 3/3 in 16.62s (engine 0.01s, storage 11.61s, offscreen
+UI 4.99s), with authorized application-data lock access. These include exact
+cell reconciliation, signs/currencies, boundaries, transfer fees, new/accepted
+and edited entries, definition retries, write/sync failure positions, pre/post
+commit interruption and restored backup. Supporting UI checks cover scoped
+editing, refresh/Undo, calendar behavior and negative-pie data.
+
+Final rules-enabled Release verification on macOS Qt 6.12.0:
+
+- Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+  `spentit_help_tests`; `build/SpentIt` bundles eleven chapters and 36 images.
+- The documented five-check CTest selection passed preparation, catalog, QML
+  and Rules UI (4/5). Full offscreen Help reached its known 120-second timeout
+  during Rules reading; total selection time 144.78s. This is not a full
+  offscreen pass, and that timing limit remains unresolved.
+- Full native `spentit_help_ui_tests`, with `SPENTIT_GUIDE_READING_CAPTURE` set
+  to a temporary path, passed 30/30 including init/cleanup in 271744ms.
+  Chapter 11 checks previous/next and section navigation, actual clicks on all
+  four images, loading/Actual size/close/scroll return, and 500-pixel reading at
+  150% text. Normal, inline-image and narrow/larger-text views were visually
+  inspected. All existing native walkthrough, scrolling and modal Help checks
+  passed as part of that run.
+- Catalog search for “grouped periods” finds chapter 11. Preparation validates
+  bundled links/images; changed-document relative links and `git diff --check`
+  passed.
+
+Dark appearance, complete keyboard-only/screen-reader use, Linux and Windows
+remain unverified. The owner accepted chapter 11 and requested its commit.
+Chapter 12 and application-wide context links require their own Go.
 
 ## Chapter 10 — 2026-11-05
 
@@ -1144,7 +1243,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. Chapter 10, “Accept transactions — now or later”, is owner-accepted for commit. Commit when requested. The next chapter is chapter 11, “Answer questions with reports” in `manual/outline.md`, after its Go.
+2. Chapter 11, “Answer questions with reports”, is owner-accepted for commit. Commit when requested. The next chapter is chapter 12, “Look after your work and resolve remaining problems” in `manual/outline.md`, after its Go.
    Do not write it, and do not add context links, unless the owner gives that Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.

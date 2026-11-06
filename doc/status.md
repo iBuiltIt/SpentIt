@@ -2,6 +2,42 @@
 
 Last updated: 2026-11-05
 
+## Help chapter 11 — 2026-11-05
+
+The owner accepted chapter 10, committed as `b1c55fc`, and gave Go for
+[Answer questions with reports](../manual/reports.md). Chapter 11 is bundled
+with four synthetic screenshots and owner-accepted for commit. Supporting
+verification, one primary writer/capture owner and independent review followed
+the documented chapter workflow. The chapter covers report setup, selection,
+periods/calendar, comparisons, signs/currencies, graphs, partial-split details,
+editing/Undo, saved-report maintenance and refresh/problems. No financial or
+Help viewer implementation changed.
+
+The synthetic walkthrough verifies January 56.18 versus February 70.00, a
+20.00 purchase contributing only its 12.00 Groceries split, refreshed period
+totals after a date edit and Undo, graph selection and report leave choices.
+Offscreen walkthrough passed 3/3 including init/cleanup in 4549ms; native
+capture passed 3/3 in 6244ms. Report engine/storage/UI selection passed 3/3 in
+16.62s, including exact reconciliation and existing report-save recovery checks.
+All four source images were visually inspected and independently reviewed.
+The Graph field's existing clipped label and below-window Save controls remain;
+the chapter gives full labels and tells the reader to scroll.
+
+Rebuilt the application and both Help test targets; `build/SpentIt` bundles
+11 chapters and 36 images. Full native Help passed 30/30 including init/cleanup
+in 271744ms, covering image clicks, reading/navigation, 500-pixel/150% text,
+existing walkthroughs, reverse scrolling and modal Help. Normal/inline-image/
+narrow Chapter 11 views were visually inspected. Preparation, catalog, QML and
+Rules UI passed (4/5 checks); full offscreen Help again hit the existing
+120-second limit during Rules reading (144.78s total selection). That timeout
+remains unresolved. Search, bundled links/images, relative links and
+`git diff --check` passed. The
+[handoff](help-prototype-handoff.md#chapter-11--2026-11-05) records commands,
+capture basis, harness corrections and limitations. This uses actual QML in a
+native synthetic harness, not a manual standalone-app walkthrough. Dark-mode,
+complete keyboard/screen-reader and Linux/Windows checks remain unverified.
+Chapter 12 and context links require their own Go; the owner accepted chapter 11 and requested its commit.
+
 ## Help chapter 10 — 2026-11-05
 
 Under the owner's Go, [Accept transactions — now or later](../manual/accept-transactions.md)
