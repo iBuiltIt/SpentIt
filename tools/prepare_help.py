@@ -135,7 +135,20 @@ def caption_follows(body: str, image_end: int, source: Path) -> None:
         fail(f"{source}: an image needs an italic caption on the next line")
 
 
-def build(manual: Path, output: Path) -> None:
+def validate_context_sources(topics: list[dict], sources: list[Path]) -> None:
+    """Every literal application Help target must resolve before bundling."""
+    by_id = {topic["id"]: topic for topic in topics}
+    for source in sources:
+        text = source.read_text(encoding="utf-8")
+        for target in re.findall(r"""["'](help:[^"']*)["']""", text):
+            match = re.fullmatch(r"help:([a-z0-9-]+)(?:#([a-z0-9-]+))?", target)
+            if not match or match[1] not in by_id:
+                fail(f"{source}: context target {target} is not a bundled topic")
+            if match[2] and not any(section["id"] == match[2] for section in by_id[match[1]]["sections"]):
+                fail(f"{source}: context target {target} is not a bundled section")
+
+
+def build(manual: Path, output: Path, context_sources: list[Path] | None = None) -> None:
     if not manual.is_dir():
         fail(f"{manual} is not a Help source directory")
     topics = []
@@ -169,6 +182,7 @@ def build(manual: Path, output: Path) -> None:
     ids = [topic["id"] for topic in topics]
     if len(ids) != len(set(ids)):
         fail("duplicate Help topic id")
+    validate_context_sources(topics, context_sources or [])
     by_path = {topic["path"]: topic for topic in topics}
     images: dict[str, dict[str, str]] = {}
 
@@ -264,9 +278,10 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Prepare the SpentIt Help bundle")
     parser.add_argument("--manual", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--context-source", action="append", default=[], type=Path)
     args = parser.parse_args(argv)
     try:
-        build(args.manual, args.output)
+        build(args.manual, args.output, args.context_source)
     except PrepareError as error:
         print(error, file=sys.stderr)
         return 1

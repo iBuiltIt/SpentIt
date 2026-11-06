@@ -12,7 +12,7 @@ SpentIt. Our household starts with Chequing and adds Credit card
 and Cash. Keeping them separate helps you check each balance against
 what you have—or owe.
 
-## Add an account
+## Add an account {#add-an-account}
 
 Choose **+ New Account** beside Accounts in the left sidebar. Type a
 name, such as Credit card, and press **Enter**. **Escape** or **Cancel**
@@ -35,7 +35,7 @@ Names differing only in capital letters count as the same name.
 SpentIt also remembers accounts’ earlier names and confirmed import
 names, so renaming an account does not free its old name for reuse.
 
-## Set the starting balance
+## Set the starting balance {#set-the-starting-balance}
 
 An opening balance is what you had, or owed, before the transactions
 you’re bringing into SpentIt. It is not income or a purchase.
@@ -85,7 +85,7 @@ where it will go.
 ![Chequing’s right-click menu with Rename, Archive, Delete, Correct opening and Reassign currency.](images/accounts-menu.png)
 *Account actions apply to the account you right-click.*
 
-### Rename or put an account aside
+### Rename or put an account aside {#rename-or-put-an-account-aside}
 
 Choose **Rename…**, enter the new name, and choose **OK**. Earlier
 names still identify the account when matching imports.
@@ -99,7 +99,7 @@ review the new transactions and use **Accept transactions** when
 ready. Acceptance covers new transactions across your accounts.
 Discard only if you intend to remove the new transactions.
 
-### Delete an unused account
+### Delete an unused account {#delete-an-unused-account}
 
 **Delete…** is for an unused account created by mistake. It must have
 no transactions, imports, or transfers, an unchanged zero opening and date,
@@ -110,7 +110,7 @@ account unused again.
 Choose **Delete…**, then **OK** to remove it. If it is ineligible,
 use **Archive** to put it aside instead.
 
-### Choose the currency
+### Choose the currency {#choose-the-currency}
 
 Use **Reassign currency…**, type the currency code, then choose
 **Reassign**. For example, type CAD for Canadian dollars.

@@ -34,6 +34,25 @@ ApplicationWindow {
     palette.disabled.text: theme.disabled
     palette.disabled.buttonText: theme.disabled
     palette.disabled.highlightedText: theme.disabled
+    // The header Help action never accepts/rejects the dialog or takes pointer
+    // focus from an editor. Keyboard users can still Tab to it.
+    component HelpDialog: Dialog {
+        id: dialog
+        required property string helpTarget
+        header: RowLayout {
+            spacing: 12
+            Label {
+                text: dialog.title; textFormat: Text.PlainText
+                font.bold: true; wrapMode: Text.Wrap; Layout.fillWidth: true
+                Layout.margins: 12
+            }
+            Button {
+                objectName: dialog.objectName + "Help"
+                text: "Help"; focusPolicy: Qt.TabFocus; Layout.rightMargin: 12
+                onClicked: window.openContextHelp(dialog.helpTarget)
+            }
+        }
+    }
     component UsableScrollBar: ScrollBar {
         id:bar;z:10;policy:ScrollBar.AsNeeded;interactive:true;minimumSize:0.08
         implicitWidth:16;implicitHeight:16;padding:2
@@ -186,11 +205,24 @@ ApplicationWindow {
             }
         }
         Menu {
+            id: helpMenu; objectName: "helpMenu"
             title: "Help"
+            onAboutToShow: {
+                helpMenuReturnItem = window.activeFocusItem
+                helpMenuTracking = true
+            }
+            onClosed: Qt.callLater(function() {
+                if (!(helpWindowInstance && helpWindowInstance.visible)) {
+                    if (helpMenuReturnItem) helpMenuReturnItem.forceActiveFocus()
+                }
+                helpMenuTracking = false
+                helpMenuReturnItem = null
+            })
             MenuItem { objectName: "openHelp"; text: "SpentIt Help"; onTriggered: openHelp() }
+            MenuItem { objectName: "openScreenHelp"; text: "Help for this screen"; onTriggered: openContextHelp(screenHelpTarget()) }
         }
     }
-    Shortcut { sequences: [StandardKey.HelpContents]; context: Qt.ApplicationShortcut; onActivated: openHelp() }
+    Shortcut { sequences: [StandardKey.HelpContents]; context: Qt.ApplicationShortcut; enabled: !rulesLeaving && !reportsWorkspace.leaving; onActivated: openContextHelp(screenHelpTarget()) }
     property var selected: s.selected || ({})
     property bool processingIncomplete: !!s.pending && !!s.pending.processingIncomplete
     // View state belongs to occurrence identities, never recycled delegates.
@@ -285,7 +317,8 @@ ApplicationWindow {
             workflow.command("select_account",{id:item.account,reveal:item.record>=0,reviewBatch:item.batch,batch:item.batch,ordinal:item.record})
         })
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:accept-transactions#when-review-still-has-questions"
         id:importBlockersDialog;objectName:"importBlockersDialog";title:"What’s blocking commit?";modal:true
         width:Math.min(parent.width-40,900);height:Math.min(parent.height-40,600);anchors.centerIn:parent
         standardButtons:Dialog.Close
@@ -360,7 +393,9 @@ ApplicationWindow {
             bulkCategoryDialog.open()
         } else applyLedgerCategory(choice,rows.length===1?rows[0].splits[0].allocationId:"")
     }
-    Dialog {id:bulkCategoryDialog;objectName:"bulkCategoryDialog";title:"Choose split";modal:true;anchors.centerIn:parent;width:Math.min(600,window.width-40);standardButtons:Dialog.Cancel
+    HelpDialog {
+        helpTarget: "help:organize-categories#change-selected-transactions"
+        id:bulkCategoryDialog;objectName:"bulkCategoryDialog";title:"Choose split";modal:true;anchors.centerIn:parent;width:Math.min(600,window.width-40);standardButtons:Dialog.Cancel
         readonly property var rows:s.selection||[]
         contentItem:ColumnLayout {
             Label {text:bulkCategoryDialog.rows.length===1?"Choose the split to change.":"Select one split transaction at a time to change its category.";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -400,7 +435,8 @@ ApplicationWindow {
         ledger.forceActiveFocus()
         workflow.command(restoringSelection?"restore_imported_selection":"rename_payee_selection",request)
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: restoringSelection ? "help:add-correct-transactions#compare-with-the-imported-transaction" : "help:add-correct-transactions#change-a-selection-or-delete-entries"
         id:selectedEditDialog;objectName:"selectedEditDialog";modal:true;anchors.centerIn:parent;width:Math.min(560,window.width-40)
         title:restoringSelection?"Restore imported values?":"Rename payee"
         contentItem:ColumnLayout {
@@ -594,7 +630,15 @@ ApplicationWindow {
         workflow.reorderAccounts(ids)
     }
     Shortcut {sequence:"Escape";enabled:accountDragRow!==null;onActivated:cancelAccountDrag()}
-    onActiveChanged:if(!active)cancelAccountDrag()
+    onActiveChanged: {
+        if(!active)cancelAccountDrag()
+        // A transient parent can remain "active" while Help has input. Wait
+        // for focus to settle and check both Help reading surfaces as well.
+        Qt.callLater(function(){
+            if(window.active && !helpMenuTracking && !(helpWindowInstance && helpWindowInstance.readingActive))
+                helpFocusTransfer=false
+        })
+    }
     Timer {
         interval:30;repeat:true;running:accountDragRow!==null
         onTriggered:{
@@ -712,8 +756,14 @@ ApplicationWindow {
     property bool rulesLeaving: false
     property var helpWindowInstance: null
     property var helpReturnItem: null
+    property var helpMenuReturnItem: null
+    property bool helpMenuTracking: false
     property string helpLoadError: ""
     property bool helpOpening: false
+    // Native window deactivation can emit editingFinished. Reading Help must
+    // not normalize an amount, restore category text, or save a category draft.
+    property bool helpFocusTransfer: false
+    readonly property bool helpFocusSuspended: helpFocusTransfer || helpMenuTracking || helpMenu.visible
     property var ruleValidationQueue: []
     property bool ruleValidatingAll: false
     property int unsavedRuleCount: {let generation=ruleEditGeneration;return dirtyRuleIndices().length}
@@ -766,16 +816,42 @@ ApplicationWindow {
         Qt.callLater(function() {
             if (owner && owner.requestActivate) owner.requestActivate()
             if (item && item.forceActiveFocus) item.forceActiveFocus()
+            helpFocusTransfer = false
         })
     }
     function presentHelp() {
+        helpFocusTransfer = true
         const owner = helpOwner() || window
-        helpReturnItem = owner.activeFocusItem
+        if (!helpWindowInstance.visible || owner.active)
+            helpReturnItem = helpMenuReturnItem || owner.activeFocusItem
         helpWindowInstance.modalOwner = helpOwner()
         helpWindowInstance.syncOwner()
         helpWindowInstance.show()
         helpWindowInstance.raise()
         helpWindowInstance.requestActivate()
+    }
+    function screenHelpTarget() {
+        if (rulesLeaving) return "help:use-rules#keep-and-change-your-rules"
+        if (reportsWorkspace.leaving) return "help:answer-with-reports#keep-and-change-your-reports"
+        // Qt Quick dialogs share the main window. Read the visible dialog,
+        // never its text, selected values, or an error payload.
+        const dialogs = [importBlockersDialog, bulkCategoryDialog, selectedEditDialog, deleteSelectionDialog, overwriteDialog, importCategories, importMapping, importDateOrder, importDestinationDialog, splitMismatch, unsaved, changePreview, mergePreview, bulkDialog, reapplyDialog, transferSuggestionSettings, ruleSplitDialog, matchedRuleDialog, categoryPicker, renameDialog, deleteAccountDialog, correctOpeningDialog, currencyDialog, importCategoriesDialog, importUndoPicker, importUndoConfirm, discardDialog, closeAuditFailure, quitCommit, linkExclusionDialog, statusDetails, reviewSurvivor, reviewDifference]
+        for (const dialog of dialogs) if (dialog.visible) return dialog.helpTarget
+        if (!s.active) return "help:create-open-file"
+        if (addingAccount) return "help:set-up-accounts#add-an-account"
+        if (search.activeFocus) return "help:search-examples"
+        if (currentPage === "review") return "help:review-duplicates-transfers"
+        if (currentPage === "categories") return "help:organize-categories"
+        if (currentPage === "rules") return "help:use-rules"
+        if (currentPage === "reports") return reportLedger ? "help:answer-with-reports#open-the-transactions-behind-an-amount" : "help:answer-with-reports"
+        if (currentPage === "history") return "help:add-correct-transactions#undo-a-saved-change"
+        if (currentPage === "settings") return "help:look-after-your-work"
+        if (editEnabled) return "help:add-correct-transactions"
+        return "help:find-transactions"
+    }
+    function openContextHelp(target) {
+        openHelp()
+        if (helpWindowInstance) helpWindowInstance.followLink(target)
     }
     function openHelp() {
         const catalog = helpCatalogObject()
@@ -813,7 +889,7 @@ ApplicationWindow {
         target: reportsWorkspace
         function onLeaveShown() { if (helpWindowInstance) helpWindowInstance.modalOwner = reportsWorkspace.leaveWindow }
         function onLeaveHiding() { if (helpWindowInstance && helpWindowInstance.modalOwner === reportsWorkspace.leaveWindow) helpWindowInstance.modalOwner = null }
-        function onHelpRequested() { openHelp() }
+        function onHelpRequested(target) { openContextHelp(target) }
     }
     Window {
         id:rulesLeaveDialog;objectName:"rulesLeaveDialog"
@@ -836,7 +912,7 @@ ApplicationWindow {
             if(!workflow.busy && !ruleValidatingAll)stayInRules()
         }
         Shortcut {sequence:"Escape";enabled:rulesLeaving && !workflow.busy && !ruleValidatingAll;onActivated:stayInRules()}
-        Shortcut {sequences:[StandardKey.HelpContents];context:Qt.WindowShortcut;enabled:rulesLeaving;onActivated:openHelp()}
+        Shortcut {sequences:[StandardKey.HelpContents];context:Qt.WindowShortcut;enabled:rulesLeaving;onActivated:openContextHelp("help:use-rules#keep-and-change-your-rules")}
         ColumnLayout {
             id:rulesLeaveContent;objectName:"rulesLeaveContent"
             anchors.top:parent.top;anchors.left:parent.left;anchors.right:parent.right
@@ -847,10 +923,10 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.alignment:Qt.AlignRight
-                enabled:!workflow.busy && !ruleValidatingAll
-                Button {objectName:"rulesGuardSave";text:"Save";onClicked:saveAllRulesAndLeave()}
-                Button {objectName:"rulesGuardDiscard";text:"Discard";onClicked:workflow.command("rules_discard")}
-                Button {objectName:"rulesGuardStay";text:"Stay";onClicked:stayInRules()}
+                Button {objectName:"rulesGuardHelp";text:"Help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp("help:use-rules#keep-and-change-your-rules")}
+                Button {objectName:"rulesGuardSave";enabled:!workflow.busy && !ruleValidatingAll;text:"Save";onClicked:saveAllRulesAndLeave()}
+                Button {objectName:"rulesGuardDiscard";enabled:!workflow.busy && !ruleValidatingAll;text:"Discard";onClicked:workflow.command("rules_discard")}
+                Button {objectName:"rulesGuardStay";enabled:!workflow.busy && !ruleValidatingAll;text:"Stay";onClicked:stayInRules()}
             }
         }
     }
@@ -1017,7 +1093,8 @@ ApplicationWindow {
         })
     }
     property var deleteSelectionRequest:null
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:add-correct-transactions#change-a-selection-or-delete-entries"
         id:deleteSelectionDialog;objectName:"deleteSelectionDialog";title:"Delete selected transactions?";modal:true;anchors.centerIn:parent;width:Math.min(520,window.width-40)
         contentItem:Label {wrapMode:Text.Wrap;text:deleteSelectionRequest && deleteSelectionRequest.selected.length===1?"Delete this transaction? This changes the account balance.":"Delete these "+(deleteSelectionRequest?deleteSelectionRequest.selected.length:0)+" transactions? This changes the account balance."}
         footer:DialogButtonBox {
@@ -1646,7 +1723,8 @@ ApplicationWindow {
         location.text=workflow.datasetFilename(location.text)
         workflow.command("create",{path:location.text,name:accountName.text,currency:currency.currentText,protected:protection.checked,password:password.text,confirmation:confirmation.text,overwrite:overwrite,dateFormat:setupDate.currentIndex===6?customDate.text:setupDate.currentText,defaultCategories:defaultCategories.checked})
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:create-open-file#choose-a-name-and-place"
         id:overwriteDialog;objectName:"overwriteDatasetDialog";width:Math.min(600,window.width-64);title:"Overwrite dataset?";modal:true;anchors.centerIn:parent
         standardButtons:Dialog.Cancel
         Label {text:location.text+" already exists";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:Math.min(560,window.width-100)}
@@ -1675,7 +1753,8 @@ ApplicationWindow {
         for(let name of pending[0].names)importCategoryModel.append({categoryName:name,selected:true})
         importCategories.open()
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:bring-in-transactions#choose-which-categories-to-keep"
         id:importCategories;objectName:"importCategories";title:"These imported categories don’t exist yet."
         modal:true;anchors.centerIn:parent;width:Math.min(window.width-40,640);height:Math.min(window.height-40,500)
         closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape
@@ -1701,7 +1780,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:bring-in-transactions#match-the-accounts"
         id:importMapping;objectName:"importAccountMapping";title:"Choose accounts for this import";modal:true;closePolicy:Popup.NoAutoClose
         anchors.centerIn:parent;width:Math.min(window.width-40,800);height:Math.min(window.height-40,620)
         visible:(s.importPlan||[]).length>0
@@ -1750,7 +1830,8 @@ ApplicationWindow {
             Label {text:errorDialog===importMapping?workflow.error:"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:bring-in-transactions#if-the-dates-could-mean-two-things"
         id:importDateOrder;objectName:"importDateOrderDialog";title:"Which date order does this file use?"
         modal:true;closePolicy:Popup.NoAutoClose;anchors.centerIn:parent
         width:Math.min(window.width-48,560)
@@ -1769,7 +1850,9 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {id:importDestinationDialog;objectName:"importDestinationDialog";title:"Choose import destination";modal:true;closePolicy:Popup.NoAutoClose;anchors.centerIn:parent
+    HelpDialog {
+        helpTarget: "help:bring-in-transactions#match-the-accounts"
+        id:importDestinationDialog;objectName:"importDestinationDialog";title:"Choose import destination";modal:true;closePolicy:Popup.NoAutoClose;anchors.centerIn:parent
         visible:!!s.importDestination
         standardButtons:Dialog.Ok|Dialog.Cancel
         contentItem:UsableComboBox {id:importDestinationAccount;objectName:"importDestinationAccount";model:s.accounts||[];textRole:"name";Accessible.name:"Import destination account"}
@@ -1779,7 +1862,8 @@ ApplicationWindow {
     property string importTarget: ""
     FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),account:importTarget}) }
     FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save a backup to a new file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:add-correct-transactions#divide-a-purchase-into-splits"
         id:splitMismatch;objectName:"splitMismatchDialog";title:"Change transaction amount?";modal:true;anchors.centerIn:parent
         onRejected:pendingAction=null
         ColumnLayout {
@@ -1790,7 +1874,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:add-correct-transactions#correct-an-entry"
         id:unsaved;objectName:"unsavedDialog"; title:"Unsaved changes"; modal:true; anchors.centerIn:parent
         ColumnLayout {
             Label {textFormat:Text.PlainText;text:"Save your changes before leaving?"}
@@ -1802,7 +1887,8 @@ ApplicationWindow {
         }
         onRejected:if(!guardHandoff){pendingAction=null}
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:add-correct-transactions#correct-an-entry"
         id:changePreview;objectName:"committedChangePreview";modal:true;anchors.centerIn:parent
         width:Math.min(window.width-48,820);height:Math.min(window.height-80,650)
         title:(s.changePreview||{}).title||"Review change"
@@ -1838,7 +1924,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:review-duplicates-transfers#if-spentit-created-the-other-side"
         id:mergePreview;objectName:"mergePreview";modal:true;anchors.centerIn:parent
         width:Math.min(window.width-48,720)
         title:"Link transactions"
@@ -1855,7 +1942,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:add-correct-transactions"
         id:bulkDialog;objectName:"bulkDialog";title:(s.bulkPreview||{}).title||"Review changes";modal:true;anchors.centerIn:parent;width:Math.min(850,window.width-80);height:Math.min(600,window.height-80)
         ColumnLayout {
             anchors.fill:parent
@@ -1872,7 +1960,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:use-rules#preview-save-and-apply"
         id:reapplyDialog;objectName:"reapplyDialog";title:(s.reapplyPreview||{}).title||"Reapply rules";modal:true;anchors.centerIn:parent;width:Math.min(850,window.width-80);height:Math.min(600,window.height-80)
         ColumnLayout {
             anchors.fill:parent
@@ -1891,8 +1980,9 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
-        id:transferSuggestionSettings;title:"Transfer suggestions";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700)
+    HelpDialog {
+        helpTarget: "help:review-duplicates-transfers#is-it-a-payment-between-accounts"
+        id:transferSuggestionSettings;objectName:"transferSuggestionSettings";title:"Transfer suggestions";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700)
         contentItem:ColumnLayout {
                         Label {text:"Link suggestions";font.pixelSize:18}
                         Label {text:"Choose which transfer suggestions to hide.";wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -1905,7 +1995,8 @@ ApplicationWindow {
                         }}
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:use-rules#transaction-and-split-rules"
         id:ruleSplitDialog;objectName:"ruleSplitDialog";title:"Create a rule for";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,600)
         contentItem:ColumnLayout {
             Repeater {model:ruleCreateChoices()
@@ -1914,7 +2005,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:use-rules#keep-and-change-your-rules"
         id:matchedRuleDialog;objectName:"matchedRuleDialog";title:"Choose a rule to edit";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640)
         ColumnLayout {
             width:matchedRuleDialog.availableWidth
@@ -1930,7 +2022,8 @@ ApplicationWindow {
         MenuItem {objectName:"archiveCategory";text:categoryMenuEntry.ownArchived?"Unarchive":"Archive";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction(categoryMenuEntry.ownArchived?"unarchive":"archive")}
         MenuItem {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction("delete")}
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:organize-categories#choose-a-category-for-a-transaction"
         id:categoryPicker;objectName:"categoryPicker";onOpened:pickerFeedback="";title:"Choose split category";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700);height:Math.min(window.height-80,650)
         ColumnLayout {
             anchors.fill:parent
@@ -1951,7 +2044,8 @@ ApplicationWindow {
             Button {text:"Cancel";onClicked:categoryPicker.close()}
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:set-up-accounts#rename-or-put-an-account-aside"
         id:renameDialog;onOpened:renameField.forceActiveFocus();objectName:"renameAccountDialog";title:"Rename account";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
         width:Math.min(window.width-48,480)
         ColumnLayout {
@@ -1961,23 +2055,26 @@ ApplicationWindow {
         }
         onAccepted:workflow.command("rename_account",{operation:workflow.newIdentity(),name:renameField.text})
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:set-up-accounts#delete-an-unused-account"
         id:deleteAccountDialog;objectName:"deleteAccountDialog";title:"Delete empty account?";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640);standardButtons:Dialog.Ok|Dialog.Cancel
         Label {width:deleteAccountDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Delete this empty account?"}
         onAccepted:workflow.command("delete_account",{operation:workflow.newIdentity()})
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:set-up-accounts#set-the-starting-balance"
         id:correctOpeningDialog;objectName:"correctOpeningDialog";title:"Correct opening balance";modal:true;anchors.centerIn:parent;standardButtons:Dialog.Ok|Dialog.Cancel
         width:Math.min(window.width-48,520)
         ColumnLayout {
             width:correctOpeningDialog.availableWidth
             Label {text:"Update the opening date and/or balance.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             NavigableTextField {id:correctDate;objectName:"correctOpeningDate";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Corrected opening date";onAccepted:acceptDialog(correctOpeningDialog)}
-            NavigableTextField {id:correctAmount;onEditingFinished:resolveAmount(correctAmount);objectName:"correctOpeningAmount";placeholderText:"Amount";Accessible.name:"Corrected opening amount";onAccepted:acceptDialog(correctOpeningDialog)}
+            NavigableTextField {id:correctAmount;onEditingFinished:if(!window.helpFocusSuspended)resolveAmount(correctAmount);objectName:"correctOpeningAmount";placeholderText:"Amount";Accessible.name:"Corrected opening amount";onAccepted:acceptDialog(correctOpeningDialog)}
         }
         onAccepted:workflow.command("correct_opening",{operation:workflow.newIdentity(),date:correctDate.text,amount:correctAmount.text})
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:set-up-accounts#choose-the-currency"
         id:currencyDialog;objectName:"currencyDialog";title:"Change account currency";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,520);standardButtons:Dialog.NoButton
         ColumnLayout {
             width:currencyDialog.availableWidth
@@ -1995,7 +2092,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:bring-in-transactions#choose-which-categories-to-keep"
         id:importCategoriesDialog;objectName:"importCategoriesDialog";title:"Imported categories";modal:true;anchors.centerIn:parent
         width:Math.min(window.width-48,680);height:Math.min(window.height-48,520);standardButtons:Dialog.Close
         ColumnLayout {
@@ -2025,7 +2123,8 @@ ApplicationWindow {
         importUndoAccount.currentIndex=Math.max(0,(s.accounts||[]).findIndex(a=>a.id===(s.accountId||"")))
         importUndoPicker.open()
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:bring-in-transactions#undo-a-mistaken-import"
         id:importUndoPicker;objectName:"importUndoPicker";title:"Undo import";modal:true;anchors.centerIn:parent
         width:Math.min(window.width-48,720);height:Math.min(window.height-48,480)
         ColumnLayout {anchors.fill:parent
@@ -2046,7 +2145,8 @@ ApplicationWindow {
             Button {text:"Close";enabled:!workflow.busy;onClicked:importUndoPicker.close()}
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:bring-in-transactions#undo-a-mistaken-import"
         id:importUndoConfirm;objectName:"importUndoConfirm";title:"Undo this import?";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640)
         closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape
         ColumnLayout {anchors.fill:parent
@@ -2060,7 +2160,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:accept-transactions#choose-the-action-you-mean"
         id:discardDialog;objectName:"discardImportDialog";width:Math.min(window.width-48,640);title:"Discard new transactions in this account?";modal:true;anchors.centerIn:parent
         property string previewToken:""
         onOpened:previewToken=(s.rollback||{}).token||""
@@ -2068,7 +2169,8 @@ ApplicationWindow {
         Label {width:discardDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Remove "+((s.rollback||{}).transactions||0)+" transactions not yet accepted and "+((s.rollback||{}).failures||0)+" import problems from "+(s.name||"")+". Matching transactions created by SpentIt may also be deleted. Transactions kept by another account's import and all accepted transactions remain.\nAffected accounts: "+(((s.rollback||{}).accounts)||[]).map(function(id){let match=(s.accounts||[]).find(function(a){return a.id===id});return match?match.name:id}).join(", ")+"."}
         onAccepted:workflow.command("discard",{token:previewToken})
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:look-after-your-work#checking-could-not-finish-on-quit"
         id:closeAuditFailure;objectName:"closeAuditFailure";title:"Couldn’t finish checking the file";modal:true;anchors.centerIn:parent;width:540
         ColumnLayout {anchors.fill:parent
             Label {Layout.fillWidth:true;text:errorDialog===closeAuditFailure?workflow.error:"";wrapMode:Text.Wrap;textFormat:Text.PlainText}
@@ -2079,7 +2181,8 @@ ApplicationWindow {
             }
         }
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:accept-transactions#leave-them-new-and-return-later"
         id:quitCommit;objectName:"quitCommitDialog";title:"Accept transactions before quitting?";modal:true;anchors.centerIn:parent;width:520
         Label {width:480;wrapMode:Text.Wrap;text:"Your transactions are already saved. Accept them in all accounts now, or leave them for review next time."}
         footer:DialogButtonBox {
@@ -2106,7 +2209,8 @@ ApplicationWindow {
         exclusionAccount.checked=exclusionEditing.account!=="0"
         linkExclusionDialog.open()
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:review-duplicates-transfers#is-it-a-payment-between-accounts"
         id:linkExclusionDialog;objectName:"linkExclusionDialog";title:"Don't suggest links";modal:true;anchors.centerIn:parent;width:Math.min(window.width-40,760);height:Math.min(window.height-40,620)
         onRejected:workflow.command("link_exclusion_cancel")
         contentItem:ColumnLayout {
@@ -2186,7 +2290,9 @@ ApplicationWindow {
         linkExclusionDialog.visible?linkExclusionDialog:reapplyDialog.visible?reapplyDialog:
         bulkDialog.visible?bulkDialog:mergePreview.visible?mergePreview:
         changePreview.visible?changePreview:importMapping.visible?importMapping:null
-    Dialog {id:statusDetails;objectName:"statusDetails";title:"Status details";modal:true;anchors.centerIn:parent;width:Math.min(720,window.width-40)
+    HelpDialog {
+        helpTarget: "help:messages-problems"
+        id:statusDetails;objectName:"statusDetails";title:"Status details";modal:true;anchors.centerIn:parent;width:Math.min(720,window.width-40)
         contentItem:Label {text:errorDialog===statusDetails?workflow.error:"";textFormat:Text.PlainText;wrapMode:Text.Wrap}
         standardButtons:Dialog.Close
     }
@@ -2203,7 +2309,8 @@ ApplicationWindow {
         workflow.command("review_answer",args)
     }
 
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:review-duplicates-transfers#is-it-the-same-purchase"
         id:reviewSurvivor;objectName:"reviewSurvivor";title:"Choose the transaction to keep";modal:true;anchors.centerIn:parent;width:Math.min(window.width-64,720)
         contentItem:ColumnLayout {
             Repeater {model:reviewSurvivors;delegate:Button {
@@ -2214,7 +2321,8 @@ ApplicationWindow {
         }
         standardButtons:Dialog.Cancel
     }
-    Dialog {
+    HelpDialog {
+        helpTarget: "help:review-duplicates-transfers#when-the-amounts-differ"
         id:reviewDifference;objectName:"reviewDifference";title:"Link the matching amount";modal:true;anchors.centerIn:parent;width:Math.min(window.width-64,620)
         onOpened:reviewRemainderCategory.currentIndex=0
         property var preview:s.reviewLinkPreview||({})
@@ -2237,6 +2345,7 @@ ApplicationWindow {
             Button {objectName:"sidebarToggle";text:sidebarVisible?"Hide sidebar":"Show sidebar";visible:!!s.active;onClicked:sidebarVisible=!sidebarVisible;Accessible.name:text+" (Ctrl+Shift+B)"}
             Button {objectName:"navigationBack";text:"Back";visible:!!s.active;enabled:!workflow.busy && navigationIndex>0;onClicked:traverseNavigation(-1)}
             Button {objectName:"navigationForward";text:"Forward";visible:!!s.active;enabled:!workflow.busy && navigationIndex+1<navigation.length;onClicked:traverseNavigation(1)}
+            Button {objectName:"workspaceHelp";text:"Help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp(screenHelpTarget())}
             Label {objectName:"workspaceTitle";textFormat:Text.PlainText;text:!s.active ? "Open or create a file" : currentPage==="ledger" ? s.name+" · "+s.currency : ({review:"Review",categories:"Categories",rules:"Rules",reports:"Reports",history:"Change history",settings:"Settings"})[currentPage] || "SpentIt";font.pixelSize:20;elide:Text.ElideRight;Layout.fillWidth:true}
             BusyIndicator {
                 id:activityIndicator;objectName:"activityIndicator"
@@ -2302,6 +2411,7 @@ ApplicationWindow {
                 RowLayout {
                     spacing:12;enabled:!workflow.busy
                     Button {objectName:"browseDataset";text:"Browse…";onClicked:{openDialog.currentFolder=workflow.documentsFolder;openDialog.open()}}
+                    Button {objectName:"welcomeHelp";text:"Help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp("help:create-open-file")}
                     Button {objectName:"newDataset";text:"New file";onClicked:{settingUp=true;location.text=workflow.suggestedPath;accountName.text="SpentIt";protection.checked=true;defaultCategories.checked=true;setupDateOverridden=false;password.clear();confirmation.clear();currency.currentIndex=workflow.currencies.indexOf("CAD");suggestSetupDate();workflow.command("prepare_create",{path:location.text})}}
                     Button {objectName:"openPublicDataset";text:"Open file";visible:!settingUp && s.path===location.text && !!s.canOpen && !s.unlockRequired;onClicked:openDataset()}
                 }
@@ -2311,6 +2421,7 @@ ApplicationWindow {
                     Button {objectName:"openProtectedDataset";text:"Open file";onClicked:openDataset()}
                 }
                 Label {objectName:"welcomeError";text:errorDialog?"":workflow.error;visible:text.length>0;textFormat:Text.PlainText;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
+                Button {objectName:"welcomeErrorHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!errorDialog && !!workflow.error;onClicked:openContextHelp("help:messages-problems#opening-a-file-and-making-backups")}
                 GroupBox {
                     title:"Create a new dataset";visible:settingUp;Layout.fillWidth:true;enabled:!workflow.busy
                     ColumnLayout {
@@ -2493,6 +2604,7 @@ ApplicationWindow {
                             HoverHandler {id:statusHover}
                         }
                         Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.busy && workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
+                        Button {objectName:"statusHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!workflow.busy && !!workflow.error && !errorDialog;onClicked:openContextHelp("help:messages-problems")}
                         Button {objectName:"statusDetailsButton";text:"Details";visible:!workflow.busy && !!workflow.error && !errorDialog;onClicked:statusDetails.open()}
                     }
                 }
@@ -2693,7 +2805,7 @@ ApplicationWindow {
                         }
                         RowLayout {
                             NavigableTextField {id:transferDate;objectName:"transferDate";text:workflow.todayDisplay();placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
-                            NavigableTextField {id:transferAmount;onEditingFinished:resolveAmount(transferAmount);objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
+                            NavigableTextField {id:transferAmount;onEditingFinished:if(!window.helpFocusSuspended)resolveAmount(transferAmount);objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
                             NavigableTextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
                             Button {objectName:"createManualTransfer";text:"Add transfer";enabled:!s.readOnly && transferDestination.currentIndex>0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
                         }
@@ -2822,7 +2934,7 @@ ApplicationWindow {
                                     onTextEdited:{categoryEditText=text}
                                     onAccepted:finishCategoryEdit()
                                     Keys.onEscapePressed:function(event){cancelCategoryEdit();event.accepted=true}
-                                    onActiveFocusChanged:if(!activeFocus && categoryRow.editing && !categorySaving)Qt.callLater(function(){if(categoryRow.editing && !inlineCategory.activeFocus)finishCategoryEdit()})
+                                    onActiveFocusChanged:if(!activeFocus && categoryRow.editing && !categorySaving)Qt.callLater(function(){if(categoryRow.editing && !inlineCategory.activeFocus && !window.helpFocusSuspended)finishCategoryEdit()})
                                 }
                             }
                         }
@@ -3063,6 +3175,7 @@ ApplicationWindow {
             width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight;enabled:!workflow.busy || workflow.selecting
             RowLayout {
                 ClearableSearchField {id:search;objectName:"ledgerSearch";clearObjectName:"clearFilter";hasAppliedFilter:appliedFilter.length>0;onClearRequested:guard(function(){search.clearSearch();query()});placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
+                Button {objectName:"searchHelp";text:"Search help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp("help:search-examples")}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
                 Button {objectName:"addTransaction";visible:!window.reportLedger;text:"+ New transaction";enabled:!s.readOnly && !workflow.busy;onClicked:addTransaction();ToolTip.visible:hovered;ToolTip.text:"Add transaction";Accessible.name:"Add transaction"}
                 Button {objectName:"undoEdit";text:s.editUndoLabel||"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo edits from this session. Other changes end this Undo sequence.";ToolTip.visible:hovered}
@@ -3235,7 +3348,7 @@ ApplicationWindow {
                     CalendarPicker {objectName:"transactionCalendar";workflow:window.workflowBackend;field:editDate;enabled:editEnabled;onSelected:function(value){editDate.text=value;dirty=true}}
                     NavigableTextField {id:editPayee;KeyNavigation.tab:editTotal;KeyNavigation.backtab:editDate;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
-                    NavigableTextField {id:editTotal;onEditingFinished:if(selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                    NavigableTextField {id:editTotal;onEditingFinished:if(!window.helpFocusSuspended && selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
                 }
                 Repeater {
@@ -3251,6 +3364,7 @@ ApplicationWindow {
                         required property string amount
                         Label {visible:window.reportLedger;text:index>=0 && index<splitModel.count && (s.reportRowInfo||{})[selected.batch+":"+selected.ordinal] && ((s.reportRowInfo||{})[selected.batch+":"+selected.ordinal].allocations||[]).indexOf(splitModel.get(index).allocationId)>=0?"●":"";Layout.preferredWidth:12;ToolTip.visible:splitReportHover.hovered;ToolTip.text:"Included in this report cell";HoverHandler {id:splitReportHover}}
                         CategoryCompletion {
+                            restoreOnFocusLoss: !window.helpFocusSuspended
                             id:categoryInput;objectName:"splitCategory_"+index
                             popupObjectName:"categoryDropdown_"+index
                             matchesObjectName:"categoryMatches_"+index
@@ -3285,7 +3399,7 @@ ApplicationWindow {
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
                         NavigableTextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
-                        NavigableTextField {id:splitAmount;onEditingFinished:{if(selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                        NavigableTextField {id:splitAmount;onEditingFinished:{if(!window.helpFocusSuspended && selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1};splitEditMessage="";dirty=true} Accessible.name:"Split amount"}
                         Label {objectName:"splitRemainder_"+index;visible:!manualSplitAmounts && automaticSplitIndex===index;text:"Automatic remainder"}
                         Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && !category.startsWith("[");onClicked:{if(!enabled || splitModel.count<=1)return;window.removeEditorSplit(index)}}

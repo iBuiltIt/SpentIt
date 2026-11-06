@@ -18,7 +18,7 @@ Open **Review** in the sidebar. Read the question above each group
 before answering **Yes** or **No**. Use **Inspect** to read a transaction’s
 details; opening it does not answer the question.
 
-## Is it the same purchase?
+## Is it the same purchase? {#is-it-the-same-purchase}
 
 Under **Are these the same?**, compare the date, amount and payee
 with your statement. Expand the category’s split count to see its
@@ -67,7 +67,7 @@ changing the file’s transactions clears the pending group choices.
 Inspection alone keeps them. If any selected match is no longer
 valid, the batch is refused rather than partly merged.
 
-## Is it a payment between accounts?
+## Is it a payment between accounts? {#is-it-a-payment-between-accounts}
 
 Our card payment is **-36.18 in Chequing** and **+36.18 in Credit card**.
 The bank might date it January 28 and the card provider January 29.
@@ -96,7 +96,7 @@ to visit the related posting, then use **Back** to return.
 ![Credit card ledger after linking the payment, showing Chequing as the payment category with a navigation arrow and a zero balance.](images/review-linked.png)
 *The payment clears the 36.18 card debt. Chequing still contains its withdrawal.*
 
-### If SpentIt created the other side
+### If SpentIt created the other side {#if-spentit-created-the-other-side}
 
 An imported transfer can name another account before that account’s
 bank posting arrives. SpentIt creates the corresponding entry there.
@@ -113,7 +113,7 @@ missing match; it is separate from **Accept transactions**. You can
 match an imported posting later. Don’t add another transfer simply
 to clear the question.
 
-## When the amounts differ
+## When the amounts differ {#when-the-amounts-differ}
 
 Suppose Chequing shows **37.18 paid** but Credit card received **36.18**.
 If the extra **1.00** is a real fee, it belongs in an ordinary category,

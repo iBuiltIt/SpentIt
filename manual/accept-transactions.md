@@ -38,7 +38,7 @@ Accepted transactions can still be [corrected](add-correct-transactions.md).
 However, an import containing accepted transactions can no longer be undone
 with **Undo import…**. Check the imported account and amounts before accepting.
 
-## When Review still has questions
+## When Review still has questions {#when-review-still-has-questions}
 
 A remaining Review item does not always prevent acceptance. Read the question
 and decide whether to resolve it now or leave the transactions new.
@@ -72,7 +72,7 @@ If acceptance fails, read the message before trying again. When SpentIt cannot
 confirm whether the change was saved, reopen the file and check the transactions
 first. Do the same if acceptance succeeded but the screen could not update.
 
-## Leave them new and return later
+## Leave them new and return later {#leave-them-new-and-return-later}
 
 You can keep working, close the file or quit without accepting. Saved new
 transactions remain available next time. An unfinished edit still needs its
@@ -89,7 +89,7 @@ quitting?**
 - **Quit without accepting** leaves the saved transactions new for next time.
 - **Cancel** returns to SpentIt without quitting.
 
-## Choose the action you mean
+## Choose the action you mean {#choose-the-action-you-mean}
 
 | Action | What it does |
 | --- | --- |

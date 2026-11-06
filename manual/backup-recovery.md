@@ -64,7 +64,7 @@ close it and reopen your usual working file instead.
 Work added after the backup was made will not be in the recovered copy.
 Check what is missing before importing or entering it again.
 
-## Adjust how you read and enter amounts
+## Adjust how you read and enter amounts {#adjust-how-you-read-and-enter-amounts}
 
 Settings shows the file’s **Date format**. That format was chosen when the
 file was created; there is no control here to change it.
@@ -119,7 +119,7 @@ imports and saved new transactions do not need accepting merely to survive
 closing the app. See [Check the result](import-transactions.md#check-the-result)
 for records that still need attention.
 
-### Checking could not finish on quit
+### Checking could not finish on quit {#checking-could-not-finish-on-quit}
 
 If **Couldn’t finish checking the file** appears, **Return** brings you back
 to the app. **Quit anyway** closes it; SpentIt will check the file again the

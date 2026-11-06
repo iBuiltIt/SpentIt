@@ -45,7 +45,7 @@ relevant split when asked. Check the proposed pattern and category.
 **Edit rule…** opens an available rule that assigned a value to that entry.
 For a manually entered transaction, start with New rule in Rules instead.
 
-## Preview, save and apply
+## Preview, save and apply {#preview-save-and-apply}
 
 **Include** chooses which transactions to consider in the selected account:
 
@@ -86,7 +86,7 @@ An empty template leaves that field alone. A plain-text payee or memo template
 supplies replacement text when the rule is allowed to change it. Rules do not
 change dates, amounts or the number of splits.
 
-### Transaction and Split rules
+### Transaction and Split rules {#transaction-and-split-rules}
 
 A **Transaction** rule matches a transaction field and fills its remaining
 Uncategorized splits. On a split transaction it assigns categories without
@@ -108,7 +108,7 @@ category. Select a rule and use **Up** and **Down** to put specific rules ahead 
 broader ones, then save the change. Applying one selected rule still respects earlier saved
 rules: it does not take a match that an earlier rule would categorize.
 
-## Keep and change your rules
+## Keep and change your rules {#keep-and-change-your-rules}
 
 Use **Search rules** to find a name, pattern or action, then select its row
 to edit. **Save** keeps that rule’s changes; **Discard** restores its saved

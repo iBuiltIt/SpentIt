@@ -14,7 +14,11 @@ excerpt; a split total varies with your entry.
 For a missing transaction or unexpected balance without an error, start with
 [Find a particular problem](backup-recovery.md#find-a-particular-problem).
 
-## Opening a file and making backups
+When **Help with this problem** appears beside a message, it opens this
+reference without retrying the action. A dialog’s **Help** button opens the
+instructions for that task.
+
+## Opening a file and making backups {#opening-a-file-and-making-backups}
 
 **“Passwords do not match”**
 
@@ -104,7 +108,7 @@ Choose an ordinary category in the rule’s editor. Rules cannot create transfer
 Choose **Refresh** before opening another amount.
 [Check report results](reports.md#if-the-result-needs-attention).
 
-## Saved changes and uncertain results
+## Saved changes and uncertain results {#saved-changes-and-uncertain-results}
 
 **“Your change was saved, but the screen could not update.”**
 

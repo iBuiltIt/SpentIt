@@ -135,7 +135,7 @@ negative amounts. Choose Bar to display them.**, the table still gives the
 amounts. Choose a Bar graph to see them. **No amounts in this period.** means
 there are no nonzero category amounts to draw.
 
-## Open the transactions behind an amount
+## Open the transactions behind an amount {#open-the-transactions-behind-an-amount}
 
 Double-click a **category amount** in the period you want to inspect.
 Double-click a **Total amount** for all selected categories in that period.
@@ -163,7 +163,7 @@ Search here only narrows the transactions you opened. Group edits must concern
 one account at a time. To add transactions, Merge duplicates or Link transfers,
 return to an ordinary account ledger.
 
-## Keep and change your reports
+## Keep and change your reports {#keep-and-change-your-reports}
 
 **Save** keeps the selected report’s settings. **Save and show** also opens its
 results. **Show** beside a report name saves that report’s changed settings
@@ -182,7 +182,7 @@ When leaving with unfinished report changes, **Save** saves all report drafts,
 **Discard** restores all saved reports, and **Stay** keeps editing. Use the
 selected report’s own **Discard** button to undo just its unfinished changes.
 
-### If the result needs attention
+### If the result needs attention {#if-the-result-needs-attention}
 
 - **Transactions changed:** choose **Refresh** before opening another amount.
 - **A saved edit could not refresh the report:** return to the report and choose

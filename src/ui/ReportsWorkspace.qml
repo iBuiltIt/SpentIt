@@ -23,7 +23,7 @@ Item {
     property alias leaveWindow: leaveDialog
     signal leaveShown()
     signal leaveHiding()
-    signal helpRequested()
+    signal helpRequested(string target)
     readonly property var current:selectedIndex>=0 && selectedIndex<drafts.length?drafts[selectedIndex]:null
     readonly property bool dirty:{generation;return JSON.stringify(drafts)!==JSON.stringify(savedDefinitions)}
     readonly property var presetIds:["ytd","this_year","last_year","this_quarter","last_quarter","this_month","last_month","six_months","previous_year","custom"]
@@ -99,14 +99,15 @@ Item {
         onVisibleChanged:if(visible){x=root.Window.window.x+(root.Window.window.width-width)/2;y=root.Window.window.y+(root.Window.window.height-height)/2;requestActivate()}else if(root.Window.window)root.Window.window.requestActivate()
         onClosing:function(event){if(root.leaving){event.accepted=false;if(!root.workflow.busy)root.stay()}}
         Shortcut {sequence:"Escape";enabled:root.leaving && !root.workflow.busy;onActivated:root.stay()}
-        Shortcut {sequences:[StandardKey.HelpContents];context:Qt.WindowShortcut;enabled:root.leaving;onActivated:root.helpRequested()}
+        Shortcut {sequences:[StandardKey.HelpContents];context:Qt.WindowShortcut;enabled:root.leaving;onActivated:root.helpRequested("help:answer-with-reports#keep-and-change-your-reports")}
         ColumnLayout {
-            anchors.fill:parent;anchors.margins:20;enabled:!root.workflow.busy
+            anchors.fill:parent;anchors.margins:20
             Label {textFormat:Text.PlainText;text:"Save your changes to Reports before leaving?";wrapMode:Text.Wrap;Layout.fillWidth:true}
             RowLayout {Layout.alignment:Qt.AlignRight
-                Button {objectName:"reportsGuardSave";text:"Save";onClicked:root.save(true,false)}
-                Button {objectName:"reportsGuardDiscard";text:"Discard";onClicked:{root.load();root.proceed()}}
-                Button {objectName:"reportsGuardStay";text:"Stay";onClicked:root.stay()}
+                Button {objectName:"reportsGuardHelp";text:"Help";focusPolicy:Qt.TabFocus;onClicked:root.helpRequested("help:answer-with-reports#keep-and-change-your-reports")}
+                Button {objectName:"reportsGuardSave";enabled:!root.workflow.busy;text:"Save";onClicked:root.save(true,false)}
+                Button {objectName:"reportsGuardDiscard";enabled:!root.workflow.busy;text:"Discard";onClicked:{root.load();root.proceed()}}
+                Button {objectName:"reportsGuardStay";enabled:!root.workflow.busy;text:"Stay";onClicked:root.stay()}
             }
         }
     }
@@ -118,6 +119,7 @@ Item {
             Button {visible:root.mode==="result";text:"Refresh";enabled:!root.workflow.busy;onClicked:root.workflow.command("report_show",{id:root.result.id})}
         }
         Label {textFormat:Text.PlainText;visible:root.feedback.length>0;text:root.feedback;wrapMode:Text.Wrap;Layout.fillWidth:true}
+        Button {objectName:"reportFeedbackHelp";text:"Help with reports";focusPolicy:Qt.TabFocus;visible:root.feedback.length>0;onClicked:root.helpRequested("help:answer-with-reports#if-the-result-needs-attention")}
         ScrollView {
             id:editorScroll;visible:root.mode==="workspace";Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth;enabled:!root.workflow.busy
             ColumnLayout {
@@ -221,6 +223,7 @@ Item {
         }
         Label {textFormat:Text.PlainText;visible:root.mode!=="workspace";text:"Net spending: outflows are positive; refunds reduce spending; income is negative.";wrapMode:Text.Wrap;Layout.fillWidth:true}
         Label {textFormat:Text.PlainText;visible:root.mode!=="workspace" && (root.state.importFailures||0)>0;text:"This file has "+(root.state.importFailures||0)+" imported records needing repair. They have no reportable amount. Open Review to repair them.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+        Button {objectName:"staleReportHelp";text:"Help with this result";focusPolicy:Qt.TabFocus;visible:root.mode!=="workspace" && !!root.result.stale;onClicked:root.helpRequested("help:answer-with-reports#if-the-result-needs-attention")}
         Label {textFormat:Text.PlainText;visible:root.mode!=="workspace" && !!root.result.stale;text:"Transactions changed. Refresh the report to see current amounts.";wrapMode:Text.Wrap;Layout.fillWidth:true}
         ScrollView {
             id:resultScroll;visible:root.mode==="result";Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth

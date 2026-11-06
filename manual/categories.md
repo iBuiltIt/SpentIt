@@ -43,7 +43,7 @@ Avoid `[` and `]`, the `|` character, extra colons, and spaces at the
 start or end. If the name is invalid, correct the text that remains
 in the row and press Enter again.
 
-## Choose a category for a transaction
+## Choose a category for a transaction {#choose-a-category-for-a-transaction}
 
 Double-click the transaction. In its category field, type part of a
 name, such as **gro**. Choose **Groceries** from the suggestions, or
@@ -62,7 +62,7 @@ from the suggestions. Simply leaving an unchosen search restores the
 previous category. If no suggestion fits, create the category in
 Categories first, then return to the transaction.
 
-## Change selected transactions
+## Change selected transactions {#change-selected-transactions}
 
 Select one or more rows, right-click, and open **Change category**.
 Choose a category from the scrollable submenu. For ordinary entries

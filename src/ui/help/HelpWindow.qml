@@ -13,6 +13,7 @@ Window {
     required property var catalog
     property var mainWindow: null
     property var modalOwner: null
+    readonly property bool readingActive: active || imageWindow.active
     signal helpClosed()
     title: "SpentIt Help"
     width: 880

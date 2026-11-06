@@ -22,10 +22,22 @@ def topic(text: str) -> str:
 
 
 class PrepareHelpTests(unittest.TestCase):
+    def test_context_targets_reject_missing_topics_sections_and_paths(self):
+        topics = [{"id": "sample-start", "sections": [{"id": "overview"}]}]
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "Context.qml"
+            source.write_text('helpTarget: "help:sample-start#overview"')
+            prepare_help.validate_context_sources(topics, [source])
+            for target in ["help:missing", "help:sample-start#missing", "help:../private", "help:/tmp/file"]:
+                with self.subTest(target=target):
+                    source.write_text('helpTarget: "' + target + '"')
+                    with self.assertRaises(prepare_help.PrepareError):
+                        prepare_help.validate_context_sources(topics, [source])
+
     def test_manual_bundle_contains_reviewed_chapters(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            prepare_help.build(MANUAL, output)
+            prepare_help.build(MANUAL, output, [ROOT / "src/ui/ImportMain.qml", ROOT / "src/ui/ReportsWorkspace.qml"])
             manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
             self.assertFalse(manifest["sample"])
             self.assertEqual(manifest["banner"], "")

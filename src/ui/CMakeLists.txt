@@ -45,6 +45,8 @@ if(SPENTIT_IMPORT_UI)
     "${PROJECT_SOURCE_DIR}/manual/*.md" "${PROJECT_SOURCE_DIR}/manual/images/*.png")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${SPENTIT_HELP_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/ImportMain.qml"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ReportsWorkspace.qml"
     "${PROJECT_SOURCE_DIR}/tools/prepare_help.py"
     "${PROJECT_SOURCE_DIR}/manual/index.md"
     "${PROJECT_SOURCE_DIR}/tests/fixtures/help/sample/start.md"
@@ -53,6 +55,8 @@ if(SPENTIT_IMPORT_UI)
   execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/prepare_help.py"
             --manual "${PROJECT_SOURCE_DIR}/manual" --output "${SPENTIT_HELP_BUNDLE}"
+            --context-source "${CMAKE_CURRENT_SOURCE_DIR}/ImportMain.qml"
+            --context-source "${CMAKE_CURRENT_SOURCE_DIR}/ReportsWorkspace.qml"
     RESULT_VARIABLE spentit_help_prepare_result
     ERROR_VARIABLE spentit_help_prepare_error)
   if(NOT spentit_help_prepare_result EQUAL 0)

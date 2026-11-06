@@ -1,5 +1,14 @@
 # SpentIt — Where did my money go?
 
+## Contextual Help — owner Go 2026-11-06
+
+Read the [Help handoff](doc/help-prototype-handoff.md) before changing Help.
+The complete manual and application context links are implemented. Keep Help
+navigation independent of financial commands, use fixed bundled topic/section
+identifiers, and preserve decision modality and unsaved edits. See the
+[contract](features/013-help-system.md#contextual-help--owner-go-2026-11-06)
+for target validation and [status](doc/status.md) for verification limits.
+
 ## Reports and calendar — owner Go 2026-11-04
 
 Read the [reports/calendar handoff](doc/reports-calendar-handoff.md) before the

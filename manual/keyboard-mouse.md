@@ -81,8 +81,11 @@ Choosing a date fills the field. Save the surrounding edit when ready.
 
 ## Read Help
 
-Choose **Help → SpentIt Help**. In a narrow Help window, **Contents**
-reveals the topic list and search.
+Choose **Help → SpentIt Help** to return to your reading. For instructions
+about the current task, choose **Help for this screen** from that menu or
+click **Help** on the screen or dialog. **Search help** beside ledger search
+opens examples. In a narrow Help window, **Contents** reveals the topic list
+and search.
 
 - Type in **Search Help**, then click a result. **Enter** opens the
   first result.

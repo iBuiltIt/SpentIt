@@ -2,6 +2,83 @@
 
 Last updated: 2026-11-06
 
+## Contextual Help — 2026-11-06
+
+Under the owner's Go, Help now opens the existing manual from the welcome
+screen, workspaces, 33 application dialogs, Rules/Reports leave windows and
+problem messages. **SpentIt Help** retains the current reading; **Help for this
+screen**, workspace/dialog **Help**, and the platform Help shortcut select the
+current task. Ledger **Search help** opens examples. Error links open instructions
+without retrying a command. Native file choosers are unchanged.
+
+Targets are fixed bundled identifiers, not financial values or error payloads.
+Referenced sections have explicit stable anchors. CMake watches the two QML
+sources and validates every literal context target before bundling; preparation
+tests reject missing topics, missing sections and outside paths. The viewer
+retains its runtime allowlist and missing-target explanation.
+
+Native tests exposed focus-loss behavior that first normalized an unfinished
+amount expression and then started a category preview while opening Help.
+The Help/menu focus guard now suspends amount normalization, category-completion
+reset and category autosave while reading Help. It accounts for Qt treating a
+transient parent as active while Help has input, restores the preceding editor
+and keeps normal explicit saves working. Rules and Reports remain
+`Qt.ApplicationModal`, with Help in the same process and existing transient-parent
+handling. No financial command, schema or storage policy changed.
+
+Verification on macOS, rules-enabled Release, Qt 6.12.0:
+
+- Rebuilt the application, Help UI/catalog and Rules UI targets; `build/SpentIt`
+  contains contextual Help.
+- The full five-check CTest selection passed **5/5 in 498.35s**, including Rules
+  UI, Help UI, preparation, catalog and QML smoke. Full offscreen Help passed
+  **52/52 including init/cleanup in 472087ms**.
+- Final target corrections (transfer Link versus duplicate Merge, bulk changes
+  and Restore imported values) and a welcome-test setup correction were followed
+  by another rebuild. Final preparation/catalog/QML checks passed **3/3 in
+  1.99s**, and the focused offscreen context checks passed **5/5 including
+  init/cleanup in 5447ms**.
+- Final full native Help passed **52/52 including init/cleanup in 525002ms**.
+  This includes both continuous walkthrough formats and all three new context
+  checks, plus the existing Rules/Reports modality and reading/lookup checks.
+- Native unsaved-dialog and contextual article captures were visually inspected.
+  No screenshots were added to the shipped manual. `git diff --check` and
+  467 relative file-link target checks passed. The manual now explains the
+  Help entry points; existing screenshots precede these additional controls.
+
+The context checks exercise actual QML pointer clicks, a dialog Help shortcut,
+all workspace targets, unsaved transaction text and amount expressions, a category
+draft, account rename, Rules/Reports leave dialogs and genuine search/open errors.
+They compare model state, preserve drafts and decisions, check return focus and
+confirm that explicit category Save via Enter still works. All 33 instantiated
+dialog targets resolve. This is a synthetic QML harness, not a standalone-app
+walkthrough or a claim that every dialog was clicked.
+
+Initial restricted tests lacked application-data lock access; authorized runs
+used the required access. A draft-array assertion was corrected to compare QML
+array contents. A welcome error check initially raced the screen's delayed probe;
+it now edits the visible path field and waits for that probe. One native menu
+attempt aborted the test harness: macOS native menu items have no QQuickWindow
+for QtTest mouse events. That unsupported pointer subcase now runs offscreen
+only; the native suite checks workspace/dialog actions and focus return. This
+was a test-process crash with temporary synthetic files, not a SpentIt user-file
+crash. Native system-menu clicking remains unverified.
+
+Reproduction commands:
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests spentit_rule_ui_tests -j 2
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
+QT_QPA_PLATFORM=offscreen ./build/import-ui-rules-release/src/ui/spentit_help_ui_tests contextHelpPreservesWorkspaceAndEditor contextHelpPreservesCategoryDraft contextHelpDialogAndErrorActions
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.qml)$' --output-on-failure
+```
+
+No private data was used. Native chooser interaction, standalone-app walkthrough,
+complete keyboard-only/screen-reader use, dark appearance and Linux/Windows
+remain unverified. Search excerpts can still expose Markdown markers or cut words;
+that separate polish item remains the next proposed Help change.
+
 ## Whole-manual continuity and acceptance replay — 2026-11-06
 
 Under the owner’s Go, all seventeen topics were audited for continuity,

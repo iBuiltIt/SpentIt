@@ -1900,6 +1900,226 @@ private slots:
         }
         QGuiApplication::styleHints()->unsetColorScheme();
     }
+    void contextHelpPreservesWorkspaceAndEditor() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1280, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        auto mouse = [&](QObject* owner, const QString& name) {
+            auto* item = qobject_cast<QQuickItem*>(object(owner, name));
+            QVERIFY2(item, qPrintable(name));
+            QTRY_VERIFY(item->isVisible() && item->isEnabled() && item->width() > 0);
+            QTest::qWait(50);
+            auto* surface = item->window(); QVERIFY(surface);
+            const auto point = item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint();
+            QVERIFY(QRect(QPoint(), surface->size()).contains(point));
+            QTest::mouseClick(surface, Qt::LeftButton, Qt::NoModifier, point);
+        };
+        mouse(session.root, "welcomeHelp");
+        auto* help = namedWindow("helpWindow"); QVERIFY(help);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("create-open-file"));
+        QVERIFY(!session.model.state().value("active").toBool());
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        createDocument(session, "Context help");
+        // Every instantiated dialog carries a fixed target validated by the catalog.
+        int dialogs = 0;
+        for (auto* candidate : session.root->findChildren<QObject*>()) {
+            const auto target = candidate->property("helpTarget");
+            if (!target.isValid()) continue;
+            ++dialogs;
+            QVERIFY2(catalog.resolveLink("", target.toString()).value("ok").toBool(), qPrintable(target.toString()));
+        }
+        QCOMPARE(dialogs, 33);
+        const QList<QPair<QString, QString>> pages{{"ledger", "find-transactions"}, {"review", "review-duplicates-transfers"},
+            {"categories", "organize-categories"}, {"rules", "use-rules"}, {"reports", "answer-with-reports"},
+            {"history", "add-correct-transactions"}, {"settings", "look-after-your-work"}};
+        for (const auto& page : pages) {
+            QVERIFY(session.root->setProperty("currentPage", page.first));
+            const auto before = session.model.state();
+            mouse(session.root, "workspaceHelp");
+            QTRY_COMPARE(help->property("topicId").toString(), page.second);
+            QCOMPARE(session.model.state(), before);
+            QCOMPARE(session.root->property("currentPage").toString(), page.first);
+            QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        }
+        QVERIFY(session.root->setProperty("currentPage", "ledger"));
+        mouse(session.root, "addTransaction"); wait(session.model);
+        QVERIFY(edit(session.root, "durablePayee", "Unsaved purchase"));
+        auto* payee = qobject_cast<QQuickItem*>(object(session.root, "durablePayee")); QVERIFY(payee);
+        payee->forceActiveFocus();
+        const auto before = session.model.state();
+        mouse(session.root, "workspaceHelp");
+        QTRY_COMPARE(help->property("topicId").toString(), QString("add-correct-transactions"));
+        QCOMPARE(payee->property("text").toString(), QString("Unsaved purchase"));
+        QVERIFY(session.root->property("dirty").toBool());
+        QCOMPARE(session.model.state(), before);
+        // General Help retains the current topic; unknown targets leave navigation available.
+        QVERIFY(QMetaObject::invokeMethod(session.root, "openHelp"));
+        QCOMPARE(help->property("topicId").toString(), QString("add-correct-transactions"));
+        QVERIFY(QMetaObject::invokeMethod(session.root, "openContextHelp", Q_ARG(QVariant, QVariant("help:missing"))));
+        QVERIFY(!help->property("linkMessage").toString().isEmpty());
+        QVERIFY(object(help, "helpSearch"));
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        QTRY_VERIFY(payee->hasActiveFocus());
+        QCOMPARE(session.model.state(), before);
+        QVERIFY(edit(session.root, "durableTotal", "-1 - 2"));
+        auto* amount = qobject_cast<QQuickItem*>(object(session.root, "durableTotal")); QVERIFY(amount);
+        amount->forceActiveFocus();
+        mouse(session.root, "workspaceHelp");
+        QCOMPARE(amount->property("text").toString(), QString("-1 - 2"));
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        QTRY_VERIFY(amount->hasActiveFocus());
+        QCOMPARE(amount->property("text").toString(), QString("-1 - 2"));
+        // A real click in the unsaved decision opens its section without answering it.
+        mouse(session.root, "sidebarSettings");
+        auto* dialog = object(session.root, "unsavedDialog"); QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        mouse(session.root, "unsavedDialogHelp");
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Correct an entry"));
+        QVERIFY(dialog->property("visible").toBool());
+        QVERIFY(session.root->property("dirty").toBool());
+        QCOMPARE(session.model.state(), before);
+        if (qEnvironmentVariableIsSet("SPENTIT_CONTEXT_CAPTURE")) {
+            QVERIFY(session.window->grabWindow().save(qEnvironmentVariable("SPENTIT_CONTEXT_CAPTURE") + "/unsaved.png"));
+            QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_CONTEXT_CAPTURE") + "/help.png"));
+        }
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        mouse(session.root, "guardStay");
+        QVERIFY(session.root->property("dirty").toBool());
+    }
+    void contextHelpPreservesCategoryDraft() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        createDocument(session, "Category draft Help");
+        QVERIFY(click(session.root, "categoryNavigation")); wait(session.model);
+        QVERIFY(click(session.root, "newCategory"));
+        QTRY_VERIFY(object(session.root, "categoryName"));
+        QVERIFY(edit(session.root, "categoryName", "Unfinished category"));
+        auto* field = qobject_cast<QQuickItem*>(object(session.root, "categoryName")); QVERIFY(field);
+        field->forceActiveFocus();
+        const auto before = session.model.state();
+        auto* button = qobject_cast<QQuickItem*>(object(session.root, "workspaceHelp")); QVERIFY(button);
+        QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier,
+            button->mapToScene(QPointF(button->width()/2, button->height()/2)).toPoint());
+        auto* help = namedWindow("helpWindow"); QVERIFY(help);
+        QTRY_COMPARE(help->property("topicId").toString(), QString("organize-categories"));
+        QTest::qWait(100);
+        QVERIFY(session.root->property("categoryDirty").toBool());
+        QCOMPARE(session.model.state(), before);
+        QCOMPARE(field->property("text").toString(), QString("Unfinished category"));
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        QTRY_VERIFY(field->hasActiveFocus());
+        if (QGuiApplication::platformName() == "cocoa")
+            QTRY_COMPARE(QGuiApplication::focusWindow(), session.window);
+        QTest::qWait(100);
+        QVERIFY(session.root->property("categoryDirty").toBool());
+        QCOMPARE(session.model.state(), before);
+        // Native macOS menus have no QQuickWindow for QTest pointer events.
+        // Exercise the real QML menu on the offscreen backend; native checks
+        // above cover the workspace action and focus return.
+        if (QGuiApplication::platformName() != "cocoa") {
+            auto* menu = object(session.root, "helpMenu"); QVERIFY(menu);
+            QVERIFY(QMetaObject::invokeMethod(menu, "open"));
+            QTRY_VERIFY(menu->property("visible").toBool());
+            QTest::qWait(100);
+            QVERIFY(session.root->property("categoryDirty").toBool());
+            QCOMPARE(session.model.state(), before);
+            auto* action = qobject_cast<QQuickItem*>(object(session.root, "openScreenHelp")); QVERIFY(action);
+            QVERIFY(action->window());
+            QTest::mouseClick(action->window(), Qt::LeftButton, Qt::NoModifier,
+                action->mapToScene(QPointF(action->width()/2, action->height()/2)).toPoint());
+            QTRY_VERIFY(help->isVisible());
+            QTRY_COMPARE(help->property("topicId").toString(), QString("organize-categories"));
+            QTest::qWait(100);
+            QVERIFY(session.root->property("categoryDirty").toBool());
+            QCOMPARE(session.model.state(), before);
+            QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        }
+        // Explicit Enter still saves after reading Help.
+        QTRY_VERIFY(field->hasActiveFocus());
+        QTest::keyClick(session.window, Qt::Key_Return); wait(session.model);
+        QTRY_VERIFY(!session.root->property("categoryDirty").toBool());
+    }
+    void contextHelpDialogAndErrorActions() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        createDocument(session, "Context dialogs");
+        auto mouse = [&](const QString& name) {
+            auto* item = qobject_cast<QQuickItem*>(object(session.root, name)); QVERIFY2(item, qPrintable(name));
+            QTRY_VERIFY(item->isVisible() && item->isEnabled()); QTest::qWait(50);
+            QTest::mouseClick(item->window(), Qt::LeftButton, Qt::NoModifier,
+                item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
+        };
+        auto* rename = object(session.root, "renameAccountDialog"); QVERIFY(rename);
+        QVERIFY(QMetaObject::invokeMethod(rename, "open"));
+        QVERIFY(edit(session.root, "renameAccountName", "Still unsaved"));
+        auto before = session.model.state();
+        mouse("renameAccountDialogHelp");
+        auto* help = namedWindow("helpWindow"); QVERIFY(help);
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Rename or put an account aside"));
+        QVERIFY(rename->property("visible").toBool());
+        QCOMPARE(object(session.root, "renameAccountName")->property("text").toString(), QString("Still unsaved"));
+        QCOMPARE(session.model.state(), before);
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        QTest::keySequence(session.window, QKeySequence(QKeySequence::HelpContents));
+        QTRY_VERIFY(help->isVisible());
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Rename or put an account aside"));
+        QVERIFY(rename->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        QVERIFY(QMetaObject::invokeMethod(rename, "close"));
+        QVERIFY(click(session.root, "rulesNavigation")); wait(session.model);
+        QVERIFY(click(session.root, "newRule"));
+        QVERIFY(edit(session.root, "ruleExpression", "^Unsaved$"));
+        QVERIFY(click(session.root, "accountNavigation"));
+        auto* rules = qobject_cast<QQuickWindow*>(object(session.root, "rulesLeaveDialog")); QVERIFY(rules);
+        QTRY_VERIFY(rules->isVisible());
+        mouse("rulesGuardHelp");
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Keep and change your rules"));
+        QCOMPARE(help->transientParent(), rules);
+        QCOMPARE(rules->modality(), Qt::ApplicationModal);
+        QVERIFY(session.root->property("rulesDirty").toBool());
+        QCOMPARE(object(session.root, "ruleExpression")->property("text").toString(), QString("^Unsaved$"));
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        mouse("rulesGuardStay");
+        QVERIFY(click(session.root, "discardRules"));
+        QVERIFY(click(session.root, "reportsNavigation")); wait(session.model);
+        QVERIFY(click(session.root, "newReport"));
+        auto* reports = object(session.root, "reportsWorkspace"); QVERIFY(reports);
+        const auto drafts = reports->property("drafts").value<QJSValue>().toVariant();
+        QVERIFY(click(session.root, "accountNavigation"));
+        auto* reportDialog = qobject_cast<QQuickWindow*>(object(session.root, "reportsLeaveDialog")); QVERIFY(reportDialog);
+        QTRY_VERIFY(reportDialog->isVisible());
+        mouse("reportsGuardHelp");
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Keep and change your reports"));
+        QCOMPARE(help->transientParent(), reportDialog);
+        QCOMPARE(reportDialog->modality(), Qt::ApplicationModal);
+        QCOMPARE(reports->property("drafts").value<QJSValue>().toVariant(), drafts);
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss")); mouse("reportsGuardStay");
+        // An actual invalid search produces an error. Help must not rerun it.
+        QVERIFY(QMetaObject::invokeMethod(reports, "load"));
+        QVERIFY(click(session.root, "accountNavigation")); wait(session.model);
+        run(session.model, "query", {{"filter", "\"unclosed"}}, false);
+        const auto error = session.model.error(); QVERIFY(!error.isEmpty());
+        before = session.model.state();
+        mouse("statusHelp");
+        QTRY_COMPARE(help->property("topicId").toString(), QString("messages-problems"));
+        QCOMPARE(session.model.error(), error); QCOMPARE(session.model.state(), before);
+        QVERIFY(!session.model.busy());
+        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        run(session.model, "close");
+        // Use the welcome field so its delayed probe and the tested path agree.
+        QVERIFY(edit(session.root, "datasetPath", session.path("missing-file.spentit")));
+        QTRY_VERIFY(!session.model.busy() && !session.model.error().isEmpty());
+        before = session.model.state();
+        const auto openError = session.model.error();
+        mouse("welcomeErrorHelp");
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Opening a file and making backups"));
+        QCOMPARE(session.model.state(), before); QCOMPARE(session.model.error(), openError);
+    }
     void helpBesideRulesDialog() {
         HelpCatalog catalog;
         QVERIFY(catalog.load(QStringLiteral(":/spentit/help/manifest.json")));

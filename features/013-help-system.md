@@ -2,44 +2,53 @@
 
 Status: **active**  
 Last updated: 2026-11-06  
-Implementation: the viewer prototype from the 2026-11-05 Go is in the tree.
-The same day's chapter Go added [Understand your spending](../manual/index.md)
-as the opening topic. The subsequent chapter-2 Go adds Create or open your file
-with three screenshots and responsive inline image sizing. Chapter 3, Set up your
-accounts, was accepted and committed. Chapter 4, Bring in transactions, is now
-bundled with five screenshots under the subsequent Go and accepted chapter
-workflow, accepted by the owner for commit. Sample topics remain a test
-fixture. Chapter 5, Find your way around transactions, is bundled under its
-subsequent Go with three screenshots, accepted and committed. Chapter 6, Review duplicates and link transfers, is
-bundled with four screenshots and committed after owner acceptance. Chapter 7,
-Add and correct transactions, is bundled with four screenshots under its Go and
-is accepted and committed. Chapter 8, Organize spending with categories, is bundled
-with four screenshots under the next Go and is owner-accepted for commit. Chapter 9, Use rules for repeated categorization, is bundled with three screenshots
-under its Go and owner-accepted for commit. Chapter 10, Accept transactions — now or later,
-is accepted and committed as `b1c55fc`. Chapter 11, Answer questions with reports,
-is bundled with four screenshots under its Go and owner-accepted for commit.
-Chapter 12, [Look after your work and resolve remaining problems](../manual/backup-recovery.md),
-is bundled with two screenshots under the next Go and is owner-accepted for commit.
-The first quick reference, [Where do I find…?](../manual/where-to-find.md), is
-bundled under the subsequent Go and is owner-accepted for commit. Remaining quick
-references and context links need their own Go. [Keyboard and mouse](../manual/keyboard-mouse.md)
-is committed as `8c3c830`. [Search examples](../manual/search-examples.md) is
-committed as `6b1333c`, with the shared pattern table moved from Rules under
-the owner’s follow-up permission. [Words used in SpentIt](../manual/words.md)
-is bundled under the next Go and is owner-accepted for commit. macOS checks and limits
-are in [the handoff](../doc/help-prototype-handoff.md).
-[Messages and problems](../manual/messages-problems.md) is bundled under the
-next Go and was accepted for commit on 2026-11-06. It links verified message excerpts to supported
-next steps; application-wide context links remain separate work.
-The 2026-11-06 whole-manual Go adds a continuous synthetic file walkthrough
-under both guide and alternate date/amount settings, problem-driven lookups,
-and a complete prose/screenshot audit. A discovered acceptance replay defect
-received a separate implementation Go; see [status](../doc/status.md) for results.
+Implementation: the offline viewer, twelve chapters and five quick references
+are bundled with 38 screenshots. The whole-manual audit and continuous synthetic
+walkthrough were completed under the 2026-11-06 Go. A discovered acceptance-replay
+defect received its own implementation Go and correction. Application-wide
+contextual Help is implemented under the subsequent Go; see the contract below.
+Sample topics remain test fixtures. The [handoff](../doc/help-prototype-handoff.md)
+records the individual chapter approvals, commits, verification and limits.
 
 The chapter-9 table follow-up reproduced missing text on reverse scrolling in
 Qt 6.12. Help now keeps the complete scene graph for table articles and batches
 paragraph formatting; native pixel/scroll/navigation checks and limits are
 recorded in the [rendering correction](../doc/help-prototype-handoff.md#long-help-chapter-rendering-correction--2026-11-05).
+
+## Contextual Help — owner Go 2026-11-06
+
+The owner authorized application-wide contextual Help after the completed manual
+and continuity walkthrough. The application now opens fixed bundled topics or
+sections from its workspaces, 33 Qt Quick dialogs, Rules/Reports leave windows,
+and error/status actions. Native operating-system file choosers are unchanged.
+
+- **SpentIt Help** retains the current reading position. **Help for this screen**,
+  the workspace **Help** button, and the platform Help shortcut open the current
+  task. Visible dialogs take priority; account creation and focused ledger search
+  have their own targets. **Search help** beside ledger search opens examples.
+- Welcome/setup/unlock opens file instructions. Ledger, Review, Categories,
+  Rules, Reports, History and Settings open their corresponding tasks. Report
+  drill-down opens the contributing-transactions section.
+- Dialog header **Help** opens the relevant decision instructions without
+  accepting, rejecting or invoking a command. Help buttons retain pointer focus
+  in the editor and remain reachable by Tab. Existing decision actions and
+  modality are preserved. Focus transitions into Help pause amount-expression
+  normalization, unfinished category-completion reset and category draft
+  autosave. Normal explicit saves still work after returning. Rules/Reports Help stays a transient child of the
+  application-modal leave window; Help remains available while work is busy.
+- Welcome errors link to file/backup messages; general status errors and Details
+  link to Messages and problems. Report feedback and stale results link to the
+  report problem section. These actions never retry an operation or pass its
+  payload into Help.
+- Targets are literal `help:topic#section` identifiers in the two application QML
+  sources. Referenced sections have explicit stable anchors in the manual.
+  CMake and `help.prepare` validate all these literal targets against the bundled
+  topics and sections; the existing viewer allowlist validates navigation again.
+  Unknown targets leave Home, Contents and Search available with an explanation.
+
+No financial, storage or schema behavior changes. Existing screenshots remain
+useful task illustrations but precede the added Help controls. See the current
+[handoff](../doc/help-prototype-handoff.md) for exact verification and limits.
 
 ## Accepted requirements — owner direction 2026-11-05
 
@@ -329,6 +338,9 @@ difference changes the task, and say so in the caption. Annotations must use
 legible labels also explained in the text.
 
 ## Search and context help
+
+The context-link deferrals below describe the original prototype scope. The
+2026-11-06 Go and implementation above supersede them.
 
 Use ordinary case-insensitive text search initially, with title and keyword
 matches preferred to incidental body matches. Search all bundled topics, not

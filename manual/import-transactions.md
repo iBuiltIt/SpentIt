@@ -30,14 +30,14 @@ menu supplies that destination for an unnamed file.
 ![Choose import destination dialog with Chequing selected.](images/import-destination.png)
 *Choose the account whose transactions you downloaded.*
 
-### If the dates could mean two things
+### If the dates could mean two things {#if-the-dates-could-mean-two-things}
 
 A QIF date such as 01/02/2026 could mean January 2 or February 1.
 When asked, compare the examples with your statement, choose
 **Day / Month / Year** or **Month / Day / Year**, then **Continue**.
 Use **Cancel import** if you cannot establish the order.
 
-## Match the accounts
+## Match the accounts {#match-the-accounts}
 
 An unfamiliar account name, a different account from the one you
 chose, or a file containing several accounts opens **Choose accounts
@@ -68,7 +68,7 @@ if you are unsure which balance to use.
 Choose **Import** after every account has a destination. **Cancel**
 leaves the mapping without importing.
 
-## Choose which categories to keep
+## Choose which categories to keep {#choose-which-categories-to-keep}
 
 A category describes what a transaction was for: Groceries, for
 example. If the export uses categories your file does not yet have,
@@ -146,7 +146,7 @@ repeated transactions in the same account as already present.
 Possible duplicates that need a decision appear in **Review**.
 Two purchases with the same date and amount are not necessarily duplicates.
 
-## Undo a mistaken import
+## Undo a mistaken import {#undo-a-mistaken-import}
 
 For an import into the wrong account, undo it first, then import the
 file into the correct account.

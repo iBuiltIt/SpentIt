@@ -17,7 +17,7 @@ Already have a file? Skip to [Open your file](#open-your-file).
 Choose **New file** on the welcome screen. If a file is already open,
 choose **File → Close file** first.
 
-### Choose a name and place
+### Choose a name and place {#choose-a-name-and-place}
 
 Use **Browse new location…** to choose a folder and name your file.
 Something like `Household.spentit` will be easy to recognize later.
