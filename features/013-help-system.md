@@ -23,7 +23,9 @@ is bundled with two screenshots under the next Go and is owner-accepted for comm
 The first quick reference, [Where do I find…?](../manual/where-to-find.md), is
 bundled under the subsequent Go and is owner-accepted for commit. Remaining quick
 references and context links need their own Go. [Keyboard and mouse](../manual/keyboard-mouse.md)
-is now bundled under its own Go and is owner-accepted for commit. macOS checks and limits
+is committed as `8c3c830`. [Search examples](../manual/search-examples.md) is
+bundled under the next Go and is owner-accepted for commit, with the shared pattern
+table moved from Rules under the owner’s follow-up permission. macOS checks and limits
 are in [the handoff](../doc/help-prototype-handoff.md).
 
 The chapter-9 table follow-up reproduced missing text on reverse scrolling in

@@ -2,6 +2,81 @@
 
 Last updated: 2026-11-05
 
+## Search examples quick reference — 2026-11-05
+
+The owner accepted Keyboard and mouse and requested its commit (`8c3c830`),
+then gave Go for [Search examples](../manual/search-examples.md). The new
+reference is bundled and is owner-accepted for commit. It covers literal words/phrases,
+category/date filters, whole-transaction totals, regex and original-record
+search, clearing and errors. Under the owner's follow-up permission, the shared
+pattern table moved from Rules; Rules retains a link and its PayPal/template
+walkthrough. No new screenshots or financial behavior changed. The bundle has
+fifteen topics and 38 images.
+
+Supporting verification checked the parser, current query fields and focused
+synthetic tests. Independent review checked prose, links, table reuse and
+rendering. Amount-search examples were omitted because current search uses
+ungrouped decimal-point amounts independently of display formatting.
+
+A real click below the moved table exposed stale Help scroll height after
+synchronous Markdown formatting: the link was at y3236 while content height
+was 2588. A coalesced deferred layout refresh after assigning the topic, before
+restoring scroll, updates height to 3889 and makes the link reachable. The
+regression asserts full document height and clicks the rendered link. Reverse
+scrolling checks now follow the shared table into Search examples. Help stays
+in one process, and Rules/Reports modality is unchanged.
+
+The new walkthrough uses the synthetic Market purchase/refund and Corner shop
+split. Setup/import/category resolution use model commands; searches use the
+actual search field and Enter, and Escape clears it. It checks words, phrases,
+category/date combinations, whole-field/prefix regex, original text, error
+retention, the full -20.00 total for a Household split match and unchanged
+-56.18 account balance. Early harness runs failed on category-dialog setup,
+partially visible Contents clicks and the stale height defect; those failures
+were corrected and are not counted as passing runs.
+
+Supporting Release checks passed `import.search` 1/1 (0.02s),
+`combinedSearchAndSelection` 3/3 (967ms), and `configuredDatesAndCategories`
+3/3 (854ms), with Qt counts including init/cleanup. Initial restricted model
+setup failed application-data lock access; the authorized rerun passed.
+
+Rebuilt the application, Help UI/catalog and Rules UI targets in the rules-enabled
+Release tree. `build/SpentIt` includes the new reference and layout fix. Focused
+native reading, both actual Rules/Search cross-links, search walkthrough and
+reverse scrolling passed **7/7 including init/cleanup in 81310ms**. Normal,
+table and 500-pixel/150% captures were visually inspected and independently
+reviewed. These captures used the initial deferred callback; independent review
+then changed it to a named callback to coalesce repeated topic requests.
+
+The final full native Help suite passed **40/40 including init/cleanup in
+89603ms**, including every chapter, all four lookup rows, reverse scrolling,
+walkthroughs and Rules/Reports modal Help. The five-check CTest selection passed
+Rules, full offscreen Help (95.87s), preparation and QML (4/5, 120.85s total);
+catalog failed an old refund-search count because the new reference also
+contains that word. After updating the expected count, preparation/catalog/QML
+passed **3/3 in 1.16s**. The prior intermittent offscreen timeout did not recur.
+
+Commands:
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests spentit_rule_ui_tests -j 2
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests createOpenChapterReading:search-examples quickReferenceLookup:search-examples quickReferenceLookup:rules-pattern-reference searchExamplesWalkthrough longChapterScrollRendering
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
+```
+
+Focused captures used `SPENTIT_GUIDE_READING_CAPTURE` with temporary paths;
+no captures were added to the manual. The synthetic harness uses actual QML;
+it is not a manual standalone-app walkthrough. `git diff --check` and 283
+relative file-link target checks passed. Preparation validates bundled anchors
+and images. The final targeted rerun selected `help.prepare`, `help.catalog`
+and `import.qml`.
+
+No private data was used. Full keyboard-only/screen-reader, dark appearance,
+standalone-app and Linux/Windows verification remain unclaimed. Next proposed
+reference: Words used in SpentIt; remaining references and context links need
+their own Go.
+
 ## Keyboard and mouse quick reference — 2026-11-05
 
 Under the owner's Go, [Keyboard and mouse](../manual/keyboard-mouse.md) is

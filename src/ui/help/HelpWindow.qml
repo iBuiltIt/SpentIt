@@ -160,7 +160,14 @@ Window {
         article.text = topic.markdown
         // Run after setText: Qt chooses its viewport optimization there.
         catalog.prepareArticleRendering(article, article.textDocument)
-        Qt.callLater(restoreScroll)
+        // setText can overwrite the height emitted during synchronous block
+        // formatting. Refresh after it finishes so links below a table remain
+        // inside the scrollable article, then restore the reading position.
+        Qt.callLater(finishArticleLayout)
+    }
+    function finishArticleLayout() {
+        catalog.relaxReading(article.textDocument, article.width)
+        restoreScroll()
     }
     function restoreScroll() {
         const saved = scrollPositions[topicId]

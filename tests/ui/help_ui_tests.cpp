@@ -318,6 +318,8 @@ private slots:
         QTest::newRow("keyboard-mouse") << QString("keyboard-mouse")
             << QStringList{}
             << QString("read-help") << QString("Read Help");
+        QTest::newRow("search-examples") << QString("search-examples") << QStringList{}
+            << QString("common-pattern-pieces") << QString("Common pattern pieces");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -333,7 +335,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find", "keyboard-mouse"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find", "keyboard-mouse", "search-examples"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -390,10 +392,10 @@ private slots:
             QTest::qWait(150);
             QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".images.png"));
         }
-        if (topic == "use-rules") {
-            QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:use-rules#common-pattern-pieces"))));
+        if (topic == "search-examples") {
+            QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:search-examples#common-pattern-pieces"))));
             QTRY_COMPARE(help->property("currentSection").toString(), QString("Common pattern pieces"));
-            QVERIFY(quick->textDocument()->toPlainText().contains("${1} from eBay"));
+            QVERIFY(quick->textDocument()->toPlainText().contains("SHOP[ -]123"));
             if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
                 QTest::qWait(150);
                 QVERIFY(help->grabWindow().save(qEnvironmentVariable("SPENTIT_GUIDE_READING_CAPTURE") + ".regex.png"));
@@ -413,9 +415,9 @@ private slots:
             QTest::qWait(150);
             QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:accept-transactions#choose-the-action-you-mean"))));
         }
-        if (topic == "use-rules") {
+        if (topic == "search-examples") {
             QTest::qWait(150);
-            QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:use-rules#common-pattern-pieces"))));
+            QVERIFY(QMetaObject::invokeMethod(help, "followLink", Q_ARG(QVariant, QVariant("help:search-examples#common-pattern-pieces"))));
         }
         QTRY_VERIFY(quick->textDocument()->idealWidth() <= article->property("width").toDouble() + 1);
         if (qEnvironmentVariableIsSet("SPENTIT_GUIDE_READING_CAPTURE")) {
@@ -436,6 +438,11 @@ private slots:
             << QString("look-after-your-work") << QString("save-a-backup") << QString("Save a backup");
         QTest::newRow("keyboard-mouse") << QString("keyboard-mouse") << QString("keyboard")
             << QString("find-transactions") << QString("select-without-editing") << QString("Select without editing");
+        QTest::newRow("search-examples") << QString("search-examples") << QString("search examples")
+            << QString("use-rules") << QString("keep-the-useful-part-of-a-paypal-description")
+            << QString("Keep the useful part of a PayPal description");
+        QTest::newRow("rules-pattern-reference") << QString("use-rules") << QString("regular expression")
+            << QString("search-examples") << QString("common-pattern-pieces") << QString("Common pattern pieces");
     }
     void quickReferenceLookup() {
         QFETCH(QString, reference);
@@ -459,6 +466,7 @@ private slots:
                          result->mapToScene(QPointF(result->width()/2, 12)).toPoint());
         QTRY_COMPARE(help->property("topicId").toString(), reference);
         QVERIFY(edit(help, "helpSearch", ""));
+        QTest::qWait(150);
         auto* article = qobject_cast<QQuickItem*>(object(help, "helpArticle")); QVERIFY(article);
         auto* quick = qobject_cast<QQuickTextDocument*>(textDocument(article)); QVERIFY(quick);
         auto* document = quick->textDocument();
@@ -469,15 +477,13 @@ private slots:
                 if (it.fragment().charFormat().anchorHref() == target)
                     position = it.fragment().position() + 1;
         QVERIFY(position >= 0);
-        const auto block = document->findBlock(position);
-        const auto line = block.layout()->lineForTextPosition(position - block.position());
-        QVERIFY(line.isValid());
-        const auto rect = document->documentLayout()->blockBoundingRect(block);
-        const QPointF point(rect.left() + line.cursorToX(position - block.position()),
-                            rect.top() + line.y() + line.height()/2);
+        QRectF character;
+        QVERIFY(QMetaObject::invokeMethod(article, "positionToRectangle", Q_RETURN_ARG(QRectF, character), Q_ARG(int, position)));
+        const QPointF point(character.x() + 2, character.center().y());
         auto* flick = object(help, "helpArticleFlick"); QVERIFY(flick);
         flick->setProperty("contentY", qMax(0.0, point.y() - 100));
         QTest::qWait(150);
+        QTRY_VERIFY(flick->property("contentHeight").toDouble() >= document->documentLayout()->documentSize().height() - 1);
         QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier, article->mapToScene(point).toPoint());
         QTRY_COMPARE(help->property("topicId").toString(), destination);
         QTRY_COMPARE(help->property("currentSection").toString(), heading);
@@ -509,6 +515,14 @@ private slots:
         auto* flick = qobject_cast<QQuickItem*>(object(help, "helpArticleFlick")); QVERIFY(flick);
         auto choose = [&](const QString& id) {
             if (help->width() < 720) { help->setProperty("contentsOpen", true); QTest::qWait(40); }
+            auto* contents = object(help, "helpContents"); QVERIFY(contents);
+            int topicIndex = -1;
+            const auto topics = catalog.topics();
+            for (int i = 0; i < topics.size(); ++i)
+                if (topics[i].toMap().value("id").toString() == id) topicIndex = i;
+            QVERIFY(topicIndex >= 0);
+            QVERIFY(QMetaObject::invokeMethod(contents, "positionViewAtIndex", Q_ARG(int, topicIndex), Q_ARG(int, 1)));
+            QTest::qWait(50);
             auto* button = qobject_cast<QQuickItem*>(object(help, "helpTopic_" + id)); QVERIFY(button);
             QElapsedTimer elapsed; elapsed.start();
             QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,
@@ -553,7 +567,7 @@ private slots:
             flick->setProperty("contentY", 0);
             const auto categories = snapshot();
             assertPainted(categories);
-            choose("use-rules");
+            choose("search-examples");
             flick->setProperty("contentY", 0);
             assertPainted(snapshot());
             const qreal maximum = qMax(0.0, flick->property("contentHeight").toDouble()-flick->height());
@@ -580,7 +594,7 @@ private slots:
             choose("organize-categories");
             comparePixels(snapshot(), categories);
             if (QTest::currentTestFailed()) return;
-            choose("use-rules");
+            choose("search-examples");
             QTRY_COMPARE(flick->property("contentY").toDouble(), savedY);
             comparePixels(snapshot(), middle);
             if (QTest::currentTestFailed()) return;
@@ -899,6 +913,52 @@ private slots:
         mouse("navigationForward");
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("review"));
         QGuiApplication::styleHints()->unsetColorScheme();
+    }
+    void searchExamplesWalkthrough() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        session.window->resize(1440, 900);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false},
+            {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        QFile source(session.path("card.qif")); QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nMGroceries for the week\nLGroceries\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\nD2026-01-22\nT-20.00\nPCorner shop\nSGroceries\n$-12.00\nSHousehold\n$-8.00\n^\n"); source.close();
+        run(session.model, "import", {{"path", source.fileName()}, {"account", "1"}});
+        QTRY_VERIFY(object(session.root, "importCategories")->property("visible").toBool());
+        const auto decision = session.model.state().value("importCategoryDecisions").toList().front().toMap();
+        run(session.model, "resolve_import_categories", {{"source", decision.value("source")}, {"selected", decision.value("names")}});
+        QTRY_VERIFY(!object(session.root, "importCategories")->property("visible").toBool());
+        session.root->setProperty("editorClosed", true);
+        auto search = [&](const QString& query, int count, bool success = true) {
+            QVERIFY(edit(session.root, "ledgerSearch", query));
+            auto* field = qobject_cast<QQuickItem*>(object(session.root, "ledgerSearch")); QVERIFY(field);
+            field->forceActiveFocus();
+            QTest::keyClick(session.window, Qt::Key_Return);
+            wait(session.model, success);
+            QCOMPARE(session.model.rowCount(), count);
+            QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
+        };
+        search("Market", 2);
+        search("Market groceries", 2);
+        search("\"Corner shop\"", 1);
+        search("category:Groceries period:2026 Market", 2);
+        search("category-exact:Groceries", 3);
+        search("period:2026-01-15", 1);
+        search("period:2026-01-15..2026-01-20 Market", 2);
+        search("category:Household", 1);
+        QCOMPARE(session.model.state().value("withdrawals").toString(), QString("-20.00"));
+        search("regex:\"^Market$\"", 1);
+        search("period:2026 regex:\"^Market\"", 2);
+        search("QIF: period:2026 Market", 2);
+        search("regex:\"(\"", 2, false);
+        search("period:dec-jan", 2, false);
+        auto* field = qobject_cast<QQuickItem*>(object(session.root, "ledgerSearch")); QVERIFY(field);
+        field->forceActiveFocus(); QTest::keyClick(session.window, Qt::Key_Escape); wait(session.model);
+        QCOMPARE(session.model.rowCount(), 4);
+        QVERIFY(field->property("text").toString().isEmpty());
     }
     void recoveryChapterWalkthrough() {
         HelpCatalog catalog;

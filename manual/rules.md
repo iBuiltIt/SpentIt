@@ -150,40 +150,13 @@ out of the displayed payee.
 
 Start with ordinary words. `Market` finds that text anywhere in the field, even inside a longer word;
 **Whole field** limits it to the complete field. Matching ignores capitalization
-unless you check **Case sensitive**. Add the pieces below as you need them.
+unless you check **Case sensitive**.
 
 ### Common pattern pieces
 
-These go in **Pattern (regular expression)**, not in the payee template.
-
-| Piece | Meaning | Try it with bank text |
-| --- | --- | --- |
-| `^` | Start of the field. | `^PAYPAL` finds descriptions starting with PAYPAL. |
-| `$` | End of the field. | `MARKET$` finds descriptions ending with MARKET. |
-| `.` | Any one character, except a line break. | `SHOP.123` matches SHOP-123 or SHOP 123. |
-| `*` | Repeat the preceding piece zero or more times. | `AB*` matches A, AB or ABBB. |
-| `+` | Repeat the preceding piece one or more times. | `AB+` matches AB or ABBB, but not A. |
-| `?` | Make the preceding piece optional: zero or one. | `SHOP-?123` matches SHOP123 or SHOP-123. |
-| `\s` | One whitespace character: a space, tab or line break. | `PAYPAL\s+EBAY` allows one or more spaces between the words. |
-| `\d` | One digit, including digits from other writing systems. | `REF\s*\d+` matches REF123 or REF 123. |
-| `[ABC]` | One character from the brackets. | `SHOP[ -]123` allows a space or hyphen. |
-| `[0-9]` | One character from 0 through 9. | `[0-9]+` matches one or more digits from 0 through 9. |
-| `[^0-9]` | One character other than 0 through 9. | `^[^0-9]+` matches **Market** and its following space in **Market 1234**, stopping before the first digit. |
-| `{4}` | Exactly four of the preceding piece. | `CARD[0-9]{4}$` matches an ending such as **CARD1234**, with exactly four digits after CARD. |
-| `(…)` | Capture the matched piece for use in a template. | `SHOP\s+(.+)` captures the text after SHOP and its spaces. |
-| `\` before punctuation | Treat a special character literally. | `\*` matches an actual asterisk; `\.` matches a dot. |
-| `\Q…\E` | Treat everything between these markers literally. | `\QMarket (Downtown)\E` includes the parentheses as ordinary text. |
-
-The distinction between `*` and `+` is whether an empty piece is allowed.
-`\s*` allows no spaces; `\s+` requires at least one. Neither means “any text”
-on its own: `.*` means any number of characters, while `.+` requires at least
-one. Both stay on the same line by default and take as much as they can while
-still allowing the rest of the pattern to match.
-
-Brackets choose **one character**, not a word. `[EBAY]` means E, B, A or Y;
-write `EBAY` to match the word. A hyphen between characters makes a range;
-put it last, as in `[ -]`, to mean a literal hyphen. A `^` immediately after
-`[` means “except”; outside brackets it marks the start of the field.
+See [Common pattern pieces](search-examples.md#common-pattern-pieces) for the shared
+pattern reference. Enter these pieces in **Pattern (regular expression)**;
+ledger search uses an extra `regex:"…"` wrapper.
 
 ### Keep the useful part of a PayPal description
 

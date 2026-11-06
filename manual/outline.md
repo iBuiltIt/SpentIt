@@ -296,7 +296,8 @@ These are alternate entry points into the same manual, not another walkthrough.
   linked to their tasks; now bundled under the owner’s Go.
 - [**Keyboard and mouse**](keyboard-mouse.md): Verified shortcuts, selection, editing,
   navigation and calendar controls, with platform differences where needed.
-- **Search examples:** Common searches first; advanced syntax separately.
+- [**Search examples**](search-examples.md): Common searches first; advanced syntax
+  and the shared regular-expression pattern table separately.
 - **Words used in SpentIt:** Short definitions, including Merge versus Link,
   new versus accepted, opening balance, split, refund and transfer.
 - **Messages and problems:** Searchable exact message wording, plain-language
@@ -379,7 +380,9 @@ charts and contributing-transaction editing. Chapter 12,
 backup/recovery, Settings and a linked problem index. The final continuity review
 clarified chapter 10’s pre-payment example. The first quick reference,
 [Where do I find…?](where-to-find.md), is also bundled.
-[Keyboard and mouse](keyboard-mouse.md) is now bundled under its Go. The
-search, glossary and messages references and context links remain separate work. The sample
+[Keyboard and mouse](keyboard-mouse.md) is committed as `8c3c830`.
+[Search examples](search-examples.md) is bundled under its Go, including the
+shared pattern table moved from Rules. Glossary and messages references and
+context links remain separate work. The sample
 pages used to check the viewer live under `tests/fixtures/help/` and are not
 shown in Help.
