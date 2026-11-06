@@ -1,6 +1,8 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QTest>
+#include <QSignalSpy>
+#include <QElapsedTimer>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QSettings>
@@ -64,6 +66,53 @@ class CategoryUiTests : public QObject {
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("CategoryUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
     void init(){QSettings().clear();}
+    void incomeRefreshWorkload() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("doc")},{"protected",false},{"name","Workload"},{"currency","CAD"}});
+        QVERIFY(click(root,"categoryNavigation"));wait(model);
+        const auto target=createCategory(model,root,"Alpha");createCategory(model,root,"Zulu");
+        QFile file(dir.filePath("synthetic.qif"));QVERIFY(file.open(QIODevice::WriteOnly));
+        for(int i=0;i<4000;++i)file.write(("D1/1/2026\nT-"+QByteArray::number(i+1)+".00\nPSynthetic "+QByteArray::number(i)+"\n^\n"));file.close();
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        QVERIFY(click(root,"categoryNavigation"));wait(model);QVERIFY(click(root,"categorySortAscending"));
+        const auto review=model.state().value("reviewQuestions");const auto balances=model.state().value("accounts");
+        QSignalSpy resets(&model,&QAbstractItemModel::modelReset);QSignalSpy completed(&model,&ImportModel::completed);
+        QElapsedTimer timer;timer.start();QVERIFY(pointer(window,root,"categoryIncome_"+target));
+        QVERIFY(model.busy());QCOMPARE(object(root,"categoryIncome_"+target)->property("checkState").toInt(),int(Qt::PartiallyChecked));
+        wait(model);QTRY_VERIFY(!root->property("categorySaving").toBool());
+        qInfo()<<"Income 4000 pending rows:"<<timer.elapsed()<<"ms; ledger resets:"<<resets.size()<<"commands:"<<completed.size();
+        QCOMPARE(resets.size(),0);QCOMPARE(completed.size(),1);QCOMPARE(completed.front().front().toString(),QString("apply_category"));
+        QCOMPARE(catalogNames(root),QStringList({"Zulu","Alpha"}));
+        QCOMPARE(object(root,"categoryIncome_"+target)->property("checkState").toInt(),int(Qt::Checked));
+        QCOMPARE(model.state().value("reviewGeneration"),model.state().value("ledgerEditGeneration"));
+        QCOMPARE(model.state().value("rollback").toMap().value("token"),model.state().value("ledgerEditGeneration"));
+        QCOMPARE(model.state().value("reviewQuestions"),review);QCOMPARE(model.state().value("accounts"),balances);
+    }
+    void incomeSorting() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("doc")},{"protected",false},{"name","Account"},{"currency","CAD"}});
+        QVERIFY(click(root,"categoryNavigation"));wait(model);
+        const auto z=createCategory(model,root,"Zulu");const auto a=createCategory(model,root,"Alpha");const auto m=createCategory(model,root,"Middle");
+        QVERIFY(pointer(window,root,"categoryIncome_"+a));wait(model);
+        QTRY_VERIFY(!root->property("categorySaving").toBool());checkSelected(root,a);
+        // Flagging a visit addition immediately removes that row's bottom-placement exception.
+        QVERIFY(!root->property("categoryVisitAdditions").value<QJSValue>().toVariant().toList().contains(a));
+        QVERIFY(click(root,"categorySortAscending"));QCOMPARE(catalogNames(root),QStringList({"Middle","Zulu","Alpha"}));
+        if(qEnvironmentVariableIsSet("SPENTIT_INCOME_CATEGORY_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INCOME_CATEGORY_SCREENSHOT")));}
+        QVERIFY(catalogRows(root).last().toMap().value("account").toBool());
+        QVERIFY(click(root,"categorySortDescending"));QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","Alpha"}));
+        QVERIFY(click(root,"categorySortAdded"));QCOMPARE(catalogNames(root),QStringList({"Zulu","Middle","Alpha"}));
+        const auto choices=root->property("ledgerCategoryChoices").value<QJSValue>().toVariant().toList();
+        QCOMPARE(choices[1].toMap().value("id").toString(),m);QCOMPARE(choices[2].toMap().value("id").toString(),z);QCOMPARE(choices[3].toMap().value("id").toString(),a);
+        QVERIFY(pointer(window,root,"categoryIncome_"+a));wait(model);QTRY_VERIFY(!root->property("categorySaving").toBool());
+        QVERIFY(click(root,"categorySortAscending"));QCOMPARE(catalogNames(root),QStringList({"Alpha","Middle","Zulu"}));
+    }
     void openingRowEditing() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

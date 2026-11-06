@@ -45,6 +45,12 @@ A new report selects all current accounts and categories, including
 a category to count. Uncheck income categories for a spending-only view.
 Category names do not decide whether an amount is spending or income.
 
+Check or clear the **Expenses** or **Income** group checkbox to select or clear
+that whole group. A partial check means some categories are selected. Group
+actions include categories hidden by search; Uncategorized stays separate.
+Set each category’s Income checkbox in **Categories** to choose its group.
+Changing that flag leaves saved reports’ selections as you chose them.
+
 Search a checklist to find a name. **All** and **None** affect the whole
 checklist, including choices hidden by the search. Saved reports do not
 automatically include accounts or categories you create later; edit their

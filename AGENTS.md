@@ -1,5 +1,16 @@
 # SpentIt — Where did my money go?
 
+## Category income grouping — owner Go 2026-11-06
+
+Categories now has a saved Income checkbox. Default workspace/picker order is
+Expenses A–Z, Income A–Z, Accounts A–Z; other workspace sorts apply within groups.
+Reports has tri-state Expenses/Income group checkboxes, retaining explicit saved
+category selections. The flag does not alter monetary signs or report arithmetic.
+Read [the contract](features/010-categories-and-selection.md#income-grouping--owner-go-2026-11-06).
+Current experimental formats are **58 with rules / 57 without**; earlier formats
+are rejected unchanged without migration. See [status](doc/status.md).
+
+
 ## Contextual Help — owner Go 2026-11-06
 
 Read the [Help handoff](doc/help-prototype-handoff.md) before changing Help.

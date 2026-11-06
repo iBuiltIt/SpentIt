@@ -23,6 +23,48 @@ class ReportUiTests:public QObject {
     static QVariant value(const QVariant& v){return v.metaType()==QMetaType::fromType<QJSValue>()?v.value<QJSValue>().toVariant():v;}
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItReportsTests");QCoreApplication::setApplicationName("Reports");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());}
+    void incomeGroups(){
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(QTest::qWaitForWindowExposed(window));auto* workspace=object(root,"reportsWorkspace");
+        run(model,"create",{{"path",dir.filePath("doc")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        QStringList ids;
+        for(const auto* name:{"Zulu expense","Alpha income","Middle expense"}) {
+            run(model,"preview_category",{{"action","create"},{"name",name},{"revision",model.state().value("catalogRevision")}});
+            ids.append(model.state().value("categorySelected").toMap().value("id").toString());
+        }
+        run(model,"preview_category",{{"action","set_income"},{"id",ids[1]},{"income",true},{"revision",model.state().value("catalogRevision")}});
+        QVERIFY(click(root,"reportsNavigation"));QTRY_VERIFY(!model.busy());QVERIFY(click(root,"newReport"));
+        auto selected=[&]{return value(workspace->property("current")).toMap().value("categories").toStringList();};
+        auto* expenses=qobject_cast<QQuickItem*>(object(root,"reportExpensesGroup"));auto* income=qobject_cast<QQuickItem*>(object(root,"reportIncomeGroup"));QVERIFY(expenses);QVERIFY(income);
+        QCOMPARE(expenses->property("checkState").toInt(),int(Qt::Checked));QCOMPARE(income->property("checkState").toInt(),int(Qt::Checked));
+        // Actual key activation tests two-state group action and tri-state feedback.
+        expenses->forceActiveFocus();QTest::keyClick(window,Qt::Key_Space);QCOMPARE(selected(),QStringList({"",ids[1]}));
+        QCOMPARE(expenses->property("checkState").toInt(),int(Qt::Unchecked));
+        QVERIFY(QMetaObject::invokeMethod(workspace,"check",Q_ARG(QVariant,"categories"),Q_ARG(QVariant,ids[0]),Q_ARG(QVariant,true)));
+        QCOMPARE(expenses->property("checkState").toInt(),int(Qt::PartiallyChecked));
+        if(qEnvironmentVariableIsSet("SPENTIT_INCOME_REPORT_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INCOME_REPORT_SCREENSHOT")));}
+        auto* search=object(root,"reportChoiceSearch_categories");QVERIFY(search);search->setProperty("text","Zulu");
+        auto* filteredGroup=qobject_cast<QQuickItem*>(object(root,"reportExpensesGroup"));QVERIFY(filteredGroup);
+        filteredGroup->forceActiveFocus();QTest::keyClick(window,Qt::Key_Space);QCOMPARE(selected().size(),4);QCOMPARE(filteredGroup->property("checkState").toInt(),int(Qt::Checked));
+        search->setProperty("text","");income=qobject_cast<QQuickItem*>(object(root,"reportIncomeGroup"));QVERIFY(income);
+        auto* flick=object(root,"reportChoiceScroll_categories")->property("contentItem").value<QObject*>();QVERIFY(flick);
+        QTRY_VERIFY(flick->property("contentHeight").toDouble()>flick->property("height").toDouble());QTest::qWait(50);
+        flick->setProperty("contentY",flick->property("contentHeight").toDouble()-flick->property("height").toDouble());QTest::qWait(50);
+        const auto incomePoint=income->mapToScene(QPointF(income->width()/2,income->height()/2)).toPoint();
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,incomePoint);QVERIFY(!selected().contains(ids[1]));QVERIFY(selected().contains(""));
+        if(qEnvironmentVariableIsSet("SPENTIT_INCOME_REPORT_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INCOME_REPORT_SCREENSHOT")+".income.png"));}
+        const auto savedSelection=selected();QVERIFY(QMetaObject::invokeMethod(workspace,"save",Q_ARG(QVariant,false),Q_ARG(QVariant,false)));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        // Reclassification changes grouping, never the saved report's explicit selection.
+        run(model,"preview_category",{{"action","set_income"},{"id",ids[0]},{"income",true},{"revision",model.state().value("catalogRevision")}});
+        auto unchanged=selected();auto original=savedSelection;unchanged.sort();original.sort();QCOMPARE(unchanged,original);QCOMPARE(object(root,"reportIncomeGroup")->property("checkState").toInt(),int(Qt::PartiallyChecked));
+        run(model,"report_load");auto stored=model.state().value("reports").toList().front().toMap().value("categories").toStringList();auto expected=savedSelection;stored.sort();expected.sort();QCOMPARE(stored,expected);
+        // A group action applies exactly that group, including colon names independently.
+        QVERIFY(QMetaObject::invokeMethod(workspace,"checkGroup",Q_ARG(QVariant,true),Q_ARG(QVariant,false)));
+        QVERIFY(!selected().contains(ids[0]) && !selected().contains(ids[1]) && selected().contains(ids[2]) && selected().contains(""));
+        QVERIFY(warnings.isEmpty());
+    }
     void editableReportLedger(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         QSignalSpy warnings(&engine,&QQmlEngine::warnings);

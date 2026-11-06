@@ -362,6 +362,7 @@ ApplicationWindow {
             if(!!a.account!==!!b.account)return a.account?1:-1
             let nameOrder=a.path.toLowerCase().localeCompare(b.path.toLowerCase()) || a.id.localeCompare(b.id)
             if(a.account)return nameOrder
+            if(!!a.income!==!!b.income)return a.income?1:-1
             if(order==="added") {
                 // Decimal strings preserve the full stored 64-bit revision range.
                 return a.createdOrder.length-b.createdOrder.length || a.createdOrder.localeCompare(b.createdOrder) || a.id.localeCompare(b.id)
@@ -1031,6 +1032,12 @@ ApplicationWindow {
         workflow.command("preview_category",{action:action||categoryAction,id:categoryFormId,revision:categoryFormRevision,
             name:categoryEditText})
     }
+    function setCategoryIncome(c, income) {
+        guard(function(){
+            categoryFormId=c.id;categoryFormRevision=s.catalogRevision||"";categoryAction="set_income";categorySaving=true
+            workflow.command("apply_category",{id:c.id,revision:categoryFormRevision,income:income})
+        })
+    }
     function categoryMenuAction(action) {
         let c=categoryMenuEntry
         guard(function(){
@@ -1664,6 +1671,7 @@ ApplicationWindow {
                 if(action==="rules_reapply_apply"){reapplyDialog.close();loadEditor()}
                 if(action==="preview_category") workflow.command("apply_category",{preview:s.categoryPreview.id})
                 if(action==="apply_category" && categoryAction==="create")categoryVisitAdditions=categoryVisitAdditions.concat([(s.categorySelected||{}).id])
+                if(action==="apply_category" && categoryAction==="set_income")categoryVisitAdditions=categoryVisitAdditions.filter(id=>id!==categoryFormId)
                 if(action==="category_select" || action==="apply_category")loadCategoryForm()
                 if(action==="apply_category") {categorySelection=(s.categorySelected||{}).id||"";categoryReveal=categorySelection;revealCategorySelection();let next=pendingAction;pendingAction=null;categoryDirty=false;if(!dirty)loadEditor();if(next)guard(next)}
                 if(action==="preview_change") changePreview.open()
@@ -2903,6 +2911,10 @@ ApplicationWindow {
                             Button {objectName:"categorySortDescending";text:"Z–A ↓";highlighted:categorySort==="descending";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("descending")}
                             Button {objectName:"categorySortAdded";text:"Order added";highlighted:categorySort==="added";enabled:!workflow.busy && !categorySaving;onClicked:sortCategories("added")}
                         }
+                        RowLayout {
+                            Label {text:"Income";Layout.preferredWidth:64;horizontalAlignment:Text.AlignHCenter}
+                            Label {text:"Name";Layout.fillWidth:true}
+                        }
                         Rectangle {objectName:"categoryListDivider";Layout.fillWidth:true;Layout.preferredHeight:1;color:theme.border}
                         ListView {
                             id:catalogList;objectName:"catalogList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;reuseItems:false
@@ -2916,10 +2928,11 @@ ApplicationWindow {
                                 required property int index
                                 width:catalogList.width-catalogBar.width;height:30
                                 color:categorySelection===modelData.id && !modelData.pending?theme.selection:index%2?theme.alternate:theme.surface
+                                readonly property bool incomePending:categorySaving && categoryAction==="set_income" && categoryFormId===modelData.id
                                 property bool editing:categoryAction==="create"?!!modelData.pending:categoryAction==="rename" && modelData.id===categoryFormId
                                 function focusEditor(){inlineCategory.forceActiveFocus();inlineCategory.selectAll()}
                                 Rectangle {anchors.bottom:parent.bottom;width:parent.width;height:1;color:theme.divider}
-                                Label {anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignLeft;textFormat:Text.PlainText;elide:Text.ElideRight;color:theme.text;visible:!categoryRow.editing;text:modelData.path+(modelData.account?" [Account — edit in Accounts]"+(modelData.aliases?" · Aliases: "+modelData.aliases:""):"")+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"")}
+                                Label {anchors.fill:parent;anchors.leftMargin:72;anchors.rightMargin:categoryRow.incomePending?100:8;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignLeft;textFormat:Text.PlainText;elide:Text.ElideRight;color:theme.text;visible:!categoryRow.editing;text:modelData.path+(modelData.account?" [Account — edit in Accounts]"+(modelData.aliases?" · Aliases: "+modelData.aliases:""):"")+(modelData.deleted?" [Deleted]":modelData.archived?" [Archived]":"")}
                                 MouseArea {
                                     anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton;enabled:!categoryRow.editing && !workflow.busy && !categorySaving
                                     onClicked:function(mouse){
@@ -2928,8 +2941,21 @@ ApplicationWindow {
                                         guard(function(){categorySelection=c.id;if(mouse.button===Qt.RightButton){categoryMenuEntry=c;categoryContext.popup(pt.x,pt.y)}})
                                     }
                                 }
+                                CheckBox {
+                                    objectName:"categoryIncome_"+modelData.id
+                                    anchors.left:parent.left;anchors.leftMargin:16;anchors.verticalCenter:parent.verticalCenter
+                                    visible:!modelData.account && !modelData.pending
+                                    enabled:!s.readOnly && !workflow.busy && !categorySaving && !categoryRow.editing
+                                    checkState:categoryRow.incomePending?Qt.PartiallyChecked:modelData.income?Qt.Checked:Qt.Unchecked
+                                    Accessible.name:"Income: "+modelData.path+(categoryRow.incomePending?" — Saving":"")
+                                    onClicked:{setCategoryIncome(modelData,!modelData.income);checkState=Qt.binding(function(){return categoryRow.incomePending?Qt.PartiallyChecked:categoryRow.modelData.income?Qt.Checked:Qt.Unchecked})}
+                                }
+                                Label {
+                                    anchors.right:parent.right;anchors.rightMargin:8;anchors.verticalCenter:parent.verticalCenter
+                                    visible:categoryRow.incomePending;text:"Saving…";color:theme.text
+                                }
                                 NavigableTextField {
-                                    id:inlineCategory;objectName:categoryRow.editing?"categoryName":"";anchors.fill:parent;visible:categoryRow.editing;enabled:!categorySaving
+                                    id:inlineCategory;objectName:categoryRow.editing?"categoryName":"";anchors.fill:parent;anchors.leftMargin:72;visible:categoryRow.editing;enabled:!categorySaving
                                     text:categoryRow.editing?categoryEditText:"";leftPadding:8;topPadding:2;bottomPadding:2;selectByMouse:true;Accessible.name:"Category name"
                                     onTextEdited:{categoryEditText=text}
                                     onAccepted:finishCategoryEdit()

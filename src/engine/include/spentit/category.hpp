@@ -21,6 +21,7 @@ struct CategoryDefinition {
     CategoryKind kind;
     std::int64_t revision;
     bool archived,deleted;
+    bool income = false;
     bool operator==(const CategoryDefinition&) const = default;
 };
 // One optional colon; normalize separator spacing without changing capitalization.

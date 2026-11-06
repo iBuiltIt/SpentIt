@@ -61,6 +61,43 @@ void catalog(){
  check(s.committed_balance().units()==0&&s.ledger(false).empty());s.verify();}
  {auto s=ImportStore::open(dir.path/"doc",password);check(s.resolve_category("parking").path=="Travel: Parking");check(s.category_catalog().creation_order.at("parking")==3);s.verify();}no_leaks(dir.path);
 }
+void income(){Directory dir;
+ {auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);s.commit("first",0,"publish");
+ check(!definition(s,"parking").income);
+ auto request=change(app::CategoryAction::set_income,"parking");request.income=true;
+ const auto preview=s.preview_category_change(request);auto receipt=s.apply_category_change("income",request,preview.catalog_revision);
+ check(receipt.after.income && !receipt.before->income);
+ check(s.apply_category_change("income",request,preview.catalog_revision).after.income);
+ auto different=request;different.income=false;rejects([&]{s.apply_category_change("income",different,preview.catalog_revision);});
+ rejects([&]{s.apply_category_change("stale-income",different,preview.catalog_revision);});
+ apply(s,"rename-income",change(app::CategoryAction::rename,"parking","Misc Income"));
+ apply(s,"archive-income",change(app::CategoryAction::archive,"parking"));
+ check(definition(s,"parking").income);apply(s,"unarchive-income",change(app::CategoryAction::unarchive,"parking"));
+ check(s.category_catalog().creation_order.at("parking")==3);
+ check(s.committed_balance().units()==-2931 && s.evidence("first")==source);s.verify();s.backup_to(dir.path/"backup",password);}
+ for(const auto* file:{"doc","backup"}) {auto s=ImportStore::open(dir.path/file,password);check(definition(s,"parking").income);check(s.category_change_outcome("income")->request.income);
+ apply(s,"expense",change(app::CategoryAction::set_income,"parking"));check(!definition(s,"parking").income);check(s.committed_balance().units()==-2931);s.verify();}
+ no_leaks(dir.path);
+}
+void income_review(){Directory dir;
+ {auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);
+ auto other=source;other.replace(other.find(marker),std::string(marker).size(),"Other synthetic payee");s.ingest("second",other,qif::DateOrder::dmy);
+ const auto before=s.review_sheet();check(!before.questions.empty());const auto acceptance=s.acceptance_review();
+ const auto balance=s.balance();auto request=change(app::CategoryAction::set_income,"parking");request.income=true;
+ int reviewed=0;s.observer([&](ImportPhase phase){if(phase==ImportPhase::review_row)++reviewed;});apply(s,"income",request);s.observer({});check(reviewed==0);
+ const auto after=s.review_sheet();check(after.generation==before.generation+1 && !after.can_undo && after.questions.size()==before.questions.size());
+ for(std::size_t i=0;i<before.questions.size();++i){check(before.questions[i].key==after.questions[i].key && before.questions[i].rows.size()==after.questions[i].rows.size());}
+ check(s.acceptance_review().transactions==acceptance.transactions && s.acceptance_review().warnings.size()==acceptance.warnings.size());check(s.balance()==balance);
+ auto expense=request;expense.income=false;
+ s.observer([](ImportPhase phase){if(phase==ImportPhase::before_commit)throw std::runtime_error("Synthetic income rollback");});rejects([&]{apply(s,"rollback-income",expense);});s.observer({});
+ check(definition(s,"parking").income && !s.category_change_outcome("rollback-income"));check(s.review_sheet().generation==after.generation);
+ s.observer([](ImportPhase phase){if(phase==ImportPhase::after_commit)throw std::runtime_error("Synthetic income saved");});rejects([&]{apply(s,"saved-income",expense);});s.observer({});
+ check(!definition(s,"parking").income && s.category_change_outcome("saved-income").has_value());check(s.review_sheet().generation==after.generation+1);
+ const auto sheet=s.review_sheet();app::ReviewAnswer answer;answer.generation=sheet.generation;answer.question=sheet.questions.front().key;answer.action=app::ReviewAction::separate;
+ for(const auto& row:sheet.questions.front().rows)answer.selected.push_back(row.identity);
+ s.answer_review("separate",answer);check(s.review_sheet().can_undo);apply(s,"income-again",request);check(!s.review_sheet().can_undo);s.verify();}
+ {auto s=ImportStore::open(dir.path/"doc",password);check(definition(s,"parking").income && !s.review_sheet().can_undo);s.verify();}
+}
 void setup(){Directory dir;
  {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check(s.category_catalog().categories.size()==41);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}
  {auto s=ImportStore::open(dir.path/"backup",password);check(s.date_format()=="MM/DD/YYYY" && s.category_catalog().categories.size()==41);s.verify();}
@@ -143,10 +180,10 @@ void legacy(){for(int version:{1,2,3,4}){Directory dir;sqlite3* db=nullptr;check
  sqlite3_stmt* insert=nullptr;check(sqlite3_prepare_v2(db,"INSERT INTO account VALUES(1,'Synthetic',?,'2026-08-01',0,0,0,0)",-1,&insert,nullptr)==SQLITE_OK);const auto definition=cad.definition_id();check(sqlite3_bind_text(insert,1,definition.data(),static_cast<int>(definition.size()),SQLITE_TRANSIENT)==SQLITE_OK);check(sqlite3_step(insert)==SQLITE_DONE);check(sqlite3_finalize(insert)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
  const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);
 }}
-app::CategoryRequest fault_request(int kind){return kind==0?make("new","New"):kind==1?change(app::CategoryAction::rename,"parking","Travel: Parking"):change(app::CategoryAction::erase,"parking");}
+app::CategoryRequest fault_request(int kind){return kind==0?make("new","New"):kind==1?change(app::CategoryAction::rename,"parking","Travel: Parking"):kind==2?change(app::CategoryAction::erase,"parking"):app::CategoryRequest{app::CategoryAction::set_income,"parking",{},{},CategoryKind::leaf,true};}
 void fault_setup(const fs::path& path){auto s=create(path);seed(s);}
 void recovered(const fs::path& path,const app::CategoryRequest& request,std::int64_t expected){auto s=ImportStore::open(path,password);s.verify();auto outcome=s.category_change_outcome("fault");check(s.category_catalog().revision==expected+(outcome?1:0));auto r=s.apply_category_change("fault",request,expected);check(r.catalog_after==expected+1&&s.category_catalog().revision==expected+1);check(s.apply_category_change("fault",request,expected).catalog_after==r.catalog_after);check(s.committed_balance().units()==0);s.verify();}
-void faults(bool crash){fault_vfs::install();for(int kind=0;kind<3;++kind){const auto request=fault_request(kind);int positions=0;{Directory dir;fault_setup(dir.path/"doc");auto s=ImportStore::open(dir.path/"doc",password);fault_vfs::arm(-1);s.apply_category_change("fault",request,3);positions=fault_vfs::seen;fault_vfs::disarm();check(positions>0);}
+void faults(bool crash,bool income_only=false){fault_vfs::install();for(int kind=income_only?3:0;kind<4;++kind){const auto request=fault_request(kind);int positions=0;{Directory dir;fault_setup(dir.path/"doc");auto s=ImportStore::open(dir.path/"doc",password);fault_vfs::arm(-1);s.apply_category_change("fault",request,3);positions=fault_vfs::seen;fault_vfs::disarm();check(positions>0);}
  for(int position=1;position<=positions;++position){Directory dir;fault_setup(dir.path/"doc");if(crash){auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(dir.path/"doc",password);fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);s.apply_category_change("fault",request,3);_exit(0);}int status=0;check(waitpid(child,&status,0)==child&&WIFEXITED(status)&&(WEXITSTATUS(status)==71||WEXITSTATUS(status)==0));}else{auto s=ImportStore::open(dir.path/"doc",password);fault_vfs::arm(position,position%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.apply_category_change("fault",request,3);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}check(fault_vfs::fired);fault_vfs::disarm();}recovered(dir.path/"doc",request,3);no_leaks(dir.path);}
  if(crash)for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory dir;fault_setup(dir.path/"doc");auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(dir.path/"doc",password);s.observer([&](ImportPhase current){if(current==phase)_exit(72);});s.apply_category_change("fault",request,3);_exit(0);}int status=0;check(waitpid(child,&status,0)==child&&WIFEXITED(status)&&WEXITSTATUS(status)==72);{auto s=ImportStore::open(dir.path/"doc",password);check(s.category_change_outcome("fault").has_value()==(phase==ImportPhase::after_commit));}recovered(dir.path/"doc",request,3);}
  std::cout<<"category kind "<<kind<<": "<<positions<<" fault positions\n";
@@ -181,10 +218,13 @@ void validation(){const char* damage[]={
  "DROP TRIGGER entry_allocation_meta_immutable;UPDATE entry_allocation_meta SET source_ordinal=NULL WHERE batch='first' AND ordinal=0 AND revision=1 AND position=0",
  // Different text cannot claim source ownership; an exact Restore is allowed.
  "DROP TRIGGER entry_fields_immutable;UPDATE entry_fields SET payee_owner=1 WHERE batch='first' AND ordinal=0 AND revision=2",
+ "DROP TRIGGER category_versions_immutable;UPDATE category_versions SET income=1 WHERE id='parking' AND revision=0",
+ "DROP TRIGGER category_operations_immutable;UPDATE category_operations SET income=1 WHERE id='rename'",
+ "PRAGMA user_version=55","PRAGMA user_version=56",
  "PRAGMA user_version=1","PRAGMA user_version=2","PRAGMA user_version=3","PRAGMA user_version=4","PRAGMA user_version=21","PRAGMA user_version=22"
 };for(const auto* sql:damage){Directory dir;{auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);auto d=*s.row(first).draft;bind(s,d,0,"parking");s.save(first,0,d);s.commit("first",1,"publish");d=s.committed_entry(first).current.draft;d.payee="Manual";d.payee_owner=FieldOwnership::manual;d.memo="";d.memo_owner=FieldOwnership::manual;correct(s,"correct",d);d=s.committed_entry(first).current.draft;d.payee="Manual again";correct(s,"correct-again",d);apply(s,"rename",change(app::CategoryAction::rename,"parking","Auto: Parking"));s.verify();}
  sqlite3* db=nullptr;check(sqlite3_open((dir.path/"doc").c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);
 }}
 
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="setup")setup();else if(mode=="catalog")catalog();else if(mode=="names")names();else if(mode=="assignments")assignments();else if(mode=="history")history();else if(mode=="backup")backup();else if(mode=="legacy")legacy();else if(mode=="validation")validation();else if(mode=="io"){faults(false);assignment_faults(false);}else if(mode=="crashes"){faults(true);assignment_faults(true);}else return 2;std::cout<<"Category "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="income_review")income_review();else if(mode=="income")income();else if(mode=="income_io")faults(false,true);else if(mode=="income_crashes")faults(true,true);else if(mode=="setup")setup();else if(mode=="catalog")catalog();else if(mode=="names")names();else if(mode=="assignments")assignments();else if(mode=="history")history();else if(mode=="backup")backup();else if(mode=="legacy")legacy();else if(mode=="validation")validation();else if(mode=="io"){faults(false);assignment_faults(false);}else if(mode=="crashes"){faults(true);assignment_faults(true);}else return 2;std::cout<<"Category "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

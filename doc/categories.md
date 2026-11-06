@@ -1,5 +1,7 @@
 # Category catalog and assignments
 
+The [Income grouping contract](../features/010-categories-and-selection.md#income-grouping--owner-go-2026-11-06) now adds a saved Income checkbox and grouped sorting, plus Reports group selection. It supersedes the alphabetical-only ordering below.
+
 The [2026-11-02 selector and sorting contract](../features/010-categories-and-selection.md#category-selector-widths-and-visit-sorting--owner-go-2026-11-02)
 supersedes persistent sorting: Categories starts A–Z on every visit, with additions
 at the bottom until departure or an explicit sort. Transaction/rule selectors

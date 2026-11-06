@@ -2,7 +2,7 @@ namespace { bool same_draft(const imports::DraftRow&,const imports::DraftRow&); 
 namespace {
 std::int64_t catalog_sequence(sqlite3* db){Statement state(db,"SELECT revision FROM category_state WHERE singleton=1");if(!state.row())fail(SQLITE_CORRUPT);return state.integer(0);}
 CategoryDefinition category_at(sqlite3* db,std::string_view id,std::int64_t catalog=INT64_MAX) {
-    Statement row(db,"SELECT id,name,parent,kind,revision,archived,deleted FROM category_versions WHERE id=? AND catalog_revision<=? ORDER BY revision DESC LIMIT 1");row.text(1,id);row.integer(2,catalog);if(!row.row())fail(SQLITE_NOTFOUND,"Category does not exist");return {row.bytes(0),row.bytes(1),row.bytes(2),static_cast<CategoryKind>(row.integer(3)),row.integer(4),row.integer(5)!=0,row.integer(6)!=0};
+    Statement row(db,"SELECT id,name,parent,kind,revision,archived,deleted,income FROM category_versions WHERE id=? AND catalog_revision<=? ORDER BY revision DESC LIMIT 1");row.text(1,id);row.integer(2,catalog);if(!row.row())fail(SQLITE_NOTFOUND,"Category does not exist");return {row.bytes(0),row.bytes(1),row.bytes(2),static_cast<CategoryKind>(row.integer(3)),row.integer(4),row.integer(5)!=0,row.integer(6)!=0,row.integer(7)!=0};
 }
 app::CategoryDisplay category_display(sqlite3* db,std::string_view id,std::int64_t catalog=INT64_MAX){const auto category=category_at(db,id,catalog);if(category.deleted)fail(SQLITE_CONSTRAINT,"Category was deleted");if(category.kind!=CategoryKind::leaf || !category.parent.empty())fail(SQLITE_CORRUPT);return {category.identity,category.name,!category.archived,category.archived};}
 void validate_binding(sqlite3* db,const Allocation& allocation){if(!allocation.category_binding)return;const auto& binding=*allocation.category_binding;if(binding.catalog_revision<1 || binding.catalog_revision>catalog_sequence(db))fail(SQLITE_CONSTRAINT,"Category assignment revision is invalid");const auto at=category_display(db,binding.identity,binding.catalog_revision);if(!at.assignable || at.path!=allocation.category)fail(SQLITE_CONSTRAINT,"Category assignment does not match its retained definition");}
@@ -101,12 +101,14 @@ app::CategoryCatalog ImportStore::category_catalog() const {
 app::CategoryDisplay ImportStore::resolve_category(std::string_view id) const {if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");return category_display(impl_->db,id);}
 app::CategoryPreview ImportStore::preview_category_change(const app::CategoryRequest& request) const {
     const auto catalog=category_catalog();identifier(request.identity);std::optional<CategoryDefinition> before;
+    if(request.income && request.action!=app::CategoryAction::set_income)fail(SQLITE_CONSTRAINT,"Income can only be set with the Income category control");
     auto found=std::find_if(catalog.categories.begin(),catalog.categories.end(),[&](const auto& definition){return definition.identity==request.identity;});
     if(request.action==app::CategoryAction::create){if(found!=catalog.categories.end())fail(SQLITE_CONSTRAINT,"Category identity already exists");}
     else {if(found==catalog.categories.end() || found->deleted)fail(SQLITE_CONSTRAINT,"Choose an existing category");before=*found;if(before->revision==INT64_MAX)fail(SQLITE_FULL);}
     CategoryDefinition after=before?*before:CategoryDefinition{request.identity,request.name,request.parent,request.kind,-1,false,false};++after.revision;
     switch(request.action){
     case app::CategoryAction::create:break;
+    case app::CategoryAction::set_income:after.income=request.income;break;
     case app::CategoryAction::rename:after.name=request.name;break;
     case app::CategoryAction::move:fail(SQLITE_CONSTRAINT,"Rename the complete category name to change its stem");
     case app::CategoryAction::archive:after.archived=true;break;
@@ -126,19 +128,37 @@ app::CategoryPreview ImportStore::preview_category_change(const app::CategoryReq
 std::optional<app::CategoryReceipt> ImportStore::category_change_outcome(std::string_view operation) const {
     if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
-    Statement row(impl_->db,"SELECT action,category,name,parent,kind,catalog_before,catalog_after,before_revision,after_revision FROM category_operations WHERE id=?");row.text(1,operation);if(!row.row()){Statement existing(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");existing.text(1,operation);if(existing.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
-    std::optional<CategoryDefinition> before;if(!row.null(7)){before=category_at(impl_->db,row.bytes(1),row.integer(5));if(before->revision!=row.integer(7))fail(SQLITE_CORRUPT);}if(category_at(impl_->db,row.bytes(1),row.integer(6)).revision!=row.integer(8))fail(SQLITE_CORRUPT);return app::CategoryReceipt{std::string(operation),{static_cast<app::CategoryAction>(row.integer(0)),row.bytes(1),row.bytes(2),row.bytes(3),static_cast<CategoryKind>(row.integer(4))},row.integer(5),row.integer(6),before,category_at(impl_->db,row.bytes(1),row.integer(6))};
+    Statement row(impl_->db,"SELECT action,category,name,parent,kind,catalog_before,catalog_after,before_revision,after_revision,income FROM category_operations WHERE id=?");row.text(1,operation);if(!row.row()){Statement existing(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");existing.text(1,operation);if(existing.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
+    std::optional<CategoryDefinition> before;if(!row.null(7)){before=category_at(impl_->db,row.bytes(1),row.integer(5));if(before->revision!=row.integer(7))fail(SQLITE_CORRUPT);}if(category_at(impl_->db,row.bytes(1),row.integer(6)).revision!=row.integer(8))fail(SQLITE_CORRUPT);return app::CategoryReceipt{std::string(operation),{static_cast<app::CategoryAction>(row.integer(0)),row.bytes(1),row.bytes(2),row.bytes(3),static_cast<CategoryKind>(row.integer(4)),row.integer(9)!=0},row.integer(5),row.integer(6),before,category_at(impl_->db,row.bytes(1),row.integer(6))};
 }
 app::CategoryReceipt ImportStore::apply_category_change(std::string_view operation,const app::CategoryRequest& request,std::int64_t expected) {
     identifier(operation);if(const auto prior=category_change_outcome(operation)){if(prior->request!=request || prior->catalog_before!=expected)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");return *prior;}
     const auto preview=preview_category_change(request);if(preview.catalog_revision!=expected)fail(SQLITE_CONSTRAINT,"Catalog changed; refresh before applying");Atomic transaction(impl_->db);if(catalog_sequence(impl_->db)!=expected)fail(SQLITE_CONSTRAINT,"Catalog changed; refresh before applying");
-    write_category_change(operation,preview);finish([&]{transaction.commit();});return *category_change_outcome(operation);
+    const auto changes=sqlite3_total_changes64(impl_->db);
+    const bool reviewsCurrent=impl_->review_changes==changes;
+    const bool sheetCurrent=impl_->sheet_cache && impl_->sheet_changes==changes;
+    write_category_change(operation,preview);
+    if(request.action==app::CategoryAction::set_income) {
+        // This flag cannot change import completion, matching, transfers or amounts.
+        // Retain already-current Review facts, but advance mutation/Undo guards.
+        exec(impl_->db,"UPDATE mutation_generation SET revision=revision+1 WHERE singleton=1");
+        if(impl_->observer)impl_->observer(ImportPhase::before_commit);
+        transaction.commit();
+        const auto savedChanges=sqlite3_total_changes64(impl_->db);
+        if(reviewsCurrent)impl_->review_changes=savedChanges;
+        if(sheetCurrent) {
+            impl_->sheet_cache->generation=ledger_edit_generation();impl_->sheet_cache->can_undo=false;
+            impl_->sheet_changes=savedChanges;
+        }
+        if(impl_->observer)impl_->observer(ImportPhase::after_commit);
+    } else finish([&]{transaction.commit();});
+    return *category_change_outcome(operation);
 }
 void ImportStore::write_category_change(std::string_view operation,const app::CategoryPreview& preview) {
     const auto& request=preview.request;const auto expected=preview.catalog_revision;
-    const auto& value=preview.after;Statement revision(impl_->db,"INSERT INTO category_versions VALUES(?,?,?,?,?,?,?,?)");revision.text(1,value.identity);revision.integer(2,value.revision);revision.integer(3,expected+1);revision.text(4,value.name);revision.text(5,value.parent);revision.integer(6,static_cast<int>(value.kind));revision.integer(7,value.archived?1:0);revision.integer(8,value.deleted?1:0);revision.done();
+    const auto& value=preview.after;Statement revision(impl_->db,"INSERT INTO category_versions VALUES(?,?,?,?,?,?,?,?,?)");revision.text(1,value.identity);revision.integer(2,value.revision);revision.integer(3,expected+1);revision.text(4,value.name);revision.text(5,value.parent);revision.integer(6,static_cast<int>(value.kind));revision.integer(7,value.archived?1:0);revision.integer(8,value.deleted?1:0);revision.integer(9,value.income);revision.done();
     Statement head(impl_->db,preview.before?"UPDATE category_heads SET revision=?2 WHERE id=?1":"INSERT INTO category_heads VALUES(?,?)");head.text(1,value.identity);head.integer(2,value.revision);head.done();
-    Statement event(impl_->db,"INSERT INTO category_operations VALUES(?,?,?,?,?,?,?,?,?,?)");event.text(1,operation);event.integer(2,static_cast<int>(request.action));event.text(3,request.identity);event.text(4,request.name);event.text(5,request.parent);event.integer(6,static_cast<int>(request.kind));event.integer(7,expected);event.integer(8,expected+1);if(preview.before)event.integer(9,preview.before->revision);event.integer(10,value.revision);event.done();
+    Statement event(impl_->db,"INSERT INTO category_operations VALUES(?,?,?,?,?,?,?,?,?,?,?)");event.text(1,operation);event.integer(2,static_cast<int>(request.action));event.text(3,request.identity);event.text(4,request.name);event.text(5,request.parent);event.integer(6,static_cast<int>(request.kind));event.integer(7,expected);event.integer(8,expected+1);if(preview.before)event.integer(9,preview.before->revision);event.integer(10,value.revision);event.integer(11,request.income);event.done();
     Statement state(impl_->db,"UPDATE category_state SET revision=? WHERE singleton=1");state.integer(1,expected+1);state.done();
 }
 std::vector<app::CategoryReceipt> ImportStore::category_history(std::string_view id) const {if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");std::vector<app::CategoryReceipt> result;Statement operations(impl_->db,"SELECT id FROM category_operations WHERE category=? ORDER BY catalog_after");operations.text(1,id);while(operations.row())result.push_back(*category_change_outcome(operations.bytes(0)));return result;}
@@ -199,10 +219,10 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
         if(context)context->checkpoint();
         const auto receipt=*category_change_outcome(operations.bytes(0));if(receipt.catalog_before!=previous || receipt.catalog_after!=previous+1)fail(SQLITE_CORRUPT);
         Statement ordering(impl_->db,"SELECT sequence FROM history_order WHERE category_operation=?");ordering.text(1,receipt.operation);if(!ordering.row() || ordering.integer(0)<=previous_order)fail(SQLITE_CORRUPT);previous_order=ordering.integer(0);
-        const auto& request=receipt.request;auto found=reconstructed.find(request.identity);CategoryDefinition expected=receipt.after;
+        const auto& request=receipt.request;if(request.income && request.action!=app::CategoryAction::set_income)fail(SQLITE_CORRUPT);auto found=reconstructed.find(request.identity);CategoryDefinition expected=receipt.after;
         if(request.action==app::CategoryAction::create){if(found!=reconstructed.end() || receipt.before || receipt.after.revision!=0)fail(SQLITE_CORRUPT);expected={request.identity,request.name,request.parent,request.kind,0,false,false};}
         else {if(found==reconstructed.end() || found->second.deleted || !receipt.before || *receipt.before!=found->second)fail(SQLITE_CORRUPT);expected=found->second;++expected.revision;
-            switch(request.action){case app::CategoryAction::rename:expected.name=request.name;break;case app::CategoryAction::move:fail(SQLITE_CORRUPT);case app::CategoryAction::archive:expected.archived=true;break;case app::CategoryAction::unarchive:expected.archived=false;break;case app::CategoryAction::erase:expected.deleted=true;break;default:fail(SQLITE_CORRUPT);}
+            switch(request.action){case app::CategoryAction::set_income:expected.income=request.income;break;case app::CategoryAction::rename:expected.name=request.name;break;case app::CategoryAction::move:fail(SQLITE_CORRUPT);case app::CategoryAction::archive:expected.archived=true;break;case app::CategoryAction::unarchive:expected.archived=false;break;case app::CategoryAction::erase:expected.deleted=true;break;default:fail(SQLITE_CORRUPT);}
         }
         expected.name=canonical_category_name(expected.name);
         if(expected!=receipt.after)fail(SQLITE_CORRUPT);

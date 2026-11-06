@@ -1,6 +1,6 @@
 # Reports workspace and reusable calendar — next-agent handoff
 
-Last updated: 2026-11-04
+Last updated: 2026-11-06
 
 State: **initial scope implemented under owner Go, 2026-11-04**.
 The owner first authorized this design handoff, then explicitly authorized the
@@ -12,6 +12,14 @@ Read [project status](status.md), [project layout](project-layout.md),
 [reporting requirements](../features/006-reporting-drill-down.md),
 [Rules workspace contract](../features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01),
 and [user-facing language](user-facing-language.md) before continuing.
+
+## Income selection follow-up — 2026-11-06
+
+The [category income grouping contract](../features/010-categories-and-selection.md#income-grouping--owner-go-2026-11-06)
+adds saved category Income flags and tri-state Expenses/Income group checkboxes
+in Reports. This is implemented under owner Go; saved explicit selections and
+all calculation policies below remain unchanged. Current formats are 58/57.
+See [status](status.md) for verification.
 
 ## Accepted report workspace direction
 

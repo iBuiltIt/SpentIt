@@ -2,6 +2,108 @@
 
 Last updated: 2026-11-06
 
+## Income checkbox refresh correction — 2026-11-06
+
+Owner reported an unchecked intermediate row and a roughly four-second delay.
+The original handler rebound the control to its old stored value, submitted
+preview and apply as separate worker commands, and invalidated all transaction
+presentation caches. Category storage also ran the general import-review refresh.
+
+Income toggles now validate/save in one worker command, display a partial check
+with **Saving…** until completion, and publish the saved check/order together.
+Only category presentation is refreshed. Cached ledger/search, balances and
+Review questions remain valid because this flag changes none of their inputs.
+Review/rollback generation tokens and Undo availability are updated; other
+category actions still use their existing refresh path. Storage retains the same
+atomic transaction, mutation-generation advance, before/after commit observation,
+revision checking and durable outcome handling, while retaining only previously
+current Review caches. Rollback invalidates speculative caches as before.
+Formats stay **58/57**; no migration or new format change.
+
+The synthetic 4,000-pending-row UI workload reproduced the prior unchecked state,
+**383ms**, two completed commands and one ledger reset. With the correction it
+passed at **57ms**, one completed command and zero ledger resets (Qt offscreen,
+macOS arm64 Release). Timing includes the test's event polling; this is not a
+measurement of the owner's file. It asserts the immediate pending indicator,
+final check/order, unchanged Review questions/balances and current generation
+tokens. The focused workload plus sorting pass reported 4/4 including init/cleanup
+in 7023ms. Existing financial/storage correctness is not inferred from timing.
+
+Verification for this correction:
+
+- Release Income persistence, pending Review-cache/Undo correctness, all counted
+  I/O fault positions and crash/pre-/post-commit checks passed **4/4 in 61.41s**.
+  The new Review test includes nonempty duplicate questions, failed-before-commit
+  rollback, saved-after-commit outcome lookup and reopen verification.
+- Full category UI, report UI and QML smoke passed **3/3 in 29.26s**.
+- Native workload/sorting checks passed **4/4 including init/cleanup in 6894ms**;
+  the native 4,000-row toggle also measured **57ms**, one command, zero resets.
+- Rules-disabled Income persistence and Review-cache tests passed **2/2 in 1.20s**.
+- ASan/UBSan Income persistence, Review-cache, I/O and crash sweeps passed
+  **4/4 in 145.16s**, with no sanitizer diagnostic. The same sanitizer environment
+  listed in the initial grouping checkpoint below was used.
+- `git diff --check` and 376 relative Markdown file-target checks passed.
+
+No private dataset was opened or altered. Linux/Windows and timings on the owner's
+file remain unverified. The rules-enabled Release `build/SpentIt` was rebuilt.
+
+## Category income grouping — 2026-11-06
+
+Implemented under owner Go. Categories has an Income checkbox before Name;
+new categories default off. The flag is an atomic, revision-checked category
+history edit, retained through rename/archive/reopen/backup restore. Default
+workspace and category-picker ordering is Expenses A–Z, Income A–Z, Accounts
+A–Z. Other workspace sorts apply within ordinary groups. Explicit flag changes
+remove the affected row's visit-addition bottom placement and retain selection.
+
+Reports has tri-state Expenses and Income group checkboxes, with Uncategorized
+separate. Group selection covers the whole current group even under search,
+without changing the other group. Saved reports keep explicit category IDs when
+a flag changes. Report arithmetic, signs, result sorting and transfer policy are
+unchanged. The category/report manual text now explains the controls; existing
+manual screenshots were not regenerated. See the [accepted contract](../features/010-categories-and-selection.md#income-grouping--owner-go-2026-11-06).
+
+Experimental formats are **58 with rules / 57 without**; earlier formats are
+rejected unchanged without migration. The local rules-enabled Release application
+was rebuilt at `build/SpentIt`.
+
+Verification on macOS arm64, Qt 6.12.0, synthetic files only:
+
+- Rules-enabled Release CTest storage selection passed **10/10 in 82.88s**:
+  `import.reports`, `category.income`, `category.income_io`,
+  `category.income_crashes`, catalog, names, assignments, history, backup and
+  validation. The new Income tests exercise default/set/clear, rename/archive,
+  reopen/backup restoration, stale revisions, identical/conflicting retries,
+  unchanged balances/source data, corrupt flag history and old-format rejection.
+  Both failure sweeps cover every counted write/sync position; crash checks also
+  interrupt immediately before and after durable commit.
+- Rules-enabled Release CTest UI/schema selection passed **4/4 in 29.29s**:
+  `rulestore.schema`, `import.reports_ui`, `import.category_ui`, `import.qml`.
+  After final search/scroll test refinements, Reports UI and QML smoke passed
+  again **2/2 in 7.26s** against the final application resources.
+  A subsequent targeted Rules `sharedCategoryCompletion` passed **3/3 including
+  init/cleanup in 1247ms**. Category tests cover grouping in each workspace sort,
+  ledger-picker order, immediate visit-addition movement and retained selection.
+- Rules-disabled Debug category Income and schema gate passed **2/2 in 10.50s**.
+- Rules-enabled ASan/UBSan category Income plus full Income I/O and crash sweeps
+  passed **3/3 in 150.99s**, with no sanitizer diagnostic. Invocation used
+  `ASAN_OPTIONS=quarantine_size_mb=8:malloc_context_size=0:halt_on_error=1:abort_on_error=1`
+  and `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`.
+- Native Categories `incomeSorting` passed **3/3 including init/cleanup in
+  1947ms**. Final native Reports `incomeGroups` passed **3/3 including
+  init/cleanup in 1684ms**, covering partial-state feedback, keyboard activation,
+  search-hidden members, pointer activation after scrolling, and saved-selection
+  stability. Synthetic captures of both workspaces were visually inspected.
+- `git diff --check` and **376 relative Markdown link file-target checks** passed.
+
+Initial sandboxed storage/UI tests could not create required application-data
+locks; authorized reruns passed. An initial report assertion compared category
+ID order despite save-time canonical sorting; it was corrected to compare the
+selection. A native pointer test initially scrolled before restored search rows
+had laid out; its final setup waits for layout. No financial behavior was changed
+for these test corrections. Full-suite, Linux, Windows, spoken accessibility and
+large-category performance checks were not run for this change.
+
 ## Help keyboard and appearance closeout — 2026-11-06
 
 Under the owner's Go, Help now has an explicitly tested keyboard path through

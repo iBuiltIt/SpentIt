@@ -16,10 +16,49 @@ durable. See [current verification and limits](../doc/status.md); earlier Resume
 source-retention and toolbar descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-11-03  
+Last updated: 2026-11-06  
 Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 30/29. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
+
+## Income grouping — owner Go 2026-11-06
+
+Accepted and implemented: Categories has an **Income** checkbox column before
+Name. New categories (including starter/import-created categories) default off;
+only an explicit checkbox edit marks income. The flag is saved with category
+history, independent of names, transaction signs and category assignments.
+Renaming and archiving preserve it; unchecking reverses the classification.
+
+Responsiveness correction (2026-11-06): the Income checkbox uses one immediate
+validated save, with a partial indicator and **Saving…** while pending. Its saved
+check and sorted position arrive together. Income-only changes reuse unchanged
+ledger and Review facts; mutation revisions and Undo barriers still advance.
+Import completion, balances, transaction contents and report results are unchanged.
+Other category edits retain their existing full refresh behavior.
+
+Default workspace and all category pickers use Expenses A–Z, Income A–Z, then
+Accounts A–Z. Uncategorized/Choose a category remains first where offered.
+Workspace Z–A and Order added apply within each ordinary group; accounts stay
+A–Z. Visit additions still start at the bottom, but changing their Income flag
+removes that exception immediately. Selection follows the moved category.
+
+Reports keeps its separate account checklist. Its category checklist starts with
+Uncategorized, then Expenses and Income, each with a tri-state group checkbox.
+A checked group clears all its categories; unchecked or partial selects all.
+Group actions include categories hidden by search, including archived report
+choices, and do not affect Uncategorized or the other group. Empty groups have
+no heading. Group actions use each category's own flag, without colon expansion;
+individual category selection retains the existing colon-prefix behavior.
+
+Saved reports retain explicit category IDs: changing a flag or adding a category
+does not change their selection. Amounts, net-spending signs, report result order,
+refund treatment and transfer exclusion are unchanged. The flag does not classify
+individual transactions by sign. This supersedes earlier neutral-only category
+presentation and alphabetic-only selector wording below.
+
+Storage formats are **58 with rules / 57 without**. Earlier experimental formats
+are rejected unchanged without migration. See [status](../doc/status.md) for
+verification and remaining limits.
 
 ## Category selector widths and visit sorting — owner Go 2026-11-02
 

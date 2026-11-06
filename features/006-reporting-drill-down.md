@@ -1,5 +1,11 @@
 # 006 — Reporting and drill-down
 
+The [Income grouping follow-up](010-categories-and-selection.md#income-grouping--owner-go-2026-11-06)
+adds Expenses/Income checklist sections and tri-state group selection. It changes
+selection convenience only; net-spending calculations and explicit saved category
+IDs retain their existing behavior.
+
+
 Status: **active**  
 Last updated: 2026-11-04  
 Implementation: initial report workspace, saved definitions, exact aggregation,

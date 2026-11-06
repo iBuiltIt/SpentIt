@@ -112,8 +112,13 @@ restores the category and the affected relationship together.
 ## Keep your category list useful
 
 Use **Search categories** to find a name. **A–Z ↑**, **Z–A ↓** and
-**Order added** change the list’s order. Each visit starts A–Z; new
-categories stay at the bottom until you sort or leave.
+**Order added** change the order within Expenses and Income. Each visit
+starts with Expenses A–Z, then Income A–Z, then Accounts A–Z. New
+categories stay at the bottom until you sort, leave, or change their Income checkbox.
+
+Check **Income** beside a category to move it into the income group;
+uncheck it to move it back to expenses. The change saves immediately.
+New categories start unchecked. Category pickers use the same grouped A–Z order.
 
 Right-click an ordinary category for these actions:
 
@@ -132,6 +137,6 @@ Account rows cannot be renamed or removed here; use their account menu.
 There is no category-manager Undo button. You can rename again or
 unarchive, so use those actions when you want to keep the category.
 
-Category names do not set an income or expense type. The transaction’s
-amount and the report’s choices determine how it contributes. A clear
-name is enough—you don’t need a special category type for a refund.
+The Income checkbox helps you find and select categories in reports.
+The transaction’s amount still determines how it contributes. Keep a
+Groceries refund in Groceries so it reduces that category’s spending.

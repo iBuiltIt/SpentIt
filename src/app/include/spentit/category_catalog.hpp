@@ -7,7 +7,7 @@ namespace spentit::app {
 bool category_name_matches(std::string_view name, std::string_view selected, bool include_children=false);
 // Unicode caseless account-name matching without category syntax restrictions.
 bool account_name_matches(std::string_view, std::string_view);
-enum class CategoryAction { create, rename, move, archive, unarchive, erase };
+enum class CategoryAction { create, rename, move, archive, unarchive, erase, set_income };
 struct CategoryCatalog { std::int64_t revision;std::vector<CategoryDefinition> categories;
     // Immutable creation catalog revision; later edits do not change this order.
     std::map<std::string,std::int64_t> creation_order{};
@@ -17,6 +17,7 @@ struct CategoryRequest {
     std::string identity;
     std::string name,parent;
     CategoryKind kind=CategoryKind::leaf;
+    bool income=false;
     bool operator==(const CategoryRequest&) const = default;
 };
 struct CategoryPreview {

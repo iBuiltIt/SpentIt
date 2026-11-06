@@ -29,7 +29,7 @@ Item {
     readonly property var presetIds:["ytd","this_year","last_year","this_quarter","last_quarter","this_month","last_month","six_months","previous_year","custom"]
     readonly property var presetNames:["Year to date","This year","Last year","This quarter","Last quarter","This month","Previous calendar month","Last 6 complete months","Same period last year","Custom"]
     readonly property var accountChoices:(state.accounts||[]).concat(state.archivedAccounts||[])
-    readonly property var categoryChoices:[{id:"",name:"Uncategorized"}].concat((state.categories||[]).filter(c=>!c.deleted && !c.group))
+    readonly property var categoryChoices:[{id:"",name:"Uncategorized"}].concat((state.categories||[]).filter(c=>!c.deleted && !c.group).sort((a,b)=>Number(!!a.income)-Number(!!b.income) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id)))
     readonly property var result:state.reportResult||{}
     function copy(v){return JSON.parse(JSON.stringify(v))}
     function changed(index) {generation;return JSON.stringify(drafts[index])!==JSON.stringify(savedDefinitions.find(r=>r.id===drafts[index].id))}
@@ -51,6 +51,30 @@ Item {
         if(enabled && index<0)values.push(id);if(!enabled && index>=0)values.splice(index,1)
         if(field==="categories" && enabled && id){let parent=categoryChoices.find(c=>c.id===id);if(parent)for(const c of categoryChoices)if(workflow.categoryNameMatches(c.name,parent.name,true) && values.indexOf(c.id)<0)values.push(c.id)}
         current[field]=values;touch()
+    }
+    function categoryGroup(income) {return categoryChoices.filter(c=>c.id && !!c.income===income)}
+    function groupCheckState(income) {
+        generation
+        const ids=categoryGroup(income).map(c=>c.id)
+        const count=current?ids.filter(id=>current.categories.indexOf(id)>=0).length:0
+        return count===0?Qt.Unchecked:count===ids.length?Qt.Checked:Qt.PartiallyChecked
+    }
+    function checkGroup(income,enabled) {
+        if(!current)return
+        const ids=categoryGroup(income).map(c=>c.id)
+        let values=current.categories.filter(id=>ids.indexOf(id)<0)
+        if(enabled)values=values.concat(ids)
+        current.categories=values;touch()
+    }
+    function choiceRows(field,query) {
+        const matches=c=>c.name.toLowerCase().indexOf(query.toLowerCase())>=0
+        if(field==="accounts")return accountChoices.filter(matches)
+        let rows=categoryChoices.filter(c=>!c.id && matches(c))
+        for(const income of [false,true]) {
+            const choices=categoryGroup(income).filter(matches)
+            if(choices.length)rows=rows.concat([{section:true,income:income,name:income?"Income":"Expenses"}],choices)
+        }
+        return rows
     }
     function save(all,show) {
         if(workflow.busy)return
@@ -156,6 +180,7 @@ Item {
                         Repeater {
                             model:[{key:"accounts",label:"Accounts"},{key:"categories",label:"Categories"}]
                             ColumnLayout {
+                                id:choiceColumn
                                 required property var modelData
                                 readonly property var choices:modelData.key==="accounts"?root.accountChoices:root.categoryChoices
                                 Layout.fillWidth:true;Layout.preferredWidth:300
@@ -164,13 +189,22 @@ Item {
                                     Button {text:"All";onClicked:root.selectAll(modelData.key,choices.map(c=>c.id))}
                                     Button {text:"None";onClicked:root.selectAll(modelData.key,[])}
                                 }
-                                ClearableSearchField {id:choiceSearch;placeholderText:"Search "+modelData.label.toLowerCase();Layout.fillWidth:true}
-                                ScrollView {Layout.fillWidth:true;Layout.preferredHeight:180;contentWidth:availableWidth
+                                ClearableSearchField {id:choiceSearch;objectName:"reportChoiceSearch_"+choiceColumn.modelData.key;placeholderText:"Search "+modelData.label.toLowerCase();Layout.fillWidth:true}
+                                ScrollView {objectName:"reportChoiceScroll_"+choiceColumn.modelData.key;Layout.fillWidth:true;Layout.preferredHeight:180;contentWidth:availableWidth
                                     ColumnLayout {width:parent.width
-                                        Repeater {model:choices
-                                            CheckBox {required property var modelData;text:modelData.name+(modelData.currency?" · "+modelData.currency:"")+(modelData.archived?" (archived)":"");visible:modelData.name.toLowerCase().indexOf(choiceSearch.text.toLowerCase())>=0
-                                                checked:{root.generation;return root.current?root.current[modelData.currency?"accounts":"categories"].indexOf(modelData.id)>=0:false}
-                                                onClicked:root.check(modelData.currency?"accounts":"categories",modelData.id,checked)
+                                        Repeater {model:root.choiceRows(choiceColumn.modelData.key,choiceSearch.text)
+                                            CheckBox {
+                                                required property var modelData
+                                                objectName:modelData.section?(modelData.income?"reportIncomeGroup":"reportExpensesGroup"):"reportChoice_"+choiceColumn.modelData.key+"_"+modelData.id
+                                                text:modelData.name+(modelData.currency?" · "+modelData.currency:"")+(modelData.archived?" (archived)":"")
+                                                font.bold:!!modelData.section
+                                                leftPadding:modelData.section || !modelData.id || modelData.currency?0:16
+                                                tristate:!!modelData.section
+                                                checkState:{root.generation;return modelData.section?root.groupCheckState(modelData.income):root.current && root.current[choiceColumn.modelData.key].indexOf(modelData.id)>=0?Qt.Checked:Qt.Unchecked}
+                                                nextCheckState:function(){return checkState===Qt.Checked?Qt.Unchecked:Qt.Checked}
+                                                onClicked:if(modelData.section)root.checkGroup(modelData.income,checkState===Qt.Checked);else root.check(choiceColumn.modelData.key,modelData.id,checked)
+                                                ToolTip.visible:hovered && !!modelData.section
+                                                ToolTip.text:"Select or clear all "+(modelData.income?"income":"expense")+" categories, including those hidden by search."
                                             }
                                         }
                                     }

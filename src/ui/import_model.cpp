@@ -607,7 +607,7 @@ struct ImportModel::Worker {
             const auto categoryPath=parent?parent->name+": "+c.name:c.name;
             QVariantMap value{{"id",text(c.identity)},{"name",text(c.name)},{"parent",text(c.parent)},{"path",text(categoryPath)},
                 {"createdOrder",QString::number(current.creation_order.at(c.identity))},
-                {"group",c.kind==CategoryKind::group},{"archived",archived},{"ownArchived",c.archived},{"deleted",c.deleted},
+                {"income",c.income},{"group",c.kind==CategoryKind::group},{"archived",archived},{"ownArchived",c.archived},{"deleted",c.deleted},
                 {"assignable",c.kind==CategoryKind::leaf && !archived && !c.deleted},{"revision",QString::number(c.revision)}};
             categories.push_back(value);categoryById[text(c.identity)]=value;
         }
@@ -1214,7 +1214,10 @@ struct ImportModel::Worker {
             catch(const app::UnlockRequired&) {welcomePassword=true;}
             return;
         }
-        if(!action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
+        // Income grouping changes no ledger values, labels, filters or Review facts.
+        const bool incomeOnly=action=="apply_category" &&
+            (a.contains("income") || (preparedCategory && preparedCategory->request.action==app::CategoryAction::set_income));
+        if(!incomeOnly && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
         if(action=="close" || action=="open" || action=="unlock" || action=="create"){reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
@@ -1576,16 +1579,26 @@ struct ImportModel::Worker {
             app::CategoryAction actionType;
             if(actionName=="create")actionType=app::CategoryAction::create;
             else if(actionName=="rename")actionType=app::CategoryAction::rename;
+            else if(actionName=="set_income")actionType=app::CategoryAction::set_income;
             else if(actionName=="move")actionType=app::CategoryAction::move;
             else if(actionName=="archive")actionType=app::CategoryAction::archive;
             else if(actionName=="unarchive")actionType=app::CategoryAction::unarchive;
             else if(actionName=="delete")actionType=app::CategoryAction::erase;
             else throw std::invalid_argument("Unknown category action");
-            app::CategoryRequest request{actionType,actionType==app::CategoryAction::create?identity():str(a.value("id")),str(a.value("name")),str(a.value("parent")),a.value("group").toBool()?CategoryKind::group:CategoryKind::leaf};
+            app::CategoryRequest request{actionType,actionType==app::CategoryAction::create?identity():str(a.value("id")),str(a.value("name")),str(a.value("parent")),a.value("group").toBool()?CategoryKind::group:CategoryKind::leaf,a.value("income").toBool()};
             auto preview=repo.preview_category_change(request);preparedCategory=preview;categoryOperation=identity();
             categoryPreview={{"id",text(categoryOperation)},{"summary",actionName+" · "+(preview.before?text(preview.before->name):"(new)")+" → "+text(preview.after.name)+"\nParent: "+(preview.after.parent.empty()?QString("Standalone"):categoryById.value(text(preview.after.parent)).toMap().value("path",text(preview.after.parent)).toString())+"\n"+(preview.after.deleted?"Deleted":preview.after.archived?"Archived":"Active")}};
         } else if(action=="apply_category") {
             categoryReceipt.clear();
+            if(a.contains("income")) {
+                // The checkbox is an immediate command: validate and save in one worker turn.
+                preparedCategory.reset();categoryOperation.clear();categoryPreview.clear();
+                const app::CategoryRequest request{app::CategoryAction::set_income,str(a.value("id")),{},{},CategoryKind::leaf,a.value("income").toBool()};
+                auto preview=repo.preview_category_change(request);
+                bool validRevision=false;const auto expected=a.value("revision").toString().toLongLong(&validRevision);
+                if(!validRevision || preview.catalog_revision!=expected)throw std::invalid_argument("Categories changed. Refresh and try again.");
+                preparedCategory=std::move(preview);categoryOperation=identity();a["preview"]=text(categoryOperation);
+            }
             if(!preparedCategory || str(a.value("preview"))!=categoryOperation)throw std::logic_error("Review a category change first");
             const auto preview=*preparedCategory;std::optional<app::CategoryReceipt> result;
             try {result=repo.apply_category_change(categoryOperation,preview.request,preview.catalog_revision);}
@@ -1597,7 +1610,18 @@ struct ImportModel::Worker {
             }
             categoryReceipt={{"operation",text(result->operation)},{"summary","Category updated"}};observedSaved();
             preparedCategory.reset();categoryOperation.clear();categoryPreview.clear();
-            try {catalog();selectCategory(result->after.identity);if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);}
+            try {
+                catalogLoaded=false;catalog();selectCategory(result->after.identity);
+                if(incomeOnly) {
+                    // Keep the transaction snapshots. Only mutation guards and Undo eligibility change.
+                    const auto generation=QString::number(repo.ledger_edit_generation());
+                    if(!metadata.isEmpty()) {
+                        metadata["reviewGeneration"]=generation;metadata["canUndoReview"]=false;
+                        metadata["canUndoTransferAssignment"]=false;
+                        auto rollback=metadata.value("rollback").toMap();rollback["token"]=generation;metadata["rollback"]=rollback;
+                    }
+                } else if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
+            }
             catch(...) {const auto saved=categoryReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();categoryReceipt=saved;throw std::runtime_error("Category change was saved, but its refreshed view could not be loaded. Reopen and inspect category history; do not apply it again.");}
         } else if(action=="history") {listHistory(a.value("before").toString().toLongLong(),a.value("append").toBool());}
         else if(action=="entry_history") {
