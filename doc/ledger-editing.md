@@ -371,4 +371,7 @@ still replays and checks all history. Currency/category history queries start fr
 the relevant operation tables, strict Undo uses the complete member key, and draft
 Undo uses an audit-local lookup capped at 65,536 members / 16 MiB, falling back to
 the original query above that budget. No integrity/durability check is disabled.
+A subsequent performance follow-up shares a bounded revision-to-history lookup
+and reuses already-read facts during Undo and committed replay, while retaining
+all validation; see the [implementation and benchmark report](undo-audit-profile.md).
 See [verification and measured limits](status.md).

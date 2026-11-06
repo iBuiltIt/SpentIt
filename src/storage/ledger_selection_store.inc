@@ -86,9 +86,9 @@ ImportStore::DeletionPlan ImportStore::plan_deletion(const app::LedgerSelectionE
     }
     return plan;
 }
-app::DeletionPreview ImportStore::preview_deletion(const app::LedgerSelectionEdit& request,const app::OperationContext& context){ScopedStatements statements(impl_->db);return plan_deletion(request,context).preview;}
+app::DeletionPreview ImportStore::preview_deletion(const app::LedgerSelectionEdit& request,const app::OperationContext& context){ScopedStatements statements(impl_->db,&context);return plan_deletion(request,context).preview;}
 app::ReviewReceipt ImportStore::delete_transactions(std::string_view operation,const app::LedgerSelectionEdit& request,const app::OperationContext& context){
-    ScopedStatements statements(impl_->db);
+    ScopedStatements statements(impl_->db,&context);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     transfer_codec::Writer encoded;encoded.number(static_cast<int>(request.action));encoded.number(request.account);encoded.number(request.generation);encoded.text(request.payee);
     for(const auto& id:request.selected)encoded.text(review_key(id));
@@ -130,7 +130,7 @@ app::ReviewReceipt ImportStore::delete_transactions(std::string_view operation,c
 std::int64_t ImportStore::ledger_edit_generation() const {return review_generation(impl_->db);}
 app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,const app::LedgerSelectionEdit& request,const app::OperationContext& context) {
     if(request.action==app::LedgerSelectionAction::remove)return delete_transactions(operation,request,context);
-    ScopedStatements statements(impl_->db);
+    ScopedStatements statements(impl_->db,&context);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     if(request.selected.empty())fail(SQLITE_CONSTRAINT,"Select at least one transaction");
     if(request.action!=app::LedgerSelectionAction::rename_payee && request.action!=app::LedgerSelectionAction::restore_imported && request.action!=app::LedgerSelectionAction::remove)fail(SQLITE_CONSTRAINT,"Choose Rename payee, Restore imported values, or Delete");

@@ -46,18 +46,28 @@ std::filesystem::path document_location(const std::filesystem::path& requested) 
     return parent/absolute.filename(); // Resolve the parent, never a dataset symlink.
 }
 void exec(sqlite3* db, const char* sql) { ok(sqlite3_exec(db, sql, nullptr, nullptr, nullptr)); }
-// Reuse prepared plans only within one bounded repository operation. Results are
-// never cached: each use binds afresh and steps the database again. Finalizing
+// Reuse prepared plans only within one bounded repository operation. Statements
+// bind afresh and step the database again; immutable revision facts have a
+// separate bounded, append-aware lookup below. Finalizing
 // the scope releases every plan before a document can close or a command return.
 class ScopedStatements {
 public:
     struct Slot { sqlite3_stmt* statement=nullptr; std::size_t bytes=0; };
-    explicit ScopedStatements(sqlite3* db):db_(db),previous_(active_) {
+    explicit ScopedStatements(sqlite3* db,const app::OperationContext* context=nullptr):db_(db),previous_(active_) {
         active_=previous_ && previous_->db_==db ? previous_ : this;
+        previous_context_=active_->revision_context;if(context)active_->revision_context=context;
     }
-    ~ScopedStatements(){active_=previous_;for(auto& [sql,slot]:plans_)sqlite3_finalize(slot.statement);}
+    ~ScopedStatements(){active_->revision_context=previous_context_;active_=previous_;for(auto& [sql,slot]:plans_)sqlite3_finalize(slot.statement);}
     ScopedStatements(const ScopedStatements&)=delete;
     ScopedStatements& operator=(const ScopedStatements&)=delete;
+    struct RevisionHistory {std::int64_t order,kind,account;};
+    using RevisionKey=std::pair<imports::Occurrence,std::int64_t>;
+    std::map<RevisionKey,RevisionHistory> revision_history;
+    std::int64_t revision_sequence=0;
+    std::size_t revision_bytes=0;
+    bool revision_complete=true;
+    const app::OperationContext* revision_context=nullptr;
+    void clear_revisions(){revision_history.clear();revision_sequence=0;revision_bytes=0;revision_complete=true;}
     std::optional<std::string> format_version;
     std::string alias_signature;
     std::optional<std::vector<app::AccountAlias>> aliases;
@@ -79,6 +89,7 @@ public:
 private:
     sqlite3* db_;
     ScopedStatements* previous_;
+    const app::OperationContext* previous_context_=nullptr;
     std::map<std::string,Slot,std::less<>> plans_;
     std::size_t cached_bytes_=0;
     inline static thread_local ScopedStatements* active_=nullptr;
@@ -141,7 +152,7 @@ std::string scalar(sqlite3* db, const char* sql) {
 class Atomic {
 public:
     explicit Atomic(sqlite3* db) : db_(db) { exec(db_, "BEGIN IMMEDIATE"); }
-    ~Atomic() { if (active_) sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); }
+    ~Atomic() { if (active_) {sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);if(auto* scope=ScopedStatements::current(db_))scope->clear_revisions();} }
     void commit() { diag::Span commitSpan(diag::Code::transaction);exec(db_, "COMMIT"); active_ = false; }
 private:
     sqlite3* db_;
@@ -2032,7 +2043,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
     (void)date_format();
     (void)amount_format();
     (void)report_catalog();
-    ScopedStatements read_plans(impl_->db);
+    ScopedStatements read_plans(impl_->db,context);
     struct VerificationGuard { bool& value; bool prior; ~VerificationGuard(){value=prior;} } guard{impl_->verifying,impl_->verifying};
     impl_->verifying=true;
     impl_->read_rows=VerificationRows{};impl_->read_rows_changes=-1;impl_->read_stamps.clear();

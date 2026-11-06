@@ -1,16 +1,38 @@
 # Project status
 
-## Remaining Undo/audit profiling — 2026-11-06
+## Undo/audit performance follow-up — 2026-11-06
 
-After commit `07be74e`, a serial synthetic profile measured median 15k-row Undo
-at 18.89 s and full audit at 64.81 s (three unsampled runs). Category/provenance
-verification and committed replay dominate; repeated revision-to-history scans
-are the primary measured bottleneck. A query-only probe showed that an index
-alone does not fix the combined acceptance/revision query. Exact separate lookups
-reduced a late lookup from 180,032 to 30 VM steps in the synthetic probe.
-See the [profiling report and proposed next steps](undo-audit-profile.md). Further
-optimization is proposed, awaiting owner Go; application behavior was not changed
-during this investigation.
+Implemented the first two proposed improvements under owner Go: one bounded,
+append-aware revision-to-history lookup shared by currency/category validation,
+and reuse of already-read snapshots, source/member facts and committed-history
+cursor fields. Rollback/cleanup invalidate the lookup; missing/ambiguous history,
+currency changes, dependencies, ownership, exact balances and strict Undo remain
+validated. Cancellation and durable transaction boundaries are unchanged. Format
+remains 58 with rules / 57 without.
+
+Serial synthetic macOS Release benchmarks on the final build (three 15k runs):
+
+| Operation | Prior median | New median | Speedup |
+|---|---:|---:|---:|
+| Delete | 9.70 s | 8.28 s | 1.17× |
+| Undo | 18.89 s | 6.72 s | 2.81× |
+| Full audit | 64.81 s | 11.59 s | 5.59× |
+
+All financial assertions passed. The proposed under-5-second Undo and
+under-10-second audit targets were not reached. A 50k-row scaling check before
+the final statement-lifetime adjustment passed at 29.48 / 22.64 / 73.77 s;
+audit growth at that size remains nonlinear. No transfer-heavy speedup is claimed.
+See the [full benchmark, implementation and verification report](undo-audit-profile.md)
+for ranges, counters, memory, deeper history and remaining limits.
+
+Verification includes 35 selected storage checks (one stale cancellation-test
+trigger corrected and rerun), four UI/import-rollback checks, rules-disabled and
+ASan/UBSan checks. New regressions reject missing/duplicate revision history and
+verify cancellation/retry with unchanged file bytes. The final dependency-plan
+lifetime adjustment passed eight focused Release checks and two each with rules
+disabled and ASan/UBSan. The rules-enabled Release application was rebuilt.
+Linux/Windows and native large-selection interaction remain unverified; manual
+text/screenshots are unchanged because no user-visible workflow changed.
 
 ## Linked deletion and large-selection performance — 2026-11-06
 

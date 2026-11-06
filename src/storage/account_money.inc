@@ -56,13 +56,49 @@ Currency version_currency(sqlite3* db,std::string_view batch,std::int64_t ordina
     seq.text(1,batch);seq.integer(2,revision);if(!seq.row()) fail(SQLITE_CORRUPT);
     return currency_as_of(db,seq.integer(1),seq.integer(0));
 }
+// One bounded, append-aware index per repository operation. Existing history is
+// immutable; new Undo writes are ingested by sequence, and rollback drops it.
+std::optional<ScopedStatements::RevisionHistory> revision_history(sqlite3* db,const imports::Occurrence& id,std::int64_t revision) {
+    if(revision==0){
+        Statement initial(db,"SELECT h.sequence,o.kind,b.account_id FROM accepted_transactions a JOIN ledger_operations o ON o.id=a.operation AND o.batch=a.batch JOIN history_order h ON h.operation=o.id JOIN batches b ON b.id=o.batch WHERE a.batch=? AND a.ordinal=? AND o.kind=0");
+        initial.text(1,id.batch);initial.integer(2,integer(id.ordinal));if(!initial.row())return {};
+        const ScopedStatements::RevisionHistory result{initial.integer(0),initial.integer(1),initial.integer(2)};
+        if(initial.row())fail(SQLITE_CORRUPT,"Ambiguous acceptance history");return result;
+    }
+    if(auto* scope=ScopedStatements::current(db)){
+        Statement latest(db,"SELECT coalesce(max(sequence),0) FROM ledger_operations");if(!latest.row())fail(SQLITE_CORRUPT);const auto last=latest.integer(0);
+        if(last<scope->revision_sequence)scope->clear_revisions();
+        if(last>scope->revision_sequence){
+            Statement rows(db,"SELECT o.sequence,o.batch,o.ordinal,o.result_revision,h.sequence,o.kind,b.account_id FROM ledger_operations o LEFT JOIN history_order h ON h.operation=o.id LEFT JOIN batches b ON b.id=o.batch WHERE o.sequence>? AND o.sequence<=? ORDER BY o.sequence");
+            rows.integer(1,scope->revision_sequence);rows.integer(2,last);
+            while(rows.row()){
+                if(scope->revision_context)scope->revision_context->checkpoint();
+                if(rows.integer(5)<1 || rows.integer(5)>3)continue;
+                if(rows.null(4) || rows.null(6) || rows.integer(2)<0 || rows.integer(3)<=0)fail(SQLITE_CORRUPT,"Invalid revision history");
+                ScopedStatements::RevisionKey key{{rows.bytes(1),static_cast<std::size_t>(rows.integer(2))},rows.integer(3)};
+                if(scope->revision_history.contains(key))fail(SQLITE_CORRUPT,"Ambiguous revision history");
+                constexpr std::size_t limit=64*1024*1024;
+                const auto bytes=sizeof(key)+sizeof(ScopedStatements::RevisionHistory)+128+key.first.batch.capacity();
+                if(scope->revision_history.size()<262144 && bytes<=limit-scope->revision_bytes){scope->revision_history.emplace(std::move(key),ScopedStatements::RevisionHistory{rows.integer(4),rows.integer(5),rows.integer(6)});scope->revision_bytes+=bytes;}else scope->revision_complete=false;
+            }
+            scope->revision_sequence=last;
+        }
+        const auto found=scope->revision_history.find({id,revision});if(found!=scope->revision_history.end())return found->second;
+        if(scope->revision_complete)return {};
+    }
+    // Correct fallback beyond the memory budget (also used outside a scope).
+    Statement row(db,"SELECT h.sequence,o.kind,b.account_id FROM ledger_operations o JOIN history_order h ON h.operation=o.id JOIN batches b ON b.id=o.batch WHERE o.batch=? AND o.ordinal=? AND o.result_revision=? AND o.kind IN(1,2,3)");
+    row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,revision);if(!row.row())return {};
+    const ScopedStatements::RevisionHistory result{row.integer(0),row.integer(1),row.integer(2)};
+    if(row.row())fail(SQLITE_CORRUPT,"Ambiguous revision history");return result;
+}
 Currency entry_currency(sqlite3* db,std::string_view batch,std::int64_t ordinal,std::int64_t revision) {
     Statement mark(db,"SELECT o.definition FROM account_amount_revisions a JOIN account_operations o ON o.id=a.operation WHERE a.kind=2 AND a.batch=? AND a.ordinal=? AND a.revision=? AND a.position=0 LIMIT 1");
     mark.text(1,batch);mark.integer(2,ordinal);mark.integer(3,revision);
     if(mark.row()) return Currency::from_definition(mark.bytes(0));
-    Statement seq(db,"SELECT h.sequence,b.account_id FROM ledger_operations o JOIN history_order h ON h.operation=o.id JOIN batches b ON b.id=o.batch WHERE o.batch=?1 AND ((?2=0 AND o.kind=0 AND EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=o.batch AND a.ordinal=?3 AND a.operation=o.id)) OR (o.ordinal=?3 AND o.result_revision=?4 AND o.kind!=0))");
-    seq.text(1,batch);seq.integer(2,revision);seq.integer(3,ordinal);seq.integer(4,revision);if(!seq.row()) fail(SQLITE_CORRUPT);
-    return currency_as_of(db,seq.integer(1),seq.integer(0));
+    const auto history=revision_history(db,{std::string(batch),static_cast<std::size_t>(ordinal)},revision);
+    if(!history)fail(SQLITE_CORRUPT,"Missing revision history");
+    return currency_as_of(db,history->account,history->order);
 }
 bool explicit_account_money(sqlite3* db,std::int64_t account) {
     Statement row(db,"SELECT 1 FROM account_operations WHERE account=? AND kind IN(4,5,6) LIMIT 1");row.integer(1,account);return row.row();

@@ -61,14 +61,14 @@ void append_financial(sqlite3* db,std::string_view operation,app::ChangeKind kin
 std::int64_t financial_sequence(sqlite3* db){Statement s(db,"SELECT coalesce(max(sequence),0) FROM ledger_operations");if(!s.row())fail(SQLITE_CORRUPT);return s.integer(0);}
 }
 bool ImportStore::committed_changes_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="4" || categories_supported();}
-app::EntrySnapshot ImportStore::entry_snapshot(const imports::Occurrence& id,std::int64_t revision) const {
+app::EntrySnapshot ImportStore::entry_snapshot(const imports::Occurrence& id,std::int64_t revision,const qif::Record* known_source) const {
     // Only a single read-only verification owns this bounded cache. History
     // reconciliation still checks every reference, ordering and balance below.
     const auto key=std::make_pair(id,revision);
     auto* cache=impl_->audit_entries;
     if(cache){const auto found=cache->values.find(key);if(found!=cache->values.end())return found->second;}
     Statement row(impl_->db,"SELECT active,date,payee,memo,total FROM entry_values WHERE batch=? AND ordinal=? AND revision=?");row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,revision);if(!row.row())fail(SQLITE_NOTFOUND,"Committed revision does not exist");
-    const auto original=load_row(id,false).source;const auto currency=entry_currency(impl_->db,id.batch,integer(id.ordinal),revision);const bool reassigned=original.source_currency && *original.source_currency!=currency;std::vector<Allocation> allocations;
+    const auto original=known_source?*known_source:load_row(id,false).source;const auto currency=entry_currency(impl_->db,id.batch,integer(id.ordinal),revision);const bool reassigned=original.source_currency && *original.source_currency!=currency;std::vector<Allocation> allocations;
     Statement aa(impl_->db,"SELECT position,category,memo,units FROM entry_allocation_values WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");aa.text(1,id.batch);aa.integer(2,integer(id.ordinal));aa.integer(3,revision);
     while(aa.row()){if(aa.integer(0)!=integer(allocations.size()) || allocations.size()>=qif::max_allocations)fail(SQLITE_CORRUPT);allocations.push_back({aa.bytes(1),aa.bytes(2),Money(aa.integer(3),currency)});}
     imports::DraftRow draft{row.bytes(1),row.bytes(2),row.bytes(3),Transaction::repaired_import(original.original_amount,Money(row.integer(4),currency),std::move(allocations),reassigned)};load_metadata(impl_->db,id,revision,draft,true);imports::validate_draft(original,draft,reassigned);
@@ -98,7 +98,7 @@ std::vector<app::DependencyStamp> ImportStore::dependencies(const imports::Occur
 app::CommittedEntry ImportStore::committed_entry(const imports::Occurrence& id) const {
     if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Editing committed transactions is not supported by this dataset");
     Statement head(impl_->db,"SELECT h.revision,r.sequence FROM entry_heads h JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch=? AND h.ordinal=?");head.text(1,id.batch);head.integer(2,integer(id.ordinal));if(!head.row())fail(SQLITE_CONSTRAINT,"Select an accepted transaction that has not been deleted.");
-    const auto revision=head.integer(0);return {id,head.integer(1),entry_snapshot(id,revision),load_row(id,false).source,{id,revision,dependencies(id)}};
+    const auto revision=head.integer(0);auto source=load_row(id,false).source;auto snapshot=entry_snapshot(id,revision,&source);return {id,head.integer(1),std::move(snapshot),std::move(source),{id,revision,dependencies(id)}};
 }
 std::optional<app::ChangeReceipt> ImportStore::committed_change_outcome(std::string_view operation) const {
     if(!committed_changes_supported())fail(SQLITE_SCHEMA,"Editing committed transactions is not supported by this dataset");
@@ -301,7 +301,16 @@ AND (a.operation=?3 OR EXISTS(
             }
             if(included!=receipt->included || excluded!=receipt->excluded || imports::sum(currency,values)+transfer_import_adjustment(operation)!=receipt->change)fail(SQLITE_CORRUPT);
         } else {
-            const auto receipt=committed_change_outcome(operation);if(!receipt)fail(SQLITE_CORRUPT);const auto head=heads.find(receipt->identity);
+            // The cursor already supplies the operation, ordering and money facts.
+            // Retain every receipt/dependency/snapshot comparison below.
+            const imports::Occurrence id{operations.bytes(2),static_cast<std::size_t>(operations.integer(3))};require_account(id.batch);
+            std::vector<app::DependencyStamp> deps;
+            {Statement saved_dependencies(impl_->db,"SELECT batch,revision,state FROM change_dependencies WHERE operation=? ORDER BY batch");saved_dependencies.text(1,operation);
+            while(saved_dependencies.row())deps.push_back({saved_dependencies.bytes(0),saved_dependencies.integer(1),static_cast<app::BatchState>(saved_dependencies.integer(2))});}
+            // Release the plan before validating an Undo's original receipt,
+            // which reads its own dependencies with the same SQL.
+            const std::optional<app::ChangeReceipt> receipt=app::ChangeReceipt{operation,kind,id,entry_snapshot(id,operations.integer(4)),entry_snapshot(id,operations.integer(5)),Money(operations.integer(6),currency),Money(operations.integer(7),currency),Money(operations.integer(8),currency),operations.bytes(9),{id,operations.integer(5),std::move(deps)},sequence};
+            const auto head=heads.find(receipt->identity);
             if(head==heads.end() || receipt->before_entry.revision!=head->second || receipt->after_entry.revision!=head->second+1 || (operations.integer(10)<prior_sequence || operations.integer(10)>=sequence) || receipt->result_token.dependencies!=dependencies(receipt->identity,order))fail(SQLITE_CORRUPT,"Invalid committed change dependencies");
             const auto& before=receipt->before_entry;const auto& after=receipt->after_entry;
             const Money zero(0,currency);const auto delta=(after.active?after.draft.transaction.effective_total():zero)-(before.active?before.draft.transaction.effective_total():zero);if(delta!=receipt->change)fail(SQLITE_CORRUPT);

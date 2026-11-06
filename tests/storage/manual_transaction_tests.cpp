@@ -252,8 +252,8 @@ void deletion_recovery(const std::filesystem::path& dir) {
         OperationContext context;s.edit_transactions("remove",request,context);check(s.current_ledger().empty(),"Delete crash retry");s.verify();
     }
     {auto s=ImportStore::open(base,"test-password");auto request=deletion(s,{{"one",0},{"two",0}});OperationContext context;int writes=0;
-    context.progress=[&](auto phase){if(phase=="Updating selected transactions" && ++writes==2)context.request();};
-    rejects([&]{s.edit_transactions("cancel",request,context);});check(s.current_ledger().size()==2 && !s.review_outcome("cancel"),"Cancelled deletion atomic");s.verify();}
+    context.progress=[&](auto phase){if(phase=="Deleting selected transactions" && ++writes==2)context.request();};
+    rejects([&]{s.edit_transactions("cancel",request,context);});check(writes==2 && s.current_ledger().size()==2 && !s.review_outcome("cancel"),"Cancelled deletion atomic");s.verify();}
 }
 void recovery(const std::filesystem::path& dir) {
     const auto base=dir/"base";

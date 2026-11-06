@@ -358,13 +358,21 @@ imports::DraftRow ImportStore::review_draft(const imports::Occurrence& id,std::i
     imports::DraftRow draft{s.bytes(0),s.bytes(1),s.bytes(2),Transaction::repaired_import(original.original_amount,Money(s.integer(3),currency),std::move(allocations),original.source_currency && *original.source_currency!=currency)};
     load_metadata(impl_->db,id,revision,draft,false);return draft;
 }
-void ImportStore::write_review_row(std::string_view answer,std::string_view child,const imports::Occurrence& id,const imports::DraftRow& draft,const imports::Decision& decision,bool active,bool undoing,bool fresh_review,std::optional<std::int64_t> applied_ruleset,std::optional<Money> unchanged_balance,Money* running_balance) {
+void ImportStore::write_review_row(std::string_view answer,std::string_view child,const imports::Occurrence& id,const imports::DraftRow& draft,const imports::Decision& decision,bool active,bool undoing,bool fresh_review,std::optional<std::int64_t> applied_ruleset,std::optional<Money> unchanged_balance,Money* running_balance,const app::CommittedEntry* known_current,const ReviewRestore* known_restore) {
     impl_->selected_account=account_for_batch(id.batch).identity;require_writable_account(impl_->db,impl_->selected_account);
-    const auto source=load_row(id,false).source;imports::validate_draft(source,draft,source.source_currency && *source.source_currency!=draft.transaction.effective_total().currency());
     const bool committed=transaction_accepted(id);std::int64_t prior,result;
+    const auto loaded_current=committed && !known_current?std::optional<app::CommittedEntry>{committed_entry(id)}:std::nullopt;
+    const auto* current_entry=known_current?known_current:loaded_current?&*loaded_current:nullptr;
+    const auto source=committed?current_entry->source:load_row(id,false).source;
+    imports::validate_draft(source,draft,source.source_currency && *source.source_currency!=draft.transaction.effective_total().currency());
+    std::optional<ReviewRestore> loaded_restore;
+    if(committed && undoing && !known_restore){
+        Statement saved(impl_->db,"SELECT prior,result,child FROM review_members WHERE answer=? AND batch=? AND ordinal=?");saved.text(1,answer);saved.text(2,id.batch);saved.integer(3,integer(id.ordinal));if(!saved.row())fail(SQLITE_CORRUPT);
+        loaded_restore=ReviewRestore{saved.integer(0),saved.integer(1),saved.bytes(2)};known_restore=&*loaded_restore;
+    }
     if(committed){
-        const auto current=committed_entry(id);prior=current.current.revision;if(prior==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");result=prior+1;
-        if(undoing){Statement saved(impl_->db,"SELECT result FROM review_members WHERE answer=? AND batch=? AND ordinal=?");saved.text(1,answer);saved.text(2,id.batch);saved.integer(3,integer(id.ordinal));if(!saved.row())fail(SQLITE_CORRUPT);const auto expected=entry_snapshot(id,saved.integer(0));if(expected.active!=current.current.active || !same_draft(expected.draft,current.current.draft))fail(SQLITE_CONSTRAINT,"Later transaction changes prevent Review Undo");}
+        const auto& current=*current_entry;prior=current.current.revision;if(prior==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");result=prior+1;
+        if(undoing){const auto expected=known_restore->result==current.current.revision?current.current:entry_snapshot(id,known_restore->result,&source);if(expected.active!=current.current.active || !same_draft(expected.draft,current.current.draft))fail(SQLITE_CONSTRAINT,"Later transaction changes prevent Review Undo");}
         auto after=current.current;after.revision=result;after.active=active;after.draft=draft;
         const auto before=running_balance?*running_balance:unchanged_balance?*unchanged_balance:committed_balance();const Money zero(0,before.currency());
         const auto delta=(active?draft.transaction.effective_total():zero)-(current.current.active?current.current.draft.transaction.effective_total():zero);
@@ -372,13 +380,13 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
         std::optional<std::int64_t> ruleset;
 #ifdef SPENTIT_RULES_STORAGE
         std::int64_t rule_revision=prior;
-        if(undoing){Statement original(impl_->db,"SELECT prior FROM review_members WHERE answer=? AND batch=? AND ordinal=?");original.text(1,answer);original.text(2,id.batch);original.integer(3,integer(id.ordinal));if(!original.row())fail(SQLITE_CORRUPT);rule_revision=original.integer(0);}
+        if(undoing)rule_revision=known_restore->prior;
         Statement mark(impl_->db,"SELECT ruleset_revision FROM entry_rule_fields WHERE batch=? AND ordinal=? AND revision=?");mark.text(1,id.batch);mark.integer(2,integer(id.ordinal));mark.integer(3,rule_revision);if(mark.row())ruleset=mark.integer(0);
 #endif
         if(applied_ruleset)ruleset=applied_ruleset;
         store_entry(impl_->db,id,after,ruleset);
         std::string undo_of;
-        if(undoing){Statement old(impl_->db,"SELECT child FROM review_members WHERE answer=? AND batch=? AND ordinal=?");old.text(1,answer);old.text(2,id.batch);old.integer(3,integer(id.ordinal));if(!old.row())fail(SQLITE_CORRUPT);undo_of=old.bytes(0);}
+        if(undoing)undo_of=known_restore->child;
         append_financial(impl_->db,child,undoing?app::ChangeKind::undo:active?app::ChangeKind::correct:app::ChangeKind::remove,id,prior,result,before,delta,before+delta,undo_of,financial_sequence(impl_->db),catalog_sequence(impl_->db));
         if(running_balance)*running_balance=before+delta;
         if(undoing){Statement member(impl_->db,"INSERT INTO review_undo_members SELECT id,?1,?2 FROM review_undos WHERE answer=?3");member.text(1,child);member.text(2,undo_of);member.text(3,answer);member.done();}
@@ -621,16 +629,18 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
     Statement rules_group(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question='rules-account'");rules_group.text(1,answer);const bool rules_undo=rules_group.row();
     std::map<std::int64_t,Money> rule_balances, balances;
     std::size_t serial=0;
-    Statement members(impl_->db,"SELECT batch,ordinal,committed,prior,result FROM review_members WHERE answer=? ORDER BY rowid DESC");members.text(1,answer);
+    Statement members(impl_->db,"SELECT batch,ordinal,committed,prior,result,child FROM review_members WHERE answer=? ORDER BY rowid DESC");members.text(1,answer);
     while(members.row()){
         const imports::Occurrence id{members.bytes(0),static_cast<std::size_t>(members.integer(1))};impl_->selected_account=account_for_batch(id.batch).identity;
         if(members.integer(2)){
-            const auto before=entry_snapshot(id,members.integer(3));
+            const auto current=committed_entry(id);
+            const ReviewRestore restore{members.integer(3),members.integer(4),members.bytes(5)};
+            const auto before=entry_snapshot(id,restore.prior,&current.source);
             std::optional<Money> unchanged;
             if(rules_undo){auto it=rule_balances.find(impl_->selected_account);if(it==rule_balances.end())it=rule_balances.emplace(impl_->selected_account,committed_balance()).first;unchanged=it->second;}
             auto balance=balances.find(impl_->selected_account);
             if(balance==balances.end())balance=balances.emplace(impl_->selected_account,committed_balance()).first;
-            write_review_row(answer,std::string(operation)+"-"+std::to_string(++serial),id,before.draft,{imports::Disposition::include,{}},before.active,true,true,{},unchanged,&balance->second);
+            write_review_row(answer,std::string(operation)+"-"+std::to_string(++serial),id,before.draft,{imports::Disposition::include,{}},before.active,true,true,{},unchanged,&balance->second,&current,&restore);
         }else{
             Statement decision(impl_->db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? AND revision=?");decision.text(1,id.batch);decision.integer(2,integer(id.ordinal));decision.integer(3,members.integer(3));if(!decision.row())fail(SQLITE_CORRUPT);
             imports::Decision value{static_cast<imports::Disposition>(decision.integer(0)),{}};if(value.disposition==imports::Disposition::duplicate)value.duplicate_of=imports::Occurrence{decision.bytes(1),static_cast<std::size_t>(decision.integer(2))};

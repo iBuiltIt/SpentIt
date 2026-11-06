@@ -195,6 +195,7 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
     // trigger permits this only within the repository's cleanup boundary.
     exec(impl_->db,"UPDATE transfer_heads SET sequence=(SELECT max(v.sequence) FROM transfer_versions v WHERE v.identity=transfer_heads.identity AND v.sequence NOT IN(SELECT l.sequence FROM ledger_operations l JOIN rollback_operations r ON r.id=l.id)) WHERE sequence IN(SELECT l.sequence FROM ledger_operations l JOIN rollback_operations r ON r.id=l.id)");
     exec(impl_->db,"DELETE FROM transfer_versions WHERE sequence IN(SELECT l.sequence FROM ledger_operations l JOIN rollback_operations r ON r.id=l.id); DELETE FROM transfer_events WHERE operation IN(SELECT id FROM rollback_operations); DELETE FROM history_order WHERE operation IN(SELECT id FROM rollback_operations); DELETE FROM operation_registry WHERE id IN(SELECT id FROM rollback_operations); DELETE FROM ledger_operations WHERE id IN(SELECT id FROM rollback_operations)");
+    if(auto* scope=ScopedStatements::current(impl_->db))scope->clear_revisions();
     // Account creation, confirmed names, staged category creation and reviewed
     // opening amounts are independent of the transaction ownership being removed.
     Statement staged(impl_->db,"INSERT OR REPLACE INTO retained_opening_reviews SELECT m.account_id,m.opening,m.opening_date FROM import_group_accounts m JOIN rollback_batches r ON r.id=m.batch JOIN account a ON a.singleton=m.account_id WHERE m.created=1 AND m.opening IS NOT NULL AND a.confirmed=0");staged.done();

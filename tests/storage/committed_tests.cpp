@@ -145,7 +145,15 @@ void history() {
     const auto items=store.committed_history(first);
     check(std::count_if(items.begin(),items.end(),[](const auto& item){return item.kind==app::ChangeKind::publication;})==1);
     for(const auto& item:items)if(item.kind==app::ChangeKind::publication)check(!item.undo_eligible);
-    store.verify();
+    const auto unchanged=bytes(dir.path/"doc");
+    for(const auto phase:{"Verifying committed change history","Verifying category history"}) {
+        app::OperationContext cancelled;bool reached=false,stopped=false;
+        cancelled.progress=[&](std::string_view at){if(at==phase){reached=true;cancelled.request();}};
+        try{store.verify(&cancelled);}catch(const app::OperationCancelled&){stopped=true;}
+        check(reached && stopped && bytes(dir.path/"doc")==unchanged);
+        store.verify(); // Rebuild scoped state after cancellation; never reuse a partial audit.
+        check(bytes(dir.path/"doc")==unchanged);
+    }
 }
 void review() {
     Directory dir;prepare(dir.path/"doc");
@@ -286,6 +294,10 @@ void validation() {
         ("DROP TRIGGER history_order_immutable;UPDATE history_order SET event_revision=99 WHERE batch='reference' AND event_revision=1;"
         "UPDATE history_order SET event_revision=1 WHERE batch='reference' AND event_revision=2;"
         "UPDATE history_order SET event_revision=2 WHERE batch='reference' AND event_revision=99"),
+        // The operation-scoped revision lookup must reject missing and ambiguous keys.
+        "DROP TRIGGER ledger_operations_immutable;UPDATE ledger_operations SET result_revision=7 WHERE id='corrupt-correction'",
+        ("INSERT INTO ledger_operations(id,kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence,catalog_revision) "
+        "SELECT 'duplicate-revision',kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence,catalog_revision FROM ledger_operations WHERE id='corrupt-correction'"),
         "PRAGMA user_version=1",
         "PRAGMA user_version=2",
         "PRAGMA user_version=3"

@@ -236,7 +236,8 @@ private:
     void require_account(std::string_view) const;
     app::ReviewReceipt write_review_answer(std::string_view,const app::ReviewAnswer&,const app::ReviewSheet&,std::string_view parent={});
     void restore_review_answer(std::string_view operation,std::string_view answer);
-    void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false,bool=true,std::optional<std::int64_t> = {},std::optional<Money> = {},Money* = nullptr);
+    struct ReviewRestore {std::int64_t prior,result;std::string child;};
+    void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false,bool=true,std::optional<std::int64_t> = {},std::optional<Money> = {},Money* = nullptr,const app::CommittedEntry* = nullptr,const ReviewRestore* = nullptr);
     bool review_draft_undo(const imports::Occurrence&,std::int64_t,const imports::DraftRow&) const;
     imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t) const;
     void generate_explicit_transfers(app::OperationContext* context=nullptr);
@@ -249,7 +250,7 @@ private:
     void initialize_categories();
     void write_category_change(std::string_view,const app::CategoryPreview&);
     void verify_categories(const app::OperationContext* context) const;
-    app::EntrySnapshot entry_snapshot(const imports::Occurrence&,std::int64_t) const;
+    app::EntrySnapshot entry_snapshot(const imports::Occurrence&,std::int64_t,const qif::Record* = nullptr) const;
     std::vector<app::DependencyStamp> dependencies(const imports::Occurrence&,std::int64_t history_before=0) const;
     void verify_committed(const app::OperationContext* = nullptr) const;
     void verify_rules(const app::OperationContext* = nullptr) const;
