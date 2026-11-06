@@ -1,5 +1,17 @@
 # Project status
 
+## Remaining Undo/audit profiling — 2026-11-06
+
+After commit `07be74e`, a serial synthetic profile measured median 15k-row Undo
+at 18.89 s and full audit at 64.81 s (three unsampled runs). Category/provenance
+verification and committed replay dominate; repeated revision-to-history scans
+are the primary measured bottleneck. A query-only probe showed that an index
+alone does not fix the combined acceptance/revision query. Exact separate lookups
+reduced a late lookup from 180,032 to 30 VM steps in the synthetic probe.
+See the [profiling report and proposed next steps](undo-audit-profile.md). Further
+optimization is proposed, awaiting owner Go; application behavior was not changed
+during this investigation.
+
 ## Linked deletion and large-selection performance — 2026-11-06
 
 Implemented under owner Go with the accepted defaults. Ledger Delete now prepares
