@@ -10,6 +10,56 @@ requested its commit and gave Go for chapter 4. The design
 is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. Update it when a step changes.
 
+## Words used in SpentIt glossary — 2026-11-05
+
+The owner accepted Search examples and requested its commit (`6b1333c`), then
+gave Go for [Words used in SpentIt](../manual/words.md). The glossary is bundled
+and is owner-accepted for commit. It defines accounts, balances, categories, files and
+backups, imports, ledger, Merge/Link, new/accepted, payee/memo, refunds/net
+spending, reports, rules, splits, transactions and transfer postings, with
+links to the existing instructions. Independent review added the Transaction
+entry. No new screenshots or application behavior changed; Help now bundles
+sixteen topics and 38 images.
+
+Supporting verification checked current engine/storage behavior and the
+existing manual. `engine.reports` passed 1/1 in 0.02s for report signs,
+currencies, selected splits and exact reconciliation. No new financial
+workflow was introduced. Reader checks add glossary navigation and actual
+Search-result/article-link/Contents clicks to the existing shared tests.
+
+Rebuilt `spentit_import_experiment`, `spentit_help_ui_tests` and
+`spentit_help_tests`; `build/SpentIt` includes the glossary. Focused native
+reading/lookup passed **4/4 including init/cleanup in 43370ms**. Normal and
+500-pixel/150% text captures were visually inspected and independently reviewed.
+Search-result, article-link, Back and Contents clicks reached the glossary and
+opening-balance instructions. The harness uses actual QML with no open file;
+it is not a manual standalone-app walkthrough.
+
+The five-check CTest selection passed **5/5 in 101.53s**, including full
+offscreen Help in 76.81s, Rules UI, preparation, catalog and QML. The final
+full native Help suite passed **42/42 including init/cleanup in 380983ms**,
+covering all chapter reading/walkthrough cases, five lookup rows, reverse
+scrolling and Rules/Reports modal Help. No failures occurred in this pass;
+the previously recorded intermittent offscreen timeout did not recur.
+
+Commands used the rules-enabled Release tree:
+
+```sh
+cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_help_ui_tests spentit_help_tests -j 2
+ctest --test-dir build/import-ui-rules-release -R '^(help\.prepare|help\.catalog|import\.help_ui|import\.qml|import\.rules_ui)$' --output-on-failure
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests createOpenChapterReading:words-used quickReferenceLookup:words-used
+./build/import-ui-rules-release/src/ui/spentit_help_ui_tests
+```
+
+Focused reading used `SPENTIT_GUIDE_READING_CAPTURE` for temporary captures;
+none were added to the manual. `git diff --check` and 295 relative file-link
+target checks passed. Preparation validates bundled links, anchors and images.
+
+No private file was opened. Full keyboard-only/screen-reader, dark appearance,
+standalone-app and Linux/Windows verification remain unclaimed. The next
+proposed reference is Messages and problems; it and application-wide context
+links require their own Go.
+
 ## Search examples quick reference — 2026-11-05
 
 The owner accepted Keyboard and mouse and requested its commit (`8c3c830`),
@@ -1550,7 +1600,7 @@ context links remain separate work requiring their own Go.
 ## Next agent
 
 1. Read the “Continuing the manual” section above and its linked workflow and sources.
-2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. “Where do I find…?” is committed as `2ef8158`. Keyboard and mouse is committed as `8c3c830`. Search examples is bundled under its Go and is owner-accepted for commit. The next proposed reference is Words used in SpentIt; remaining references/context links require their own Go.
+2. The main twelve chapters are written; chapter 12 is committed as `7583f61`. “Where do I find…?” is committed as `2ef8158`. Keyboard and mouse is committed as `8c3c830`. Search examples is committed as `6b1333c`. Words used in SpentIt is bundled under its Go and is owner-accepted for commit. The next proposed reference is Messages and problems; remaining references/context links require their own Go.
 3. Do not change `rulesLeaveDialog` away from `Qt.ApplicationModal`, and do
    not add a second process, to make Help easier to reach.
 4. If you change Help, rerun the two commands in “Build and check” and write

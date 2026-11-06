@@ -320,6 +320,8 @@ private slots:
             << QString("read-help") << QString("Read Help");
         QTest::newRow("search-examples") << QString("search-examples") << QStringList{}
             << QString("common-pattern-pieces") << QString("Common pattern pieces");
+        QTest::newRow("words-used") << QString("words-used") << QStringList{}
+            << QString("merge-and-link") << QString("Merge and Link");
     }
     void createOpenChapterReading() {
         QFETCH(QString, topic);
@@ -335,7 +337,7 @@ private slots:
         QVERIFY(help);
         QVERIFY(QTest::qWaitForWindowExposed(help));
         const QStringList order{"understand-spending", "create-open-file", "set-up-accounts",
-                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find", "keyboard-mouse", "search-examples"};
+                                "bring-in-transactions", "find-transactions", "review-duplicates-transfers", "add-correct-transactions", "organize-categories", "use-rules", "accept-transactions", "answer-with-reports", "look-after-your-work", "where-to-find", "keyboard-mouse", "search-examples", "words-used"};
         const auto topicIndex = order.indexOf(topic);
         QVERIFY(topicIndex > 0);
         for (int index = 0; index < topicIndex; ++index)
@@ -443,6 +445,8 @@ private slots:
             << QString("Keep the useful part of a PayPal description");
         QTest::newRow("rules-pattern-reference") << QString("use-rules") << QString("regular expression")
             << QString("search-examples") << QString("common-pattern-pieces") << QString("Common pattern pieces");
+        QTest::newRow("words-used") << QString("words-used") << QString("glossary")
+            << QString("set-up-accounts") << QString("set-the-starting-balance") << QString("Set the starting balance");
     }
     void quickReferenceLookup() {
         QFETCH(QString, reference);

@@ -40,11 +40,11 @@ private slots:
         QVERIFY(catalog.loaded());
         QVERIFY(!catalog.sample());
         QVERIFY(catalog.banner().isEmpty());
-        QCOMPARE(catalog.topics().size(), 15);
+        QCOMPARE(catalog.topics().size(), 16);
         QCOMPARE(catalog.topics().front().toMap().value("id").toString(), QStringLiteral("understand-spending"));
         QCOMPARE(catalog.topics().front().toMap().value("title").toString(), QStringLiteral("Understand your spending"));
         const auto refund = catalog.search(QStringLiteral("refund"));
-        QCOMPARE(refund.size(), 9);
+        QCOMPARE(refund.size(), 10);
         QCOMPARE(refund.front().toMap().value("topicId").toString(), QStringLiteral("understand-spending"));
         const auto commit = catalog.search(QStringLiteral("commit"));
         QCOMPARE(commit.size(), 2);
