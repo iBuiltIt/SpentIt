@@ -15,7 +15,7 @@ constexpr const char* reapply_membership="Invalid rule reapply Undo membership";
 constexpr const char* head_where=
     "FROM entry_heads h JOIN entry_values e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision "
     "JOIN batches b ON b.id=h.batch WHERE e.active=1 AND b.account_id=spentit_account() AND b.state=1 AND substr(h.batch,1,10)<>'~transfer-'";
-bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="52";}
+bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="64";}
 std::string protection_stamp(const std::vector<app::TransferView>& links,std::int64_t account){
     std::set<std::pair<imports::Occurrence,std::string>> keys;
     for(const auto& value:links){
@@ -54,6 +54,7 @@ std::string ImportStore::rule_reapply_group(std::string_view operation) const {
 std::optional<app::RuleReapplyReceipt> ImportStore::rule_reapply_outcome(std::string_view operation) const {
     if(!rules_supported())fail(SQLITE_SCHEMA,rules_dataset);
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying)session_snapshot::expired(impl_->db,operation,"reapply");
     Statement group(impl_->db,"SELECT account,ruleset_revision,catalog_revision,replace_manual,evaluated,changed_count,preview_sequence,undo_of FROM rule_reapplications WHERE id=?");group.text(1,operation);
     if(!group.row()){if(command_taken(impl_->db,operation))fail(SQLITE_CONSTRAINT,other_command);return {};}
     const auto account_id=group.integer(0);const auto ruleset=group.integer(1);const auto catalog=group.integer(2);const auto replace=group.integer(3)!=0;const auto evaluated=group.integer(4);const auto changed=group.integer(5);const auto sequence=group.integer(6);const auto undo=group.null(7)?std::string{}:group.bytes(7);
@@ -201,6 +202,8 @@ app::RuleReapplyReceipt ImportStore::apply_rule_reapply(std::string_view operati
     if(!rules_supported())fail(SQLITE_SCHEMA,rules_dataset);
     identifier(operation);
     if(operation.size()>96)fail(SQLITE_CONSTRAINT,"Rule reapply operation identity is too long");
+    transfer_codec::Writer encoding;encoding.number(request.ruleset_revision);encoding.number(request.catalog_revision);encoding.number(request.replace_manual);encoding.text(request.undo_of);encoding.number(request.preview_sequence);encoding.number(integer(request.evaluated));encoding.number(integer(request.changed));
+    const auto request_hash=session_snapshot::digest(encoding.bytes);session_snapshot::retry(impl_->db,operation,"reapply",request_hash);
     if(const auto prior=rule_reapply_outcome(operation)){if(prior->request!=request)fail(SQLITE_CONSTRAINT,reused_command);return *prior;}
     if(command_taken(impl_->db,operation))fail(SQLITE_CONSTRAINT,other_command);
     const auto preview=preview_rule_reapply(request.replace_manual,request.undo_of,context);
@@ -250,6 +253,7 @@ app::RuleReapplyReceipt ImportStore::apply_rule_reapply(std::string_view operati
     if(!request.undo_of.empty())group.text(9,request.undo_of);
     group.done();
     for(std::size_t index=0;index<operations.size();++index){Statement member(impl_->db,"INSERT INTO rule_reapplication_members VALUES(?,?,?)");member.text(1,operation);member.integer(2,integer(index));member.text(3,operations[index]);member.done();}
+    session_snapshot::completed(impl_->db,operation,"reapply",request_hash);
     finish([&]{transaction.commit();});
     return *rule_reapply_outcome(operation);
 }

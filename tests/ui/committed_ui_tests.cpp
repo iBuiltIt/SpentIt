@@ -23,6 +23,8 @@ public:
     void open(const std::filesystem::path& p,std::optional<std::string> pw) override {refreshBroken=false;inner->open(p,std::move(pw));}
     void open_controlled(const std::filesystem::path& p,std::optional<std::string> pw,const app::OperationContext& c) override {refreshBroken=false;inner->open_controlled(p,std::move(pw),c);}
     void close() override {inner->close();}
+    void close_verified(const app::OperationContext& c) override {inner->close_verified(c);}
+    void check_file(const app::OperationContext& c) override {inner->check_file(c);}
     void backup(const std::filesystem::path& p) override {inner->backup(p);}
     app::ImportRepository& repository() override {return *this;}
     app::Account account() const override {return repo().account();}
@@ -228,8 +230,8 @@ private slots:
         for(int mode=0;mode<4;++mode){
             QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));prepare(model,dir.path());
             if(!model.state().value("bulkSupported").toBool())QSKIP("Bulk format is not enabled");
-            const auto batch=selected(model).value("batch").toString();
-            run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});run(model,"select",{{"row",model.occurrenceIndex(batch,1)},{"range",true}});
+            const auto batch=model.state().value("batches").toList().front().toMap().value("id").toString();
+            run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});run(model,"select",{{"row",model.occurrenceIndex(batch,1)},{"toggle",true}});
             run(model,"preview_bulk",{{"kind","remove"}});const auto id=model.state().value("bulkPreview").toMap().value("id");
             fault->failBefore=mode==0;fault->loseAcknowledgement=mode==1||mode==2;fault->unknownOutcome=mode==2;fault->failRefresh=mode==3;
             run(model,"apply_bulk",{{"preview",id}},mode==1);

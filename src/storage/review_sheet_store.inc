@@ -546,6 +546,7 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
 }
 app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     ScopedStatements statements(impl_->db);
+    session_snapshot::retry(impl_->db,operation,"review-undo",session_snapshot::digest(operation));
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE);if(const auto prior=review_outcome(operation)){Statement saved(impl_->db,"SELECT 1 FROM review_undos WHERE id=?");saved.text(1,operation);if(!saved.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another Review command");return *prior;}
     Statement top(impl_->db,"SELECT answer,generation FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1");
     if(!top.row())fail(SQLITE_CONSTRAINT,"There is no Review decision to undo");
@@ -752,6 +753,8 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         if(!entries.insert(request.left->endpoint.entry).second || !link_ids.insert(request.link).second)fail(SQLITE_CONSTRAINT,"Select each transaction and relationship only once");
         const auto bytes=transfer_codec::encode(request);encoded+=std::to_string(bytes.size())+":"+bytes;
     }
+    const auto request_hash=session_snapshot::digest(encoded);
+    session_snapshot::retry(impl_->db,operation,"transfer-assignment",request_hash);
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='transfer-assignment'");saved.text(1,operation);
         if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Transfer assignment retry changed its selections");
@@ -823,6 +826,7 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         }
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();
+    session_snapshot::completed(impl_->db,operation,"transfer-assignment",request_hash);
     context.checkpoint("Validating transfer assignments");
     finish([&]{context.seal();transaction.commit();});return {std::string(operation)};
 }

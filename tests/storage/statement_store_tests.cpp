@@ -193,7 +193,7 @@ void review() {
     check(query(path, "SELECT format||'/'||grammar FROM source_headers WHERE source_id='overlap'") == "ofx/ofx-sgml");
     check(query(path, "SELECT ledger_batch||':'||ledger_ordinal FROM source_associations WHERE source_batch='overlap-account-0' AND source_ordinal=0") == "qif:0");
     check(query(path, "SELECT count(*) FROM source_associations WHERE source_batch='qif'") == "1");
-    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "60" : "59"));
+    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "64" : "63"));
     {
         auto restored = ImportStore::open(d.path / "backup", password);
         restored.select_account(1);
@@ -630,8 +630,10 @@ void exact_reimport() {
     }
 }
 void import_undo(bool close_sessions=false) {
+    int session_checkpoint=0;
     auto review_source=[&](ImportStore& store,const fs::path& path,std::string_view source){
         if(close_sessions){
+            std::cout<<"Import Undo session checkpoint "<<++session_checkpoint<<std::endl;
             const auto selected=store.account().identity;
             {auto previous=std::move(store);previous.certify({});}
             store=ImportStore::open(path,password);store.select_account(selected);

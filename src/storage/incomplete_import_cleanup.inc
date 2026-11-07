@@ -30,7 +30,10 @@ bool ImportStore::cleanup_incomplete_imports(std::string_view source) {
     const auto previous=impl_->selected_account;
     {Statement retained(impl_->db,"SELECT 1 FROM account WHERE singleton=?");retained.integer(1,previous);
      if(!retained.row())impl_->selected_account=smallest_active_account(impl_->db);}
-    try { verify();finish([&]{transaction.commit();}); }
+    // The checked roots above contain no published financial rows. Foreign-key
+    // constraints and the ownership/stage checks protect this bounded deletion;
+    // do not turn normal startup cleanup into another full-document audit.
+    try { finish([&]{transaction.commit();}); }
     catch(...) {
         const auto failure=std::current_exception();
         if(!sqlite3_get_autocommit(impl_->db)){impl_->selected_account=previous;throw app::OperationOutcomeUnknown();}

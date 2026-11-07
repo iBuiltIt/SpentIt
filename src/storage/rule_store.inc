@@ -237,6 +237,7 @@ app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const ap
 std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string_view operation) const {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying)session_snapshot::expired(impl_->db,operation,"rule-apply");
     Statement row(impl_->db,"SELECT batch,batch_before,batch_after,ruleset_revision,catalog_revision,replace_manual,evaluated,changed_count FROM rule_applications WHERE id=?");row.text(1,operation);
     if(!row.row()){if(command_taken(impl_->db,operation))fail(SQLITE_CONSTRAINT,other_command);return {};}
     require_account(row.bytes(0));
@@ -329,6 +330,8 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
 app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operation,const app::RuleApplyRequest& request,const app::OperationContext& context) {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
     identifier(operation);
+    transfer_codec::Writer encoding;encoding.text(request.batch);encoding.number(request.batch_revision);encoding.number(request.ruleset_revision);encoding.number(request.catalog_revision);encoding.number(request.replace_manual);
+    const auto request_hash=session_snapshot::digest(encoding.bytes);session_snapshot::retry(impl_->db,operation,"rule-apply",request_hash);
     if(const auto prior=rule_apply_outcome(operation)){if(prior->batch!=request.batch || prior->batch_before!=request.batch_revision || prior->ruleset_revision!=request.ruleset_revision || prior->catalog_revision!=request.catalog_revision || prior->replace_manual!=request.replace_manual)fail(SQLITE_CONSTRAINT,reused_command);return *prior;}
     ScopedStatements read_plans(impl_->db);
     context.checkpoint("Loading rules");
@@ -385,6 +388,7 @@ app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operatio
         advance(impl_->db,scope.batch,request.batch_revision,"apply_rules");
     }
     Statement application(impl_->db,"INSERT INTO rule_applications VALUES(?,?,?,?,?,?,?,?,?)");application.text(1,operation);application.text(2,scope.batch);application.integer(3,request.batch_revision);application.integer(4,after_revision);application.integer(5,request.ruleset_revision);application.integer(6,request.catalog_revision);application.integer(7,request.replace_manual?1:0);application.integer(8,integer(evaluated));application.integer(9,integer(changed));application.done();
+    session_snapshot::completed(impl_->db,operation,"rule-apply",request_hash);
     finish([&]{transaction.commit();});
     return *rule_apply_outcome(operation);
 }
@@ -522,7 +526,7 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
             previous_decision=versions.integer(5);previous_duplicate=versions.bytes(6);previous_ordinal=versions.integer(7);previous=std::move(draft);
         }
     }
-    Statement applications(impl_->db,"SELECT id,batch,batch_before,batch_after,ruleset_revision,changed_count,evaluated FROM rule_applications");
+    Statement applications(impl_->db,"SELECT id,batch,batch_before,batch_after,ruleset_revision,changed_count,evaluated FROM rule_applications WHERE id IN(SELECT rule_application FROM history_order WHERE sequence>(SELECT history_cut FROM document_session))");
     while(applications.row()){
         if(context) context->checkpoint();
         Statement history(impl_->db,"SELECT sequence FROM history_order WHERE rule_application=?");history.text(1,applications.bytes(0));if(!history.row())fail(SQLITE_CORRUPT);
@@ -530,7 +534,7 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
         if(ruleset>0){Statement present(impl_->db,"SELECT 1 FROM rule_operations WHERE ruleset_after=?");present.integer(1,ruleset);if(!present.row())fail(SQLITE_CORRUPT);}
         // An unchanged Apply keeps the revision, so the event there belongs to the earlier command.
         if(changed==0){if(after!=before)fail(SQLITE_CORRUPT);}
-        else {Statement event(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");event.text(1,applications.bytes(1));event.integer(2,after);if(!event.row() || event.bytes(0)!="apply_rules" || after!=before+1)fail(SQLITE_CORRUPT);Statement count(impl_->db,"SELECT count(*) FROM snapshot_facts WHERE kind=0 AND batch=? AND revision=?");count.text(1,applications.bytes(1));count.integer(2,after);if(!count.row() || count.integer(0)!=changed)fail(SQLITE_CORRUPT);}
+        else {Statement event(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");event.text(1,applications.bytes(1));event.integer(2,after);if(!event.row() || event.bytes(0)!="apply_rules" || after!=before+1)fail(SQLITE_CORRUPT);Statement count(impl_->db,"SELECT count(*) FROM versions WHERE batch=? AND revision=?");count.text(1,applications.bytes(1));count.integer(2,after);if(!count.row() || count.integer(0)!=changed)fail(SQLITE_CORRUPT);}
         Statement scope_count(impl_->db,"SELECT count(*) FROM records r WHERE r.batch=? AND EXISTS(SELECT 1 FROM versions v WHERE v.batch=r.batch AND v.ordinal=r.ordinal AND v.revision<=?2) AND NOT EXISTS(SELECT 1 FROM accepted_transactions a JOIN operations o ON o.id=a.operation WHERE a.batch=r.batch AND a.ordinal=r.ordinal AND o.revision<?2) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g JOIN ledger_operations l ON l.sequence=g.sequence JOIN history_order h ON h.operation=l.id WHERE g.batch=r.batch AND g.ordinal=r.ordinal AND h.sequence<?3)");scope_count.text(1,applications.bytes(1));scope_count.integer(2,before);scope_count.integer(3,history.integer(0));if(!scope_count.row() || scope_count.integer(0)!=evaluated)fail(SQLITE_CORRUPT);
     }
 }

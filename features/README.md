@@ -1,11 +1,11 @@
 # Feature discovery
 
-**Implementation Go (2026-11-07):** [Session history and close-time
-baseline](../doc/session-history-baseline.md) is implemented; see
-[status](../doc/status.md). Successful close atomically publishes the baseline,
-prunes unneeded snapshots and expires ordinary Undo with compact retry receipts. Broader
-verification-policy rollout is the planned subsequent task; the encrypted-marker
-policy and every-successful-document-close boundary are settled.
+**Session-history correction (2026-11-07):** [Session history and close-time
+baseline](../doc/session-history-baseline.md) now uses current-baseline verification,
+an encrypted clean marker and dependency-based pruning without permanent ordinary
+revision facts. Formats 64/63 reject earlier experimental data unchanged. See
+[storage measurements](../doc/session-storage-comparison.md) and
+[executed verification/status](../doc/status.md) before further lifecycle work.
 
 **Next-session handoff (2026-11-04):** [Reports and reusable calendar](../doc/reports-calendar-handoff.md).
 The report workspace and calendar interaction are settled; the compact-results

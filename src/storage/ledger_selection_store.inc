@@ -93,6 +93,8 @@ app::ReviewReceipt ImportStore::delete_transactions(std::string_view operation,c
     transfer_codec::Writer encoded;encoded.number(static_cast<int>(request.action));encoded.number(request.account);encoded.number(request.generation);encoded.text(request.payee);
     for(const auto& id:request.selected)encoded.text(review_key(id));
     if(request.delete_counterparts)encoded.text("delete-counterparts");
+    const auto request_hash=session_snapshot::digest(encoded.bytes);
+    session_snapshot::retry(impl_->db,operation,"selection",request_hash);
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='ledger-delete'");saved.text(1,operation);
         if(!saved.row() || saved.bytes(0)!=encoded.bytes)fail(SQLITE_CONSTRAINT,"Retry changed the deletion choice or selection");return *prior;
@@ -123,6 +125,7 @@ app::ReviewReceipt ImportStore::delete_transactions(std::string_view operation,c
         write_review_row(row.remove?std::string(operation):kept,child,row.id,row.draft,row.decision,!row.remove,false,false,{},{},&balance->second);
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();
+    session_snapshot::completed(impl_->db,operation,"selection",request_hash);
     context.checkpoint("Finishing deletion");finish([&]{context.seal();transaction.commit();});return {std::string(operation)};
 }
 

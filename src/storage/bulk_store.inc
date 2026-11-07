@@ -1,4 +1,4 @@
-bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="52";}
+bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="64";}
 std::string ImportStore::bulk_group(std::string_view operation) const {if(!bulk_supported())return {};Statement group(impl_->db,"SELECT operation FROM bulk_members WHERE entry_operation=?");group.text(1,operation);return group.row()?group.bytes(0):std::string{};}
 namespace {
 constexpr const char* bulk_refresh="Bulk preview changed; refresh before applying";
@@ -17,6 +17,7 @@ bool same_preview(const app::BulkPreview& a,const app::BulkPreview& b){
 std::optional<app::BulkReceipt> ImportStore::bulk_outcome(std::string_view operation) const {
     if(!bulk_supported())fail(SQLITE_SCHEMA,"Bulk changes are not supported by this dataset");
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying)session_snapshot::expired(impl_->db,operation,"bulk");
     Statement group(impl_->db,"SELECT kind,category,undo_of,preview_sequence,catalog_revision,count FROM bulk_operations WHERE id=?");group.text(1,operation);
     if(!group.row()){Statement used(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");used.text(1,operation);if(used.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
     Statement owner(impl_->db,"SELECT o.batch FROM bulk_members m JOIN ledger_operations o ON o.id=m.entry_operation WHERE m.operation=? ORDER BY m.position LIMIT 1");owner.text(1,operation);if(!owner.row())fail(SQLITE_CORRUPT);require_account(owner.bytes(0));
@@ -66,6 +67,11 @@ app::BulkPreview ImportStore::preview_bulk(const app::BulkRequest& request) cons
 }
 app::BulkReceipt ImportStore::apply_bulk(std::string_view operation,const app::BulkPreview& supplied) {
     identifier(operation);if(operation.size()>96)fail(SQLITE_CONSTRAINT,"Bulk operation identity is too long");
+    transfer_codec::Writer encoding;encoding.number(static_cast<int>(supplied.request.kind));encoding.text(supplied.request.category);encoding.text(supplied.request.undo_of);
+    encoding.number(integer(supplied.request.identities.size()));for(const auto& id:supplied.request.identities){encoding.text(id.batch);encoding.number(integer(id.ordinal));}
+    encoding.number(supplied.preview_sequence);encoding.number(supplied.catalog_revision);encoding.money(supplied.before);encoding.money(supplied.change);encoding.money(supplied.after);
+    encoding.number(integer(supplied.entries.size()));for(const auto& e:supplied.entries){encoding.text(session_snapshot::change(e.request,e.expected,e.preview_sequence,e.catalog_revision));encoding.number(e.before_entry.active);encoding.number(e.after_entry.active);session_snapshot::request_draft(encoding,e.before_entry.draft);session_snapshot::request_draft(encoding,e.after_entry.draft);encoding.text(e.link_stamp);encoding.text(e.relationship);}
+    const auto request_hash=session_snapshot::digest(encoding.bytes);session_snapshot::retry(impl_->db,operation,"bulk",request_hash);
     if(const auto prior=bulk_outcome(operation)){
         if(prior->request!=supplied.request || prior->preview_sequence!=supplied.preview_sequence || prior->catalog_revision!=supplied.catalog_revision || prior->entries.size()!=supplied.entries.size())fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");
         for(std::size_t i=0;i<prior->entries.size();++i){auto expected=prior->entries[i].result_token;expected.revision=prior->entries[i].before_entry.revision;if(expected!=supplied.entries[i].expected || !same_draft(prior->entries[i].after_entry.draft,supplied.entries[i].after_entry.draft) || prior->entries[i].after_entry.active!=supplied.entries[i].after_entry.active)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");}
@@ -93,6 +99,7 @@ app::BulkReceipt ImportStore::apply_bulk(std::string_view operation,const app::B
     }
     Statement group(impl_->db,"INSERT INTO bulk_operations VALUES(?,?,?,?,?,?,?)");group.text(1,operation);group.integer(2,static_cast<int>(preview.request.kind));if(preview.request.kind==app::ChangeKind::correct)group.text(3,preview.request.category);if(preview.request.kind==app::ChangeKind::undo)group.text(4,preview.request.undo_of);group.integer(5,preview.preview_sequence);group.integer(6,preview.catalog_revision);group.integer(7,integer(preview.entries.size()));group.done();
     for(std::size_t i=0;i<operations.size();++i){Statement member(impl_->db,"INSERT INTO bulk_members VALUES(?,?,?)");member.text(1,operation);member.integer(2,integer(i));member.text(3,operations[i]);member.done();}
+    session_snapshot::completed(impl_->db,operation,"bulk",request_hash);
     finish([&]{transaction.commit();});return *bulk_outcome(operation);
 }
 void ImportStore::verify_bulk(const app::OperationContext* context) const {

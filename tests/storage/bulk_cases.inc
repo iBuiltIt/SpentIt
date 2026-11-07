@@ -19,10 +19,11 @@ void bulk_basics(){
         auto stale=s.preview_bulk(bulk_request(app::ChangeKind::remove));apply_category(s,"rename",change(app::CategoryAction::rename,"bulk","Changed"));rejects_text([&]{s.apply_bulk("stale",stale);},"preview changed");check(!s.bulk_outcome("stale"));
         auto correction=s.committed_entry({"batch",0}).current.draft;correction.memo="Later";correct(s,"later",{"batch",0},correction);undo.undo_of="restore";rejects_text([&]{s.preview_bulk(undo);},"Newer transaction");
         auto request=bulk_request(app::ChangeKind::remove);request.identities.push_back(request.identities.front());rejects_text([&]{s.preview_bulk(request);},"Duplicate");request.identities={{"",0}};rejects_text([&]{s.preview_bulk(request);},"identifier");
-        s.ingest("pending",plain_source,qif::DateOrder::dmy);request.identities={{"pending",0}};rejects_text([&]{s.preview_bulk(request);},"committed");
-        auto clear=bulk_request(app::ChangeKind::correct);clear.category.clear();s.apply_bulk("uncategorize",s.preview_bulk(clear));s.verify();
+        s.ingest("pending",plain_source,qif::DateOrder::dmy);request.identities={{"pending",0}};rejects_text([&]{s.preview_bulk(request);},"accepted transaction");
+        auto clear=bulk_request(app::ChangeKind::correct);clear.category.clear();s.apply_bulk("uncategorize",s.preview_bulk(clear));s.verify();s.certify({});
     }
     {auto s=ImportStore::open(dir.path/"backup",password);check(s.bulk_outcome("bulk")->entries.size()==2);s.verify();}
+    {auto s=ImportStore::open(path,password);s.verify();check(s.committed_changes().empty());bool completed=false;try{s.apply_bulk("bulk",preview);}catch(const app::OperationAlreadyCompleted&){completed=true;}check(completed);auto conflict=preview;conflict.request.category="changed";rejects_text([&]{s.apply_bulk("bulk",conflict);},"different content");s.certify({});}
     no_leaks(dir.path);
     Directory provenance("spentit-bulk-provenance-XXXXXX");
     {

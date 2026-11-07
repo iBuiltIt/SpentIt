@@ -71,6 +71,10 @@ public:
         if(!store_) throw std::logic_error("No dataset is open");
         return *store_;
     }
+    void check_file(const app::OperationContext& context) override {
+        if(!store_)throw std::logic_error("No dataset is open");
+        store_->verify(&context);
+    }
     void backup_controlled(const std::filesystem::path& p,const app::OperationContext& context) override {
         diagnostics::Span span(diagnostics::Code::gateway);
         if(!store_) throw std::logic_error("No dataset is open");

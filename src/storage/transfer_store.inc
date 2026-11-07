@@ -234,6 +234,7 @@ void ImportStore::require_unlinked(const imports::Occurrence& id) const {
 }
 std::optional<app::TransferReceipt> ImportStore::transfer_outcome(std::string_view operation) const {
     if(!impl_->verifying && !impl_->composing_review && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !impl_->cleaning)session_snapshot::expired(impl_->db,operation,"transfer");
     Statement row(impl_->db,"SELECT t.account,o.sequence,o.before,o.change,o.after FROM transfer_events t JOIN ledger_operations o ON o.id=t.operation WHERE t.operation=?");row.text(1,operation);
     if(!row.row())return {};
     if(!impl_->verifying && row.integer(0)!=impl_->selected_account)fail(SQLITE_CONSTRAINT,"Transfer operation belongs to another account");
@@ -255,6 +256,7 @@ std::vector<app::TransferJournalEntry> ImportStore::transfer_journal() const {
 }
 app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,const app::TransferRequest& request){
     identifier(operation);identifier(request.link);const auto encoded=transfer_codec::encode(request);
+    const auto request_hash=session_snapshot::digest(encoded);session_snapshot::retry(impl_->db,operation,"transfer",request_hash);
     if(const auto prior=transfer_outcome(operation)){Statement saved(impl_->db,"SELECT request FROM transfer_events WHERE operation=?");saved.text(1,operation);if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");return *prior;}
     Statement collision(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");collision.text(1,operation);if(collision.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
     require_writable_account(impl_->db,impl_->selected_account);
@@ -356,7 +358,8 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             append_financial(impl_->db,operation,app::ChangeKind::correct,entry_identity,entry_after->revision-1,entry_after->revision,before,zero,before,"",request.expected_sequence,catalog_sequence(impl_->db));
             for(const auto& dependency:entry_dependencies){Statement d(impl_->db,"INSERT INTO change_dependencies VALUES(?,?,?,?)");d.text(1,operation);d.text(2,dependency.batch);d.integer(3,dependency.revision);d.integer(4,static_cast<int>(dependency.state));d.done();}
         }else append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,before+change,"",request.expected_sequence,catalog_sequence(impl_->db));
-        finish([&]{if(transaction)transaction->commit();});return {std::string(operation),account.identity,sequence,before,entry_category?zero:change,before+(entry_category?zero:change)};
+        session_snapshot::completed(impl_->db,operation,"transfer",request_hash);
+    finish([&]{if(transaction)transaction->commit();});return {std::string(operation),account.identity,sequence,before,entry_category?zero:change,before+(entry_category?zero:change)};
     }
     if(create){
         if(found!=values.end())fail(SQLITE_CONSTRAINT,"Transfer identity already exists");
@@ -405,6 +408,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             append_financial(impl_->db,completed,app::ChangeKind::transfer,{"",0},-1,0,after,Money(0,account.currency),after,"",sequence,catalog_sequence(impl_->db));
         }
     }
+    session_snapshot::completed(impl_->db,operation,"transfer",request_hash);
     finish([&]{if(transaction)transaction->commit();});return {std::string(operation),account.identity,sequence,before,change,after};
 }
 std::set<std::size_t> ImportStore::protected_import_rows(std::string_view batch) const {
@@ -434,15 +438,25 @@ Money ImportStore::transfer_import_transition(std::string_view batch_id,std::str
 }
 void ImportStore::verify_transfers(const app::OperationContext* context) const {
     std::map<std::string,app::TransferView> previous;std::size_t count=0;std::set<std::string> verified_retained;
+    Statement marker(impl_->db,"SELECT financial_cut FROM document_session WHERE singleton=1");if(!marker.row())fail(SQLITE_CORRUPT);const auto cut=marker.integer(0);
+    Statement baseline(impl_->db,"SELECT identity,sequence,payload FROM transfer_versions WHERE sequence<=? ORDER BY sequence");baseline.integer(1,cut);
+    while(baseline.row()){
+        if(context)context->checkpoint();const auto value=transfer_codec::view(baseline.bytes(2));
+        if(value.link.identity!=baseline.bytes(0))fail(SQLITE_CORRUPT,"Retained transfer identity is inconsistent");
+        transfers::validate(value.link);previous.insert_or_assign(value.link.identity,value);++count;
+    }
+    {std::vector<app::TransferView> values;for(const auto& [id,v]:previous){(void)id;values.push_back(v);}validate_transfer_set(values);}
+    Statement protected_batches(impl_->db,"SELECT DISTINCT r.batch FROM retained_transfer_rows r JOIN events e ON e.batch=r.batch AND e.kind='retain' JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision WHERE h.sequence<=(SELECT history_cut FROM document_session)");while(protected_batches.row())verified_retained.insert(protected_batches.bytes(0));
+
     struct Scale {std::int64_t sequence; std::int64_t account; std::string operation;};
-    std::vector<Scale> scales;Statement scale_rows(impl_->db,"SELECT sequence,ordinal,undo_of FROM ledger_operations WHERE kind=5 ORDER BY sequence");
+    std::vector<Scale> scales;Statement scale_rows(impl_->db,"SELECT sequence,ordinal,undo_of FROM ledger_operations WHERE kind=5 AND sequence>? ORDER BY sequence");scale_rows.integer(1,cut);
     while(scale_rows.row())scales.push_back({scale_rows.integer(0),scale_rows.integer(1),scale_rows.bytes(2)});
     // A prefix of independent draft merges only appends links. Validate each
     // reconstructed link immediately and the entire accumulated set before any
     // other transition (or at final head comparison). Set constraints are
     // monotone for additions: validating the union validates every prefix.
     // Currency rewrites require the ordinary chronological replay throughout.
-    bool append_only=scales.empty();
+    bool append_only=scales.empty() && previous.empty();
     std::set<std::tuple<std::int64_t,imports::Occurrence,std::string>> appended_endpoints;
     const auto endpoint_key=[](const transfers::Endpoint& e){return std::tuple{e.account,e.entry,e.allocation};};
     std::size_t scale_index=0;
@@ -460,7 +474,7 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
             }
         }
     };
-    Statement events(impl_->db,"SELECT e.operation,e.account,e.request,e.did_commit,o.sequence,o.kind,e.local_change,o.preview_sequence,o.change,h.sequence FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN history_order h ON h.operation=o.id ORDER BY o.sequence");
+    Statement events(impl_->db,"SELECT e.operation,e.account,e.request,e.did_commit,o.sequence,o.kind,e.local_change,o.preview_sequence,o.change,h.sequence FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN history_order h ON h.operation=o.id WHERE o.sequence>? ORDER BY o.sequence");events.integer(1,cut);
     while(events.row()){
         if(context)context->checkpoint();
         const auto request=transfer_codec::request(events.bytes(2));const auto account=account_by_id(events.integer(1));const auto sequence=events.integer(4);apply_scales(sequence);const auto currency=currency_as_of(impl_->db,account.identity,events.integer(9));

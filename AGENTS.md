@@ -1,20 +1,22 @@
 # SpentIt — Where did my money go?
 
-## Session history baseline — implementation Go 2026-11-07
+## Session history baseline — correction Go 2026-11-07
 
-Read [the accepted contract](doc/session-history-baseline.md) and
-[current progress](doc/status.md) before further history/lifecycle work. Every
-successful document close ends ordinary history; crashes and failed/cancelled
-closes preserve recoverable history. Originals, current relationships and eligible
-import Undo survive. The owner accepts compact durable completion results after
-close, with request-conflict checks and no re-execution or fabricated historical
-results. Dependency-based snapshot pruning, compact receipts and baseline-aware
-verification are implemented. Current experimental formats are 62 with rules / 61
-without; earlier formats are rejected unchanged. See status for executed checks.
-The owner identified the broad verification-policy rollout as the next task.
-Its offline-change policy is already settled: encrypted clean marker, no routine
-hashing, reduced offline-change detection accepted. Do not ask that decision again
-or introduce a full close-time audit. Manual updates remain deferred.
+Read [the accepted contract](doc/session-history-baseline.md),
+[current progress](doc/status.md), and [storage measurements](doc/session-storage-comparison.md)
+before history/lifecycle work. The owner rejected `f8a1f4b`'s permanent per-revision
+facts and historical monetary replay. Correct them together with the normal-open
+verification policy; do not treat that implementation or its passing tests as the
+requirement. Every successful close ends ordinary history; failed/cancelled closes
+and crashes preserve recovery. Current state, originals, recognition, necessary
+relationships and eligible import Undo survive. Compact retry receipts must not
+become historical archives. Normal open/close uses an encrypted clean marker with
+no routine audit or hashing; reduced offline-change detection is accepted. Retain
+full recovery, backup/restore and explicit checks. Storage must not exceed the
+pre-change `cf8f1a5` implementation on identical workloads. The corrected experimental
+formats are **64 with rules / 63 without**; older formats are rejected unchanged.
+Current-baseline verification and dependency pruning replace the permanent facts
+layer. Preserve the measured storage acceptance; manual updates remain deferred.
 
 ## Deferred manual updates — owner direction 2026-11-06
 

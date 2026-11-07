@@ -2,9 +2,34 @@
 
 Last updated: 2026-11-07
 
-State: session-history scope implemented on 2026-11-07 under explicit owner Go.
-See [status](status.md) for executed checks and limits. The broader normal-open
-verification-policy rollout remains a separate task.
+State: **implemented; lifecycle and storage acceptance verified**. The failed
+`f8a1f4b` architecture was corrected in place, preserving unrelated changes.
+Permanent revision facts and monetary replay are removed. See
+[measurements and verification](session-storage-comparison.md).
+
+## Corrected acceptance boundary — owner Go 2026-11-07
+
+The current state is the baseline. Full verification must validate that baseline,
+necessary retained dependencies and subsequent session changes without replaying
+all expired ordinary revisions. Do not keep a permanent record, fingerprint,
+monetary summary or other substitute for every expired ordinary revision.
+Compact command receipts may prevent duplicate execution and conflicting request-ID
+reuse; they must not archive transaction history.
+
+Storage is an acceptance criterion. Compare identical import-only, repeated
+edit/close and cross-session import-Undo workloads with `cf8f1a5`, before the failed
+implementation. Report physical bytes, free pages and actual retained payload/index
+bytes. Neither retained storage nor file size may grow relative to that baseline;
+no shrinking or padding tricks. If a genuine required tradeoff prevents meeting
+this criterion, stop and explain it. No such unavoidable tradeoff has been
+established by the measurements so far.
+
+Normal opens and closes, including edited and uncommitted-import sessions, must
+use reliable encrypted session state without full verification or full-file
+hashing. Retain full checks after abnormal shutdown, for backup/restore and on
+explicit request. Preserve operation validation, encryption, locks, atomicity,
+durability and error propagation. This is part of the same correction, not a
+separate optional follow-up. Manual prose and screenshots remain deferred.
 
 ## Accepted product direction
 
@@ -234,50 +259,66 @@ mistaken assumptions with the writer; agreement is not proof of user intent.
   operation latency over repeated sessions, not only a single small example.
 - Verify memory/resource bounds and supported platforms before claiming them.
 
-The implementation uses experimental formats **62 with rules / 61 without**;
+The implementation uses experimental formats **64 with rules / 63 without**;
 no old-format migration is provided. Preserve the existing reject-unchanged policy. Update affected
 contracts and contributor rules only under implementation Go. Manual chapters on
 editing/history, file closing/recovery, acceptance and import Undo will need a
 deferred backlog entry when the behavior actually changes; no manual prose or
 screenshots have changed in this implementation task.
 
-## Implemented representation — 2026-11-07
+## Corrected implementation — 2026-11-07
 
-`document_session` and `session_history` publish the close boundary atomically.
-Mutations write encrypted snapshot facts (identity, revision, disposition, currency,
-exact total and SHA-256 image) beside the validated draft/entry. These are compact
-financial and conflict facts, not copies of old payee/memo/split text. SHA-256 is
-used as an equality fingerprint inside SQLCipher, not as a replacement for page
-authentication or as a full-file hash.
+Current draft/entry metadata carries its currency definition and a baseline flag
+and ordering reference. Only retained payloads have these fields; there is no
+`snapshot_facts` or allocation-origin tombstone table. Intrinsic `source-N`
+allocation identities bind source ordinals, and retained metadata prevents rebinding.
 
-Close computes a reference closure over current heads, original/acceptance
-references, reviewed duplicate targets and retained transfer/Review restoration
-inputs. Retained Undo dependencies are followed transitively. Unreferenced payloads
-and allocation/ownership/provenance children are deleted in the same transaction;
-ordinary history and the Review Undo stack expire, completion receipts expire,
-and the clean generation advances. An unchanged close uses the indexed unfinished
-facts check and does not copy or revalidate transaction payloads. Pages become
-reusable; no VACUUM or physical size reduction is promised.
+Close computes the reference closure of current heads, original/acceptance rows,
+duplicate targets/review origins, and required relationship/import restoration
+snapshots. Ordinary linked edits retain only the live restoration input; superseded
+editor restoration chains expire. Transfer versions retain current heads and source
+match restoration references. Obsolete operation records, deletion subcommands, group memberships and
+ordinary monetary summaries (including conversion marks for expired snapshots) are deleted, along with unreferenced payloads.
+Autoincrement high-water marks preserve ordering across pruning and import rollback.
 
-Direct corrections, inline edits and selection edits persist exact request
-fingerprints. Expired retries return `OperationAlreadyCompleted`, with the operation
-identity and an instruction to refresh. Reusing that ID with changed request data
-is rejected before mutation. Existing compact identity/configuration receipts stay
-available; retained monetary ordering, acceptance, currency, rule-definition and
-relationship records still support validation. Selection-request payee text is
-removed once its fingerprint is sufficient. Allocation-origin tombstones prevent
-reusing a removed split identity with a different source association.
+Full verification seeds current baseline heads and balances from retained payloads
+and baseline relationships, reverses only subsequent opening changes to establish
+the starting opening, and validates subsequent journal transitions. It still checks
+source facts, exact splits, provenance, acceptance and current-head reconciliation.
+Retained dependency snapshots are validated intrinsically, not against fingerprints
+of removed revisions. Historical financial replay before the baseline is unnecessary.
 
-Full verification checks retained baseline payloads against those immutable facts
-and their intrinsic financial/source/provenance constraints. It validates subsequent
-session transitions against the retained baseline and journal. Expired ordinary
-field transitions no longer require reconstructing removed snapshots; financial
-continuity is checked using compact scalar receipts, totals and fingerprints.
-Rule-application counts likewise use compact facts. This retains independent
-financial reconciliation without retaining every ordinary interpretation. Full
-verification remains deliberately more expensive than close publication.
+Request receipts contain an ID, command domain, request digest and expiration bit.
+They contain no transaction identity, revision, amount or before/after result.
+Direct, editor, selection, transfer-assignment, bulk and rule commands reject changed
+request reuse; expired requests return completion without re-execution. Reserved
+internal child IDs cannot be reused as new commands. Source recognition, import
+acceptance and configuration receipts remain only for their separate purposes.
 
-This task does not claim the broader no-routine-open rollout: normal open still
-uses the earlier cache/audit policy, and no new Check file UI is included. Unclean
-activation always verifies; backup/restore checks remain. Marker publication,
-pruning, lost acknowledgements and retry behavior have dedicated tests; see status.
+Payload tables use their existing composite keys as WITHOUT ROWID storage, avoiding
+a second B-tree for the same key. No VACUUM, padding or weakened encryption/durability
+is used. Physical free pages and actual retained payload are measured separately.
+
+## Operation validation inventory
+
+- Draft/editor/selection changes canonicalize ownership/source allocation identities,
+  validate exact totals/splits and currencies, check current revision/generation,
+  and commit all members and affected links atomically.
+- Committed changes validate tokens and dependency generations, exact monetary delta,
+  current links and strict Undo preconditions before saving their session journal.
+- Transfer commands validate both endpoint facts, currency/account ownership,
+  relationship-set consistency and cross-account effects in one transaction.
+- Import preparation validates parsed records and durable review state; acceptance
+  consumes mutation-maintained review with stale-state checks. Source rollback
+  checks ownership/protected relationships and retains its independent full audit.
+- Rule application validates rule definitions, evaluated scope, category/provenance
+  and conflict tokens; it cannot change financial totals. Account/currency operations
+  retain their existing exact conversion and cross-relationship validation.
+- Incomplete-capture cleanup proves there are no published financial rows before
+  deletion, uses one transaction and preserves completed imports. It no longer runs
+  a routine full audit after deleting only incomplete preparation.
+
+SQL constraints, encrypted temporary/journal storage, durable synchronization,
+operation cancellation gates and error propagation remain enforced. Independent
+recovery/fault tests and explicit audits check the maintained invariants; the clean
+marker does not substitute for operation validation.

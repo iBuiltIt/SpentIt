@@ -29,7 +29,7 @@ void reapply_basics(){
         s.select_account(2);check(s.committed_entry({"other",0}).current.draft.payee==marker && s.committed_balance()==other_balance);s.select_account(1);
         check(s.rule_reapply_group("reapply")=="reapply" && s.rule_reapply_group("reapply-1")=="reapply" && s.rule_reapply_group("remove-one").empty());
         const auto token=s.committed_entry({"rows",0}).token;app::ChangeRequest misuse{app::ChangeKind::correct,{"rows",0},std::nullopt,{}};
-        rejects_text([&]{s.apply_committed_change_with_catalog("reapply-1",misuse,token,0,0);},"Operation identity belongs to a rule reapply");
+        rejects_text([&]{s.apply_committed_change_with_catalog("reapply-1",misuse,token,0,0);},"Operation identity belongs to another command");
         app::ChangeRequest single{app::ChangeKind::undo,{"rows",0},{},"reapply"};rejects_text([&]{s.apply_committed_change_with_catalog("plain-undo",single,token,0,0);},"Operation identity belongs to a rule reapply");
         rejects_text([&]{preview(s,"rows",batch_revision(s,"rows"));},"Committed records are not changed by rules");
         auto undo=reapply_preview(s,false,"reapply");check(undo.request.undo_of=="reapply" && undo.request.changed==2 && undo.records[0].after.payee==marker && undo.records[0].after.payee_owner==FieldOwnership::source);

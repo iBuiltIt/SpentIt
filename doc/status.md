@@ -1,5 +1,94 @@
 # Project status
 
+## Session-history correction — 2026-11-07
+
+The correction replaces `f8a1f4b`'s permanent ordinary-revision layer in place.
+`cf8f1a5`, its immediate parent, is the storage comparator. Unrelated changes,
+including `0edf528`, `68b73f5` and `9fa2166`, remain intact; no reset, revert or
+Git-history rewrite was used. Experimental formats are **64 with rules / 63
+without**; previous formats are rejected unchanged with no migration.
+
+Current payloads now form the baseline. `snapshot_facts` and allocation-origin
+tombstones are removed. Close deletes obsolete ordinary snapshots, operation
+records, monetary summaries and group memberships, retaining only current state,
+original/acceptance/duplicate references and necessary relationship/import-Undo
+inputs. Repeated linked edits no longer preserve a restoration chain. Pending
+transfer proposals retain the specific predecessor needed by source rollback.
+Compact request-ID/domain/digest receipts reject conflicts and prevent re-execution
+without preserving transaction history. Composite-key payload tables use WITHOUT
+ROWID storage rather than duplicating keys in an extra B-tree.
+
+Successful close atomically expires ordinary history and publishes the baseline and
+encrypted clean marker. Failed/cancelled closes and crashes retain the recoverable
+session. Normal opens/closes run neither a full audit nor a full-file hash, including
+after edits and imports left uncommitted. Abnormal shutdown and backups/restores
+retain full checks. Settings **Check file** runs the explicit audit without ending
+Undo. Full verification validates retained baseline state/dependencies and subsequent
+session changes; it does not replay expired ordinary monetary history.
+
+**Storage acceptance passed** on all three identical 1,000-row synthetic workloads
+and an additional matched-transfer import-Undo workload:
+
+| Workload | Original physical bytes | Corrected physical bytes | Original retained payload | Corrected retained payload |
+|---|---:|---:|---:|---:|
+| Import only | 1,556,480 | 1,503,232 | 602,151 | 569,698 |
+| 32 edits / four closes | 1,855,488 | 1,777,664 | 822,085 | 760,219 |
+| Cross-session import Undo | 2,146,304 | 2,039,808 | 602,202 | 569,752 |
+| Matched transfer import Undo | 2,519,040 | 2,375,680 | 1,314,653 | 1,216,681 |
+
+All intermediate measured points also pass. The [comparison report](session-storage-comparison.md)
+separates live pages, reusable freelist pages and unused B-tree space, documents
+reproduction and the rejected implementation's overhead. No VACUUM, padding or
+weakened encryption/durability was used. These are synthetic measurements, not an
+explanation of the owner's private file's reported 23% increase.
+
+Executed verification on macOS arm64:
+
+- Release build succeeded, including the application, storage and UI targets.
+- Final lifecycle/dependency selection: **15/15 passed**, covering session expiry,
+  pending imports, exact financial state, originals/duplicate dependencies, bounded
+  ordinary and linked retention, rule retries, retained import Undo, corruption,
+  clean-marker policy and close failure/crash boundaries. Close covered 105
+  write/sync failure positions, both commit-side process exits and lost
+  acknowledgement; activation covered 13 failure/process-exit positions.
+- Rules-disabled lifecycle selection: **7/7 passed**; the final currency/deletion
+  cleanup rerun passed **4/4**. Earlier schema-gate, marker-fault and close-fault
+  checks also passed.
+- ASan/UBSan lifecycle selection: **8/8 passed**; final cleanup rerun **5/5 passed**,
+  including retained import Undo, currency/deletion pruning, provenance and retry
+  conflicts. Additional currency/account, corruption and bulk/reapply checks passed in the preceding sanitizer selection.
+- Final targeted offscreen UI: **9/9 passed** including Qt setup/cleanup: transfers,
+  linked deletion/close, normal quit/open, failed close, cancelled recovery and
+  explicit Check file preserving Undo and bulk interaction/close expiry. Bulk
+  lost-acknowledgement/error recovery passed separately (**3/3**).
+- Broader Release financial/rule selection: 57/58 passed in the initial sweep;
+  the cross-session proposal predecessor failure was fixed and passed the final
+  Release, rules-disabled and sanitizer reruns. This includes disk-full/I/O and
+  process-exit tests for edits, imports, rules, categories and bulk commands.
+- Relationship/account/report/backup selection: 19 ordinary cases passed. The two
+  transfer fault sweeps exposed an outdated one-sequence-step test assumption for
+  atomic bank-match completion (two records) and source discard (no financial step).
+  The assertion now compares against the completed operation's sequence. All 15
+  transfer scenarios passed both I/O and process-exit sweeps across the full run's
+  successful cases 0–7 and the final cases 8–14 rerun, including before/after commit
+  boundaries and retries. The default tests still run all 15 cases.
+
+Testing found and corrected sequence high-water reuse after rollback, missing
+proposal predecessors, stale legacy bulk/reapply format gates, duplicate-target
+ordering, deletion Undo foreign-key cleanup, deletion subcommand retention and
+obsolete currency-conversion records. Tests were updated for current
+formats, the existing 46 starter categories, and session-only bulk history.
+
+Limits: no Linux/Windows build or native interactive platform walkthrough was run;
+offscreen Qt tests are not a native window-system certification. An earlier broad
+UI run also had Help calendar/typing/focus failures; those unrelated interactions
+were not rerun or certified by this storage task. Offline-change detection is reduced by the accepted marker policy. Files retain reusable free
+pages and compact completion receipts grow with commands. No private dataset was
+read. Manual prose/screenshots remain unchanged; MAN-008 records the deferred work.
+See the [design and operation-validation inventory](session-history-baseline.md)
+and [startup policy](fast-startup.md). Earlier dated entries below describe the
+superseded implementation and are not current completion claims.
+
 ## Session-history storage review — 2026-11-07
 
 The owner reports a dataset size increase from approximately 65 MB to 79 MB

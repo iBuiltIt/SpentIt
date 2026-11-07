@@ -37,6 +37,7 @@ public:
     virtual void close() = 0;
     // Graceful close finalizes the session while holding its lock. Emergency close retains recovery state.
     virtual void close_verified(const OperationContext&) { close(); }
+    virtual void check_file(const OperationContext&) { throw std::logic_error("File checking is not supported by this gateway"); }
     virtual bool lazy_review() const { return false; }
     virtual ImportRepository& repository() = 0;
     // Backup/restore publishes a new document with the current protection mode.

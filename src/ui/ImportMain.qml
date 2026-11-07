@@ -3254,6 +3254,7 @@ ApplicationWindow {
                         Item {Layout.fillWidth:true;Layout.preferredHeight:16}
                         Label {text:"Backup and recovery";font.bold:true}
                         Label {text:"Save a backup to a new file. To restore a backup, open it and save a copy to a new location.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        Button {objectName:"settingsCheckFile";text:"Check file";onClicked:guard(function(){workflow.command("check_file",{})})}
                         Button {objectName:"settingsBackup";text:"Save backup…";onClicked:guard(function(){backupDialog.open()})}
                     }
                 }

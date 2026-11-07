@@ -77,12 +77,10 @@ Currency currency_as_of(sqlite3* db,std::int64_t account,std::int64_t sequence) 
     return Currency::from_definition(id);
 }
 Currency version_currency(sqlite3* db,std::string_view batch,std::int64_t ordinal,std::int64_t revision) {
-    Statement mark(db,"SELECT o.definition FROM account_amount_revisions a JOIN account_operations o ON o.id=a.operation WHERE a.kind=0 AND a.batch=? AND a.ordinal=? AND a.revision=? AND a.position=0 LIMIT 1");
-    mark.text(1,batch);mark.integer(2,ordinal);mark.integer(3,revision);
-    if(mark.row()) return Currency::from_definition(mark.bytes(0));
-    Statement seq(db,"SELECT h.sequence,b.account_id FROM history_order h JOIN batches b ON b.id=h.batch WHERE h.batch=? AND h.event_revision=?");
-    seq.text(1,batch);seq.integer(2,revision);if(!seq.row()) fail(SQLITE_CORRUPT);
-    return currency_as_of(db,seq.integer(1),seq.integer(0));
+    Statement row(db,"SELECT definition FROM draft_fields WHERE batch=? AND ordinal=? AND revision=?");
+    row.text(1,batch);row.integer(2,ordinal);row.integer(3,revision);
+    if(!row.row())fail(SQLITE_CORRUPT,"Snapshot currency is missing");
+    return Currency::from_definition(row.bytes(0));
 }
 // One bounded, append-aware index per repository operation. Existing history is
 // immutable; new Undo writes are ingested by sequence, and rollback drops it.
@@ -94,7 +92,7 @@ std::optional<ScopedStatements::RevisionHistory> revision_history(sqlite3* db,co
         if(initial.row())fail(SQLITE_CORRUPT,"Ambiguous acceptance history");return result;
     }
     if(auto* scope=ScopedStatements::current(db)){
-        Statement latest(db,"SELECT coalesce(max(sequence),0) FROM ledger_operations");if(!latest.row())fail(SQLITE_CORRUPT);const auto last=latest.integer(0);
+        Statement latest(db,"SELECT max(coalesce(max(sequence),0),(SELECT financial_cut FROM document_session),(SELECT coalesce(max(seq),0) FROM sqlite_sequence WHERE name='ledger_operations')) FROM ledger_operations");if(!latest.row())fail(SQLITE_CORRUPT);const auto last=latest.integer(0);
         if(last<scope->revision_sequence)scope->clear_revisions();
         if(last>scope->revision_sequence){
             Statement rows(db,"SELECT o.sequence,o.batch,o.ordinal,o.result_revision,h.sequence,o.kind,b.account_id FROM ledger_operations o LEFT JOIN history_order h ON h.operation=o.id LEFT JOIN batches b ON b.id=o.batch WHERE o.sequence>? AND o.sequence<=? ORDER BY o.sequence");
@@ -121,12 +119,10 @@ std::optional<ScopedStatements::RevisionHistory> revision_history(sqlite3* db,co
     if(row.row())fail(SQLITE_CORRUPT,"Ambiguous revision history");return result;
 }
 Currency entry_currency(sqlite3* db,std::string_view batch,std::int64_t ordinal,std::int64_t revision) {
-    Statement mark(db,"SELECT o.definition FROM account_amount_revisions a JOIN account_operations o ON o.id=a.operation WHERE a.kind=2 AND a.batch=? AND a.ordinal=? AND a.revision=? AND a.position=0 LIMIT 1");
-    mark.text(1,batch);mark.integer(2,ordinal);mark.integer(3,revision);
-    if(mark.row()) return Currency::from_definition(mark.bytes(0));
-    const auto history=revision_history(db,{std::string(batch),static_cast<std::size_t>(ordinal)},revision);
-    if(!history)fail(SQLITE_CORRUPT,"Missing revision history");
-    return currency_as_of(db,history->account,history->order);
+    Statement row(db,"SELECT definition FROM entry_fields WHERE batch=? AND ordinal=? AND revision=?");
+    row.text(1,batch);row.integer(2,ordinal);row.integer(3,revision);
+    if(!row.row())fail(SQLITE_CORRUPT,"Snapshot currency is missing");
+    return Currency::from_definition(row.bytes(0));
 }
 bool explicit_account_money(sqlite3* db,std::int64_t account) {
     Statement row(db,"SELECT 1 FROM account_operations WHERE account=? AND kind IN(4,5,6) LIMIT 1");row.integer(1,account);return row.row();
@@ -149,19 +145,6 @@ std::optional<app::AccountCommandReceipt> matching_account_command(sqlite3* db,s
     Statement reg(db,"SELECT 1 FROM operation_registry WHERE id=? UNION ALL SELECT 1 FROM ledger_operations WHERE id=?");reg.text(1,operation);reg.text(2,operation);
     if(reg.row()) fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
     return {};
-}
-Money opening_at_start(sqlite3* db,std::int64_t account) {
-    Statement current(db,"SELECT opening,definition FROM account WHERE singleton=?");current.integer(1,account);if(!current.row()) fail(SQLITE_CORRUPT);
-    auto units=current.integer(0);auto currency=Currency::from_definition(current.bytes(1));
-    Statement rows(db,"SELECT o.kind,o.prior_opening,o.prior_definition,o.undo_of FROM account_operations o CROSS JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(4,5,6) ORDER BY h.sequence DESC");
-    rows.integer(1,account);
-    while(rows.row()) {
-        auto target=static_cast<int>(rows.integer(0));
-        if(target==6) {Statement undone(db,"SELECT kind FROM account_operations WHERE id=?");undone.text(1,rows.bytes(3));if(!undone.row()) fail(SQLITE_CORRUPT);target=static_cast<int>(undone.integer(0));}
-        if(target==4) units=rows.integer(1);
-        else if(target==5) {units=rows.integer(1);currency=Currency::from_definition(rows.bytes(2));}
-    }
-    return Money(units,currency);
 }
 struct OpeningDelta {std::int64_t sequence; Money prior; Money next;};
 std::vector<OpeningDelta> opening_deltas(sqlite3* db,std::int64_t account) {

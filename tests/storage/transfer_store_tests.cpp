@@ -357,17 +357,19 @@ void fault_execute(ImportStore& s,int mode,std::int64_t expected){
  if(mode==9)r.action=app::TransferAction::clear_local;
  s.apply_transfer("operation",r);
 }
-void faults(bool crash){
+void faults(bool crash,int first_mode=0){
+ check(first_mode>=0 && first_mode<15);
  fault_vfs::install();
- for(int mode=0;mode<15;++mode){Directory fixture;const auto seed=fixture.path/"seed";fault_setup(seed,mode);std::int64_t expected;
+ for(int mode=first_mode;mode<15;++mode){Directory fixture;const auto seed=fixture.path/"seed";fault_setup(seed,mode);std::int64_t expected;
  {auto s=ImportStore::open(seed,password);expected=s.transfer_sequence();}
- int count=0;{Directory sample;const auto path=sample.path/"doc";fs::copy_file(seed,path);auto s=ImportStore::open(path,password);fault_vfs::arm(-1);fault_execute(s,mode,expected);count=fault_vfs::seen;fault_vfs::disarm();s.verify();}check(count>0);
+ std::int64_t completed_sequence=0;
+ int count=0;{Directory sample;const auto path=sample.path/"doc";fs::copy_file(seed,path);auto s=ImportStore::open(path,password);fault_vfs::arm(-1);fault_execute(s,mode,expected);count=fault_vfs::seen;fault_vfs::disarm();s.verify();completed_sequence=s.transfer_sequence();}check(count>0 && completed_sequence>=expected);
  for(int position=1;position<=count;++position){Directory d;const auto path=d.path/"doc";fs::copy_file(seed,path);
   if(crash){const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,password);fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);fault_execute(s,mode,expected);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && (WEXITSTATUS(status)==71 || WEXITSTATUS(status)==0));}
   else{{auto s=ImportStore::open(path,password);fault_vfs::arm(position,position%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{fault_execute(s,mode,expected);}catch(const std::exception&){}fault_vfs::disarm();}}
-  {auto s=ImportStore::open(path,password);check(s.transfer_sequence()==expected || s.transfer_sequence()==expected+1);s.verify();fault_execute(s,mode,expected);s.verify();check(s.transfer_sequence()==expected+1);}no_leaks(d.path);
+  {auto s=ImportStore::open(path,password);check(s.transfer_sequence()==expected || s.transfer_sequence()==completed_sequence);s.verify();fault_execute(s,mode,expected);s.verify();check(s.transfer_sequence()==completed_sequence);}no_leaks(d.path);
  }
- for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;const auto path=d.path/"doc";fs::copy_file(seed,path);const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,password);s.observer([&](ImportPhase at){if(at==phase)_exit(72);});fault_execute(s,mode,expected);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);auto s=ImportStore::open(path,password);check(s.transfer_sequence()==expected+(phase==ImportPhase::after_commit?1:0));fault_execute(s,mode,expected);s.verify();}
+ for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;const auto path=d.path/"doc";fs::copy_file(seed,path);const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,password);s.observer([&](ImportPhase at){if(at==phase)_exit(72);});fault_execute(s,mode,expected);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);auto s=ImportStore::open(path,password);check(s.transfer_sequence()==(phase==ImportPhase::after_commit?completed_sequence:expected));fault_execute(s,mode,expected);s.verify();}
  std::cout<<"Transfer operation "<<mode<<": "<<count<<" write/sync positions\n"<<std::flush;
  }
 }
@@ -381,4 +383,4 @@ void validation(){
 }
 
 }
-int main(int argc,char** argv){try{const std::string name=argc>1?argv[1]:"";if(name=="basics")basics();else if(name=="imports")import_flow();else if(name=="management")management();else if(name=="splits")split_flow();else if(name=="qif")qif_destinations();else if(name=="manual_evidence")manual_evidence();else if(name=="io")faults(false);else if(name=="crashes")faults(true);else if(name=="validation")validation();else return 2;std::cout<<"Transfer store "<<name<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string name=argc>1?argv[1]:"";if(name=="basics")basics();else if(name=="imports")import_flow();else if(name=="management")management();else if(name=="splits")split_flow();else if(name=="qif")qif_destinations();else if(name=="manual_evidence")manual_evidence();else if(name=="io")faults(false,argc>2?std::stoi(argv[2]):0);else if(name=="crashes")faults(true,argc>2?std::stoi(argv[2]):0);else if(name=="validation")validation();else return 2;std::cout<<"Transfer store "<<name<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

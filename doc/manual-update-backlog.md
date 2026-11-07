@@ -175,9 +175,9 @@ No manual text or pictures changed during implementation.
 
 ### MAN-008 — Session Change History and close recovery
 
-Recorded: 2026-11-07. Status: **pending manual pass; session-history implementation complete**.
+Recorded: 2026-11-07. Status: **pending owner-authorized manual pass**.
 Source: [session-history contract](session-history-baseline.md) and
-[implementation progress](status.md#session-history-baseline--2026-11-07).
+[implementation progress](status.md#session-history-correction--2026-11-07).
 
 No manual text, captions or pictures have been changed.
 
@@ -196,10 +196,12 @@ No manual text, captions or pictures have been changed.
 - Review editing/history, acceptance, import-Undo and recovery pictures/captions,
   including `manual/images/import-undo.png`, `manual/images/accept-review.png`,
   and `manual/images/recovery-existing.png`. Capture the revised close-failure
-  dialog if the final walkthrough uses it. Recapture only after the implementation
-  and planned verification-policy follow-up settle; no storage-saving claims.
+  dialog if the final walkthrough uses it. Include the Settings **Check file**
+  button and its result. Recapture only during
+  the owner-authorized manual pass; avoid promising a fixed storage-saving percentage.
 - Explain the already-saved retry message: refresh current transactions; an old
   request cannot execute twice or display expired values as its historical result.
-- Include final normal-open/check-on-request behavior only after the separate
-  verification-policy task is implemented and verified. Check links and bundled
+- Explain normal open/close without a routine full audit, recovery checks after an
+  abnormal shutdown, and Settings **Check file** without ending Undo. Check links
+  and bundled
   Help during the owner-authorized manual pass.

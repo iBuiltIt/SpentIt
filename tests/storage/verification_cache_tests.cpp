@@ -63,15 +63,14 @@ int main(){try{
     Directory d;const auto path=d.path/"dataset",cache=d.path/"cache";
     {auto s=ImportStore::create(path,key,"Synthetic",cad,"2026-10-01");s.opening(0,"2026-10-01",Money(0,cad));s.ingest("input",source,qif::DateOrder::dmy);}
     int audits=0;app::OperationContext context;context.progress=[&](std::string_view phase){if(phase=="Checking file")++audits;};
-    // Open policy is deliberately unchanged in this task. No close cache is
-    // published, so clean opens can still audit until the separate rollout.
+    // Only the first unclean opening audits. Missing caches never trigger audits.
     for(int session=0;session<3;++session){
-        audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check(audits==1);
+        audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check(audits==(session==0?1:0));
         auto row=*s.row({"input",0}).draft;row.memo="session "+std::to_string(session);
         s.save({"input",0},session,row);
         app::OperationContext cancelled;cancelled.request();fails([&]{s.certify(cache,&cancelled);});
-        check(!fs::exists(cache));s.certify(cache,&context);check(audits==1);
-        s.certify(cache,&context);check(audits==1 && !fs::exists(cache));
+        check(!fs::exists(cache));s.certify(cache,&context);check(audits==(session==0?1:0));
+        s.certify(cache,&context);check(audits==(session==0?1:0) && !fs::exists(cache));
     }
     const auto before=bytes(path);fails([&]{ImportStore::open_cached(path,"wrong",cache);});check(bytes(path)==before);
     {auto s=ImportStore::open(path,key);s.backup_to(d.path/"backup",key);}
@@ -82,6 +81,6 @@ int main(){try{
     {auto s=ImportStore::open(path,key);const auto original=bytes(path);auto damaged=original;damaged[8192]^=1;write(path,damaged);fails([&]{s.verify();});write(path,original);}
     const auto gatewayPath=d.path/"gateway",gatewayCache=d.path/"gateway-cache";
     {auto g=document_gateway(gatewayCache);g->create(gatewayPath,false,"","Synthetic",cad,"2026-10-01");g->close();g->open(gatewayPath,std::nullopt);audits=0;g->close_verified(context);check(audits==0 && !fs::exists(gatewayCache));}
-    {auto g=document_gateway(gatewayCache);audits=0;g->open_controlled(gatewayPath,std::nullopt,context);check(audits==1);g->close();}
-    std::cout<<"Open policy retained; close baseline without audit/cache, cancellation, backups, authentication and corruption checks passed\n";
+    {auto g=document_gateway(gatewayCache);audits=0;g->open_controlled(gatewayPath,std::nullopt,context);check(audits==0);g->check_file(context);check(audits==1);g->close();}
+    std::cout<<"Encrypted clean-marker opens/closes without audit/cache, cancellation, backups, authentication and corruption checks passed\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

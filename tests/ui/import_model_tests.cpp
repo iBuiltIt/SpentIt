@@ -59,8 +59,10 @@ public:
     QString groupFaultAction;bool groupInjected=false,cancelGroupResume=false;
     app::ImportRepository& repo() const { return inner->repository(); }
     bool failReviewRefresh=false;
-    bool delayClose=false;
+    bool delayClose=false,failClose=false;
+    void check_file(const app::OperationContext& context) override {inner->check_file(context);}
     void close_verified(const app::OperationContext& context) override {
+        if(failClose)throw std::runtime_error("Injected close failure");
         if(delayClose){context.checkpoint("Checking file");QThread::msleep(1000);}
         inner->close_verified(context);
     }
@@ -926,7 +928,7 @@ private slots:
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
         const auto path=dir.path()+"/doc";create(m,path);if(!m.state().value("bulkSupported").toBool())QSKIP("Bulk format is not enabled");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         const auto source=fixture(dir.path(),"D1/5/2026\nT-10.00\nPSplit\nSFood\nERefund\n$2.00\nSTravel\nEFare\n$-12.00\n^\nD2/5/2026\nT20.00\nPIncome\n^\n");
-        run(m,"import",{{"path",source},{"profile","DMY"}});const auto batch=selected(m).value("batch").toString();
+        run(m,"import",{{"path",source},{"profile","DMY"}});const auto batch=m.state().value("batches").toList().front().toMap().value("id").toString();
         run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});run(m,"preview_bulk",{{"kind","remove"}},false);QVERIFY(m.state().value("active").toBool());
         run(m,"commit");run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});run(m,"select",{{"row",m.occurrenceIndex(batch,1)},{"range",true}});
         QCOMPARE(m.state().value("selectionCount").toInt(),2);
@@ -938,6 +940,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(root,"selectLedgerRow",Q_ARG(QVariant,0),Q_ARG(QVariant,0)));QTRY_VERIFY(!m.busy());
         QVERIFY(QMetaObject::invokeMethod(clearFilter,"clicked"));QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),1);QCOMPARE(m.state().value("selection").toList()[0].toMap().value("ordinal").toInt(),1);
         auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);ledger->forceActiveFocus();QTest::keyClick(window,Qt::Key_End);QTRY_VERIFY(!m.busy());QTest::keyClick(window,Qt::Key_Up,Qt::ShiftModifier);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});run(m,"select",{{"row",m.occurrenceIndex(batch,1)},{"range",true}});
         run(m,"preview_bulk",{{"kind","category"},{"category",""}});QVERIFY(root->findChild<QObject*>("bulkDialog")->property("visible").toBool());
         run(m,"cancel_bulk");QCOMPARE(m.state().value("committed").toString(),"10.00");
         run(m,"preview_bulk",{{"kind","category"},{"category",""}});run(m,"apply_bulk",{{"preview",m.state().value("bulkPreview").toMap().value("id")}});QCOMPARE(m.state().value("committed").toString(),"10.00");
@@ -945,11 +948,13 @@ private slots:
         if(qEnvironmentVariableIsSet("SPENTIT_BULK_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_BULK_SCREENSHOT")));
         run(m,"apply_bulk",{{"preview",m.state().value("bulkPreview").toMap().value("id")}});const auto operation=m.state().value("bulkReceipt").toMap().value("operation");
         QCOMPARE(m.state().value("committed").toString(),"0.00");QCOMPARE(m.state().value("selectionCount").toInt(),0);
-        run(m,"close");run(m,"open",{{"path",path}});run(m,"entry_history",{{"batch",batch},{"ordinal",0}});
+        run(m,"entry_history",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(m.state().value("entryHistory").toList().front().toMap().value("bulkGroup"),operation);
         run(m,"preview_bulk",{{"kind","undo"},{"operation",operation}});run(m,"apply_bulk",{{"preview",m.state().value("bulkPreview").toMap().value("id")}});
         QCOMPARE(m.state().value("committed").toString(),"10.00");
         run(m,"inspect",{{"batch",batch},{"ordinal",0}});auto allocations=selected(m).value("draft").toMap().value("splits").toList();QCOMPARE(allocations.size(),2);QCOMPARE(allocations[0].toMap().value("amount").toString(),"2.00");QCOMPARE(allocations[1].toMap().value("memo").toString(),"Fare");
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"entry_history",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(m.state().value("entryHistory").toList().isEmpty());QCOMPARE(m.state().value("committed").toString(),"10.00");
     }
     void combinedSearchAndSelection() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/doc");
@@ -1088,11 +1093,11 @@ private slots:
         QCOMPARE(window->findChild<QObject*>("operationPhase")->property("text").toString(),QString("Closing file…"));
         window->close();QVERIFY(window->isVisible());
         QTRY_VERIFY_WITH_TIMEOUT(!m.busy() && !m.state().value("active").toBool(),30000);
-        QVERIFY(QDir(dir.path()+"/approval").entryList({"*.verified"},QDir::Files).size()==1);
+        QVERIFY(QDir(dir.path()+"/approval").entryList({"*.verified"},QDir::Files).isEmpty());
     }
     void closingApprovalFailure() {
         QTemporaryDir dir;const auto cache=dir.path()+"/blocked";QFile file(cache);QVERIFY(file.open(QIODevice::WriteOnly));file.write("occupied");file.close();
-        ImportModel m(storage::document_gateway(cache.toStdString()));create(m,dir.path()+"/doc");
+        auto gateway=std::make_unique<OutcomeGateway>();gateway->failClose=true;ImportModel m(std::move(gateway));create(m,dir.path()+"/doc");
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         QVERIFY(QMetaObject::invokeMethod(window,"beginQuit",Q_ARG(QVariant,QVariant(false))));QVERIFY(window->isVisible());
         QVERIFY(m.busy());QVERIFY(window->findChild<QObject*>("activityIndicator")->property("running").toBool());
@@ -1309,7 +1314,7 @@ private slots:
         {auto store=storage::ImportStore::create(path,"synthetic","Account",Currency("CAD"),"2026-01-01");
          store.ingest("one","D1/1/2026\nT1.00\nPSynthetic\n^\n",qif::DateOrder::dmy);}
         QFile file(QString::fromStdString(path));QVERIFY(file.open(QIODevice::ReadOnly));const auto original=file.readAll();file.close();
-        for(const auto phase:{"Opening file","Checking file","Checking imported transactions","Verifying category history","Verifying committed change history"}) {
+        for(const auto phase:{"Opening file","Checking file","Checking imported transactions","Verifying category history","Verifying baseline and session changes"}) {
             app::OperationContext context;bool reached=false;
             context.progress=[&](std::string_view value){if(value==phase){reached=true;context.request();}};
             QVERIFY_THROWS_EXCEPTION(app::OperationCancelled,storage::ImportStore::open(path,"synthetic",&context));
@@ -2333,6 +2338,7 @@ private slots:
         payee->setProperty("text","Row 40 Stefan");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));payee->forceActiveFocus();payee->setProperty("cursorPosition",13);
         const auto y=editor->mapToScene(QPointF(0,0)).y();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());
         QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QTRY_COMPARE(selected(m).value("draft").toMap().value("payee").toString(),QString("Row 40 Stefan"));
+        QVERIFY(m.state().value("canUndoEdit").toBool());run(m,"check_file");QVERIFY(m.state().value("canUndoEdit").toBool());
         QTRY_VERIFY(payee->hasActiveFocus());QTRY_VERIFY(qAbs(editor->mapToScene(QPointF(0,0)).y()-y)<2);QCOMPARE(payee->property("cursorPosition").toInt(),13);
         QCOMPARE(m.state().value("selectionIndex").toInt(),m.occurrenceIndex(batch,40));QVERIFY(m.state().value("canUndoEdit").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_EDITOR_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_EDITOR_SCREENSHOT")));

@@ -12,6 +12,7 @@ app::ReviewReceipt ImportStore::apply_account_rules(std::string_view operation,c
     if(!rules_supported())fail(SQLITE_SCHEMA,rules_dataset);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     const auto encoded=account_rule_request(request);
+    const auto request_hash=session_snapshot::digest(encoded);session_snapshot::retry(impl_->db,operation,"account-rules",request_hash);
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='rules-account'");saved.text(1,operation);
         if(!saved.row() || saved.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,reused_command);
@@ -45,6 +46,7 @@ app::ReviewReceipt ImportStore::apply_account_rules(std::string_view operation,c
         write_review_row(operation,std::string(operation)+"-rule-"+std::to_string(++serial),record.identity,record.proposal.after,row.decision,true,false,false,request.ruleset_revision,unchanged_balance);
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();
+    session_snapshot::completed(impl_->db,operation,"account-rules",request_hash);
     finish([&]{context.seal();transaction.commit();});
     return {std::string(operation)};
 }

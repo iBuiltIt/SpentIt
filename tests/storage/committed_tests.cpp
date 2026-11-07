@@ -97,7 +97,7 @@ void sessions() {
         store.certify({},&context);check(audits==0);
     }
     for(int session=0;session<3;++session){
-        audits=0;auto store=ImportStore::open_cached(path,password,dir.path/"missing-cache",&context);check(audits==1);
+        audits=0;auto store=ImportStore::open_cached(path,password,dir.path/"missing-cache",&context);check(audits==0);
         check(store.committed_changes().empty() && store.committed_history(first).empty());
         check(store.committed_balance().units()==12000);
         check(store.committed_entry(first).current.draft.transaction.original_imported_amount()->units()==-2931);
@@ -145,10 +145,18 @@ void session_pruning() {
         check(count_rows(path,"SELECT count(*) FROM entry_revisions WHERE batch='first' AND ordinal=0")==2);
         check(count_rows(path,"SELECT count(*) FROM entry_revisions WHERE revision>0 AND memo LIKE 'Expired synthetic memo %'")==1);
         check(count_rows(path,"SELECT count(*) FROM command_completions WHERE expired=1")==8*(generation+1));
+        check(count_rows(path,"SELECT count(*) FROM sqlite_master WHERE name IN('snapshot_facts','allocation_origins')")==0);
+        check(count_rows(path,"SELECT count(*) FROM ledger_operations WHERE kind IN(1,2,3)")==0);
+        check(count_rows(path,"SELECT count(*) FROM events WHERE kind='save'")<=generation+1);
         {auto s=ImportStore::open(path,password);check(s.committed_changes().empty());check(s.committed_balance().units()==11993);s.verify();s.certify({});}
     }
     {auto s=ImportStore::open(path,password);s.backup_to(dir.path/"backup",password);}
     {auto s=ImportStore::open(dir.path/"backup",password);s.verify();check(s.committed_balance().units()==11993);}
+    const auto currency_path=dir.path/"currency";prepare(currency_path);
+    {auto s=ImportStore::open(currency_path,password);s.reassign_currency("sterling",Currency("GBP"));const auto e=s.committed_entry(first);auto d=e.current.draft;d.payee="Current currency baseline";d.payee_owner=FieldOwnership::manual;s.edit_transaction("currency-edit",first,revision(s,first.batch),e.token,d);s.verify();s.certify({});}
+    check(count_rows(currency_path,"SELECT count(*) FROM account_amount_revisions a WHERE a.kind IN(2,3) AND NOT EXISTS(SELECT 1 FROM entry_revisions e WHERE e.batch=a.batch AND e.ordinal=a.ordinal AND e.revision=a.revision)")==0);
+    {auto s=ImportStore::open(currency_path,password);check(s.committed_balance()==Money(12069,Currency("GBP")));s.verify();s.reassign_currency("cad-again",cad);s.verify();s.certify({});}
+    {auto s=ImportStore::open(currency_path,password);check(s.committed_balance()==Money(12069,cad));s.verify();s.certify({});}
 }
 
 void session_editor() {
@@ -182,6 +190,21 @@ void session_editor() {
         check(!store.committed_entry(first).current.active);store.verify();store.certify({});
     }
     {auto store=ImportStore::open(path,password);store.verify();check(!store.committed_entry(first).current.active);}
+}
+
+void session_linked_pruning() {
+    Directory dir;const auto path=dir.path/"linked";
+    {auto s=ImportStore::create(path,password,"Checking",cad,"2026-01-01");s.create_account(2,"Savings",cad,"2026-01-01");
+     s.ingest("out","D01/01/2026\nT-10\nPPayment\n^\n",qif::DateOrder::dmy);
+     const auto row=s.row({"out",0});app::TransferRequest r{};r.action=app::TransferAction::retarget;r.mode=1;r.link="link";r.kept="kept";r.expected_sequence=s.transfer_sequence();r.batch_revision=revision(s,"out");
+     r.left=transfers::AllocationFact{{1,{"out",0},row.draft->transaction.allocations().front().identity},Money(-1000,cad),row.draft->date,transfers::State::draft,true};r.generated=transfers::Endpoint{2,{"~transfer-link",0},"generated"};r.generated_currency=cad.definition_id();app::OperationContext c;s.assign_transfer_batch("assign",{r},c);s.accept_all("accept",true);s.certify({});}
+    for(int session=0;session<3;++session){
+        {auto s=ImportStore::open(path,password);for(int edit=0;edit<8;++edit){const auto e=s.committed_entry({"out",0});auto d=e.current.draft;d.memo="Linked memo "+std::to_string(session*8+edit);d.memo_owner=FieldOwnership::manual;s.edit_transaction("linked-"+std::to_string(session*8+edit),{"out",0},revision(s,"out"),e.token,d);}app::LedgerSelectionEdit deletion;deletion.action=app::LedgerSelectionAction::remove;deletion.account=1;deletion.generation=s.ledger_edit_generation();deletion.selected={{"out",0}};app::OperationContext c;const auto op="delete-"+std::to_string(session);s.edit_transactions(op,deletion,c);s.undo_transaction_edit(op+"-undo",op);s.verify();s.certify({});}
+        check(count_rows(path,"SELECT count(*) FROM review_answers WHERE question='ledger-delete' OR question LIKE 'ledger-delete-%'")==0);
+        check(count_rows(path,"SELECT count(*) FROM review_link_history h JOIN review_answers a ON a.id=h.answer WHERE a.question='ledger-edit'")<=1);
+        check(count_rows(path,"SELECT count(*) FROM entry_revisions WHERE batch='out' AND ordinal=0")<=4);
+        {auto s=ImportStore::open(path,password);check(s.committed_balance()==Money(-1000,cad));check(s.committed_changes().empty());s.verify();s.select_account(2);check(s.committed_balance()==Money(1000,cad));s.certify({});}
+    }
 }
 
 void session_duplicates() {
@@ -232,10 +255,9 @@ void session_corruption() {
     {auto s=ImportStore::open(seed,password);apply(s,"first-edit",correction(s,first,-3000));apply(s,"second-edit",correction(s,first,-3100));s.certify({});}
     int serial=0;
     for(const auto* sql:{
-        "DROP TRIGGER ledger_operations_immutable; UPDATE ledger_operations SET preview_sequence=999 WHERE id='first-edit'",
-        "DROP TRIGGER entry_revisions_immutable; UPDATE entry_revisions SET memo='silently changed' WHERE batch='first' AND ordinal=0 AND revision=2",
-        "DROP TRIGGER snapshot_identity; UPDATE snapshot_facts SET total=total+1 WHERE kind=1 AND batch='first' AND ordinal=0 AND revision=1",
-        "DROP TRIGGER snapshot_keep; DELETE FROM snapshot_facts WHERE kind=1 AND batch='first' AND ordinal=0 AND revision=1"}){
+        "DROP TRIGGER entry_revisions_immutable; UPDATE entry_revisions SET total=total+1 WHERE batch='first' AND ordinal=0 AND revision=2",
+        "DROP TRIGGER record_immutable; UPDATE records SET original=original+1 WHERE batch='first' AND ordinal=0",
+        "DROP TRIGGER head_step; UPDATE entry_heads SET revision=999 WHERE batch='first' AND ordinal=0"}){
         const auto path=dir.path/("damaged-"+std::to_string(serial++));check(fs::copy_file(seed,path));
         sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
         check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
@@ -349,7 +371,7 @@ void history() {
     check(std::count_if(items.begin(),items.end(),[](const auto& item){return item.kind==app::ChangeKind::publication;})==1);
     for(const auto& item:items)if(item.kind==app::ChangeKind::publication)check(!item.undo_eligible);
     const auto unchanged=bytes(dir.path/"doc");
-    for(const auto phase:{"Verifying committed change history","Verifying category history"}) {
+    for(const auto phase:{"Verifying baseline and session changes","Verifying category history"}) {
         app::OperationContext cancelled;bool reached=false,stopped=false;
         cancelled.progress=[&](std::string_view at){if(at==phase){reached=true;cancelled.request();}};
         try{store.verify(&cancelled);}catch(const app::OperationCancelled&){stopped=true;}
@@ -586,7 +608,7 @@ void faults(bool crash) {
 int main(int argc,char** argv) {
     try {
         const std::string mode=argc>1?argv[1]:"";
-        if(mode=="session_marker_faults")session_marker_faults();else if(mode=="session_corruption")session_corruption();else if(mode=="session_editor")session_editor();else if(mode=="session_pruning")session_pruning();else if(mode=="session_duplicates")session_duplicates();else if(mode=="session_faults")session_faults();else if(mode=="sessions")sessions();else if(mode=="basics")basics();else if(mode=="history")history();else if(mode=="review")review();
+        if(mode=="session_linked_pruning")session_linked_pruning();else if(mode=="session_marker_faults")session_marker_faults();else if(mode=="session_corruption")session_corruption();else if(mode=="session_editor")session_editor();else if(mode=="session_pruning")session_pruning();else if(mode=="session_duplicates")session_duplicates();else if(mode=="session_faults")session_faults();else if(mode=="sessions")sessions();else if(mode=="basics")basics();else if(mode=="history")history();else if(mode=="review")review();
         else if(mode=="dependencies")dependencies();else if(mode=="exact")exact();else if(mode=="backup")backup();
         else if(mode=="legacy")legacy();else if(mode=="validation")validation();else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;
         std::cout<<"Committed "<<mode<<" passed\n";

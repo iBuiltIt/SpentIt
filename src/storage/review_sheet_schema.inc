@@ -15,9 +15,9 @@ CREATE TABLE review_sources(answer TEXT NOT NULL REFERENCES review_answers(id),s
 CREATE TABLE review_merges(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,target_batch TEXT NOT NULL,target_ordinal INTEGER NOT NULL,answer TEXT NOT NULL REFERENCES review_answers(id),PRIMARY KEY(batch,ordinal)) STRICT;
 CREATE TABLE review_link_history(answer TEXT NOT NULL REFERENCES review_answers(id),identity TEXT NOT NULL,prior_payload BLOB,result_payload BLOB NOT NULL,operation TEXT NOT NULL,PRIMARY KEY(answer,identity)) STRICT;
 CREATE TRIGGER review_answers_immutable BEFORE UPDATE ON review_answers BEGIN SELECT RAISE(ABORT,'Review history is immutable'); END;
-CREATE TRIGGER review_answers_keep BEFORE DELETE ON review_answers BEGIN SELECT RAISE(ABORT,'Review history is retained'); END;
+CREATE TRIGGER review_answers_keep BEFORE DELETE ON review_answers WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Review history is retained'); END;
 CREATE TRIGGER review_undos_immutable BEFORE UPDATE ON review_undos BEGIN SELECT RAISE(ABORT,'Review history is immutable'); END;
-CREATE TRIGGER review_undos_keep BEFORE DELETE ON review_undos BEGIN SELECT RAISE(ABORT,'Review history is retained'); END;
+CREATE TRIGGER review_undos_keep BEFORE DELETE ON review_undos WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Review history is retained'); END;
 CREATE TRIGGER review_members_immutable BEFORE UPDATE ON review_members BEGIN SELECT RAISE(ABORT,'Review history is immutable'); END;
 CREATE TRIGGER review_members_keep BEFORE DELETE ON review_members WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Review history is retained'); END;
 CREATE TRIGGER review_choices_immutable BEFORE UPDATE ON review_choices BEGIN SELECT RAISE(ABORT,'Review history is immutable'); END;
@@ -31,5 +31,5 @@ CREATE TRIGGER review_undo_collision BEFORE INSERT ON review_undos WHEN EXISTS(S
 CREATE TRIGGER registry_review_collision BEFORE INSERT ON operation_registry WHEN EXISTS(SELECT 1 FROM review_answers WHERE id=NEW.id) OR EXISTS(SELECT 1 FROM review_undos WHERE id=NEW.id) BEGIN SELECT RAISE(ABORT,'Operation identity belongs to Review'); END;
 CREATE TRIGGER acceptance_review_collision BEFORE INSERT ON dataset_acceptances WHEN EXISTS(SELECT 1 FROM review_answers WHERE id=NEW.id) OR EXISTS(SELECT 1 FROM review_undos WHERE id=NEW.id) BEGIN SELECT RAISE(ABORT,'Operation identity belongs to Review'); END;
 CREATE TRIGGER review_undo_members_immutable BEFORE UPDATE ON review_undo_members BEGIN SELECT RAISE(ABORT,'Review history is immutable'); END;
-CREATE TRIGGER review_undo_members_keep BEFORE DELETE ON review_undo_members BEGIN SELECT RAISE(ABORT,'Review history is retained'); END;
+CREATE TRIGGER review_undo_members_keep BEFORE DELETE ON review_undo_members WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Review history is retained'); END;
 )SQL";

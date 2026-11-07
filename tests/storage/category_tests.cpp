@@ -99,8 +99,8 @@ void income_review(){Directory dir;
  {auto s=ImportStore::open(dir.path/"doc",password);check(definition(s,"parking").income && !s.review_sheet().can_undo);s.verify();}
 }
 void setup(){Directory dir;
- {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check(s.category_catalog().categories.size()==41);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}
- {auto s=ImportStore::open(dir.path/"backup",password);check(s.date_format()=="MM/DD/YYYY" && s.category_catalog().categories.size()==41);s.verify();}
+ {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check(s.category_catalog().categories.size()==46);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}
+ {auto s=ImportStore::open(dir.path/"backup",password);check(s.date_format()=="MM/DD/YYYY" && s.category_catalog().categories.size()==46);s.verify();}
  {auto s=ImportStore::create(dir.path/"empty",password,"Empty",cad,"2026-10-28",false,{"YYYYMMDD",false});check(s.date_format()=="YYYYMMDD" && s.category_catalog().categories.empty());}
  no_leaks(dir.path);
 }

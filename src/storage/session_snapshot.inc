@@ -1,5 +1,5 @@
-// Snapshot facts are written with the checked mutation. Baseline publication
-// drops payloads, never financial identities, conflict tokens or retry identity.
+// Only command request digests survive ordinary history expiry. Snapshot
+// interpretation belongs to the retained payload, never to a parallel archive.
 namespace session_snapshot {
 std::string digest(std::string_view bytes) {
     unsigned char result[EVP_MAX_MD_SIZE];unsigned length=0;
@@ -28,15 +28,14 @@ void retry(sqlite3* db,std::string_view id,std::string_view domain,std::string_v
     if(row.bytes(0)!=domain || row.bytes(1)!=hash)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");
     if(row.integer(2))throw app::OperationAlreadyCompleted(std::string(id));
 }
-void completed(sqlite3* db,std::string_view id,std::string_view domain,std::string_view hash){Statement row(db,"INSERT INTO command_completions VALUES(?,?,?,0)");row.text(1,id);row.text(2,domain);row.blob(3,hash);row.done();}
-void save(sqlite3* db,bool entry,const imports::Occurrence& id,std::int64_t revision,int active,const imports::DraftRow& d){
-    Statement row(db,"INSERT INTO snapshot_facts VALUES(?,?,?,?,?,?,?,?,0)");row.integer(1,entry);row.text(2,id.batch);row.integer(3,integer(id.ordinal));row.integer(4,revision);row.integer(5,active);row.integer(6,d.transaction.effective_total().units());row.text(7,d.transaction.effective_total().currency().definition_id());row.blob(8,image(d));row.done();
-    for(const auto& a:d.transaction.allocations()){
-        Statement prior(db,"SELECT source_ordinal FROM allocation_origins WHERE batch=? AND ordinal=? AND identity=?");prior.text(1,id.batch);prior.integer(2,integer(id.ordinal));prior.text(3,a.identity);
-        if(prior.row()){if(prior.null(0)!=!a.source_ordinal || (a.source_ordinal && prior.integer(0)!=integer(*a.source_ordinal)))fail(SQLITE_CONSTRAINT,"Allocation identity was rebound");}
-        else {Statement origin(db,"INSERT INTO allocation_origins VALUES(?,?,?,?)");origin.text(1,id.batch);origin.integer(2,integer(id.ordinal));origin.text(3,a.identity);if(a.source_ordinal)origin.integer(4,integer(*a.source_ordinal));origin.done();}
-    }
+void expired(sqlite3* db,std::string_view id,std::string_view domain){
+    Statement row(db,"SELECT domain FROM command_completions WHERE id=? AND expired=1");row.text(1,id);
+    if(row.row()){if(row.bytes(0)!=domain)fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");throw app::OperationAlreadyCompleted(std::string(id));}
 }
-bool baseline(sqlite3* db,bool entry,const imports::Occurrence& id,std::int64_t revision){Statement row(db,"SELECT baseline FROM snapshot_facts WHERE kind=? AND batch=? AND ordinal=? AND revision=?");row.integer(1,entry);row.text(2,id.batch);row.integer(3,integer(id.ordinal));row.integer(4,revision);if(!row.row())fail(SQLITE_CORRUPT,"Snapshot facts are missing");return row.integer(0)!=0;}
-void check(sqlite3* db,bool entry,const imports::Occurrence& id,std::int64_t revision,int active,const imports::DraftRow& d){Statement row(db,"SELECT active,total,definition,digest FROM snapshot_facts WHERE kind=? AND batch=? AND ordinal=? AND revision=?");row.integer(1,entry);row.text(2,id.batch);row.integer(3,integer(id.ordinal));row.integer(4,revision);if(!row.row() || row.integer(0)!=active || row.integer(1)!=d.transaction.effective_total().units() || row.bytes(2)!=d.transaction.effective_total().currency().definition_id() || row.bytes(3)!=image(d))fail(SQLITE_CORRUPT,"Snapshot does not match its checked financial state");}
+void completed(sqlite3* db,std::string_view id,std::string_view domain,std::string_view hash){Statement row(db,"INSERT INTO command_completions VALUES(?,?,?,0)");row.text(1,id);row.text(2,domain);row.blob(3,hash);row.done();}
+bool baseline(sqlite3* db,bool entry,const imports::Occurrence& id,std::int64_t revision){
+    Statement row(db,entry?"SELECT baseline FROM entry_fields WHERE batch=? AND ordinal=? AND revision=?":"SELECT baseline FROM draft_fields WHERE batch=? AND ordinal=? AND revision=?");
+    row.text(1,id.batch);row.integer(2,integer(id.ordinal));row.integer(3,revision);
+    if(!row.row())fail(SQLITE_CORRUPT,"Snapshot metadata is missing");return row.integer(0)!=0;
+}
 }
