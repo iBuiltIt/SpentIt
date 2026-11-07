@@ -1,5 +1,20 @@
 # Project status
 
+## Manual-transaction test wait — 2026-11-06
+
+Corrected `manualTransactionEntry` under owner Go to wait for the second deletion
+preview dialog before invoking Delete. The preceding delete and Undo already
+succeeded; the test previously attempted its second deletion while the preview
+worker was busy, so the command was rejected and the restored row survived reopen.
+This was test synchronization, not an Undo/storage failure. Production code and
+the selection-edit History UI remain unchanged; no manual update is needed.
+
+Rebuilt the rules-enabled Release navigation-test target. The focused offscreen
+`manualTransactionEntry` run passed on macOS (3/3 including setup/cleanup,
+1787 ms), with application-data lock access. The existing float-to-int warnings
+in screenshot test code remain. `git diff --check` passed. The full navigation
+suite and other platforms were not rerun for this test-only correction.
+
 ## Navigation and Settings cleanup — 2026-11-06
 
 Owner-approved layout follow-up: the file path now sits directly below Current
@@ -29,7 +44,8 @@ The first navigation run could not create application-data locks under the
 sandbox. Rerunning with that access completed in 19.70 s: 21 passed, one failed,
 one opt-in diagnostics case skipped. `guardedNavigationAndIsolation`,
 `ledgerViewportSurvivesCategoryNavigation` and `appearanceSwitching` passed.
-`manualTransactionEntry` failed at its existing line 319 assertion: after Undo,
+`manualTransactionEntry` failed at its existing line 319 assertion: after a second
+delete attempt and reopening,
 `occurrenceIndex(batch,0)` was 1 instead of -1. This manual-entry failure was not
 investigated or changed in this narrow presentation work; the full suite is not
 claimed passing. Native visual inspection and Linux/Windows remain unverified.
