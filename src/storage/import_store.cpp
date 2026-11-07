@@ -9,6 +9,7 @@ namespace diag = spentit::diagnostics;
 #include <sys/stat.h>
 #endif
 #include <set>
+#include <list>
 #include <tuple>
 #include <map>
 #include <unordered_set>
@@ -68,6 +69,9 @@ public:
     bool revision_complete=true;
     const app::OperationContext* revision_context=nullptr;
     void clear_revisions(){revision_history.clear();revision_sequence=0;revision_bytes=0;revision_complete=true;}
+    struct CurrencyTimeline {std::vector<std::pair<std::int64_t,Currency>> values;bool complete=false;};
+    struct AuditCurrencies {std::map<std::int64_t,CurrencyTimeline> accounts;std::size_t bytes=0,members=0;};
+    AuditCurrencies* audit_currencies=nullptr;
     std::optional<std::string> format_version;
     std::string alias_signature;
     std::optional<std::vector<app::AccountAlias>> aliases;
@@ -943,9 +947,30 @@ struct ImportStore::Impl {
     sqlite3_int64 opening_audit_changes=-1;
     mutable VerificationRows* verification_rows=nullptr;
     struct AuditEntries {
-        std::map<std::pair<imports::Occurrence,std::int64_t>,app::EntrySnapshot> values;
+        using Key=std::pair<imports::Occurrence,std::int64_t>;
+        struct Value {app::EntrySnapshot snapshot;std::size_t bytes;bool rolling;std::list<const Key*>::iterator recent;};
+        std::map<Key,Value> values;
+        std::list<const Key*> recent;
         std::size_t bytes=0;
+        void touch(const Key& key){auto& value=values.at(key);if(value.rolling)recent.splice(recent.begin(),recent,value.recent);}
+        void remember(const Key& key,const app::EntrySnapshot& value,std::size_t size){
+            constexpr std::size_t limit=64*1024*1024,stable=60*1024*1024;
+            if(size>limit)return;
+            if(values.contains(key)){touch(key);return;}
+            // A sequential pass must not evict the entire preceding pass. Keep
+            // a stable prefix and use the remaining budget for local reuse.
+            const bool rolling=bytes>stable || size>stable-bytes || values.size()>=61440;
+            while(!recent.empty() && (values.size()>=65536 || size>limit-bytes)){
+                const auto old=values.find(*recent.back());bytes-=old->second.bytes;
+                recent.pop_back();values.erase(old);
+            }
+            if(values.size()>=65536 || size>limit-bytes)return;
+            auto [it,inserted]=values.emplace(key,Value{value,size,rolling,{}});
+            if(rolling){recent.push_front(&it->first);it->second.recent=recent.begin();}
+            bytes+=size;
+        }
     };
+
     mutable AuditEntries* audit_entries=nullptr;
     struct AuditRestores {
         bool loaded=false,complete=false;
@@ -2048,6 +2073,10 @@ void ImportStore::verify(const app::OperationContext* context) const {
     impl_->verifying=true;
     impl_->read_rows=VerificationRows{};impl_->read_rows_changes=-1;impl_->read_stamps.clear();
     VerificationRows verified_rows;
+    ScopedStatements::AuditCurrencies currencies;
+    auto* plans=ScopedStatements::current(impl_->db);
+    struct CurrencyGuard {ScopedStatements* scope;ScopedStatements::AuditCurrencies* prior;~CurrencyGuard(){scope->audit_currencies=prior;}} currency_guard{plans,plans->audit_currencies};
+    plans->audit_currencies=&currencies;
     Impl::AuditRestores restores;
     struct RestoresGuard {Impl& state;Impl::AuditRestores* prior;~RestoresGuard(){state.audit_restores=prior;}} restores_guard{*impl_,impl_->audit_restores};
     impl_->audit_restores=&restores;

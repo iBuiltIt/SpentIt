@@ -40,6 +40,34 @@ void pin_source_currency(sqlite3* db,std::string_view batch,const Currency& curr
     Statement row(db,"INSERT INTO batch_source_currency VALUES(?,?)");row.text(1,batch);row.text(2,currency.definition_id());row.done();
 }
 Currency currency_as_of(sqlite3* db,std::int64_t account,std::int64_t sequence) {
+    // Audit-only immutable timelines. Mutation paths always read the database.
+    if(auto* scope=ScopedStatements::current(db);scope && scope->audit_currencies){
+        auto& cache=*scope->audit_currencies;
+        auto found=cache.accounts.find(account);
+        if(found==cache.accounts.end() && cache.accounts.size()<4096){
+            auto& timeline=cache.accounts[account];
+            Statement initial(db,"SELECT definition FROM account_creations WHERE identity=?");initial.integer(1,account);
+            if(!initial.row())fail(SQLITE_CORRUPT);
+            timeline.values.emplace_back(0,Currency::from_definition(initial.bytes(0)));
+            std::size_t bytes=256+initial.bytes(0).size(),members=1;
+            Statement history(db,"SELECT h.sequence,o.definition FROM account_operations o CROSS JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND (o.kind=5 OR (o.kind=6 AND EXISTS(SELECT 1 FROM account_operations u WHERE u.id=o.undo_of AND u.kind=5))) ORDER BY h.sequence");history.integer(1,account);
+            bool fits=bytes<=32*1024*1024-cache.bytes && members<=65536-cache.members;
+            while(fits && history.row()){
+                if(scope->revision_context)scope->revision_context->checkpoint();
+                auto definition=history.bytes(1);bytes+=256+definition.size();++members;
+                fits=bytes<=32*1024*1024-cache.bytes && members<=65536-cache.members;
+                if(fits){if(history.integer(0)<=timeline.values.back().first)fail(SQLITE_CORRUPT,"Invalid currency history order");timeline.values.emplace_back(history.integer(0),Currency::from_definition(definition));}
+            }
+            if(fits){timeline.complete=true;cache.bytes+=bytes;cache.members+=members;}
+            else decltype(timeline.values){}.swap(timeline.values); // Exact original query is the bounded fallback.
+            found=cache.accounts.find(account);
+        }
+        if(found!=cache.accounts.end() && found->second.complete){
+            const auto& values=found->second.values;
+            const auto after=std::upper_bound(values.begin(),values.end(),sequence,[](auto order,const auto& value){return order<value.first;});
+            return after==values.begin()?values.front().second:std::prev(after)->second;
+        }
+    }
     Statement created(db,"SELECT definition FROM account_creations WHERE identity=?");created.integer(1,account);
     if(!created.row()) fail(SQLITE_CORRUPT);
     auto id=created.bytes(0);

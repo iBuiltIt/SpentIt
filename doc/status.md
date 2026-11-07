@@ -10,10 +10,29 @@ source reconstructions for 50k rows and 360,564 snapshot reconstructions for 150
 distinct revisions. Full-scan work scaled with rows; repeated targeted reads
 drove most of the excess work. All profiled financial assertions passed.
 
-The [50k profiling report](audit-50k-profile.md) proposes bounded transaction-local
-working sets/rolling audit caches, ordered snapshot/metadata reads, and reuse of
-audited currency timelines. These preserve validation and remain proposals pending
-owner Go. No application behavior changed during this investigation.
+The owner subsequently authorized implementation. Transaction-local source reuse,
+a stable/rolling snapshot cache, ordered snapshot/metadata reads and audit-only
+currency timelines are implemented; see the [follow-up report](audit-50k-profile.md).
+Whole-cache LRU was measured and rejected because sequential passes increased
+reconstructions. All integrity, exact replay, ownership and financial validation
+remain enabled; cancellation, durable transaction boundaries and Undo are unchanged.
+Final serial synthetic Release measurements: the 15k full-audit median fell from
+11.59 s to 9.68 s (three runs, 16.5% faster), and the 50k audit fell from 73.77 s
+to 57.97 s (single runs, 21.4% faster). Final 15k Delete/Undo medians were
+8.15 / 6.96 s; Undo was 3.6% slower than the prior 6.72 s median. The 50k
+Delete/Undo measured 28.39 / 21.82 s. The final counter run confirmed 31.4% fewer
+source reconstructions and 28.9% fewer SQL step calls with unchanged full-scan
+validation work. Final 20k/36k audits passed at 13.56 / 30.97 s, and five
+Delete/Undo/audit cycles on 5k rows passed as history grew to 55k snapshots.
+Large-history audit growth is still nonlinear.
+
+Formats remain 58/57. Verification includes 36 selected Release checks before the
+cache-policy adjustment, ten focused final Release checks, six final rules-disabled
+and six final ASan/UBSan checks, and a final Release byte-budget eviction fixture
+covering cancellation/retry, reopened Undo and historical corruption rejection.
+The earlier whole-cache LRU eviction fixture also passed ASan/UBSan. The Release
+application is rebuilt; native large-selection interaction and Linux/Windows
+remain unverified. No manual changes are needed for this internal optimization.
 
 ## Undo/audit performance follow-up — 2026-11-06
 

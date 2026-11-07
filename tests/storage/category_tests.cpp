@@ -216,6 +216,10 @@ void validation(){const char* damage[]={
  "DROP TRIGGER entry_allocation_meta_immutable;UPDATE entry_allocation_meta SET catalog_revision=999 WHERE batch='first' AND ordinal=0 AND revision=1 AND position=0",
  "DROP TRIGGER entry_fields_immutable;UPDATE entry_fields SET payee_owner=3 WHERE batch='first' AND ordinal=0 AND revision=1",
  "DROP TRIGGER entry_allocation_meta_immutable;UPDATE entry_allocation_meta SET source_ordinal=NULL WHERE batch='first' AND ordinal=0 AND revision=1 AND position=0",
+ // Ordered audit streams must not hide missing or displaced metadata.
+ "DROP TRIGGER entry_fields_keep;DELETE FROM entry_fields WHERE batch='first' AND ordinal=0 AND revision=1",
+ "DROP TRIGGER entry_allocation_meta_keep;DELETE FROM entry_allocation_meta WHERE batch='first' AND ordinal=0 AND revision=1 AND position=0",
+ "DROP TRIGGER entry_allocation_meta_immutable;UPDATE entry_allocation_meta SET position=9 WHERE batch='first' AND ordinal=0 AND revision=1 AND position=0",
  // Different text cannot claim source ownership; an exact Restore is allowed.
  "DROP TRIGGER entry_fields_immutable;UPDATE entry_fields SET payee_owner=1 WHERE batch='first' AND ordinal=0 AND revision=2",
  "DROP TRIGGER category_versions_immutable;UPDATE category_versions SET income=1 WHERE id='parking' AND revision=0",

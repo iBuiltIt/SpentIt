@@ -536,6 +536,27 @@ void deletion_benchmark(const std::filesystem::path& dir,int count){
     timed("Undo",[&]{s.undo_transaction_edit("undo","delete");});check(s.balance()==balance && s.current_ledger().size()==ids.size(),"Benchmark Undo restores all rows and balance");
     timed("full audit",[&]{s.verify();});
 }
+// Opt-in large-text fixture crosses both audit byte budgets with fewer rows.
+void audit_eviction_tests(const std::filesystem::path& dir){
+    const auto path=dir/"audit-eviction";const Currency cad("CAD");
+    constexpr int count=10000;const std::string memo(6000,'x');
+    {auto s=ImportStore::create(path,"test","Audit",cad,"2026-01-01");
+    std::string records="!Type:Bank\n";std::vector<imports::Occurrence> ids;
+    for(int i=0;i<count;++i){records+="D01/01/2026\nT-"+std::to_string(i+1)+"\nPTransaction "+std::to_string(i)+"\nM"+memo+"\n^\n";ids.push_back({"rows",static_cast<std::size_t>(i)});}
+    s.ingest("rows",records,qif::DateOrder::dmy);records.clear();records.shrink_to_fit();s.accept_all("accept",false);const auto balance=s.balance();
+    OperationContext apply;s.edit_transactions("delete",selection_request(s,LedgerSelectionAction::remove,ids),apply);
+    s.undo_transaction_edit("undo","delete");check(s.balance()==balance,"Eviction Undo preserves balance");
+    OperationContext cancelled;bool reached=false,stopped=false;
+    cancelled.progress=[&](auto phase){if(phase=="Verifying committed change history"){reached=true;cancelled.request();}};
+    try{s.verify(&cancelled);}catch(const OperationCancelled&){stopped=true;}
+    check(reached && stopped,"Cancellation after category cache eviction");s.verify();
+    for(const auto& row:s.current_ledger())check(row.draft.memo==memo,"Eviction preserves long source text");}
+    {auto s=ImportStore::open(path,"test");check(s.current_ledger().size()==count,"Reopened eviction audit");}
+    sqlite3* raw=nullptr;check(sqlite3_open(path.c_str(),&raw)==SQLITE_OK,"Open synthetic corruption fixture");check(sqlite3_key(raw,"test",4)==SQLITE_OK,"Synthetic key");
+    check(sqlite3_exec(raw,"DROP TRIGGER entry_allocation_meta_immutable;UPDATE entry_allocation_meta SET position=9 WHERE batch='rows' AND ordinal=9999 AND revision=1 AND position=0",nullptr,nullptr,nullptr)==SQLITE_OK,"Displace final-row historical metadata");check(sqlite3_close(raw)==SQLITE_OK,"Close synthetic corruption fixture");
+    bool rejected=false;try{ImportStore::open(path,"test");}catch(const std::exception&){rejected=true;}check(rejected,"Corruption beyond cache boundaries rejected");
+    std::cout<<"Audit byte-budget eviction, cancellation, retry, reopened Undo and late historical corruption passed\n";
+}
 void linked_deletion_tests(const std::filesystem::path& dir){
     const Currency cad("CAD");
     for(int mode=0;mode<8;++mode){
@@ -784,6 +805,7 @@ int main(int argc,char** argv){
     try{
         if(argc>1 && std::string(argv[1])=="acceptance_order"){acceptance_order_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="deletion_faults"){deletion_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="audit_eviction"){audit_eviction_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="deletion_benchmark"){deletion_benchmark(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):15000);std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="deletion"){linked_deletion_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="large_review"){large_review_batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

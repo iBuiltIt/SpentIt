@@ -261,14 +261,16 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
         Statement registry(impl_->db,"SELECT 1 FROM operation_registry r WHERE (domain=0 AND NOT EXISTS(SELECT 1 FROM ledger_operations o WHERE o.id=r.id)) OR (domain=1 AND NOT EXISTS(SELECT 1 FROM category_operations o WHERE o.id=r.id)) OR (domain=4 AND NOT EXISTS(SELECT 1 FROM account_operations o WHERE o.id=r.id)) OR (domain=5 AND NOT EXISTS(SELECT 1 FROM dataset_acceptances o WHERE o.id=r.id)) OR (domain=6 AND NOT EXISTS(SELECT 1 FROM link_exclusion_events o WHERE o.operation=r.id))");if(registry.row())fail(SQLITE_CORRUPT);
     }
     for(bool entry:{false,true}){
+        std::optional<app::RowView> working_head;
         Statement rows(impl_->db,entry?"SELECT batch,ordinal,revision FROM entry_values ORDER BY batch,ordinal,revision":"SELECT batch,ordinal,revision FROM versions ORDER BY batch,ordinal,revision");
         while(rows.row()){
             if(context)context->checkpoint();
             const imports::Occurrence id{rows.bytes(0),static_cast<std::size_t>(rows.integer(1))};const auto revision=rows.integer(2);
-            const auto head=load_row(id,false);const auto& source=head.source;
+            if(!working_head || working_head->identity!=id)working_head=load_row(id,false);
+            const auto& head=*working_head;const auto& source=head.source;
             // Reuse the validated head; the historical version below still gets
             // its own fields, allocations, ownership and provenance checks.
-            imports::DraftRow draft=entry?entry_snapshot(id,revision).draft:*head.draft;
+            imports::DraftRow draft=entry?entry_snapshot(id,revision,&source).draft:*head.draft;
             if(!entry){ // Load an arbitrary historical draft revision, not only its head.
                 Statement fields(impl_->db,"SELECT date,payee,memo,total FROM versions WHERE batch=? AND ordinal=? AND revision=?");fields.text(1,id.batch);fields.integer(2,integer(id.ordinal));fields.integer(3,revision);if(!fields.row())fail(SQLITE_CORRUPT);
                 const auto currency=version_currency(impl_->db,id.batch,integer(id.ordinal),revision);const bool reassigned=source.source_currency && *source.source_currency!=currency;

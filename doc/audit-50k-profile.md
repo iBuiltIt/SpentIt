@@ -1,6 +1,6 @@
 # 50k full-audit profiling
 
-Date: 2026-11-06. Status: **profiling and proposals; no further optimization implemented**.
+Date: 2026-11-06. Status: **three follow-up improvements implemented under owner Go; verification below**.
 
 The preceding Undo/audit improvements are committed as `0edf528`. This investigation
 uses synthetic data only; it neither opens private datasets nor changes application
@@ -131,7 +131,7 @@ This does **not** prove every query is optimal, but it argues against another
 blanket index addition as the first response. The preceding OR-query scan problem
 has been replaced here by redundant reconstruction and read amplification.
 
-## Proposed next improvements (not implemented)
+## Proposed improvements (subsequently authorized)
 
 1. **Use bounded audit working sets that follow the current transaction.** Keep
    source facts and the current/prior/original snapshots together while checking
@@ -170,7 +170,7 @@ replace exact comparisons with unchecked hashes. The SQLite integrity/cipher/FK
 phase is only 2.9% of the reproduced audit and should remain intact. Transfer-heavy
 optimization remains separately unmeasured.
 
-## Acceptance checks for a future Go
+## Acceptance checks from the proposal
 
 - Repeat serial 15k and 50k runs, adding sizes around both observed byte-budget
   thresholds (about 20k rows for these snapshots and 36k for these RowViews).
@@ -188,7 +188,163 @@ optimization remains separately unmeasured.
   retry cleanly. Repeat financial recovery, strict Undo and sanitizer coverage for
   any shared reader changed. No changes to durable/atomic command boundaries.
 
-Only profiling documentation changed after the implementation commit. No additional
-application optimization or schema change was made. Measurements cover synthetic
+At the profiling checkpoint, only documentation changed after the implementation
+commit; the later implementation is described below. Measurements cover synthetic
 macOS repository execution, not native UI response, private data, other platforms
 or transfer-heavy accounts.
+
+## Implementation follow-up — owner Go 2026-11-06
+
+The three improvement areas are implemented; schema remains 58/57. The source-row
+cache retains its original bounded admission policy. The snapshot cache retains
+a stable prefix (up to 60 MiB / 61,440 entries), with remaining space used for
+least-recently-used replacement within the total 64 MiB / 65,536-entry budget,
+including estimated recency bookkeeping. Oversized entries are reconstructed
+without caching. Category verification retains
+one head/source while walking its ordered revisions and passes that source into
+snapshot reconstruction. Recency state and currency timelines are scoped to the
+read-only audit; they do not cache mutable financial state across commands.
+
+The new snapshot reader streams one snapshot at a time through one ordered
+`UNION ALL` query containing tagged snapshot fields, allocation values, ownership
+metadata and optional rule marks. It preserves separate streams for allocation
+values and metadata rather than joining away missing rows. Required fields,
+positions, allocation/metadata cardinality, rule-mark pairs and ownership,
+category bindings, exact money and draft validation are all checked. Existing
+whole-history counts, ordering, orphan/FK checks and exact replay remain enabled.
+No multi-snapshot chunk is materialized. Cancellation is checked while consuming
+the stream; temporary SQL storage retains the existing memory-only setting.
+
+Currency creation and ordered change/Undo definitions are read once per account
+within an audit, with binary search by history order. The cache has a 32 MiB /
+65,536-entry data budget and at most 4,096 account slots; oversized timelines
+release their partial data and use the unchanged exact query. Currency-reassignment
+markers retain their original validation. Mutation paths do not use this cache.
+No transaction boundary, durable gate, Undo eligibility or file-format rule changed.
+
+New corruption cases cover missing snapshot metadata and displaced allocation
+positions. An opt-in large-text fixture (`spentit_review_sheet_tests audit_eviction`)
+uses 10,000 rows with 6,000-character memos to cross both byte budgets, then checks
+cancellation after category verification, retry, reopened Undo and corruption in
+a deleted historical revision of the final row. It is separate from timing fixtures.
+
+
+### Verification of the implementation
+
+The selected macOS Release suite passed 36/36 checks, including committed replay,
+category/rule validation, account lifecycle, linked deletion and fault injection,
+selection edits and faults, cancellation, strict Undo, transfer behavior, import
+rollback, and offscreen UI/QML. Before the final cache-policy adjustment, focused
+rules-disabled checks passed 8/8, ASan/UBSan checks passed 8/8 plus a five-check
+rerun, and the large-text eviction fixture passed in Release and ASan/UBSan.
+
+After replacing whole-cache LRU with the final stable/rolling policy, ten focused
+Release checks, six rules-disabled checks and six ASan/UBSan checks passed. The
+large-text fixture was rerun and passed in Release; its earlier sanitizer run
+exercised the whole-cache LRU trial, not the final stable/rolling admission policy.
+These checks do not establish native large-selection interaction or Linux/Windows
+behavior.
+
+The stream and cache changes were benchmarked together, not isolated individually.
+The 32 MiB currency-timeline overflow fallback was not separately forced; normal
+currency changes/Undo and the unchanged uncached query are covered by account
+lifecycle checks. Transfer-heavy performance remains unmeasured. No manual text
+or screenshots changed because this work changes no user-visible workflow.
+
+
+### Rejected whole-cache LRU trial
+
+A first implementation applied LRU replacement to both complete caches. Three
+15k audits took 9.53925–9.73685 s (median 9.72919 s), but the serial 50k audit
+regressed to 86.2779 s. Instrumentation reproduced 83.9923 s, with 363,650 source
+reconstructions and 402,504 snapshot reconstructions, versus 268,192 / 360,564
+before the change. SQL VM work increased to 461,066,627 instructions. Sequential
+passes displaced data needed by later passes. All correctness assertions passed;
+the policy was rejected for performance. The final policy above restores stable
+source retention and reserves most snapshot space against sequential eviction.
+
+
+### Final serial benchmark results
+
+Fresh synthetic datasets, same Delete / Undo / full-audit driver and assertions as
+above; no concurrent agent builds/tests, no cache flush and no UI timing. The
+final uninstrumented driver SHA-256 is
+`71e3b6c9139f90857c7f432b325af09d73b34c0e8eec16b5507fd1d00dae6cf1`.
+The observation-only counter driver SHA-256 is
+`e35d2484d9d491c8efd4a963b3ab247dca4b34df71914e76726d8fe81ffdc1c8`.
+
+Three final 15k runs passed:
+
+| Operation | Prior median | Final median | Final range |
+|---|---:|---:|---:|
+| Delete | 8.27868 s | 8.14710 s | 7.63341–8.46165 s |
+| Undo | 6.72186 s | 6.96275 s | 6.77193–7.30479 s |
+| Full audit | 11.59040 s | 9.67948 s | 9.63375–9.96292 s |
+
+The 15k audit improved 16.5% (1.20×). Undo was 3.6% slower in these runs; this
+follow-up primarily changes audit reads and does not establish an Undo speedup.
+Whole-process maximum RSS ranged from 224,428,032 to 264,929,280 bytes.
+
+The final uninstrumented 50k run passed at **28.3940 s Delete, 21.8212 s Undo,
+57.9683 s full audit**, versus the earlier 29.4786 / 22.6381 / 73.7659 s.
+The audit improved 21.4% (1.27×); this is a single-run comparison, not a median.
+Whole-process maximum RSS was 677,150,720 bytes (645.8 MiB), including setup and
+command execution, not just the bounded audit caches. Audit time still grows
+faster than transaction count across the cache thresholds; this is an improvement,
+not elimination of the large-history cost.
+
+
+The final counter run passed at 58.0461 s full audit. Its observations support the
+plain timing result (instrumentation is not a separate baseline):
+
+| 50k audit work | Prior | Final |
+|---|---:|---:|
+| Source reconstructions | 268,192 | 184,014 |
+| Snapshot reconstructions | 360,564 | 341,639 |
+| SQL step calls | 17,671,944 | 12,569,745 |
+| SQL VM instructions | 389,147,934 | 372,223,208 |
+| SQL full-scan steps | 2,049,993 | 2,049,993 |
+| Statement preparations / reuses | 146 / 14,374,035 | 141 / 8,789,191 |
+
+Final source hits were 257,625, snapshot hits 158,361 and snapshot evictions
+285,103. Estimated peak cache bytes were 134,215,833 source / 67,108,232 snapshot,
+within the unchanged 128/64 MiB budgets. Source misses fell 31.4%, snapshot misses
+5.2% and SQL calls 28.9%; VM work fell only 4.3% because a streamed query does more
+work per call. The unchanged full-scan count is consistent with retaining all
+whole-history validation passes.
+
+| Final audit phase | Seconds |
+|---|---:|
+| Committed replay | 24.361843 |
+| Category/provenance | 18.942791 |
+| Imported evidence | 7.966456 |
+| Rules | 3.365003 |
+| Integrity/cipher/FK | 1.965011 |
+| Transfers | 1.407806 |
+
+Committed replay and category/provenance still account for about 75% of audit time.
+The remaining 341,639 snapshot reconstructions exceed the 150,000 distinct
+snapshots; the bounded caches still cannot retain an entire large history.
+Further work should target shared ordered replay/source reconstruction, measured
+against these counters, rather than reducing integrity checks or skipping history.
+
+
+Intermediate final-build scaling runs also passed:
+
+| Rows | Delete | Undo | Full audit | Whole-process max RSS |
+|---|---:|---:|---:|---:|
+| 20,000 | 10.2403 s | 8.65997 s | 13.5602 s | 336,445,440 bytes |
+| 36,000 | 18.9151 s | 15.3798 s | 30.9740 s | 548,798,464 bytes |
+
+These are single runs around the previously observed cache thresholds, not
+universal row limits: allocation count and text size change cache occupancy.
+
+
+A final 5,000-row deeper-history run repeated Delete, Undo and full audit five
+times on one file, asserting zero rows/balance after every Delete and the original
+count/exact balance after every Undo. All five cycles passed. Audit times were
+3.40038 / 4.78132 / 5.95716 / 6.98212 / 10.0218 s as history grew to 55,000
+snapshots. Delete stayed within 2.68148–2.79123 s and Undo within
+2.07524–2.34239 s. Whole-process maximum RSS was 150,192,128 bytes. This confirms
+correct deeper replay and records its remaining growth; it is not a new baseline
+comparison or a bound on arbitrary histories.
