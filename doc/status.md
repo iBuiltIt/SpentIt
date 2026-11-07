@@ -1,5 +1,87 @@
 # Project status
 
+## Duplicate resolution performance and automatic Review — 2026-11-07
+
+Implemented the [performance follow-up](review-sheet.md#resolution-performance-and-automatic-discovery--owner-go-2026-11-07).
+Each decision still saves immediately through the existing atomic Review operation
+and retains its individual session Undo. Merge storage/recognition, format 64/63,
+and clean-marker verification policy are unchanged. Open and import now discover
+Review questions on the worker before publishing the view; no visit to Review is
+needed. The permanent ledger/report-detail status area shows **Selected: n**, with
+Opening Balance excluded.
+
+Repeated refreshes reuse unaffected validated committed drafts in a bounded,
+in-memory cache. Other mutations invalidate it; transactional reads and full
+verification bypass it. Review reads original comparison facts only for relevant
+batches, collects accepted ordinals and transfer protection in bulk, and grouped
+import refreshes collect record membership in bulk. Ledger category decoration
+reads the selected account once instead of once per row.
+
+Synthetic macOS Release, Qt 6.12.0 offscreen benchmark (diagnostics enabled), run
+serially without concurrent builds/tests: **19,009 transactions**, 15,009 in the
+main account, 100 retained transfer relationships and nine duplicate questions.
+Three repetitions per action. The same driver/fixture was run against an isolated
+`65ed402` source archive, adding only an explicit Review load after its lazy reopen
+before timing decisions. Each timed run had no concurrent builds/tests:
+
+| Action | Previous median | Updated median | Updated range | Updated interaction-ready median |
+| --- | ---: | ---: | ---: | ---: |
+| Merge | 4,194 ms | 981 ms | 971–1,006 ms | 995 ms |
+| Undo Merge | 4,871 ms | 965 ms | 964–984 ms | 978 ms |
+| Separate | 4,278 ms | 975 ms | 944–1,012 ms | 986 ms |
+| Undo Separate | 4,865 ms | 946 ms | 940–947 ms | 955 ms |
+
+The maximum measured UI scheduling gap during these decisions was 53 ms. Durable
+transaction spans were 9–13 ms; grouped import readiness refresh remains
+the largest cost. Merge and Separate completion times fell about 77% on this
+fixture; decisions still take roughly one second. Importing the nine candidates took 3.20 s and
+clean reopening, including automatic discovery, took 5.23 s. The workload checked
+question counts, removal of exactly one duplicate, retained transfers, exact
+balance restoration on Undo, and explicit full verification. The benchmark's
+peak process memory was 546 MiB (includes Qt, fixtures and verification).
+
+Reproduce with the rules-enabled diagnostics build:
+
+```sh
+SPENTIT_BENCHMARK_DIAGNOSTICS=1 QT_QPA_PLATFORM=offscreen \
+  build/import-ui-rules-release/src/ui/spentit_import_benchmark 19000 --duplicates
+```
+
+Verification on macOS, synthetic data only:
+
+- Rules-enabled Release application and all test targets built. Final complete
+  import UI run: **87 passed, 0 failed** in 105.49 s. Initial runs exposed a queued
+  editor-focus restoration racing the next edit/search action; restoration now
+  respects new edits and newly focused controls while retaining focus across
+  verification. Added a direct stale-restoration check. A separate 30-cycle
+  new/accepted split-edit stress run and ledger review/viewport checks passed.
+- Focused rules-disabled Release and ASan/UBSan storage runs each passed **4/4**:
+  Review, cached ledger, ledger duplicates and batch Merge. Leak detection was
+  disabled; no leak-check claim. Cache tests compare displayed rows with
+  authoritative entries after Merge, Separate, Undo, unrelated edits, rollback,
+  explicit verification and backup restore.
+- The broader Release selection initially passed **133/140**. Its import UI
+  failure was corrected and the full UI rerun above passed. The other six failing
+  test groups have unchanged pre-existing expectations: `accounts.basics`,
+  `accounts.validation`, `accounts.combined`, `accounts.groups`,
+  `import.navigation`, and `import.help_ui`. All four account modes and the
+  failing navigation/Help cases were reproduced from an isolated `65ed402` source
+  archive: old rule/category setup, cross-session ordinary Undo, old survivor
+  picker and calendar walkthrough expectations. They were not weakened here.
+- Grouped-import I/O and crash suites each completed modes 0–3 (133, 157, 21 and
+  85 injected write/sync positions), then stopped at the existing mode-4 fixture's
+  missing imported-category choice. Full grouped-import recovery coverage remains
+  blocked by that fixture; the 19k workload and UI mapped-import cases passed.
+- Both dedicated Review failure suites passed: **2,036 injected disk-full/I/O
+  positions** (524 Separate/Undo; 1,512 Merge/Link/batch/Undo) and **24 process
+  interruptions**, covering both sides of durable commit. Trials reopen, verify,
+  retry and restore encrypted backups. The broader sweep took 1,082.48 s; the
+  Separate sweep took 194.78 s while other checks were running.
+- Changed-document file links and `git diff --check` passed. Manual prose and
+  screenshots remain deferred in MAN-009.
+
+Native interaction, private-file timing, Linux and Windows remain unverified.
+
 ## Ledger duplicate review — 2026-11-07
 
 Implemented the [owner-approved ledger interaction](review-sheet.md#ledger-duplicate-resolution--owner-go-2026-11-07).
@@ -8,8 +90,8 @@ The ledger comparison bar shows direct candidates, New/Accepted labels, the row
 that Merge keeps, pair-only Separate, None of these match, Show match, Next and
 Undo review. The context menu exposes the same resolution actions. Review adds
 Show in ledger and New/Accepted row styling. Explicit reveal clears a hiding
-filter; ordinary selection preserves ledger order and neighbours. Existing lazy
-Review loading exposes Load possible duplicates after reopening.
+filter; ordinary selection preserves ledger order and neighbours. The original lazy
+Review loading was superseded by automatic discovery in the follow-up above.
 
 Automatic survivor choice retains a unique linked/manual/accepted entry, or a
 unique entry from the earliest import when neither row is protected. Ambiguous

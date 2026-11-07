@@ -11,6 +11,7 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QDate>
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -70,8 +71,9 @@ int main(int argc,char** argv) {
     try {
         const int count=argc>1?std::stoi(argv[1]):100000;
         const bool groups=argc==3 && std::string_view(argv[2])=="--groups";
+        const bool duplicates=argc==3 && std::string_view(argv[2])=="--duplicates";
         const bool interactionsOnly=argc==3 && std::string_view(argv[2])=="--interactions";
-        require(argc<=3 && (argc<3 || interactionsOnly || groups),"Optional mode is --interactions or --groups");
+        require(argc<=3 && (argc<3 || interactionsOnly || groups || duplicates),"Optional mode is --interactions, --groups or --duplicates");
         require(count>0 && count<=200000 && (groups?count%6==0:count%10==0),"Use a multiple of 10 (six for groups) up to 200000");
         QTemporaryDir dir;require(dir.isValid(),"Temporary directory failed");
         QCoreApplication::setOrganizationName("SpentItBenchmark");QCoreApplication::setApplicationName("DurableUi");
@@ -87,14 +89,14 @@ int main(int argc,char** argv) {
         auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());require(window,"No window");
         auto* ledger=window->findChild<QQuickItem*>("durableLedger");require(ledger,"No ledger");
         std::cout<<"phase=application_startup ms="<<elapsed(startup)<<std::endl;
-        std::cout<<"rows="<<count<<" mode="<<(groups?"groups":interactionsOnly?"interactions":"full")<<" platform="<<QGuiApplication::platformName().toStdString()<<" qt="<<qVersion()<<std::endl;
+        std::cout<<"rows="<<count<<" mode="<<(duplicates?"duplicates":groups?"groups":interactionsOnly?"interactions":"full")<<" platform="<<QGuiApplication::platformName().toStdString()<<" qt="<<qVersion()<<std::endl;
         // Timer gaps measure UI-thread scheduling, not display frame latency.
         QElapsedTimer clock;clock.start();qint64 previous=clock.nsecsElapsed();double maxGap=0;std::size_t ticks=0;
         QTimer heartbeat;heartbeat.setTimerType(Qt::PreciseTimer);heartbeat.setInterval(5);
         QObject::connect(&heartbeat,&QTimer::timeout,[&]{const auto now=clock.nsecsElapsed();maxGap=std::max(maxGap,static_cast<double>(now-previous)/1e6);previous=now;++ticks;});heartbeat.start();
         auto settle=[&](int ms){QEventLoop loop;QTimer::singleShot(ms,&loop,&QEventLoop::quit);loop.exec();};
         auto command=[&](const char* phase,const QString& action,const QVariantMap& args=QVariantMap{}) {
-            maxGap=0;ticks=0;previous=clock.nsecsElapsed();const auto start=Clock::now();
+            maxGap=0;ticks=0;previous=clock.nsecsElapsed();const auto start=Clock::now();const auto metricsBefore=diagnostics::Collector::instance().snapshot();
             QEventLoop loop;bool success=false;bool finished=false;
             auto connection=QObject::connect(&model,&ImportModel::completed,&loop,[&](const QString&,bool ok){success=ok;finished=true;loop.quit();});
             require(!model.busy(),"Benchmark command admission is busy");
@@ -106,6 +108,10 @@ int main(int argc,char** argv) {
             if(model.diagnosticsEnabled()) {
                 const auto observation=diagnostics::Collector::instance().snapshot();
                 require(observation.latest.id==expectedOperation && observation.latest.delivered!=0,"Wrong diagnostic operation completed");
+                if(action=="review_answer" || action=="review_undo")for(const auto code:{diagnostics::Code::worker,diagnostics::Code::snapshot,diagnostics::Code::model_apply,diagnostics::Code::ledger,diagnostics::Code::search,diagnostics::Code::review_build,diagnostics::Code::review_write,diagnostics::Code::review_refresh,diagnostics::Code::transaction}){
+                    const auto& before=metricsBefore.metrics[static_cast<unsigned>(code)];const auto& after=observation.metrics[static_cast<unsigned>(code)];
+                    std::cout<<"decision_span="<<diagnostics::name(code)<<" inclusive_us="<<after.inclusive-before.inclusive<<" exclusive_us="<<after.exclusive-before.exclusive<<std::endl;
+                }
                 if(action=="map_import") {
                     for(const auto code:{diagnostics::Code::import_capture,diagnostics::Code::import_prepare,diagnostics::Code::import_populate,diagnostics::Code::import_resolve_transfers,diagnostics::Code::import_generate_transfers}) {
                         const auto& metric=observation.metrics[static_cast<unsigned>(code)];
@@ -129,6 +135,46 @@ int main(int argc,char** argv) {
         };
         const auto path=dir.path()+"/synthetic.spentit";
         command("create","create",{{"path",path},{"protected",true},{"password","synthetic-benchmark-password"},{"confirmation","synthetic-benchmark-password"},{"name","Synthetic benchmark"},{"currency","CAD"}});
+        if(duplicates) {
+            require(count>=19000,"Duplicate workload needs at least 19000 rows");
+            QFile file(dir.path()+"/duplicate-base.qif");require(file.open(QIODevice::WriteOnly),"Fixture open failed");
+            for(int account=0;account<2;++account){
+                QByteArray bytes="!Account\nN"+QByteArray(account==0?"Synthetic benchmark":"Other")+"\nTBank\n^\n!Type:Bank\n";
+                const int rows=account==0?15000:count-15000;
+                for(int i=1;i<=rows;++i){const bool transfer=i<=100;const int amount=account==0?i:transfer?i:100000+i;
+                    bytes+="D"+QDate(2000,1,1).addDays(i/4).toString(Qt::ISODate).toUtf8()+"\nT"+QByteArray(account==1 && transfer?"":"-")+QByteArray::number(amount)+"\nP"+(transfer?QByteArray("Transfer "):QByteArray("Merchant "))+QByteArray::number(i)+"\n";
+                    if(transfer)bytes+="L["+QByteArray(account==0?"Other":"Synthetic benchmark")+"]\n";bytes+="^\n";
+                }
+                require(file.write(bytes)==bytes.size(),"Fixture write failed");
+            }
+            file.close();command("duplicate_scan","import",{{"path",file.fileName()},{"profile","DMY"}});
+            command("duplicate_prepare","map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"account","1"},{"create",false}},QVariantMap{{"source",1},{"create",true},{"currency","CAD"},{"date","2000-01-01"},{"useReportedOpening",false}}}}});
+            command("duplicate_accept","commit");command("duplicate_account","select_account",{{"id","1"}});
+            require(model.state().value("transfers").toList().size()==100,"Expected one hundred retained transfer relationships");
+            QFile more(dir.path()+"/duplicate-nine.qif");require(more.open(QIODevice::WriteOnly),"Fixture open failed");QByteArray bytes="!Type:Bank\n";
+            for(int i=1;i<=9;++i)bytes+="D"+QDate(2000,1,1).addDays(i/4).toString(Qt::ISODate).toUtf8()+"\nT-"+QByteArray::number(i)+"\nPDownloaded payment "+QByteArray::number(i)+"\n^\n";
+            require(more.write(bytes)==bytes.size(),"Fixture write failed");more.close();
+            command("duplicate_import","import",{{"path",more.fileName()},{"account","1"}});
+            require(model.state().value("reviewReady").toBool() && model.state().value("reviewCount").toInt()==9,"Import must discover nine questions automatically");
+            command("duplicate_close","close");command("duplicate_reopen","unlock",{{"path",path},{"password","synthetic-benchmark-password"}});
+            require(model.state().value("reviewReady").toBool() && model.state().value("reviewCount").toInt()==9,"Open must discover nine questions automatically");
+            command("duplicate_account","select_account",{{"id","1"}});
+            const auto baseline=model.state().value("balance");const auto baselineRows=model.rowCount();
+            for(int pass=0;pass<3;++pass){
+                QVariantMap question;for(const auto& item:model.state().value("reviewQuestions").toList())if(item.toMap().value("kind")=="same"){question=item.toMap();break;}
+                require(!question.isEmpty(),"Missing duplicate pair");const auto rows=question.value("rows").toList();QVariantMap keep;
+                for(const auto& row:rows)if(row.toMap().value("committed").toBool())keep=row.toMap();require(!keep.isEmpty(),"Missing established survivor");
+                command("duplicate_merge","review_answer",{{"question",question.value("key")},{"generation",model.state().value("reviewGeneration")},{"answer","merge"},{"selected",rows},{"survivor",keep}});
+                require(model.rowCount()==baselineRows-1 && model.state().value("reviewCount").toInt()==8,"Merge must remove only the duplicate");
+                require(model.state().value("transfers").toList().size()==100,"Merge must retain links");
+                command("duplicate_undo","review_undo");require(model.rowCount()==baselineRows && model.state().value("balance")==baseline && model.state().value("reviewCount").toInt()==9,"Undo must restore the exact ledger");
+                question.clear();for(const auto& item:model.state().value("reviewQuestions").toList())if(item.toMap().value("kind")=="same"){question=item.toMap();break;}
+                command("duplicate_separate","review_answer",{{"question",question.value("key")},{"generation",model.state().value("reviewGeneration")},{"answer","separate"},{"selected",question.value("rows")}});
+                require(model.state().value("balance")==baseline && model.state().value("reviewCount").toInt()==8,"Separate must preserve the balance");
+                command("duplicate_separate_undo","review_undo");require(model.state().value("reviewCount").toInt()==9 && model.state().value("balance")==baseline,"Undo Separate must restore questions");
+            }
+            command("duplicate_check","check_file");command("duplicate_close","close");std::cout<<"Duplicate workload passed: "<<count+9<<" transactions, 100 transfers, 9 questions"<<std::endl;return 0;
+        }
         if(groups) {
             require(count>=120,"Group workload needs at least 120 rows");
             QFile file(dir.path()+"/synthetic.qif");require(file.open(QIODevice::WriteOnly),"Fixture open failed");

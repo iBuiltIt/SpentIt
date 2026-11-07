@@ -1,4 +1,10 @@
 namespace {
+template<class State> void retain_review_ledger_entries(State& state,sqlite3_int64 before,const std::set<imports::Occurrence>& changed){
+    if(state.ledger_entry_changes!=before)return;
+    for(const auto& id:changed)state.ledger_entries.erase(id);
+    // Bytes remain a conservative upper bound until the next full invalidation.
+    state.ledger_entry_changes=sqlite3_total_changes64(state.db);
+}
 std::string review_key(const imports::Occurrence& id) {return std::to_string(id.batch.size())+":"+id.batch+":"+std::to_string(id.ordinal);}
 std::int64_t review_generation(sqlite3* db) {Statement s(db,"SELECT revision FROM mutation_generation WHERE singleton=1");if(!s.row())fail(SQLITE_CORRUPT);return s.integer(0);}
 bool review_pair(sqlite3* db,int kind,const imports::Occurrence& a,const imports::Occurrence& b) {
@@ -158,17 +164,23 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     auto all_accounts=accounts();const auto archived=archived_accounts();all_accounts.insert(all_accounts.end(),archived.begin(),archived.end());
     for(const auto& account:all_accounts){
         impl_->selected_account=account.identity;
+        const auto account_batches=batches();std::map<std::string,bool> manual_batches;
+        for(const auto& b:account_batches)manual_batches.emplace(b.id,b.manual);
         for(const auto& row:current_ledger()) {
             if(row.identity.batch.starts_with("~transfer-"))continue;
-            rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,row.draft,row.committed,batch(impl_->db,row.identity.batch).manual?"Manually entered":""});
+            rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,row.draft,row.committed,manual_batches.at(row.identity.batch)?"Manually entered":""});
         }
-        for(const auto& b:batches())if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts){
+        for(const auto& b:account_batches)if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts){
             if(b.processing_incomplete){result.questions.push_back({"file:"+b.id,app::ReviewKind::correction,account.identity,account.name,"Resume this import before reviewing its transactions",b.id,{},{}});continue;}
             const auto parsed=parsed_source(b.id);
             if(parsed.diagnostic)result.questions.push_back({"file:"+b.id,app::ReviewKind::correction,account.identity,account.name,"Needs correction: import could not be fully read",b.id,{},{}});
+            std::set<std::size_t> accepted;
+            Statement accepted_rows(impl_->db,"SELECT ordinal FROM accepted_transactions WHERE batch=?");accepted_rows.text(1,b.id);
+            while(accepted_rows.row())accepted.insert(static_cast<std::size_t>(accepted_rows.integer(0)));
             for(std::size_t i=0;i<parsed.records.size();++i){
+                if(accepted.contains(i))continue;
                 const imports::Occurrence id{b.id,i};const auto row=load_row(id,false);
-                if(row.excluded_by_clear || transaction_accepted(id))continue;
+                if(row.excluded_by_clear)continue;
                 if(!row.draft){result.questions.push_back({"repair:"+review_key(id),app::ReviewKind::correction,account.identity,account.name,"Needs correction: repair this imported record",b.id,i,{}});continue;}
                 if(row.decision.disposition==imports::Disposition::unresolved || row.review_stale)unresolved.insert(id);
             }
@@ -196,7 +208,8 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     // Load immutable comparison facts once, not once per possible pair. Check
     // the engine predicate before querying persisted human decisions.
     std::map<imports::Occurrence,qif::Record> comparison_sources;
-    if(!unresolved.empty())for(const auto& [id,view]:rows){impl_->selected_account=view.account;comparison_sources.emplace(id,load_row(id,false).source);}
+    std::set<std::string> unresolved_batches;for(const auto& id:unresolved)unresolved_batches.insert(id.batch);
+    for(const auto& [id,view]:rows)if(unresolved_batches.contains(id.batch)){impl_->selected_account=view.account;comparison_sources.emplace(id,load_row(id,false).source);}
     for(const auto& id:unresolved){
         const auto it=rows.find(id);if(it==rows.end())continue;
         impl_->selected_account=it->second.account;
@@ -211,9 +224,17 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         }
     }
     std::map<std::string,std::int64_t> import_orders;Statement orders(impl_->db,"SELECT batch,min(sequence) FROM records GROUP BY batch");while(orders.row())import_orders.emplace(orders.bytes(0),orders.integer(1));
+    std::set<imports::Occurrence> protected_rows;
+    for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
+        if(side->state==transfers::State::removed)continue;
+        if(!value.link.unresolved || local_side(*side))protected_rows.insert(side->endpoint.entry);
+        if(!value.link.unresolved){if(side->attached_evidence)protected_rows.insert(side->attached_evidence->endpoint.entry);if(side->proposed_evidence)protected_rows.insert(side->proposed_evidence->endpoint.entry);}
+    }
+    Statement generated_rows(impl_->db,"SELECT batch,ordinal FROM generated_source_matches");
+    while(generated_rows.row())protected_rows.insert({generated_rows.bytes(0),static_cast<std::size_t>(generated_rows.integer(1))});
     for(auto& [id,row]:rows)if(graph.contains(id) && !graph.at(id).empty()){
         row.duplicate_candidates.assign(graph[id].begin(),graph[id].end());
-        row.transfer_linked=transfer_linked(id);
+        row.transfer_linked=protected_rows.contains(id);
         row.import_order=import_orders.at(id.batch);
     }
     std::set<imports::Occurrence> visited,duplicate_rows;
@@ -426,6 +447,7 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
 }
 app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,const app::ReviewAnswer& answer,const app::ReviewSheet& sheet,std::string_view parent) {
     if(!parent.empty() && (sqlite3_get_autocommit(impl_->db) || answer.action!=app::ReviewAction::merge))fail(SQLITE_MISUSE,"A batch child requires its enclosing Merge transaction");
+    const auto cache_changes=sqlite3_total_changes64(impl_->db);
     const auto encoded=review_request(answer);
     if(answer.action==app::ReviewAction::accept_missing){
         const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){return q.key==answer.question && !q.waiting_link.empty();});
@@ -574,7 +596,7 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
             }
         }
     }
-    if(parent.empty()){Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();finish([&]{transaction->commit();});}
+    if(parent.empty()){Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();finish([&]{transaction->commit();});if(same)retain_review_ledger_entries(*impl_,cache_changes,selected);}
     return {std::string(operation)};
 }
 app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
@@ -586,8 +608,12 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     const auto answer=top.bytes(0);const auto generation=top.integer(1);if(generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
     if(generation!=review_generation(impl_->db))fail(SQLITE_CONSTRAINT,"Later changes prevent Review Undo");
     struct Scope{Impl& state;std::int64_t selected;bool cleaning;~Scope(){state.selected_account=selected;state.cleaning=cleaning;}} scope{*impl_,impl_->selected_account,impl_->cleaning};
+    const auto cache_changes=sqlite3_total_changes64(impl_->db);
+    std::set<imports::Occurrence> cache_changed;
+    Statement cache_rows(impl_->db,"SELECT batch,ordinal FROM review_choices WHERE answer=? AND kind=0");cache_rows.text(1,answer);
+    while(cache_rows.row())cache_changed.insert({cache_rows.bytes(0),static_cast<std::size_t>(cache_rows.integer(1))});
     Atomic transaction(impl_->db);
-    Statement parent(impl_->db,"SELECT question,request FROM review_answers WHERE id=?");parent.text(1,answer);if(!parent.row())fail(SQLITE_CORRUPT);
+    Statement parent(impl_->db,"SELECT question,request,action FROM review_answers WHERE id=?");parent.text(1,answer);if(!parent.row())fail(SQLITE_CORRUPT);
     Statement children(impl_->db,"SELECT id,request FROM review_answers WHERE question=? ORDER BY sequence");children.text(1,"batch-child:"+answer);
     std::vector<std::string> ids;std::string encoded="batch:";
     while(children.row()){
@@ -615,7 +641,9 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     Statement pop(impl_->db,"DELETE FROM review_stack WHERE answer=?");pop.text(1,answer);pop.done();
     // Reversing the top decision makes the preceding stack entry current again.
     Statement prior(impl_->db,"UPDATE review_stack SET generation=? WHERE answer=(SELECT answer FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1) AND generation=(SELECT generation FROM review_answers WHERE id=?2)");prior.integer(1,generation+1);prior.text(2,answer);prior.done();
-    finish([&]{transaction.commit();});return {std::string(operation)};
+    finish([&]{transaction.commit();});
+    if((parent.integer(2)==0 || parent.integer(2)==1) && (parent.bytes(0).starts_with("same:") || parent.bytes(0)=="selected"))retain_review_ledger_entries(*impl_,cache_changes,cache_changed);
+    return {std::string(operation)};
 }
 
 void ImportStore::restore_review_answer(std::string_view operation,std::string_view answer) {

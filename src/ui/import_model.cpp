@@ -1114,10 +1114,11 @@ struct ImportModel::Worker {
                         transferCategories[endpointKey(value.link.destination.endpoint)]=names.at(value.link.origin.endpoint.account)+" [Account]";
                     }
                 }
+                const auto ledgerAccount=repo.account().identity;
                 if(repo.categories_supported())for(auto& row:*cachedLedger) {
                     auto values=row.draft.transaction.allocations();
                     for(auto& value:values){
-                        const auto transfer=transferCategories.find({repo.account().identity,row.identity,value.identity});
+                        const auto transfer=transferCategories.find({ledgerAccount,row.identity,value.identity});
                         value.category=transfer==transferCategories.end()?allocationMap(value,categoryById,amountFormat).value("categoryDisplay").toString().toUtf8().toStdString():transfer->second;
                     }
                     row.draft.transaction=row.draft.transaction.corrected(row.draft.transaction.effective_total(),std::move(values));
@@ -1244,7 +1245,7 @@ struct ImportModel::Worker {
                 try { context.seal(); } catch (...) { gateway->close(); throw; }
             }
             startupCleanupNotice=action!="create" && (gateway->repository().startup_import_cleanup() || cleanupNoticePath==path);cleanupNoticePath.clear();
-            deferReview=gateway->lazy_review() && action!="create";
+            deferReview=false; // Discovery is part of the background open/import refresh, not a file audit.
             sortAccount.reset();sortDocument=sortSettingsGroup();
             dateFormat=gateway->repository().date_format();amountFormat=gateway->repository().amount_format();active=true; selected.clear(); receipt.clear();clearChanges();
             if(action=="create"){QSettings settings;settings.remove(sortDocument);settings.sync();if(settings.status()!=QSettings::NoError)throw std::runtime_error("The file was created, but its sort preferences could not be reset. Reopen the file before continuing.");}
@@ -2539,7 +2540,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         if(worker->diagnosticPresentationFailed && outcome!=diag::Result::cancelled)presentation=diag::Presentation::failed;
         if(uncertain)persistence=diag::Persistence::unknown;
         operation->state.store(app::OperationContext::sealed);observer.cancel(diagnosticId,diag::Code::sealed);
-        operation->checkpoint("Refreshing verified ledger");
+        operation->checkpoint((action=="open" || action=="unlock" || action=="import" || action=="map_import" || action=="resolve_import_categories")?"Checking for possible duplicates…":"Refreshing ledger");
         try {auto snapshot=worker->snapshot();result.state=std::move(snapshot.first);result.rows=std::move(snapshot.second);}
         catch(const std::exception&){
             presentation=diag::Presentation::failed;

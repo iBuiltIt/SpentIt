@@ -225,8 +225,9 @@ No manual text, captions or pictures have been changed.
   and exceptional conflicting relationships.
 - Update [Import transactions](../manual/import-transactions.md) and
   [Accept transactions](../manual/accept-transactions.md) to mention ledger review
-  without changing the existing acceptance or matching policy. Include explicit
-  Load possible duplicates after lazy reopening.
+  without changing the existing acceptance or matching policy. Include
+  automatic duplicate discovery after opening/importing and Selected: n in the
+  permanent ledger status area.
 - Recapture affected ledger and Review pictures during the authorized manual pass:
   `manual/images/transactions-ledger.png`, `manual/images/transactions-review.png`,
   `manual/images/review-keep.png`, and `manual/images/accept-review.png`. Add a

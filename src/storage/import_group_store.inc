@@ -142,18 +142,22 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         bool ready=!parsed.diagnostic && b.state!=app::BatchState::captured && b.state!=app::BatchState::discarded;
         const bool active_review=b.state!=app::BatchState::discarded;
         std::vector<Money> amounts;
+        std::set<std::size_t> retained_ordinals,stored_ordinals,accepted_ordinals;
+        for(auto [table,target]:{std::pair{"source_occurrences",&retained_ordinals},std::pair{"records",&stored_ordinals},std::pair{"accepted_transactions",&accepted_ordinals}}){
+            const auto sql="SELECT ordinal FROM "+std::string(table)+" WHERE batch=?";Statement ordinals(impl_->db,sql.c_str());ordinals.text(1,batch_id);
+            while(ordinals.row())target->insert(static_cast<std::size_t>(ordinals.integer(0)));
+        }
         for(std::size_t i=0;i<parsed.records.size();++i) {
             if(b.state==app::BatchState::protected_drafts && !retained_member(impl_->db,batch_id,i))continue;
-            Statement retained(impl_->db,"SELECT 1 FROM source_occurrences WHERE batch=? AND ordinal=?");retained.text(1,batch_id);retained.integer(2,integer(i));if(b.state!=app::BatchState::captured && !retained.row())continue;
+            if(b.state!=app::BatchState::captured && !retained_ordinals.contains(i))continue;
             const auto& record=parsed.records[i];
             if(record.diagnostic && record.repairable) {
                 ++result.repairs_total;if(record.amount_repair)++result.amount_repairs;
             } else if(record.diagnostic)++result.blocked_records;
-            Statement stored(impl_->db,"SELECT 1 FROM records WHERE batch=? AND ordinal=?");stored.text(1,batch_id);stored.integer(2,integer(i));
-            if(!stored.row()){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"",record.diagnostic?std::string(qif::message(*record.diagnostic)):"Import processing incomplete");}ready=false;continue;}
+            if(!stored_ordinals.contains(i)){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"",record.diagnostic?std::string(qif::message(*record.diagnostic)):"Import processing incomplete");}ready=false;continue;}
             const auto row=load_row({batch_id,i},false);
             if(row.matched_generated){if(record.diagnostic && record.repairable)++result.repairs_done;continue;}
-            if(row.draft && !transaction_accepted(row.identity) && b.state!=app::BatchState::committed && b.state!=app::BatchState::discarded)for(const auto& allocation:row.draft->transaction.allocations())if(const auto destination=transfer_name(allocation.category)) {
+            if(row.draft && !accepted_ordinals.contains(i) && b.state!=app::BatchState::committed && b.state!=app::BatchState::discarded)for(const auto& allocation:row.draft->transaction.allocations())if(const auto destination=transfer_name(allocation.category)) {
                 const bool linked=resolved.contains({batch_id,i,allocation.identity});
                 const bool eligible=!linked && !row.excluded_by_clear && !row.review_stale && row.decision.disposition==imports::Disposition::include && !account.archived;
                 const std::string status=linked?"Already linked":row.excluded_by_clear?"Excluded by discard":row.review_stale?"Review is stale":row.decision.disposition==imports::Disposition::duplicate?"Excluded as duplicate":row.decision.disposition!=imports::Disposition::include?"Inclusion needs review":account.archived?"Account archived":"Available draft";
@@ -161,7 +165,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
             }
             if(record.diagnostic && record.repairable)++result.repairs_done;
             if(!row.draft || row.decision.disposition==imports::Disposition::unresolved || (row.review_stale && b.state!=app::BatchState::committed)){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"","Review transaction inclusion or duplicate decision");}ready=false;continue;}
-            if(active_review && !transaction_accepted(row.identity) && b.state!=app::BatchState::committed && row.decision.disposition==imports::Disposition::include)for(const auto& allocation:row.draft->transaction.allocations())if(transfer_name(allocation.category) && !resolved.contains({batch_id,i,allocation.identity})){++result.unresolved;++result.unresolved_transfers;blocker(account.identity,batch_id,i,allocation.identity,"Transfer counterpart is not linked: resolve mapped transfers, then review missing, repeated, or different-date counterparts");}
+            if(active_review && !accepted_ordinals.contains(i) && b.state!=app::BatchState::committed && row.decision.disposition==imports::Disposition::include)for(const auto& allocation:row.draft->transaction.allocations())if(transfer_name(allocation.category) && !resolved.contains({batch_id,i,allocation.identity})){++result.unresolved;++result.unresolved_transfers;blocker(account.identity,batch_id,i,allocation.identity,"Transfer counterpart is not linked: resolve mapped transfers, then review missing, repeated, or different-date counterparts");}
             if(row.decision.disposition==imports::Disposition::include)amounts.push_back(row.draft->transaction.effective_total());
         }
         if(parsed.diagnostic){if(active_review)++result.unresolved;++result.blocked_records;}

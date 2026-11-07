@@ -27,8 +27,7 @@ and offers Merge, Keep this pair separate, Show match and Next possible duplicat
 Several candidates require choosing one by clicking its ledger row or using the
 candidate picker. None of these match rejects only the selected origin's candidate
 comparisons. Right-click Resolve duplicate exposes the same actions. Read-only files
-cannot resolve questions. Existing lazy Review loading remains explicit through
-Load possible duplicates when a reopened file has not loaded Review yet.
+cannot resolve questions. Review discovery runs automatically in the document worker after open and import.
 
 Rows remain in ledger order with surrounding transactions visible. Show match
 scrolls to an available row; revealing a hidden match explicitly clears the filter.
@@ -55,6 +54,27 @@ Merge. No schema change or widened automatic matching is introduced.
 
 Verification is recorded in [status](status.md). Manual text and screenshots are
 tracked in [MAN-009](manual-update-backlog.md#man-009--ledger-duplicate-review).
+
+## Resolution performance and automatic discovery — owner Go, 2026-11-07
+
+Accepted: each decision remains immediately durable and individually undoable.
+Do not introduce accumulated unsaved resolutions or change Merge source retention.
+Review discovery is automatic during the worker's open/import refresh; report
+Checking for possible duplicates… while that refresh is in progress. A completed
+open/import must publish the question count and ledger markers without requiring
+a visit to Review. Discovery is not an integrity audit and does not change the
+clean-marker verification policy. The permanent status area shows Selected: n
+for the ledger (including report detail), independently of operation/error text.
+Opening Balance is excluded and existing filtered selection semantics apply.
+
+Reuse unaffected validated committed drafts during ordinary Review resolutions;
+cache only in memory, under a bounded memory budget. Failed/other mutations must
+invalidate reuse. Transactional reads, full recovery, explicit verification and
+backup validation must not consume that presentation cache. Keep the existing
+matching predicate and all source/relationship checks. Test actual command-to-UI
+latency using roughly 19,000 transactions, a 15,000-row main account, many retained
+transfers and nine outstanding duplicate questions, not just small functional
+fixtures. Record measurements and limitations in [status](status.md).
 
 ## User interaction
 

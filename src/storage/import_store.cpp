@@ -1003,6 +1003,12 @@ struct ImportStore::Impl {
     bool composing_review=false;
     mutable std::optional<app::ReviewSheet> sheet_cache;
     mutable sqlite3_int64 sheet_changes=-1;
+    // Presentation-only current committed drafts. Ordinary writes invalidate the
+    // whole cache; a completed same-account Review decision may retain unaffected
+    // entries. Transactional reads and verification never consume it.
+    mutable std::map<imports::Occurrence,app::EntrySnapshot> ledger_entries;
+    mutable sqlite3_int64 ledger_entry_changes=-1;
+    mutable std::size_t ledger_entry_bytes=0;
     mutable std::map<imports::Occurrence,app::ReviewTransaction> link_rows;
     mutable std::map<imports::Occurrence,std::map<imports::Occurrence,bool>> link_edges;
     mutable std::string link_alias_stamp;
@@ -2025,7 +2031,21 @@ std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current
         if(projected && !current && !projected_balance())fail(SQLITE_CONSTRAINT,"Projection is incomplete; review the pending import");
         std::vector<app::LedgerRow> result;
         Statement entries(impl_->db,"SELECT h.batch,h.ordinal,h.revision,r.sequence FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1 ORDER BY e.date,r.sequence");
-        while(entries.row()){imports::Occurrence identity{entries.bytes(0),static_cast<std::size_t>(entries.integer(1))};result.push_back({identity,entries.integer(3),entry_snapshot(identity,entries.integer(2)).draft,true});}
+        const bool cache_current=current && projected && !impl_->verifying && sqlite3_get_autocommit(impl_->db);
+        if(cache_current && impl_->ledger_entry_changes!=sqlite3_total_changes64(impl_->db)){
+            impl_->ledger_entries.clear();impl_->ledger_entry_bytes=0;impl_->ledger_entry_changes=sqlite3_total_changes64(impl_->db);
+        }
+        while(entries.row()){
+            imports::Occurrence identity{entries.bytes(0),static_cast<std::size_t>(entries.integer(1))};const auto revision=entries.integer(2);
+            const auto cached=impl_->ledger_entries.find(identity);
+            if(cache_current && cached!=impl_->ledger_entries.end() && cached->second.revision==revision){result.push_back({identity,entries.integer(3),cached->second.draft,true});continue;}
+            auto snapshot=entry_snapshot(identity,revision);
+            if(cache_current){
+                const auto& d=snapshot.draft;const auto bytes=sizeof(snapshot)+256+VerificationRows::text_size(identity.batch)+VerificationRows::text_size(d.date)+VerificationRows::text_size(d.payee)+VerificationRows::text_size(d.memo)+VerificationRows::text_size(d.remainder_allocation)+VerificationRows::transaction_size(d.transaction)+(d.payee_rule?VerificationRows::text_size(d.payee_rule->identity):0)+(d.memo_rule?VerificationRows::text_size(d.memo_rule->identity):0);
+                if(bytes<=64*1024*1024 && impl_->ledger_entry_bytes<=64*1024*1024-bytes){impl_->ledger_entries.insert_or_assign(identity,snapshot);impl_->ledger_entry_bytes+=bytes;}
+            }
+            result.push_back({identity,entries.integer(3),std::move(snapshot.draft),true});
+        }
         if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND (v.decision=1 OR (?1=1 AND v.decision=0)) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");pending.integer(1,current?1:0);while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
         const auto local=local_transfer_ledger(projected);result.insert(result.end(),local.begin(),local.end());
         std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return std::tie(a.draft.date,a.sequence)<std::tie(b.draft.date,b.sequence);});return result;

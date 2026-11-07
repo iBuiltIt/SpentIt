@@ -225,6 +225,10 @@ private slots:
         QVERIFY(!fresh.isEmpty());QCOMPARE(fresh.value("duplicateCandidates").toList().size(),2);
         run(m,"select",{{"row",m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt())}});
         QTRY_COMPARE(window->property("duplicateOriginKey").toString(),fresh.value("key").toString());
+        auto* selectedCount=visualItem(window->contentItem(),"ledgerSelectionCount");QVERIFY(selectedCount);QCOMPARE(selectedCount->property("text").toString(),"Selected: 1");
+        run(m,"select",{{"mode","all"}});QCOMPARE(selectedCount->property("text").toString(),"Selected: 4");
+        run(m,"select",{{"mode","none"}});QCOMPARE(selectedCount->property("text").toString(),"Selected: 0");
+        run(m,"select",{{"row",m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt())}});
         auto click=[&](const char* name){auto* item=visualItem(window->contentItem(),QString::fromUtf8(name));if(!item)return false;return QMetaObject::invokeMethod(item,"clicked");};
         QTRY_VERIFY(visualItem(window->contentItem(),"ledgerDuplicateMerge"));QVERIFY(!visualItem(window->contentItem(),"ledgerDuplicateMerge")->isEnabled());
         run(m,"select",{{"row",m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())}});
@@ -1082,7 +1086,7 @@ private slots:
         ImportModel m(storage::document_gateway((dir.path()+"/approval").toStdString()));QElapsedTimer timer;timer.start();
         run(m,"open",{{"path",path}});const auto first=timer.elapsed();QCOMPARE(m.rowCount(),count+1);QCOMPARE(m.state().value("balance").toString(),QString::number(-count)+".00");
         timer.restart();run(m,"close");const auto closing=timer.elapsed();timer.restart();run(m,"open",{{"path",path}});const auto cached=timer.elapsed();
-        QCOMPARE(m.rowCount(),count+1);QCOMPARE(m.state().value("balance").toString(),QString::number(-count)+".00");QVERIFY(!m.state().value("reviewReady").toBool());
+        QCOMPARE(m.rowCount(),count+1);QCOMPARE(m.state().value("balance").toString(),QString::number(-count)+".00");QVERIFY(m.state().value("reviewReady").toBool());
         timer.restart();run(m,"review_load");const auto review=timer.elapsed();QVERIFY(m.state().value("reviewReady").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),0);
         qInfo()<<"Startup synthetic rows"<<count<<"bytes"<<QFileInfo(path).size()<<"full-open-ms"<<first<<"audit-close-ms"<<closing<<"approved-open-ms"<<cached<<"deferred-review-ms"<<review;
         run(m,"close");
@@ -1129,11 +1133,11 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPA\n^\n")}});run(m,"commit");
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPB\n^\n")}});
         QCOMPARE(m.state().value("reviewCount").toInt(),1);run(m,"close");run(m,"open",{{"path",path}});
-        QVERIFY(!m.state().value("reviewReady").toBool());QCOMPARE(m.state().value("balance").toString(),"-20.00");
+        QVERIFY(m.state().value("reviewReady").toBool());QCOMPARE(m.state().value("balance").toString(),"-20.00");
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         QVERIFY(QMetaObject::invokeMethod(window,"requestCommit"));QTRY_VERIFY(!m.busy() && m.state().value("reviewReady").toBool());
         QTRY_COMPARE(window->property("currentPage").toString(),QString("review"));QCOMPARE(m.state().value("reviewCount").toInt(),1);QCOMPARE(m.state().value("newTransactions").toInt(),1);
-        run(m,"close");run(m,"open",{{"path",path}});QVERIFY(!m.state().value("reviewReady").toBool());
+        run(m,"close");run(m,"open",{{"path",path}});QVERIFY(m.state().value("reviewReady").toBool());
         auto* review=visualItem(window->contentItem(),"reviewNavigation");QVERIFY(review);QVERIFY(QMetaObject::invokeMethod(review,"clicked"));QTRY_VERIFY(!m.busy() && m.state().value("reviewReady").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),1);
         QVERIFY(QMetaObject::invokeMethod(window,"beginQuit",Q_ARG(QVariant,QVariant(false))));QVERIFY(window->isVisible());
         QVERIFY(m.busy());QVERIFY(window->findChild<QObject*>("activityIndicator")->property("running").toBool());
@@ -2177,6 +2181,14 @@ private slots:
             QVERIFY(QMetaObject::invokeMethod(item("addSplit"),"clicked"));
             QTRY_VERIFY(item("editSplitAmount_2"));QTest::qWait(100);auto* amount=item("editSplitAmount_2");
             amount->forceActiveFocus();QTRY_VERIFY(amount->hasActiveFocus());
+            if(cycle==0){
+                // A delayed restoration from the previous save must not steal
+                // focus after the user has started this new split edit.
+                root->setProperty("editFocus",QVariantMap{{"name","durableDate"},{"position",0}});
+                QVERIFY(QMetaObject::invokeMethod(root,"restoreEditView"));
+                QCoreApplication::processEvents();QCoreApplication::processEvents();
+                QVERIFY(amount->hasActiveFocus());
+            }
             QTest::keySequence(window,QKeySequence::SelectAll);QTest::keyClick(window,Qt::Key_Minus);QTest::keyClick(window,Qt::Key_1);QTest::keyClick(window,Qt::Key_Return);waitSaved();
             QCOMPARE(splits().size(),3);QCOMPARE(splits()[0].toMap().value("amount").toString(),QString("-0.04"));QCOMPARE(splits()[1].toMap().value("amount").toString(),QString("-6.31"));QCOMPARE(splits()[2].toMap().value("amount").toString(),QString("-1.00"));
             QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),QString("-7.35"));

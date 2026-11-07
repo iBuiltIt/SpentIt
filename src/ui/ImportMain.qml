@@ -1489,8 +1489,10 @@ ApplicationWindow {
         return null
     }
     function restoreEditView() {
-        let view=editView,focus=editFocus;editView=null;editFocus=null
+        let view=editView,focus=editFocus,pendingFocus=window.activeFocusItem;editView=null;editFocus=null
         Qt.callLater(function(){
+            // A new edit takes priority over restoration queued by the last save.
+            if(dirty || (window.activeFocusItem!==pendingFocus && window.activeFocusItem && window.activeFocusItem.text!==undefined))return
             ledger.forceLayout()
             if(view){
                 // Sorting can move the edited transaction. Follow its identity,
@@ -1506,7 +1508,9 @@ ApplicationWindow {
             }
             // A newly materialized row acquires the editor height after the
             // first positioning pass. Settle that layout before restoring focus.
+            pendingFocus=window.activeFocusItem
             Qt.callLater(function(){
+                if(dirty || (window.activeFocusItem!==pendingFocus && window.activeFocusItem && window.activeFocusItem.text!==undefined))return
                 ledger.forceLayout()
                 if(view && view.editorOffset!==undefined && workflow.selectedRowIndex()>=0)
                     ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain)
@@ -2746,6 +2750,7 @@ ApplicationWindow {
                             ToolTip.visible:statusHover.hovered && truncated;ToolTip.text:text
                             HoverHandler {id:statusHover}
                         }
+                        Label {objectName:"ledgerSelectionCount";visible:currentPage==="ledger" || window.reportLedger;text:"Selected: "+(s.selectionCount||0);textFormat:Text.PlainText;Accessible.name:text}
                         Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.busy && workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
                         Button {objectName:"statusHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!workflow.busy && !!workflow.error && !errorDialog;onClicked:openContextHelp("help:messages-problems")}
                         Button {objectName:"statusDetailsButton";text:"Details";visible:!workflow.busy && !!workflow.error && !errorDialog;onClicked:statusDetails.open()}
@@ -2831,7 +2836,7 @@ ApplicationWindow {
     }
             ScrollBar.vertical:UsableScrollBar {}
             ScrollBar.horizontal:UsableScrollBar {}
-            Label {anchors.centerIn:parent;visible:reviewQuestions.count===0;text:s.reviewReady===false?"Review has not loaded yet.":"Nothing left to review."}
+            Label {anchors.centerIn:parent;visible:reviewQuestions.count===0;text:s.reviewReady===false?"Checking for possible duplicates…":"Nothing left to review."}
             delegate:Item {
                 id:questionCard;required property var modelData;required property int index;width:reviewQuestions.contentWidth-24;height:questionContent.implicitHeight
                 property var chosen: reviewRowChoices[modelData.key]||[]
@@ -3352,8 +3357,7 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth:true
                     Label {objectName:"ledgerDuplicateSummary";Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap
-                        text:duplicateOrigin?"Possible duplicate · "+duplicateCandidates.length+" possible "+(duplicateCandidates.length===1?"match":"matches")+" · "+(duplicateOrigin.committed?"Accepted":"New")+" — "+duplicateOrigin.payee+(duplicateCandidate?" ↔ "+(duplicateCandidate.committed?"Accepted":"New")+" — "+duplicateCandidate.payee: " · Select a marked transaction to compare"):(s.reviewReady===false?"Load possible duplicates to review them in the ledger.":"Review possible duplicates in this account.")}
-                    Button {text:"Load possible duplicates";visible:s.reviewReady===false;onClicked:guard(function(){workflow.command("review_load")})}
+                        text:duplicateOrigin?"Possible duplicate · "+duplicateCandidates.length+" possible "+(duplicateCandidates.length===1?"match":"matches")+" · "+(duplicateOrigin.committed?"Accepted":"New")+" — "+duplicateOrigin.payee+(duplicateCandidate?" ↔ "+(duplicateCandidate.committed?"Accepted":"New")+" — "+duplicateCandidate.payee: " · Select a marked transaction to compare"):(s.reviewReady===false?"Checking for possible duplicates…":"Review possible duplicates in this account.")}
                     Button {objectName:"ledgerDuplicateNext";text:"Next possible duplicate";visible:Object.values(duplicateRows).some(row=>row.account===s.accountId);onClicked:nextLedgerDuplicate()}
                     Button {objectName:"ledgerReviewUndo";text:"Undo review";visible:!!s.canUndoReview;enabled:!s.readOnly;onClicked:undoLedgerReview()}
                 }

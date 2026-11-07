@@ -822,6 +822,26 @@ void ledger_duplicate_faults(const std::filesystem::path& dir){
     }
 }
 
+void ledger_cache_tests(const std::filesystem::path& dir){
+    const Currency cad("CAD");auto s=ImportStore::create(dir/"ledger-cache","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+    s.ingest("old",source("First")+source("Unrelated","-20").substr(11),qif::DateOrder::dmy);s.accept_all("accept");s.ingest("new",source("Download"),qif::DateOrder::dmy);
+    const auto check_current=[&]{
+        const auto ledger=s.current_ledger();for(const auto& row:ledger)if(row.committed){const auto expected=s.committed_entry(row.identity).current.draft;const auto& actual=row.draft;
+            check(actual.date==expected.date && actual.payee==expected.payee && actual.memo==expected.memo && actual.transaction.effective_total()==expected.transaction.effective_total() && actual.transaction.original_imported_amount()==expected.transaction.original_imported_amount(),"Cached ledger agrees with authoritative entry");
+            check(actual.payee_owner==expected.payee_owner && actual.memo_owner==expected.memo_owner && actual.payee_rule==expected.payee_rule && actual.memo_rule==expected.memo_rule && actual.manual_split_amounts==expected.manual_split_amounts && actual.remainder_allocation==expected.remainder_allocation,"Cached edit metadata agrees");
+            const auto& aa=actual.transaction.allocations();const auto& bb=expected.transaction.allocations();check(aa.size()==bb.size(),"Cached split count agrees");for(std::size_t i=0;i<aa.size();++i)check(aa[i].amount==bb[i].amount && aa[i].identity==bb[i].identity && aa[i].category==bb[i].category && aa[i].memo==bb[i].memo && aa[i].category_binding==bb[i].category_binding,"Cached allocations agree");
+        }
+    };
+    check_current();answer(s,"merge",ReviewAction::merge,{{"old",0},{"new",0}});check_current();s.undo_review("undo-merge");check_current();
+    answer(s,"separate",ReviewAction::separate,{{"old",0},{"new",0}});check_current();s.undo_review("undo-separate");check_current();
+    auto edit=edit_row(s,{"old",1});edit.payee="Changed unrelated row";edit.memo="Changed memo";
+    s.edit_transaction("edit",{"old",1},edit_revision(s,{"old",1}),edit_token(s,{"old",1}),edit);check_current();
+    s.undo_transaction_edit("undo-edit","edit");check_current();
+    bool refused=false;s.observer([](auto phase){if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("Injected rollback");});
+    try{answer(s,"failed",ReviewAction::merge,{{"old",0},{"new",0}});}catch(...){refused=true;}s.observer({});check(refused,"Rollback injected");check_current();
+    answer(s,"retry",ReviewAction::merge,{{"old",0},{"new",0}});check_current();s.verify();check_current();
+    s.backup_to(dir/"cached-backup","test");auto cold=ImportStore::open(dir/"cached-backup","test");check(cold.current_ledger().size()==s.current_ledger().size() && cold.balance()==s.balance(),"Restored backup agrees with warm ledger");cold.verify();
+}
 void ledger_duplicate_tests(const std::filesystem::path& dir) {
     const Currency cad("CAD");
     auto store=ImportStore::create(dir/"ledger-duplicates","test","Checking",cad,"2026-01-01");
@@ -879,6 +899,7 @@ int main(int argc,char** argv){
         if(argc>1 && std::string(argv[1])=="editor_faults"){editor_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="release"){release_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="ledger_faults"){ledger_duplicate_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="ledger_cache"){ledger_cache_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="ledger"){ledger_duplicate_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="assignment"){assignment_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="assignment_faults"){assignment_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
