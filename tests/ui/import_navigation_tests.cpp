@@ -703,7 +703,7 @@ private slots:
         QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         QCOMPARE(root->property("currentPage").toString(),"settings");QCOMPARE(title(),QString("Settings"));
         QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("payee").toString(),"Saved navigation");
-        QVERIFY(click(root,"closeDataset"));QTRY_VERIFY(!model.busy());QVERIFY(!model.state().value("active").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object(root,"fileCloseDataset"),"triggered"));QTRY_VERIFY(!model.busy());QVERIFY(!model.state().value("active").toBool());
         QCOMPARE(root->property("currentPage").toString(),"ledger");QCOMPARE(root->property("navigationIndex").toInt(),0);
         run(model,"create",{{"path",dir.path()+"/second"},{"protected",false},{"name","Other dataset"},{"currency","CAD"}});
         QVERIFY(model.state().value("selected").toMap().isEmpty());QCOMPARE(root->property("navigationIndex").toInt(),0);

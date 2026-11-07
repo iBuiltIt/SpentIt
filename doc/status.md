@@ -1,5 +1,40 @@
 # Project status
 
+## Navigation and Settings cleanup — 2026-11-06
+
+Owner-approved layout follow-up: the file path now sits directly below Current
+file, with a smaller gap before Date format. Equal explicit section spacers
+separate Window, File settings and Backup and recovery. Removed the Settings
+Close file button and close-before-opening note; File → Close file remains.
+Existing navigation and manual-walkthrough test actions now use that menu entry.
+No manual text or screenshots were changed; MAN-007 includes the deferred work.
+
+Follow-up verification: rebuilt the Release application, navigation tests and Help
+UI tests. `import.qml` passed (1.58 s); the focused offscreen
+`guardedNavigationAndIsolation` run passed (3/3 including setup/cleanup, 1542 ms),
+including closing through the File menu. Help walkthroughs were compiled but not
+rerun or used to recapture pictures. The compiler reported existing float-to-int
+warnings in navigation-test screenshot code. `git diff --check` passed; native
+visual inspection and other platforms remain unverified.
+
+Implemented under owner Go: unavailable toolbar Back/Forward buttons now render
+at 45% opacity, reinforcing the existing disabled palette and destination/busy
+checks. Settings no longer has the bottom Return to account button; sidebar
+accounts and toolbar navigation remain available. No financial behavior or format
+changed. Manual work is deferred as [MAN-007](manual-update-backlog.md#man-007--navigation-availability-and-settings-cleanup).
+
+Verification on macOS Release: rebuilt `spentit_import_experiment` and
+`spentit_import_navigation_tests`; `import.qml` passed (1.52 s).
+The first navigation run could not create application-data locks under the
+sandbox. Rerunning with that access completed in 19.70 s: 21 passed, one failed,
+one opt-in diagnostics case skipped. `guardedNavigationAndIsolation`,
+`ledgerViewportSurvivesCategoryNavigation` and `appearanceSwitching` passed.
+`manualTransactionEntry` failed at its existing line 319 assertion: after Undo,
+`occurrenceIndex(batch,0)` was 1 instead of -1. This manual-entry failure was not
+investigated or changed in this narrow presentation work; the full suite is not
+claimed passing. Native visual inspection and Linux/Windows remain unverified.
+`git diff --check` passed. The local `build/SpentIt` application is rebuilt.
+
 ## 50k audit profiling — 2026-11-06
 
 The prior improvements are committed as `0edf528`. A committed-build synthetic

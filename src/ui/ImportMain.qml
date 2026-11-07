@@ -2439,8 +2439,8 @@ ApplicationWindow {
         RowLayout {
             visible:!!s.active
             Button {objectName:"sidebarToggle";text:sidebarVisible?"Hide sidebar":"Show sidebar";visible:!!s.active;onClicked:sidebarVisible=!sidebarVisible;Accessible.name:text+" (Ctrl+Shift+B)"}
-            Button {objectName:"navigationBack";text:"Back";visible:!!s.active;enabled:!workflow.busy && navigationIndex>0;onClicked:traverseNavigation(-1)}
-            Button {objectName:"navigationForward";text:"Forward";visible:!!s.active;enabled:!workflow.busy && navigationIndex+1<navigation.length;onClicked:traverseNavigation(1)}
+            Button {objectName:"navigationBack";opacity:enabled?1.0:0.45;text:"Back";visible:!!s.active;enabled:!workflow.busy && navigationIndex>0;onClicked:traverseNavigation(-1)}
+            Button {objectName:"navigationForward";opacity:enabled?1.0:0.45;text:"Forward";visible:!!s.active;enabled:!workflow.busy && navigationIndex+1<navigation.length;onClicked:traverseNavigation(1)}
             Button {objectName:"workspaceHelp";text:"Help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp(screenHelpTarget())}
             Label {objectName:"workspaceTitle";textFormat:Text.PlainText;text:!s.active ? "Open or create a file" : currentPage==="ledger" ? s.name+" · "+s.currency : ({review:"Review",categories:"Categories",rules:"Rules",reports:"Reports",history:"Change history",settings:"Settings"})[currentPage] || "SpentIt";font.pixelSize:20;elide:Text.ElideRight;Layout.fillWidth:true}
             ActivitySpinner {
@@ -3235,9 +3235,11 @@ ApplicationWindow {
                         Label {text:"Settings";font.pixelSize:20}
                         Label {text:"Window";font.bold:true}
                         CheckBox {objectName:"rememberWindowPosition";text:"Remember window size and position";checked:workflow.rememberWindowPosition;onToggled:workflow.rememberWindowPosition=checked}
-                        Label {text:"";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        Item {Layout.fillWidth:true;Layout.preferredHeight:16}
                         Label {text:"File settings";font.bold:true}
                         Label {text:"Current file";font.bold:true}
+                        Label {textFormat:Text.PlainText;text:s.path||"";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere}
+                        Item {Layout.fillWidth:true;Layout.preferredHeight:4}
                         Label {text:"Date format: "+(s.dateFormat||"YYYY-MM-DD")}
                         RowLayout {
                             CheckBox {objectName:"amountFormatting";text:"Use amount formatting";checked:s.amountFormatting===undefined?true:s.amountFormatting
@@ -3249,13 +3251,10 @@ ApplicationWindow {
                         }
                         Label {text:"Use this style when entering amounts and calculations. Thousands separators are optional.";Layout.fillWidth:true;wrapMode:Text.Wrap}
 
-                        Label {textFormat:Text.PlainText;text:s.path||"";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere}
-                        Label {text:"Close this file before opening another.";Layout.fillWidth:true;wrapMode:Text.Wrap}
-                        Button {objectName:"closeDataset";text:"Close file…";onClicked:guard(function(){workflow.command("close")})}
+                        Item {Layout.fillWidth:true;Layout.preferredHeight:16}
                         Label {text:"Backup and recovery";font.bold:true}
                         Label {text:"Save a backup to a new file. To restore a backup, open it and save a copy to a new location.";Layout.fillWidth:true;wrapMode:Text.Wrap}
                         Button {objectName:"settingsBackup";text:"Save backup…";onClicked:guard(function(){backupDialog.open()})}
-                        Button {objectName:"returnToLedger";text:"Return to account";onClicked:navigate("ledger")}
                     }
                 }
                 UsableScrollView {

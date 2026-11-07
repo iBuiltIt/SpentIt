@@ -1085,7 +1085,8 @@ private slots:
         run(session.model, "backup", {{"path", backup}});
         QVERIFY2(session.model.error().isEmpty(), qPrintable(session.model.error()));
         QCOMPARE(session.model.state().value("path").toString(), path);
-        mouse("closeDataset");
+        QVERIFY(QMetaObject::invokeMethod(object(session.root, "fileCloseDataset"), "triggered"));
+        wait(session.model);
         QVERIFY(object(session.root, "datasetPath")->setProperty("text", backup));
         run(session.model, "open", {{"path", backup}}, false);
         QVERIFY(session.model.state().value("unlockRequired").toBool());
@@ -1544,7 +1545,8 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(details, "close"));
         QTRY_VERIFY(!details->property("visible").toBool());
         QTest::qWait(200);
-        mouse("closeDataset");
+        QVERIFY(QMetaObject::invokeMethod(object(session.root, "fileCloseDataset"), "triggered"));
+        wait(session.model);
         QVERIFY(!session.model.state().value("active").toBool());
         run(session.model, "open", {{"path", backup}}, false);
         QVERIFY(session.model.state().value("unlockRequired").toBool());
@@ -1557,7 +1559,8 @@ private slots:
         mouse("sidebarSettings");
         run(session.model, "backup", {{"path", recovered}});
         QCOMPARE(session.model.state().value("path").toString(), backup);
-        mouse("closeDataset");
+        QVERIFY(QMetaObject::invokeMethod(object(session.root, "fileCloseDataset"), "triggered"));
+        wait(session.model);
         run(session.model, "unlock", {{"path", recovered}, {"password", "synthetic-guide-password"}});
         QCOMPARE(session.model.state().value("path").toString(), recovered);
         QCOMPARE(session.model.state().value("newTransactions").toInt(), newCount);

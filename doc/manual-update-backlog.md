@@ -151,3 +151,24 @@ No manual text or pictures changed during implementation.
   split transactions. Review transfer and selection captions for obsolete manual
   unlink instructions. Capture both choice summaries if useful.
 - Check eventual bundled Help targets and links during the owner-authorized pass.
+
+### MAN-007 — Navigation availability and Settings cleanup
+
+Recorded: 2026-11-06. Status: **pending**.
+Source: owner Go for disabled Back/Forward appearance and removal of Settings'
+Return to account button; [implementation record](status.md#navigation-and-settings-cleanup--2026-11-06).
+
+No manual text or pictures changed during implementation.
+
+- Review [Accounts](../manual/accounts.md) and
+  [Keyboard and mouse](../manual/keyboard-mouse.md) navigation guidance: Back and
+  Forward are dimmed and unavailable when there is no destination.
+- Recapture Settings pictures `manual/images/recovery-backup.png` and
+  `manual/images/recovery-existing.png` without Return to account. Review their
+  captions in [Look after your work](../manual/backup-recovery.md); use an account
+  in the sidebar or Back to leave Settings. Include the follow-up layout: file
+  path directly below Current file, a small gap before Date format, matching
+  section gaps, and no Close file button or close-before-opening note. Update
+  the chapter's Settings → Close file instructions to File → Close file.
+- Audit toolbar pictures for disabled navigation appearance and recapture only
+  affected examples during the later owner-authorized manual pass.
