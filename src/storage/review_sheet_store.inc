@@ -180,11 +180,11 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     std::map<std::string,std::vector<imports::Occurrence>> remainders;
     Statement pending_choices(impl_->db,R"SQL(SELECT p.answer,p.batch,p.ordinal
       FROM review_choices p JOIN review_answers a ON a.id=p.answer
-      WHERE p.kind=0 AND p.resolved=0
+      WHERE p.kind=0 AND p.resolved=0 AND a.action<>0
       AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=p.answer)
       AND NOT EXISTS(SELECT 1 FROM review_choices n JOIN review_answers na ON na.id=n.answer
         WHERE n.kind=0 AND n.resolved=1 AND n.batch=p.batch AND n.ordinal=p.ordinal
-        AND na.sequence>a.sequence AND NOT EXISTS(SELECT 1 FROM review_undos nu WHERE nu.answer=n.answer)))SQL");
+        AND na.action<>0 AND na.sequence>a.sequence AND NOT EXISTS(SELECT 1 FROM review_undos nu WHERE nu.answer=n.answer)))SQL");
     while(pending_choices.row()){
         imports::Occurrence id{pending_choices.bytes(1),static_cast<std::size_t>(pending_choices.integer(2))};
         if(rows.contains(id))remainders[pending_choices.bytes(0)].push_back(std::move(id));
@@ -210,9 +210,16 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
             if(imports::candidate_basis(row.source,comparison_sources.at(other)) && !review_pair(impl_->db,0,id,other)){graph[id].insert(other);graph[other].insert(id);}
         }
     }
+    std::map<std::string,std::int64_t> import_orders;Statement orders(impl_->db,"SELECT batch,min(sequence) FROM records GROUP BY batch");while(orders.row())import_orders.emplace(orders.bytes(0),orders.integer(1));
+    for(auto& [id,row]:rows)if(graph.contains(id) && !graph.at(id).empty()){
+        row.duplicate_candidates.assign(graph[id].begin(),graph[id].end());
+        row.transfer_linked=transfer_linked(id);
+        row.import_order=import_orders.at(id.batch);
+    }
     std::set<imports::Occurrence> visited,duplicate_rows;
     for(const auto& id:unresolved){
         if(!rows.contains(id) || visited.contains(id))continue;
+        if(graph[id].empty() && load_row(id,false).decision.disposition==imports::Disposition::include)continue;
         std::vector<imports::Occurrence> pending{id};visited.insert(id);std::vector<app::ReviewTransaction> members;
         while(!pending.empty()) {const auto next=pending.back();pending.pop_back();members.push_back(rows.at(next));duplicate_rows.insert(next);for(const auto& neighbor:graph[next])if(visited.insert(neighbor).second)pending.push_back(neighbor);}
         std::sort(members.begin(),members.end(),[](const auto& a,const auto& b){return a.identity<b.identity;});
@@ -441,17 +448,36 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
     if(same!=(answer.action==app::ReviewAction::merge || answer.action==app::ReviewAction::separate))fail(SQLITE_CONSTRAINT,"Invalid Review answer");
     std::set<imports::Occurrence> selected(answer.selected.begin(),answer.selected.end());
     if(selected.size()!=answer.selected.size())fail(SQLITE_CONSTRAINT,"Select each transaction only once");
-    if(answer.action==app::ReviewAction::separate || answer.action==app::ReviewAction::not_linked)for(const auto& row:question->rows)selected.insert(row.identity);
+    if((answer.action==app::ReviewAction::separate && selected.empty()) || answer.action==app::ReviewAction::not_linked)for(const auto& row:question->rows)selected.insert(row.identity);
+    const bool focused_separate=answer.action==app::ReviewAction::separate && !answer.selected.empty();
+    if(focused_separate && answer.selected.size()>2)fail(SQLITE_CONSTRAINT,"Choose a pair or one transaction and all its matches");
+    const auto separate_origin=focused_separate?answer.selected.front():imports::Occurrence{};
+    if(focused_separate && selected.size()==1){
+        const auto origin=std::find_if(question->rows.begin(),question->rows.end(),[&](const auto& r){return r.identity==separate_origin;});
+        if(origin==question->rows.end())fail(SQLITE_CONSTRAINT,"Select a transaction in this question");
+        selected.insert(origin->duplicate_candidates.begin(),origin->duplicate_candidates.end());
+    }
     if(selected.size()<2)fail(SQLITE_CONSTRAINT,"Select at least two transactions");
     std::vector<app::ReviewTransaction> chosen;
     for(const auto& id:selected){const auto row=std::find_if(question->rows.begin(),question->rows.end(),[&](const auto& r){return r.identity==id;});if(row==question->rows.end())fail(SQLITE_CONSTRAINT,"Select transactions in this question");chosen.push_back(*row);}
     std::optional<imports::Occurrence> survivor=answer.action==app::ReviewAction::merge?answer.survivor:std::nullopt;
     if(answer.action==app::ReviewAction::merge){
         const auto committed=std::count_if(chosen.begin(),chosen.end(),[](const auto& r){return r.committed;});
+        // Revalidate the survivor using current relationships and import order.
+        for(auto& row:chosen){row.transfer_linked=transfer_linked(row.identity);Statement order(impl_->db,"SELECT min(sequence) FROM records WHERE batch=?");order.text(1,row.identity.batch);if(order.row())row.import_order=order.integer(0);}
+        const auto linked=std::count_if(chosen.begin(),chosen.end(),[](const auto& r){return r.transfer_linked;});
         const auto manual=std::count_if(chosen.begin(),chosen.end(),[&](const auto& r){return batch(impl_->db,r.identity.batch).manual;});
-        if(manual==1)survivor=std::find_if(chosen.begin(),chosen.end(),[&](const auto& r){return batch(impl_->db,r.identity.batch).manual;})->identity;
-        else if(manual>1){if(!survivor || !selected.contains(*survivor) || !batch(impl_->db,survivor->batch).manual)fail(SQLITE_CONSTRAINT,"Choose the manually entered transaction to keep");}
-        else if(committed==1)survivor=std::find_if(chosen.begin(),chosen.end(),[](const auto& r){return r.committed;})->identity;
+        const auto protected_count=std::count_if(chosen.begin(),chosen.end(),[](const auto& r){return r.transfer_linked || r.committed || r.note=="Manually entered";});
+        if(protected_count==1){
+            const auto keep=std::find_if(chosen.begin(),chosen.end(),[](const auto& r){return r.transfer_linked || r.committed || r.note=="Manually entered";})->identity;
+            if(survivor && *survivor!=keep)fail(SQLITE_CONSTRAINT,"Keep the established transaction or resolve it separately");
+            survivor=keep;
+        }
+        if(manual && survivor && !batch(impl_->db,survivor->batch).manual)fail(SQLITE_CONSTRAINT,"Keep the manually entered transaction or resolve it separately");
+        if(!survivor && !linked && !manual && !committed){
+            const auto first=std::min_element(chosen.begin(),chosen.end(),[](const auto& a,const auto& b){return a.import_order<b.import_order;});
+            if(first->import_order>0 && std::count_if(chosen.begin(),chosen.end(),[&](const auto& r){return r.import_order==first->import_order;})==1)survivor=first->identity;
+        }
         if(!survivor || !selected.contains(*survivor))fail(SQLITE_CONSTRAINT,"Choose the transaction to keep");
         for(const auto& r:chosen){if(r.account!=chosen.front().account)fail(SQLITE_CONSTRAINT,"Merge transactions within the same account");if(r.draft.transaction.effective_total()!=chosen.front().draft.transaction.effective_total())fail(SQLITE_CONSTRAINT,"Amounts differ. Edit the transactions before merging.");if(r.identity!=*survivor && transfer_linked(r.identity))fail(SQLITE_CONSTRAINT,"Resolve the existing links before merging this transaction");}
     }
@@ -463,10 +489,17 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
     if(same){
         // Selected rows leave this question. Remaining rows retain their mutual
         // comparisons, including exactly two remaining candidates.
-        for(const auto& row:question->rows)choice(0,row.identity,selected.contains(row.identity));
+        if(focused_separate){
+            const auto& origin=*std::find_if(chosen.begin(),chosen.end(),[&](const auto& r){return r.identity==separate_origin;});
+            for(const auto& row:chosen)if(row.identity!=separate_origin && std::find(origin.duplicate_candidates.begin(),origin.duplicate_candidates.end(),row.identity)==origin.duplicate_candidates.end())fail(SQLITE_CONSTRAINT,"This pair is no longer a suggested match");
+            for(const auto& row:chosen)choice(0,row.identity,row.identity==separate_origin);
+        }else for(const auto& row:question->rows)choice(0,row.identity,selected.contains(row.identity));
         if(survivor)std::stable_sort(chosen.begin(),chosen.end(),[&](const auto& a,const auto& b){return a.identity==*survivor && b.identity!=*survivor;});
         for(const auto& row:chosen){
             impl_->selected_account=row.account;
+            // A pair rejection must leave other comparisons and their unresolved
+            // import decisions intact. Only resolved endpoints become included.
+            if(focused_separate && std::any_of(row.duplicate_candidates.begin(),row.duplicate_candidates.end(),[&](const auto& other){return row.identity==separate_origin?!selected.contains(other):other!=separate_origin;}))continue;
             const bool loser=survivor && row.identity!=*survivor;
             if(loser){Statement mapping(impl_->db,"INSERT INTO review_merges VALUES(?,?,?,?,?)");mapping.text(1,row.identity.batch);mapping.integer(2,integer(row.identity.ordinal));mapping.text(3,survivor->batch);mapping.integer(4,integer(survivor->ordinal));mapping.text(5,operation);mapping.done();}
             // Capture sources before version triggers reassociate the row itself.

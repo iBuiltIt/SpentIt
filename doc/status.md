@@ -1,5 +1,53 @@
 # Project status
 
+## Ledger duplicate review — 2026-11-07
+
+Implemented the [owner-approved ledger interaction](review-sheet.md#ledger-duplicate-resolution--owner-go-2026-11-07).
+Possible duplicates carry rose markers without replacing new/accepted row colours.
+The ledger comparison bar shows direct candidates, New/Accepted labels, the row
+that Merge keeps, pair-only Separate, None of these match, Show match, Next and
+Undo review. The context menu exposes the same resolution actions. Review adds
+Show in ledger and New/Accepted row styling. Explicit reveal clears a hiding
+filter; ordinary selection preserves ledger order and neighbours. Existing lazy
+Review loading exposes Load possible duplicates after reopening.
+
+Automatic survivor choice retains a unique linked/manual/accepted entry, or a
+unique entry from the earliest import when neither row is protected. Ambiguous
+protected entries require a choice; an explicit survivor that would discard the
+unique protected entry is rejected. Merge's source association/recognition writes,
+monetary validation and relationship protection remain in place. No schema,
+retention, clean-marker policy or normal-open audit change was made (formats 64/63).
+Focused Separate uses the existing atomic Review receipt/choice and Undo machinery,
+preserving other direct comparisons and clean remainders from partial Merge.
+
+Verification on macOS, synthetic fixtures only:
+
+- Rules-enabled Release application and relevant test targets built successfully;
+  `build/SpentIt` was rebuilt. Seven selected CTest cases passed: full import UI,
+  ledger duplicates, Review sheet, batch Merge, matching policy, transfer assignment
+  and manual transactions. The full Qt run reported **86 passed, 0 failed**.
+  After the final viewport adjustment, four focused Qt cases passed (six including
+  setup/cleanup), covering filtered candidate reveal, pair/None/Merge/Undo,
+  automatic survivor choice and bringing an offscreen survivor into view.
+- New storage checks cover pair-only rejection, origin-wide rejection, unchanged
+  balances, retained alternatives, retries, Undo, clean partial-Merge remainders,
+  an earlier unaccepted survivor, and preservation of an established account link.
+- Four new Separate/Undo fault scenarios passed **524** injected disk-full/I/O
+  write/sync positions, **8** process interruptions before/after commit, repeated
+  retries and restored-backup checks. A first UI run under sandbox restrictions
+  could not create the application-data lock; passing runs used approved access
+  with normal locking unchanged.
+- The three storage cases (ledger duplicates, Review sheet, batch Merge) passed
+  in rules-disabled Release and ASan/UBSan builds. Leak detection was disabled;
+  these build trees do not include the UI.
+- The synthetic offscreen light-mode ledger comparison was rendered and inspected.
+  The initial Review background layout warning was corrected; the later focused
+  UI run had no such warning. Document file links and `git diff --check` passed.
+
+Manual text and screenshots remain unchanged; [MAN-009](manual-update-backlog.md#man-009--ledger-duplicate-review)
+records the deferred chapters and pictures. No private data was read. Native
+interaction, dark-mode visual inspection, Linux and Windows remain unverified.
+
 ## Verification-policy follow-through — 2026-11-07
 
 Inspection confirmed the accepted encrypted-marker policy and atomic baseline

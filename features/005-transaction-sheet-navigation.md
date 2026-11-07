@@ -1,5 +1,14 @@
 # 005 — Transaction sheet and navigation
 
+## Ledger duplicate review — owner Go, 2026-11-07
+
+Accepted: resolve suspected duplicates in ledger context, preserving neighbouring
+rows, new/accepted styling, existing matching and Merge source retention. Use
+explicit pair/all-candidate rejection, automatic established-survivor choice where
+unambiguous, and the existing protected relationship and Undo rules. Review remains
+the overview with Show in ledger. See the [contract](../doc/review-sheet.md#ledger-duplicate-resolution--owner-go-2026-11-07),
+[verification](../doc/status.md), and [deferred manual work](../doc/manual-update-backlog.md#man-009--ledger-duplicate-review).
+
 ## Selection shortcuts — owner Go, 2026-11-06
 
 Accepted: platform Select All and Deselect for the focused transaction list,
@@ -164,7 +173,7 @@ See [current verification and limits](../doc/status.md); older Resume and toolba
 descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-11-06  
+Last updated: 2026-11-07  
 Implementation: partial. The durable QIF UI now has combined text/date/source/regex search, identity-based multiselection, and atomic committed bulk category/removal/group Undo; see [contract and verification](../doc/search-ledger.md). Point 8 adds the [session sidebar balances, column ratios, narrow scroll, and viewport retention](#point-8-sheet-slice--2026-10-27). The synthetic sheet and broader account/navigation design remain separate bounded scopes. The optional Qt Quick sheet implements the shell, sorting/literal filtering, stable selection, inline engine-backed editing, and Save / Discard / Stay for session navigation/closing. The [durable UI](../doc/import-ui.md) adds setup/review/edit/commit with persistence; it does not implement this full sheet design. See [scope, actual verification and measurements](../doc/sheet-prototype.md). Full acceptance criteria below remain open; this feature is **active**.
 
 ## Next tasks: Review responsiveness and batch decisions — 2026-10-31

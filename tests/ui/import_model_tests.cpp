@@ -215,6 +215,53 @@ private slots:
         QVERIFY(window->findChild<QObject*>("importStatement"));QVERIFY(window->findChild<QObject*>("commitImport"));QVERIFY(window->findChild<QObject*>("discardImport"));QVERIFY(window->findChild<QObject*>("settingsBackup"));
         run(m,"close");run(m,"probe",{{"path",QDir::homePath()+"/spentit-missing-title-fixture.spentit"}},false);QCOMPARE(m.state().value("displayPath").toString(),"~/spentit-missing-title-fixture.spentit");
     }
+    void ledgerDuplicateReview() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPOlder A\n^\nD2026-02-01\nT-10\nPOlder B\n^\nD2026-02-01\nT-2\nPNeighbour\n^\n")}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPNew download\n^\n")}});
+        const auto questions=m.state().value("reviewQuestions").toList();QCOMPARE(questions.size(),1);
+        QVariantMap fresh,old;for(const auto& v:questions[0].toMap().value("rows").toList()){const auto r=v.toMap();if(r.value("payee")=="New download")fresh=r;else if(r.value("payee")=="Older A")old=r;}
+        QVERIFY(!fresh.isEmpty());QCOMPARE(fresh.value("duplicateCandidates").toList().size(),2);
+        run(m,"select",{{"row",m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt())}});
+        QTRY_COMPARE(window->property("duplicateOriginKey").toString(),fresh.value("key").toString());
+        auto click=[&](const char* name){auto* item=visualItem(window->contentItem(),QString::fromUtf8(name));if(!item)return false;return QMetaObject::invokeMethod(item,"clicked");};
+        QTRY_VERIFY(visualItem(window->contentItem(),"ledgerDuplicateMerge"));QVERIFY(!visualItem(window->contentItem(),"ledgerDuplicateMerge")->isEnabled());
+        run(m,"select",{{"row",m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())}});
+        QTRY_COMPARE(window->property("duplicateCandidateKey").toString(),old.value("key").toString());
+        if(!qEnvironmentVariableIsEmpty("SPENTIT_LEDGER_PREVIEW")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_LEDGER_PREVIEW")));}
+        // Revealing a filtered-out candidate is explicit and clears that filter.
+        run(m,"query",{{"filter","payee:New"}});
+        QVERIFY(click("ledgerDuplicateShow"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(m.state().value("filter").toString().isEmpty());
+        QVERIFY(m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())>=0);
+        QVERIFY(click("ledgerDuplicateSeparate"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("reviewQuestions").toList()[0].toMap().value("rows").toList().size(),2);QCOMPARE(m.rowCount(),5);QCOMPARE(m.state().value("balance").toString(),"-32.00");
+        QVERIFY(click("ledgerReviewUndo"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(m.state().value("reviewQuestions").toList()[0].toMap().value("rows").toList().size(),3);
+        // Reset the origin explicitly, choose a pair, and merge without a survivor dialog.
+        QVERIFY(QMetaObject::invokeMethod(window,"showDuplicateInLedger",Q_ARG(QVariant,fresh),Q_ARG(QVariant,fresh)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        run(m,"select",{{"row",m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())}});
+        QVERIFY(click("ledgerDuplicateMerge"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QVERIFY(!window->findChild<QObject*>("reviewSurvivor")->property("visible").toBool());QCOMPARE(m.rowCount(),4);QCOMPARE(m.state().value("balance").toString(),"-22.00");QVERIFY(m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())>=0);QCOMPARE(m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt()),-1);
+        QVERIFY(click("ledgerReviewUndo"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(m.rowCount(),5);
+        QVERIFY(QMetaObject::invokeMethod(window,"showDuplicateInLedger",Q_ARG(QVariant,fresh),Q_ARG(QVariant,fresh)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QVERIFY(click("ledgerDuplicateNone"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.rowCount(),5);
+    }
+    void ledgerDuplicateViewport() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1200,650);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        QByteArray records;for(int i=1;i<=60;++i)records+="D2026-02-01\nT-"+QByteArray::number(i)+"\nPOlder "+QByteArray::number(i)+"\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),records)}});run(m,"commit");
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-20\nPDownloaded again\n^\n")}});
+        QVariantMap fresh,old;for(const auto& v:m.state().value("reviewQuestions").toList()[0].toMap().value("rows").toList()){const auto r=v.toMap();if(r.value("committed").toBool())old=r;else fresh=r;}
+        QVERIFY(QMetaObject::invokeMethod(window,"showDuplicateInLedger",Q_ARG(QVariant,fresh),Q_ARG(QVariant,fresh)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QTest::qWait(100);
+        auto* ledger=visualItem(window->contentItem(),"durableLedger");QVERIFY(ledger);QVERIFY(ledger->property("contentY").toReal()>0);
+        auto* merge=visualItem(window->contentItem(),"ledgerDuplicateMerge");QVERIFY(merge && merge->isEnabled());QVERIFY(QMetaObject::invokeMethod(merge,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        const auto survivor=m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt());QCOMPARE(m.state().value("selectionIndex").toInt(),survivor);
+        const auto name="ledgerRow_"+QString::number(survivor);QTRY_VERIFY(visualItem(ledger,name));
+        QTRY_VERIFY(visualItem(ledger,name)->y()>=ledger->property("contentY").toReal()-1);
+        QTRY_VERIFY(visualItem(ledger,name)->y()+visualItem(ledger,name)->height()<=ledger->property("contentY").toReal()+ledger->height()+1);
+        auto* undo=visualItem(window->contentItem(),"ledgerReviewUndo");QVERIFY(undo);QVERIFY(QMetaObject::invokeMethod(undo,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(m.state().value("reviewCount").toInt(),1);
+    }
     void batchReviewOutcomes() {
         for(int mode=0;mode<4;++mode){
             QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* fault=gateway.get();ImportModel m(std::move(gateway));create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});

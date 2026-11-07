@@ -457,6 +457,13 @@ ApplicationWindow {
         MenuItem {objectName:"addTransactionContext";visible:!window.reportLedger;text:"Add transaction…";enabled:!s.readOnly && !workflow.busy;onTriggered:addTransaction()}
         MenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
         MenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
+        Menu {
+            title:"Resolve duplicate";visible:!window.reportLedger;enabled:!!duplicateOrigin && !workflow.busy && !s.readOnly
+            MenuItem {text:"Merge";enabled:!!duplicateCandidate;onTriggered:resolveLedgerDuplicate("merge",false)}
+            MenuItem {text:"Keep this pair separate";enabled:!!duplicateCandidate;onTriggered:resolveLedgerDuplicate("separate",false)}
+            MenuItem {text:"None of these match";enabled:duplicateCandidates.length>1;onTriggered:resolveLedgerDuplicate("separate",true)}
+            MenuItem {text:"Show match";enabled:!!duplicateCandidate;onTriggered:showDuplicateInLedger(duplicateCandidate,duplicateOrigin)}
+        }
         MenuItem {objectName:"duplicateMergeSelection";visible:!window.reportLedger;text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
         MenuItem {objectName:"mergeSelection";visible:!window.reportLedger;text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
         MenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
@@ -536,7 +543,9 @@ ApplicationWindow {
         let related=false
         let restore=false
         let clear=false
-        if(ledgerViewKind==="selected-edit") {
+        if(ledgerViewKind==="review") {
+            related=action==="review_answer" || action==="review_undo";restore=related;clear=true
+        } else if(ledgerViewKind==="selected-edit") {
             related=action==="delete_selection" || action==="rename_payee_selection" || action==="restore_imported_selection" || action==="undo_edit"
             restore=related;clear=true
         } else if(ledgerViewKind==="category") {
@@ -558,8 +567,9 @@ ApplicationWindow {
         if(!related && !restore) {ledgerViewRestore=null;ledgerViewKind="";return}
         if(restore) {
             let saved=ledgerViewRestore
+            const revealReview=ledgerViewKind==="review" && action==="review_answer" && success
             if(clear) {ledgerViewRestore=null;ledgerViewKind=""}
-            Qt.callLater(function(){restoreViewport(saved);Qt.callLater(function(){restoreViewport(saved)})})
+            Qt.callLater(function(){restoreViewport(saved);Qt.callLater(function(){restoreViewport(saved);if(revealReview && s.selectionIndex>=0)ledger.positionViewAtIndex(s.selectionIndex,ListView.Contain)})})
             return
         }
         if(clear) {ledgerViewRestore=null;ledgerViewKind=""}
@@ -1654,7 +1664,7 @@ ApplicationWindow {
                 searchReturn.chosen=true
             if(success && action==="select" && searchReturn)searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
-                searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
+                duplicateOriginKey="";duplicateCandidateKey="";pendingDuplicateReveal=null;searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
                 loadCategoryForm();categoryVisitAdditions=[];categorySort="ascending";categorySelection="";categoryReveal="";categoryMenuEntry=({});categoryContext.close()
                 transferDate.text=workflow.todayDisplay();ledgerViewRestore=null;ledgerViewKind=""
             }
@@ -1662,7 +1672,7 @@ ApplicationWindow {
                 categorySaving=false
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
-            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false}
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false;pendingDuplicateReveal=null}
             if(success) {
                 if(action==="transfer_manual")resolveAmount(transferAmount)
                 if(action==="correct_opening")correctAmount.text=s.opening
@@ -1674,6 +1684,12 @@ ApplicationWindow {
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
                     if(pendingReviewInspection){currentPage="review";pendingReviewInspection=false}
                     loadEditor();loadRulesForm();loadCategoryForm()
+                    if(pendingDuplicateReveal){
+                        const request=pendingDuplicateReveal;pendingDuplicateReveal=null
+                        duplicateOriginKey=request.origin.key;duplicateCandidateKey=request.row.key===request.origin.key?"":request.row.key
+                        currentPage="ledger";editorClosed=true
+                        Qt.callLater(function(){const index=workflow.occurrenceIndex(request.row.batch,request.row.ordinal);if(index>=0)ledger.positionViewAtIndex(index,ListView.Contain)})
+                    }
                     if(currentPage==="history")Qt.callLater(function(){workflow.command("history")})
                 }
                 if(action.indexOf("transfer_")===0 || action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment")loadEditor()
@@ -2290,7 +2306,7 @@ ApplicationWindow {
     Shortcut {
         sequences:[StandardKey.Undo]
         enabled:!reviewSheet.visible && (!!s.canUndoManual || !!s.canUndoEdit || !!s.canUndoReview || !!s.canUndoTransferAssignment) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
-        onActivated:if(s.canUndoEdit || s.canUndoManual)undoEdit();else {if(s.canUndoTransferAssignment)captureLedgerView("category");workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")}
+        onActivated:if(s.canUndoEdit || s.canUndoManual)undoEdit();else {captureLedgerView(s.canUndoTransferAssignment?"category":"review");workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")}
     }
     property var exclusionEndpoint: ({})
     property var exclusionEditing: ({})
@@ -2328,6 +2344,61 @@ ApplicationWindow {
             Button {text:"Cancel";onClicked:{workflow.command("link_exclusion_cancel");linkExclusionDialog.close()}}
         }
     }
+    // Duplicate comparison is independent of the ledger's financial selection.
+    readonly property var duplicateRows: {
+        let rows={}
+        for(const q of (s.reviewQuestions||[]))if(q.kind==="same")
+            for(const row of q.rows)rows[row.key]=Object.assign({},row,{question:q.key})
+        return rows
+    }
+    onDuplicateRowsChanged: {if(!duplicateRows[duplicateOriginKey]){duplicateOriginKey=duplicateRows[duplicateFocusKey]?duplicateFocusKey:"";duplicateCandidateKey=""}}
+    property string duplicateOriginKey: ""
+    property string duplicateCandidateKey: ""
+    property var pendingDuplicateReveal: null
+    readonly property string duplicateFocusKey: s.selectionFocusKey||""
+    readonly property var duplicateOrigin: duplicateRows[duplicateOriginKey] && duplicateRows[duplicateOriginKey].account===s.accountId?duplicateRows[duplicateOriginKey]:null
+    readonly property var duplicateCandidates: duplicateOrigin?(duplicateOrigin.duplicateCandidates||[]).map(key=>duplicateRows[key]).filter(row=>!!row):[]
+    readonly property var duplicateCandidate: duplicateCandidates.find(row=>row.key===duplicateCandidateKey)||(duplicateCandidates.length===1?duplicateCandidates[0]:null)
+    readonly property var duplicatePair: duplicateOrigin && duplicateCandidate?[duplicateOrigin,duplicateCandidate]:[]
+    readonly property var duplicateSurvivor: automaticSurvivor(duplicatePair)
+    onDuplicateFocusKeyChanged: {
+        if(pendingDuplicateReveal)return
+        if(duplicateOrigin && duplicateCandidates.some(row=>row.key===duplicateFocusKey))duplicateCandidateKey=duplicateFocusKey
+        else if(duplicateFocusKey!==duplicateOriginKey){duplicateOriginKey=duplicateRows[duplicateFocusKey]?duplicateFocusKey:"";duplicateCandidateKey=""}
+    }
+    function automaticSurvivor(rows) {
+        if(rows.length<2)return null
+        // Independent protections must agree before choosing automatically.
+        let protectedRows=rows.filter(row=>row.transferLinked || row.manual || row.committed)
+        if(protectedRows.length)return protectedRows.length===1?protectedRows[0]:null
+        let ordered=rows.filter(row=>Number(row.importOrder)>0).slice().sort((a,b)=>Number(a.importOrder)-Number(b.importOrder))
+        return ordered.length===rows.length && Number(ordered[0].importOrder)<Number(ordered[1].importOrder)?ordered[0]:null
+    }
+    function showDuplicateInLedger(row, origin) {
+        guard(function(){
+            pendingDuplicateReveal={row:row,origin:origin||row}
+            const index=row.account===s.accountId?workflow.occurrenceIndex(row.batch,row.ordinal):-1
+            if(index>=0 && currentPage==="ledger"){
+                workflow.command("select",{row:index});duplicateOriginKey=(origin||row).key;duplicateCandidateKey=origin && origin.key!==row.key?row.key:""
+                pendingDuplicateReveal=null;editorClosed=true;ledger.positionViewAtIndex(index,ListView.Contain);return
+            }
+            workflow.command("select_account",{id:row.account,reveal:true,batch:row.batch,ordinal:row.ordinal})
+        })
+    }
+    function resolveLedgerDuplicate(answer, all) {
+        if(!duplicateOrigin || (!all && !duplicateCandidate))return
+        const origin=duplicateOrigin, pair=duplicatePair.slice()
+        guard(function(){captureLedgerView("review");answerReview({key:origin.question},answer,all?[origin]:pair)})
+    }
+    function nextLedgerDuplicate() {
+        const rows=Object.values(duplicateRows).filter(row=>row.account===s.accountId)
+        let positions={}
+        for(let i=0;i<ledger.count;++i){const row=workflow.rowIdentity(i);positions[row.batch+":"+row.ordinal]=i}
+        rows.sort((a,b)=>(positions[a.key]===undefined?ledger.count:positions[a.key])-(positions[b.key]===undefined?ledger.count:positions[b.key]))
+        const index=rows.findIndex(row=>row.key===duplicateOriginKey)
+        if(rows.length)showDuplicateInLedger(rows[(index+1)%rows.length])
+    }
+    function undoLedgerReview() {guard(function(){captureLedgerView("review");workflow.command("review_undo")})}
     property bool reviewInspecting: false
     property bool pendingReviewInspection: false
     function inspectReviewTransaction(row) {
@@ -2374,8 +2445,8 @@ ApplicationWindow {
         if(reviewBatch[question.key]){let values=Object.assign({},reviewBatch);delete values[question.key];reviewBatch=values;return}
         let args={question:question.key,generation:s.reviewGeneration,answer:"merge",selected:chosen,batchIntent:true}
         let manual=chosen.filter(row=>row.manual)
-        let accepted=manual.length>0?manual:chosen.filter(row=>row.committed)
-        if(accepted.length===1){args.survivor=accepted[0];setReviewBatch(args)}
+        let survivor=automaticSurvivor(chosen)
+        if(survivor){args.survivor=survivor;setReviewBatch(args)}
         else {reviewPending=args;reviewSurvivors=manual.length>0?manual:chosen;reviewSurvivor.open()}
     }
     property string workspaceFeedback: "Ready"
@@ -2393,14 +2464,14 @@ ApplicationWindow {
         standardButtons:Dialog.Close
     }
     function answerReview(question, answer, chosen) {
+        if(currentPage==="ledger")captureLedgerView("review")
         captureReviewView()
         reviewScrollPosition=reviewQuestions.contentY
         let args={question:question.key,generation:s.reviewGeneration,answer:answer,selected:chosen||[]}
         if(answer==="merge") {
-            let manual=(chosen||[]).filter(row=>row.manual)
-            let accepted=manual.length>0?manual:(chosen||[]).filter(function(row){return row.committed})
-            if(manual.length===1)args.survivor=manual[0]
-            if(accepted.length!==1){reviewPending=args;reviewSurvivors=manual.length>0?manual:chosen;reviewSurvivor.open();return}
+            let survivor=automaticSurvivor(chosen||[])
+            if(survivor)args.survivor=survivor
+            else {reviewPending=args;reviewSurvivors=chosen;reviewSurvivor.open();return}
         }
         workflow.command("review_answer",args)
     }
@@ -2412,7 +2483,7 @@ ApplicationWindow {
             Repeater {model:reviewSurvivors;delegate:Button {
                 required property var modelData;required property int index;objectName:"reviewKeep_"+index;Layout.fillWidth:true
                 text:modelData.date+" · "+modelData.payee+" · "+modelData.total+(modelData.committed?" · Accepted":"")+" — Keep this transaction"
-                onClicked:{let args=Object.assign({},reviewPending,{survivor:modelData});reviewSurvivor.close();if(args.batchIntent)setReviewBatch(args);else workflow.command("review_answer",args)}
+                onClicked:{let args=Object.assign({},reviewPending,{survivor:modelData});reviewSurvivor.close();if(args.batchIntent)setReviewBatch(args);else {if(currentPage==="ledger")captureLedgerView("review");workflow.command("review_answer",args)}}
             }}
         }
         standardButtons:Dialog.Cancel
@@ -2809,6 +2880,7 @@ ApplicationWindow {
                         else {reviewScrollPosition=reviewQuestions.contentY;workflow.command("review_link_preview",{question:questionCard.modelData.key,generation:s.reviewGeneration,answer:"link",selected:[questionCard.modelData.rows[0],questionCard.modelData.rows[questionCard.counterpart]],leftAllocation:questionCard.leftAllocation,rightAllocation:questionCard.rightAllocation})}
                     }}
                     Button {text:"No";objectName:"reviewNo";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,questionCard.modelData.kind==="same"?"separate":"not_linked",[])}
+                    Button {objectName:"reviewShowLedger";text:"Show in ledger";visible:questionCard.modelData.kind==="same";enabled:!workflow.busy;onClicked:showDuplicateInLedger(questionCard.modelData.rows.find(row=>!row.committed)||questionCard.modelData.rows[0])}
                     Button {text:"Selected yes";objectName:"reviewSelectedYes";visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;enabled:!workflow.busy && questionCard.chosen.length>=2;onClicked:answerReview(questionCard.modelData,"merge",questionCard.chosen)}
                     Button {text:"Accept without bank match";objectName:"acceptMissingMatch";visible:!!questionCard.modelData.waitingLink;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,"accept_missing",[])}
                     Button {objectName:"reviewCorrect";text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}
@@ -2816,12 +2888,14 @@ ApplicationWindow {
                 Repeater {model:questionCard.modelData.rows;delegate:ColumnLayout {
                     id:reviewRow;required property var modelData;required property int index;Layout.fillWidth:true
                     property bool showSplits:false
+                    Item {Layout.preferredHeight:0;Layout.preferredWidth:0;z:-1;Rectangle {width:reviewRow.width;height:reviewRow.height;color:reviewRow.modelData.committed?(reviewRow.index%2?theme.rowAlternate:theme.row):(reviewRow.index%2?theme.draftAlternate:theme.draft)}}
                     RowLayout {
                         Layout.fillWidth:true
                         Item {Layout.preferredWidth:32;Layout.preferredHeight:36
                         CheckBox {objectName:"reviewRowSelect_"+reviewRow.index;anchors.centerIn:parent;enabled:!workflow.busy;checked:questionCard.chosen.some(row=>row.key===reviewRow.modelData.key);visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;onClicked:questionCard.toggle(reviewRow.modelData,checked);Accessible.name:"Select transaction "+reviewRow.modelData.payee}
                         RadioButton {anchors.centerIn:parent;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;onClicked:questionCard.selectCounterpart(reviewRow.index);Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee}
                         }
+                        Label {text:reviewRow.modelData.committed?"Accepted":"New";Layout.preferredWidth:65}
                         Label {text:reviewRow.modelData.date;Layout.preferredWidth:95;textFormat:Text.PlainText}
                         Label {text:reviewRow.modelData.accountName;Layout.preferredWidth:105;elide:Text.ElideRight;textFormat:Text.PlainText}
                         Label {text:reviewRow.modelData.payee;Layout.fillWidth:true;Layout.minimumWidth:100;elide:Text.ElideRight;textFormat:Text.PlainText;MouseArea {anchors.fill:parent;onDoubleClicked:inspectReviewTransaction(reviewRow.modelData)}}
@@ -3273,6 +3347,26 @@ ApplicationWindow {
                 Button {objectName:"undoEdit";text:s.editUndoLabel||"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo edits from this session. Other changes end this Undo sequence.";ToolTip.visible:hovered}
                 Button {objectName:"undoTransferAssignment";text:"Undo category change";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){captureLedgerView("category");workflow.command("undo_transfer_assignment")})}
             }
+            ColumnLayout {
+                objectName:"ledgerDuplicateBar";Layout.fillWidth:true;visible:!window.reportLedger && (!!duplicateOrigin || !!s.canUndoReview || s.reviewReady===false || Object.values(duplicateRows).some(row=>row.account===s.accountId))
+                RowLayout {
+                    Layout.fillWidth:true
+                    Label {objectName:"ledgerDuplicateSummary";Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap
+                        text:duplicateOrigin?"Possible duplicate · "+duplicateCandidates.length+" possible "+(duplicateCandidates.length===1?"match":"matches")+" · "+(duplicateOrigin.committed?"Accepted":"New")+" — "+duplicateOrigin.payee+(duplicateCandidate?" ↔ "+(duplicateCandidate.committed?"Accepted":"New")+" — "+duplicateCandidate.payee: " · Select a marked transaction to compare"):(s.reviewReady===false?"Load possible duplicates to review them in the ledger.":"Review possible duplicates in this account.")}
+                    Button {text:"Load possible duplicates";visible:s.reviewReady===false;onClicked:guard(function(){workflow.command("review_load")})}
+                    Button {objectName:"ledgerDuplicateNext";text:"Next possible duplicate";visible:Object.values(duplicateRows).some(row=>row.account===s.accountId);onClicked:nextLedgerDuplicate()}
+                    Button {objectName:"ledgerReviewUndo";text:"Undo review";visible:!!s.canUndoReview;enabled:!s.readOnly;onClicked:undoLedgerReview()}
+                }
+                RowLayout {
+                    visible:!!duplicateOrigin;Layout.fillWidth:true
+                    UsableComboBox {objectName:"ledgerDuplicateCandidates";visible:duplicateCandidates.length>1;Layout.preferredWidth:280;model:duplicateCandidates.map(row=>({key:row.key,label:row.date+" · "+row.payee+" · "+(row.committed?"Accepted":"New")}));textRole:"label";currentIndex:duplicateCandidates.findIndex(row=>duplicateCandidate && row.key===duplicateCandidate.key);displayText:currentIndex<0?"Choose a possible match":currentText;onActivated:duplicateCandidateKey=model[currentIndex].key}
+                    Button {objectName:"ledgerDuplicateMerge";text:"Merge";enabled:!!duplicateCandidate && !s.readOnly;onClicked:resolveLedgerDuplicate("merge",false)}
+                    Button {objectName:"ledgerDuplicateSeparate";text:"Keep this pair separate";enabled:!!duplicateCandidate && !s.readOnly;onClicked:resolveLedgerDuplicate("separate",false)}
+                    Button {objectName:"ledgerDuplicateNone";text:"None of these match";visible:duplicateCandidates.length>1;enabled:!s.readOnly;onClicked:resolveLedgerDuplicate("separate",true)}
+                    Button {objectName:"ledgerDuplicateShow";text:duplicateCandidate && workflow.occurrenceIndex(duplicateCandidate.batch,duplicateCandidate.ordinal)<0?"Reveal hidden match (clear filter)":"Show match";enabled:!!duplicateCandidate;onClicked:showDuplicateInLedger(duplicateCandidate,duplicateOrigin)}
+                    Label {Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap;text:duplicateSurvivor?"Keeps “"+duplicateSurvivor.payee+"”"+(duplicateSurvivor.transferLinked?" and its account link.":"."):(duplicateCandidate?"Choose which transaction to keep when merging.":"")}
+                }
+            }
             Row {
                 Layout.fillWidth:true;spacing:0
                 Repeater {model:window.reportLedger?["Date","Payee","Account","Category","Withdrawal","Deposit","In report"]:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
@@ -3333,6 +3427,7 @@ ApplicationWindow {
                     objectName:"ledgerRow_"+index
                     Accessible.role:Accessible.ListItem
                     Accessible.name:record.date+", "+record.payee+", "+record.category+", withdrawal "+record.withdrawal+", deposit "+record.deposit+", balance "+record.balance+" "+(s.currency||"")+", "+record.status
+                    Accessible.description:possibleDuplicate?"Possible duplicate · "+(record.status==="Draft"?"New":"Accepted"):""
                     Accessible.selectable:true
                     Accessible.selected:!!(s.selectionKeys||{})[record.batch+":"+record.ordinal]
                     Accessible.focusable:true
@@ -3351,7 +3446,14 @@ ApplicationWindow {
                     property alias editorSlot: rowEditorSlot
                     readonly property int rowHeight:34
                     width:ledger.width-20;height:rowHeight+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?(index%2===0?theme.draft:theme.draftAlternate):(index%2===0?theme.row:theme.rowAlternate)
-                    border.width:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?1:0;border.color:theme.focus
+                    readonly property string duplicateKey:record.batch+":"+record.ordinal
+                    readonly property bool possibleDuplicate:!window.reportLedger && !!duplicateRows[duplicateKey]
+                    readonly property bool comparingDuplicate:possibleDuplicate && (duplicateKey===duplicateOriginKey || duplicateCandidates.some(row=>row.key===duplicateKey))
+                    border.width:comparingDuplicate?2:(s.selectionKeys||{})[duplicateKey]?1:0;border.color:comparingDuplicate?theme.duplicate:theme.focus
+                    Rectangle {width:4;height:ledgerRow.rowHeight;visible:ledgerRow.possibleDuplicate;color:theme.duplicate}
+                    ToolTip.visible:duplicateHover.hovered && possibleDuplicate
+                    ToolTip.text:comparingDuplicate?(record.status==="Draft"?"New":"Accepted")+" · Possible duplicate":"Possible duplicate"
+                    HoverHandler {id:duplicateHover}
                     MouseArea {width:parent.width;height:ledgerRow.rowHeight;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){if(!(s.selectionKeys||{})[record.batch+":"+record.ordinal])selectLedgerRow(ledgerRow.index,0);ledgerContext.popup()}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
                         onDoubleClicked:function(mouse){if(mouse.button!==Qt.LeftButton)return;if(record.batch.length)toggleRecord(record.batch,record.ordinal);else editOpening()}
@@ -3364,7 +3466,7 @@ ApplicationWindow {
                                 required property int index
                                 width:(ledger.width-20)*window.ledgerColumnWeights[index];height:ledgerRow.rowHeight
                                 TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===window.ledgerCategoryColumn?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===window.ledgerCategoryColumn?window.firstLedgerTransfer(record):null}
-                                Label {anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2}
+                                Label {anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:index===0?8:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2}
                                 LedgerAction {
                                     anchors.fill:parent;anchors.leftMargin:32;visible:index===window.ledgerCategoryColumn && record.splits.length>1
                                     textAlignment:Text.AlignLeft

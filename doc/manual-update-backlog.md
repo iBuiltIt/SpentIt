@@ -208,3 +208,26 @@ No manual text, captions or pictures have been changed.
   independently detect every change made while the application was closed. Check links
   and bundled
   Help during the owner-authorized manual pass.
+
+
+### MAN-009 — Ledger duplicate review
+
+Recorded: 2026-11-07. Status: **pending owner-authorized manual pass**.
+Source: [ledger duplicate contract](review-sheet.md#ledger-duplicate-resolution--owner-go-2026-11-07).
+
+No manual text, captions or pictures have been changed.
+
+- Update [Review duplicates/transfers](../manual/review-duplicates-transfers.md)
+  and [Add/correct transactions](../manual/add-correct-transactions.md) for rose
+  markers, New/Accepted labels, direct candidate selection, Merge, pair-only
+  Separate, None of these match, Show match/reveal hidden matches, Next possible
+  duplicate, and Undo review. Explain automatic established-survivor selection
+  and exceptional conflicting relationships.
+- Update [Import transactions](../manual/import-transactions.md) and
+  [Accept transactions](../manual/accept-transactions.md) to mention ledger review
+  without changing the existing acceptance or matching policy. Include explicit
+  Load possible duplicates after lazy reopening.
+- Recapture affected ledger and Review pictures during the authorized manual pass:
+  `manual/images/transactions-ledger.png`, `manual/images/transactions-review.png`,
+  `manual/images/review-keep.png`, and `manual/images/accept-review.png`. Add a
+  comparison with neighbouring transactions and a multiple-candidate example.

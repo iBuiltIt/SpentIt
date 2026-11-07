@@ -23,6 +23,7 @@ QtObject {
     readonly property color draft: dark ? "#3d3524" : "#fff6de"
     readonly property color draftAlternate: dark ? "#49402c" : "#fffdf2"
     readonly property color changed: dark ? "#463b24" : "#fff2cf"
+    readonly property color duplicate: dark ? "#f0a1bf" : "#a13661"
     readonly property color error: dark ? "#ff9999" : "#a02020"
     readonly property color warning: dark ? "#e9be70" : "#855100"
     readonly property color scrollThumb: dark ? "#718396" : "#94a3b0"

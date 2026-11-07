@@ -23,6 +23,9 @@ struct ReviewTransaction {
     std::string note;
     // Presentation defaults relative to the question’s source; never confirm a link.
     std::string suggested_left_allocation={}, suggested_right_allocation={};
+    bool transfer_linked=false;
+    std::int64_t import_order=0;
+    std::vector<imports::Occurrence> duplicate_candidates={};
 };
 struct ReviewQuestion {
     std::string key;
@@ -43,6 +46,8 @@ struct ReviewAnswer {
     std::int64_t generation=0;
     std::string question;
     ReviewAction action=ReviewAction::separate;
+    // Separate: empty means the whole group; two means only that pair; one
+    // means the origin and its direct candidates (not candidate-to-candidate).
     std::vector<imports::Occurrence> selected;
     std::optional<imports::Occurrence> survivor;
     std::string left_allocation,right_allocation,remainder_category;

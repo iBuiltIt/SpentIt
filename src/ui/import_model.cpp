@@ -926,7 +926,7 @@ struct ImportModel::Worker {
             const auto review=deferReview?app::ReviewSheet{}:repo.review_sheet();state["reviewReady"]=!deferReview;QVariantList questions;std::int64_t priorAccount=-1;
             for(const auto& q:review.questions){
                 QVariantList rows;
-                for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat,amountFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total(),amountFormat):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total(),amountFormat):QString();value["note"]=text(row.note);value["sameDate"]=!q.rows.empty() && !row.draft.date.empty() && row.draft.date==q.rows.front().draft.date;value["suggestedLeftAllocation"]=text(row.suggested_left_allocation);value["suggestedRightAllocation"]=text(row.suggested_right_allocation);value["manual"]=row.note=="Manually entered";value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
+                for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat,amountFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total(),amountFormat):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total(),amountFormat):QString();value["note"]=text(row.note);value["sameDate"]=!q.rows.empty() && !row.draft.date.empty() && row.draft.date==q.rows.front().draft.date;value["suggestedLeftAllocation"]=text(row.suggested_left_allocation);value["suggestedRightAllocation"]=text(row.suggested_right_allocation);value["manual"]=row.note=="Manually entered";value["transferLinked"]=row.transfer_linked;value["importOrder"]=QString::number(row.import_order);QVariantList peers;for(const auto& peer:row.duplicate_candidates)peers.push_back(text(peer.batch)+":"+QString::number(peer.ordinal));value["duplicateCandidates"]=peers;value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
                 questions.push_back(QVariantMap{{"waitingLink",text(q.waiting_link)},{"key",text(q.key)},{"kind",q.kind==app::ReviewKind::same?"same":q.kind==app::ReviewKind::link?"link":"correction"},{"account",QString::number(q.account)},{"accountName",text(q.account_name)},{"separator",q.account!=priorAccount},{"reason",text(q.reason)},{"batch",text(q.batch)},{"ordinal",q.ordinal?static_cast<int>(*q.ordinal):-1},{"rows",rows}});priorAccount=q.account;
             }
             QVariantList exclusions;
@@ -1179,7 +1179,7 @@ struct ImportModel::Worker {
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
         int focus=-1;
         if(selectionFocus)for(std::size_t i=0;i<cachedView->order.size();++i)if(cachedView->rows[cachedView->order[i]].identity==*selectionFocus){focus=static_cast<int>(i);break;}
-        state["selectionIndex"]=focus;
+        state["selectionIndex"]=focus;state["selectionFocusKey"]=selectionFocus?text(selectionFocus->batch)+":"+QString::number(selectionFocus->ordinal):QString();
         return {state,cachedView};
     }
     void publishPreview(const app::RulePreviewResult& result,bool single) {
@@ -1375,7 +1375,9 @@ struct ImportModel::Worker {
                 }
             }
             const auto op=identity();try{repo.answer_review(op,answer);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
-            diagnosticSaved=true;reviewLinkPreview.clear();selected.clear();return;
+            diagnosticSaved=true;reviewLinkPreview.clear();selected.clear();
+            if(answer.action==app::ReviewAction::merge && answer.survivor){selection={*answer.survivor};selectionFocus=answer.survivor;selectionAnchor=answer.survivor;}
+            return;
         }
         if(action=="review_cancel_link"){reviewLinkPreview.clear();return;}
         if(action=="review_undo") {const auto op=identity();try{repo.undo_review(op);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}diagnosticSaved=true;reviewLinkPreview.clear();selected.clear();return;}
@@ -2410,7 +2412,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             }
             auto value=draft(record.draft,worker_->categoryById,worker_->dateFormat,amountFormat);
             value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=record.committed;value["transferLinked"]=worker_->cachedLinkedRows.contains(id);
-            auto next=state_;next["selection"]=QVariantList{value};next["selectionKeys"]=QVariantMap{{text(id.batch)+":"+QString::number(id.ordinal),true}};next["selectionCount"]=1;next["selectionIndex"]=row;
+            auto next=state_;next["selection"]=QVariantList{value};next["selectionKeys"]=QVariantMap{{text(id.batch)+":"+QString::number(id.ordinal),true}};next["selectionCount"]=1;next["selectionIndex"]=row;next["selectionFocusKey"]=text(id.batch)+":"+QString::number(id.ordinal);
             worker_->selection={id};worker_->selectionFocus=id;worker_->selectionAnchor=id;state_=std::move(next);error_.clear();
             observer.finish(diagnosticId,diag::Result::succeeded,diag::Persistence::not_applicable,diag::Presentation::model_applied);observer.applied(diagnosticId);
             emit changed();emit completed(action,true);

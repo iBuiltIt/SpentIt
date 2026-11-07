@@ -13,6 +13,49 @@ and persistence contract below includes it. The owner settled grouped imports wi
 counterparts: each unresolved explicit transfer gets its generated entry.
 The broader transaction-sheet feature remains active.
 
+## Ledger duplicate resolution — owner Go, 2026-11-07
+
+Accepted: keep the existing matching policy and Merge source-association storage.
+The losing posting's imported representations continue to attach to the survivor;
+this work does not change retention, formats, clean-open verification or close policy.
+
+The ordinary ledger marks suspected duplicates with a rose edge and comparison
+outline, preserving new/accepted striping and selection. Selecting a marked row
+exposes its direct candidates, not every transitive member of the Review group.
+The comparison bar labels New/Accepted, identifies the selected match and survivor,
+and offers Merge, Keep this pair separate, Show match and Next possible duplicate.
+Several candidates require choosing one by clicking its ledger row or using the
+candidate picker. None of these match rejects only the selected origin's candidate
+comparisons. Right-click Resolve duplicate exposes the same actions. Read-only files
+cannot resolve questions. Existing lazy Review loading remains explicit through
+Load possible duplicates when a reopened file has not loaded Review yet.
+
+Rows remain in ledger order with surrounding transactions visible. Show match
+scrolls to an available row; revealing a hidden match explicitly clears the filter.
+Review retains its overview and batch controls, adds New/Accepted styling and
+Show in ledger. Navigation and inspection do not answer questions. Existing unsaved
+edit guards apply. Merge and Separate retain the viewport; Merge selects the survivor.
+Undo review and the standard Undo shortcut reverse the decision through existing
+session Undo. Navigation to another question is explicit, not an automatic jump.
+
+The survivor rules below supersede the earlier committed-only default.
+A unique protected row (linked, manually entered or accepted) is retained
+without a survivor prompt. With no protected rows, a unique row from the earliest
+import is retained even if still new. Multiple rows from that earliest import or
+conflicting protected rows require an explicit choice; a losing row's account link
+cannot be discarded by Merge. Domain validation rechecks amounts, membership,
+generation, survivor eligibility and relationships. Existing manual-original
+attachment restrictions remain enforced.
+
+Focused Separate uses existing encrypted Review choices/receipts and atomic Undo:
+two selected identities reject that pair; one selected origin rejects its current
+direct candidates. An empty selection retains Review's group-wide No behavior.
+Other comparisons remain outstanding, including clean remainders from partial
+Merge. No schema change or widened automatic matching is introduced.
+
+Verification is recorded in [status](status.md). Manual text and screenshots are
+tracked in [MAN-009](manual-update-backlog.md#man-009--ledger-duplicate-review).
+
 ## User interaction
 
 Review is above Categories as the first sidebar action. Review and Commit open

@@ -800,6 +800,69 @@ void acceptance_order_tests(const std::filesystem::path& dir) {
     std::cout<<"Acceptance ordering passed\n";
 }
 
+void ledger_duplicate_faults(const std::filesystem::path& dir){
+    fault_vfs::install();const Currency cad("CAD");
+    for(int mode=0;mode<4;++mode){
+        const bool all=mode&1,undo=mode&2;const auto base=dir/("duplicate-base-"+std::to_string(mode));ReviewAnswer request;
+        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+            s.ingest("old",source("Older A")+source("Older B").substr(11),qif::DateOrder::dmy);s.ingest("new",source("New"),qif::DateOrder::dmy);
+            const auto sheet=s.review_sheet();request.question=sheet.questions.at(0).key;request.generation=sheet.generation;request.action=ReviewAction::separate;request.selected={{"new",0}};if(!all)request.selected.push_back({"old",0});
+            if(undo)s.answer_review("answer",request);}
+        const auto apply=[&](ImportStore& s){if(undo)s.undo_review("operation");else s.answer_review("operation",request);};
+        const auto verify=[&](ImportStore& s,bool saved){s.verify();const bool resolved=undo?!saved:saved;const auto sheet=s.review_sheet();check(s.balance().units()==-3000 && s.current_ledger().size()==3,"Separate never changes financial totals");check(sheet.questions.size()==(resolved && all?0:1),"Separate questions are atomic");if(!sheet.questions.empty())check(sheet.questions[0].rows.size()==(resolved?2:3),"Pair preserves other candidates");};
+        int positions=0;
+        for(int nth=1;nth<600;++nth){const auto trial=dir/"duplicate-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired=false;
+            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(...){if(!fault_vfs::fired)throw;}fired=fault_vfs::fired;fault_vfs::disarm();}
+            {auto s=ImportStore::open(trial,"test");verify(s,s.review_outcome("operation").has_value());apply(s);apply(s);verify(s,true);}
+            if(!fired){positions=nth-1;break;}}
+        check(positions>0,"Separate fault sweep completed");std::cout<<"Ledger duplicate fault mode "<<mode<<": "<<positions<<" positions"<<std::endl;
+        for(auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){const auto trial=dir/"duplicate-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto p){if(p==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Separate crash boundary reached");auto s=ImportStore::open(trial,"test");verify(s,phase==storage::ImportPhase::after_commit);apply(s);verify(s,true);}
+        {auto s=ImportStore::open(base,"test");apply(s);s.backup_to(dir/"duplicate-backup","test");}
+        {auto s=ImportStore::open(dir/"duplicate-backup","test");verify(s,true);}std::filesystem::remove(dir/"duplicate-backup");
+    }
+}
+
+void ledger_duplicate_tests(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    auto store=ImportStore::create(dir/"ledger-duplicates","test","Checking",cad,"2026-01-01");
+    store.opening(0,"2026-01-01",Money(0,cad));
+    store.ingest("old",source("Older A")+source("Older B").substr(11),qif::DateOrder::dmy);
+    store.ingest("new",source("New"),qif::DateOrder::dmy);
+    auto sheet=store.review_sheet();check(sheet.questions.size()==1,"Ambiguous duplicate group");
+    const auto newer=std::find_if(sheet.questions[0].rows.begin(),sheet.questions[0].rows.end(),[](const auto& r){return r.identity.batch=="new";});
+    check(newer!=sheet.questions[0].rows.end() && newer->duplicate_candidates.size()==2,"Only direct candidates are exposed");
+    ReviewAnswer separate;separate.question=sheet.questions[0].key;separate.generation=sheet.generation;separate.action=ReviewAction::separate;separate.selected={{"new",0},{"old",0}};
+    store.answer_review("pair-no",separate);store.answer_review("pair-no",separate);
+    sheet=store.review_sheet();check(sheet.questions.size()==1 && sheet.questions[0].rows.size()==2,"Rejecting a pair retains the other candidate");
+    check(store.row({"new",0}).decision.disposition==imports::Disposition::unresolved,"Other candidate remains unresolved");store.verify();
+    auto changed=separate;changed.selected={{"new",0},{"old",1}};bool refused=false;try{store.answer_review("pair-no",changed);}catch(...){refused=true;}check(refused,"Changed pair retry is rejected");
+    store.undo_review("undo-pair");check(store.review_sheet().questions[0].rows.size()==3,"Undo restores all candidates");store.verify();
+    separate.generation=store.review_sheet().generation;separate.selected={{"new",0}};
+    store.answer_review("none",separate);check(store.review_sheet().questions.empty(),"None rejects source candidates without inventing older comparisons");check(store.balance().units()==-3000,"Separate preserves balance");store.verify();
+    store.undo_review("undo-none");check(store.review_sheet().questions[0].rows.size()==3,"Undo none restores ambiguity");
+    answer(store,"merge-old",ReviewAction::merge,{{"new",0},{"old",0}});
+    check(store.current_ledger().size()==2 && store.row({"new",0}).decision.duplicate_of==imports::Occurrence{"old",0},"Unique earlier import survives automatically");store.verify();
+    store.undo_review("undo-merge");check(store.current_ledger().size()==3,"Merge Undo restores duplicate");store.verify();
+    auto remainder=ImportStore::create(dir/"ledger-remainder","test","Checking",cad,"2026-01-01");
+    remainder.opening(0,"2026-01-01",Money(0,cad));
+    remainder.ingest("a",source("Original")+source("Original").substr(11)+source("Original").substr(11),qif::DateOrder::dmy);
+    remainder.ingest("b",source("Other")+source("Other").substr(11),qif::DateOrder::dmy);
+    answer(remainder,"partial",ReviewAction::merge,{{"b",0},{"b",1}},imports::Occurrence{"b",0});
+    check(remainder.review_sheet().questions.at(0).rows.size()==3,"Three clean rows remain after partial Merge");
+    answer(remainder,"partial-no",ReviewAction::separate,{{"a",0},{"a",1}});
+    check(remainder.review_sheet().questions.at(0).rows.size()==3,"Pair rejection preserves clean remainder comparisons");
+    answer(remainder,"remainder-none",ReviewAction::separate,{{"a",2}});
+    check(remainder.review_sheet().questions.empty(),"All remaining edges answered without orphan correction tasks");remainder.verify();
+    remainder.undo_review("undo-remainder-none");check(remainder.review_sheet().questions.at(0).rows.size()==3,"Undo restores clean remainder edges");remainder.verify();
+    auto linked=ImportStore::create(dir/"ledger-linked","test","Checking",cad,"2026-01-01");
+    linked.opening(0,"2026-01-01",Money(0,cad));linked.create_account(2,"Visa",cad,"2026-01-01");
+    linked.ingest("linked-old",source("Payment"),qif::DateOrder::dmy);
+    TransferRequest request{};request.action=TransferAction::from_draft;request.link="payment";request.origin=imports::Occurrence{"linked-old",0};request.allocation="source-0";request.destination=2;request.expected_sequence=linked.transfer_sequence();linked.apply_transfer("link",request);
+    linked.ingest("download",source("Bank payment"),qif::DateOrder::dmy);
+    answer(linked,"merge-linked",ReviewAction::merge,{{"download",0},{"linked-old",0}});
+    check(linked.row({"download",0}).decision.duplicate_of==imports::Occurrence{"linked-old",0},"Linked established transaction survives");
+    check(linked.transfers().size()==1 && linked.balance().units()==-1000,"Account link and balance survive Merge");linked.verify();linked.undo_review("undo-linked");linked.verify();
+}
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
@@ -815,6 +878,8 @@ int main(int argc,char** argv){
         if(argc>1 && std::string(argv[1])=="editor"){editor_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="editor_faults"){editor_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="release"){release_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="ledger_faults"){ledger_duplicate_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="ledger"){ledger_duplicate_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="assignment"){assignment_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="assignment_faults"){assignment_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="batch"){batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
