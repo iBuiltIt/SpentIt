@@ -75,7 +75,7 @@ void definitions(){
     const auto kept=s.rule_image();s.ingest("temporary",plain_source,qif::DateOrder::dmy);s.discard("temporary",0);check(s.rule_image().revision==kept.revision&&s.rule_image().ordered.size()==kept.ordered.size()&&s.rule_image().ordered[0].label==kept.ordered[0].label);
     rejects_text([&]{apply_category(s,"erase-fees",change(app::CategoryAction::erase,"fees"));},"Transactions use this category. Archive it instead.");apply_category(s,"archive-fees",change(app::CategoryAction::archive,"fees"));check(s.resolve_category("fees").archived);
     const imports::Occurrence row{"assigned",0};s.ingest(row.batch,split_source,qif::DateOrder::dmy);auto draft=*s.row(row).draft;bind(s,draft,1,"parking");s.save(row,0,draft);s.commit(row.batch,1,"publish-assigned");check(s.committed_balance().units()==-2931&&s.committed_entry(row).current.draft.transaction.allocations()[1].category_binding->identity=="parking");s.verify();}
-    check(query(path,"PRAGMA user_version")=="58");no_leaks(dir.path);
+    check(query(path,"PRAGMA user_version")=="62");no_leaks(dir.path);
 }
 
 void application(){
@@ -122,8 +122,8 @@ void schema(){
     alter("PRAGMA user_version=18");const auto rejected18=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected18);
     alter("PRAGMA user_version=19");const auto rejected19=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected19);
     alter("PRAGMA user_version=20");const auto bumped=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==bumped);
-    for(const auto version:{27,28,29,30,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57}){alter(("PRAGMA user_version="+std::to_string(version)).c_str());const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported");check(bytes(path)==before);}
-    alter("PRAGMA user_version=58");const auto current=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==current);
+    for(const auto version:{27,28,29,30,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61}){alter(("PRAGMA user_version="+std::to_string(version)).c_str());const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported");check(bytes(path)==before);}
+    alter("PRAGMA user_version=62");const auto current=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==current);
     alter("CREATE TABLE rule_state(singleton INTEGER PRIMARY KEY)");const auto extra=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==extra);
     const auto sibling=bytes(path);fault_vfs::arm(1,SQLITE_FULL);rejects_text([&]{ImportStore::create(mismatch.path/"other",password,"Synthetic account",cad,"2026-08-01");},"");fault_vfs::disarm();check(bytes(path)==sibling);
 }
@@ -288,6 +288,11 @@ void account_apply(){
     query.replace_manual=true;rejects_text([&]{s.preview_pending_rules(query,context);},"Clear categories");
     check(s.row({"new",0}).draft->payee=="My ride");s.verify();
     s.select_account(2);check(s.row({"other",0}).draft->payee=="Ride other" && !s.can_undo_account_rules());s.select_account(1);
+    s.certify({});s.verify();s.backup_to(dir.path/"baseline-backup",password);
+    auto restored=ImportStore::open(dir.path/"baseline-backup",password);restored.select_account(1);
+    auto draft=*restored.row({"new",0}).draft;draft.memo="New session edit";
+    restored.edit_transaction("after-baseline",{"new",0},batch_revision(restored,"new"),{},draft);
+    restored.undo_review("after-baseline-undo");restored.verify();restored.certify({});restored.verify();
 }
 
 app::AccountRuleRequest account_fault_setup(const fs::path& path){

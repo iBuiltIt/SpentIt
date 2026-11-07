@@ -2267,10 +2267,10 @@ ApplicationWindow {
     }
     HelpDialog {
         helpTarget: "help:look-after-your-work#checking-could-not-finish-on-quit"
-        id:closeAuditFailure;objectName:"closeAuditFailure";title:"Couldn’t finish checking the file";modal:true;anchors.centerIn:parent;width:540
+        id:closeAuditFailure;objectName:"closeAuditFailure";title:"Couldn’t close the file";modal:true;anchors.centerIn:parent;width:540
         ColumnLayout {anchors.fill:parent
             Label {Layout.fillWidth:true;text:errorDialog===closeAuditFailure?workflow.error:"";wrapMode:Text.Wrap;textFormat:Text.PlainText}
-            Label {Layout.fillWidth:true;text:"SpentIt couldn’t finish checking the file. It will check again next time you open it.";wrapMode:Text.Wrap}
+            Label {Layout.fillWidth:true;text:"SpentIt couldn’t finish closing the file. Return to try again, or quit and let SpentIt check it when you reopen it.";wrapMode:Text.Wrap}
             RowLayout {
                 Button {text:"Return";onClicked:closeAuditFailure.close()}
                 Button {objectName:"closeAuditQuitAnyway";text:"Quit anyway";onClicked:{closeAuditFailure.close();beginQuit(true)}}

@@ -10,9 +10,16 @@
 #include <spentit/transfer_commands.hpp>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 
 namespace spentit::app {
+// A durable result, not a failed command and not a reconstructed old snapshot.
+class OperationAlreadyCompleted final : public std::runtime_error {
+public:
+    explicit OperationAlreadyCompleted(std::string id):std::runtime_error("This change was already saved. Refresh the current transactions."),operation(std::move(id)){}
+    std::string operation;
+};
 enum class LedgerSelectionAction { rename_payee, restore_imported, remove };
 struct LedgerSelectionEdit {
     LedgerSelectionAction action=LedgerSelectionAction::rename_payee;

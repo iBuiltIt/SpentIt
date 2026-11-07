@@ -103,7 +103,7 @@ void behavior(){
     }
     Directory dir("spentit-lifecycle-XXXXXX");const auto path=dir.path/"doc";
     {
-        auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"58":"57"));
+        auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"62":"61"));
         store.create_account(2,"Savings",cad,date);publish(store);const auto balance=store.committed_balance();const auto revision=store.account().revision;const auto evidence=store.evidence("checking");
         rejects([&]{store.rename_account("rename"," ");},"Account name is required");
         rejects([&]{store.rename_account("rename","");},"Account name is required");
@@ -193,7 +193,7 @@ void behavior(){
         check(undone.currency==cad && store.account().currency==cad && store.account().opening==Money(2000,cad) && store.committed_balance()==Money(1000,cad));
         check(store.ledger(false).at(0).draft.transaction.effective_total()==Money(-1000,cad) && store.ledger(false).at(0).draft.transaction.original_imported_amount()==Money(-1000,cad));
         store.reassign_currency("pad",bhd);check(store.account().opening==Money(20000,bhd) && store.committed_balance()==Money(10000,bhd) && store.ledger(false).at(0).draft.transaction.effective_total()==Money(-10000,bhd) && store.ledger(false).at(0).draft.transaction.original_imported_amount()==Money(-1000,cad));
-        store.verify();store.backup_to(money_dir.path/"backup",password);
+        store.certify({});store.verify();store.backup_to(money_dir.path/"backup",password);
         check(query(money_path,"SELECT currency||':'||original_units FROM source_occurrences WHERE batch='checking' AND ordinal=0")==cad.definition_id()+":-1000");
         auto restored=ImportStore::open(money_dir.path/"backup",password);check(restored.account().currency==bhd && restored.evidence("checking")==bytes && restored.committed_entry({"checking",0}).current.draft.transaction.original_imported_amount()==Money(-1000,cad));restored.verify();
         check(query(money_dir.path/"backup","SELECT currency||':'||original_units FROM source_occurrences WHERE batch='checking' AND ordinal=0")==cad.definition_id()+":-1000");

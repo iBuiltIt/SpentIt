@@ -41,7 +41,7 @@ void ImportStore::undo_manual(std::string_view id,std::int64_t generation) {
     require_account(id);Statement kind(impl_->db,"SELECT parser,state FROM batches WHERE id=?");kind.text(1,id);
     if(!kind.row() || kind.bytes(0)!="manual-v1")fail(SQLITE_CONSTRAINT,"Choose a manually entered transaction");
     if(kind.integer(1)==2)return;
-    Statement created(impl_->db,"SELECT generation FROM manual_creations WHERE batch=?");created.text(1,id);
+    Statement created(impl_->db,"SELECT generation FROM manual_creations WHERE batch=? AND batch IN(SELECT id FROM session_history WHERE domain='manual')");created.text(1,id);
     if(!created.row() || created.integer(0)!=generation || ledger_edit_generation()!=generation || transaction_accepted({std::string(id),0}))fail(SQLITE_CONSTRAINT,"Another change ended Undo for this transaction");
     discard(id,batch(impl_->db,id).revision);
 }

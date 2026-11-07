@@ -495,7 +495,10 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
             std::size_t marked_allocations=0;for(const auto& allocation:stored_allocations)if(allocation.category_rule||allocation.memo_rule)++marked_allocations;if(marked_positions.size()!=marked_allocations)fail(SQLITE_CORRUPT);
             Statement event(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");event.text(1,id.batch);event.integer(2,revision_at);if(!event.row())fail(SQLITE_CORRUPT);
             const auto kind=event.bytes(0);
-            if(!previous){
+            if(session_snapshot::baseline(impl_->db,false,id,revision_at)){
+                // Checked baseline: provenance is validated above; expired
+                // intermediate field transitions are not reconstructed.
+            } else if(!previous){
                 const auto initial_owner=source.format=="manual"?FieldOwnership::manual:FieldOwnership::source;
                 if(draft.payee_owner==FieldOwnership::rule || draft.memo_owner==FieldOwnership::rule || marked) fail(SQLITE_CORRUPT);
                 if((kind=="ingest" || kind=="materialize") && (draft.payee_owner!=initial_owner || draft.memo_owner!=initial_owner)) fail(SQLITE_CORRUPT);
@@ -527,7 +530,7 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
         if(ruleset>0){Statement present(impl_->db,"SELECT 1 FROM rule_operations WHERE ruleset_after=?");present.integer(1,ruleset);if(!present.row())fail(SQLITE_CORRUPT);}
         // An unchanged Apply keeps the revision, so the event there belongs to the earlier command.
         if(changed==0){if(after!=before)fail(SQLITE_CORRUPT);}
-        else {Statement event(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");event.text(1,applications.bytes(1));event.integer(2,after);if(!event.row() || event.bytes(0)!="apply_rules" || after!=before+1)fail(SQLITE_CORRUPT);Statement count(impl_->db,"SELECT count(*) FROM versions WHERE batch=? AND revision=?");count.text(1,applications.bytes(1));count.integer(2,after);if(!count.row() || count.integer(0)!=changed)fail(SQLITE_CORRUPT);}
+        else {Statement event(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");event.text(1,applications.bytes(1));event.integer(2,after);if(!event.row() || event.bytes(0)!="apply_rules" || after!=before+1)fail(SQLITE_CORRUPT);Statement count(impl_->db,"SELECT count(*) FROM snapshot_facts WHERE kind=0 AND batch=? AND revision=?");count.text(1,applications.bytes(1));count.integer(2,after);if(!count.row() || count.integer(0)!=changed)fail(SQLITE_CORRUPT);}
         Statement scope_count(impl_->db,"SELECT count(*) FROM records r WHERE r.batch=? AND EXISTS(SELECT 1 FROM versions v WHERE v.batch=r.batch AND v.ordinal=r.ordinal AND v.revision<=?2) AND NOT EXISTS(SELECT 1 FROM accepted_transactions a JOIN operations o ON o.id=a.operation WHERE a.batch=r.batch AND a.ordinal=r.ordinal AND o.revision<?2) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g JOIN ledger_operations l ON l.sequence=g.sequence JOIN history_order h ON h.operation=l.id WHERE g.batch=r.batch AND g.ordinal=r.ordinal AND h.sequence<?3)");scope_count.text(1,applications.bytes(1));scope_count.integer(2,before);scope_count.integer(3,history.integer(0));if(!scope_count.row() || scope_count.integer(0)!=evaluated)fail(SQLITE_CORRUPT);
     }
 }

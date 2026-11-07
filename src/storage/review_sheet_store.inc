@@ -347,7 +347,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
 }
 std::optional<app::ReviewReceipt> ImportStore::review_outcome(std::string_view operation) const {
     if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
-    Statement s(impl_->db,"SELECT id FROM review_answers WHERE id=?1 UNION ALL SELECT id FROM review_undos WHERE id=?1 UNION ALL SELECT operation FROM link_exclusion_events WHERE operation=?1");s.text(1,operation);if(!s.row())return {};return app::ReviewReceipt{std::string(operation)};
+    Statement s(impl_->db,"SELECT id FROM review_answers WHERE id=?1 UNION ALL SELECT id FROM review_undos WHERE id=?1 UNION ALL SELECT operation FROM link_exclusion_events WHERE operation=?1 UNION ALL SELECT id FROM command_completions WHERE id=?1 AND domain IN('editor','selection')");s.text(1,operation);if(!s.row())return {};return app::ReviewReceipt{std::string(operation)};
 }
 imports::DraftRow ImportStore::review_draft(const imports::Occurrence& id,std::int64_t revision) const {
     const auto original=load_row(id,false).source;const auto currency=account_for_batch(id.batch).currency;
@@ -831,10 +831,12 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
 // buffer is persisted: only a complete, validated transaction reaches this API.
 app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,const imports::Occurrence& id,std::int64_t revision,const std::optional<app::EntryToken>& token,const imports::DraftRow& input) {
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
-    require_account(id.batch);require_writable_account(impl_->db,impl_->selected_account);
     transfer_codec::Writer request;request.text(review_key(id));request.number(revision);request.number(token?1:0);
     if(token){request.text(review_key(token->identity));request.number(token->revision);request.number(integer(token->dependencies.size()));for(const auto& dependency:token->dependencies){request.text(dependency.batch);request.number(dependency.revision);request.number(static_cast<int>(dependency.state));}}
     const auto encoded=request.bytes;
+    session_snapshot::request_draft(request,input);const auto request_hash=session_snapshot::digest(request.bytes);
+    session_snapshot::retry(impl_->db,operation,"editor",request_hash);
+    require_account(id.batch);require_writable_account(impl_->db,impl_->selected_account);
     if(const auto receipt=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT a.request,m.committed,m.prior,m.result FROM review_answers a JOIN review_members m ON m.answer=a.id WHERE a.id=? AND a.question='ledger-edit' AND m.batch=? AND m.ordinal=?");
         saved.text(1,operation);saved.text(2,id.batch);saved.integer(3,integer(id.ordinal));
@@ -880,6 +882,7 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
         }
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();
+    session_snapshot::completed(impl_->db,operation,"editor",request_hash);
     finish([&]{transaction.commit();});return {std::string(operation)};
 }
 bool ImportStore::can_undo_transaction_edit(std::string_view edit) const {

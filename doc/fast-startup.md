@@ -1,5 +1,15 @@
 # Verified fast startup
 
+Implementation coordination (2026-11-07): [session history and baseline](session-history-baseline.md)
+records implementation Go and settled decisions. Every successful document close
+ends ordinary history; the owner accepts the encrypted clean marker without
+routine hashing. The history work introduces the durable marker and an atomic
+journal boundary with dependency-based snapshot pruning and compact retry receipts. Close no longer calls
+full certification or publishes disposable approval. The normal-open policy below
+is retained pending the separately planned verification-policy task, so clean open
+may still audit. The closing-certification sections below describe the superseded
+implementation. See [status](status.md) for actual progress and verification.
+
 The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
 is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
 It includes import routing, Review repair/Commit, account-context Discard and
@@ -7,7 +17,7 @@ atomic cleanup of incomplete preparation. Completed uncommitted imports remain
 durable. See [current verification and limits](status.md); earlier Resume,
 source-retention and toolbar descriptions below are historical.
 
-Last updated: 2026-11-06
+Last updated: 2026-11-07
 
 ## Accepted behavior
 

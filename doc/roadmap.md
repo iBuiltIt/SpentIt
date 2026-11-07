@@ -1,5 +1,20 @@
 # Coordinated implementation roadmap
 
+## Session-only history and baseline — implementation Go, 2026-11-07
+
+Read the [contract](session-history-baseline.md) and [current progress](status.md).
+The owner authorized session-only ordinary history, retained originals/import Undo,
+and atomic baseline publication. Every successful document close is the boundary.
+The encrypted clean marker will replace routine hashing; reduced offline-change
+detection is accepted. Compact completion results must prevent duplicate execution
+and reject conflicting operation-ID reuse. Snapshot pruning, compact receipts and
+the baseline-aware recovery verifier are implemented; see status for verification.
+
+The owner identified the broader verification-policy implementation as a subsequent
+task, not an additional prompt to execute here. Share the marker and baseline
+transaction, retain full backup/recovery checks, and add no full close-time audit.
+The offline-change and session-boundary decisions above are already settled.
+
 ## Busy feedback and operation progress — separate work item, 2026-11-05
 
 [Feature 014](../features/014-busy-feedback-and-progress.md) records the owner’s

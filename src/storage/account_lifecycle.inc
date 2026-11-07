@@ -31,7 +31,7 @@ std::optional<app::AccountCommandReceipt> ImportStore::account_command_outcome(s
 }
 std::optional<std::string> ImportStore::undoable_account_operation() const {
     if(impl_->selected_account<=0) return {};
-    Statement row(impl_->db,"SELECT o.id,o.kind FROM account_operations o JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(4,5,6) ORDER BY h.sequence DESC LIMIT 1");
+    Statement row(impl_->db,"SELECT o.id,o.kind FROM account_operations o JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.id IN(SELECT id FROM session_history WHERE domain='account') AND o.kind IN(4,5,6) ORDER BY h.sequence DESC LIMIT 1");
     row.integer(1,impl_->selected_account);if(!row.row() || row.integer(1)==6) return {};
     const auto id=row.bytes(0);const auto kind=static_cast<int>(row.integer(1));
     if(!command_image_current(impl_->db,id) || later_financial(impl_->db,impl_->selected_account,account_anchor(impl_->db,id,kind))) return {};
@@ -210,6 +210,7 @@ app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view 
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     const auto id=command_id(operation);command_id(undo_of);const auto content="6\n"+std::string(undo_of);
     if(auto prior=matching_account_command(impl_->db,id,content)) return *prior;
+    require_session_history(undo_of);
     Statement target(impl_->db,"SELECT account,kind,name,definition,prior_definition,opening,prior_opening,opening_date,prior_opening_date,archived,revision,frozen,confirmed FROM account_operations WHERE id=?");
     target.text(1,undo_of);if(!target.row() || (target.integer(1)!=4 && target.integer(1)!=5)) fail(SQLITE_CONSTRAINT,"Choose an opening balance or currency change to undo.");
     const auto acct=command_account(false);

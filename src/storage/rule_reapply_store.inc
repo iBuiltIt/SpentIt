@@ -103,6 +103,7 @@ app::RuleReapplyPreview ImportStore::preview_rule_reapply(bool replace_manual,st
     const auto sequence=financial_sequence(impl_->db);const auto catalog=catalog_sequence(impl_->db);
     const auto selected=account().identity;
     if(!undo_of.empty()){
+        require_session_history(undo_of);
         const auto original=rule_reapply_outcome(undo_of);if(!original)fail(SQLITE_CONSTRAINT,reapply_missing);
         if(original->request.changed!=original->entries.size())fail(SQLITE_CORRUPT,reapply_membership);
         if(sequence>INT64_MAX-integer(original->entries.size()))fail(SQLITE_FULL,"History capacity exhausted");

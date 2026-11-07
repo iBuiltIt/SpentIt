@@ -63,69 +63,25 @@ int main(){try{
     Directory d;const auto path=d.path/"dataset",cache=d.path/"cache";
     {auto s=ImportStore::create(path,key,"Synthetic",cad,"2026-10-01");s.opening(0,"2026-10-01",Money(0,cad));s.ingest("input",source,qif::DateOrder::dmy);}
     int audits=0;app::OperationContext context;context.progress=[&](std::string_view phase){if(phase=="Checking file")++audits;};
-    auto open=[&](bool expected){audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check((audits==1)==expected);check(s.ledger(true).size()==1);check(s.ledger(true).front().draft.transaction.effective_total()==Money(-1234,cad));};
-    open(true); // no approval
-    for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}) {
-        const auto trial=d.path/(phase==ImportPhase::before_commit?"before":"after");
-        fs::copy_file(path,trial);const auto approval=trial.string()+"-approval";
-        audits=0;auto s=ImportStore::open_cached(trial,key,approval,&context);
-        auto row=*s.row({"input",0}).draft;row.memo="interrupted edit";
-        s.observer([&](ImportPhase at){if(at==phase)throw std::runtime_error("synthetic interruption");});
-        fails([&]{s.save({"input",0},0,row);});s.observer({});
-        s.certify(approval,&context);check(audits==2);
-        check(s.row({"input",0}).draft->memo==(phase==ImportPhase::after_commit?"interrupted edit":""));
+    // Open policy is deliberately unchanged in this task. No close cache is
+    // published, so clean opens can still audit until the separate rollout.
+    for(int session=0;session<3;++session){
+        audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check(audits==1);
+        auto row=*s.row({"input",0}).draft;row.memo="session "+std::to_string(session);
+        s.save({"input",0},session,row);
+        app::OperationContext cancelled;cancelled.request();fails([&]{s.certify(cache,&cancelled);});
+        check(!fs::exists(cache));s.certify(cache,&context);check(audits==1);
+        s.certify(cache,&context);check(audits==1 && !fs::exists(cache));
     }
-    // A full opening audit survives read-only inspection and avoids a second audit.
-    {audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check(audits==1);
-    (void)s.row({"input",0});s.certify(cache,&context);check(audits==1);}
-    fs::remove_all(cache);
-    // A rolled-back command invalidates even when no bytes changed.
-    {audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);auto row=*s.row({"input",0}).draft;
-    fails([&]{s.save({"input",0},999,row);});s.certify(cache,&context);check(audits==2);}
-    fs::remove_all(cache);
-    // Successful writes invalidate the in-memory audit.
-    {audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);auto row=*s.row({"input",0}).draft;
-    row.memo="session edit";s.save({"input",0},0,row);s.certify(cache,&context);check(audits==2);}
-    fs::remove_all(cache);
-    // Cancellation during fingerprinting cannot publish; retry audits safely.
-    {auto s=ImportStore::open_cached(path,key,cache);app::OperationContext cancelled;cancelled.request();
-    fails([&]{s.certify(cache,&cancelled);});check(!fs::exists(cache));audits=0;s.certify(cache,&context);check(audits==1);}
-    fs::remove_all(cache);
-    // An externally damaged file must not inherit the opening approval.
-    {auto s=ImportStore::open_cached(path,key,cache);const auto before=bytes(path);auto damaged=before;damaged[8192]^=1;write(path,damaged);
-    fails([&]{s.certify(cache);});check(!fs::exists(cache));write(path,before);}
-    {auto s=ImportStore::open(path,key);s.certify(cache,&context);fails([&]{ImportStore::open_cached(path,key,cache);});}
-    check(fs::directory_iterator(cache)!=fs::directory_iterator{});
-    const auto receipt=fs::directory_iterator(cache)->path();const auto approved=bytes(receipt);const auto original=bytes(path);
-    check(approved.find("SYNTHETIC")==approved.npos && approved.find(key)==approved.npos && approved.find(path.string())==approved.npos);
-    open(false);
-    fails([&]{ImportStore::open_cached(path,"wrong",cache);});check(bytes(path)==original);
-    write(receipt,"truncated");open(true);write(receipt,approved);
-    auto stale=approved;stale[24]=stale[24]=='a'?'b':'a';write(receipt,stale);open(true);write(receipt,approved);
-    // Sidecars invalidate approval even if SQLite removes an empty stale journal.
-    write(path.string()+"-journal","");open(true);fs::remove(path.string()+"-journal");open(false);
-    {auto s=ImportStore::open_cached(path,key,cache);auto row=*s.row({"input",0}).draft;row.memo="Synthetic edit";s.save({"input",0},1,row);}
-    open(true); // changed bytes cannot use old approval
-    {auto s=ImportStore::open(path,key);s.certify(cache);s.backup_to(d.path/"backup",key);}
-    open(false);
-    {audits=0;auto s=ImportStore::open_cached(d.path/"backup",key,cache,&context);check(audits==1);check(s.ledger(true).front().draft.memo=="Synthetic edit");}
-    const auto updated=bytes(path);auto corrupt=updated;corrupt[8192]^=1;write(path,corrupt);
-    fails([&]{ImportStore::open_cached(path,key,cache);});write(path,updated);open(false);
-    fs::remove(receipt);
-    // Cancellation and process death before audit completion never publish approval.
-    {auto s=ImportStore::open(path,key);app::OperationContext cancelled;cancelled.progress=[](std::string_view phase){if(phase=="Checking file")throw app::OperationCancelled();};fails([&]{s.certify(cache,&cancelled);});check(!fs::exists(receipt));s.verify();}
-    auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,key);app::OperationContext interrupted;interrupted.progress=[](std::string_view phase){if(phase=="Checking file")_exit(19);};s.certify(cache,&interrupted);_exit(20);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==19);check(!fs::exists(receipt));open(true);
-    // The audit checks actual encrypted pages even when the connection has warm caches.
-    {auto s=ImportStore::open(path,key);const auto before=bytes(path);auto damaged=before;damaged[8192]^=1;write(path,damaged);fails([&]{s.certify(cache);});check(!fs::exists(receipt));write(path,before);}
-    // A process killed after publication leaves a usable approval and releases locks.
-    child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,key);s.certify(cache);_exit(21);}check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==21);open(false);
-    // Failed approval publication preserves the dataset and permits a safe retry.
-    const auto blocked=d.path/"not-a-directory";write(blocked,"occupied");
-    {auto s=ImportStore::open(path,key);const auto before=bytes(path);fails([&]{s.certify(blocked);});check(bytes(path)==before);s.certify(cache);}
-    open(false);
-    // Graceful gateway close generates approval; emergency close deliberately does not.
+    const auto before=bytes(path);fails([&]{ImportStore::open_cached(path,"wrong",cache);});check(bytes(path)==before);
+    {auto s=ImportStore::open(path,key);s.backup_to(d.path/"backup",key);}
+    {audits=0;auto s=ImportStore::open_cached(d.path/"backup",key,cache,&context);check(audits==1);check(s.ledger(true).front().draft.memo=="session 2");s.verify();}
+    auto corrupt=bytes(path);corrupt[8192]^=1;write(path,corrupt);
+    fails([&]{ImportStore::open_cached(path,key,cache);});write(path,before);
+    // Explicit audits still detect damaged encrypted pages with warm caches.
+    {auto s=ImportStore::open(path,key);const auto original=bytes(path);auto damaged=original;damaged[8192]^=1;write(path,damaged);fails([&]{s.verify();});write(path,original);}
     const auto gatewayPath=d.path/"gateway",gatewayCache=d.path/"gateway-cache";
-    {auto g=document_gateway(gatewayCache);g->create(gatewayPath,false,"","Synthetic",cad,"2026-10-01");check(g->lazy_review());g->close();check(!fs::exists(gatewayCache));g->open(gatewayPath,std::nullopt);g->close_verified(context);}
-    {auto g=document_gateway(gatewayCache);audits=0;g->open_controlled(gatewayPath,std::nullopt,context);check(audits==0);g->close();}
-    std::cout<<"Verification approval, changed/corrupt input, recovery, cancellation, interruption, publication failure and gateway tests passed\n";
+    {auto g=document_gateway(gatewayCache);g->create(gatewayPath,false,"","Synthetic",cad,"2026-10-01");g->close();g->open(gatewayPath,std::nullopt);audits=0;g->close_verified(context);check(audits==0 && !fs::exists(gatewayCache));}
+    {auto g=document_gateway(gatewayCache);audits=0;g->open_controlled(gatewayPath,std::nullopt,context);check(audits==1);g->close();}
+    std::cout<<"Open policy retained; close baseline without audit/cache, cancellation, backups, authentication and corruption checks passed\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

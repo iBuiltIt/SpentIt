@@ -1213,7 +1213,7 @@ struct ImportModel::Worker {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();canOpen=false;welcomePassword=false;
             if(!QFileInfo(path).isFile()) throw std::runtime_error("Dataset file not found or inaccessible");
-            try {gateway->open_controlled(path.toStdString(),std::nullopt,context);if(gateway->repository().startup_import_cleanup())cleanupNoticePath=path;gateway->close();canOpen=true;}
+            try {gateway->probe(path.toStdString(),context);canOpen=true;}
             catch(const app::UnlockRequired&) {welcomePassword=true;}
             return;
         }

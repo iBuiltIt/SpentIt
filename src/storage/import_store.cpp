@@ -14,6 +14,7 @@ namespace diag = spentit::diagnostics;
 #include <map>
 #include <unordered_set>
 #include <sqlite3.h>
+#include <openssl/evp.h>
 #include <algorithm>
 #include <climits>
 #include <cerrno>
@@ -221,10 +222,11 @@ ResolvedTransfers resolved_transfers(const std::vector<app::TransferView>& value
 #include "review_sheet_schema.inc"
 #include "transfer_codec.inc"
 #include "manual_codec.inc"
+#include "session_snapshot.inc"
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=57;
+PRAGMA user_version=61;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -318,9 +320,9 @@ CREATE TRIGGER order_event AFTER INSERT ON events BEGIN INSERT INTO history_orde
 CREATE TRIGGER order_operation AFTER INSERT ON ledger_operations BEGIN INSERT INTO history_order(operation) VALUES(NEW.id); END;
 CREATE TRIGGER head_step BEFORE UPDATE ON entry_heads WHEN NEW.batch!=OLD.batch OR NEW.ordinal!=OLD.ordinal OR NEW.revision!=OLD.revision+1 BEGIN SELECT RAISE(ABORT,'invalid head'); END;
 CREATE TRIGGER entry_revisions_immutable BEFORE UPDATE ON entry_revisions BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_revisions_keep BEFORE DELETE ON entry_revisions BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_revisions_keep BEFORE DELETE ON entry_revisions WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER entry_allocations_immutable BEFORE UPDATE ON entry_allocations BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_allocations_keep BEFORE DELETE ON entry_allocations BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_allocations_keep BEFORE DELETE ON entry_allocations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER ledger_operations_immutable BEFORE UPDATE ON ledger_operations BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER ledger_operations_keep BEFORE DELETE ON ledger_operations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER change_dependencies_immutable BEFORE UPDATE ON change_dependencies BEGIN SELECT RAISE(ABORT,'immutable'); END;
@@ -354,16 +356,16 @@ CREATE TRIGGER operation_registry_keep BEFORE DELETE ON operation_registry WHEN 
 CREATE TRIGGER draft_fields_immutable BEFORE UPDATE ON draft_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER draft_fields_keep BEFORE DELETE ON draft_fields WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER entry_fields_immutable BEFORE UPDATE ON entry_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_fields_keep BEFORE DELETE ON entry_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_fields_keep BEFORE DELETE ON entry_fields WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER draft_allocation_meta_immutable BEFORE UPDATE ON draft_allocation_meta BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER draft_allocation_meta_keep BEFORE DELETE ON draft_allocation_meta WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER entry_allocation_meta_immutable BEFORE UPDATE ON entry_allocation_meta BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 )SQL";
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=58;
+PRAGMA user_version=62;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -468,9 +470,9 @@ CREATE TRIGGER order_event AFTER INSERT ON events BEGIN INSERT INTO history_orde
 CREATE TRIGGER order_operation AFTER INSERT ON ledger_operations BEGIN INSERT INTO history_order(operation) VALUES(NEW.id); END;
 CREATE TRIGGER head_step BEFORE UPDATE ON entry_heads WHEN NEW.batch!=OLD.batch OR NEW.ordinal!=OLD.ordinal OR NEW.revision!=OLD.revision+1 BEGIN SELECT RAISE(ABORT,'invalid head'); END;
 CREATE TRIGGER entry_revisions_immutable BEFORE UPDATE ON entry_revisions BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_revisions_keep BEFORE DELETE ON entry_revisions BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_revisions_keep BEFORE DELETE ON entry_revisions WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER entry_allocations_immutable BEFORE UPDATE ON entry_allocations BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_allocations_keep BEFORE DELETE ON entry_allocations BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_allocations_keep BEFORE DELETE ON entry_allocations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER ledger_operations_immutable BEFORE UPDATE ON ledger_operations BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER ledger_operations_keep BEFORE DELETE ON ledger_operations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER change_dependencies_immutable BEFORE UPDATE ON change_dependencies BEGIN SELECT RAISE(ABORT,'immutable'); END;
@@ -504,11 +506,11 @@ CREATE TRIGGER operation_registry_keep BEFORE DELETE ON operation_registry WHEN 
 CREATE TRIGGER draft_fields_immutable BEFORE UPDATE ON draft_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER draft_fields_keep BEFORE DELETE ON draft_fields WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER entry_fields_immutable BEFORE UPDATE ON entry_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_fields_keep BEFORE DELETE ON entry_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_fields_keep BEFORE DELETE ON entry_fields WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER draft_allocation_meta_immutable BEFORE UPDATE ON draft_allocation_meta BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER draft_allocation_meta_keep BEFORE DELETE ON draft_allocation_meta WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER entry_allocation_meta_immutable BEFORE UPDATE ON entry_allocation_meta BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TABLE rule_definitions(id TEXT NOT NULL,version INTEGER NOT NULL CHECK(version>=0),label TEXT NOT NULL CHECK(length(label)<=256),scope INTEGER NOT NULL CHECK(scope IN(0,1)),input_field INTEGER NOT NULL CHECK(input_field IN(0,1,2)),expression TEXT NOT NULL CHECK(length(expression)<=4096),payee_template TEXT CHECK(payee_template IS NULL OR length(payee_template)<=65536),memo_template TEXT CHECK(memo_template IS NULL OR length(memo_template)<=65536),category_id TEXT CHECK(category_id IS NULL OR (length(category_id) BETWEEN 1 AND 256)),inherit_parent INTEGER NOT NULL CHECK(inherit_parent IN(0,1)),PRIMARY KEY(id,version),FOREIGN KEY(category_id) REFERENCES category_heads(id),CHECK(category_id IS NOT NULL),CHECK(inherit_parent=0),CHECK(scope<>1 OR payee_template IS NULL)) STRICT;
 CREATE TRIGGER rule_definitions_immutable BEFORE UPDATE ON rule_definitions BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER rule_definitions_keep BEFORE DELETE ON rule_definitions BEGIN SELECT RAISE(ABORT,'immutable'); END;
@@ -531,10 +533,10 @@ CREATE TRIGGER draft_rule_allocations_immutable BEFORE UPDATE ON draft_rule_allo
 CREATE TRIGGER draft_rule_allocations_keep BEFORE DELETE ON draft_rule_allocations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TABLE entry_rule_fields(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,payee_rule TEXT,payee_version INTEGER,memo_rule TEXT,memo_version INTEGER,ruleset_revision INTEGER NOT NULL CHECK(ruleset_revision>=1),PRIMARY KEY(batch,ordinal,revision),FOREIGN KEY(batch,ordinal,revision) REFERENCES entry_fields(batch,ordinal,revision),FOREIGN KEY(payee_rule,payee_version) REFERENCES rule_definitions(id,version),FOREIGN KEY(memo_rule,memo_version) REFERENCES rule_definitions(id,version),FOREIGN KEY(ruleset_revision) REFERENCES rule_operations(ruleset_after),CHECK((payee_rule IS NULL)=(payee_version IS NULL) AND (memo_rule IS NULL)=(memo_version IS NULL) AND (payee_version IS NULL OR payee_version>=0) AND (memo_version IS NULL OR memo_version>=0))) STRICT;
 CREATE TRIGGER entry_rule_fields_immutable BEFORE UPDATE ON entry_rule_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_rule_fields_keep BEFORE DELETE ON entry_rule_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_rule_fields_keep BEFORE DELETE ON entry_rule_fields WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TABLE entry_rule_allocations(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,position INTEGER NOT NULL,category_rule TEXT,category_version INTEGER,memo_rule TEXT,memo_version INTEGER,PRIMARY KEY(batch,ordinal,revision,position),FOREIGN KEY(batch,ordinal,revision,position) REFERENCES entry_allocation_meta(batch,ordinal,revision,position),FOREIGN KEY(category_rule,category_version) REFERENCES rule_definitions(id,version),FOREIGN KEY(memo_rule,memo_version) REFERENCES rule_definitions(id,version),CHECK((category_rule IS NULL)=(category_version IS NULL) AND (memo_rule IS NULL)=(memo_version IS NULL) AND (category_version IS NULL OR category_version>=0) AND (memo_version IS NULL OR memo_version>=0) AND (category_rule IS NOT NULL OR memo_rule IS NOT NULL))) STRICT;
 CREATE TRIGGER entry_rule_allocations_immutable BEFORE UPDATE ON entry_rule_allocations BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER entry_rule_allocations_keep BEFORE DELETE ON entry_rule_allocations BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER entry_rule_allocations_keep BEFORE DELETE ON entry_rule_allocations WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER register_rule_save BEFORE INSERT ON rule_operations BEGIN INSERT INTO operation_registry VALUES(NEW.id,2); END;
 CREATE TRIGGER order_rule_save AFTER INSERT ON rule_operations BEGIN INSERT INTO history_order(rule_operation) VALUES(NEW.id); END;
 CREATE TRIGGER register_rule_apply BEFORE INSERT ON rule_applications BEGIN INSERT INTO operation_registry VALUES(NEW.id,3); END;
@@ -641,17 +643,17 @@ CREATE TRIGGER order_account AFTER INSERT ON account_operations BEGIN INSERT INT
 )SQL";
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="17" || version=="19" || version=="57"
+    return version=="3" || version=="4" || version=="17" || version=="19" || version=="61"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="58"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="62"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="17" || version=="19" || version=="57"
+    return version=="4" || version=="17" || version=="19" || version=="61"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="58"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="62"
 #endif
         ;
 }
@@ -718,17 +720,18 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
         Statement x(db,"INSERT INTO allocations VALUES(?,?,?,?,?,?,?)"); x.text(1,id.batch); x.integer(2,integer(id.ordinal)); x.integer(3,rev);
         x.integer(4,pos++); x.text(5,a.category); x.text(6,a.memo); x.integer(7,a.amount.units()); x.done();
     }    save_metadata(db,id,rev,row,false,ruleset);
+    session_snapshot::save(db,false,id,rev,static_cast<int>(decision.disposition),row);
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="57"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="61"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16" || version=="18" || version=="20" || version=="58"
+    || version=="6" || version=="16" || version=="18" || version=="20" || version=="62"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="58";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="62";
 #else
     (void)db;return false;
 #endif
@@ -941,6 +944,7 @@ struct ImportStore::Impl {
     int account_command=0;
     bool verifying=false;
     bool startup_cleanup=false;
+    bool finalized=false;
     // An opening audit is reusable only in this process, with no intervening
     // writes/rollback and an identical full-file fingerprint under a read lock.
     mutable std::string opening_audit;
@@ -1018,7 +1022,7 @@ ImportStore::~ImportStore()=default;
 ImportStore::ImportStore(ImportStore&&) noexcept=default;
 ImportStore& ImportStore::operator=(ImportStore&&) noexcept=default;
 void ImportStore::observer(ImportObserver f) { impl_->observer=std::move(f); }
-ImportStore ImportStore::connect(const std::filesystem::path& requested_path, std::string_view password, bool create, const app::OperationContext* context,bool overwrite,const std::filesystem::path& cache) {
+ImportStore ImportStore::connect(const std::filesystem::path& requested_path, std::string_view password, bool create, const app::OperationContext* context,bool overwrite,const std::filesystem::path& cache,bool activate) {
     if(context) context->checkpoint("Opening file");
     if (password.empty() || password.size() > 1024) fail(SQLITE_MISUSE, "Password length is invalid");
     // Resolve the parent once for both session locking and all database I/O.
@@ -1090,6 +1094,8 @@ ImportStore ImportStore::connect(const std::filesystem::path& requested_path, st
         },nullptr,nullptr,nullptr));
     ok(sqlite3_create_function_v2(db,"spentit_cleanup",0,SQLITE_UTF8,impl.get(),
         [](sqlite3_context* ctx,int,sqlite3_value**){sqlite3_result_int(ctx,static_cast<Impl*>(sqlite3_user_data(ctx))->cleaning?1:0);},nullptr,nullptr,nullptr));
+    ok(sqlite3_create_function_v2(db,"spentit_verifying",0,SQLITE_UTF8,impl.get(),
+        [](sqlite3_context* ctx,int,sqlite3_value**){sqlite3_result_int(ctx,static_cast<Impl*>(sqlite3_user_data(ctx))->verifying?1:0);},nullptr,nullptr,nullptr));
     sqlite3_limit(db, SQLITE_LIMIT_LENGTH, static_cast<int>(qif::max_file + 1024 * 1024));
     sqlite3_limit(db, SQLITE_LIMIT_SQL_LENGTH, 64 * 1024);
     sqlite3_limit(db, SQLITE_LIMIT_ATTACHED, 0);
@@ -1105,9 +1111,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& requested_path, st
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="58";
+        constexpr const char* expected_format="62";
 #else
-        constexpr const char* expected_format="57";
+        constexpr const char* expected_format="61";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"This dataset format is not supported by this version of SpentIt; the file has not been changed");
@@ -1119,6 +1125,8 @@ ImportStore ImportStore::connect(const std::filesystem::path& requested_path, st
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='dataset_preferences'")!="1")fail(SQLITE_SCHEMA,"Dataset preferences do not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('review_answers','review_undos','review_undo_members','review_stack','review_members','review_choices','review_sources','review_merges','review_link_history','link_exclusion_events')")!="10")fail(SQLITE_SCHEMA,"Review structure does not match format version");
         if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('report_state','reports','report_accounts','report_categories','report_periods')")!="5")fail(SQLITE_SCHEMA,"Report structure does not match format version");
+        if(scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('document_session','session_history','command_completions','snapshot_facts','allocation_origins')")!="5")
+            fail(SQLITE_SCHEMA,"Session structure does not match format version");
         const auto common=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('account','account_creations','sources','batches','records','versions','allocations','operations','events','entry_revisions','entry_allocations','entry_heads','ledger_operations','change_dependencies','history_order','review_stamps','category_state','category_versions','category_heads','category_operations','operation_registry','draft_fields','entry_fields','draft_allocation_meta','entry_allocation_meta')");
         const auto rule_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('rule_state','rule_definitions','rule_heads','rule_operations','rule_operation_requests','rule_snapshots','rule_applications','draft_rule_fields','draft_rule_allocations','entry_rule_fields','entry_rule_allocations','rule_reapplications','rule_reapplication_members')");
         const auto bulk_tables=scalar(db,"SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN('bulk_operations','bulk_members')");
@@ -1157,6 +1165,39 @@ ImportStore ImportStore::connect(const std::filesystem::path& requested_path, st
         exec(db, account_command_schema);
         exec(db, review_sheet_schema);
         exec(db,R"SQL(
+CREATE TABLE document_session(singleton INTEGER PRIMARY KEY CHECK(singleton=1),generation INTEGER NOT NULL CHECK(generation>=0),clean INTEGER NOT NULL CHECK(clean IN(0,1))) STRICT;
+INSERT INTO document_session VALUES(1,0,0);
+CREATE TABLE command_completions(id TEXT PRIMARY KEY,domain TEXT NOT NULL,digest BLOB NOT NULL CHECK(length(digest)=32),expired INTEGER NOT NULL CHECK(expired IN(0,1))) STRICT;
+CREATE TABLE snapshot_facts(kind INTEGER NOT NULL CHECK(kind IN(0,1)),batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL CHECK(revision>=0),active INTEGER NOT NULL CHECK((kind=0 AND active IN(0,1,2)) OR (kind=1 AND active IN(0,1))),total INTEGER NOT NULL,definition TEXT NOT NULL,digest BLOB NOT NULL CHECK(length(digest)=32),baseline INTEGER NOT NULL CHECK(baseline IN(0,1)),PRIMARY KEY(kind,batch,ordinal,revision),FOREIGN KEY(batch,ordinal) REFERENCES records(batch,ordinal) ON DELETE CASCADE) STRICT;
+CREATE TABLE allocation_origins(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,identity TEXT NOT NULL,source_ordinal INTEGER,PRIMARY KEY(batch,ordinal,identity),FOREIGN KEY(batch,ordinal) REFERENCES records(batch,ordinal) ON DELETE CASCADE) STRICT;
+CREATE INDEX unfinished_snapshots ON snapshot_facts(baseline) WHERE baseline=0;
+CREATE INDEX unfinished_completions ON command_completions(expired) WHERE expired=0;
+CREATE TRIGGER completion_identity BEFORE UPDATE OF id,domain,digest ON command_completions BEGIN SELECT RAISE(ABORT,'Completion identity is immutable'); END;
+CREATE TRIGGER completion_keep BEFORE DELETE ON command_completions BEGIN SELECT RAISE(ABORT,'Completion identity is retained'); END;
+CREATE TRIGGER completion_expiry BEFORE UPDATE OF expired ON command_completions WHEN spentit_cleanup()=0 OR OLD.expired=1 OR NEW.expired!=1 BEGIN SELECT RAISE(ABORT,'Completion expiry requires baseline publication'); END;
+CREATE TRIGGER snapshot_identity BEFORE UPDATE OF kind,batch,ordinal,revision,active,total,definition,digest ON snapshot_facts BEGIN SELECT RAISE(ABORT,'Snapshot facts are immutable'); END;
+CREATE TRIGGER snapshot_baseline BEFORE UPDATE OF baseline ON snapshot_facts WHEN spentit_cleanup()=0 OR OLD.baseline=1 OR NEW.baseline!=1 BEGIN SELECT RAISE(ABORT,'Snapshot baseline requires publication'); END;
+CREATE TRIGGER snapshot_keep BEFORE DELETE ON snapshot_facts WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Snapshot facts require ownership cleanup'); END;
+CREATE TRIGGER allocation_origin_immutable BEFORE UPDATE ON allocation_origins BEGIN SELECT RAISE(ABORT,'Allocation origin is immutable'); END;
+CREATE TRIGGER allocation_origin_keep BEFORE DELETE ON allocation_origins WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'Allocation origin requires ownership cleanup'); END;
+CREATE TRIGGER completion_registry_collision BEFORE INSERT ON operation_registry WHEN EXISTS(SELECT 1 FROM command_completions WHERE id=NEW.id) BEGIN SELECT RAISE(ABORT,'Operation identity already completed'); END;
+CREATE TRIGGER completion_review_collision BEFORE INSERT ON review_answers WHEN EXISTS(SELECT 1 FROM command_completions WHERE id=NEW.id) BEGIN SELECT RAISE(ABORT,'Operation identity already completed'); END;
+CREATE TRIGGER completion_undo_collision BEFORE INSERT ON review_undos WHEN EXISTS(SELECT 1 FROM command_completions WHERE id=NEW.id) BEGIN SELECT RAISE(ABORT,'Operation identity already completed'); END;
+CREATE TRIGGER completion_acceptance_collision BEFORE INSERT ON dataset_acceptances WHEN EXISTS(SELECT 1 FROM command_completions WHERE id=NEW.id) BEGIN SELECT RAISE(ABORT,'Operation identity already completed'); END;
+DROP TRIGGER review_answers_immutable;
+CREATE TRIGGER review_answers_immutable BEFORE UPDATE ON review_answers WHEN spentit_cleanup()=0 OR NEW.id!=OLD.id OR NEW.sequence!=OLD.sequence OR NEW.action!=OLD.action OR NEW.question!=OLD.question OR NEW.generation!=OLD.generation OR NEW.request!='' OR OLD.question!='ledger-edit-batch' BEGIN SELECT RAISE(ABORT,'Review history is immutable'); END;
+CREATE TABLE session_history(domain TEXT NOT NULL CHECK(domain IN('ledger','account','category','manual')),id TEXT NOT NULL,generation INTEGER NOT NULL CHECK(generation>=0),PRIMARY KEY(domain,id)) STRICT;
+CREATE TRIGGER document_session_keep BEFORE DELETE ON document_session BEGIN SELECT RAISE(ABORT,'Session state is required'); END;
+CREATE TRIGGER session_ledger AFTER INSERT ON ledger_operations BEGIN INSERT INTO session_history SELECT 'ledger',NEW.id,generation FROM document_session WHERE clean=0; END;
+CREATE TRIGGER session_account AFTER INSERT ON account_operations BEGIN INSERT INTO session_history SELECT 'account',NEW.id,generation FROM document_session WHERE clean=0; END;
+CREATE TRIGGER session_category AFTER INSERT ON category_operations BEGIN INSERT INTO session_history SELECT 'category',NEW.id,generation FROM document_session WHERE clean=0; END;
+CREATE TRIGGER session_manual AFTER INSERT ON manual_creations BEGIN INSERT INTO session_history SELECT 'manual',NEW.batch,generation FROM document_session WHERE clean=0; END;
+CREATE TRIGGER session_ledger_remove AFTER DELETE ON ledger_operations BEGIN DELETE FROM session_history WHERE domain='ledger' AND id=OLD.id; END;
+CREATE TRIGGER session_account_remove AFTER DELETE ON account_operations BEGIN DELETE FROM session_history WHERE domain='account' AND id=OLD.id; END;
+CREATE TRIGGER session_category_remove AFTER DELETE ON category_operations BEGIN DELETE FROM session_history WHERE domain='category' AND id=OLD.id; END;
+CREATE TRIGGER session_manual_remove AFTER DELETE ON manual_creations BEGIN DELETE FROM session_history WHERE domain='manual' AND id=OLD.batch; END;
+)SQL");
+        exec(db,R"SQL(
 CREATE TABLE report_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL CHECK(revision>=0)) STRICT;
 INSERT INTO report_state VALUES(1,0);
 CREATE TABLE reports(id TEXT PRIMARY KEY,name TEXT NOT NULL,graph TEXT NOT NULL CHECK(graph IN('none','bar','pie','grouped_bar')),position INTEGER NOT NULL UNIQUE) STRICT;
@@ -1169,6 +1210,10 @@ CREATE TABLE report_periods(report TEXT NOT NULL REFERENCES reports(id) ON DELET
         transaction.commit();
         sync_directory(path);
     }
+    sqlite3_set_authorizer(db,[](void* pointer,int action,const char*,const char*,const char*,const char*){
+        const auto& state=*static_cast<Impl*>(pointer);
+        return state.finalized && (action==SQLITE_INSERT || action==SQLITE_UPDATE || action==SQLITE_DELETE)?SQLITE_DENY:SQLITE_OK;
+    },store.impl_.get());
     sqlite3_rollback_hook(db,[](void* pointer){
         auto& state=*static_cast<Impl*>(pointer);
         state.opening_audit.clear();
@@ -1177,8 +1222,16 @@ CREATE TABLE report_periods(report TEXT NOT NULL REFERENCES reports(id) ON DELET
         state.reviewed_transfers.reset();state.reviewed_transfer_stamp.clear();
     },store.impl_.get());
     if (!create) {store.impl_->selected_account=smallest_active_account(store.impl_->db);
+        Statement marker(db,"SELECT generation,clean FROM document_session WHERE singleton=1");
+        if(!marker.row() || marker.integer(0)<0 || (marker.integer(1)!=0 && marker.integer(1)!=1))
+            fail(SQLITE_CORRUPT,"File session state is missing or invalid");
+        const bool recovery=marker.integer(1)==0 || !clean_input;
+        if(marker.row())fail(SQLITE_CORRUPT,"File session state is invalid");
+        if(!activate)return store;
+        // Retain the existing opening-verification policy until its separate
+        // rollout. An unfinished session can never reuse disposable approval.
         bool approved=false;
-        if(clean_input && !cache.empty()) {
+        if(!recovery && !cache.empty()) {
             if(context)context->checkpoint("Checking saved verification");
             exec(db,"BEGIN");
             try {
@@ -1204,6 +1257,9 @@ CREATE TABLE report_periods(report TEXT NOT NULL REFERENCES reports(id) ON DELET
                 } catch(...) {sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
             }
         }
+        {Atomic transaction(db);
+         exec(db,"UPDATE document_session SET clean=0 WHERE singleton=1");
+         transaction.commit();}
         if(context)context->checkpoint("Removing unfinished import");
         store.impl_->startup_cleanup=store.cleanup_incomplete_imports();
         store.prepare_review();}
@@ -1377,24 +1433,45 @@ app::Account ImportStore::create_account(std::int64_t id,std::string_view name,c
 ImportStore ImportStore::open_cached(const std::filesystem::path& path,std::string_view password,const std::filesystem::path& cache,const app::OperationContext* context) {
     return connect(path,password,false,context,false,cache);
 }
-void ImportStore::certify(const std::filesystem::path& cache,const app::OperationContext* context) {
-    if(cache.empty())return;
-    // Keep the document and SQLite read locks until audit and publication finish.
-    exec(impl_->db,"BEGIN");
-    try {
-        (void)scalar(impl_->db,"SELECT count(*) FROM account");
-        // If no bytes changed since a previous successful audit, it remains valid.
-        if(!verification_cache::matches(impl_->path,cache,context)) {
-            const auto audited=verification_cache::fingerprint(impl_->path,context);
-            const bool reuse=!audited.empty() && audited==impl_->opening_audit &&
-                impl_->opening_audit_changes==sqlite3_total_changes64(impl_->db);
-            impl_->opening_audit.clear();
-            if(!reuse)verify(context);
-            verification_cache::publish(impl_->path,cache,audited,context);
-        }
-        exec(impl_->db,"COMMIT");
-    } catch(...) {sqlite3_exec(impl_->db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
+void ImportStore::probe(const std::filesystem::path& path,std::string_view password,const app::OperationContext* context) {
+    (void)connect(path,password,false,context,false,{},false);
 }
+void ImportStore::certify(const std::filesystem::path& cache,const app::OperationContext* context) {
+    (void)cache;
+    if(impl_->finalized)return;
+    if(context)context->checkpoint("Finishing file session");
+    Atomic transaction(impl_->db);
+    Statement marker(impl_->db,"SELECT generation,clean FROM document_session WHERE singleton=1");
+    if(!marker.row() || marker.integer(0)<0 || marker.integer(0)==INT64_MAX || marker.integer(1)!=0)
+        fail(SQLITE_CORRUPT,"File session state is missing or invalid");
+    const auto generation=marker.integer(0);
+    if(marker.row())fail(SQLITE_CORRUPT,"File session state is invalid");
+    struct Cleanup {bool& flag;bool previous;~Cleanup(){flag=previous;}} cleanup{impl_->cleaning,impl_->cleaning};
+    impl_->cleaning=true;
+    prune_session(context);
+    exec(impl_->db,"DELETE FROM review_stack; DELETE FROM session_history; UPDATE document_session SET generation=generation+1,clean=1 WHERE singleton=1");
+    if(context){context->checkpoint("Finishing file session");context->seal();}
+    try {
+        if(impl_->observer)impl_->observer(ImportPhase::before_commit);
+        transaction.commit();
+        impl_->finalized=true;
+        if(impl_->observer)impl_->observer(ImportPhase::after_commit);
+    } catch(...) {
+        // A lost acknowledgement must not publish a second generation.
+        if(sqlite3_get_autocommit(impl_->db)) {
+            Statement saved(impl_->db,"SELECT generation,clean FROM document_session WHERE singleton=1");
+            if(saved.row() && saved.integer(0)==generation+1 && saved.integer(1)==1){impl_->finalized=true;return;}
+        }
+        throw;
+    }
+}
+void ImportStore::require_session_history(std::string_view operation) const {
+    if(impl_->verifying)return;
+    Statement row(impl_->db,"SELECT 1 FROM session_history WHERE id=?1 AND domain IN('ledger','account')");
+    row.text(1,operation);
+    if(!row.row())fail(SQLITE_CONSTRAINT,"This change belongs to an earlier file session and can no longer be undone.");
+}
+
 void ImportStore::opening(std::int64_t expected,std::string_view date,const Money& amount) {
     Statement grouped(impl_->db,"SELECT 1 FROM import_group_accounts m JOIN import_groups g ON g.id=m.group_id WHERE m.account_id=spentit_account() AND m.created=1 AND g.state IN(0,1,2)");if(grouped.row())fail(SQLITE_CONSTRAINT,"Use the import account balance review for this account");
     iso_date(date); const auto acct=account(); require_writable_account(impl_->db,acct.identity);
@@ -2065,6 +2142,17 @@ std::vector<app::AccountBalance> ImportStore::account_balances() const {
 void ImportStore::verify(const app::OperationContext* context) const {
     impl_->opening_audit.clear();
     diag::Span verificationSpan(diag::Code::verify);
+    Statement session(impl_->db,"SELECT generation,clean FROM document_session WHERE singleton=1");
+    if(!session.row() || session.integer(0)<0 || (session.integer(1)!=0 && session.integer(1)!=1))fail(SQLITE_CORRUPT,"File session state is missing or invalid");
+    Statement journal(impl_->db,"SELECT 1 FROM session_history j WHERE j.generation!=(SELECT generation FROM document_session WHERE singleton=1) OR (SELECT clean FROM document_session WHERE singleton=1)=1 OR (j.domain='ledger' AND NOT EXISTS(SELECT 1 FROM ledger_operations WHERE id=j.id)) OR (j.domain='account' AND NOT EXISTS(SELECT 1 FROM account_operations WHERE id=j.id)) OR (j.domain='category' AND NOT EXISTS(SELECT 1 FROM category_operations WHERE id=j.id)) OR (j.domain='manual' AND NOT EXISTS(SELECT 1 FROM manual_creations WHERE batch=j.id))");
+    if(journal.row())fail(SQLITE_CORRUPT,"File session history is inconsistent");
+    Statement facts(impl_->db,R"SQL(
+SELECT 1 FROM snapshot_facts f WHERE
+ (f.baseline=0 AND NOT EXISTS(SELECT 1 FROM versions v WHERE f.kind=0 AND v.batch=f.batch AND v.ordinal=f.ordinal AND v.revision=f.revision) AND NOT EXISTS(SELECT 1 FROM entry_revisions e WHERE f.kind=1 AND e.batch=f.batch AND e.ordinal=f.ordinal AND e.revision=f.revision))
+ OR (f.baseline=0 AND (SELECT clean FROM document_session)=1)
+UNION ALL SELECT 1 FROM command_completions WHERE expired=0 AND (SELECT clean FROM document_session)=1
+)SQL");
+    if(facts.row())fail(SQLITE_CORRUPT,"File baseline and session snapshots are inconsistent");
     (void)date_format();
     (void)amount_format();
     (void)report_catalog();
@@ -2195,6 +2283,7 @@ void ImportStore::verify(const app::OperationContext* context) const {
                 imports::DraftRow historical{vv.bytes(1),vv.bytes(2),vv.bytes(3),Transaction::repaired_import(source.original_amount,Money(vv.integer(4),historical_currency),std::move(allocations),reassigned)};
                 load_metadata(impl_->db,{b.id,i},vv.integer(0),historical,false);
                 imports::validate_draft(source,historical,reassigned);
+                session_snapshot::check(impl_->db,false,{b.id,i},vv.integer(0),static_cast<int>(vv.integer(5)),historical);
                 if(vv.integer(5)==2) {
                     imports::Occurrence target{vv.bytes(6),static_cast<std::size_t>(vv.integer(7))};
                     const bool reviewed=explicit_review_merge(impl_->db,{b.id,i},vv.integer(0));
@@ -2285,6 +2374,7 @@ void ImportStore::backup_to(const std::filesystem::path& requested_destination,s
 #include "category_store.inc"
 #include "manual_store.inc"
 #include "committed_store.inc"
+#include "session_prune.inc"
 #include "bulk_store.inc"
 namespace { std::int64_t review_generation(sqlite3*); }
 #include "rule_store.inc"

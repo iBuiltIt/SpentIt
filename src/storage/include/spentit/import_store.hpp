@@ -29,9 +29,10 @@ class ImportStore final : public app::ImportRepository {
 public:
     static ImportStore create(const std::filesystem::path&,std::string_view password,
                               std::string_view name,const Currency&,std::string_view today,bool overwrite=false,const app::DatasetOptions& options={});
-    // Optional local approval cache; ordinary open always performs full verification.
+    // Existing opening verification; an unfinished session always requires recovery verification.
     static ImportStore open_cached(const std::filesystem::path&,std::string_view,
                                    const std::filesystem::path& cache,const app::OperationContext* = nullptr);
+    static void probe(const std::filesystem::path&,std::string_view,const app::OperationContext* = nullptr);
     void certify(const std::filesystem::path& cache,const app::OperationContext* = nullptr);
     static ImportStore open(const std::filesystem::path&,std::string_view password, const app::OperationContext* = nullptr);
     ~ImportStore();
@@ -203,6 +204,8 @@ private:
     void publish_import_categories(std::string_view batch);
     imports::DraftRow bind_import_categories(std::string_view batch,const imports::DraftRow&) const;
     void start_import_groups(const std::set<std::string>&,std::string_view);
+    void prune_session(const app::OperationContext*);
+    void require_session_history(std::string_view) const;
     void verify_import_groups(const app::OperationContext*) const;
     std::vector<app::TransferView> all_transfers() const;
     Money local_transfer_total(std::int64_t,bool projected) const;
@@ -260,6 +263,6 @@ private:
     app::Account command_account(bool money_edit) const;
     void populate(std::string_view,std::string_view,const qif::Result&,std::int64_t,const app::OperationContext*);
     app::RowView load_row(const imports::Occurrence&, bool candidates) const;
-    static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr,bool overwrite=false,const std::filesystem::path& cache={});
+    static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr,bool overwrite=false,const std::filesystem::path& cache={},bool activate=true);
 };
 } // namespace spentit::storage

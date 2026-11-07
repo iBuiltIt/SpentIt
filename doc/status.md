@@ -1,5 +1,107 @@
 # Project status
 
+## Session-history storage review — 2026-11-07
+
+The owner reports a dataset size increase from approximately 65 MB to 79 MB
+following this change. No private dataset or table/page breakdown was inspected;
+the precise contribution of live data, indexes and reusable pages is unmeasured.
+Code review confirms that snapshot facts persist for every revision, alongside
+allocation-origin records and retry receipts. Close deletes eligible payloads but
+does not physically shrink the file. A fresh import can therefore gain bookkeeping
+without removing much ordinary edit history.
+
+The completion claim below was too broad: session history expiry, retry protection
+and dependency-based payload pruning are implemented and tested, but the verifier
+still relies on permanent per-revision financial facts and historical monetary
+continuity. It has not fully moved to current-baseline verification with only
+necessary retained dependencies. This architectural limitation and representative
+bulk-import storage overhead remain unresolved. No corrective implementation was
+requested in this exchange; the owner requested committing the current work.
+
+## Session history baseline — 2026-11-07
+
+Implemented the accepted [session-only Change History scope](session-history-baseline.md)
+under owner Go. Current experimental formats are **62 with rules / 61 without**;
+earlier formats, including intermediate 60/59, are rejected unchanged without migration.
+Every successful File → Close file, document switch or quit publishes the current
+state as the baseline and expires ordinary history. Failed/cancelled closes and
+crashes retain the recoverable journal. Closing does not accept pending imports.
+
+The close transaction now computes snapshot dependencies, prunes unreferenced
+payloads and their allocation/ownership/provenance children, expires the session
+journal and Review stack, and advances the encrypted clean generation atomically.
+It retains originals, acceptance references, current heads, duplicate recognition
+(including removed identities), transfer/Review restoration dependencies and eligible
+source-scoped import Undo. Allocation-origin tombstones prevent rebinding deleted
+split identities. Financial/conflict generations are not reset. No full close audit,
+full-file hash, VACUUM, baseline payload copy or physical shrink is introduced.
+Unchanged closes use the indexed unfinished-facts check.
+
+Direct corrections, inline edits and selection edits persist exact request
+fingerprints and durable completion identities. Expired retries report already
+completed and require refreshing current data; changed content is rejected and
+cannot execute again. Selection-request text is removed when the fingerprint is
+sufficient. Current values are never presented as an expired historical result.
+Existing compact configuration/identity receipts and necessary financial references
+remain. A committed close with lost acknowledgement is resolved from its generation;
+retry cannot publish a second generation. Finalized connections refuse mutations.
+
+Full verification validates the retained baseline payloads, source/provenance and
+financial relationships against immutable mutation-time snapshot facts. It checks
+new session transitions from that baseline; expired ordinary field transitions no
+longer depend on removed snapshots. Compact monetary ordering/totals, acceptance,
+currency and relationship records still reconcile independently. Retained scalar
+facts/receipts can grow; this is not a claim of constant database size or secure
+erasure of old backups. The historical duplicate-target lookup includes retained
+earlier-session revisions, independently of user-visible history eligibility.
+
+The broader verification-policy rollout remains separate. Normal open still uses
+the existing cache/audit policy and can audit even after clean close; unclean sessions
+always require recovery verification. Close no longer publishes cache approval.
+The welcome authentication probe does not start a history session. Backup/restore
+checks remain. No new Check file UI is included. The accepted encrypted-marker,
+reduced offline-detection policy is settled for the follow-up; do not ask it again.
+
+Verification on macOS:
+
+- Rules-enabled Release application built. A 24-test focused run passed (227.85 s),
+  including committed editing/history/dependencies/exact arithmetic, validation,
+  backup, legacy-format refusal, I/O/process-crash sweeps and the new session tests.
+- After the final pruning/verifier changes, all 13 focused session/currency/rule,
+  cross-session import-Undo, close-policy and QML checks passed (27.49 s). Another
+  12 financial workflow checks passed (40.64 s): manual entries, selection edits,
+  Review batch, transfer assignment/management/imports/splits/QIF and reports.
+- All nine selected rules-disabled Release checks passed (24.23 s), including
+  session failures, cross-session import Undo and schema rejection. All nine
+  selected ASan/UBSan checks passed (49.21 s), including session recovery/pruning,
+  import Undo and rule application after baseline publication.
+- Session tests cover clean/failed/cancelled close, multi-generation expiry,
+  original values, pending-import retention, changed-content retry rejection,
+  removed-entry reimport, backup restore, corruption of retained payloads/compact
+  facts, and zero full-audit calls at close. Import-Undo checks cover shared and
+  duplicate-only sources, multi-account imports, generated counterparts, Review
+  Link reversal, prior arrangements, stale previews and restored backups.
+- Dedicated fault sweeps exercise session activation and close with alternating
+  disk-full/write errors, abrupt exits, both close commit boundaries and lost
+  acknowledgements. The close sweep additionally asserts all-or-nothing payload
+  pruning and journal expiry. Repeated-session tests retain only original/current
+  ordinary entry payloads after eight edits per generation, over four generations;
+  the measured synthetic close times were 17.22, 13.81, 9.46 and 11.51 ms, with
+  file sizes 954,368 / 954,368 / 954,368 / 962,560 bytes. These small synthetic
+  measurements are not large-file performance claims. Strengthened pruning-fault
+  reruns passed in Release, rules-disabled Release and ASan/UBSan.
+
+Final verifier review also retained financial preview/dependency-token validation
+for expired compact records and added a tampered-preview regression. The final
+reruns passed 10/10 Release checks (32.38 s), 4/4 rules-disabled checks (9.77 s)
+and 5/5 ASan/UBSan checks (23.49 s). `git diff --check` and local documentation
+link-target checks passed; the Release application was rebuilt.
+
+Tests use synthetic data and required access to application-data locks. Native
+interactive close/switch/quit, large private datasets, Linux and Windows were not
+verified in this work. Manual text/screenshots remain unchanged; deferred chapters,
+pictures and retry wording are recorded in [MAN-008](manual-update-backlog.md#man-008--session-change-history-and-close-recovery).
+
 ## Manual-transaction test wait — 2026-11-06
 
 Corrected `manualTransactionEntry` under owner Go to wait for the second deletion

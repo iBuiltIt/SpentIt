@@ -242,7 +242,7 @@ std::optional<app::TransferReceipt> ImportStore::transfer_outcome(std::string_vi
     return app::TransferReceipt{std::string(operation),row.integer(0),row.integer(1),Money(row.integer(2),currency),Money(row.integer(3),currency),Money(row.integer(4),currency)};
 }
 std::vector<app::TransferJournalEntry> ImportStore::transfer_journal() const {
-    Statement rows(impl_->db,"SELECT e.operation,e.request,o.sequence,v.payload,g.sequence,completed.sequence FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN transfer_versions v ON v.sequence=o.sequence LEFT JOIN generated_source_matches g ON g.sequence=o.sequence LEFT JOIN generated_source_matches completed ON completed.sequence+1=o.sequence ORDER BY o.sequence,v.identity");
+    Statement rows(impl_->db,"SELECT e.operation,e.request,o.sequence,v.payload,g.sequence,completed.sequence FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN transfer_versions v ON v.sequence=o.sequence LEFT JOIN generated_source_matches g ON g.sequence=o.sequence LEFT JOIN generated_source_matches completed ON completed.sequence+1=o.sequence WHERE o.id IN(SELECT id FROM session_history WHERE domain='ledger') ORDER BY o.sequence,v.identity");
     std::vector<app::TransferJournalEntry> out;
     while(rows.row()) {
         if(out.size()>=qif::max_records) fail(SQLITE_TOOBIG);

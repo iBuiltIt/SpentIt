@@ -3,6 +3,7 @@
 #include "import_legacy_schema.hpp"
 #include "import_schema3_fixture.hpp"
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -72,6 +73,208 @@ bool eligible(const ImportStore& store,const imports::Occurrence& id,std::string
     for(const auto& item:store.committed_history(id))if(item.operation==operation)return item.undo_eligible;
     throw std::runtime_error("Missing synthetic history");
 }
+void sessions() {
+    Directory dir;const auto path=dir.path/"doc";prepare(path);
+    int audits=0;app::OperationContext context;
+    context.progress=[&](std::string_view phase){if(phase=="Checking file")++audits;};
+    std::optional<app::ChangePreview> original;
+    {
+        auto store=ImportStore::open(path,password,&context);check(audits==1);
+        original=store.preview_committed_change(correction(store,first,-3000));
+        store.apply_committed_change("session-edit",original->request,original->expected,original->preview_sequence);
+        check(store.committed_changes().size()==1);
+        store.observer([](ImportPhase phase){if(phase==ImportPhase::before_commit)throw std::runtime_error("synthetic close failure");});
+        rejects([&]{store.certify({},&context);});
+        check(store.committed_changes().size()==1);
+        store.observer({});store.verify();
+    }
+    {
+        audits=0;auto store=ImportStore::open(path,password,&context);check(audits==1);
+        check(store.committed_changes().size()==1);
+        store.ingest("pending","D12/08/2026\nT-5.00\nPPending synthetic\n^\n",qif::DateOrder::dmy);
+        check(!store.undoable_imports().empty());
+        audits=0;store.certify({},&context);check(audits==0);
+        store.certify({},&context);check(audits==0);
+    }
+    for(int session=0;session<3;++session){
+        audits=0;auto store=ImportStore::open_cached(path,password,dir.path/"missing-cache",&context);check(audits==1);
+        check(store.committed_changes().empty() && store.committed_history(first).empty());
+        check(store.committed_balance().units()==12000);
+        check(store.committed_entry(first).current.draft.transaction.original_imported_amount()->units()==-2931);
+        check(store.evidence("first")==source);
+        check(!store.undoable_imports().empty());
+        rejects([&]{store.preview_committed_change(undo(first,"session-edit"));});
+        bool completed=false;try{store.apply_committed_change("session-edit",original->request,original->expected,original->preview_sequence);}catch(const app::OperationAlreadyCompleted& result){completed=result.operation=="session-edit";}check(completed);
+        auto conflict=original->request;conflict.correction->memo="different request";
+        bool refused=false;try{store.apply_committed_change("session-edit",conflict,original->expected,original->preview_sequence);}catch(const ImportError&){refused=true;}check(refused);
+        audits=0;store.verify(&context);check(audits==1);
+        store.certify({},&context);check(audits==1);
+    }
+    {
+        auto store=ImportStore::open(path,password);
+        const auto imports=store.undoable_imports();check(imports.size()==1);
+        const auto preview=store.review_import_undo("pending");
+        store.undo_import("undo-pending","pending",preview.token);
+        check(store.undoable_imports().empty());store.verify();
+        store.backup_to(dir.path/"backup",password);
+        store.certify({});
+    }
+    {
+        audits=0;auto backup=ImportStore::open(dir.path/"backup",password,&context);check(audits==1);
+        check(backup.committed_changes().empty());backup.verify();backup.certify({});
+    }
+    no_leaks(dir.path);
+}
+
+std::int64_t count_rows(const fs::path& path,const char* sql) {
+    sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
+    sqlite3_stmt* row=nullptr;check(sqlite3_prepare_v2(db,sql,-1,&row,nullptr)==SQLITE_OK);check(sqlite3_step(row)==SQLITE_ROW);const auto value=sqlite3_column_int64(row,0);check(sqlite3_finalize(row)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);return value;
+}
+void session_pruning() {
+    Directory dir;const auto path=dir.path/"doc";prepare(path);
+    for(int generation=0;generation<4;++generation){
+        {
+            auto s=ImportStore::open(path,password);
+            for(int edit=0;edit<8;++edit){auto request=correction(s,first,-3000-edit);request.correction->memo="Expired synthetic memo "+std::to_string(generation*8+edit);apply(s,"edit-"+std::to_string(generation*8+edit),request);}
+            s.ingest("draft-"+std::to_string(generation),"D12/08/2026\nT-1.00\nPPending "+std::to_string(generation)+"\n^\n",qif::DateOrder::dmy);
+            const imports::Occurrence draft{"draft-"+std::to_string(generation),0};
+            for(int edit=0;edit<8;++edit){auto row=*s.row(draft).draft;row.memo="Transient draft memo "+std::to_string(edit);s.save(draft,revision(s,draft.batch),row);}
+            s.verify();const auto start=std::chrono::steady_clock::now();s.certify({});
+            std::cout<<"baseline "<<generation+1<<": close ms "<<std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count()<<", file bytes "<<fs::file_size(path)<<'\n';
+        }
+        check(count_rows(path,"SELECT count(*) FROM entry_revisions WHERE batch='first' AND ordinal=0")==2);
+        check(count_rows(path,"SELECT count(*) FROM entry_revisions WHERE revision>0 AND memo LIKE 'Expired synthetic memo %'")==1);
+        check(count_rows(path,"SELECT count(*) FROM command_completions WHERE expired=1")==8*(generation+1));
+        {auto s=ImportStore::open(path,password);check(s.committed_changes().empty());check(s.committed_balance().units()==11993);s.verify();s.certify({});}
+    }
+    {auto s=ImportStore::open(path,password);s.backup_to(dir.path/"backup",password);}
+    {auto s=ImportStore::open(dir.path/"backup",password);s.verify();check(s.committed_balance().units()==11993);}
+}
+
+void session_editor() {
+    Directory dir;const auto path=dir.path/"doc";prepare(path);
+    std::optional<imports::DraftRow> original;std::optional<app::EntryToken> token;
+    std::int64_t prior=0;app::LedgerSelectionEdit selected;
+    {
+        auto store=ImportStore::open(path,password);original=store.committed_entry(first).current.draft;
+        original->memo="Expired editor text";token=store.committed_entry(first).token;prior=revision(store,first.batch);
+        store.edit_transaction("editor",first,prior,token,*original);
+        store.edit_transaction("editor",first,prior,token,*original);
+        selected.action=app::LedgerSelectionAction::rename_payee;selected.account=store.account().identity;selected.generation=store.ledger_edit_generation();selected.selected={first};selected.payee="Expired selection payee";
+        app::OperationContext context;store.edit_transactions("selection",selected,context);
+        auto latest=store.committed_entry(first);auto next=latest.current.draft;next.memo="Current memo";next.payee="Current payee";
+        store.edit_transaction("editor-last",first,revision(store,first.batch),latest.token,next);
+        store.verify();store.certify({});
+    }
+    check(count_rows(path,"SELECT count(*) FROM entry_revisions WHERE memo='Expired editor text' OR payee='Expired selection payee'")==0);
+    check(count_rows(path,"SELECT count(*) FROM review_answers WHERE question='ledger-edit-batch' AND request!=''")==0);
+    {
+        auto store=ImportStore::open(path,password);bool completed=false;
+        try{store.edit_transaction("editor",first,prior,token,*original);}catch(const app::OperationAlreadyCompleted& e){completed=e.operation=="editor";}check(completed);
+        auto changed=*original;changed.memo="Different request";bool conflict=false;try{store.edit_transaction("editor",first,prior,token,changed);}catch(const ImportError&){conflict=true;}check(conflict);
+        app::OperationContext context;completed=false;try{store.edit_transactions("selection",selected,context);}catch(const app::OperationAlreadyCompleted&){completed=true;}check(completed);
+        selected.payee="Conflicting payee";conflict=false;try{store.edit_transactions("selection",selected,context);}catch(const ImportError&){conflict=true;}check(conflict);
+        apply(store,"remove",removal(first));store.certify({});
+    }
+    {
+        auto store=ImportStore::open(path,password);store.ingest("removed-reimport",purchase,qif::DateOrder::dmy);
+        check(store.row({"removed-reimport",0}).decision.disposition!=imports::Disposition::duplicate);
+        check(!store.committed_entry(first).current.active);store.verify();store.certify({});
+    }
+    {auto store=ImportStore::open(path,password);store.verify();check(!store.committed_entry(first).current.active);}
+}
+
+void session_duplicates() {
+    Directory dir;const auto path=dir.path/"doc";prepare(path);
+    {
+        auto store=ImportStore::open(path,password);
+        apply(store,"correct",correction(store,first,-3000));
+        store.certify({});
+    }
+    {
+        auto store=ImportStore::open(path,password);
+        store.ingest("duplicate",source,qif::DateOrder::dmy);
+        check(store.committed_changes().empty());
+        check(store.row({"duplicate",0}).decision.disposition==imports::Disposition::duplicate);
+        store.verify();store.certify({});
+    }
+    {
+        auto store=ImportStore::open(path,password);
+        check(store.committed_changes().empty());
+        check(store.row({"duplicate",0}).decision.disposition==imports::Disposition::duplicate);
+        check(store.committed_balance().units()==12000);
+        store.verify();
+        const auto preview=store.review_import_undo("duplicate");
+        store.undo_import("undo-duplicate","duplicate",preview.token);
+        check(store.committed_balance().units()==12000);store.verify();
+    }
+}
+
+void session_marker_faults() {
+    fault_vfs::install();Directory dir;const auto seed=dir.path/"seed",path=dir.path/"trial";prepare(seed);
+    {auto s=ImportStore::open(seed,password);s.certify({});}
+    auto copy=[&]{std::error_code e;fs::remove(path,e);fs::remove(path.string()+"-journal",e);check(fs::copy_file(seed,path));};
+    copy();fault_vfs::arm(-1);{auto s=ImportStore::open(path,password);}const int positions=fault_vfs::seen;fault_vfs::disarm();check(positions>0);
+    for(int position=1;position<=positions;++position){
+        copy();fault_vfs::arm(position,position%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
+        try{auto s=ImportStore::open(path,password);}catch(const std::exception&){}fault_vfs::disarm();
+        {auto s=ImportStore::open(path,password);check(s.committed_balance().units()==12069);s.verify();s.certify({});}
+        copy();const auto child=fork();check(child>=0);
+        if(child==0){fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);auto s=ImportStore::open(path,password);_exit(72);}
+        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71);
+        {auto s=ImportStore::open(path,password);check(s.committed_balance().units()==12069);s.verify();s.certify({});}
+    }
+    std::cout<<"session activation: "<<positions<<" write/sync failures and process exits passed\n";
+}
+
+void session_corruption() {
+    Directory dir;const auto seed=dir.path/"seed";prepare(seed);
+    {auto s=ImportStore::open(seed,password);apply(s,"first-edit",correction(s,first,-3000));apply(s,"second-edit",correction(s,first,-3100));s.certify({});}
+    int serial=0;
+    for(const auto* sql:{
+        "DROP TRIGGER ledger_operations_immutable; UPDATE ledger_operations SET preview_sequence=999 WHERE id='first-edit'",
+        "DROP TRIGGER entry_revisions_immutable; UPDATE entry_revisions SET memo='silently changed' WHERE batch='first' AND ordinal=0 AND revision=2",
+        "DROP TRIGGER snapshot_identity; UPDATE snapshot_facts SET total=total+1 WHERE kind=1 AND batch='first' AND ordinal=0 AND revision=1",
+        "DROP TRIGGER snapshot_keep; DELETE FROM snapshot_facts WHERE kind=1 AND batch='first' AND ordinal=0 AND revision=1"}){
+        const auto path=dir.path/("damaged-"+std::to_string(serial++));check(fs::copy_file(seed,path));
+        sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
+        check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
+        rejects([&]{auto store=ImportStore::open(path,password);store.verify();});
+    }
+}
+
+void session_faults() {
+    fault_vfs::install();Directory dir;const auto seed=dir.path/"seed",path=dir.path/"trial";
+    prepare(seed);
+    {auto s=ImportStore::open(seed,password);apply(s,"expired-intermediate",correction(s,first,-3100));apply(s,"session-edit",correction(s,first,-3000));}
+    auto copy=[&]{std::error_code error;fs::remove(path,error);fs::remove(path.string()+"-journal",error);check(fs::copy_file(seed,path));};
+    copy();int positions=0;
+    {auto s=ImportStore::open(path,password);fault_vfs::arm(-1);s.certify({});positions=fault_vfs::seen;fault_vfs::disarm();}
+    check(positions>0);
+    for(int position=1;position<=positions;++position){
+        copy();
+        {auto s=ImportStore::open(path,password);fault_vfs::arm(position,position%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
+         try{s.certify({});}catch(const std::exception&){}fault_vfs::disarm();}
+        {auto s=ImportStore::open(path,password);check(s.committed_balance().units()==12000);
+         check(s.committed_changes().empty() || s.committed_changes().size()==2);
+         check(count_rows(path,"SELECT count(*) FROM entry_revisions WHERE batch='first' AND ordinal=0")== (s.committed_changes().empty()?2:3));try{check(s.committed_change_outcome("session-edit").has_value());}catch(const app::OperationAlreadyCompleted& completed){check(completed.operation=="session-edit");}
+         s.verify();s.certify({});s.certify({});}
+        {auto s=ImportStore::open(path,password);check(s.committed_changes().empty());s.verify();}
+    }
+    for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){
+        copy();const auto child=fork();check(child>=0);
+        if(child==0){auto s=ImportStore::open(path,password);s.observer([&](ImportPhase at){if(at==phase)_exit(72);});s.certify({});_exit(73);}
+        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
+        auto s=ImportStore::open(path,password);
+        check(s.committed_changes().empty()==(phase==ImportPhase::after_commit));
+        check(s.committed_balance().units()==12000);s.verify();s.certify({});
+    }
+    copy();
+    {auto s=ImportStore::open(path,password);s.observer([](ImportPhase at){if(at==ImportPhase::after_commit)throw std::runtime_error("lost acknowledgement");});s.certify({});s.certify({});}
+    {auto s=ImportStore::open(path,password);check(s.committed_changes().empty());s.verify();}
+    std::cout<<"session close: "<<positions<<" write/sync failure positions, both commit crash boundaries, and lost acknowledgement passed\n";
+}
+
 void basics() {
     Directory dir;prepare(dir.path/"doc");
     {
@@ -383,7 +586,7 @@ void faults(bool crash) {
 int main(int argc,char** argv) {
     try {
         const std::string mode=argc>1?argv[1]:"";
-        if(mode=="basics")basics();else if(mode=="history")history();else if(mode=="review")review();
+        if(mode=="session_marker_faults")session_marker_faults();else if(mode=="session_corruption")session_corruption();else if(mode=="session_editor")session_editor();else if(mode=="session_pruning")session_pruning();else if(mode=="session_duplicates")session_duplicates();else if(mode=="session_faults")session_faults();else if(mode=="sessions")sessions();else if(mode=="basics")basics();else if(mode=="history")history();else if(mode=="review")review();
         else if(mode=="dependencies")dependencies();else if(mode=="exact")exact();else if(mode=="backup")backup();
         else if(mode=="legacy")legacy();else if(mode=="validation")validation();else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;
         std::cout<<"Committed "<<mode<<" passed\n";

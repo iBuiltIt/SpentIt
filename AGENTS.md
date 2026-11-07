@@ -1,5 +1,21 @@
 # SpentIt — Where did my money go?
 
+## Session history baseline — implementation Go 2026-11-07
+
+Read [the accepted contract](doc/session-history-baseline.md) and
+[current progress](doc/status.md) before further history/lifecycle work. Every
+successful document close ends ordinary history; crashes and failed/cancelled
+closes preserve recoverable history. Originals, current relationships and eligible
+import Undo survive. The owner accepts compact durable completion results after
+close, with request-conflict checks and no re-execution or fabricated historical
+results. Dependency-based snapshot pruning, compact receipts and baseline-aware
+verification are implemented. Current experimental formats are 62 with rules / 61
+without; earlier formats are rejected unchanged. See status for executed checks.
+The owner identified the broad verification-policy rollout as the next task.
+Its offline-change policy is already settled: encrypted clean marker, no routine
+hashing, reduced offline-change detection accepted. Do not ask that decision again
+or introduce a full close-time audit. Manual updates remain deferred.
+
 ## Deferred manual updates — owner direction 2026-11-06
 
 Record manual work caused by user-visible application changes in the
@@ -249,7 +265,7 @@ Use relative links between repository documents. Do not rely on chat history, pr
 - Follow the [accepted import/commit direction](doc/import-commit-discussion.md): a separate permanent original-import evidence archive is no longer required. Forget removes exclusively owned import material; retain only ownership relationships needed to avoid deleting retained transactions. The current UI uses source-owned account rollback and removes exclusively owned material; shared material remains only while retained transactions require it.
 - New/uncommitted transactions persist across restarts. The accepted target includes them in one balance and default future reports, removing the actual/projected distinction; see the [handoff](doc/import-commit-discussion.md). The normal ledger and displayed balance now include uncommitted rows; committed-only calculations remain internal to acceptance receipts and correction/history verification.
 - Commit the entire chosen operation atomically, including linked transfers, status transitions, and history. The current UI commits all new transactions dataset-wide; legacy per-account storage entry points remain for existing internal history/test paths. Committed means accepted, not uneditable. Never report success before durable completion.
-- Preserve persistent history for committed changes. Reversal must respect later changes and financial relationships; it must not silently overwrite newer work.
+- Preserve durable ordinary history during the document session, including crash recovery. Successful close expires ordinary Undo under the session-baseline contract; retain originals, recognition, financial dependencies and eligible import Undo across sessions. Reversal must respect later changes and financial relationships; it must not silently overwrite newer work.
 - Duplicate recognition must preserve evidence and legitimate repeated occurrences. An uncertain match is not permission to drop a transaction silently.
 - Reporting totals must reconcile to the exact allocations and filters shown by drill-down.
 - No silent repair, rounding, truncation, skipped records, fallback to plaintext, or destructive migration. Explain and surface errors.

@@ -31,8 +31,11 @@ public:
         open(path,std::move(password));
         try { context.checkpoint(); } catch (...) { close(); throw; }
     }
+    virtual void probe(const std::filesystem::path& path,const OperationContext& context) {
+        open_controlled(path,std::nullopt,context);close();
+    }
     virtual void close() = 0;
-    // Graceful close may audit while retaining the document lock. Emergency close never does.
+    // Graceful close finalizes the session while holding its lock. Emergency close retains recovery state.
     virtual void close_verified(const OperationContext&) { close(); }
     virtual bool lazy_review() const { return false; }
     virtual ImportRepository& repository() = 0;

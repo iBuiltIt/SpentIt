@@ -27,7 +27,6 @@ public:
     bool lazy_review() const override {return !cache_.empty();}
     void close_verified(const app::OperationContext& context) override {
         if(store_)store_->certify(cache_,&context);
-        context.checkpoint("Closing file…");
         close();
     }
     ~Gateway() override { close(); }
@@ -62,6 +61,11 @@ public:
         } catch(const ImportAuthenticationError&) {
             throw app::UnlockRequired();
         }
+    }
+    void probe(const std::filesystem::path& path,const app::OperationContext& context) override {
+        if(store_)throw std::logic_error("Close the current dataset first");
+        try {ImportStore::probe(document_path(path),public_document_key,&context);}
+        catch(const ImportAuthenticationError&){throw app::UnlockRequired();}
     }
     app::ImportRepository& repository() override {
         if(!store_) throw std::logic_error("No dataset is open");

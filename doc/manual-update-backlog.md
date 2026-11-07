@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-06
+Last updated: 2026-11-07
 
 Owner direction: accumulate manual changes here while application work continues,
 then update and verify the manual together in a later owner-authorized pass.
@@ -172,3 +172,34 @@ No manual text or pictures changed during implementation.
   the chapter's Settings → Close file instructions to File → Close file.
 - Audit toolbar pictures for disabled navigation appearance and recapture only
   affected examples during the later owner-authorized manual pass.
+
+### MAN-008 — Session Change History and close recovery
+
+Recorded: 2026-11-07. Status: **pending manual pass; session-history implementation complete**.
+Source: [session-history contract](session-history-baseline.md) and
+[implementation progress](status.md#session-history-baseline--2026-11-07).
+
+No manual text, captions or pictures have been changed.
+
+- Update [Add/correct transactions](../manual/add-correct-transactions.md),
+  [Accounts](../manual/accounts.md), [Categories](../manual/categories.md), and
+  [Review duplicates/transfers](../manual/review-duplicates-transfers.md): ordinary
+  history/Undo ends after successful File → Close file, switching files, or quit.
+  Failed/cancelled close and crash recovery retain the recoverable session.
+- Update [Create/open a file](../manual/create-open-file.md),
+  [Look after your work](../manual/backup-recovery.md), and
+  [Messages/problems](../manual/messages-problems.md) for close failure/retry and
+  the final recovery workflow. Keep bundled Help topic/section IDs stable.
+- Check [Accept transactions](../manual/accept-transactions.md) and
+  [Import transactions](../manual/import-transactions.md): close does not accept
+  pending transactions; originals and eligible Undo last import survive sessions.
+- Review editing/history, acceptance, import-Undo and recovery pictures/captions,
+  including `manual/images/import-undo.png`, `manual/images/accept-review.png`,
+  and `manual/images/recovery-existing.png`. Capture the revised close-failure
+  dialog if the final walkthrough uses it. Recapture only after the implementation
+  and planned verification-policy follow-up settle; no storage-saving claims.
+- Explain the already-saved retry message: refresh current transactions; an old
+  request cannot execute twice or display expired values as its historical result.
+- Include final normal-open/check-on-request behavior only after the separate
+  verification-policy task is implemented and verified. Check links and bundled
+  Help during the owner-authorized manual pass.

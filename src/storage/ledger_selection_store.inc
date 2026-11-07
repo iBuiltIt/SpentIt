@@ -141,6 +141,8 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
     transfer_codec::Writer encoded;encoded.number(static_cast<int>(request.action));encoded.number(request.account);encoded.number(request.generation);encoded.text(request.payee);
     std::set<imports::Occurrence> identities;
     for(const auto& id:request.selected){context.checkpoint("Checking selected transactions");if(!identities.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once");encoded.text(review_key(id));}
+    const auto request_hash=session_snapshot::digest(encoded.bytes);
+    session_snapshot::retry(impl_->db,operation,"selection",request_hash);
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question=?");saved.text(1,operation);saved.text(2,question);
         if(!saved.row() || saved.bytes(0)!=encoded.bytes)fail(SQLITE_CONSTRAINT,"Retry changed the selected transactions or values");
@@ -216,5 +218,6 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
         }
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();
+    session_snapshot::completed(impl_->db,operation,"selection",request_hash);
     context.checkpoint("Finishing selected transaction changes");finish([&]{context.seal();transaction.commit();});return {std::string(operation)};
 }
