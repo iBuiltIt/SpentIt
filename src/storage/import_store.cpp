@@ -944,10 +944,6 @@ struct ImportStore::Impl {
     bool verifying=false;
     bool startup_cleanup=false;
     bool finalized=false;
-    // An opening audit is reusable only in this process, with no intervening
-    // writes/rollback and an identical full-file fingerprint under a read lock.
-    mutable std::string opening_audit;
-    sqlite3_int64 opening_audit_changes=-1;
     mutable VerificationRows* verification_rows=nullptr;
     struct AuditEntries {
         using Key=std::pair<imports::Occurrence,std::int64_t>;
@@ -1209,7 +1205,6 @@ CREATE TABLE report_periods(report TEXT NOT NULL REFERENCES reports(id) ON DELET
     },store.impl_.get());
     sqlite3_rollback_hook(db,[](void* pointer){
         auto& state=*static_cast<Impl*>(pointer);
-        state.opening_audit.clear();
         state.reviews.clear();state.reviewed_groups.clear();state.reviewed_sources.clear();state.review_changes=-1;
         state.read_rows=VerificationRows{};state.read_stamps.clear();
         state.reviewed_transfers.reset();state.reviewed_transfer_stamp.clear();
@@ -2112,7 +2107,6 @@ std::vector<app::AccountBalance> ImportStore::account_balances() const {
     return result;
 }
 void ImportStore::verify(const app::OperationContext* context) const {
-    impl_->opening_audit.clear();
     diag::Span verificationSpan(diag::Code::verify);
     Statement session(impl_->db,"SELECT generation,clean FROM document_session WHERE singleton=1");
     if(!session.row() || session.integer(0)<0 || (session.integer(1)!=0 && session.integer(1)!=1))fail(SQLITE_CORRUPT,"File session state is missing or invalid");

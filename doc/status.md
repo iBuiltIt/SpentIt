@@ -1,5 +1,39 @@
 # Project status
 
+## Verification-policy follow-through — 2026-11-07
+
+Inspection confirmed the accepted encrypted-marker policy and atomic baseline
+publication were already implemented by the session-history correction below.
+The offline-change decision is explicitly settled in the accepted contract:
+no routine hashing, with reduced offline-change detection accepted. This follow-up
+does not change that decision, format 64/63, financial validation, locking,
+encryption, durability or baseline retention.
+
+Removed the unused file-hash/audit-approval publication implementation, obsolete
+opening-audit state and build-generated verifier fingerprint. Recovery-sidecar
+inspection remains unchanged. This removes the superseded cache mechanism rather
+than leaving it available to accidentally reinstate rebuild-driven audits.
+Extended the policy regression to cover an unusable/stale cache location, another
+uncommitted import followed by clean close/reopen, exact balance preservation,
+explicit audit counting, and full backup candidate/restore checks.
+
+Verification: the full rules-enabled macOS Release build succeeded, including
+`build/SpentIt`. The targeted CTest selection passed **6/6**: verification cache,
+sessions, marker faults, close faults, corruption and backup. The close sweep
+covers I/O/disk-full failures, process exits before/after commit and lost
+acknowledgement; marker faults exercise failure/process-exit activation recovery.
+The rules-disabled build and corresponding selection also passed **5/5**
+(policy, sessions, marker faults, corruption and backup). `git diff --check` passed.
+Initial sandboxed tests were blocked by the application-data lock directory;
+the recorded passing rerun used approved access with locking unchanged.
+
+Manual text/screenshots remain unchanged; MAN-008 now explicitly includes
+unaccepted imports, rebuild/cache independence and offline-change limitations.
+No private data was inspected. Linux/Windows, native UI interaction and sanitizers
+were not rerun in this follow-up; prior measurements below remain the storage
+acceptance evidence because this change adds no persisted data or schema changes.
+
+
 ## Session-history correction — 2026-11-07
 
 The correction replaces `f8a1f4b`'s permanent ordinary-revision layer in place.

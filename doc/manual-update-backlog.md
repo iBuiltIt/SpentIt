@@ -201,7 +201,10 @@ No manual text, captions or pictures have been changed.
   the owner-authorized manual pass; avoid promising a fixed storage-saving percentage.
 - Explain the already-saved retry message: refresh current transactions; an old
   request cannot execute twice or display expired values as its historical result.
-- Explain normal open/close without a routine full audit, recovery checks after an
-  abnormal shutdown, and Settings **Check file** without ending Undo. Check links
+- Explain normal open/close without a routine full audit, including edits and
+  imports left unaccepted; missing cache approvals and ordinary rebuilds do not
+  require a check. Explain recovery checks after an abnormal shutdown, full backup
+  checks, and Settings **Check file** without ending Undo. Normal opening does not
+  independently detect every change made while the application was closed. Check links
   and bundled
   Help during the owner-authorized manual pass.

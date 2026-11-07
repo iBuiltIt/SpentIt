@@ -33,19 +33,6 @@ spentit_compiler_options(spentit_storage_prototype)
 
 if(SPENTIT_IMPORT_WORKFLOW)
 add_library(spentit_import_store STATIC import_store.cpp document_gateway.cpp verification_cache.cpp document_lock.cpp)
-# Approval is invalidated whenever financial/storage/app validation sources change.
-file(GLOB_RECURSE verifier_sources CONFIGURE_DEPENDS
-  "${PROJECT_SOURCE_DIR}/src/storage/*.cpp" "${PROJECT_SOURCE_DIR}/src/storage/*.inc" "${PROJECT_SOURCE_DIR}/src/storage/*.hpp"
-  "${PROJECT_SOURCE_DIR}/src/engine/*.cpp" "${PROJECT_SOURCE_DIR}/src/engine/*.hpp"
-  "${PROJECT_SOURCE_DIR}/src/app/*.cpp" "${PROJECT_SOURCE_DIR}/src/app/*.hpp")
-set(verifier_material "${SPENTIT_RULES};${sqlcipher_c_hash};${sqlcipher_h_hash}")
-foreach(source IN LISTS verifier_sources)
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
-  file(SHA256 "${source}" source_hash)
-  string(APPEND verifier_material "${source_hash}")
-endforeach()
-string(SHA256 verifier_id "${verifier_material}")
-target_compile_definitions(spentit_import_store PRIVATE SPENTIT_VERIFIER_ID="${verifier_id}")
 target_link_libraries(spentit_import_store PRIVATE OpenSSL::Crypto)
 if(WIN32)
   target_link_libraries(spentit_import_store PRIVATE shell32 ole32 uuid)

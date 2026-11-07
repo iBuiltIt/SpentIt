@@ -72,8 +72,20 @@ int main(){try{
         check(!fs::exists(cache));s.certify(cache,&context);check(audits==(session==0?1:0));
         s.certify(cache,&context);check(audits==(session==0?1:0) && !fs::exists(cache));
     }
+    // An obsolete approval location (even a regular file instead of a directory)
+    // cannot change policy or block an edited/uncommitted session after a rebuild.
+    write(cache,"SpentIt verification 1\nobsolete-build\ninvalid-hash\n");
+    {audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check(audits==0);
+     s.ingest("later","!Type:Bank\nD2026-10-02\nT-2.00\nPLater synthetic import\n^\n",qif::DateOrder::dmy);
+     s.certify(cache,&context);check(audits==0);}
+    {audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check(audits==0);
+     check(s.balance()==Money(-1434,cad));check(!s.ledger(true).back().committed);
+     s.verify(&context);check(audits==1);s.certify(cache,&context);check(audits==1);}
+    check(bytes(cache)=="SpentIt verification 1\nobsolete-build\ninvalid-hash\n");
+    fs::remove(cache);
     const auto before=bytes(path);fails([&]{ImportStore::open_cached(path,"wrong",cache);});check(bytes(path)==before);
-    {auto s=ImportStore::open(path,key);s.backup_to(d.path/"backup",key);}
+    {audits=0;auto s=ImportStore::open_cached(path,key,cache,&context);check(audits==0);
+     s.backup_to(d.path/"backup",key,{},&context);check(audits==3);}
     {audits=0;auto s=ImportStore::open_cached(d.path/"backup",key,cache,&context);check(audits==1);check(s.ledger(true).front().draft.memo=="session 2");s.verify();}
     auto corrupt=bytes(path);corrupt[8192]^=1;write(path,corrupt);
     fails([&]{ImportStore::open_cached(path,key,cache);});write(path,before);

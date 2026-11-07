@@ -16,6 +16,9 @@ history or completion rows. Before exposing the document, a transaction durably
 marks it unclean. Failure prevents activation. Review preparation and bounded
 cleanup of incomplete capture still run; completed uncommitted imports survive.
 Neither missing disposable approval files nor a rebuild triggers a full audit.
+The obsolete cache publication, file-fingerprint functions and build-generated
+verifier ID have been removed; recovery-sidecar detection remains. Legacy cache
+path arguments are ignored by storage opening/finalization.
 
 Successful close prunes obsolete ordinary snapshots and their operation records,
 expires session Undo, advances the baseline cutoffs and marks the file clean in
