@@ -301,12 +301,42 @@ private slots:
             fault->fault=OutcomeGateway::none;fault->failReviewRefresh=false;fault->groupFaultAction.clear();if(m.state().value("active").toBool())run(m,"close");run(m,"open",{{"path",dir.path()+"/doc"}});QCOMPARE(m.state().value("balance").toString(),mode==0?"-60.00":"-30.00");run(m,"close");
         }
     }
+    void selectedReviewMerge() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        const QByteArray categorized="D2026-02-01\nT6000\nPRepeated deposit\nLMiscellaneous Income: Long complete category name\nMKeep categorized deposit\n^\n";
+        const QByteArray uncategorized="D2026-02-01\nT6000\nPRepeated deposit\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),categorized+uncategorized)}});
+        QByteArray second=categorized+uncategorized;second.replace("Repeated deposit","Other export");run(m,"import",{{"path",fixture(dir.path(),second)}});
+        for(const auto& item:m.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(m,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTest::qWait(100);
+        QCOMPARE(m.state().value("reviewQuestions").toList().size(),1);
+        auto rows=m.state().value("reviewQuestions").toList().first().toMap().value("rows").toList();QCOMPARE(rows.size(),4);
+        auto* merge=visualItem(window->contentItem(),"reviewYes");QVERIFY(merge);QVERIFY(!merge->isEnabled());QVERIFY(!window->findChild<QObject*>("reviewSelectedYes"));
+        for(int i:{0,1}){auto* row=visualItem(window->contentItem(),"reviewRowSelect_"+QString::number(i));QVERIFY(row);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene(QPointF(row->width()/2,row->height()/2)).toPoint());}
+        QTRY_VERIFY(merge->isEnabled());QCOMPARE(merge->property("text").toString(),QString("Merge 2 selected rows…"));
+        QVERIFY(QMetaObject::invokeMethod(merge,"clicked"));auto* dialog=window->findChild<QObject*>("reviewSurvivor");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
+        const auto survivors=window->property("reviewSurvivors").value<QJSValue>().toVariant().toList();QCOMPARE(survivors.size(),2);QCOMPARE(survivors[0].toMap().value("key"),rows[0].toMap().value("key"));QCOMPARE(survivors[1].toMap().value("key"),rows[1].toMap().value("key"));
+        auto* description=visualItem(window->contentItem(),"reviewKeepDescription_0");QVERIFY(description);QVERIFY(description->property("text").toString().contains("Miscellaneous Income: Long complete category name"));QVERIFY(description->property("text").toString().contains("Keep categorized deposit"));
+        QVERIFY(visualItem(window->contentItem(),"reviewKeepDescription_1")->property("text").toString().contains("Uncategorized"));
+        QVERIFY(visualItem(window->contentItem(),"reviewMergeImpact")->property("text").toString().contains("other 2 transactions will remain unchanged"));
+        if(qEnvironmentVariableIsSet("SPENTIT_SELECTED_MERGE_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_SELECTED_MERGE_CAPTURE")));}
+        QVERIFY(QMetaObject::invokeMethod(dialog,"reject"));QCOMPARE(m.state().value("balance").toString(),QString("24,000.00"));
+        QVERIFY(QMetaObject::invokeMethod(merge,"clicked"));QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewKeep_0"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("balance").toString(),QString("18,000.00"));
+        const auto batch=rows[0].toMap().value("batch").toString();
+        for(int i:{0,2,3}){const auto row=rows[i].toMap();QVERIFY(m.occurrenceIndex(row.value("batch").toString(),row.value("ordinal").toInt())>=0);}
+        QVERIFY(m.occurrenceIndex(batch,rows[1].toMap().value("ordinal").toInt())<0);
+        const auto kept=m.rowRecord(m.occurrenceIndex(batch,rows[0].toMap().value("ordinal").toInt()));QCOMPARE(kept.value("category").toString(),QString("Miscellaneous Income: Long complete category name"));
+        run(m,"review_undo");QCOMPARE(m.state().value("balance").toString(),QString("24,000.00"));QCOMPARE(m.state().value("reviewQuestions").toList().first().toMap().value("rows").toList().size(),4);run(m,"close");
+    }
     void batchReviewSurvivorSelection() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         for(int pass=0;pass<2;++pass){const QByteArray record="D2026-02-01\nT-10\nP"+QByteArray::number(pass)+" synthetic\n^\n";run(m,"import",{{"path",fixture(dir.path(),record+record)}});}
         QCOMPARE(m.state().value("reviewCount").toInt(),1);QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTest::qWait(100);
         auto* group=visualItem(window->contentItem(),"reviewGroupSelect_0");QVERIFY(group);QVERIFY(!group->isEnabled());
+        QVERIFY(!visualItem(window->contentItem(),"selectAllMerges")->property("visible").toBool());
         for(int i=0;i<2;++i){auto* row=visualItem(window->contentItem(),"reviewRowSelect_"+QString::number(i));QVERIFY(row);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene(QPointF(row->width()/2,row->height()/2)).toPoint());}
         QTRY_VERIFY(group->isEnabled());const auto clickGroup=[&]{QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,group->mapToScene(QPointF(group->width()/2,group->height()/2)).toPoint());};
         clickGroup();auto* survivor=window->findChild<QObject*>("reviewSurvivor");QVERIFY(survivor);QTRY_VERIFY(survivor->property("visible").toBool());QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
@@ -323,6 +353,11 @@ private slots:
         auto* status=visualItem(window->contentItem(),"workspaceStatus");auto* list=visualItem(window->contentItem(),"reviewQuestions");QVERIFY(status && list);QTest::qWait(30);const auto statusPosition=status->mapToScene(QPointF());const auto listPosition=list->mapToScene(QPointF());const auto listHeight=list->height();
         const auto select=[&](int index){const auto q=m.state().value("reviewQuestions").toList().at(index).toMap();QVERIFY(QMetaObject::invokeMethod(window,"selectReviewGroup",Q_ARG(QVariant,QVariant(q)),Q_ARG(QVariant,q.value("rows"))));};
         if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_SCREENSHOT")));}
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"selectAllMerges"),"clicked"));
+        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),40);
+        QVERIFY(!visualItem(window->contentItem(),"selectAllMerges")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"clearMergeSelection"),"clicked"));
+        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
         select(0);select(1);QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),2);
         // A read-only inspection refresh must retain group intent.
         const auto row=m.state().value("reviewQuestions").toList().at(0).toMap().value("rows").toList().at(0).toMap();run(m,"inspect",{{"batch",row.value("batch")},{"ordinal",row.value("ordinal")}});
@@ -355,9 +390,10 @@ private slots:
         QVERIFY(visualItem(window->contentItem(),"transactionEditor")->isVisible());
         QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
         const auto row=rows.last().toMap();run(m,"inspect",{{"batch",row.value("batch")},{"ordinal",row.value("ordinal")}});QCOMPARE(m.state().value("reviewCount").toInt(),1);
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"commitImport"),"clicked"));QTRY_VERIFY(dialog->property("visible").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"commitImport"),"clicked"));QTRY_VERIFY(window->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"returnToReview"),"clicked"));QTRY_VERIFY(dialog->property("visible").toBool());
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"-10.00");
-        QVERIFY(visualItem(window->contentItem(),"reviewUndo")->isEnabled());QTest::keySequence(window,QKeySequence::Undo);QTRY_COMPARE(m.state().value("reviewCount").toInt(),1);
+        QVERIFY(visualItem(window->contentItem(),"reviewUndo")->isEnabled());visualItem(window->contentItem(),"reviewQuestions")->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);QTRY_COMPARE(m.state().value("reviewCount").toInt(),1);
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"-20.00");
         QVERIFY(QMetaObject::invokeMethod(dialog,"close"));run(m,"close");run(m,"open",{{"path",dir.path()+"/doc"}});QCOMPARE(m.state().value("reviewCount").toInt(),0);
     }
@@ -489,6 +525,50 @@ private slots:
             if(mode==3)QVERIFY(m.error().contains("undone"));
         }
     }
+    void reviewCleanup() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        const auto capture=[&](const QString& name){if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_CAPTURE_DIR")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_CAPTURE_DIR")+"/"+name+".png"));}};
+        create(m,dir.path()+"/doc");
+        QVERIFY(root->setProperty("currentPage","review"));
+        for(const auto& name:{"chooseImportUndo","reviewUndo","commitImport","selectAllMerges","mergeSelectedMatches","clearMergeSelection","resolveMappedTransfers"}) {
+            auto* item=visualItem(window->contentItem(),name);QVERIFY(item);QVERIFY2(!item->property("visible").toBool(),name);
+        }
+        capture("review-no-work");
+        QVERIFY(!root->findChild<QObject*>("reviewIgnoreCommit"));QVERIFY(!root->findChild<QObject*>("reviewImportedCategories"));
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT1\nPFirst\n^\n")}});
+        QVERIFY(root->setProperty("currentPage","review"));QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        if(qEnvironmentVariableIsSet("SPENTIT_EMPTY_REVIEW_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_EMPTY_REVIEW_CAPTURE")));}
+        capture("review-ready");
+        window->resize(720,560);QTest::qWait(100);capture("review-narrow");
+        auto* acceptButton=visualItem(window->contentItem(),"commitImport");QVERIFY(acceptButton->mapToScene(QPointF(acceptButton->width(),acceptButton->height())).x()<=window->width());
+        window->resize(1440,850);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"chooseImportUndo"),"clicked"));capture("undo-import-picker");QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("importUndoPicker"),"close"));
+        QVERIFY(visualItem(window->contentItem(),"commitImport")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"commitImport"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("newTransactions").toInt(),0);
+        QVERIFY(!root->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());
+        run(m,"create_account",{{"id","2"},{"name","Other"},{"currency","CAD"},{"date","2026-01-01"}});
+        QVERIFY(root->setProperty("currentPage","review"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"openReviewTransfers"),"clicked"));
+        auto* chooser=visualItem(window->contentItem(),"reviewTransferAccount");QVERIFY(chooser);QVERIFY(chooser->setProperty("currentIndex",0));QVERIFY(QMetaObject::invokeMethod(chooser,"activated",Q_ARG(int,0)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(m.state().value("accountId").toString(),QString("1"));
+        capture("review-transfers");
+        QVERIFY(!visualItem(window->contentItem(),"createManualTransfer")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"showAddTransfer"),"clicked"));QTRY_VERIFY(visualItem(window->contentItem(),"createManualTransfer")->property("visible").toBool());
+        QVERIFY(root->setProperty("currentPage","settings"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"hiddenTransferSuggestions"),"clicked"));
+        auto* dialog=root->findChild<QObject*>("transferSuggestionSettings");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());capture("hidden-transfer-suggestions");QVERIFY(dialog->property("standardButtons").toInt()!=0);QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
+        run(m,"close");
+    }
+    void mappedTransferConfirmation() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);create(m,dir.path()+"/doc");
+        run(m,"import",{{"path",fixture(dir.path(),"!Account\nNChecking\nTBank\n^\n!Type:Bank\nD2026-01-02\nT-10\nL[Unknown account]\n^\n")},{"profile","DMY"}});
+        run(m,"map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}}}});
+        QVERIFY(m.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()>0);
+        QVERIFY(root->setProperty("currentPage","review"));const auto balance=m.state().value("balance");const auto generation=m.state().value("reviewGeneration");
+        auto* button=visualItem(window->contentItem(),"resolveMappedTransfers");QVERIFY(button);QTRY_VERIFY(button->isVisible());QVERIFY(QMetaObject::invokeMethod(button,"clicked"));
+        auto* dialog=root->findChild<QObject*>("mappedTransferConfirm");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(!m.busy());QCOMPARE(m.state().value("reviewGeneration"),generation);
+        if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_CAPTURE_DIR")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_CAPTURE_DIR")+"/mapped-transfer-confirmation.png"));}
+        QVERIFY(QMetaObject::invokeMethod(dialog,"reject"));QCOMPARE(m.state().value("balance"),balance);
+        QVERIFY(QMetaObject::invokeMethod(button,"clicked"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"confirmMappedTransfers"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("balance"),balance);QVERIFY(m.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()>0);run(m,"close");
+    }
     void datasetAcceptanceAndRollback() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         const auto path=dir.path()+"/doc";create(m,path);run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
@@ -498,8 +578,8 @@ private slots:
         run(m,"create_account",{{"id","2"},{"name","Other"},{"currency","USD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-04\nT3\nPThird\n^\n")}});
         auto* commit=visualItem(window->contentItem(),"commitImport");QVERIFY(commit && commit->property("enabled").toBool());QVERIFY(QMetaObject::invokeMethod(commit,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        QTRY_VERIFY(window->findChild<QObject*>("reviewSheet")->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewIgnoreCommit"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QTRY_VERIFY(window->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"acceptAnyway"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("newTransactions").toInt(),0);QCOMPARE(m.state().value("importFailures").toInt(),1);QCOMPARE(m.state().value("balance").toString(),"3.00");
         run(m,"select_account",{{"id","1"}});QCOMPARE(m.state().value("balance").toString(),"3.00");
         run(m,"discard",{{"token",m.state().value("rollback").toMap().value("token")}});QCOMPARE(m.state().value("balance").toString(),"3.00");QCOMPARE(m.state().value("importFailures").toInt(),0);
@@ -517,8 +597,8 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nTbad\nPRepair\n^\n")}});
         auto edit=selected(m).value("draft").toMap();edit["total"]="1.00";auto splits=edit.value("splits").toList();auto split=splits[0].toMap();split["amount"]="1.00";splits[0]=split;edit["splits"]=splits;run(m,"save",edit);
         QVERIFY(m.state().value("canIgnoreWarnings").toBool());QVERIFY(!m.state().value("acceptanceWarnings").toList().isEmpty());
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"commitImport"),"clicked"));QTRY_VERIFY(window->findChild<QObject*>("reviewSheet")->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewIgnoreCommit"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("newTransactions").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"1.00");
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"commitImport"),"clicked"));QTRY_VERIFY(window->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"acceptAnyway"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("newTransactions").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"1.00");
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-02\nT2\nPNext\n^\n")}});injected->fault=OutcomeGateway::before;
         window->close();QTRY_VERIFY(window->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"quitCommitYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(!m.error().isEmpty());QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("newTransactions").toInt(),1);QVERIFY(window->isVisible());
         injected->fault=OutcomeGateway::none;window->close();QTRY_VERIFY(window->findChild<QObject*>("quitCommitDialog")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"quitCommitYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy() && !m.state().value("active").toBool(),30000);
@@ -585,6 +665,9 @@ private slots:
         QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().last().toMap().value("transferDestination").toString(),QString("Old Visa export"));
         run(m,"commit",{},false);QVERIFY(m.error().contains("Resolve every account"));
         auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        QVERIFY(QMetaObject::invokeMethod(window,"requestCommit"));QTRY_VERIFY(root->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());
+        QVERIFY(!visualItem(window->contentItem(),"acceptAnyway")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("acceptanceDialog"),"reject"));
         const auto visual=[](auto&& self,QQuickItem* item)->QQuickItem*{if(item->objectName()=="splitCategory_1")return item;for(auto* child:item->childItems())if(auto* found=self(self,child))return found;return nullptr;};
         QTRY_VERIFY(visual(visual,window->contentItem()));
         auto* category=visual(visual,window->contentItem());category->forceActiveFocus();
@@ -1505,7 +1588,8 @@ private slots:
         run(m,"map_import",{{"mappings",mappings}});
         QCOMPARE(m.state().value("accountCategories").toList().size(),3);
         auto group=m.state().value("importGroup").toMap();QCOMPARE(group.value("unresolvedTransfers").toInt(),0);QCOMPARE(group.value("unresolved").toInt(),0);QCOMPARE(group.value("blockers").toList().size(),0);QCOMPARE(m.state().value("transfers").toList().size(),2);
-        QVERIFY(!visualItem(window->contentItem(),"showImportBlockers")->property("enabled").toBool());
+        QVERIFY(!visualItem(window->contentItem(),"showImportBlockers"));
+        QVERIFY(!visualItem(window->contentItem(),"resolveMappedTransfers")->property("visible").toBool());
         QVERIFY(!root->findChild<QObject*>("confirmGroupOpening"));
         run(m,"group_resolve_transfers",{{"group",group.value("id")}});QCOMPARE(m.state().value("transfers").toList().size(),2);
         QVERIFY(m.state().value("importGroup").toMap().value("ready").toBool());run(m,"commit");run(m,"select_account",{{"id","3"}});QCOMPARE(m.state().value("committed").toString(),"20.00");
@@ -1526,11 +1610,8 @@ private slots:
         if(qEnvironmentVariableIsSet("SPENTIT_GROUP_REVIEW_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_GROUP_REVIEW_SCREENSHOT")));}
         QCOMPARE(m.state().value("categories").toList().size(),0);
         QCOMPARE(m.state().value("importGroup").toMap().value("categories").toList().size(),2);
-        auto* categoryReview=root->findChild<QObject*>("reviewImportedCategories");QVERIFY(categoryReview);QVERIFY(QMetaObject::invokeMethod(categoryReview,"clicked"));
-        auto* categoryDialog=root->findChild<QObject*>("importCategoriesDialog");QVERIFY(categoryDialog);QTRY_VERIFY(categoryDialog->property("visible").toBool());
-        QTRY_COMPARE(root->findChild<QObject*>("importCategoryList")->property("count").toInt(),2);
-        if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_IMPORT_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_IMPORT_SCREENSHOT")));}
-        QVERIFY(QMetaObject::invokeMethod(categoryDialog,"close"));
+        QVERIFY(!root->findChild<QObject*>("reviewImportedCategories"));
+        QVERIFY(!root->findChild<QObject*>("importCategoriesDialog"));
         for(const auto& item:m.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(m,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}
         QCOMPARE(visualItem(window->contentItem(),"durablePayee")->property("text").toString(),QString("Synthetic shop\rRepeated text\rTnot-an-amount"));
         auto group=m.state().value("importGroup").toMap();QCOMPARE(group.value("repairs").toInt(),1);QCOMPARE(group.value("amountRepairs").toInt(),1);QCOMPARE(group.value("done").toInt(),0);

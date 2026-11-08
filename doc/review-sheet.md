@@ -13,6 +13,61 @@ and persistence contract below includes it. The owner settled grouped imports wi
 counterparts: each unresolved explicit transfer gets its generated entry.
 The broader transaction-sheet feature remains active.
 
+## Selected-row Merge correction — owner Go, 2026-11-08
+
+A duplicate group has one Merge action. For groups larger than two rows it is
+unavailable until at least two rows are checked, reads **Merge N selected rows…**,
+and submits exactly those identities. The competing whole-group Merge and
+Merge selected rows actions are replaced by this one action. A two-row group
+continues to offer Merge 2 rows without requiring checkboxes.
+
+When a survivor choice is required, show only eligible rows from that selected
+set, with full wrapped categories for every split, split amounts/memos, transaction
+memo, account, date, payee, amount/currency and New/Accepted status. A separate
+Keep this transaction button chooses the survivor. The dialog states how many
+selected transactions become one and how many unselected transactions remain
+unchanged. Cancel writes nothing. Existing automatic-survivor protections,
+financial validation, atomic commands and Undo remain unchanged. Batch inclusion
+uses the same selected identities and the richer survivor dialog.
+
+## Review workspace cleanup — owner Go, 2026-11-08
+
+Accepted and implemented: supporting tools at the top, question-specific actions
+beside their items, and one **Accept transactions** action in a footer that states
+its all-account scope. Hide unavailable actions; remove the Review-only Close
+button and the read-only imported-category catalog button/dialog. Keep explicit
+Close or Cancel on dialogs. Required import-time missing-category decisions stay.
+
+- Group questions into possible duplicates, possible transfers and import
+  problems, preserving account order within each kind. Merge/Link/Keep separate
+  name the action. Select all merges includes only groups with enough selected
+  rows and an unambiguous survivor; it never invents ambiguous choices. Clear
+  merge selection affects batch intent only. Batch Merge remains atomic and
+  preserves the visible question anchor.
+- Acceptance is direct without concerns. Outstanding questions or acceptance
+  warnings open a dialog; Accept anyway is available only when all warnings are
+  overridable. Failed imports remain visible and may remain after acceptance.
+  The old selected-import “blocking commit” dialog is removed. Dataset-wide
+  acceptance concerns not already represented by questions appear inline.
+- Undo import lists descriptions with separate **Undo…** buttons, retaining the
+  existing preview/confirmation. The account picker filters imports; undo affects
+  the entire selected source, potentially including other accounts.
+- Hidden transfer suggestions moves to Settings with Close; contextual Hide
+  suggestions remains beside transfer candidates. Exclusions do not delete rows.
+- Transfers has an explicit account picker that stays in Review. Add transfer
+  reveals the creation form; switching accounts clears its visibility. Transaction
+  matching controls require Review inspection rather than a hidden ledger choice.
+- Set up imported transfers appears only for unresolved mapped transfers and
+  explains matching and counterpart creation before confirmation. The existing
+  command matches within the selected import and then checks explicit transfers
+  across pending imports. The confirmation therefore discloses file-wide scope;
+  it is an explanation, not an exact per-posting dry-run preview. No matching,
+  generation, acceptance, storage, or format policy changes are introduced.
+
+See [status](status.md) for executed checks and
+[MAN-014](manual-update-backlog.md#man-014--review-workspace-cleanup) for deferred
+manual text and captures.
+
 ## Ledger duplicate resolution — owner Go, 2026-11-07
 
 Accepted: keep the existing matching policy and Merge source-association storage.

@@ -294,3 +294,30 @@ No manual text or pictures changed during implementation.
   the reference. Capture only in the later batch with synthetic data.
 - Keep risk/backup guidance consistent with the approved notice without presenting
   a disclaimer as guaranteed legal immunity. Verify bundled Help links afterward.
+
+### MAN-014 — Review workspace cleanup
+
+Recorded: 2026-11-08. Status: **pending owner-authorized manual pass**.
+Source: [Review cleanup](review-sheet.md#review-workspace-cleanup--owner-go-2026-11-08).
+
+- Update Review, Accept transactions, Bring in transactions, Settings, and
+  navigation/keyboard guidance for the one all-account acceptance footer, hidden
+  unavailable controls, typed question sections and removal of Review Close.
+- Replace Review empty/populated, acceptance warning, Undo import, transfer
+  details and suggestion settings pictures. Undo import uses row-specific Undo…
+  buttons and still previews the whole import's affected accounts.
+- Explain Select all merges and Clear merge selection, ambiguous groups requiring
+  choices, account selection in Transfers, and Add transfer revealing its form.
+- Remove the read-only imported-category review instructions; retain import-time
+  missing-category choices. Replace the old blocking-commit button with inline
+  problems and distinguish overridable warnings from required fixes.
+- Hidden transfer suggestions is in Settings and has Close. Document the contextual
+  Hide suggestions action and explained Set up imported transfers confirmation.
+- No manual text or screenshots were changed in this implementation. Synthetic
+  verification captures are temporary and are not replacements for the manual.
+
+MAN-014 follow-up (2026-11-08): replace the competing group/selected Merge
+instructions with the single selection-aware action. Capture an ambiguous
+four-row group with two checked rows and the two-row survivor dialog showing
+full categories/splits and explicit unchanged-row count. No manual prose or
+pictures updated during this correction.

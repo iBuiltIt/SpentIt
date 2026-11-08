@@ -1,5 +1,94 @@
 # Project status
 
+## Selected-row Review Merge correction — owner Go, 2026-11-08
+
+Corrected the [selection contract](review-sheet.md#selected-row-merge-correction--owner-go-2026-11-08):
+the sole Merge button in a group larger than two uses only checked rows and names
+their count. It is unavailable until at least two are checked. The redundant
+Merge selected rows button is removed. Two-row groups retain a direct Merge.
+The survivor dialog shows only selected eligible candidates with full wrapped
+categories for all splits, split amounts/memos, transaction memo, account, date,
+payee, amount/currency and status, alongside explicit Keep this transaction
+buttons. It states the merge count and the number of unchanged unselected rows.
+Existing automatic-survivor policy and storage validation remain unchanged.
+
+Rebuilt `build/SpentIt` and import UI tests (macOS arm64, Qt 6.12.0, rules-enabled
+Release). Focused offscreen checks passed **10/10 including setup/cleanup** in
+7.690 s: `selectedReviewMerge`, `batchReviewSurvivorSelection`,
+`batchReviewWorkspace`, `unifiedReviewSheet`, and four
+`reviewMultipleLinkCandidates` cases. QML smoke passed **1/1**, 1.68 s.
+The synthetic four-row regression verifies that the dialog contains precisely
+the checked identities, exposes full category and memo text, leaves Cancel
+unchanged, retains the chosen category and both unselected identities, changes
+four 6,000-unit postings to three (24,000 to 18,000), and Undo restores all four.
+
+Those selected-pair and batch checks also passed natively; the actual two-choice
+survivor screenshot was inspected. A broader native run passed 9 cases including
+setup/cleanup but failed `unifiedReviewSheet` at its existing keyboard-Undo
+assertion, even after explicitly focusing Review. Its offscreen counterpart
+passed; native keyboard Undo is not claimed verified by this change. No shortcut
+implementation was changed. An initial synthetic fixture used only one import,
+which correctly produced no cross-import duplicate question; the fixture was
+corrected to two imports before the passing selection checks.
+
+`git diff --check` and changed-document link-target checks passed. No financial
+policy, storage, format or private data changed. Windows/Linux and full financial
+regressions were not run. MAN-014 records the deferred manual updates; no manual
+text or pictures were changed.
+
+
+## Review workspace cleanup — owner Go, 2026-11-08
+
+Implemented the [approved cleanup](review-sheet.md#review-workspace-cleanup--owner-go-2026-11-08).
+Review now separates supporting tools, duplicate/transfer/problem questions and
+one all-account acceptance footer. Unavailable tools disappear. The Review Close
+button, read-only imported-category catalog and old blocking-commit dialog are
+removed; dialogs retain Close/Cancel. Warnings use the dataset acceptance snapshot
+and retain required-fix versus overridable behaviour. No storage, matching,
+acceptance policy or format change (68/67).
+
+Undo import uses description rows with explicit Undo… buttons and the existing
+whole-source impact confirmation. Hidden transfer suggestions is in Settings with
+Close and remains available contextually beside transfer candidates. Transfers
+has an account picker that stays in Review and an on-demand Add transfer form.
+Mapped transfer setup now explains matching, possible counterpart creation and
+file-wide scope before confirmation; this is not an exact per-posting preview.
+Select all merges skips ambiguous choices; Clear merge selection affects batch
+intent only. Question-kind ordering explicitly preserves ties, avoiding QML sort
+reordering and retaining the batch-Merge viewport anchor.
+
+Verification: macOS arm64, Qt 6.12.0, rules-enabled Release, synthetic files only.
+
+- Rebuilt `build/SpentIt`, import UI tests and Help UI tests.
+- Focused import UI run passed **18/18 including setup/cleanup**, 15.772 s:
+  `reviewCleanup`, `mappedTransferConfirmation`, `datasetAcceptanceAndRollback`,
+  `warningAndQuitAcceptance`, `undoSelectedImport`, `batchReviewWorkspace`,
+  `batchReviewSurvivorSelection`, `mappedTransferImport`, `unifiedReviewSheet`,
+  four `reviewMultipleLinkCandidates` rows, `unifiedReviewLinkDifference`,
+  `transferManagementUi`, and `qifTransferResolution`. Covers empty controls,
+  all-account acceptance, warnings and required fixes, cancel/confirm, select-all,
+  ambiguous survivor protection, durable Merge/Undo, viewport and transfer picker.
+- Acceptance/Review/contextual-Help walkthroughs passed **6/6 including
+  setup/cleanup**, 10.270 s. Updated the walkthrough's obsolete expectation of a
+  survivor prompt: the already-accepted unique-earliest-import policy selects it.
+- Native Review empty/populated and batch interaction checks passed **4/4 including
+  setup/cleanup**, 4.989 s on the layout checkpoint. Final native captures inspected:
+  empty with/without new work, populated duplicates, 720×560 layout, Undo picker,
+  transfer account picker and Hidden transfer suggestions with Close. A later
+  native mapped-confirmation check initially asserted visibility before layout;
+  after waiting for layout, that native check passed **3/3 including setup/cleanup**,
+  1.162 s. Its explanation/Cancel/Set up transfers capture was also inspected.
+- Help preparation/catalog and application QML smoke passed **3/3**, 1.97 s.
+- Initial sandboxed checks could not create application-data locks and the test
+  then aborted on missing state; reruns used normal lock access. No lock protection
+  was changed. Iteration also caught a QML name collision, transfer navigation
+  leaving Review, and unstable sort ties; corrected before the passing checks.
+
+Manual prose and images remain unchanged; [MAN-014](manual-update-backlog.md#man-014--review-workspace-cleanup)
+records the later batch. No private financial files were read. This is selected
+UI coverage, not a full financial regression, sanitizer, Windows or Linux claim.
+
+
 ## Compact About component picker — 2026-11-08
 
 Owner-requested reduction of vertical spacing in the third-party component list.

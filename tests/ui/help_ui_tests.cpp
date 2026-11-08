@@ -1904,9 +1904,9 @@ private slots:
         mouse("reviewNavigation");
         mouse("commitImport");
         QVERIFY(session.model.state().value("canIgnoreWarnings").toBool());
-        QCOMPARE(object(session.root, "reviewIgnoreCommit")->property("text").toString(), QString("Accept valid transactions"));
+        QCOMPARE(object(session.root, "acceptAnyway")->property("text").toString(), QString("Accept anyway"));
         capture("accept-review");
-        mouse("reviewIgnoreCommit");
+        mouse("acceptAnyway");
         QCOMPARE(session.model.state().value("newTransactions").toInt(), 0);
         QCOMPARE(session.model.state().value("importFailures").toInt(), 1);
         QCOMPARE(session.model.state().value("balance").toString(), QString("-61.18"));
@@ -2224,9 +2224,8 @@ private slots:
             QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
             mouse("reviewNavigation");
             QTRY_VERIFY(object(session.root, "reviewYes")); mouse("reviewYes");
-            QTRY_VERIFY(object(session.root, "reviewSurvivor")->property("visible").toBool());
-            capture("review-keep");
-            mouse("reviewKeep_0");
+            // The unique earliest import is the automatic survivor.
+            QVERIFY(!object(session.root, "reviewSurvivor")->property("visible").toBool());
             QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
             mouse("reviewUndo");
             QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
@@ -2235,7 +2234,7 @@ private slots:
             QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
             mouse("reviewUndo");
             QTRY_VERIFY(object(session.root, "reviewYes")); mouse("reviewYes");
-            QTRY_VERIFY(object(session.root, "reviewSurvivor")->property("visible").toBool()); mouse("reviewKeep_0");
+            QVERIFY(!object(session.root, "reviewSurvivor")->property("visible").toBool());
             run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
             run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "1,000.00"}});
             import("!Type:Bank\nD2026-01-28\nT-36.18\nPCredit card payment\n^\n", "2");
