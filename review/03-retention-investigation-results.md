@@ -1,6 +1,11 @@
 # Retention investigation results — 2026-11-08
 
-Status: investigation complete for the bounded workloads below; **no storage
+Follow-up: the owner authorized step 1 on 2026-11-08. The legacy path is
+retired; see [status](../doc/status.md). Rules and other retention changes remain
+deferred. Historical failure reproduction uses commit `c1fbc0b`; the current
+driver rejects legacy-mode capture instead.
+
+Status at investigation completion: investigation complete for the bounded workloads below; **no storage
 implementation changes authorized or made**. Remediation remains incomplete and
 requires a separate owner decision. This report qualifies the original
 [storage review](01-session-close-storage-growth.md), rather than accepting its

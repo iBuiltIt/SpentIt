@@ -128,3 +128,35 @@ The owner approved replacing the generic unresolved-transfer message with diagno
 For each displayed transfer blocker, the group snapshot distinguishes a missing mapped destination, self reference, archived/unavailable source or destination, incompatible currency, an unrepresentable opposite amount, no reciprocal draft reference, unequal amounts, differing dates, unavailable candidates, unequal eligible occurrence counts, or a unique pair/equivalent balanced repeated group awaiting the resolve command. Current draft allocations provide candidate facts; committed and discarded imports are not presented as available draft counterparts. Excluded, stale and already-linked draft candidates retain their explicit status. Analysis is bounded to 400,000 transfer allocations; exceeding that bound yields an explicit analysis-limit reason rather than claiming no counterpart exists.
 
 The dialog displays up to ten candidate allocations per blocker, with the total count, account, record number, date, exact amount/currency and review status. Same-date/opposite-amount candidates are displayed first as a group; absent those, opposite-amount candidates on other dates are shown, then reciprocal allocations with different amounts. These are inspection links, not match confirmations. Following either a blocker or candidate clears the ledger filter, selects the projected account view, expands the requested record and reveals it instead of restoring the old account viewport. Opening-only blockers navigate to their account. The virtualized list reserves space for a visible draggable scrollbar; the aggregate blocker count and 200-entry display cap remain unchanged. No private dataset is needed to verify this behavior; see [status](status.md).
+
+## Legacy staged-balance retirement — owner Go 2026-11-08
+
+The caller audit found no supported workflow needing post-import balance-meaning
+selection. Desktop mapping supplies `useReportedOpening` explicitly. Remaining
+callers were historical tests, an investigation driver and an unreachable legacy
+UI command/panel. The older “Reported balances and staged openings” description
+above is retired; it is not an alternative supported workflow.
+
+Every new-account mapping must supply an explicit zero/reported opening choice.
+Omission refuses before the capture transaction and creates no account/source.
+Existing-account mappings supply no opening choice and retain their current
+opening. A reported amount is used literally, never treated as a closing balance
+or adjusted by imported transaction totals. It must parse exactly. Fixed openings
+remain set at creation; subsequent changes use Correct opening. Import Undo
+continues to preserve the opening setting and account creation.
+
+Staged balance mutation and commit-time opening publication are removed. The old
+repository method refuses without writing, making attempts to invoke the retired
+operation explicit; there is no fallback to a new interpretation. The obsolete UI
+panel/command is removed. Diagnostic action numbering remains stable.
+
+Verification requires exactly one fixed-choice record for each created mapping,
+checks it against source/creation facts and the current mapping, and rejects
+staged-choice values. Subsequent transaction revisions are not inputs to opening
+choice validation. No ordinary edit snapshots are retained for balance replay.
+Formats are **66 with rules / 65 without**; previous formats, including 64/63,
+are rejected unchanged. No migration or silent repair is introduced.
+
+The owner authorized step 1 only. Ruleset-save duplication and the other retention
+findings remain deferred; this change adds no general pruning policy or new audit
+on normal open/close. See [status](status.md) for executed verification.

@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-07
+Last updated: 2026-11-08
 
 Owner direction: accumulate manual changes here while application work continues,
 then update and verify the manual together in a later owner-authorized pass.
@@ -245,3 +245,18 @@ Contract: [statement header validation](../features/003-ofx-profile.md#statement
   and their captions; valid-import screens are unchanged. Decide during the manual
   pass whether a synthetic error illustration is useful.
 - No manual prose, screenshots or captions were changed in this implementation.
+
+### MAN-011 — Explicit import openings and retired staging
+
+Date: 2026-11-08. Pending owner-authorized manual pass.
+Contract: [legacy staged-balance retirement](qif-account-imports.md#legacy-staged-balance-retirement--owner-go-2026-11-08).
+
+- Audit `manual/import-transactions.md` and `manual/accounts.md` for stale
+  instructions about choosing opening/closing meaning after import or publishing
+  an opening on acceptance. Describe zero/reported-at-creation and later Correct
+  opening; current desktop mapping behavior is unchanged.
+- Review `manual/images/import-mapping.png` and `manual/images/accounts-opening.png`
+  captions during the batch; no screenshots were changed or newly captured.
+- Review experimental-format/recovery wording in `manual/backup-recovery.md` if
+  applicable. Formats 66/65 reject earlier files unchanged, without migration.
+- No manual prose or screenshot changes completed in this implementation.

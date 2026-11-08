@@ -1057,10 +1057,8 @@ struct ImportModel::Worker {
                 }
                 state["importGroup"]=QVariantMap{{"id",text(group.id)},{"started",group.state==app::GroupState::started},{"blockers",blockers},{"unresolvedTransfers",static_cast<int>(group.unresolved_transfers)},{"ready",group.unresolved==0},{"repairs",static_cast<int>(group.repairs_total)},{"done",static_cast<int>(group.repairs_done)},{"amountRepairs",static_cast<int>(group.amount_repairs)},{"blocked",static_cast<int>(group.blocked_records)},{"unresolved",static_cast<int>(group.unresolved)},{"sourceAccount",static_cast<int>(member->source_account)},{"categories",importedCategories}};
                 state["groupOpeningFixed"]=member->created && static_cast<int>(member->balance_choice)>=5;
-                state["groupCreated"]=member->created && !acct.frozen && static_cast<int>(member->balance_choice)<5;
                 state["groupOpeningReady"]=member->created && member->balance_choice!=app::ReportedBalanceChoice::unreviewed;
                 state["groupReviewedChange"]=member->reviewed_change?money(*member->reviewed_change,amountFormat):QString("Incomplete");
-                state["groupCanReviewBalance"]=member->created && member->reviewed_change.has_value() && !acct.frozen && static_cast<int>(member->balance_choice)<5;
                 state["groupReportedBalance"]=document.accounts[member->source_account].reported_balance?text(*document.accounts[member->source_account].reported_balance):QString("Not supplied");
                 state["groupProposedOpening"]=member->proposed_opening?money(*member->proposed_opening,amountFormat):QString("Not confirmed");
             }
@@ -1892,9 +1890,6 @@ struct ImportModel::Worker {
         } else if(action=="group_resolve_transfers") {
             try{repo.resolve_import_transfers(str(a.value("group")),context);}catch(...){const auto failure=std::current_exception();(void)durableGroup(str(a.value("group")));std::rethrow_exception(failure);}
             if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
-        } else if(action=="group_balance") {
-            const auto review=[&]{repo.review_import_balance(str(a.value("group")),a.value("source").toUInt(),a.value("revision").toLongLong(),static_cast<app::ReportedBalanceChoice>(a.value("choice").toInt()),str(a.value("date")));};
-            try{review();}catch(...){const auto failure=std::current_exception();if(!durableGroup(str(a.value("group"))))std::rethrow_exception(failure);review();}
         } else if(action=="group_abort") {
             try{repo.abort_import_group(str(a.value("group")));}catch(...){const auto failure=std::current_exception();const auto saved=durableGroup(str(a.value("group")));if(!saved || saved->state!=app::GroupState::aborted)std::rethrow_exception(failure);repo.abort_import_group(saved->id);}selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;
         } else if(action=="resume") {
@@ -2551,7 +2546,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
                 :(action=="delete_selection" && worker->diagnosticSaved)?"The transactions were deleted, but the screen could not update. Reopen the file before continuing."
                  :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."
-                :((action=="map_import" || action=="resolve_import_categories" || action=="group_balance" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
+                :((action=="map_import" || action=="resolve_import_categories" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved, but its view could not be refreshed. Reopen and inspect Review before retrying."
                 :((action.startsWith("transfer_") || action=="assign_transfer_batch" || action=="release_transfer_batch" || action=="undo_transfer_assignment") && result.success)?"Transfer operation was saved, but its view could not be refreshed. Reopen and inspect transfers before retrying."
                 :(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."

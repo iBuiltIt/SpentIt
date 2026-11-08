@@ -2790,17 +2790,6 @@ ApplicationWindow {
                 Button {objectName:"showImportBlockers";text:"What’s blocking commit? ("+(s.importGroup?s.importGroup.unresolved:0)+")";enabled:!!s.importGroup && s.importGroup.unresolved>0;onClicked:importBlockersDialog.open()}
             }
             Button {objectName:"reviewImportedCategories";visible:!!s.importGroup && s.importGroup.categories.length>0;text:"Review imported categories ("+(s.importGroup?s.importGroup.categories.length:0)+")…";onClicked:importCategoriesDialog.open()}
-            ColumnLayout {
-                visible:!!s.groupCreated;Layout.fillWidth:true
-                Label {text:"Reported balance: "+(s.groupReportedBalance||"")+" · Reviewed change: "+(s.groupReviewedChange||"")+" "+(s.currency||"")+" · Proposed opening: "+(s.groupProposedOpening||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                RowLayout {
-                    UsableComboBox {id:balanceMeaning;objectName:"groupBalanceMeaning";Layout.preferredWidth:330;model:["Choose balance meaning","Zero opening (balance agrees)","Treat as opening balance","Treat as closing balance","Ignore reported balance"] ;Accessible.name:"Reported balance meaning"}
-                    NavigableTextField {id:groupOpeningDate;objectName:"groupOpeningDate";text:s.openingDate||"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Confirmed opening date"}
-                    CalendarPicker {objectName:"groupOpeningDateCalendar";workflow:window.workflowBackend;field:groupOpeningDate;onSelected:function(value){groupOpeningDate.text=value}}
-                    Button {objectName:"confirmGroupOpening";text:"Calculate opening balance";enabled:!s.readOnly && !!s.groupCanReviewBalance && balanceMeaning.currentIndex>0;onClicked:guard(function(){workflow.command("group_balance",{group:s.importGroup.id,source:s.importGroup.sourceAccount,revision:s.pending.revision,choice:balanceMeaning.currentIndex,date:groupOpeningDate.text})})}
-                }
-                Label {text:"The opening stays staged until this account first commits. Existing mapped account openings are never replaced.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-            }
             }
         }
         Item {Layout.fillWidth:true;Layout.preferredHeight:30;clip:true

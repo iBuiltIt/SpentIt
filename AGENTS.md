@@ -1,5 +1,16 @@
 # SpentIt — Where did my money go?
 
+## Explicit import openings only — owner Go 2026-11-08
+
+The legacy staged-balance path is retired. Every new-account import mapping must
+explicitly choose zero or the reported amount literally; omission refuses before
+capture. Existing-account mappings preserve their openings. Later corrections use
+Correct opening. Verification checks the fixed creation-time choice independently
+of subsequent transaction edits. Experimental formats are **66 with rules / 65
+without**; older formats are rejected unchanged, with no migration. See
+[the contract](doc/qif-account-imports.md#legacy-staged-balance-retirement--owner-go-2026-11-08)
+and [status](doc/status.md). Rules and all other retention cleanup remain deferred.
+
 ## Session history baseline — correction Go 2026-11-07
 
 Read [the accepted contract](doc/session-history-baseline.md),

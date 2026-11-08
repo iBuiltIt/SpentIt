@@ -95,7 +95,7 @@ struct ImportAccountMapping {
     std::size_t source_account;
     std::int64_t account;
     std::optional<AccountCreation> creation;
-    std::optional<bool> use_reported_opening={}; // Explicit creation-time choice; absent for legacy staged review.
+    std::optional<bool> use_reported_opening={}; // Required for new accounts; absent only for mappings to existing accounts.
 };
 enum class GroupState { captured, reviewing, started, aborted };
 enum class ReportedBalanceChoice { unreviewed, zero, opening, closing, ignore, fixed_zero, fixed_reported };

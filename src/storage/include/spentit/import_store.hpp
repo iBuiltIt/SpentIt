@@ -196,7 +196,6 @@ private:
     app::ImportGroup import_group(std::string_view) const;
     void require_group_ready(std::string_view) const;
     std::set<std::string> financial_group_batches(std::int64_t) const;
-    void publish_group_opening(std::int64_t);
     const std::vector<qif::CategoryDefinition>& source_categories(std::string_view batch) const;
     imports::DraftRow resolve_repaired_categories(std::string_view,const imports::DraftRow&) const;
     void stage_import_categories(std::string_view,const app::OperationContext&);

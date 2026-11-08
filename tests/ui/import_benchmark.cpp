@@ -192,7 +192,7 @@ int main(int argc,char** argv) {
                     bytes+="\n^\n";
                 }
                 require(file.write(bytes)==bytes.size(),"Fixture write failed");
-                mappings.push_back(QVariantMap{{"source",account},{"create",true},{"currency","CAD"},{"date","2026-01-01"}});
+                mappings.push_back(QVariantMap{{"source",account},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}});
             }
             file.close();
             command("group_scan","import",{{"path",file.fileName()},{"profile","DMY"}});

@@ -1,12 +1,27 @@
 # Project status
 
+## Explicit import openings; legacy balance path retired — 2026-11-08
+
+The owner authorized step 1 only after committing the OFX fixes and investigation
+as `c1fbc0b`. The [caller audit and retirement contract](qif-account-imports.md#legacy-staged-balance-retirement--owner-go-2026-11-08) requires an explicit zero/reported choice for new-account mappings, rejects omitted choices before capture, removes the obsolete UI command/panel and commit-time opening publisher, and verifies only fixed creation-time choices. Formats are **66 with rules / 65 without**; older formats are rejected unchanged. Rules and other retention changes remain deferred.
+
+Verification on macOS arm64 with synthetic data:
+
+- Rebuilt the rules-enabled Release application and affected test/measurement targets. New zero/reported-opening regressions reject omitted choices before any capture write, refuse the retired operation, and check two successive amount-edit/close cycles, exact balances, full verification, unclean reopening, backup restoration and import Undo.
+- Selected Release checks passed for mapping openings, statement Review/rollback/import Undo across sessions, committed session/recovery/marker/corruption/backup behavior, schema refusal, verification cache and incomplete-import cleanup. The full offscreen import UI suite passed (**88 cases**, including setup/cleanup) after adjusting its account-selection fixture. After the final opening-display guard adjustment, five focused UI cases passed (**7 including setup/cleanup**).
+- Rules-disabled mapping/opening and cross-session import Undo checks passed **2/2**; its schema gate also passed. Final ASan/UBSan mapping/opening and cross-session import Undo checks passed **2/2** (leak detection disabled).
+- The Release opening fault sweep passed in 331.17 s: capture/resume/accept/abort covered **137/149/177/85 write/sync positions** with alternating disk-full/I/O failures, retries, restored backups and interruptions before/after commit. The final display-only guard adjustment was subsequently covered by mapping and focused UI reruns.
+- The two broader `accounts.groups` and `accounts.validation` checks still fail with `Choose the imported categories before accepting transactions`, matching the previously recorded category-decision fixture failures. They are not passing coverage for this change.
+- The measurement driver now confirms legacy mapping refusal without capture. The equivalent fixed-opening workload passes two edits/closes, verification, backup and unclean recovery; its main-file size remains 888,832 bytes on this bounded workload.
+- Changed-document relative file links and `git diff --check` passed. Normal clean-marker policy and other retention behavior are unchanged. Native interaction, Linux and Windows remain unverified. Manual text/screenshots remain deferred in MAN-011.
+
 ## Storage retention investigation — 2026-11-08
 
 The owner authorized investigation and measurements only. The [results](../review/03-retention-investigation-results.md) record 12 synthetic 1,000-row/32-cycle workloads, zero-edit controls, B-tree accounting, and minimal balance-history reproductions. No production storage implementation changed.
 
 - Confirmed legacy staged-balance correctness defect: the second amount-edit close prunes a draft still required by a retained balance event. Verification passes before close and fails afterward; backup creation and unclean-reopen verification also fail. Current desktop fixed-opening mapping passed the equivalent edits, backup and unclean reopen. Current amounts remained exact in both cases.
 - Rule saves retain complete ruleset copies: 32 changes to one rule in a 128-rule set added 679,936 physical bytes and 561,782 B-tree payload bytes. Verification passed. Other measured configuration histories were substantially smaller; Review Link/Undo retained history but subsequent import Undo passed.
-- Investigation is complete for these bounded cases. **Remediation remains incomplete and requires a separate owner decision.** Recommend a narrow decision/fix for the legacy balance path; consider ruleset retention separately as an efficiency improvement. The evidence does not establish a need for an immediate six-domain refactor.
+- Investigation is complete for these bounded cases. **Other retention remediation remains deferred and requires a separate owner decision.** The legacy balance path is retired under the subsequent step-1 Go above; consider ruleset retention separately as an efficiency improvement. The evidence does not establish a need for an immediate six-domain refactor.
 - Added an optional measurement driver and raw synthetic results, not production behavior or mandatory passing regression tests. Full verification was explicitly invoked by the driver. No private data, storage migration, manual update, or clean-marker-policy change. See the report for reproduction and verification limits.
 
 ## OFX statement validation and incomplete storage follow-up — 2026-11-07

@@ -265,7 +265,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     if(request.expected_sequence!=transfer_sequence() || request.expected_sequence==INT64_MAX)fail(SQLITE_CONSTRAINT,"Transfer preview changed; refresh before applying");
     std::unique_ptr<Atomic> transaction;
     if(!impl_->composing_review)transaction=std::make_unique<Atomic>(impl_->db);
-    if(request.action==app::TransferAction::commit_local){start_import_groups(financial_group_batches(impl_->selected_account),operation);publish_group_opening(impl_->selected_account);}
+    if(request.action==app::TransferAction::commit_local){start_import_groups(financial_group_batches(impl_->selected_account),operation);}
     const auto account=this->account();auto values=all_transfers();auto found=std::find_if(values.begin(),values.end(),[&](const auto& v){return v.link.identity==request.link;});
     const bool create=request.action==app::TransferAction::manual || request.action==app::TransferAction::from_draft;
     const bool managed=request.action==app::TransferAction::merge || request.action==app::TransferAction::retarget;

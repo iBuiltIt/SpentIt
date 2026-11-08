@@ -1416,15 +1416,14 @@ private slots:
         }
     }
     void groupOutcomeRecovery() {
-        for(const auto& action:{QString("capture"),QString("resume"),QString("balance"),QString("abort")})for(const auto fault:{OutcomeGateway::before,OutcomeGateway::after,OutcomeGateway::unknown}) {
+        for(const auto& action:{QString("capture"),QString("resume"),QString("abort")})for(const auto fault:{OutcomeGateway::before,OutcomeGateway::after,OutcomeGateway::unknown}) {
             QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));const auto path=dir.path()+"/doc";create(m,path);
             const auto file=fixture(dir.path(),"!Account\nNSynthetic source\nTBank\nB10\n^\n!Type:Bank\nD1/1/2026\nT10\n^\n");run(m,"import",{{"path",file},{"profile","DMY"}});
-            QVariantMap mapping{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}};QVariantMap args{{"mappings",QVariantList{mapping}}};
-            if(action=="balance" || action=="abort")run(m,"map_import",args);
+            QVariantMap mapping{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}};QVariantMap args{{"mappings",QVariantList{mapping}}};
+            if(action=="abort")run(m,"map_import",args);
             seam->fault=fault;seam->groupFaultAction=action;QString command="map_import";
-            if(action=="balance"){command="group_balance";args={{"group",m.state().value("importGroup").toMap().value("id")},{"source",0},{"revision",1},{"choice",1},{"date","2026-01-01"}};}
             if(action=="abort"){command="group_abort";args={{"group",m.state().value("importGroup").toMap().value("id")}};}
-            run(m,command,args,fault==OutcomeGateway::after || (action=="balance" && fault==OutcomeGateway::before));
+            run(m,command,args,fault==OutcomeGateway::after);
             if(m.diagnosticsEnabled() && action=="resume" && fault==OutcomeGateway::before) {
                 const auto observed=diagnostics::Collector::instance().snapshot();
                 QCOMPARE(observed.latest.result,diagnostics::Result::failed);
@@ -1440,7 +1439,7 @@ private slots:
         for(bool selectionFailure:{false,true}) {
             QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));const auto path=dir.path()+"/doc";create(m,path);
             run(m,"import",{{"path",fixture(dir.path(),"!Account\nNSynthetic source\nTBank\n^\n!Type:Bank\nD1/1/2026\nT1\n^\n")},{"profile","DMY"}});seam->groupFaultAction="capture";seam->failAccountRefresh=!selectionFailure;seam->failAccountSelection=selectionFailure;
-            run(m,"map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}}}}},false);QVERIFY(!m.state().value("active").toBool());QVERIFY(m.error().contains("saved"));
+            run(m,"map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}}}},false);QVERIFY(!m.state().value("active").toBool());QVERIFY(m.error().contains("saved"));
             seam->attempted=false;seam->failAccountRefresh=false;seam->failAccountSelection=false;run(m,"open",{{"path",path}});QCOMPARE(m.state().value("accounts").toList().size(),selectionFailure?1:2);
         }
     }
@@ -1448,8 +1447,8 @@ private slots:
         QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));const auto path=dir.path()+"/document";create(m,path);
         run(m,"create_account",{{"id","2"},{"name","JPY workspace"},{"currency","JPY"},{"date","2026-01-01"}});
         const auto file=fixture(dir.path(),"!Account\nNSynthetic retained\nTBank\n^\n!Type:Bank\nD1/1/2026\nT1\n^\n");run(m,"import",{{"path",file},{"profile","DMY"}});QCOMPARE(m.state().value("importPlan").toList()[0].toMap().value("currency").toString(),"CAD");
-        seam->cancelGroupResume=true;run(m,"map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}}}}},false);QVERIFY(m.error().contains("Import cancelled"));QVERIFY(!m.state().value("pending").toMap().value("processingIncomplete").toBool());QCOMPARE(m.state().value("accounts").toList().size(),2);
-        seam->cancelGroupResume=false;run(m,"import",{{"path",file},{"profile","DMY"}});run(m,"map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}}}}});QCOMPARE(m.state().value("accounts").toList().size(),3);run(m,"group_abort",{{"group",m.state().value("importGroup").toMap().value("id")}});QCOMPARE(m.state().value("accounts").toList().size(),2);
+        seam->cancelGroupResume=true;run(m,"map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}}}},false);QVERIFY(m.error().contains("Import cancelled"));QVERIFY(!m.state().value("pending").toMap().value("processingIncomplete").toBool());QCOMPARE(m.state().value("accounts").toList().size(),2);
+        seam->cancelGroupResume=false;run(m,"import",{{"path",file},{"profile","DMY"}});run(m,"map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}}}});QCOMPARE(m.state().value("accounts").toList().size(),3);run(m,"group_abort",{{"group",m.state().value("importGroup").toMap().value("id")}});QCOMPARE(m.state().value("accounts").toList().size(),2);
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         QByteArray list;for(int i=0;i<20;++i)list+="!Account\nNSynthetic list "+QByteArray::number(i)+"\nTBank\n^\n";run(m,"import",{{"path",fixture(dir.path(),list)},{"profile","DMY"}});
         QTRY_VERIFY(visualItem(window->contentItem(),"sourceAccountChoice_0"));auto* choice=visualItem(window->contentItem(),"sourceAccountChoice_0");choice->setProperty("currentIndex",1);QVERIFY(QMetaObject::invokeMethod(choice,"activated",Q_ARG(int,1)));
@@ -1465,7 +1464,7 @@ private slots:
         for(int i=0;i<73;++i)input+="D2026-01-02\nT-10\nL[B]\n^\n";
         input+="!Account\nNB\nTBank\n^\n!Type:Bank\nD2026-01-03\nT10\nL[A]\n^\n";
         run(m,"import",{{"path",fixture(dir.path(),input)},{"profile","DMY"}});
-        QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"currency","CAD"},{"date","2026-01-01"}}};run(m,"map_import",{{"mappings",mappings}});
+        QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}};run(m,"map_import",{{"mappings",mappings}});
         QCOMPARE(m.state().value("importGroup").toMap().value("unresolvedTransfers").toInt(),0);
         const auto questions=m.state().value("reviewQuestions").toList();int waiting=0;QVariantMap target;
         for(const auto& value:questions){const auto q=value.toMap();if(!q.value("waitingLink").toString().isEmpty()){++waiting;target=q.value("rows").toList().first().toMap();}}
@@ -1480,6 +1479,8 @@ private slots:
         QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/doc");
         run(m,"import",{{"path",fixture(dir.path(),"!Account\nNNew account\nTBank\nBinvalid\n^\n!Type:Bank\nDinvalid\nT10\n^\n")},{"profile","DMY"}});
         const auto plan=m.state().value("importPlan").toList();QCOMPARE(plan[0].toMap().value("openingDate").toString(),"1900-01-01");QVERIFY(plan[0].toMap().value("offerReportedOpening").toBool());
+        QVariantMap missing{{"source",0},{"create",true},{"currency","CAD"},{"date","1900-01-01"}};
+        run(m,"map_import",{{"mappings",QVariantList{missing}}},false);QVERIFY(m.error().contains("Choose zero or the reported"));QCOMPARE(m.state().value("accounts").toList().size(),1);
         QVariantMap mapping{{"source",0},{"create",true},{"currency","CAD"},{"date","1900-01-01"},{"useReportedOpening",true}};run(m,"map_import",{{"mappings",QVariantList{mapping}}},false);QCOMPARE(m.state().value("accounts").toList().size(),1);
         mapping["useReportedOpening"]=false;run(m,"map_import",{{"mappings",QVariantList{mapping}}});QCOMPARE(m.state().value("opening").toString(),"0.00");QVERIFY(m.state().value("groupOpeningFixed").toBool());QVERIFY(m.state().value("importGroup").toMap().value("unresolved").toInt()>0);
     }
@@ -1500,15 +1501,14 @@ private slots:
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);create(m,dir.path()+"/doc");
         run(m,"import",{{"path",fixture(dir.path(),"!Type:Cat\nNA\nE\n^\nNFees\nE\n^\n!Account\nNA\nTBank\n^\n!Type:Bank\nD2026-01-02\nT-10.25\nSB\n$-10\nSFees\n$-0.25\n^\nD2026-01-02\nT-10.25\nSB\n$-10\nSFees\n$-0.25\n^\n!Account\nNB\nTBank\n^\n!Type:Bank\nD2026-01-02\nT10\nL[A]\n^\nD2026-01-02\nT10\nL[A]\n^\n")},{"profile","DMY"}});
-        QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"currency","CAD"},{"date","2026-01-01"}}};
+        QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}};
         run(m,"map_import",{{"mappings",mappings}});
         QCOMPARE(m.state().value("accountCategories").toList().size(),3);
-        auto group=m.state().value("importGroup").toMap();QCOMPARE(group.value("unresolvedTransfers").toInt(),0);QCOMPARE(group.value("unresolved").toInt(),2);QCOMPARE(group.value("blockers").toList().size(),2);QCOMPARE(m.state().value("transfers").toList().size(),2);
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"showImportBlockers"),"clicked"));
-        auto* dialog=root->findChild<QObject*>("importBlockersDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
+        auto group=m.state().value("importGroup").toMap();QCOMPARE(group.value("unresolvedTransfers").toInt(),0);QCOMPARE(group.value("unresolved").toInt(),0);QCOMPARE(group.value("blockers").toList().size(),0);QCOMPARE(m.state().value("transfers").toList().size(),2);
+        QVERIFY(!visualItem(window->contentItem(),"showImportBlockers")->property("enabled").toBool());
+        QVERIFY(!root->findChild<QObject*>("confirmGroupOpening"));
         run(m,"group_resolve_transfers",{{"group",group.value("id")}});QCOMPARE(m.state().value("transfers").toList().size(),2);
-        for(int i=0;i<2;++i){run(m,"select_account",{{"id",QString::number(i+2)}});run(m,"group_balance",{{"group",group.value("id")},{"source",i},{"revision",m.state().value("pending").toMap().value("revision")},{"choice",4},{"date","2026-01-01"}});}
-        QVERIFY(m.state().value("importGroup").toMap().value("ready").toBool());run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"20.00");
+        QVERIFY(m.state().value("importGroup").toMap().value("ready").toBool());run(m,"commit");run(m,"select_account",{{"id","3"}});QCOMPARE(m.state().value("committed").toString(),"20.00");
         run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("committed").toString(),"-20.50");QCOMPARE(m.state().value("newTransactions").toInt(),0);
     }
     void multiAccountImport() {
@@ -1518,7 +1518,7 @@ private slots:
         const auto file=fixture(dir.path(),"!Type:Cat\nNFood\nE\nDImported source description\n^\nNUnused/Category\nI\n^\n!Account\nNSynthetic wallet\nTCash\nB50\n^\n!Type:Cash\nD2026-01-01\nTbad\nPSynthetic shop\rRepeated text\rTnot-an-amount\nLFood/Class\n^\n!Account\nNSynthetic card\nTCCard\nB-10\n^\n!Type:CCard\nD2026-01-02\nT-10\n^\n");
         run(m,"import",{{"path",file},{"profile","DMY"}});QCOMPARE(m.state().value("importPlan").toList().size(),2);QCOMPARE(m.state().value("accounts").toList().size(),1);
         auto* popup=root->findChild<QObject*>("importAccountMapping");QVERIFY(popup);QTRY_VERIFY(popup->property("visible").toBool());
-        QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"currency","CAD"},{"date","2026-01-01"}}};
+        QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}};
         for(int i=0;i<2;++i){const auto name="sourceAccountChoice_"+QString::number(i);QTRY_VERIFY(visualItem(window->contentItem(),name));auto* choice=visualItem(window->contentItem(),name);QVERIFY(choice->setProperty("currentIndex",1));QVERIFY(QMetaObject::invokeMethod(choice,"activated",Q_ARG(int,1)));}
         if(qEnvironmentVariableIsSet("SPENTIT_GROUP_MAPPING_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_GROUP_MAPPING_SCREENSHOT")));}
         QTRY_VERIFY(visualItem(window->contentItem(),"confirmImportMappings"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"confirmImportMappings"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("accounts").toList().size(),3);QVERIFY(m.state().value("importPlan").toList().isEmpty());

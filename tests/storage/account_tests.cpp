@@ -42,7 +42,7 @@ void group_benchmark() {
     auto start=std::chrono::steady_clock::now();
     const auto timing=[&](const char* phase){const auto now=std::chrono::steady_clock::now();std::cout<<phase<<" ms: "<<std::chrono::duration<double,std::milli>(now-start).count()<<std::endl;start=now;};
     app::OperationContext capture;
-    store.prepare_import_group("benchmark",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Synthetic",cad,"2026-01-01"}}},capture);
+    store.prepare_import_group("benchmark",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Synthetic",cad,"2026-01-01"},false}},capture);
     timing("Capture and initial group status");
     app::OperationContext resume;
     const auto group=store.resume_import_group("benchmark",resume);
@@ -57,7 +57,7 @@ void group_benchmark() {
 void group_snapshot_invalidation() {
     Directory d;auto s=create(d.path/"snapshots");
     app::OperationContext capture;
-    s.prepare_import_group("snapshot","!Type:Bank\nD2026-01-02\nT-10\nLGeneral\n^\n",qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Snapshot",cad,"2026-01-01"}}},capture);
+    s.prepare_import_group("snapshot","!Type:Bank\nD2026-01-02\nT-10\nLGeneral\n^\n",qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Snapshot",cad,"2026-01-01"},false}},capture);
     app::OperationContext resume;s.resume_import_group("snapshot",resume);s.select_account(2);
     const imports::Occurrence id{"snapshot-account-0",0};
     const auto snapshot=[&]{return s.import_groups().at(0);};
@@ -75,7 +75,7 @@ void group_snapshot_invalidation() {
     check(snapshot().unresolved_transfers==0 && snapshot().accounts[0].reviewed_change==Money(-1100,cad));
     s.save(id,2,next);
     check(snapshot().unresolved_transfers==0 && snapshot().accounts[0].reviewed_change==Money(-1200,cad));
-    s.review_import_balance("snapshot",0,3,app::ReportedBalanceChoice::ignore,"2026-01-01");
+
     check(snapshot().unresolved==0);
     s.commit(id.batch,3,"snapshot-commit");check(snapshot().state==app::GroupState::started);
     s.verify();
@@ -83,7 +83,7 @@ void group_snapshot_invalidation() {
 void groups(){
     Directory d;const auto path=d.path/"group";
     const std::string bytes="!Option:AutoSwitch\n!Account\nNFirst synthetic\nTBank\nB25\n^\n!Type:Bank\nD1/1/2026\nTbad\nLFood/Class\n^\n!Account\nNSecond synthetic\nTCCard\nB-10\n^\n!Type:CCard\nD2/1/2026\nT-10\n^\n";
-    const std::vector<app::ImportAccountMapping> mapping{{0,2,app::AccountCreation{2,"First synthetic",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Second synthetic",cad,"2026-01-01"}}};
+    const std::vector<app::ImportAccountMapping> mapping{{0,2,app::AccountCreation{2,"First synthetic",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Second synthetic",cad,"2026-01-01"},false}};
     {
         auto s=create(path);app::OperationContext capture;auto group=s.prepare_import_group("group",bytes,qif::DateOrder::dmy,mapping,capture);
         check(group.state==app::GroupState::captured && group.repairs_total==1 && group.repairs_done==0 && s.accounts().size()==3);s.verify();
@@ -92,7 +92,7 @@ void groups(){
     }
     {
         auto s=ImportStore::open(path,password);check(s.startup_import_cleanup() && s.accounts().size()==1);app::OperationContext capture;s.prepare_import_group("group",bytes,qif::DateOrder::dmy,mapping,capture);app::OperationContext resume;auto group=s.resume_import_group("group",resume);check(group.state==app::GroupState::reviewing);s.verify();
-        s.select_account(3);s.review_import_balance("group",1,1,app::ReportedBalanceChoice::zero,"2026-01-01");
+        s.select_account(3);
         rejected([&]{s.commit("group-account-1",1,"too-soon");});check(s.committed_balance()==Money(0,cad));
         s.select_account(2);check(s.evidence("group-account-0")==bytes);rejected([&]{s.opening(0,"2026-01-01",Money(25,cad));});
         exact_record_evidence(s,"group-account-0");rejected([&]{s.record_evidence({"group-account-1",0});});
@@ -100,10 +100,10 @@ void groups(){
         imports::DraftRow repair{"2026-01-01","","",Transaction::repaired_import({},Money(2500,cad),{{"Food","",Money(2500,cad)}})};
         s.save(row.identity,1,repair);exact_record_evidence(s,"group-account-0");s.decide(row.identity,2,{imports::Disposition::include,{}});
         group=s.import_groups()[0];check(group.repairs_done==1 && group.repairs_total==1);
-        s.review_import_balance("group",0,3,app::ReportedBalanceChoice::zero,"2026-01-01");check(s.account().opening.units()==0 && !s.account().opening_confirmed);
+        check(s.account().opening.units()==0 && s.account().opening_confirmed);
         check(s.import_groups()[0].unresolved==0);check(s.commit("group-account-0",3,"first-commit").after==Money(2500,cad));
         rejected([&]{s.abort_import_group("group");});s.select_account(3);
-        s.review_import_balance("group",1,1,app::ReportedBalanceChoice::closing,"2026-01-01");check(s.import_groups()[0].unresolved==0);check(s.commit("group-account-1",1,"second-commit").after==Money(-1000,cad));s.verify();
+        check(s.import_groups()[0].unresolved==0);check(s.commit("group-account-1",1,"second-commit").after==Money(-1000,cad));s.verify();
         exact_record_evidence(s,"group-account-1");s.backup_to(d.path/"backup",password);
     }
     {auto restored=ImportStore::open(d.path/"backup",password);check(restored.import_groups()[0].state==app::GroupState::started);restored.select_account(2);exact_record_evidence(restored,"group-account-0");restored.select_account(3);exact_record_evidence(restored,"group-account-1");restored.verify();}
@@ -171,14 +171,14 @@ void mapped_transfers() {
     // Cancelling after a generated link was staged rolls back every generated
     // child/history row, retaining only the earlier durable capture for retry.
     {Directory d;auto s=create(d.path/"cancel-generated");app::OperationContext capture;
-     s.prepare_import_group("cancel-generated",source(left+left,right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"}}},capture);
+     s.prepare_import_group("cancel-generated",source(left+left,right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"},false}},capture);
      app::OperationContext cancel;cancel.progress=[&](std::string_view phase){if(phase=="Generated transfer staged")cancel.request();};bool stopped=false;
      try{s.resume_import_group("cancel-generated",cancel);}catch(const app::OperationCancelled&){stopped=true;}
      s.select_account(2);check(stopped && s.transfers().empty() && s.import_groups()[0].state==app::GroupState::captured);s.verify();
      app::OperationContext retry;s.resume_import_group("cancel-generated",retry);check(s.transfers().size()==3);s.verify();s.abort_import_group("cancel-generated");s.verify();}
     // Ambiguous groups retain every imported occurrence and generate every explicit counterpart.
-    {Directory d;auto s=create(d.path/"ambiguous");app::OperationContext capture;s.prepare_import_group("ambiguous",source(left+left,right+right+right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"}}},capture);app::OperationContext resume;auto group=s.resume_import_group("ambiguous",resume);s.select_account(2);check(s.transfers().size()==5 && group.unresolved_transfers==0);const auto sheet=s.review_sheet();check(std::count_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& q){return !q.waiting_link.empty();})==5);s.select_account(2);check(s.balance()==Money(-5400,cad));s.select_account(3);check(s.balance()==Money(5000,cad));const auto sequence=s.transfer_sequence();app::OperationContext retry;s.resolve_import_transfers("ambiguous",retry);check(s.transfer_sequence()==sequence);s.abort_import_group("ambiguous");s.verify();}
-    {Directory d;auto s=create(d.path/"linked-candidate");app::OperationContext capture;s.prepare_import_group("linked",source(left+left,right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"}}},capture);app::OperationContext resume;s.resume_import_group("linked",resume);s.select_account(2);
+    {Directory d;auto s=create(d.path/"ambiguous");app::OperationContext capture;s.prepare_import_group("ambiguous",source(left+left,right+right+right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"},false}},capture);app::OperationContext resume;auto group=s.resume_import_group("ambiguous",resume);s.select_account(2);check(s.transfers().size()==5 && group.unresolved_transfers==0);const auto sheet=s.review_sheet();check(std::count_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& q){return !q.waiting_link.empty();})==5);s.select_account(2);check(s.balance()==Money(-5400,cad));s.select_account(3);check(s.balance()==Money(5000,cad));const auto sequence=s.transfer_sequence();app::OperationContext retry;s.resolve_import_transfers("ambiguous",retry);check(s.transfer_sequence()==sequence);s.abort_import_group("ambiguous");s.verify();}
+    {Directory d;auto s=create(d.path/"linked-candidate");app::OperationContext capture;s.prepare_import_group("linked",source(left+left,right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"},false}},capture);app::OperationContext resume;s.resume_import_group("linked",resume);s.select_account(2);
      const auto sheet=s.review_sheet();const auto q=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& q){return q.kind==app::ReviewKind::link && q.rows.size()>1;});check(q!=sheet.questions.end());app::ReviewAnswer request;request.question=q->key;request.generation=sheet.generation;request.action=app::ReviewAction::link;request.selected={q->rows[0].identity,q->rows[1].identity};request.left_allocation="source-0";request.right_allocation="source-0";s.answer_review("chosen-operation",request);
      app::OperationContext remaining;s.resolve_import_transfers("linked",remaining);s.select_account(2);check(s.balance()==Money(-2400,cad));s.select_account(3);check(s.balance()==Money(2000,cad));const auto after=s.review_sheet();check(std::count_if(after.questions.begin(),after.questions.end(),[](const auto& q){return !q.waiting_link.empty();})==1);s.abort_import_group("linked");s.verify();}
     // Invalid destinations remain correction tasks. Valid explicit destinations
@@ -190,14 +190,14 @@ void mapped_transfers() {
         if(variant==2)l.replace(l.find("[Export B]"),10,"[Export A]");
         if(variant==5)r.replace(r.find("T10"),3,"T11");
         if(variant==3)r.replace(r.find("2026-01-02"),10,"2026-01-03");
-        app::OperationContext capture;s.prepare_import_group("unresolved",source(l,r),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",variant==4?jpy:cad,"2026-01-01"}}},capture);
+        app::OperationContext capture;s.prepare_import_group("unresolved",source(l,r),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Export B",variant==4?jpy:cad,"2026-01-01"},false}},capture);
         app::OperationContext resume;const auto group=s.resume_import_group("unresolved",resume);s.select_account(2);const std::size_t generated[]={1,1,1,2,0,2};check(s.transfers().size()==generated[variant]);
         const std::string expected[]={"No reciprocal draft", "absent from", "own account", "different date", "different currency", "exact opposite amount"};
         if(variant==1 || variant==2 || variant==4)check(group.blockers[0].reason.find(expected[variant])!=std::string::npos);else check(group.unresolved_transfers==0);
         s.select_account(2);check(s.committed_balance()==Money(0,cad));s.abort_import_group("unresolved");s.verify();
     }
     {Directory d;auto s=create(d.path/"cancel");
-     app::OperationContext capture;s.prepare_import_group("cancel",source(left+left,right+right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"}}},capture);
+     app::OperationContext capture;s.prepare_import_group("cancel",source(left+left,right+right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"},false}},capture);
      app::OperationContext cancelled;cancelled.progress=[&](std::string_view phase){if(phase=="Mapped transfer pair staged")cancelled.request();};bool stopped=false;try{s.resume_import_group("cancel",cancelled);}catch(const app::OperationCancelled&){stopped=true;}s.select_account(2);check(stopped && s.transfers().empty() && s.import_groups()[0].state==app::GroupState::captured);s.verify();app::OperationContext retry;s.resume_import_group("cancel",retry);check(s.transfers().size()==2);s.abort_import_group("cancel");s.verify();}
 
     // Resolution after a repair uses current amounts and is restart-safe.
@@ -207,7 +207,7 @@ auto s=create(path);
 auto bad=right;
 bad.replace(bad.find("T10"),3,"Tbad");
 app::OperationContext capture;
-s.prepare_import_group("repair",source(left+left,bad+right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"}}},capture);
+s.prepare_import_group("repair",source(left+left,bad+right),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export A",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Export B",cad,"2026-01-01"},false}},capture);
 app::OperationContext resume;
 s.resume_import_group("repair",resume);s.select_account(2);
 check(s.transfers().size()==3);
@@ -220,8 +220,8 @@ s.decide({"repair-account-1",0},2,{imports::Disposition::include,{}});
 app::OperationContext cancel;cancel.request();bool cancelled=false;
 try{s.resolve_import_transfers("repair",cancel);}catch(const app::OperationCancelled&){cancelled=true;}
 check(cancelled && s.transfers().size()==3);
-s.review_import_balance("repair",0,1,app::ReportedBalanceChoice::ignore,"2026-01-01");
-s.review_import_balance("repair",1,3,app::ReportedBalanceChoice::ignore,"2026-01-01");
+
+
 app::OperationContext resolve;s.resolve_import_transfers("repair",resolve);
 check(s.transfers().size()==4);
 check(s.import_groups()[0].unresolved_transfers==0);
@@ -269,7 +269,7 @@ void mapping_opening_faults() {
 void group_categories(){
     Directory d;const auto path=d.path/"categories";
     const std::string bytes="!Option:AutoSwitch\n!Account\nNFirst\nTBank\nB1,190.00\n^\nNSecond\nTCCard\nB-20\n^\n!Clear:AutoSwitch\n!Type:Cat\nNTravel\nE\n^\nNTravel:Flights\nE\n^\nNTelephone/Cellular\nE\nDSource description\n^\nNUnused\nI\n^\nNLater only\nE\n^\n!Account\nNFirst\nTBank\n^\n!Type:Bank\nD2026-01-01\nT1,200.00\nPSTARTING BALANCE\rSynthetic continuation\rTnot-an-amount\n^\nD2026-01-02\nT-10\nSTravel:Flights\n$-15\nSTelephone/Cellular\n$5\n^\n!Account\nNSecond\nTCCard\n^\n!Type:CCard\nD2026-01-03\nT-20\nLLater only\n^\n";
-    const std::vector<app::ImportAccountMapping> mappings{{0,2,app::AccountCreation{2,"First",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Second",cad,"2026-01-01"}}};
+    const std::vector<app::ImportAccountMapping> mappings{{0,2,app::AccountCreation{2,"First",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Second",cad,"2026-01-01"},false}};
     {
         auto s=create(path);s.apply_category_change("existing",{app::CategoryAction::create,"travel","Travel",{},CategoryKind::leaf},0);
         s.apply_category_change("similar",{app::CategoryAction::create,"similar","Travel: Flight",{},CategoryKind::leaf},1);
@@ -285,7 +285,7 @@ void group_categories(){
     {auto s=ImportStore::open(path,password);check(s.import_groups()[0].state==app::GroupState::aborted && s.category_catalog().categories.size()==2);}
     {
         auto s=ImportStore::open(d.path/"pending-backup",password);s.select_account(2);
-        s.review_import_balance("cat",0,1,app::ReportedBalanceChoice::closing,"2026-01-01");s.review_import_balance("cat",1,1,app::ReportedBalanceChoice::zero,"2026-01-01");
+
         check(s.import_groups()[0].accounts[0].proposed_opening==Money(0,cad));
         check(s.commit("cat-account-0",1,"publish-cat").after==Money(119000,cad));check(s.category_catalog().categories.size()==6);
         check(s.commit("cat-account-0",1,"publish-cat").after==Money(119000,cad));
@@ -321,14 +321,14 @@ void group_transfers(){
         Directory d;const auto path=d.path/"group-transfer";
         const std::string bytes="!Account\nNOrigin synthetic\nTBank\nB-10\n^\n!Type:Bank\nD1/1/2026\nT-10\nL[Old destination export]\n^\n!Account\nNDestination synthetic\nTCash\nB40\n^\n!Type:Cash\n";
         {
-            auto s=create(path);const std::vector<app::ImportAccountMapping> mappings{{0,2,app::AccountCreation{2,"Origin synthetic",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Destination synthetic",cad,"2026-01-01"}}};
+            auto s=create(path);const std::vector<app::ImportAccountMapping> mappings{{0,2,app::AccountCreation{2,"Origin synthetic",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Destination synthetic",cad,"2026-01-01"},false}};
             app::OperationContext capture;s.prepare_import_group("transfers",bytes,qif::DateOrder::dmy,mappings,capture);app::OperationContext resume;s.resume_import_group("transfers",resume);
-            s.review_import_balance("transfers",0,1,app::ReportedBalanceChoice::zero,"2026-01-01");s.review_import_balance("transfers",1,1,app::ReportedBalanceChoice::closing,"2026-01-01");
+
             s.select_account(2);app::TransferRequest request{};request.action=app::TransferAction::from_draft;request.link="linked";request.origin=imports::Occurrence{"transfers-account-0",0};request.allocation="source-0";request.destination=3;request.batch_revision=1;request.expected_sequence=s.transfer_sequence();s.apply_transfer("link",request);
             auto group=s.import_groups()[0];check(group.accounts[1].reviewed_change==Money(1000,cad) && group.accounts[1].balance_choice==app::ReportedBalanceChoice::unreviewed);
             s.select_account(3);request={};request.action=app::TransferAction::accept;request.link="linked";request.expected_sequence=s.transfer_sequence();s.apply_transfer("accept",request);
             request.action=app::TransferAction::commit_local;request.expected_sequence=s.transfer_sequence();rejected([&]{s.apply_transfer("stale-balance",request);});
-            s.review_import_balance("transfers",1,1,app::ReportedBalanceChoice::closing,"2026-01-01");check(s.committed_balance()==Money(0,cad) && s.import_groups()[0].accounts[1].proposed_opening==Money(3000,cad));
+            check(s.committed_balance()==Money(0,cad) && s.import_groups()[0].accounts[1].proposed_opening==Money(0,cad));
             const auto commit_destination=[&]{s.select_account(3);request.action=app::TransferAction::commit_local;request.expected_sequence=s.transfer_sequence();s.apply_transfer("destination",request);check(s.committed_balance()==Money(4000,cad));};
             if(destination_first)commit_destination();
             s.select_account(2);check(s.commit("transfers-account-0",1,"origin").after==Money(-1000,cad));
@@ -339,33 +339,35 @@ void group_transfers(){
     }
 }
 void group_balances(){
-    struct Case {const char* balance;app::ReportedBalanceChoice choice;std::int64_t opening,after;};
-    for(const auto& c:std::vector<Case>{{"100",app::ReportedBalanceChoice::opening,10000,11000},{"100",app::ReportedBalanceChoice::closing,9000,10000},{"-20",app::ReportedBalanceChoice::closing,-3000,-2000},{"invalid",app::ReportedBalanceChoice::ignore,0,1000}}) {
-        Directory d;const auto path=d.path/"balance";
-        {auto s=create(path);const std::string bytes=std::string("!Account\nNBalance synthetic\nTBank\nB")+c.balance+"\n^\n!Type:Bank\nD1/1/2026\nT10\n^\n";
-        app::OperationContext capture;s.prepare_import_group("balance",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Balance synthetic",cad,"2026-01-01"}}},capture);app::OperationContext resume;s.resume_import_group("balance",resume);
-        s.review_import_balance("balance",0,1,c.choice,"2026-01-01");s.select_account(2);check(s.committed_balance().units()==0 && s.import_groups()[0].accounts[0].proposed_opening->units()==c.opening);check(s.commit("balance-account-0",1,"commit").after.units()==c.after);s.verify();}
-        {auto s=ImportStore::open(path,password);s.select_account(2);check(s.account().opening.units()==c.opening && s.committed_balance().units()==c.after);}
-    }
-    for(const auto bad:{"1.001","92233720368547758.07"}) {
-        Directory d;auto s=create(d.path/"invalid");const std::string bytes=std::string("!Account\nNBalance synthetic\nTBank\nB")+bad+"\n^\n!Type:Bank\nD1/1/2026\nT-1\n^\n";
-        app::OperationContext capture;s.prepare_import_group("invalid",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Balance synthetic",cad,"2026-01-01"}}},capture);app::OperationContext resume;s.resume_import_group("invalid",resume);
-        bool failed=false;try{s.review_import_balance("invalid",0,1,app::ReportedBalanceChoice::closing,"2026-01-01");}catch(const FinancialError&){failed=true;}check(failed);s.verify();
-    }
-    {
-        Directory d;auto s=create(d.path/"existing");s.opening(0,"2026-01-01",Money(7500,cad));
-        const std::string bytes="!Account\nNExisting source name\nTBank\nB100\n^\n!Type:Bank\nD1/1/2026\nT10\n^\n";
-        app::OperationContext capture;s.prepare_import_group("existing",bytes,qif::DateOrder::dmy,{{0,1,{}}},capture);app::OperationContext resume;s.resume_import_group("existing",resume);check(s.commit("existing-account-0",1,"commit").after==Money(8500,cad));check(s.account().opening==Money(7500,cad));s.verify();
-    }
-    {
-        Directory d;auto s=create(d.path/"mixed");const std::string bytes="!Account\nNMixed synthetic\nTBank\nB92233720368547758.07\n^\n!Type:Bank\nD1/1/2026\nT92233720368547758.07\n^\nD2/1/2026\nT0.01\n^\nD3/1/2026\nT-0.01\n^\n";
-        app::OperationContext capture;s.prepare_import_group("mixed",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Mixed synthetic",cad,"2026-01-01"}}},capture);app::OperationContext resume;s.resume_import_group("mixed",resume);check(s.import_groups()[0].accounts[0].reviewed_change==Money(INT64_MAX,cad));s.review_import_balance("mixed",0,1,app::ReportedBalanceChoice::zero,"2026-01-01");s.select_account(2);check(s.commit("mixed-account-0",1,"commit").after==Money(INT64_MAX,cad));s.verify();
-    }
-    {
-        Directory d;auto s=create(d.path/"discard-after-start");std::string bytes;std::vector<app::ImportAccountMapping> mappings;
-        for(int i=0;i<3;++i){const auto name="Synthetic "+std::to_string(i);bytes+="!Account\nN"+name+"\nTBank\nB10\n^\n!Type:Bank\nD1/1/2026\nT10\n^\n";mappings.push_back({static_cast<std::size_t>(i),i+2,app::AccountCreation{i+2,name,cad,"2026-01-01"}});}
-        app::OperationContext capture;s.prepare_import_group("three",bytes,qif::DateOrder::dmy,mappings,capture);app::OperationContext resume;s.resume_import_group("three",resume);for(int i=0;i<3;++i)s.review_import_balance("three",static_cast<std::size_t>(i),1,app::ReportedBalanceChoice::zero,"2026-01-01");
-        s.select_account(2);s.commit("three-account-0",1,"first");s.select_account(3);s.discard("three-account-1",1);s.select_account(4);check(s.commit("three-account-2",1,"third").after==Money(1000,cad));s.verify();
+    for(bool reported:{false,true}) {
+        Directory d;const auto path=d.path/"fixed-opening";
+        const std::string bytes="!Account\nNBalance synthetic\nTBank\nB100\n^\n!Type:Bank\nD2/1/2026\nT-1\n^\n";
+        {
+            auto s=create(path);app::OperationContext c;
+            std::vector<app::ImportAccountMapping> mappings{{0,2,app::AccountCreation{2,"Balance synthetic",cad,"2026-01-01"}}};
+            fault_vfs::arm(1,SQLITE_FULL);
+            rejected([&]{s.prepare_import_group("missing",bytes,qif::DateOrder::dmy,mappings,c);});
+            check(!fault_vfs::fired);fault_vfs::disarm();
+            check(!s.import_group_outcome("missing") && s.accounts().size()==1);
+            mappings[0].use_reported_opening=reported;app::OperationContext capture;
+            s.prepare_import_group("fixed",bytes,qif::DateOrder::dmy,mappings,capture);
+            app::OperationContext resume;s.resume_import_group("fixed",resume);s.select_account(2);
+            rejected([&]{s.review_import_balance("fixed",0,1,app::ReportedBalanceChoice::closing,"2026-01-01");});
+            check(s.account().opening==Money(reported?10000:0,cad));s.verify();s.certify({});
+        }
+        // The exact two-close reproducer now uses only the supported fixed choice.
+        for(int step=1;step<=2;++step){
+            auto s=ImportStore::open(path,password);s.select_account(2);auto row=*s.row({"fixed-account-0",0}).draft;
+            auto allocations=row.transaction.allocations();allocations[0].amount=Money(-100-step,cad);
+            row.transaction=row.transaction.corrected(Money(-100-step,cad),allocations);
+            s.save({"fixed-account-0",0},step,row);s.verify();s.certify({});s.verify();
+            check(s.balance()==Money((reported?10000:0)-100-step,cad));
+        }
+        {auto s=ImportStore::open(path,password);s.verify();s.backup_to(d.path/"backup",password);}
+        // Leaving the open marker simulates an unclean shutdown; reopening audits.
+        {auto s=ImportStore::open(path,password);s.select_account(2);check(s.balance()==Money((reported?10000:0)-102,cad));s.verify();s.certify({});}
+        {auto s=ImportStore::open(d.path/"backup",password);s.select_account(2);check(s.balance()==Money((reported?10000:0)-102,cad));s.verify();s.certify({});}
+        {auto s=ImportStore::open(path,password);s.select_account(2);const auto preview=s.review_import_undo("fixed");s.undo_import("undo-fixed","fixed",preview.token);check(s.account().opening==Money(reported?10000:0,cad));s.verify();s.certify({});}
     }
 }
 void group_duplicates_and_protection(){
@@ -379,8 +381,8 @@ void group_duplicates_and_protection(){
     }
     {
         Directory d;auto s=create(d.path/"swapped");std::string bytes;std::vector<app::ImportAccountMapping> mapping;
-        for(int i=0;i<2;++i){const auto name="Mapped source "+std::to_string(i);bytes+="!Account\nN"+name+"\nTBank\n^\n!Type:Bank\nD1/1/2026\nT10\n^\n";mapping.push_back({static_cast<std::size_t>(i),i+2,app::AccountCreation{i+2,name,cad,"2026-01-01"}});}
-        app::OperationContext capture;s.prepare_import_group("first",bytes,qif::DateOrder::dmy,mapping,capture);app::OperationContext resume;s.resume_import_group("first",resume);for(std::size_t i=0;i<2;++i)s.review_import_balance("first",i,1,app::ReportedBalanceChoice::zero,"2026-01-01");s.select_account(2);s.commit("first-account-0",1,"commit-0");s.select_account(3);s.commit("first-account-1",1,"commit-1");
+        for(int i=0;i<2;++i){const auto name="Mapped source "+std::to_string(i);bytes+="!Account\nN"+name+"\nTBank\n^\n!Type:Bank\nD1/1/2026\nT10\n^\n";mapping.push_back({static_cast<std::size_t>(i),i+2,app::AccountCreation{i+2,name,cad,"2026-01-01"},false});}
+        app::OperationContext capture;s.prepare_import_group("first",bytes,qif::DateOrder::dmy,mapping,capture);app::OperationContext resume;s.resume_import_group("first",resume);s.select_account(2);s.commit("first-account-0",1,"commit-0");s.select_account(3);s.commit("first-account-1",1,"commit-1");
         app::OperationContext again;rejected([&]{s.prepare_import_group("swap",bytes,qif::DateOrder::dmy,{{0,3,{}},{1,2,{}}},again);});check(!s.import_group_outcome("swap"));s.verify();
     }
     {
@@ -470,7 +472,7 @@ std::string group_fault_source(int kind){
     const auto first=kind==5?"-10":(kind==3 || kind==6)?"bad":"10";
     return std::string("!Type:Cat\nNFault category\nE\n^\nNUnused fault category\nI\n^\n!Account\nNFault first\nTBank\nB")+(kind==5?"-10":"100")+"\n^\n!Type:Bank\nD1/1/2026\nT"+first+"\nPGROUP-FAULT-MARKER\n"+(kind==5?"L[Old destination export]\n":"LFault category\n")+"^\n!Account\nNFault second\nTCash\nB"+(kind==5?"40":"-10")+"\n^\n!Type:Cash\n"+(kind==5?"":"D2/1/2026\nT-10\n^\n");
 }
-std::vector<app::ImportAccountMapping> group_fault_mapping(){return {{0,2,app::AccountCreation{2,"Fault first",cad,"2026-01-01"}},{1,3,app::AccountCreation{3,"Fault second",cad,"2026-01-01"}}};}
+std::vector<app::ImportAccountMapping> group_fault_mapping(){return {{0,2,app::AccountCreation{2,"Fault first",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Fault second",cad,"2026-01-01"},false}};}
 imports::DraftRow group_fault_repair(){return {"2026-01-01","GROUP-FAULT-MARKER","",Transaction::repaired_import({},Money(1000,cad),{{"","",Money(1000,cad)}})};}
 void group_fault_setup(const fs::path& path,int kind){
     auto s=create(path);if(kind==0)return;app::OperationContext capture;s.prepare_import_group("fault",group_fault_source(kind),qif::DateOrder::dmy,group_fault_mapping(),capture);if(kind==1 || kind==7)return;
@@ -478,7 +480,7 @@ void group_fault_setup(const fs::path& path,int kind){
     if(kind==8){s.select_account(3);imports::DraftRow edit{"2026-01-01","","",Transaction::repaired_import({},Money(1000,cad),{{"Fault first","",Money(1000,cad),{},"source-0",0}})};s.save({"fault-account-1",0},1,edit);s.decide({"fault-account-1",0},2,{imports::Disposition::include,{}});return;}
     if(kind==3){s.select_account(2);s.save({"fault-account-0",0},1,group_fault_repair());return;}
     if(kind==5){s.select_account(2);app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="fault-link";r.origin=imports::Occurrence{"fault-account-0",0};r.allocation="source-0";r.destination=3;r.batch_revision=1;r.expected_sequence=s.transfer_sequence();s.apply_transfer("link",r);s.select_account(3);r={};r.action=app::TransferAction::accept;r.link="fault-link";r.expected_sequence=s.transfer_sequence();s.apply_transfer("accept",r);}
-    s.review_import_balance("fault",0,1,kind==5?app::ReportedBalanceChoice::zero:app::ReportedBalanceChoice::closing,"2026-01-01");s.review_import_balance("fault",1,1,kind==5?app::ReportedBalanceChoice::closing:app::ReportedBalanceChoice::zero,"2026-01-01");
+
 }
 void group_fault_ready(ImportStore& s,int kind){
     if((kind==1 || kind==7) && !s.import_group_outcome("fault")){app::OperationContext capture;s.prepare_import_group("fault",group_fault_source(kind),qif::DateOrder::dmy,group_fault_mapping(),capture);}
@@ -490,7 +492,7 @@ void group_fault_execute(ImportStore& s,int kind){
     else if(kind==1 || kind==7)s.resume_import_group("fault",context);
     else if(kind==8)s.resolve_import_transfers("fault",context);
     else if(kind==9)s.abort_import_group("fault");
-    else if(kind==2)s.review_import_balance("fault",0,1,app::ReportedBalanceChoice::closing,"2026-01-01");
+    else if(kind==2){s.select_account(2);s.correct_opening("fault-opening","2026-01-01",Money(9000,cad));}
     else if(kind==3)s.abort_import_group("fault");
     else if(kind==4){s.select_account(2);s.commit("fault-account-0",1,"publish");}
     else if(kind==5){s.select_account(3);app::TransferRequest r{};r.action=app::TransferAction::commit_local;r.link="fault-link";r.expected_sequence=2;s.apply_transfer("publish-transfer",r);}
@@ -530,9 +532,9 @@ bool group_fault_done(ImportStore& s,int kind){
     if(kind==1 || kind==7){const bool done=saved->state==app::GroupState::reviewing;if(kind==7){s.select_account(2);check(s.transfers().size()==(done?2:0));}return done;}
     if(kind==8){s.select_account(2);const auto count=s.transfers().size();check(count==3 || count==4);return count==4;}
     if(kind==9){const bool done=saved->state==app::GroupState::aborted;check(s.accounts().size()==(done?1:3));return done;}
-    if(kind==2)return saved->accounts[0].balance_choice!=app::ReportedBalanceChoice::unreviewed;
+    if(kind==2){s.select_account(2);return s.account().opening==Money(9000,cad);}
     if(kind==3){const bool done=saved->state==app::GroupState::aborted;check(s.accounts().size()==(done?1:3));check(s.category_catalog().categories.empty());return done;}
-    if(kind==4 || kind==5){s.select_account(kind==4?2:3);const bool done=kind==4?s.outcome("publish").has_value():s.transfer_outcome("publish-transfer").has_value();check((saved->state==app::GroupState::started)==done);check(s.category_catalog().categories.size()==(done?2:0));check(s.account().opening.units()==(done?(kind==4?9000:3000):0));return done;}
+    if(kind==4 || kind==5){s.select_account(kind==4?2:3);const bool done=kind==4?s.outcome("publish").has_value():s.transfer_outcome("publish-transfer").has_value();check((saved->state==app::GroupState::started)==done);check(s.category_catalog().categories.size()==(done?2:0));check(s.account().opening.units()==0);return done;}
     s.select_account(2);const bool done=s.row({"fault-account-0",0}).draft.has_value();check(s.batches()[0].revision==(done?2:1));return done;
 }
 void group_fault_recovered(const fs::path& path,int kind){
@@ -541,10 +543,10 @@ void group_fault_recovered(const fs::path& path,int kind){
     if(kind==1 || kind==7)check(group.state==app::GroupState::reviewing && group.accounts.size()==2);
     if(kind==8){s.select_account(2);check(s.transfers().size()==4);check(s.balance()==Money(-4000,cad));s.select_account(3);check(s.balance()==Money(4000,cad));}
     if(kind==9)check(group.state==app::GroupState::aborted && s.accounts().size()==1);
-    if(kind==2)check(group.accounts[0].proposed_opening==Money(9000,cad));
+    if(kind==2){s.select_account(2);check(s.account().opening==Money(9000,cad));}
     if(kind==3)check(group.state==app::GroupState::aborted && s.accounts().size()==1);
-    if(kind==4)check(s.committed_balance()==Money(10000,cad));
-    if(kind==5)check(s.committed_balance()==Money(4000,cad));
+    if(kind==4)check(s.committed_balance()==Money(1000,cad));
+    if(kind==5)check(s.committed_balance()==Money(1000,cad));
     if(kind==6)check(s.row({"fault-account-0",0}).draft->transaction.effective_total()==Money(1000,cad));
 }
 void group_faults(bool crash,int first=0){
@@ -579,7 +581,7 @@ bool combined_done(ImportStore& s,int step){
     case 4:return s.category_change_outcome("combined-category").has_value();
     case 5:return !s.rules_supported() || s.rule_save_outcome("combined-rules").has_value();
     case 6:return !s.rules_supported() || s.rule_apply_outcome("combined-apply").has_value();
-    case 7:return group->accounts[0].balance_choice!=app::ReportedBalanceChoice::unreviewed;
+    case 7:return s.account().opening==Money(9000,cad);
     case 8:return s.outcome("combined-commit").has_value();
     case 9:return s.committed_change_outcome("combined-correct").has_value();
     case 10:return s.committed_change_outcome("combined-undo").has_value();
@@ -593,14 +595,14 @@ void combined_step(ImportStore& s,int step){
     if(step==1 && !s.import_group_outcome("combined"))combined_step(s,0);
     s.select_account(step==0?1:2);app::OperationContext context;
     switch(step){
-    case 0:s.prepare_import_group("combined",combined_source,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Combined synthetic",cad,"2026-01-01"}}},context);break;
+    case 0:s.prepare_import_group("combined",combined_source,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Combined synthetic",cad,"2026-01-01"},false}},context);break;
     case 1:s.resume_import_group("combined",context);break;
     case 2:s.save(combined_id,revision(s,combined_id.batch),{"2026-01-01","GROUP-FAULT-MARKER","",Transaction::repaired_import({},Money(1000,cad),{{"Food","",Money(1000,cad),{},"source-0",0}})});break;
     case 3:s.decide(combined_id,revision(s,combined_id.batch),{imports::Disposition::include,{}});break;
     case 4:{app::CategoryRequest request{app::CategoryAction::create,"combined-food","Food",{},CategoryKind::leaf};const auto p=s.preview_category_change(request);s.apply_category_change("combined-category",p.request,p.catalog_revision);break;}
     case 5:if(s.rules_supported()){app::RuleDefinitionImage rule;rule.identity="combined-rule";rule.label="Synthetic classification";rule.enabled=true;rule.scope=rules::Scope::transaction;rule.input=rules::InputField::payee;rule.expression="GROUP-FAULT-MARKER";rule.actions.category="combined-food";s.save_rules("combined-rules",{{rule}},s.rule_image().revision,context);}break;
     case 6:if(s.rules_supported()){check(s.preview_pending_rules({combined_id.batch,revision(s,combined_id.batch),std::nullopt,false},context).changed==0);auto p=s.preview_pending_rules({combined_id.batch,revision(s,combined_id.batch),std::nullopt,true},context);check(p.changed==1);s.apply_pending_rules("combined-apply",{p.batch,p.batch_revision,p.ruleset_revision,p.catalog_revision,p.replace_manual},context);}break;
-    case 7:s.review_import_balance("combined",0,revision(s,combined_id.batch),app::ReportedBalanceChoice::closing,"2026-01-01");break;
+    case 7:s.correct_opening("combined-opening","2026-01-01",Money(9000,cad));break;
     case 8:s.commit(combined_id.batch,revision(s,combined_id.batch),"combined-commit");break;
     case 9:case 10:{app::ChangeRequest request{step==9?app::ChangeKind::correct:app::ChangeKind::undo,combined_id,{},step==10?"combined-correct":""};if(step==9){auto draft=s.committed_entry(combined_id).current.draft;auto a=draft.transaction.allocations();a[0].amount=Money(1200,cad);draft.transaction=draft.transaction.corrected(Money(1200,cad),a);request.correction=draft;}const auto p=s.preview_committed_change(request);s.apply_committed_change_with_catalog(step==9?"combined-correct":"combined-undo",p.request,p.expected,p.preview_sequence,p.catalog_revision);break;}
     case 11:s.ingest("overlap","D1/1/2026\nT10\nPGROUP-FAULT-MARKER\nLFood\n^\n",qif::DateOrder::dmy);break;
@@ -677,4 +679,4 @@ void faults(bool crash){
     }
 }
 }
-int main(int argc,char** argv){if(std::getenv("SPENTIT_TEST_DIAGNOSTICS"))spentit::diagnostics::Collector::instance().enable();try{std::string mode=argc>1?argv[1]:"basics";if(mode=="group_benchmark")group_benchmark();else if(mode=="basics")basics();else if(mode=="combined")combined_recovery();else if(mode=="combined_io")combined_io();else if(mode=="aliases")account_aliases_test();else if(mode=="mapping_openings")mapping_openings();else if(mode=="mapping_opening_faults")mapping_opening_faults();else if(mode=="groups"){account_aliases_test();group_snapshot_invalidation();groups();mapped_transfers();group_categories();group_transfers();group_balances();group_duplicates_and_protection();}else if(mode=="mapped_io")group_faults(false,7);else if(mode=="mapped_crashes")group_faults(true,7);else if(mode=="group_io")group_faults(false);else if(mode=="group_crashes")group_faults(true);else if(mode=="validation"){validation();group_validation();association_validation();}else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;std::cout<<"Accounts "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){if(std::getenv("SPENTIT_TEST_DIAGNOSTICS"))spentit::diagnostics::Collector::instance().enable();try{std::string mode=argc>1?argv[1]:"basics";if(mode=="group_benchmark")group_benchmark();else if(mode=="basics")basics();else if(mode=="combined")combined_recovery();else if(mode=="combined_io")combined_io();else if(mode=="aliases")account_aliases_test();else if(mode=="mapping_openings"){mapping_openings();group_balances();}else if(mode=="mapping_opening_faults")mapping_opening_faults();else if(mode=="groups"){account_aliases_test();group_snapshot_invalidation();groups();mapped_transfers();group_categories();group_transfers();group_balances();group_duplicates_and_protection();}else if(mode=="mapped_io")group_faults(false,7);else if(mode=="mapped_crashes")group_faults(true,7);else if(mode=="group_io")group_faults(false);else if(mode=="group_crashes")group_faults(true);else if(mode=="validation"){validation();group_validation();association_validation();}else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;std::cout<<"Accounts "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -193,7 +193,7 @@ void review() {
     check(query(path, "SELECT format||'/'||grammar FROM source_headers WHERE source_id='overlap'") == "ofx/ofx-sgml");
     check(query(path, "SELECT ledger_batch||':'||ledger_ordinal FROM source_associations WHERE source_batch='overlap-account-0' AND source_ordinal=0") == "qif:0");
     check(query(path, "SELECT count(*) FROM source_associations WHERE source_batch='qif'") == "1");
-    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "64" : "63"));
+    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "66" : "65"));
     {
         auto restored = ImportStore::open(d.path / "backup", password);
         restored.select_account(1);
@@ -302,11 +302,11 @@ void review() {
         }
         check(read_file(bad_path) == malformed);
         const auto two = sgml(bank(txn("FIT-1", "20260201", "-1.00"), "CAD", "1001") + bank(txn("FIT-2", "20260202", "-2.00"), "CAD", "2002"));
-        const std::vector<app::ImportAccountMapping> mapping{{0, 1, {}}, {1, 2, app::AccountCreation{2, "999 2002", cad, "2026-01-01"}}};
+        const std::vector<app::ImportAccountMapping> mapping{{0, 1, {}}, {1, 2, app::AccountCreation{2, "999 2002", cad, "2026-01-01"},false}};
         check(capture(s, "two", two, mapping).accounts.size() == 2);
         check(capture(s, "two", two, mapping).state == app::GroupState::captured);
         materialize(s, "two");
-        s.review_import_balance("two", 1, 1, app::ReportedBalanceChoice::zero, "2026-01-01");
+
         s.select_account(1);
         check(s.commit("two-account-0", revision(s, "two-account-0"), "first-account").included == 1);
         s.select_account(2);
@@ -759,8 +759,8 @@ void rollback() {
     {
         Directory d;auto s=create(d.path/"doc");
         const std::string bytes="!Type:Cat\nNUnused category\nE\n^\n!Account\nNExport name\nTBank\nB25\n^\n!Type:Bank\nD01/02/2026\nT-1\nPTransient\n^\n";
-        app::OperationContext context;s.prepare_import_group("created",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export name",cad,"2026-01-01"}}},context);materialize(s,"created");s.select_account(2);
-        s.review_import_balance("created",0,1,app::ReportedBalanceChoice::opening,"2026-01-01");s.rollback_account("remove-work",s.rollback_review().token);
+        app::OperationContext context;s.prepare_import_group("created",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export name",cad,"2026-01-01"},true}},context);materialize(s,"created");s.select_account(2);
+        s.rollback_account("remove-work",s.rollback_review().token);
         check(s.accounts().size()==2 && s.resolve_account_name("Export name")==2);check(s.batches().empty());s.verify();
         s.ingest("later","D02/02/2026\nT-2\nPNew transaction\n^\n",qif::DateOrder::dmy);s.accept_all("accept-later");check(s.account().opening==Money(2500,cad));check(s.balance()==Money(2300,cad));check(s.category_catalog().categories.size()==1);s.verify();
         s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.verify();

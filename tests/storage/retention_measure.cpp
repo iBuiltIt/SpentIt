@@ -37,6 +37,11 @@ int main(int argc,char** argv){try{
  {
  auto s=ImportStore::create(path,password,"Synthetic",cad,"2026-01-01");
  if(balance_mode || fixed_mode){
+  if(balance_mode){
+   app::OperationContext rejected;bool refused=false;
+   try{s.prepare_import_group("group","!Type:Bank\n"+source(rows),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Balance",cad,"2026-01-01"}}},rejected);}catch(const storage::ImportError& e){refused=std::string(e.what()).find("Choose zero or the reported")!=std::string::npos;}
+   require(refused && !s.import_group_outcome("group") && s.accounts().size()==1);s.verify();s.certify({});std::cout<<"RETIRED,legacy mapping refused without capture"<<std::endl;return 0;
+  }
   app::OperationContext c;s.prepare_import_group("group","!Account\nNBalance\nTBank\nB100\n^\n!Type:Bank\n"+source(rows),qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Balance",cad,"2026-01-01"},fixed_mode?std::optional<bool>(false):std::nullopt}},c);app::OperationContext r;s.resume_import_group("group",r);s.select_account(2);
   if(balance_mode)s.review_import_balance("group",0,rev(s,"group-account-0"),app::ReportedBalanceChoice::opening,"2026-01-01");
  }else{
