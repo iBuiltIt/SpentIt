@@ -530,9 +530,23 @@ private slots:
         run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
         run(model,"assign_transfer_batch",{{"destination","2"},{"sequence",model.state().value("transferSequence")}});
         QVERIFY(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString().contains("Savings"));
+        // Ordinary assignment Undo belongs to this session.
+        QVERIFY(model.state().value("canUndoTransferAssignment").toBool());
+        run(model,"undo_transfer_assignment");
+        QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+        run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
+        run(model,"assign_transfer_batch",{{"destination","2"},{"sequence",model.state().value("transferSequence")}});
+        QVERIFY(model.state().value("canUndoTransferAssignment").toBool());
+        const auto saved=model.rowRecord(model.occurrenceIndex(batch,0));
+        QVERIFY(saved.value("category").toString().contains("Savings"));
+        QCOMPARE(saved.value("status").toString(),QString("Committed"));
         run(model,"close");run(model,"open",{{"path",path}});run(model,"select_account",{{"id","1"}});
-        QVERIFY(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString().contains("Savings"));
-        run(model,"undo_transfer_assignment");QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+        // Successful close retains the financial state, but expires ordinary Undo.
+        QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)),saved);
+        QVERIFY(!model.state().value("canUndoTransferAssignment").toBool());
+        model.command("undo_transfer_assignment");QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
+        QVERIFY(model.error().contains("Later changes prevent transfer assignment Undo"));
+        QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)),saved);
     }
     void categoryMenuSavesMixedRowsAndReopens() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
@@ -564,10 +578,33 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(choice,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
         QCOMPARE(model.state().value("selectionCount").toInt(),3);
-        run(model,"close");run(model,"open",{{"path",path}});
-        for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
+        QVERIFY(model.state().value("canUndoTransferAssignment").toBool());
         run(model,"undo_transfer_assignment");
         for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),original[batch]);
+        // Reapply through the menu so the changed mixed selection becomes the baseline.
+        run(model,"select",{{"row",model.occurrenceIndex(accepted,0)}});
+        run(model,"select",{{"row",model.occurrenceIndex(pending,0)},{"toggle",true}});
+        run(model,"select",{{"row",model.occurrenceIndex(manualBatch,0)},{"toggle",true}});
+        QVERIFY(showPopup(context));QTRY_VERIFY(context->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(menu,"open"));QTRY_VERIFY(menu->property("visible").toBool());
+        choice=object(root,"ledgerCategoryChoice_0");QVERIFY(choice);
+        QVERIFY(QMetaObject::invokeMethod(choice,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QVERIFY(model.state().value("canUndoTransferAssignment").toBool());
+        QMap<QString,QVariantMap> saved;
+        for(const auto& batch:{accepted,pending,manualBatch}){
+            saved[batch]=model.rowRecord(model.occurrenceIndex(batch,0));
+            QCOMPARE(saved[batch].value("category").toString(),QString("Uncategorized"));
+        }
+        QCOMPARE(saved[accepted].value("status").toString(),QString("Committed"));
+        QVERIFY(saved[pending].value("status").toString()!="Committed");
+        QVERIFY(saved[manualBatch].value("status").toString()!="Committed");
+        run(model,"close");run(model,"open",{{"path",path}});
+        for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)),saved[batch]);
+        QVERIFY(!model.state().value("canUndoTransferAssignment").toBool());
+        model.command("undo_transfer_assignment");QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
+        QVERIFY(model.error().contains("Later changes prevent transfer assignment Undo"));
+        for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)),saved[batch]);
     }
     void ledgerViewportSurvivesCategoryNavigation() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());

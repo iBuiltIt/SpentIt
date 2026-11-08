@@ -1,5 +1,77 @@
 # Project status
 
+## Navigation tests aligned with session history — 2026-11-08
+
+Updated `acceptedManualTransferAssignment` and
+`categoryMenuSavesMixedRowsAndReopens` to the accepted
+[session-history contract](session-history-baseline.md). Both now verify successful
+ordinary assignment Undo within the session, reapply the assignment, then close
+and reopen. The complete displayed row maps (including amounts, splits, balances,
+text and acceptance state) must equal their saved pre-close values. Undo eligibility
+must be false after reopen; explicitly attempting the expired Undo must fail and
+leave those row maps unchanged. The mixed-row case preserves accepted, new imported
+and manual transaction states without treating close as acceptance.
+
+Rebuilt `spentit_import_navigation_tests` in the macOS arm64 rules-enabled Release
+configuration (Qt 6.12.0). Reran precisely those two tests with
+`QT_QPA_PLATFORM=offscreen`: **4/4 passed including setup/cleanup**, 3.084 s.
+Used normal application-data lock access. The build retains four existing
+floating-point-to-integer warnings in the unrelated screenshot crop helper at
+line 79. `git diff --check` passed. No application/financial code or manual content
+changed in this follow-up. The full navigation suite, native interactions and
+other platforms were not rerun; this resolves the two specific stale failures
+reported below, without claiming a new full-suite pass.
+
+## Rules workspace usability — owner Go, 2026-11-08
+
+Implemented the [approved Rules cleanup](../features/004-rules-and-explanations.md#rules-workspace-usability--owner-go-2026-11-08).
+Empty Rules offers New rule; unavailable search, removed-rule and transaction
+controls disappear. The selected definition owns Save rule / Discard changes and
+staged Save removal / Keep rule. Removed definitions have readable summaries and
+Copy into new rule. Search reports no matches and retained selections outside the
+results. Long rows omit secondary summaries at narrow widths; full definitions
+remain available in the selected editor.
+
+A separate Apply section names the selected rule and exposes the target account
+picker and transaction scope. Switching accounts stays in Rules, retains all
+local drafts/selection/search and invalidates preview output. The existing account
+selection command is reused without the usual Rules-form reset. Optional Preview
+and selected Apply rule / Save and apply rule retain existing ordered context,
+category eligibility and financial protections. Undo appears only for the existing
+eligible account application, independently of selected rule. The movable leave
+dialog lists changed definitions in a bounded scroll area and offers Save all
+changes / Discard all changes / Cancel. No engine, storage or format changes.
+
+Verification: macOS arm64, Qt 6.12.0, rules-enabled Release, synthetic files only.
+
+- Rebuilt `build/SpentIt`, Rules UI tests and navigation tests. Full Rules UI suite
+  passed **28/28 including setup/cleanup**; final CTest Rules/QML pass was
+  **2/2**, 27.23 s (Rules 25.64 s; smoke 1.59 s). The new end-to-end
+  case covers empty controls, two-account preview/application, preserved incomplete
+  draft and selected edit across account switches, selected-only Save and apply,
+  Undo after changing rule selection, disabled-rule controls, empty search,
+  pending removal cancellation/save and removed-definition copying.
+- Native focused run passed **5/5 including setup/cleanup**, 5.745 s, covering that
+  workflow, long-list editor/action visibility and independent draft/save/apply
+  plus movable leave-dialog dismissal. Final capture run passed **4/4**, 4.617 s.
+  Inspected empty, draft editor, preview, 720×560 scrolled editor and leave-dialog
+  captures. Full native suite, Windows, Linux and sanitizers were not run.
+- Broader navigation suite: **20 passed, 2 failed, 1 skipped** (opt-in diagnostics).
+  `acceptedManualTransferAssignment` and `categoryMenuSavesMixedRowsAndReopens`
+  both expect ordinary assignment Undo after successful close/reopen. Their
+  assertions conflict with the accepted session-baseline expiration policy;
+  the command correctly refuses later Undo. These tests were not changed, and
+  no full navigation-suite pass is claimed. Guarded navigation/isolation passed.
+- Initial sandboxed execution could not create application-data locks; reruns used
+  normal lock access. Iteration caught QML syntax/transient-index warnings, a
+  long-list viewport overflow and old dialog-label assertions; corrected before
+  the passing Rules runs. Offscreen Qt emits its usual unsupported size-hint
+  warnings; native focused runs had no QML warnings.
+
+`git diff --check` and changed-document relative link-target checks passed.
+Manual prose and pictures remain unchanged; [MAN-015](manual-update-backlog.md#man-015--rules-workspace-usability)
+records the later batch. Current-value matching remains separately gated.
+
 ## Selected-row Review Merge correction — owner Go, 2026-11-08
 
 Corrected the [selection contract](review-sheet.md#selected-row-merge-correction--owner-go-2026-11-08):

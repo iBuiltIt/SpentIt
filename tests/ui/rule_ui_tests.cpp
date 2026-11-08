@@ -95,6 +95,62 @@ class RuleUiTests : public QObject {
 private slots:
     void initTestCase(){if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS"))QVERIFY(spentit::diagnostics::Collector::instance().enable());QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("RuleUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
     void init(){QSettings().clear();qunsetenv("SPENTIT_RULE_CANCEL_WINDOW");qunsetenv("SPENTIT_RULE_REFRESH_FAIL");}
+    void workspaceUsabilityAndAccountPicker(){
+        Session s;createDocument(s,"First account");
+        const auto first=s.model.state().value("accountId").toString();
+        run(s.model,"create_account",{{"id","2"},{"name","Second account"},{"currency","CAD"},{"date","2026-01-01"}});
+        const auto source=s.path("shop.qif");writeQif(source,"!Type:Bank\nD01/01/2026\nT-12.00\nPShop\n^\n");
+        run(s.model,"import",{{"path",source},{"profile","DMY"}});
+        const auto batch=selected(s.model).value("batch");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        for(const auto* name:{"ruleSearch","showRemovedRules","ruleTransactionScope","previewThisRule","applyRules","undoRules"})QVERIFY2(!object(s.root,name)->property("visible").toBool(),name);
+        QVERIFY(object(s.root,"rulesEmpty")->property("visible").toBool());
+        if(qEnvironmentVariableIsSet("SPENTIT_RULE_EMPTY_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_EMPTY_SCREENSHOT")));}
+        transactionRule(s.root,"Shop","^Shop$","Shop result");QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(!object(s.root,"saveRules")->property("visible").toBool());
+        QVERIFY(click(s.root,"newRule"));QVERIFY(edit(s.root,"ruleLabel","Unfinished"));
+        QVERIFY(!object(s.root,"newRule")->property("visible").toBool());
+        QVERIFY(click(s.root,"openRule_0"));QVERIFY(edit(s.root,"rulePayeeTemplate","Changed shop"));
+        QVERIFY(click(s.root,"previewThisRule"));wait(s.model);QVERIFY(s.root->property("currentRulePreview").toBool());
+        if(qEnvironmentVariableIsSet("SPENTIT_RULE_PREVIEW_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_PREVIEW_SCREENSHOT")));}
+        auto accounts=s.model.state().value("accounts").toList();int firstIndex=-1,secondIndex=-1;
+        for(int i=0;i<accounts.size();++i){if(accounts[i].toMap().value("id").toString()==first)firstIndex=i;else secondIndex=i;}
+        QVERIFY(firstIndex>=0 && secondIndex>=0);
+        QVERIFY(choose(s.root,"rulesAccount",firstIndex));wait(s.model);
+        QCOMPARE(page(s.root),"rules");QCOMPARE(s.root->property("ruleIndex").toInt(),0);
+        QVERIFY(!s.root->property("currentRulePreview").toBool());QVERIFY(s.root->property("rulesDirty").toBool());
+        QCOMPARE(object(s.root,"rulePayeeTemplate")->property("text").toString(),"Changed shop");
+        QVERIFY(object(s.root,"openRule_1")->property("text").toString().contains("Unfinished"));
+        QVERIFY(click(s.root,"previewThisRule"));wait(s.model);
+        QCOMPARE(s.model.state().value("rulePreview").toMap().value("changed").toInt(),0);
+        QVERIFY(choose(s.root,"rulesAccount",secondIndex));wait(s.model);
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QCOMPARE(s.model.state().value("rules").toList().size(),1);
+        QVERIFY(s.root->property("rulesDirty").toBool());
+        QVERIFY(object(s.root,"undoRules")->property("visible").toBool());
+        run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Changed shop");
+        QVERIFY(click(s.root,"openRule_1"));QVERIFY(click(s.root,"undoRules"));wait(s.model);
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Shop");
+        QVERIFY(!object(s.root,"undoRules")->property("visible").toBool());
+        QVERIFY(click(s.root,"discardRules"));QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(edit(s.root,"ruleSearch","Absent"));QVERIFY(object(s.root,"ruleSearchEmpty")->property("visible").toBool());
+        QVERIFY(object(s.root,"ruleEditor")->property("visible").toBool());
+        QVERIFY(click(s.root,"ruleSearchClear"));
+        QVERIFY(setChecked(s.root,"ruleEnabled_0",false));
+        QVERIFY(!object(s.root,"applyRules")->property("visible").toBool());
+        QVERIFY(click(s.root,"discardRules"));
+        QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(!object(s.root,"ruleLabel")->property("visible").toBool());
+        QCOMPARE(object(s.root,"saveRules")->property("text").toString(),"Save removal");
+        QVERIFY(click(s.root,"discardRules"));QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(object(s.root,"showRemovedRules")->property("visible").toBool());
+        QVERIFY(setChecked(s.root,"showRemovedRules",true));
+        const auto removed=s.model.state().value("ruleTombstones").toList().front().toMap().value("id").toString();
+        QVERIFY(click(s.root,"copyRemoved_"+removed));
+        QVERIFY(!object(s.root,"copyRemoved_"+removed)->property("visible").toBool());
+        QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Shop");
+        if(qEnvironmentVariableIsSet("SPENTIT_RULE_EDIT_SCREENSHOT")){s.window->resize(720,560);QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_EDIT_SCREENSHOT")));}
+    }
     void currentFormatShowsRulesAndOldFormatIsRejected(){
         Session current;createDocument(current,"Current rules");
         QVERIFY(current.model.state().value("rulesSupported").toBool());
@@ -299,8 +355,8 @@ private slots:
         QVERIFY(s.root->property("rulesDirty").toBool());
         QVERIFY(click(s.root,"accountNavigation"));
         QTRY_VERIFY(dialog->isVisible());
-        QCOMPARE(object(s.root,"rulesGuardSave")->property("text").toString(),QString("Save"));
-        QCOMPARE(object(s.root,"rulesGuardDiscard")->property("text").toString(),QString("Discard"));
+        QCOMPARE(object(s.root,"rulesGuardSave")->property("text").toString(),QString("Save all changes"));
+        QCOMPARE(object(s.root,"rulesGuardDiscard")->property("text").toString(),QString("Discard all changes"));
         if(qEnvironmentVariableIsSet("SPENTIT_RULE_SCREENSHOT"))QVERIFY(dialog->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_SCREENSHOT")));
         QVERIFY(click(s.root,"rulesGuardStay"));
         QCOMPARE(s.root->property("ruleIndex").toInt(),1);
@@ -515,7 +571,7 @@ private slots:
         QVERIFY(click(s.root,"previewThisRule"));wait(s.model);QCOMPARE(summary(s.model),"2 transactions match. 0 already categorized. 0 handled by earlier rules. 2 eligible; 2 will change.");
         QVERIFY(choose(s.root,"ruleTransactionScope",1));QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
         QVERIFY(click(s.root,"previewThisRule"));wait(s.model);QCOMPARE(summary(s.model),"1 transactions match. 0 already categorized. 0 handled by earlier rules. 1 eligible; 1 will change.");
-        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply");
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply rule");
         QVERIFY(click(s.root,"applyRules"));wait(s.model);QTRY_VERIFY(s.model.state().value("canUndoRules").toBool());
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
         run(s.model,"inspect",{{"batch",oldBatch},{"ordinal",0}});QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride old");
@@ -750,7 +806,7 @@ private slots:
         QCOMPARE(rows.size(),1);QCOMPARE(rows[0].toMap().value("payee").toString(),"Ride");
         QCOMPARE(object(s.root,"ruleMatches")->property("count").toInt(),1);
         QVERIFY(!object(s.root,"ruleApplyHelp")->property("visible").toBool());
-        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply");
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply rule");
         QVERIFY(click(s.root,"saveRules"));wait(s.model);QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QVERIFY(object(s.root,"applyRules")->property("enabled").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_MATCH_COMPACT_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_MATCH_COMPACT_SCREENSHOT")));}

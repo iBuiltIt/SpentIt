@@ -716,7 +716,7 @@ ApplicationWindow {
     property bool currentRulePreview: !!rulePreviewKey && rulePreviewKey===rulesPreviewKey()
     property bool ruleApplyAfterSave: false
     property bool ruleApplyAfterPreview: false
-    function rulesPreviewKey() {return JSON.stringify([rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,false])}
+    function rulesPreviewKey() {return JSON.stringify([s.accountId,rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,false])}
     property int ruleEditGeneration: 0
     property var ruleBaseline: []
     property var ruleMovedIds: ({})
@@ -884,8 +884,8 @@ ApplicationWindow {
         // WindowModal becomes an attached sheet on macOS, without a draggable title bar.
         modality:Qt.ApplicationModal
         title:"Save changes before leaving Rules?"
-        width:460;height:rulesLeaveContent.implicitHeight+40
-        minimumWidth:460;maximumWidth:460
+        width:620;height:rulesLeaveContent.implicitHeight+40
+        minimumWidth:620;maximumWidth:620
         minimumHeight:rulesLeaveContent.implicitHeight+40
         maximumHeight:rulesLeaveContent.implicitHeight+40
         color:window.palette.window
@@ -903,16 +903,19 @@ ApplicationWindow {
             id:rulesLeaveContent;objectName:"rulesLeaveContent"
             anchors.top:parent.top;anchors.left:parent.left;anchors.right:parent.right
             anchors.margins:20;spacing:16
-            Label {
-                Layout.fillWidth:true;wrapMode:Text.Wrap
-                text:unsavedRuleCount===1?"You have unsaved changes to 1 rule.":"You have unsaved changes to "+unsavedRuleCount+" rules."
+            UsableScrollView {
+                Layout.fillWidth:true;Layout.preferredHeight:Math.min(240,rulesLeaveNames.implicitHeight);contentWidth:availableWidth
+                Label {
+                id:rulesLeaveNames;width:parent.width;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                text:{let generation=ruleEditGeneration;return dirtyRuleIndices().map(i=>{let r=ruleModel.get(i);return (r.label||"Unnamed rule")+" · "+(r.pendingDelete?"Remove":!savedRule(r.id)?"New":"Edited")}).join("\n")}
+                }
             }
             RowLayout {
                 Layout.alignment:Qt.AlignRight
                 Button {objectName:"rulesGuardHelp";text:"Help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp("help:use-rules#keep-and-change-your-rules")}
-                Button {objectName:"rulesGuardSave";enabled:!workflow.busy && !ruleValidatingAll;text:"Save";onClicked:saveAllRulesAndLeave()}
-                Button {objectName:"rulesGuardDiscard";enabled:!workflow.busy && !ruleValidatingAll;text:"Discard";onClicked:workflow.command("rules_discard")}
-                Button {objectName:"rulesGuardStay";enabled:!workflow.busy && !ruleValidatingAll;text:"Stay";onClicked:stayInRules()}
+                Button {objectName:"rulesGuardSave";enabled:!workflow.busy && !ruleValidatingAll;text:"Save all changes";onClicked:saveAllRulesAndLeave()}
+                Button {objectName:"rulesGuardDiscard";enabled:!workflow.busy && !ruleValidatingAll;text:"Discard all changes";onClicked:workflow.command("rules_discard")}
+                Button {objectName:"rulesGuardStay";enabled:!workflow.busy && !ruleValidatingAll;text:"Cancel";onClicked:stayInRules()}
             }
         }
     }
@@ -1219,6 +1222,18 @@ ApplicationWindow {
         let body=expr.startsWith("(?-i)")?expr.slice(5):expr, shape=patternShape(body)
         return shape.complete && body.startsWith("^") && shape.endAnchor && !shape.alternative
     }
+    property bool switchingRulesAccount: false
+    readonly property string rulesAccountName: ((s.accounts||[]).find(a=>a.id===s.accountId)||{}).name||"Choose account"
+    readonly property bool rulePendingRemoval: {let generation=ruleEditGeneration;return ruleIndex>=0 && ruleIndex<ruleModel.count && !!ruleModel.get(ruleIndex).pendingDelete}
+    readonly property bool ruleCanRun: {let generation=ruleEditGeneration;return ruleIndex>=0 && ruleIndex<ruleModel.count && !rulePendingRemoval && !!ruleModel.get(ruleIndex).ruleOn}
+    function ruleMatchesSearch(row) {if(!row)return false;return (row.label+" "+row.expression+" "+actionSummary(row)).toLowerCase().indexOf(ruleSearch.text.toLowerCase())>=0}
+    readonly property int matchingRuleCount: {let generation=ruleEditGeneration;let count=0;for(let i=0;i<ruleModel.count;i++)if(ruleMatchesSearch(ruleModel.get(i)))count++;return count}
+    function selectRulesAccount(index) {
+        const account=(s.accounts||[])[index]
+        if(!account || account.id===s.accountId || workflow.busy)return
+        rulePreviewKey="";switchingRulesAccount=true
+        workflow.command("select_account",{id:account.id})
+    }
     function ruleRow(rule) {
         let copy=Object.assign({payeeTemplate:"",memoTemplate:"",categoryId:"",inheritParent:false,label:"",expression:"",scope:"transaction",input:"payee"}, rule||{})
         copy.pendingDelete=false
@@ -1396,7 +1411,7 @@ ApplicationWindow {
         workflow.command("rules_save",{rules:image})
     }
     function previewRules() {rulePreviewSingle=false;previewAccountRules()}
-    function applyReady() {return !workflow.busy && ruleIndex>=0 && !ruleModel.get(ruleIndex).pendingDelete}
+    function applyReady() {return !workflow.busy && !!s.accountId && ruleCanRun}
     function applyRules() {
         if(!applyReady() || !acceptRuleCategory())return
         rulePreviewSingle=true
@@ -1651,7 +1666,7 @@ ApplicationWindow {
                 categorySaving=false
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
-            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false;pendingDuplicateReveal=null}
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false}
             if(success) {
                 if(action==="transfer_manual"){resolveAmount(transferAmount);transferDialog.addingTransfer=false}
                 if(action==="correct_opening")correctAmount.text=s.opening
@@ -1659,10 +1674,11 @@ ApplicationWindow {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
                     if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
                     else if(accountViewports[s.accountId])restoreAccountViewport()
-                    if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
+                    if(switchingRulesAccount) {currentPage="rules";let accounts=navigationAccounts.slice();accounts[navigationIndex]=s.accountId;navigationAccounts=accounts}
+                    else if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
                     if(pendingReviewInspection){currentPage="review";pendingReviewInspection=false}
-                    loadEditor();loadRulesForm();loadCategoryForm()
+                    loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false
                     if(pendingDuplicateReveal){
                         const request=pendingDuplicateReveal;pendingDuplicateReveal=null
                         duplicateOriginKey=request.origin.key;duplicateCandidateKey=request.row.key===request.origin.key?"":request.row.key
@@ -3153,10 +3169,11 @@ ApplicationWindow {
                         width:rulesPage.availableWidth;spacing:8
                         Label {text:"Rules";font.pixelSize:20}
                         ColumnLayout {Layout.fillWidth:true;visible:!!s.rulesSupported
-                        ClearableSearchField {id:ruleSearch;objectName:"ruleSearch";placeholderText:"Search rules";Layout.fillWidth:true;onClearRequested:clearSearch()}
+                        Label {objectName:"rulesEmpty";visible:ruleModel.count===0;text:(s.ruleTombstones||[]).length?"No active rules.":"No rules yet."}
+                        ClearableSearchField {visible:ruleModel.count>0;id:ruleSearch;objectName:"ruleSearch";placeholderText:"Search rules";Layout.fillWidth:true;onClearRequested:clearSearch()}
                         RowLayout {
-                            Button {objectName:"newRule";text:"New rule";enabled:{let generation=ruleEditGeneration;return newRuleIndex()<0} onClicked:newRule()}
-                            CheckBox {id:showRemovedRules;objectName:"showRemovedRules";text:"Show removed"}
+                            Button {objectName:"newRule";text:"New rule";visible:enabled;enabled:{let generation=ruleEditGeneration;return newRuleIndex()<0 && ruleModel.count<128} onClicked:newRule()}
+                            CheckBox {id:showRemovedRules;objectName:"showRemovedRules";visible:(s.ruleTombstones||[]).length>0;text:"Removed rules ("+(s.ruleTombstones||[]).length+")"}
                         }
                         Column {
                             Layout.fillWidth:true
@@ -3178,7 +3195,7 @@ ApplicationWindow {
                                     property bool isNew: {let generation=ruleEditGeneration;return index>=0 && index<ruleModel.count && !savedRule(ruleModel.get(index).id)}
                                     property bool deletedDraft: {let generation=ruleEditGeneration;return index>=0 && index<ruleModel.count && ruleModel.get(index).pendingDelete}
                                     objectName:"ruleRow_"+index
-                                    visible:index===ruleIndex || (label+" "+expression+" "+actionSummary(ruleEntry)).toLowerCase().indexOf(ruleSearch.text.toLowerCase())>=0
+                                    visible:index===ruleIndex || ruleMatchesSearch(ruleEntry)
                                     width:rulesPage.availableWidth
                                     Rectangle {anchors.fill:parent;z:-1;color:ruleEntry.changed?theme.changed:"transparent";border.width:ruleIndex===ruleEntry.index?2:0;border.color:theme.focus}
                                     height:visible?ruleRowLayout.implicitHeight:0
@@ -3186,20 +3203,20 @@ ApplicationWindow {
                                     RowLayout {
                                     id:ruleRowLayout;anchors.fill:parent
                                     Label {text:String(index+1);Layout.preferredWidth:28}
-                                    CheckBox {objectName:"ruleEnabled_"+index;text:"Enabled";checked:ruleEntry.ruleOn;onClicked:toggleRule(index)}
+                                    CheckBox {objectName:"ruleEnabled_"+index;text:"Enabled";enabled:!ruleEntry.deletedDraft;checked:ruleEntry.ruleOn;onClicked:toggleRule(index)}
                                     Button {objectName:"openRule_"+index;text:(label||("Rule "+(index+1)))+(ruleEntry.isNew?" · New":ruleEntry.deletedDraft?" · Deleted":ruleEntry.changed?" · Unsaved":"");highlighted:ruleIndex===index;onClicked:openRule(index);Layout.fillWidth:true}
-                                    Label {text:(scope==="split"?"Split":"Transaction")+" · "+(scope==="split" && input==="payee"?"Parent payee":input);Layout.preferredWidth:170}
-                                    Label {text:expression;elide:Text.ElideRight;Layout.preferredWidth:180;textFormat:Text.PlainText}
-                                    Label {text:actionSummary(ruleEntry);elide:Text.ElideRight;Layout.preferredWidth:180;textFormat:Text.PlainText}
-                                    Button {objectName:"moveRuleUp_"+index;text:"Up";enabled:index>0;onClicked:moveRule(index,-1)}
-                                    Button {objectName:"moveRuleDown_"+index;text:"Down";enabled:index<ruleModel.count-1;onClicked:moveRule(index,1)}
-                                    Button {objectName:"deleteRule_"+index;text:"Delete";enabled:!ruleEntry.deletedDraft;onClicked:deleteRule(index)}
+                                    Label {text:(scope==="split"?"Split":"Transaction")+" · "+(scope==="split" && input==="payee"?"Parent payee":input);visible:rulesPage.availableWidth>=900;Layout.preferredWidth:150}
+                                    Label {text:expression;visible:rulesPage.availableWidth>=1100;elide:Text.ElideRight;Layout.preferredWidth:140;textFormat:Text.PlainText}
+                                    Label {text:actionSummary(ruleEntry);visible:rulesPage.availableWidth>=1100;elide:Text.ElideRight;Layout.preferredWidth:140;textFormat:Text.PlainText}
+                                    Button {objectName:"moveRuleUp_"+index;text:"Up";visible:enabled;enabled:index>0 && !ruleEntry.deletedDraft;onClicked:moveRule(index,-1)}
+                                    Button {objectName:"moveRuleDown_"+index;text:"Down";visible:enabled;enabled:index<ruleModel.count-1 && !ruleEntry.deletedDraft;onClicked:moveRule(index,1)}
+
                                     }
                                 }
                             }
                         }
                         Column {
-                            visible:showRemovedRules.checked
+                            visible:showRemovedRules.visible && showRemovedRules.checked
                             Layout.fillWidth:true
                             Label {text:"Removed rules";font.bold:true}
                             Repeater {
@@ -3207,8 +3224,8 @@ ApplicationWindow {
                                 RowLayout {
                                     required property var modelData
                                     width:rulesPage.availableWidth
-                                    Label {text:(modelData.label||modelData.id)+" · v"+modelData.version+" · "+modelData.expression;Layout.fillWidth:true;elide:Text.ElideRight;textFormat:Text.PlainText}
-                                    Button {objectName:"copyRemoved_"+modelData.id;text:"Copy into new rule";enabled:{let generation=ruleEditGeneration;return newRuleIndex()<0} onClicked:copyRemoved(modelData.id)}
+                                    Label {text:(modelData.label||"Unnamed rule")+" · "+(modelData.scope==="split"?"Split":"Transaction")+" / "+modelData.input+"\n"+modelData.expression+"\n"+actionSummary(modelData);Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText}
+                                    Button {objectName:"copyRemoved_"+modelData.id;text:"Copy into new rule";visible:enabled;enabled:{let generation=ruleEditGeneration;return newRuleIndex()<0 && ruleModel.count<128} onClicked:copyRemoved(modelData.id)}
                                 }
                             }
                         }
@@ -3216,12 +3233,11 @@ ApplicationWindow {
                             id:ruleEditor;objectName:"ruleEditor"
                             visible:ruleIndex>=0
                             Layout.fillWidth:true
-                            RowLayout {
-                                Layout.fillWidth:true
-                                Label {text:"Rule name";font.bold:true;Layout.fillWidth:true}
-                            Button {objectName:"saveRules";text:"Save";enabled:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)} onClicked:saveRules()}
-                            Button {objectName:"discardRules";text:"Discard";enabled:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)} onClicked:discardRule()}
-                            }
+                            Label {textFormat:Text.PlainText;text:rulePendingRemoval?'Remove “'+(ruleLabel.text||"Unnamed rule")+'”?':"Selected rule";font.bold:true}
+                            Label {textFormat:Text.PlainText;visible:rulePendingRemoval;text:ruleExpression.text+"\n"+(ruleIndex>=0?actionSummary(ruleModel.get(ruleIndex)):"");wrapMode:Text.Wrap;Layout.fillWidth:true}
+                            ColumnLayout {
+                            visible:!rulePendingRemoval;Layout.fillWidth:true
+                            Label {text:"Rule name"}
                             NavigableTextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Rule name";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
                             Label {text:"Match";font.bold:true}
                             RowLayout {
@@ -3244,8 +3260,13 @@ ApplicationWindow {
                             }
                             Label {id:ruleAssistNote;objectName:"ruleAssistNote";text:"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                             Label {text:"Changes";font.bold:true}
+                            GridLayout {
+                            Layout.fillWidth:true;columns:2
+                            Label {visible:ruleScope.currentIndex===0;text:"Payee (optional)"}
                             NavigableTextField {id:rulePayeeTemplate;objectName:"rulePayeeTemplate";visible:ruleScope.currentIndex===0;placeholderText:"Payee template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Payee template"}
+                            Label {text:"Memo (optional)"}
                             NavigableTextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
+                            }
                             RowLayout {
                                 Label {text:"Category"}
                                 CategoryCompletion {
@@ -3263,18 +3284,33 @@ ApplicationWindow {
                             }
                         }
                         RowLayout {
-                            Label {text:"Include"}
-                            UsableComboBox {id:ruleTransactionScope;objectName:"ruleTransactionScope";model:["All transactions in this account","New transactions only"];currentIndex:0;Layout.preferredWidth:340}
+                            Button {objectName:"saveRules";text:rulePendingRemoval?"Save removal":"Save rule";visible:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)} enabled:visible;onClicked:saveRules()}
+                            Button {objectName:"discardRules";text:rulePendingRemoval?"Keep rule":ruleIndex>=0 && ruleIndex<ruleModel.count && !savedRule(ruleModel.get(ruleIndex).id)?"Discard draft":"Discard changes";visible:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)} enabled:visible;onClicked:discardRule()}
+                            Button {objectName:ruleIndex>=0?"deleteRule_"+ruleIndex:"removeSelectedRule";text:"Remove rule";visible:ruleIndex>=0 && ruleIndex<ruleModel.count && !rulePendingRemoval && !!savedRule(ruleModel.get(ruleIndex).id);onClicked:deleteRule(ruleIndex)}
                         }
-                        GridLayout {
-                            columns:rulesPage.availableWidth<1000?1:4
-                            Button {objectName:"previewThisRule";text:"Preview this rule";enabled:ruleIndex>=0 && !ruleModel.get(ruleIndex).pendingDelete;onClicked:previewThisRule()}
-                            Button {objectName:"applyRules";text:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)?"Save and apply":"Apply to this account now"} enabled:applyReady();onClicked:applyRules()}
                         }
-                        Label {objectName:"rulePreviewStatus";visible:currentRulePreview;text:(s.rulePreview||{}).label||"";font.bold:true;textFormat:Text.PlainText}
+                        Label {textFormat:Text.PlainText;objectName:"ruleSearchEmpty";visible:ruleModel.count>0 && matchingRuleCount===0;text:'No rules match “'+ruleSearch.text+'”.';wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {visible:ruleIndex>=0 && !ruleMatchesSearch(ruleModel.get(ruleIndex));text:"Selected rule is outside the search results."}
+                        Label {objectName:"ruleApplyHelp";visible:ruleModel.count>0 && ruleIndex<0;text:"Select a rule to edit."}
+                        ColumnLayout {
+                            visible:ruleCanRun;Layout.fillWidth:true
+                            Label {textFormat:Text.PlainText;text:'Apply “'+(ruleLabel.text||"Unnamed rule")+'”';font.bold:true}
+                            GridLayout {
+                                Layout.fillWidth:true;columns:rulesPage.availableWidth>=760?4:2
+                                Label {text:"Account"}
+                                UsableComboBox {objectName:"rulesAccount";Layout.fillWidth:true;Layout.minimumWidth:160;model:s.accounts||[];textRole:"name";currentIndex:(s.accounts||[]).findIndex(a=>a.id===s.accountId);onActivated:selectRulesAccount(currentIndex)}
+                                Label {visible:!!s.accountId;text:"Transactions"}
+                                UsableComboBox {visible:!!s.accountId;id:ruleTransactionScope;objectName:"ruleTransactionScope";model:["All transactions","New transactions only"];currentIndex:0;Layout.preferredWidth:220}
+                            }
+                            Label {visible:!!s.accountId;text:"Uncategorized transactions only."}
+                            RowLayout {
+                                visible:!!s.accountId
+                                Button {objectName:"previewThisRule";text:"Preview";enabled:ruleCanRun;onClicked:previewThisRule()}
+                                Button {objectName:"applyRules";text:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)?"Save and apply rule":"Apply rule"} enabled:applyReady();onClicked:applyRules()}
+                            }
+                        }
+                        Label {objectName:"rulePreviewStatus";visible:currentRulePreview;text:'Preview · '+(ruleLabel.text||"Unnamed rule")+' · '+rulesAccountName+' · '+(ruleTransactionScope.currentIndex===1?"New transactions only":"All transactions");font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                         Label {objectName:"rulePreviewBody";visible:currentRulePreview;text:(s.rulePreview||{}).summaryText||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
-                        Label {objectName:"ruleApplyHelp";visible:!applyReady();text:"Choose a rule to preview or apply.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        Button {objectName:"undoRules";text:"Undo rule application";enabled:!!s.canUndoRules && !workflow.busy;onClicked:workflow.command("rules_account_undo")}
                         RowLayout {
                             visible:currentRulePreview && ((s.rulePreview||{}).records||[]).length>0;Layout.fillWidth:true;Layout.rightMargin:18
                             Label {text:"Date";font.bold:true;Layout.preferredWidth:110}
@@ -3294,6 +3330,11 @@ ApplicationWindow {
                                 Label {objectName:"ruleMatchPayee_"+index;text:String(modelData.payee||"").replace(/[\r\n\t]+/g," ");textFormat:Text.PlainText;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
                                 Label {text:modelData.amount;textFormat:Text.PlainText;Layout.preferredWidth:160;horizontalAlignment:Text.AlignRight;elide:Text.ElideRight}
                             }
+                        }
+                        RowLayout {
+                            visible:!!s.canUndoRules;Layout.fillWidth:true;Layout.topMargin:16
+                            Label {textFormat:Text.PlainText;text:"Last rule application · "+rulesAccountName;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                            Button {objectName:"undoRules";text:"Undo application";enabled:!workflow.busy;onClicked:workflow.command("rules_account_undo")}
                         }
                     }
                     }

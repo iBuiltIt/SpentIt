@@ -321,3 +321,21 @@ instructions with the single selection-aware action. Capture an ambiguous
 four-row group with two checked rows and the two-row survivor dialog showing
 full categories/splits and explicit unchanged-row count. No manual prose or
 pictures updated during this correction.
+
+### MAN-015 — Rules workspace usability
+
+Recorded: 2026-11-08. Status: **pending owner-authorized manual pass**.
+Source: [Rules usability](../features/004-rules-and-explanations.md#rules-workspace-usability--owner-go-2026-11-08).
+
+- Update Use rules (chapter 9), Where to find things, keyboard/navigation and
+  messages guidance for the empty state, conditional controls, selected-definition
+  Save rule / Discard changes, staged Save removal / Keep rule, and removed copies.
+- Explain the account picker inside Rules, All transactions / New transactions
+  only, Uncategorized eligibility, optional Preview and selected Apply rule /
+  Save and apply rule. Keep definition saves distinct from transaction changes.
+- Explain account-specific Undo application independent of the selected rule and
+  Save all changes / Discard all changes / Cancel in the movable leave dialog.
+- Replace Rules empty, selected/new/edited, removed, preview and leave-dialog
+  pictures in the later batch. Include an explicit target account and narrow layout.
+- No manual prose or screenshots changed in this implementation; temporary
+  synthetic verification captures are not manual replacements.

@@ -1,5 +1,42 @@
 # 004 — Rules and explanations
 
+## Rules workspace usability — owner Go 2026-11-08
+
+Implemented presentation cleanup; verification is in [status](../doc/status.md).
+This supersedes older placement and button-label descriptions, not rule policy.
+
+- Empty Rules shows No rules yet and New rule. Search appears with rules;
+  Removed rules appears only with saved deleted definitions. One new draft remains
+  the limit; New rule and Copy into new rule hide while it exists.
+- The ordered list retains row Enabled and applicable Up/Down controls. Selected
+  rules remain visible outside search results, with explicit feedback when the
+  search matches nothing or the selected rule is outside the results.
+- The selected definition has Save rule / Discard changes (Discard draft for new
+  rules) beneath its fields, visible only with changes. Remove rule stages removal;
+  the summary then offers Save removal / Keep rule. Removing a definition does not
+  reverse transaction changes. Removed definitions show readable scope, pattern
+  and actions and can be copied into a new identity.
+- Enabled selected rules expose a separate Apply section naming the rule. An
+  account picker stays inside Rules, preserving selection, search and independent
+  drafts. Account changes invalidate preview output and update navigation context.
+  Transactions selects All transactions (default) or New transactions only, with
+  explicit Uncategorized eligibility. Preview is optional; the sole application
+  button is Apply rule or Save and apply rule. No all-rules action is introduced.
+- Preview identifies rule, account and scope, retains reconciled exclusion/eligible/
+  change counts and the eligible row list. Undo application appears only when the
+  existing account operation is undoable, in a separate strip naming the account;
+  it is independent of current rule selection. Temporarily busy controls stay
+  present but unavailable, rather than becoming empty-state instructions.
+- The movable leave dialog lists changed rule names and New / Edited / Remove
+  states in a bounded scroll area. Save all changes and Discard all changes retain
+  their existing all-drafts semantics. Cancel, Escape and window close stay in
+  Rules. Saving validates all changes atomically and never applies transactions.
+
+No matching, category eligibility, ordering, manual/transfer protection, financial,
+retention or format change. Current-value matching remains separately gated.
+Manual prose and pictures are deferred under MAN-015 in the
+[manual backlog](../doc/manual-update-backlog.md#man-015--rules-workspace-usability).
+
 ## Current-value matching — accepted direction 2026-11-08
 
 The owner accepted current transaction/split values as ordinary matching inputs
