@@ -382,3 +382,25 @@ screenshots updated.
 MAN-016 placement refinement (2026-11-08): capture Duplicate report / Delete
 report below the name, and category actions ordered Clear expenses, Clear income,
 Select all categories, keeping the Clear buttons stationary.
+
+### MAN-017 — Unified action Undo (design only)
+
+Recorded: 2026-11-08. Status: **pending implementation and the later
+owner-authorized manual pass**.
+Source: [reviewed action Undo design](action-undo-design.md).
+
+- After implementation, reconcile Add/correct transactions, Accept transactions,
+  Import transactions, Review duplicates/transfers, Accounts, Categories, Use
+  rules, Answer with reports, keyboard/navigation, recovery and messages guidance
+  with one strict file-wide session action chain. This supplements MAN-008 and
+  supersedes older action-specific Undo instructions only when implemented.
+- Explain whole-action scope, newer-action blockers across accounts, reversible
+  acceptance, complete current-session import/setup reversal, and Remove import
+  for eligible prior-session imports. Distinguish removing an import from Undo.
+- Cover recovery of the chain, successful-close expiry, failed/cancelled close,
+  unsaved-draft guards and no Redo. Describe undone-action detail availability
+  according to the final History UI design; that layout is not settled yet.
+- Replace affected Undo/History, acceptance, import removal, Rules and account
+  pictures during the later batch pass, after native verification of the final
+  implementation. Do not capture proposed behaviour as though already shipped.
+- No manual text, captions or screenshots changed in this design session.

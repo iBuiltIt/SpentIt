@@ -1,5 +1,16 @@
 # Coordinated implementation roadmap
 
+## Unified action Undo — next-session design handoff, 2026-11-08
+
+The [action Undo design](action-undo-design.md) records the accepted strict
+file-wide session chain, reversible acceptance, complete current-session import
+reversal and undoable removal of eligible older imports. This arose from the
+Change History usability discussion. Design and independent review are complete;
+the owner approved the reviewed design and granted fresh-session implementation
+Go on 2026-11-08. Use the design-review-implement workflow for implementation and
+independent implementation review; final History layout follows. Preserve the
+hard storage/recovery gates and deferred manual pass.
+
 ## First release and next UI work — accepted 2026-11-08
 
 The [accepted first-release plan](first-release-plan.md) is the current planning

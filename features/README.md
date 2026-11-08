@@ -1,5 +1,12 @@
 # Feature discovery
 
+**Next Undo design (2026-11-08):** [Unified action Undo and implementation
+handoff](../doc/action-undo-design.md). The owner accepted a strict file-wide
+session chain including acceptance/import reversal and undoable older-import
+removal. Design/review is complete; the owner approved the design and granted
+fresh-session implementation Go on 2026-11-08. Implementation has not started. The
+existing session-baseline implementation below remains current until replaced.
+
 **Current planning baseline (2026-11-08):** [Accepted first-release decisions](../doc/first-release-plan.md).
 Usage-driven UI improvements come next, including [About and third-party notices](007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08);
 the rest of the owner's list is open. The release plan settles macOS-first scope,

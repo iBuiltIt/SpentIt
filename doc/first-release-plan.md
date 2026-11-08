@@ -11,6 +11,14 @@ See [current status](status.md) for implemented behavior and actual verification
 
 ## Next phase: usage-driven UI improvements
 
+Change History discussion led to the accepted [unified action Undo
+direction and handoff](action-undo-design.md): a strict file-wide session chain,
+including reversible acceptance and imports. The owner authorized design and
+independent review, then approved the reviewed design and granted implementation
+Go for a fresh session on 2026-11-08. This is a substantive Undo behaviour change,
+not merely presentation cleanup. Implementation has not started; the final Change
+History layout is not yet settled.
+
 Address the owner's items discovered through use first. This is a separate phase
 from the essential busy/readiness audit below, and is not limited to About.
 The rest of the owner's list has not yet been supplied; do not invent it or treat

@@ -1,5 +1,37 @@
 # Project status
 
+## Unified action Undo — reviewed design handoff, 2026-11-08
+
+The owner accepted one strict file-wide session action chain, reversible
+acceptance, full reversal of current-session imports including import-created
+setup, and undoable removal of eligible prior-session imports. The owner then
+authorized design and independent review, then approved the reviewed design and
+granted implementation Go for a fresh session on 2026-11-08. Use the
+design-review-implement workflow for implementation and independent implementation
+review. See the [reviewed design and implementation handoff](action-undo-design.md).
+**Implementation has not started; no runtime change is claimed.** Final Change
+History layout remains a subsequent design task.
+
+Separate Designer and Reviewer agents inspected the current code and contracts.
+The first review requested explicit registry/restore and version-allocation rules,
+a concrete representation for removed-but-retained payloads, and atomic
+Save-and-apply semantics. The revised design addresses all three; the independent
+Reviewer returned **APPROVED, zero unresolved blocking design issues**.
+
+The proposed implementation uses a durable root-action chain, typed inverse
+capture, immutable payloads with active memberships and temporary Undo pins,
+monotonic freshness/identity/version allocation, and one common Undo API. It
+requires a new experimental format and changes to storage verifiers, command
+composition, lifecycle and UI command routing. The early prototype must meet the
+existing storage acceptance; design review is not proof of size, performance or
+recovery correctness. Deferred unrelated retention cleanup remains excluded.
+
+Documentation-only work: contributor guidance, feature discovery, release plan
+and roadmap point to the handoff. MAN-017 records future manual work as pending
+implementation; manual text/screenshots are unchanged. Relative file links and
+`git diff --check` were checked. No builds, runtime tests, private-data inspection
+or native UI verification were performed for this design handoff.
+
 ## Reports button placement refinement — 2026-11-08
 
 Owner follow-up: moved Duplicate report / Delete report below the name field.

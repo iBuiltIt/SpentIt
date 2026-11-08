@@ -1,5 +1,18 @@
 # SpentIt — Where did my money go?
 
+## Unified action Undo — accepted direction 2026-11-08
+
+Read the [action Undo design and next-session handoff](doc/action-undo-design.md)
+before further history/Undo work. The owner accepted one strict file-wide session
+chain, reversible acceptance, full reversal of current-session imports including
+their setup, and undoable removal of eligible older imports. Design/review and
+handoff are complete; the owner approved implementation in a fresh session on
+2026-11-08. Use the design-review-implement workflow for implementation and an
+independent implementation review. Existing code
+does not yet implement this contract. Preserve session-close expiry, recovery,
+exact financial/source relationships and the measured storage acceptance. Final
+Change History layout follows the Undo design; manual changes remain deferred.
+
 ## First release and next UI phase — accepted 2026-11-08
 
 Read [the accepted release plan](doc/first-release-plan.md) before planning next
