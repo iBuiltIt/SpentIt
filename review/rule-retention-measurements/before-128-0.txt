@@ -1,0 +1,7 @@
+VERIFY,setup-before-close,pass,326.397
+VERIFY,setup-after-close,pass,326.708
+SIZE,0,file,1748992,free_bytes,32768,rule_operations,1,rule_operation_requests,128,rule_snapshots,128,rule_definitions,128,category_operations,1,category_versions,1,review_answers,0,review_undos,0,review_link_history,0,review_members,0,transfer_events,0,transfer_versions,0,link_exclusion_events,0,account_operations,0,account_amount_revisions,0,import_balance_events,0,versions,1000,entry_revisions,1000,ledger_operations,1,command_completions,0,logical_value_bytes,407551
+VERIFY,reopen,pass,339.793
+UNCHANGED-CLOSE,5.73883
+SIZE,unchanged,file,1748992,free_bytes,32768,rule_operations,1,rule_operation_requests,128,rule_snapshots,128,rule_definitions,128,category_operations,1,category_versions,1,review_answers,0,review_undos,0,review_link_history,0,review_members,0,transfer_events,0,transfer_versions,0,link_exclusion_events,0,account_operations,0,account_amount_revisions,0,import_balance_events,0,versions,1000,entry_revisions,1000,ledger_operations,1,command_completions,0,logical_value_bytes,407551
+BACKUP,pass

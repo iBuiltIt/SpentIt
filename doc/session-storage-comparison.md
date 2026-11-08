@@ -197,3 +197,14 @@ snapshots and ordinary monetary summaries do not grow with expired revisions.
 
 Linux/Windows and native interactive platform behavior are not established by
 these measurements. Manual prose and screenshots remain unchanged.
+
+
+## Ruleset-retention acceptance recheck — 2026-11-08
+
+The owner-approved ruleset cleanup was measured independently with 1/32/128 rules
+and 32 saves. See the [paired report](../review/04-ruleset-retention-results.md).
+The same original session driver was also rerun against the existing `cf8f1a5`
+build and formats 68/67 implementation. Import, repeated edits, import Undo and
+linked-import Undo still have lower physical size and B-tree payload than
+`cf8f1a5`. Physical sizes match the corrected results above; the schema adds
+198 B-tree payload bytes. Raw totals and verification limits are linked in the report.

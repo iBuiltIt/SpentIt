@@ -1,5 +1,62 @@
 # Project status
 
+## Bounded ruleset-save retention — 2026-11-08
+
+Owner Go covers ruleset duplication only. The [contract](../features/004-rules-and-explanations.md#ruleset-save-retention--owner-go-2026-11-08)
+keeps one current rules baseline, referenced old definitions and compact retry
+fingerprints, expiring full requests and superseded snapshots atomically at
+successful close. Failed/cancelled close and abnormal recovery retain session
+inputs; normal open/close does not gain an audit. Formats are **68/67**; older
+formats are rejected unchanged.
+
+**Deferred and incomplete — explicit owner direction:** category history, undone
+Review-link history, link-exclusion history and account/opening/currency retention
+cleanup. Do not start these as an automatic follow-up; each needs a separate
+owner discussion and Go. The bounded ruleset work is complete; this does not mark
+all findings in the original storage review resolved.
+
+Implemented and retained after the [paired measurements](../review/04-ruleset-retention-results.md)
+met the bounded efficiency criterion. Across 32 saves, file growth fell from
+159,744/679,936 bytes to zero for 32/128 rules. The 128-rule case retains 128
+baseline members and zero full requests instead of 4,224 of each. B-tree payload
+growth fell from 561,782 to 4,998 bytes. One-rule physical growth was zero both
+before and after; retained payload growth roughly halved. Compact per-command
+receipts still grow intentionally.
+
+Verification on macOS arm64 with synthetic data:
+
+- Rebuilt the rules-enabled Release application (`build/SpentIt`) and test targets.
+  **21/21 selected Release tests passed**: rule definitions/application/category
+  gating/account Apply, verification/schema/backup, Save I/O/crashes, rules/session
+  retention, cross-session import Undo, committed session/marker/corruption/backup
+  checks, verification cache, and full import/rules UI suites (**88/27 Qt cases**,
+  including setup/cleanup).
+- The new rules close sweep covered **121 write/sync positions**, alternating
+  disk-full/I/O failures, reopening/retry and process exits on both sides of commit.
+  Existing session-close tests also covered 105 positions and lost acknowledgement;
+  activation covered 13 positions and process exits.
+- New regression verifies old definitions referenced by accepted and pending
+  transactions after newer saves/deletion, no resurrection, exact and conflicting
+  retries, cancellation after pruning, open-session and closed-baseline backup
+  restoration, restored import Undo, and explicit refusal of corrupted baseline,
+  missing referenced definitions and wrong receipt domains.
+- Final review added a deleted-member filter to rule evaluation and a regression
+  with **128 deleted rules plus one live rule**. The final retention test passed
+  in Release and ASan/UBSan. The preceding sanitizer selection passed **4/4**;
+  leak detection was disabled. Rules-disabled schema and cross-session import Undo
+  passed **2/2**. The broad Release selection spans the final filter rebuild;
+  its dedicated final regression verifies that last change.
+- All 12 paired 1/32/128-rule runs (zero/32 cycles, before/after) passed full checks
+  and backup creation. Separate referenced-definition tests cover cases absent
+  from the unapplied-rule size fixture. Unchanged closes preserved sizes/counts.
+- Repeated the original import/edit/Undo/linked storage acceptance with identical
+  driver sources against `cf8f1a5`: physical sizes and B-tree payload remain lower
+  in all four workloads. Raw logs, free-page accounting and CSV summaries are in
+  the measurement report. No VACUUM or storage padding was used.
+- Changed-document relative links and `git diff --check` passed. Native interaction,
+  Linux and Windows remain unverified. No manual text/screenshots changed; MAN-012
+  records the later manual pass. Other retention cleanup remains deferred.
+
 ## Explicit import openings; legacy balance path retired — 2026-11-08
 
 The owner authorized step 1 only after committing the OFX fixes and investigation

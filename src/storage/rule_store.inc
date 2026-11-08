@@ -55,7 +55,7 @@ rules::Rule rule_from_row(Statement& row,int id_column,std::int64_t version,bool
 std::vector<rules::Rule> rules_at(sqlite3* db,std::int64_t revision){
     if(revision==0) return {};
     Statement present(db,"SELECT 1 FROM rule_operations WHERE ruleset_after=?");present.integer(1,revision);if(!present.row()) return {};
-    Statement rows(db,"SELECT s.rule,s.version,s.enabled,d.scope,d.input_field,d.expression,d.payee_template,d.memo_template,d.category_id,d.inherit_parent FROM rule_snapshots s JOIN rule_definitions d ON d.id=s.rule AND d.version=s.version WHERE s.ruleset_revision=? ORDER BY s.position");rows.integer(1,revision);
+    Statement rows(db,"SELECT s.rule,s.version,s.enabled,d.scope,d.input_field,d.expression,d.payee_template,d.memo_template,d.category_id,d.inherit_parent FROM rule_snapshots s JOIN rule_definitions d ON d.id=s.rule AND d.version=s.version WHERE s.ruleset_revision=? AND s.deleted=0 ORDER BY s.position");rows.integer(1,revision);
     std::vector<rules::Rule> rules;
     while(rows.row()){
         rules::Rule rule;rule.identity=rows.bytes(0);rule.version=rows.integer(1);rule.enabled=rows.integer(2)!=0;rule.scope=static_cast<rules::Scope>(rows.integer(3));rule.input=static_cast<rules::InputField>(rows.integer(4));rule.expression=rows.bytes(5);rule.actions.payee_template=optional_text(rows,6);rule.actions.memo_template=optional_text(rows,7);rule.actions.category=optional_text(rows,8);rule.actions.inherit_parent=rows.integer(9)!=0;rules.push_back(std::move(rule));
@@ -137,6 +137,12 @@ void bind_definition(Statement& row,const app::RuleDefinitionImage& image,std::i
     if(image.actions.category)row.text(first+8,*image.actions.category);
     row.integer(first+9,image.actions.inherit_parent?1:0);
 }
+std::string rule_save_digest(const app::RuleSaveRequest& request,std::int64_t expected) {
+    transfer_codec::Writer out;out.number(expected);out.number(integer(request.ordered.size()));
+    auto optional=[&](const std::optional<std::string>& value){out.number(value.has_value());if(value)out.text(*value);};
+    for(const auto& r:request.ordered){out.text(r.identity);out.text(r.label);out.number(r.enabled);out.number(static_cast<int>(r.scope));out.number(static_cast<int>(r.input));out.text(r.expression);optional(r.actions.payee_template);optional(r.actions.memo_template);optional(r.actions.category);out.number(r.actions.inherit_parent);}
+    return session_snapshot::digest(out.bytes);
+}
 void bind_request(Statement& row,const app::RuleDefinitionImage& image,int first){
     row.text(first,image.identity);row.text(first+1,image.label);row.integer(first+2,static_cast<int>(image.scope));row.integer(first+3,static_cast<int>(image.input));row.text(first+4,image.expression);
     if(image.actions.payee_template)row.text(first+5,*image.actions.payee_template);
@@ -177,10 +183,11 @@ std::vector<app::RuleTombstone> ImportStore::rule_tombstones() const {
 std::optional<app::RuleSaveReceipt> ImportStore::rule_save_outcome(std::string_view operation) const {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+    session_snapshot::expired(impl_->db,operation,"rule-save");
     Statement row(impl_->db,"SELECT ruleset_before,ruleset_after FROM rule_operations WHERE id=?");row.text(1,operation);
     if(!row.row()){if(command_taken(impl_->db,operation))fail(SQLITE_CONSTRAINT,other_command);return {};}
     app::RuleSaveReceipt receipt{std::string(operation),row.integer(0),row.integer(1),false,{}};
-    Statement versions(impl_->db,"SELECT rule,version FROM rule_snapshots WHERE ruleset_revision=? ORDER BY position");versions.integer(1,receipt.ruleset_after);
+    Statement versions(impl_->db,"SELECT rule,version FROM rule_snapshots WHERE ruleset_revision=? AND deleted=0 ORDER BY position");versions.integer(1,receipt.ruleset_after);
     while(versions.row()) receipt.versions.emplace_back(versions.bytes(0),versions.integer(1));
     Statement requests(impl_->db,"SELECT count(*) FROM rule_operation_requests WHERE operation=?");requests.text(1,operation);
     if(!requests.row() || requests.integer(0)!=integer(receipt.versions.size())) fail(SQLITE_CORRUPT);
@@ -189,6 +196,8 @@ std::optional<app::RuleSaveReceipt> ImportStore::rule_save_outcome(std::string_v
 app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const app::RuleSaveRequest& request,std::int64_t expected,const app::OperationContext& context) {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
     identifier(operation);
+    const auto digest=rule_save_digest(request,expected);
+    session_snapshot::retry(impl_->db,operation,"rule-save",digest);
     if(const auto prior=rule_save_outcome(operation)){if(prior->ruleset_before!=expected || !save_request_matches(impl_->db,operation,request))fail(SQLITE_CONSTRAINT,reused_command);return *prior;}
     context.checkpoint("Saving rules");
     auto compiled=compile_images(impl_->db,request.ordered,true);
@@ -228,8 +237,9 @@ app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const ap
     for(std::size_t index=0;index<planned.size();++index){
         const auto& item=planned[index];
         Statement stored(impl_->db,"INSERT INTO rule_operation_requests VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");stored.text(1,operation);stored.integer(2,integer(index));bind_request(stored,item.image,3);stored.integer(12,item.image.enabled?1:0);stored.done();
-        Statement snapshot(impl_->db,"INSERT INTO rule_snapshots VALUES(?,?,?,?,?)");snapshot.integer(1,current+1);snapshot.integer(2,integer(index));snapshot.text(3,item.image.identity);snapshot.integer(4,item.version);snapshot.integer(5,item.image.enabled?1:0);snapshot.done();
+        Statement snapshot(impl_->db,"INSERT INTO rule_snapshots(ruleset_revision,position,rule,version,enabled) VALUES(?,?,?,?,?)");snapshot.integer(1,current+1);snapshot.integer(2,integer(index));snapshot.text(3,item.image.identity);snapshot.integer(4,item.version);snapshot.integer(5,item.image.enabled?1:0);snapshot.done();
     }
+    session_snapshot::completed(impl_->db,operation,"rule-save",digest);
     Statement bump(impl_->db,"UPDATE rule_state SET revision=? WHERE singleton=1 AND revision=?");bump.integer(1,current+1);bump.integer(2,current);bump.done();
     finish([&]{transaction.commit();});
     return *rule_save_outcome(operation);
@@ -419,6 +429,14 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
     if(context) context->checkpoint("Verifying rules");
     struct Sim { std::int64_t version=0; bool enabled=false; bool deleted=false; RuleBody body; };
     std::map<std::string,Sim> reconstructed;std::int64_t revision=0,previous_order=0;
+    Statement cut(impl_->db,"SELECT coalesce(max(o.ruleset_after),0) FROM rule_operations o JOIN history_order h ON h.rule_operation=o.id WHERE h.sequence<=(SELECT history_cut FROM document_session)");
+    if(!cut.row())fail(SQLITE_CORRUPT);const auto baseline=cut.integer(0);
+    Statement shape(impl_->db,"SELECT 1 FROM rule_snapshots WHERE ruleset_revision<?1 OR (deleted=1 AND ruleset_revision!=?1) UNION ALL SELECT 1 FROM rule_operation_requests r JOIN rule_operations o ON o.id=r.operation WHERE o.ruleset_after<=?1 UNION ALL SELECT 1 FROM (SELECT ruleset_revision,count(*) AS n,min(position) AS lo,max(position) AS hi FROM rule_snapshots WHERE deleted=0 GROUP BY ruleset_revision) WHERE lo!=0 OR hi!=n-1 UNION ALL SELECT 1 FROM (SELECT operation,count(*) AS n,min(position) AS lo,max(position) AS hi FROM rule_operation_requests GROUP BY operation) WHERE lo!=0 OR hi!=n-1");shape.integer(1,baseline);if(shape.row())fail(SQLITE_CORRUPT,"Invalid retained ruleset baseline");
+
+    if(baseline){
+        Statement saved(impl_->db,"SELECT s.rule,s.version,s.enabled,s.deleted,d.label,d.scope,d.input_field,d.expression,d.payee_template,d.memo_template,d.category_id,d.inherit_parent FROM rule_snapshots s JOIN rule_definitions d ON d.id=s.rule AND d.version=s.version WHERE s.ruleset_revision=?");saved.integer(1,baseline);
+        while(saved.row()) reconstructed.emplace(saved.bytes(0),Sim{saved.integer(1),saved.integer(2)!=0,saved.integer(3)!=0,{saved.bytes(4),saved.bytes(7),static_cast<rules::Scope>(saved.integer(5)),static_cast<rules::InputField>(saved.integer(6)),optional_text(saved,8),optional_text(saved,9),optional_text(saved,10),saved.integer(11)!=0}});
+    }
     Statement operations(impl_->db,"SELECT id,ruleset_before,ruleset_after FROM rule_operations ORDER BY ruleset_after");
     while(operations.row()){
         if(context) context->checkpoint();
@@ -426,15 +444,23 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
         if(before!=revision || after!=revision+1) fail(SQLITE_CORRUPT);
         Statement ordering(impl_->db,"SELECT sequence FROM history_order WHERE rule_operation=?");ordering.text(1,operation);if(!ordering.row() || ordering.integer(0)<=previous_order)fail(SQLITE_CORRUPT);
         const auto sequence=ordering.integer(0);previous_order=sequence;
+        Statement completion(impl_->db,"SELECT domain,length(digest),expired FROM command_completions WHERE id=?");completion.text(1,operation);
+        if(!completion.row() || completion.bytes(0)!="rule-save" || completion.integer(1)!=32 || (completion.integer(2)!=0)!=(after<=baseline))fail(SQLITE_CORRUPT,"Invalid rule save completion");
+        if(after<=baseline){revision=after;continue;}
+
         Statement epoch(impl_->db,"SELECT coalesce(max(o.catalog_after),0) FROM category_operations o CROSS JOIN history_order h ON h.category_operation=o.id WHERE h.sequence<?");epoch.integer(1,sequence);if(!epoch.row())fail(SQLITE_CORRUPT);
         const auto catalog=epoch.integer(0);
         struct Member { std::string rule; RuleBody body; std::int64_t version=0; bool enabled=false; };
         std::vector<Member> requests,snapshots;
         Statement request_rows(impl_->db,"SELECT rule,label,scope,input_field,expression,payee_template,memo_template,category_id,inherit_parent,enabled FROM rule_operation_requests WHERE operation=? ORDER BY position");request_rows.text(1,operation);
         while(request_rows.row()) requests.push_back({request_rows.bytes(0),{request_rows.bytes(1),request_rows.bytes(4),static_cast<rules::Scope>(request_rows.integer(2)),static_cast<rules::InputField>(request_rows.integer(3)),optional_text(request_rows,5),optional_text(request_rows,6),optional_text(request_rows,7),request_rows.integer(8)!=0},0,request_rows.integer(9)!=0});
-        Statement snapshot_rows(impl_->db,"SELECT rule,version,enabled FROM rule_snapshots WHERE ruleset_revision=? ORDER BY position");snapshot_rows.integer(1,after);
+        Statement snapshot_rows(impl_->db,"SELECT rule,version,enabled FROM rule_snapshots WHERE ruleset_revision=? AND deleted=0 ORDER BY position");snapshot_rows.integer(1,after);
         while(snapshot_rows.row()) snapshots.push_back({snapshot_rows.bytes(0),{},snapshot_rows.integer(1),snapshot_rows.integer(2)!=0});
         if(requests.size()!=snapshots.size()) fail(SQLITE_CORRUPT);
+        app::RuleSaveRequest request;
+        for(const auto& r:requests){app::RuleDefinitionImage image;image.identity=r.rule;image.label=r.body.label;image.enabled=r.enabled;image.scope=r.body.scope;image.input=r.body.input;image.expression=r.body.expression;image.actions={r.body.payee,r.body.memo,r.body.category,r.body.inherit};request.ordered.push_back(std::move(image));}
+        Statement digest(impl_->db,"SELECT digest FROM command_completions WHERE id=?");digest.text(1,operation);if(!digest.row() || digest.bytes(0)!=rule_save_digest(request,before))fail(SQLITE_CORRUPT,"Rule request differs from completion");
+
         std::set<std::string> seen;
         for(std::size_t index=0;index<requests.size();++index){
             if(requests[index].rule!=snapshots[index].rule || requests[index].enabled!=snapshots[index].enabled || !seen.insert(requests[index].rule).second) fail(SQLITE_CORRUPT);
@@ -467,7 +493,7 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
     }
     std::sort(live.begin(),live.end(),[](const auto& left,const auto& right){return left.position<right.position;});
     for(std::size_t index=0;index<live.size();++index) if(live[index].position!=integer(index)) fail(SQLITE_CORRUPT);
-    if(revision>0){Statement snapshot(impl_->db,"SELECT rule,version,enabled FROM rule_snapshots WHERE ruleset_revision=? ORDER BY position");snapshot.integer(1,revision);std::size_t index=0;while(snapshot.row()){if(index>=live.size() || snapshot.bytes(0)!=live[index].id || snapshot.integer(1)!=live[index].version || (snapshot.integer(2)!=0)!=live[index].enabled)fail(SQLITE_CORRUPT);++index;}if(index!=live.size())fail(SQLITE_CORRUPT);}
+    if(revision>0){Statement snapshot(impl_->db,"SELECT rule,version,enabled FROM rule_snapshots WHERE ruleset_revision=? AND deleted=0 ORDER BY position");snapshot.integer(1,revision);std::size_t index=0;while(snapshot.row()){if(index>=live.size() || snapshot.bytes(0)!=live[index].id || snapshot.integer(1)!=live[index].version || (snapshot.integer(2)!=0)!=live[index].enabled)fail(SQLITE_CORRUPT);++index;}if(index!=live.size())fail(SQLITE_CORRUPT);}
     try {
         std::vector<rules::Rule> current;for(const auto& head:live){app::RuleDefinitionImage image;image.identity=head.id;image.label=head.body.label;image.enabled=head.enabled;image.scope=head.body.scope;image.input=head.body.input;image.expression=head.body.expression;image.actions={head.body.payee,head.body.memo,head.body.category,head.body.inherit};current.push_back(rule_from(image,head.version));}
         if(context) context->checkpoint();

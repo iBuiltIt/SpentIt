@@ -226,7 +226,7 @@ ResolvedTransfers resolved_transfers(const std::vector<app::TransferView>& value
 #ifndef SPENTIT_RULES_STORAGE
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=65;
+PRAGMA user_version=67;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -365,7 +365,7 @@ CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta
 #else
 constexpr const char* schema=R"SQL(
 PRAGMA application_id=1397770577;
-PRAGMA user_version=66;
+PRAGMA user_version=68;
 CREATE TABLE account(singleton INTEGER PRIMARY KEY CHECK(singleton>0),name TEXT NOT NULL,definition TEXT NOT NULL,
  opening_date TEXT NOT NULL,opening INTEGER NOT NULL,frozen INTEGER NOT NULL CHECK(frozen IN(0,1)),revision INTEGER NOT NULL CHECK(revision>=0),confirmed INTEGER NOT NULL CHECK(confirmed IN(0,1))) STRICT;
 CREATE TABLE sources(id TEXT PRIMARY KEY,bytes BLOB NOT NULL) STRICT;
@@ -513,18 +513,18 @@ CREATE TRIGGER entry_allocation_meta_immutable BEFORE UPDATE ON entry_allocation
 CREATE TRIGGER entry_allocation_meta_keep BEFORE DELETE ON entry_allocation_meta WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TABLE rule_definitions(id TEXT NOT NULL,version INTEGER NOT NULL CHECK(version>=0),label TEXT NOT NULL CHECK(length(label)<=256),scope INTEGER NOT NULL CHECK(scope IN(0,1)),input_field INTEGER NOT NULL CHECK(input_field IN(0,1,2)),expression TEXT NOT NULL CHECK(length(expression)<=4096),payee_template TEXT CHECK(payee_template IS NULL OR length(payee_template)<=65536),memo_template TEXT CHECK(memo_template IS NULL OR length(memo_template)<=65536),category_id TEXT CHECK(category_id IS NULL OR (length(category_id) BETWEEN 1 AND 256)),inherit_parent INTEGER NOT NULL CHECK(inherit_parent IN(0,1)),PRIMARY KEY(id,version),FOREIGN KEY(category_id) REFERENCES category_heads(id),CHECK(category_id IS NOT NULL),CHECK(inherit_parent=0),CHECK(scope<>1 OR payee_template IS NULL)) STRICT;
 CREATE TRIGGER rule_definitions_immutable BEFORE UPDATE ON rule_definitions BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER rule_definitions_keep BEFORE DELETE ON rule_definitions BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER rule_definitions_keep BEFORE DELETE ON rule_definitions WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TABLE rule_heads(id TEXT PRIMARY KEY,version INTEGER NOT NULL,position INTEGER,enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),deleted INTEGER NOT NULL CHECK(deleted IN(0,1)),FOREIGN KEY(id,version) REFERENCES rule_definitions(id,version),CHECK((deleted=1 AND position IS NULL AND enabled=0) OR (deleted=0 AND position IS NOT NULL AND position>=0))) STRICT;
 CREATE UNIQUE INDEX rule_head_position ON rule_heads(position) WHERE deleted=0;
 CREATE TRIGGER rule_heads_update BEFORE UPDATE ON rule_heads WHEN NEW.id<>OLD.id OR OLD.deleted=1 OR NEW.version<>OLD.version AND NEW.version<>OLD.version+1 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER rule_heads_keep BEFORE DELETE ON rule_heads BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TABLE rule_operation_requests(operation TEXT NOT NULL REFERENCES rule_operations(id),position INTEGER NOT NULL,rule TEXT NOT NULL,label TEXT NOT NULL CHECK(length(label)<=256),scope INTEGER NOT NULL CHECK(scope IN(0,1)),input_field INTEGER NOT NULL CHECK(input_field IN(0,1,2)),expression TEXT NOT NULL CHECK(length(expression)<=4096),payee_template TEXT CHECK(payee_template IS NULL OR length(payee_template)<=65536),memo_template TEXT CHECK(memo_template IS NULL OR length(memo_template)<=65536),category_id TEXT CHECK(category_id IS NULL OR (length(category_id) BETWEEN 1 AND 256)),inherit_parent INTEGER NOT NULL CHECK(inherit_parent IN(0,1)),enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),PRIMARY KEY(operation,position),UNIQUE(operation,rule),CHECK(category_id IS NOT NULL),CHECK(inherit_parent=0),CHECK(scope<>1 OR payee_template IS NULL)) STRICT;
 CREATE TRIGGER rule_operation_requests_immutable BEFORE UPDATE ON rule_operation_requests BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER rule_operation_requests_keep BEFORE DELETE ON rule_operation_requests BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER rule_operation_requests_keep BEFORE DELETE ON rule_operation_requests WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 )SQL"
-R"SQL(CREATE TABLE rule_snapshots(ruleset_revision INTEGER NOT NULL REFERENCES rule_operations(ruleset_after),position INTEGER NOT NULL,rule TEXT NOT NULL,version INTEGER NOT NULL,enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),PRIMARY KEY(ruleset_revision,position),UNIQUE(ruleset_revision,rule),FOREIGN KEY(rule,version) REFERENCES rule_definitions(id,version)) STRICT;
+R"SQL(CREATE TABLE rule_snapshots(ruleset_revision INTEGER NOT NULL REFERENCES rule_operations(ruleset_after),position INTEGER NOT NULL,rule TEXT NOT NULL,version INTEGER NOT NULL,enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN(0,1)),CHECK((deleted=0 AND position>=0) OR (deleted=1 AND position<0 AND enabled=0)),PRIMARY KEY(ruleset_revision,position),UNIQUE(ruleset_revision,rule),FOREIGN KEY(rule,version) REFERENCES rule_definitions(id,version)) STRICT;
 CREATE TRIGGER rule_snapshots_immutable BEFORE UPDATE ON rule_snapshots BEGIN SELECT RAISE(ABORT,'immutable'); END;
-CREATE TRIGGER rule_snapshots_keep BEFORE DELETE ON rule_snapshots BEGIN SELECT RAISE(ABORT,'immutable'); END;
+CREATE TRIGGER rule_snapshots_keep BEFORE DELETE ON rule_snapshots WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TABLE draft_rule_fields(batch TEXT NOT NULL,ordinal INTEGER NOT NULL,revision INTEGER NOT NULL,payee_rule TEXT,payee_version INTEGER,memo_rule TEXT,memo_version INTEGER,ruleset_revision INTEGER NOT NULL CHECK(ruleset_revision>=1),PRIMARY KEY(batch,ordinal,revision),FOREIGN KEY(batch,ordinal,revision) REFERENCES draft_fields(batch,ordinal,revision),FOREIGN KEY(payee_rule,payee_version) REFERENCES rule_definitions(id,version),FOREIGN KEY(memo_rule,memo_version) REFERENCES rule_definitions(id,version),FOREIGN KEY(ruleset_revision) REFERENCES rule_operations(ruleset_after),CHECK((payee_rule IS NULL)=(payee_version IS NULL) AND (memo_rule IS NULL)=(memo_version IS NULL) AND (payee_version IS NULL OR payee_version>=0) AND (memo_version IS NULL OR memo_version>=0))) STRICT, WITHOUT ROWID;
 CREATE TRIGGER draft_rule_fields_immutable BEFORE UPDATE ON draft_rule_fields BEGIN SELECT RAISE(ABORT,'immutable'); END;
 CREATE TRIGGER draft_rule_fields_keep BEFORE DELETE ON draft_rule_fields WHEN spentit_cleanup()=0 BEGIN SELECT RAISE(ABORT,'immutable'); END;
@@ -643,17 +643,17 @@ CREATE TRIGGER order_account AFTER INSERT ON account_operations BEGIN INSERT INT
 )SQL";
 bool schema3_batch(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="3" || version=="4" || version=="17" || version=="19" || version=="65"
+    return version=="3" || version=="4" || version=="17" || version=="19" || version=="67"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="66"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="68"
 #endif
         ;
 }
 bool review_stamp_schema(sqlite3* db) {
     const auto version=scalar(db,"PRAGMA user_version");
-    return version=="4" || version=="17" || version=="19" || version=="65"
+    return version=="4" || version=="17" || version=="19" || version=="67"
 #ifdef SPENTIT_RULES_STORAGE
-        || version=="6" || version=="16" || version=="18" || version=="20" || version=="66"
+        || version=="6" || version=="16" || version=="18" || version=="20" || version=="68"
 #endif
         ;
 }
@@ -723,14 +723,14 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
 }
 
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
-bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="65"
+bool categories_format(sqlite3* db){const auto version=scalar(db,"PRAGMA user_version");return version=="17" || version=="19" || version=="67"
 #ifdef SPENTIT_RULES_STORAGE
-    || version=="6" || version=="16" || version=="18" || version=="20" || version=="66"
+    || version=="6" || version=="16" || version=="18" || version=="20" || version=="68"
 #endif
     ;}
 bool rules_format(sqlite3* db){
 #ifdef SPENTIT_RULES_STORAGE
-    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="66";
+    const auto version=scalar(db,"PRAGMA user_version");return version=="6" || version=="16" || version=="18" || version=="20" || version=="68";
 #else
     (void)db;return false;
 #endif
@@ -1112,9 +1112,9 @@ ImportStore ImportStore::connect(const std::filesystem::path& requested_path, st
     }
     if (!create) {
 #ifdef SPENTIT_RULES_STORAGE
-        constexpr const char* expected_format="66";
+        constexpr const char* expected_format="68";
 #else
-        constexpr const char* expected_format="65";
+        constexpr const char* expected_format="67";
 #endif
         if(scalar(db,"PRAGMA application_id")!="1397770577" || scalar(db,"PRAGMA user_version")!=expected_format)
             fail(SQLITE_SCHEMA,"This dataset format is not supported by this version of SpentIt; the file has not been changed");

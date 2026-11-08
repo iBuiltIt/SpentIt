@@ -1,0 +1,2 @@
+initial,file=1503232,pages=367,free=4,live_page_bytes=1486848,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0
+reopened,file=1503232,pages=367,free=4,live_page_bytes=1486848,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0

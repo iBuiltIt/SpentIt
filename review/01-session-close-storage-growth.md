@@ -1,6 +1,16 @@
 # Review: session-close storage growth
 
-Status: investigation authorized and measured on 2026-11-08; see [results and qualified recommendations](03-retention-investigation-results.md). Implementation remains incomplete and requires a separate owner Go. The original proposed work below is review context, not an accepted six-part implementation plan.
+Status as of 2026-11-08: investigation complete; see [measured results](03-retention-investigation-results.md). The legacy staged-balance path is retired (`fa630d1`), and [bounded ruleset retention](04-ruleset-retention-results.md) is implemented with passing storage/recovery acceptance. **Other retention work remains deferred and incomplete by explicit owner direction.**
+
+Current disposition of the original work items:
+
+- Item 1: addressed by baseline pruning, referenced-definition retention and compact retry receipts.
+- Item 6: addressed by retiring the unsupported staged-balance path; supported creation-time opening choices remain.
+- Items 2–5: deferred—category histories, undone Review links, exclusions and account/opening/currency histories. A separate discussion and Go are required before implementation.
+
+The findings, code descriptions and proposed work below describe the original
+review. They are preserved as context, not an accepted six-part implementation
+plan or a claim that the now-retired paths still exist.
 
 Date: 2026-11-07.
 

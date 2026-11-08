@@ -1,0 +1,4 @@
+initial,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1001,entry_revisions=1001,ledger_operations=3,command_completions=1
+before-linked-import-undo,file=2375680,pages=580,free=5,live_page_bytes=2355200,versions=2002,entry_revisions=1001,ledger_operations=4,command_completions=2
+after-linked-import-undo,file=2375680,pages=580,free=23,live_page_bytes=2281472,versions=2002,entry_revisions=1001,ledger_operations=5,command_completions=2
+reopened,file=2375680,pages=580,free=23,live_page_bytes=2281472,versions=2002,entry_revisions=1001,ledger_operations=5,command_completions=2

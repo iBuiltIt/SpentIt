@@ -193,7 +193,7 @@ void review() {
     check(query(path, "SELECT format||'/'||grammar FROM source_headers WHERE source_id='overlap'") == "ofx/ofx-sgml");
     check(query(path, "SELECT ledger_batch||':'||ledger_ordinal FROM source_associations WHERE source_batch='overlap-account-0' AND source_ordinal=0") == "qif:0");
     check(query(path, "SELECT count(*) FROM source_associations WHERE source_batch='qif'") == "1");
-    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "66" : "65"));
+    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "68" : "67"));
     {
         auto restored = ImportStore::open(d.path / "backup", password);
         restored.select_account(1);

@@ -1,4 +1,4 @@
-bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="66";}
+bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="68";}
 std::string ImportStore::bulk_group(std::string_view operation) const {if(!bulk_supported())return {};Statement group(impl_->db,"SELECT operation FROM bulk_members WHERE entry_operation=?");group.text(1,operation);return group.row()?group.bytes(0):std::string{};}
 namespace {
 constexpr const char* bulk_refresh="Bulk preview changed; refresh before applying";

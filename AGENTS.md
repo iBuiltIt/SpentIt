@@ -1,5 +1,19 @@
 # SpentIt — Where did my money go?
 
+## Bounded ruleset retention — owner Go 2026-11-08
+
+Successful close expires full rule-save requests and superseded ruleset snapshots.
+Keep one current baseline including deleted identities, current definitions and
+older definitions referenced by retained draft/entry fields or allocations. Keep
+compact request fingerprints for exact retry/conflicting-ID handling; failed or
+cancelled close preserves the session. Verification seeds the rules baseline and
+checks subsequent saves rather than requiring expired request replay. No normal
+open/close audit is added. See [the contract](features/004-rules-and-explanations.md#ruleset-save-retention--owner-go-2026-11-08)
+and [status](doc/status.md). Experimental formats are **68 with rules / 67 without**;
+older formats are rejected unchanged. Category, undone Review-link, exclusion and
+account/opening/currency retention cleanup remain deferred and incomplete by
+explicit owner direction; revisit only after a separate discussion and Go.
+
 ## Explicit import openings only — owner Go 2026-11-08
 
 The legacy staged-balance path is retired. Every new-account import mapping must
@@ -9,7 +23,8 @@ Correct opening. Verification checks the fixed creation-time choice independentl
 of subsequent transaction edits. Experimental formats are **66 with rules / 65
 without**; older formats are rejected unchanged, with no migration. See
 [the contract](doc/qif-account-imports.md#legacy-staged-balance-retirement--owner-go-2026-11-08)
-and [status](doc/status.md). Rules and all other retention cleanup remain deferred.
+and [status](doc/status.md). The subsequent ruleset-retention Go is recorded above;
+other retention cleanup remains deferred.
 
 ## Session history baseline — correction Go 2026-11-07
 

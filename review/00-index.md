@@ -1,12 +1,22 @@
 # RC1 review index — 2026-11-07
 
-Read-only pass over the current tree. No application code, tests, or product documents were changed. Current formats remain **64 with rules / 63 without**.
+Original review: read-only pass on 2026-11-07. No application code, tests, or product documents were changed during that pass; its formats were **64/63**. Subsequent implementation and owner decisions are recorded below; current formats are **68/67**.
 
-Four bounded reads covered durability, storage growth, money and relationships, and import fidelity. The coordinator then read the cited functions before promoting a finding to a brief. A later session should start here and open only the briefs below. The owner subsequently authorized the OFX fixes, now implemented; see [status](../doc/status.md#ofx-statement-validation-and-incomplete-storage-follow-up--2026-11-07). Storage retention remains an incomplete step deferred for a separate owner discussion. The observations below describe the original read-only review.
+Four bounded reads covered durability, storage growth, money and relationships, and import fidelity. The coordinator then read the cited functions before promoting a finding to a brief. A later session should start here and open only the briefs below. The owner subsequently authorized the OFX fixes, now implemented; see [status](../doc/status.md#ofx-statement-validation-and-incomplete-storage-follow-up--2026-11-07). The legacy balance path and bounded ruleset retention have since been addressed; other retention work remains explicitly deferred by the owner. The observations below describe the original read-only review.
 
 ## Investigation follow-up — 2026-11-08
 
-[Measured results](03-retention-investigation-results.md): a reproducible legacy balance-history verification defect, ruleset-size-dependent storage waste, and smaller retention gaps. Current desktop fixed-opening mapping passed. Investigation is complete for the documented workloads; storage remediation is still unimplemented and awaits an owner decision.
+[Measured results](03-retention-investigation-results.md): a reproducible legacy balance-history verification defect, ruleset-size-dependent storage waste, and smaller retention gaps. Current desktop fixed-opening mapping passed. Investigation is complete for the documented workloads.
+
+## Implementation and remaining deferrals — 2026-11-08
+
+- OFX statement validation is implemented in `c1fbc0b`.
+- The unsupported staged-balance path is retired in `fa630d1`; supported fixed-opening workflows remain.
+- Bounded ruleset retention is implemented and verified. [Measurements and acceptance](04-ruleset-retention-results.md) justify keeping it; see [status](../doc/status.md) for tests and limits.
+- **Deferred and incomplete, by explicit owner direction:** category history, undone Review-link history, link-exclusion history, and account-command/opening/currency retention cleanup. These are not authorized next steps. Revisit only after a separate owner discussion and Go; the measurements do not establish an urgent correctness problem in these domains.
+
+The original briefs below remain historical review context, not descriptions of
+all current code or an approved six-domain refactor.
 
 ## Briefs
 

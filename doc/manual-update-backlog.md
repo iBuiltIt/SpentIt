@@ -260,3 +260,16 @@ Contract: [legacy staged-balance retirement](qif-account-imports.md#legacy-stage
 - Review experimental-format/recovery wording in `manual/backup-recovery.md` if
   applicable. Formats 66/65 reject earlier files unchanged, without migration.
 - No manual prose or screenshot changes completed in this implementation.
+
+
+### MAN-012 — Rule save history expires at successful close
+
+Recorded: 2026-11-08. Status: **pending**.
+Source: [ruleset-retention contract](../features/004-rules-and-explanations.md#ruleset-save-retention--owner-go-2026-11-08).
+
+During the later manual pass, check Rules and file/recovery chapters for any promise
+of complete past ruleset inspection or full historical save receipts after close.
+Current rules and the definitions needed to explain retained transactions remain.
+Retries of expired saves require refreshing current data. No workspace controls or
+pictures changed; no new screenshots are required by this change alone. No manual
+text has been updated.

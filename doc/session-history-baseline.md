@@ -322,3 +322,14 @@ SQL constraints, encrypted temporary/journal storage, durable synchronization,
 operation cancellation gates and error propagation remain enforced. Independent
 recovery/fault tests and explicit audits check the maintained invariants; the clean
 marker does not substitute for operation validation.
+
+
+## Ruleset baseline follow-up — owner Go 2026-11-08
+
+The bounded [ruleset-save retention contract](../features/004-rules-and-explanations.md#ruleset-save-retention--owner-go-2026-11-08)
+extends close-time expiry to full rule-save requests and superseded ruleset
+snapshots, preserving current/deleted identities, referenced definitions and compact
+retry digests. Verification starts from one retained rules baseline. Experimental
+formats are now **68/67**, rejecting older formats unchanged. The [paired results](../review/04-ruleset-retention-results.md)
+include the original `cf8f1a5` storage-acceptance rerun; all four workloads remain
+below that baseline. Other retention findings remain deferred.

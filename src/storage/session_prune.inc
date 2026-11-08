@@ -1,3 +1,24 @@
+#ifdef SPENTIT_RULES_STORAGE
+namespace {
+void prune_rule_saves(sqlite3* db) {
+    // A single baseline includes deleted identities to prevent resurrection.
+    exec(db,R"SQL(
+INSERT INTO rule_snapshots(ruleset_revision,position,rule,version,enabled,deleted)
+ SELECT (SELECT revision FROM rule_state),-row_number() OVER(ORDER BY id),id,version,0,1 FROM rule_heads WHERE deleted=1
+ AND NOT EXISTS(SELECT 1 FROM rule_snapshots s WHERE s.ruleset_revision=(SELECT revision FROM rule_state) AND s.rule=rule_heads.id);
+DELETE FROM rule_operation_requests;
+DELETE FROM rule_snapshots WHERE ruleset_revision!=(SELECT revision FROM rule_state);
+DELETE FROM rule_definitions AS d
+ WHERE NOT EXISTS(SELECT 1 FROM rule_heads h WHERE h.id=d.id AND h.version=d.version)
+ AND NOT EXISTS(SELECT 1 FROM rule_snapshots s WHERE s.rule=d.id AND s.version=d.version)
+ AND NOT EXISTS(SELECT 1 FROM draft_rule_fields f WHERE (f.payee_rule=d.id AND f.payee_version=d.version) OR (f.memo_rule=d.id AND f.memo_version=d.version))
+ AND NOT EXISTS(SELECT 1 FROM entry_rule_fields f WHERE (f.payee_rule=d.id AND f.payee_version=d.version) OR (f.memo_rule=d.id AND f.memo_version=d.version))
+ AND NOT EXISTS(SELECT 1 FROM draft_rule_allocations a WHERE (a.category_rule=d.id AND a.category_version=d.version) OR (a.memo_rule=d.id AND a.memo_version=d.version))
+ AND NOT EXISTS(SELECT 1 FROM entry_rule_allocations a WHERE (a.category_rule=d.id AND a.category_version=d.version) OR (a.memo_rule=d.id AND a.memo_version=d.version));
+)SQL");
+}
+}
+#endif
 // Called inside the close transaction, with cleanup permission. This is a
 // reference-closure calculation, not a financial audit or a full-file rewrite.
 void ImportStore::prune_session(const app::OperationContext* context) {
@@ -8,7 +29,12 @@ void ImportStore::prune_session(const app::OperationContext* context) {
     exec(impl_->db,"UPDATE review_answers SET request='' WHERE (question IN('ledger-edit-batch','ledger-delete','transfer-assignment','rules-account') OR question LIKE 'ledger-delete-%') AND request!='' AND id IN(SELECT id FROM command_completions WHERE expired=0)");
     // No changed snapshot means no payload scan/rewrite for an unchanged close.
     Statement pending(impl_->db,"SELECT 1 FROM draft_fields WHERE baseline=0 UNION ALL SELECT 1 FROM entry_fields WHERE baseline=0 UNION ALL SELECT 1 FROM ledger_operations WHERE sequence>(SELECT financial_cut FROM document_session) LIMIT 1");
-    if(!pending.row()){exec(impl_->db,"UPDATE command_completions SET expired=1 WHERE expired=0");return;}
+    if(!pending.row()){
+#ifdef SPENTIT_RULES_STORAGE
+        Statement saves(impl_->db,"SELECT 1 FROM command_completions WHERE domain='rule-save' AND expired=0 LIMIT 1");if(saves.row())prune_rule_saves(impl_->db);
+#endif
+        exec(impl_->db,"UPDATE command_completions SET expired=1 WHERE expired=0");return;
+    }
     // Ordinary editor restoration is not a permanent link-history archive.
     // Keep only the latest live restoration input for each current relationship;
     // Review matching decisions remain dependencies for source-owned rollback.
@@ -101,6 +127,9 @@ INSERT OR IGNORE INTO session_operations SELECT m.child FROM review_members m JO
         const auto sql="DELETE FROM "+std::string(table)+" WHERE NOT EXISTS(SELECT 1 FROM session_keep k WHERE k.kind="+(entry?"1":"0")+" AND k.batch="+table+".batch AND k.ordinal="+table+".ordinal AND k.revision="+table+".revision)";
         exec(impl_->db,sql.c_str());
     }
+#ifdef SPENTIT_RULES_STORAGE
+    prune_rule_saves(impl_->db);
+#endif
     exec(impl_->db,R"SQL(
 DELETE FROM review_stack;
 DELETE FROM review_undo_members WHERE child NOT IN(SELECT id FROM session_operations) OR original_child NOT IN(SELECT id FROM session_operations);

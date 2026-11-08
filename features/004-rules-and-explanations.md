@@ -1,8 +1,8 @@
 # 004 — Rules and explanations
 
 Status: **active**  
-Last updated: 2026-11-04  
-Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 42; rules-off documents use schema 41. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
+Last updated: 2026-11-08  
+Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 68; rules-off documents use schema 67. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).
 
 ## Shared category completion — owner Go 2026-11-02
 
@@ -491,3 +491,36 @@ The owner said Go for point 7 and declined a further scope question. This comman
 - A preview of more than 4096 active committed rows is refused. That 4097-row case was not executed. The refusal of a reapply that would change committed money is implemented and was not executed.
 
 Verification is the selected macOS run in [status](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27). This checkpoint is committed as `b6b9346`.
+
+
+## Ruleset-save retention — owner Go 2026-11-08
+
+Accepted scope: address measured ruleset-save duplication only, provided paired
+measurements justify the bounded implementation. Other retention domains are
+unchanged. Current rules and old definitions referenced by retained transactions,
+including import-Undo restoration inputs, must survive successful close.
+
+Implementation: save requests and ordered snapshots remain complete during a
+session for lost-acknowledgement recovery and verification. Each changed save also
+records a compact canonical request digest including expected revision, order,
+identity, enabled state and every definition field. After successful close, exact
+retries report already completed and require refreshing current data; changed
+request-ID reuse is refused. No historical result is fabricated from current rules.
+
+Close atomically removes full save requests and superseded snapshots, retaining
+one current ruleset baseline. That baseline includes deleted identities and their
+last definition versions so future sessions cannot revive them. Rule definitions
+remain while referenced by heads, the baseline or any retained draft/entry field
+or allocation; unreferenced intermediate definitions expire. Compact operation
+identity/revision/order records remain for existing provenance relationships.
+No per-save full-ruleset archive survives close.
+
+Full verification validates baseline structure, retained definitions and provenance,
+then replays only subsequent session saves, checking requests against their digests,
+snapshots and current heads. Failed/cancelled closes and crashes preserve either
+the old recoverable session or the complete published baseline. Encryption,
+normal clean-marker behavior, backup audits and explicit checks are unchanged.
+
+Experimental formats are **68 with rules / 67 without**; older formats are rejected
+unchanged, without migration. See [status](../doc/status.md) for measurements,
+executed fault/recovery tests and platform limits. Manual updates remain deferred.

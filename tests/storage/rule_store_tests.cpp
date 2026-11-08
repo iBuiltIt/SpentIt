@@ -75,7 +75,7 @@ void definitions(){
     const auto kept=s.rule_image();s.ingest("temporary",plain_source,qif::DateOrder::dmy);s.discard("temporary",0);check(s.rule_image().revision==kept.revision&&s.rule_image().ordered.size()==kept.ordered.size()&&s.rule_image().ordered[0].label==kept.ordered[0].label);
     rejects_text([&]{apply_category(s,"erase-fees",change(app::CategoryAction::erase,"fees"));},"Transactions use this category. Archive it instead.");apply_category(s,"archive-fees",change(app::CategoryAction::archive,"fees"));check(s.resolve_category("fees").archived);
     const imports::Occurrence row{"assigned",0};s.ingest(row.batch,split_source,qif::DateOrder::dmy);auto draft=*s.row(row).draft;bind(s,draft,1,"parking");s.save(row,0,draft);s.commit(row.batch,1,"publish-assigned");check(s.committed_balance().units()==-2931&&s.committed_entry(row).current.draft.transaction.allocations()[1].category_binding->identity=="parking");s.verify();}
-    check(query(path,"PRAGMA user_version")=="66");no_leaks(dir.path);
+    check(query(path,"PRAGMA user_version")=="68");no_leaks(dir.path);
 }
 
 void application(){
@@ -122,8 +122,8 @@ void schema(){
     alter("PRAGMA user_version=18");const auto rejected18=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected18);
     alter("PRAGMA user_version=19");const auto rejected19=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected19);
     alter("PRAGMA user_version=20");const auto bumped=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==bumped);
-    for(const auto version:{27,28,29,30,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65}){alter(("PRAGMA user_version="+std::to_string(version)).c_str());const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported");check(bytes(path)==before);}
-    alter("PRAGMA user_version=66");const auto current=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==current);
+    for(const auto version:{27,28,29,30,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67}){alter(("PRAGMA user_version="+std::to_string(version)).c_str());const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported");check(bytes(path)==before);}
+    alter("PRAGMA user_version=68");const auto current=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==current);
     alter("CREATE TABLE rule_state(singleton INTEGER PRIMARY KEY)");const auto extra=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==extra);
     const auto sibling=bytes(path);fault_vfs::arm(1,SQLITE_FULL);rejects_text([&]{ImportStore::create(mismatch.path/"other",password,"Synthetic account",cad,"2026-08-01");},"");fault_vfs::disarm();check(bytes(path)==sibling);
 }
@@ -301,6 +301,8 @@ app::AccountRuleRequest account_fault_setup(const fs::path& path){
     save_rules(s,"save",{rule_of("ride","Ride",rules::Scope::transaction,rules::InputField::payee,"Ride",{"Ruled",{},"rule-default",false})},0);
     app::OperationContext c;app::RulePreviewRequest r;r.account_scope=true;r.matches_only=true;return s.preview_pending_rules(r,c).account_request;
 }
+#include "rule_retention_cases.inc"
+
 void session_rules(){
     Directory dir("spentit-session-rules-XXXXXX");const auto path=dir.path/"account";const auto request=account_fault_setup(path);
     {auto s=ImportStore::open(path,password);app::OperationContext c;s.apply_account_rules("session-rules",request,c);s.verify();s.certify({});}
@@ -476,4 +478,4 @@ void category_faults() {
     }
     std::cout<<"Import category resolution: "<<positions<<" write/sync faults, cancellation and both commit boundaries passed\n";
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

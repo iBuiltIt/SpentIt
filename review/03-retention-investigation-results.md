@@ -1,9 +1,12 @@
 # Retention investigation results — 2026-11-08
 
 Follow-up: the owner authorized step 1 on 2026-11-08. The legacy path is
-retired; see [status](../doc/status.md). Rules and other retention changes remain
-deferred. Historical failure reproduction uses commit `c1fbc0b`; the current
-driver rejects legacy-mode capture instead.
+retired; see [status](../doc/status.md). The subsequent bounded ruleset Go and
+[paired measurements](04-ruleset-retention-results.md) address ruleset duplication.
+Other retention changes remain deferred and incomplete by explicit owner direction:
+category, undone Review-link, exclusion and account/opening/currency cleanup need
+a separate discussion and Go. Historical failure reproduction uses commit
+`c1fbc0b`; the current driver rejects legacy-mode capture instead.
 
 Status at investigation completion: investigation complete for the bounded workloads below; **no storage
 implementation changes authorized or made**. Remediation remains incomplete and
