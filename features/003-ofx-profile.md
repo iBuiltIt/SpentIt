@@ -1,6 +1,6 @@
 # OFX, QFX, QBO, and ASO statement profile
 
-Last updated: 2026-10-31
+Last updated: 2026-11-07
 
 Implementation contract for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). Feature 003 stays **active**. This profile does not finish QIF product scope or transfer repair. New documents use experimental schema 40 with rules and schema 39 without rules. Schemas 22/21, schema 20 and schemas 18 and 19 are rejected with `Unsupported experimental format; no migration was attempted`. No migration was added. `aso` remains a legal file label in those format checks. Account commands are recorded in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).
 
@@ -132,3 +132,19 @@ These choices would change posted money, duplicate exclusion, or evidence retent
 - a duplicate target for a repeated `FITID` that exists only inside the current uncommitted batch
 
 Surrounding behavior is a file refusal or a non-repairable record blocker, with the original file unchanged.
+
+## Statement header validation — owner Go 2026-11-07
+
+Conflicting repeated statement CODE, BANKID, ACCTID, ACCTTYPE, CURDEF or
+LEDGERBAL/BALAMT values refuse the whole import before destination/account mapping.
+Identical repeats are accepted; presence is tracked separately from empty text.
+This applies to SGML and XML bank and credit-card statements. Non-zero statement
+status still refuses even when it occurs before a later zero status.
+
+A supplied, unsuppressed ledger balance that cannot be parsed exactly for its
+currency, including empty text, grouping, excessive precision or overflow, refuses
+the import with an explicit unreadable-balance message. It must not appear as
+“Not supplied” or proceed to a zero-opening confirmation. Missing ledger balances
+and the existing extra-balance-aggregate suppression policy are unchanged.
+Errors do not echo account identifiers or source amounts. Formats remain 64/63;
+there is no storage or migration change. See [status](../doc/status.md) for checks.

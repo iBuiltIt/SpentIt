@@ -193,6 +193,27 @@ class ImportUiTests : public QObject {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
     }
 private slots:
+    void statementHeaderRefusalBeforeMapping() {
+        QTemporaryDir dir; QVERIFY(dir.isValid()); ImportModel m(storage::document_gateway());
+        create(m,dir.path()+"/doc");
+        const auto source=QFileInfo(QString::fromUtf8(SPENTIT_REVIEW_FIXTURE)).absoluteDir().filePath("../statements/bank-sgml.ofx");
+        QFile original(source); QVERIFY(original.open(QIODevice::ReadOnly)); const auto bytes=original.readAll();
+        const auto accounts=m.state().value("accounts").toList();
+        for(bool conflict : {false,true}) {
+            auto malformed=bytes;
+            malformed.replace("<BALAMT>10.00",conflict?"<BALAMT>10.00\n<BALAMT>20.00":"<BALAMT>1.001");
+            const auto path=dir.path()+"/malformed.ofx";
+            QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(malformed),malformed.size()); file.close();
+            run(m,"import",{{"path",path}},false);
+            QVERIFY(m.error().contains(conflict?"conflicting fields":"balance could not be read"));
+            QVERIFY(m.state().value("importPlan").toList().isEmpty());
+            QVERIFY(!m.state().value("importDestination").toBool());
+            QCOMPARE(m.state().value("accounts").toList(),accounts);
+        }
+        run(m,"import",{{"path",source}});
+        QCOMPARE(m.state().value("importPlan").toList().size(),1);
+        run(m,"cancel_import_mapping"); run(m,"close");
+    }
     void importRoutingAndLedgerCleanup() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/document");
         run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});

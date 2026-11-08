@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cstdio>
 #include <map>
+#include <set>
 #include <utility>
 
 namespace spentit::statements {
@@ -23,6 +24,7 @@ struct Acct {
     std::size_t begin = 0, end = 0;
     std::string bank_id, acct_id, acct_type, currency, ledger, status;
     bool suppress_balance = false, in_txn = false;
+    std::set<std::string> seen_fields;
     Txn txn;
     std::vector<Txn> txns;
 };
@@ -44,6 +46,15 @@ struct Builder {
         out.stop = true; out.refusal = std::move(refusal); out.diagnostic = qif::Diagnostic{issue, at};
         if(resource) out.admissible = false;
         out.accounts.clear(); current = nullptr;
+    }
+    void statement_field(const std::string& name, const std::string& value,
+                         std::string& stored, std::size_t at) {
+        if(!current->seen_fields.insert(name).second && stored != value) {
+            fail(qif::Issue::header, at,
+                 "Statement contains conflicting fields; no import was saved. Obtain a corrected export and try again.");
+            return;
+        }
+        stored = value;
     }
     [[nodiscard]] bool extra_balance(std::string_view name) const {
         return name != "LEDGERBAL" && name != "AVAILBAL" && name != "BALAMT" && name.find("BAL") != name.npos;
@@ -114,26 +125,25 @@ struct Builder {
         if(parent == "STATUS" && name == "CODE") {
             bool statement = false;
             for(const auto& frame : stack) if(frame == "STMTTRNRS" || frame == "CCSTMTTRNRS") statement = true;
-            if(statement && current && !current->in_txn) current->status = value;
+            if(statement && current && !current->in_txn) statement_field(name, value, current->status, at);
             else if(in_signon) out.signon = value;
             return;
         }
         if(!current) return;
         if(parent == "BANKACCTFROM" || parent == "CCACCTFROM") {
-            if(name == "BANKID") current->bank_id = value;
-            else if(name == "ACCTID") current->acct_id = value;
-            else if(name == "ACCTTYPE") current->acct_type = value;
+            if(name == "BANKID") statement_field(name, value, current->bank_id, at);
+            else if(name == "ACCTID") statement_field(name, value, current->acct_id, at);
+            else if(name == "ACCTTYPE") statement_field(name, value, current->acct_type, at);
             return;
         }
         if(parent == "STMTRS" || parent == "CCSTMTRS") {
             if(name == "CURDEF") {
-                if(!current->currency.empty() && current->currency != value) { fail(qif::Issue::header, at, "Malformed OFX; no import was saved"); return; }
-                current->currency = std::move(value); return;
+                statement_field(name, value, current->currency, at); return;
             }
             if(name == "MKTGINFO") return;
             fail(qif::Issue::header, at, "Malformed OFX; no import was saved"); return;
         }
-        if(parent == "LEDGERBAL" && name == "BALAMT") { current->ledger = std::move(value); return; }
+        if(parent == "LEDGERBAL" && name == "BALAMT") { statement_field(name, value, current->ledger, at); return; }
         if(parent == "AVAILBAL" || parent == "LEDGERBAL" || parent == "BANKTRANLIST" || parent == "STATUS" || parent == "SONRS" || parent == "FI") return;
         if(!current->in_txn) return;
         if(parent == "BANKACCTTO" || parent == "CCACCTTO") { current->txn.transfer = true; return; }
@@ -539,9 +549,13 @@ Parsed parse_ofx(std::string_view bytes, const std::string& format, bool xml, co
         view.currency_code = account.currency; view.begin = account.begin; view.end = account.end; view.type = account.acct_type.empty() && account.credit ? "CREDITCARD" : account.acct_type;
         const std::string raw_name = account.bank_id.empty() ? account.acct_id : account.bank_id + " " + account.acct_id;
         view.name = std::string(trim(raw_name));
-        if(!account.suppress_balance && !account.ledger.empty()) {
+        if(!account.suppress_balance && account.seen_fields.contains("BALAMT")) {
             try { (void)Money::parse(account.ledger, currency); view.reported_balance = account.ledger; }
-            catch(const FinancialError&) {}
+            catch(const FinancialError&) {
+                parsed.index.refusal = "The statement balance could not be read; no import was saved. Obtain a corrected export and try again.";
+                parsed.index.diagnostic = qif::Diagnostic{qif::Issue::header, account.begin};
+                parsed.index.accounts.clear(); parsed.results.clear(); return parsed;
+            }
         }
         const auto key = account.bank_id + "\t" + account.acct_id;
         qif::Result result; bool overflow = false;

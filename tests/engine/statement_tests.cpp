@@ -33,6 +33,60 @@ std::string fixture_bytes() {
 qif::Record basis_row(std::string date, std::optional<Money> amount, std::string fit, std::string format) {
     qif::Record row; row.repairable = true; row.date = std::move(date); row.source_currency = cad; row.original_amount = amount; row.fitid = std::move(fit); row.format = std::move(format); row.payee = "Coffee"; return row;
 }
+void statement_headers() {
+    // Exercise both grammars and both statement types with the same cases.
+    for(bool xml : {false, true}) for(bool credit : {false, true}) {
+        const auto leaf=[&](std::string name,std::string value) {
+            return "<"+name+">"+value+(xml?"</"+name+">":"\n");
+        };
+        const auto statement=[&](std::string status,std::string identity,std::string currency,std::string balance) {
+            const std::string messages=credit?"CREDITCARDMSGSRSV1":"BANKMSGSRSV1";
+            const std::string response=credit?"CCSTMTTRNRS":"STMTTRNRS";
+            const std::string body=credit?"CCSTMTRS":"STMTRS";
+            const std::string account=credit?"CCACCTFROM":"BANKACCTFROM";
+            return "<"+messages+"><"+response+"><STATUS>"+status+"</STATUS><"+body+">"+currency+
+                "<"+account+">"+identity+"</"+account+"><BANKTRANLIST>"+leaf("DTSTART","20260101")+"</BANKTRANLIST>"+balance+
+                "</"+body+"></"+response+"></"+messages+">";
+        };
+        const auto inspect=[&](std::string body) {
+            const auto bytes=xml?std::string("<?xml version=\"1.0\"?>\n<?OFX OFXHEADER=\"200\" VERSION=\"203\" SECURITY=\"NONE\" OLDFILEUID=\"NONE\" NEWFILEUID=\"NONE\"?>\n<OFX>")+body+"</OFX>":sgml(body);
+            return statements::inspect(bytes,"ofx");
+        };
+        const auto status=leaf("CODE","0"), currency=leaf("CURDEF","CAD");
+        const auto identity=leaf("BANKID","999")+leaf("ACCTID","1001")+leaf("ACCTTYPE","CHECKING");
+        const auto balance=[&](std::string value){return "<LEDGERBAL>"+leaf("BALAMT",value)+"</LEDGERBAL>";};
+        const auto refused=[&](const statements::Index& index,std::string_view message){
+            check(index.diagnostic.has_value() && index.accounts.empty() && index.refusal.find(message)!=std::string::npos);
+        };
+        for(const auto& value : {"10.00","-10.00","+0.00","92233720368547758.07","-92233720368547758.08"}) {
+            const auto index=inspect(statement(status,identity,currency,balance(value)));
+            if(!index.refusal.empty()) throw std::runtime_error(std::string(xml?"XML: ":"SGML: ")+value+": "+index.refusal);
+            check(index.accounts.size()==1 && index.accounts[0].reported_balance==value);
+            check(qif::amount(*index.accounts[0].reported_balance,cad)==Money::parse(value,cad));
+        }
+        for(const auto& value : {"1,234.56","1.001","nonsense","","92233720368547758.08"}) {
+            const auto bad=statement(status,identity,currency,balance(value));
+            refused(inspect(bad),"balance could not be read");
+            // A later invalid statement must also discard earlier account mappings.
+            refused(inspect(statement(status,identity,currency,balance("10.00"))+bad),"balance could not be read");
+        }
+        const auto missing=inspect(statement(status,identity,currency,""));
+        check(missing.refusal.empty() && missing.accounts.size()==1 && !missing.accounts[0].reported_balance);
+        const auto suppressed=inspect(statement(status,identity,currency,balance("10.00")+"<BALLIST>"+leaf("BAL","1.00")+"</BALLIST>"));
+        check(suppressed.refusal.empty() && suppressed.accounts.size()==1 && !suppressed.accounts[0].reported_balance);
+        for(const auto& field : {"BANKID","ACCTID","ACCTTYPE"}) {
+            refused(inspect(statement(status,identity+leaf(field,"different"),currency,balance("10.00"))),"conflicting fields");
+            refused(inspect(statement(status,leaf(field,"")+identity,currency,balance("10.00"))),"conflicting fields");
+        }
+        refused(inspect(statement(status,identity,currency+leaf("CURDEF","USD"),balance("10.00"))),"conflicting fields");
+        refused(inspect(statement(status,identity,currency,balance("10.00")+balance("20.00"))),"conflicting fields");
+        refused(inspect(statement(status+leaf("CODE","1"),identity,currency,"")),"conflicting fields");
+        refused(inspect(statement(leaf("CODE","1")+status,identity,currency,"")),"conflicting fields");
+        refused(inspect(statement(leaf("CODE","1"),identity,currency,"")),"Statement status is not success");
+        const auto identical=inspect(statement(status+status,identity+identity,currency+currency,balance("10.00")+balance("10.00")));
+        check(identical.refusal.empty() && identical.accounts.size()==1 && identical.accounts[0].account_number=="1001" && identical.accounts[0].institution_id=="999");
+    }
+}
 void parser() {
     const auto amp_sgml=statements::parse_occurrence(txn("AMP","20261028","-1.00","Coffee & Food"),statements::parser_sgml,cad);
     check(amp_sgml.records.size()==1 && amp_sgml.records[0].payee=="Coffee & Food");
@@ -133,7 +187,7 @@ void parser() {
     auto missing_cur = statements::inspect(sgml("<BANKMSGSRSV1><STMTTRNRS><TRNUID>1<STATUS><CODE>0<SEVERITY>INFO</STATUS><STMTRS><BANKACCTFROM><BANKID>9<ACCTID>1<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1>\n"), "ofx");
     check(missing_cur.refusal.find("currency") != std::string::npos && missing_cur.accounts.empty());
     const auto repeated_cur = statements::inspect(sgml("<BANKMSGSRSV1><STMTTRNRS><TRNUID>1<STATUS><CODE>0<SEVERITY>INFO</STATUS><STMTRS><CURDEF>CAD<CURDEF>USD<BANKACCTFROM><BANKID>9<ACCTID>1<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1>\n"), "ofx");
-    check(repeated_cur.refusal.find("Malformed OFX") != std::string::npos && repeated_cur.accounts.empty());
+    check(repeated_cur.refusal.find("conflicting fields") != std::string::npos && repeated_cur.accounts.empty());
     const auto empty_list = statements::inspect(sgml(bank("")), "ofx");
     check(empty_list.refusal.empty() && !empty_list.diagnostic && empty_list.accounts.size() == 1);
     check(statements::parse_mapped(sgml(bank("")), empty_list, 0, qif::DateOrder::dmy, cad).records.empty());
@@ -235,6 +289,6 @@ void parser() {
 }
 }
 int main() {
-    try { parser(); std::cout << "Statement parser passed\n"; }
+    try { statement_headers(); parser(); std::cout << "Statement parser passed\n"; }
     catch(const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

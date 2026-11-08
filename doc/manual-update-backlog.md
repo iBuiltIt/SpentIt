@@ -232,3 +232,16 @@ No manual text, captions or pictures have been changed.
   `manual/images/transactions-ledger.png`, `manual/images/transactions-review.png`,
   `manual/images/review-keep.png`, and `manual/images/accept-review.png`. Add a
   comparison with neighbouring transactions and a multiple-candidate example.
+
+### MAN-010 — OFX statement validation
+
+Date: 2026-11-07. Pending owner-authorized manual pass.
+Contract: [statement header validation](../features/003-ofx-profile.md#statement-header-validation--owner-go-2026-11-07).
+
+- Update `manual/import-transactions.md` to explain refusal of conflicting statement
+  fields and unreadable ledger balances before account mapping, and obtaining a
+  corrected export. Distinguish missing balances from unreadable balances.
+- Review `manual/images/import-mapping.png` and `manual/images/import-destination.png`
+  and their captions; valid-import screens are unchanged. Decide during the manual
+  pass whether a synthetic error illustration is useful.
+- No manual prose, screenshots or captions were changed in this implementation.

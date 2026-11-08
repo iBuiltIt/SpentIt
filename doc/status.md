@@ -1,5 +1,28 @@
 # Project status
 
+## Storage retention investigation — 2026-11-08
+
+The owner authorized investigation and measurements only. The [results](../review/03-retention-investigation-results.md) record 12 synthetic 1,000-row/32-cycle workloads, zero-edit controls, B-tree accounting, and minimal balance-history reproductions. No production storage implementation changed.
+
+- Confirmed legacy staged-balance correctness defect: the second amount-edit close prunes a draft still required by a retained balance event. Verification passes before close and fails afterward; backup creation and unclean-reopen verification also fail. Current desktop fixed-opening mapping passed the equivalent edits, backup and unclean reopen. Current amounts remained exact in both cases.
+- Rule saves retain complete ruleset copies: 32 changes to one rule in a 128-rule set added 679,936 physical bytes and 561,782 B-tree payload bytes. Verification passed. Other measured configuration histories were substantially smaller; Review Link/Undo retained history but subsequent import Undo passed.
+- Investigation is complete for these bounded cases. **Remediation remains incomplete and requires a separate owner decision.** Recommend a narrow decision/fix for the legacy balance path; consider ruleset retention separately as an efficiency improvement. The evidence does not establish a need for an immediate six-domain refactor.
+- Added an optional measurement driver and raw synthetic results, not production behavior or mandatory passing regression tests. Full verification was explicitly invoked by the driver. No private data, storage migration, manual update, or clean-marker-policy change. See the report for reproduction and verification limits.
+
+## OFX statement validation and incomplete storage follow-up — 2026-11-07
+
+Implemented the owner-approved [statement header validation](../features/003-ofx-profile.md#statement-header-validation--owner-go-2026-11-07): conflicting repeated statement fields refuse import, and unreadable ledger balances produce an explicit error before mapping. Identical repeats, missing balances and extra-balance suppression retain their existing behavior. Formats remain 64/63; storage behavior is unchanged. Manual updates are deferred in MAN-010.
+
+Verification on macOS arm64 with synthetic data:
+
+- Rebuilt the rules-enabled Release application (`build/SpentIt`) and test targets.
+- `statement.parser` passed in Release and ASan/UBSan (leak detection disabled). New cases cover SGML/XML, bank/credit-card statements, identical/conflicting/empty fields, both status-conflict orders, exact signed balance limits, malformed/grouped/over-precision/overflow balances, missing balances, extra-balance suppression and refusal of a whole multi-account file. The existing statement regression suite also passed.
+- Focused Qt offscreen checks `statementHeaderRefusalBeforeMapping`, `importRoutingAndLedgerCleanup` and `automaticImportDates` passed: **5 passed, 0 failed**, including setup/cleanup. Rejected imports expose the error without destination/mapping state or account changes; a subsequent valid import opens mapping. The initial sandboxed run could not create the application-data lock; the approved rerun passed with normal locking unchanged.
+- Changed-document relative file links and `git diff --check` passed. No private data was read. Native interaction, Linux and Windows were not tested.
+
+**Incomplete — storage remediation; investigation results recorded above.**
+The independent [storage review](../review/01-session-close-storage-growth.md) identifies retained rule/category, Review-link, exclusion, account-command and balance-choice histories not covered by the published repeated-payee-edit measurements. This work is not implemented or authorized by the OFX Go. Validate required dependencies and reproduce the suspected balance-history verification failure before choosing changes; preserve import Undo, retry safety and baseline verification. Existing measurements remain evidence only for their tested workloads. Do not mark this follow-up complete with the parser fix.
+
 ## Duplicate resolution performance and automatic Review — 2026-11-07
 
 Implemented the [performance follow-up](review-sheet.md#resolution-performance-and-automatic-discovery--owner-go-2026-11-07).
