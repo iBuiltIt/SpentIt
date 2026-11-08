@@ -97,6 +97,11 @@ verification; the subsequent closing-optimization Go adds safe opening-audit reu
 and bounded reconstruction caches within full audits. This does not change
 financial acceptance or authorize automatic repair.
 
+The [Reports usability follow-up](006-reporting-drill-down.md#reports-workspace-usability--owner-go-2026-11-08)
+adds conditional selected-definition actions, named modal deletion, stable Help,
+explicit search states and full chart labels. Independent drafts and financial
+report policies remain unchanged; see status for verification.
+
 ## Initial features
 
 | Document | Status | Scope |

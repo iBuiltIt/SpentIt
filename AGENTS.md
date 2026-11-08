@@ -12,6 +12,17 @@ not implementation Go. Licensing policy is settled in the plan; exact legal
 terms and publication remain gated. Preserve deferred retention scope and the
 later batch manual pass. See [About requirements](features/007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08).
 
+## Reports usability — owner Go 2026-11-08
+
+Use the [Reports presentation contract](features/006-reporting-drill-down.md#reports-workspace-usability--owner-go-2026-11-08).
+Reports has conditional definition actions, one Show report / Save and show action
+per row, stable Help, explicit checklist scope and complete chart labels.
+Deletion uses a named modal confirmation and saves only that removal, retaining
+unrelated drafts and selecting the existing new draft first. Leaving lists changed
+reports with Save all changes / Discard all changes / Cancel. Financial policies,
+drill-down protections and transaction Undo are unchanged; manual work is MAN-016.
+See status for actual verification and limits.
+
 ## Rules and ledger usability — owner Go 2026-11-08
 
 Use the [current Rules presentation contract](features/004-rules-and-explanations.md#rules-workspace-usability--owner-go-2026-11-08)

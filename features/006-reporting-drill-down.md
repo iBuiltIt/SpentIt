@@ -7,7 +7,7 @@ IDs retain their existing behavior.
 
 
 Status: **active**  
-Last updated: 2026-11-04  
+Last updated: 2026-11-08  
 Implementation: initial report workspace, saved definitions, exact aggregation,
 shared snapshot drill-down, separate Bar/Pie charts and reusable calendar are
 implemented under owner Go (2026-11-04). The [handoff](../doc/reports-calendar-handoff.md)
@@ -92,3 +92,66 @@ amount columns, contributing-split markers and automatic report refresh after
 saved edits/Undo. Reopening uses current membership. Group edits retain the
 existing one-account boundary; Merge/Link and creation remain in account ledgers.
 Formats are 56/55; see status for verification.
+
+
+## Reports workspace usability — owner Go, 2026-11-08
+
+Accepted and implemented presentation follow-up. Empty Reports offers New report
+without search or definition actions. Search filters the list honestly, reports
+no matches, and retains the independent selected editor with an outside-results
+notice. New and Unsaved changes identify draft state. One new draft is allowed;
+New report keeps its label and is disabled while that draft exists. Duplicate
+report is hidden until another new draft can be created. Duplicate copies the selected current definition, including
+its unsaved edits, without saving the source.
+
+The selected editor owns Duplicate report and Delete report… beside its heading.
+Accounts/categories precede periods and Chart. Whole-list selection shortcuts name
+their scope; group and parent-category selection semantics are unchanged. Chart
+and preset selectors accommodate their full labels; narrow layouts stack sections.
+Selected Save report / Discard changes appear only for edits; a new report uses
+Discard draft. Each list row has one Show report / Save and show action. Showing
+a changed definition explicitly advertises the selected-only save. No unsaved
+preview or transaction-application mode is added.
+
+Delete report… opens a named modal Delete report / Cancel confirmation, noting
+unsaved edits when present. Confirmation persists only that deletion using saved
+surrounding definitions; unrelated drafts survive. Failure retains the local
+definitions. Success selects an existing new draft first, otherwise a nearby
+remaining report or the empty state. This supersedes staged deletion; there is
+no new definition Undo. Escape cancels.
+
+Leaving lists changed report names and offers Save all changes / Discard all
+changes / Cancel. Save-all remains atomic and validates all outstanding edits.
+Help with reports remains visible independently of feedback. Local refusals use
+the permanent error-colored status line. Busy controls remain disabled in place.
+Results retain separate currency calculations and show their account scope;
+drill-down retains the existing exact membership, editing protections and Undo.
+
+Financial/report policies are unchanged. See [status](../doc/status.md) for
+executed checks and limits. Manual updates are deferred under MAN-016.
+
+
+### Interaction corrections — owner follow-up, 2026-11-08
+
+New report is above Search reports, with a stable label and disabled state when
+a new draft exists. Help with reports is at the workspace bottom. Report details
+and account/category count headings sit above their action rows.
+
+All three search clear buttons clear their own field. Save and report selection
+release the previous editor focus. Account/category lists have explicit,
+interactive scrollbars with reserved thumb space. Clear expenses and Clear
+income replace Clear categories; each clears its entire group, including
+search-hidden categories, without changing Uncategorized or the other group.
+Existing group checkboxes and Select all categories remain.
+
+Report dates use overwrite editing. While a date field has focus its raw text
+and caret remain under the user's control; validation continues updating the
+unsaved Custom range, but formatting does not replace text on each keystroke.
+Calendar selection still updates only the unsaved definition. Normalization on
+leaving the field and saved validation retain existing date policies.
+
+
+Owner placement refinement (2026-11-08): Duplicate report / Delete report sit
+below the name field. Category actions stay in Clear expenses, Clear income,
+Select all categories order, so conditional Select all visibility does not shift
+the Clear buttons. Account action order is unchanged.

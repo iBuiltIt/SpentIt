@@ -1,5 +1,105 @@
 # Project status
 
+## Reports button placement refinement — 2026-11-08
+
+Owner follow-up: moved Duplicate report / Delete report below the name field.
+Categories now orders Clear expenses, Clear income, then conditional Select all
+categories, keeping both Clear buttons stationary. Account action order and all
+command behavior are unchanged. Rebuilt build/SpentIt (macOS arm64 Release);
+offscreen QML smoke and git diff --check passed. No new tests or financial
+regression rerun for this placement-only change. MAN-016 records the deferred
+manual capture update.
+
+
+## Reports interaction corrections — owner follow-up, 2026-11-08
+
+New report now keeps its label and is disabled while a new draft exists, above
+the report search. Help with reports is at the bottom. Report details and
+account/category count headings sit above their action rows; empty definition
+action rows collapse. Clear expenses and Clear income replace Clear categories,
+retaining Uncategorized and the other group even when search hides entries.
+
+Wired all Reports search clearRequested signals to their local clearSearch
+handlers. Saving and selecting a report release the prior text editor focus.
+Date fields use overwrite entry with a focus-gated text binding: raw typing
+updates the unsaved Custom range without formatting back into the field on each
+keystroke. Calendar choices explicitly update the displayed field as well.
+Existing validation and saved-date semantics remain unchanged.
+
+Both checklists use persistent interactive thumbs with reserved content space.
+Native drag verification exposed the category scrollbar overlapping the outer
+workspace scrollbar at the right edge. Reserved outer-scrollbar space fixes the
+hit-target conflict; native hover/press/drag-to-top now passes.
+
+Rebuilt build/SpentIt and Reports UI tests on macOS arm64 Qt 6.12.0 Release.
+Final offscreen Reports/QML CTest passed **2/2**, 10.60 s (8.96 s and 1.63 s).
+Native workspaceUsability and incomeGroups passed **4/4 including setup/cleanup**,
+1.986 s. Tests cover stable disabled New report, all three search X buttons,
+released Save focus, selected-digit replacement, year overwrite, whole-date
+replacement, selective group clearing with search-hidden categories, retained
+Uncategorized, and an actual category thumb hover/press/drag. Inspected a synthetic
+native checklist screenshot. The initial drag failure was resolved before the
+final passing runs; a temporary test-only key API compile error was corrected.
+
+git diff --check and changed-document relative file links passed. No private
+financial data was accessed. Financial/report calculation policies are unchanged.
+Windows/Linux, sanitizers and the broader release regression suite were not run.
+MAN-016 records the follow-up; manual prose/screenshots remain deferred.
+
+
+## Reports workspace usability — owner Go, 2026-11-08
+
+Implemented the [approved Reports presentation](../features/006-reporting-drill-down.md#reports-workspace-usability--owner-go-2026-11-08).
+Empty Reports offers New report without empty search or definition actions.
+One new draft changes New report to Continue new report; Duplicate is available
+only for a saved definition when no new draft exists. It copies current edits
+without saving the source. Search has an explicit no-results state and retains
+the independent selected editor with an outside-results notice.
+
+Each report row has one Show report / Save and show action. Selected Save report
+and Discard changes/Discard draft appear only when meaningful. The selected
+heading owns Duplicate report and Delete report…. Named modal deletion offers
+Delete report / Cancel, with Escape cancellation and an unsaved-edits consequence.
+It persists only the selected removal, retains unrelated drafts and selects a
+remaining new draft first. The leave dialog lists changed report names and uses
+Save all changes / Discard all changes / Cancel.
+
+Account/category scope precedes periods and Chart; whole-list shortcuts name
+their scope. Chart and preset controls size for their full labels, and narrow
+layouts stack sections. Help is stable; local refusals reach the permanent
+error-colored status line. Results display the accounts used when shown.
+Financial calculations, membership, category selection semantics, transaction
+editing guards and Undo remain unchanged. No engine/storage/format changes.
+
+Verification: macOS arm64, Qt 6.12.0, Release, synthetic files only.
+
+- Rebuilt build/SpentIt, Reports UI and Help UI tests.
+- Full offscreen Reports UI plus QML CTest: **2/2 passed**, 10.47 s
+  (Reports 8.81 s; QML 1.66 s). Reports covers the new usability flow plus Income
+  groups, editable drill-down, exact displayed totals, transaction Undo,
+  calendar behavior and independent selected saves with an invalid other draft.
+- New usability regression verifies empty controls, single-draft continuation,
+  duplication of current unsaved edits without saving its source, no-match search,
+  conditional controls, selected-only save/deletion, Cancel/Escape, remaining-draft
+  selection, deletion reload and chart content width.
+- Native Cocoa usability test: **3/3 including setup/cleanup**, 1.071 s.
+  Inspected its synthetic screenshot at a 1000×800 logical window: complete
+  chart label, periods and selected Save/Discard controls.
+- Reports leave-dialog Help regression: **3/3 including setup/cleanup**, 1.267 s.
+  Offscreen plugin reports unsupported raise and a font alias warning.
+- Initial checks found and corrected temporary QML syntax errors. Sandboxed
+  execution could not create normal application-data locks; checks were rerun
+  with lock access. The first complete UI run also exposed two stale assertions
+  for the retired groupOpeningDateCalendar. Updated them to assert its absence,
+  retaining checks of Correct opening and transfer calendars; the final full
+  Reports run passes.
+- git diff --check and changed-document relative file-link checks passed.
+
+No private financial file was accessed. Windows/Linux, sanitizers, broad release
+regressions and large-report responsiveness were not tested for this UI change.
+Manual prose/screenshots remain deferred under MAN-016.
+
+
 ## Rules documentation reconciliation — 2026-11-08
 
 Reconciled contributor guidance, feature index, durable-rules and ledger entry

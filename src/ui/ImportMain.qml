@@ -2873,8 +2873,8 @@ ApplicationWindow {
                     RowLayout {anchors.fill:parent;anchors.margins:4
                         Label {id:workspaceStatusText;objectName:"operationPhase";Layout.fillWidth:true;Layout.minimumWidth:0
                             textFormat:Text.PlainText;elide:Text.ElideRight
-                            text:workflow.busy?(workflow.cancellationRequested?"Cancellation requested…":workflow.phase):(workflow.error?(errorDialog?"":workflow.error):(currentPage==="rules" && ruleValidationError?ruleValidationError:workspaceFeedback))
-                            color:!workflow.busy && ((workflow.error && !errorDialog) || (!workflow.error && currentPage==="rules" && ruleValidationError))?theme.error:palette.windowText
+                            text:workflow.busy?(workflow.cancellationRequested?"Cancellation requested…":workflow.phase):(workflow.error?(errorDialog?"":workflow.error):(currentPage==="rules" && ruleValidationError?ruleValidationError:currentPage==="reports" && reportsWorkspace.feedback?reportsWorkspace.feedback:workspaceFeedback))
+                            color:!workflow.busy && ((workflow.error && !errorDialog) || (!workflow.error && (currentPage==="rules" && ruleValidationError || currentPage==="reports" && reportsWorkspace.feedback)))?theme.error:palette.windowText
                             Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}
                             ToolTip.visible:statusHover.hovered && truncated;ToolTip.text:text
                             HoverHandler {id:statusHover}

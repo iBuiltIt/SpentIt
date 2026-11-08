@@ -24,6 +24,90 @@ class ReportUiTests:public QObject {
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItReportsTests");QCoreApplication::setApplicationName("Reports");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());}
     void init(){QSettings().clear();}
+    void workspaceUsability(){
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);
+        auto* workspace=object(root,"reportsWorkspace");QVERIFY(workspace);
+        run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        QVERIFY(click(root,"reportsNavigation"));QTRY_VERIFY(!model.busy());
+        auto visible=[&](const char* name){auto* item=object(root,name);return item && item->property("visible").toBool();};
+        auto drafts=[&]{return value(workspace->property("drafts")).toList();};
+        auto field=[&](const QString& name,const QVariant& v){return QMetaObject::invokeMethod(workspace,"setField",Q_ARG(QVariant,name),Q_ARG(QVariant,v));};
+        QVERIFY(!visible("reportSearch"));QVERIFY(!visible("duplicateReport"));QVERIFY(visible("reportFeedbackHelp"));
+        QVERIFY(click(root,"newReport"));QVERIFY(field("name","First report"));
+        QCOMPARE(drafts().size(),1);QVERIFY(!visible("duplicateReport"));QVERIFY(!visible("deleteReport"));
+        QCOMPARE(object(root,"newReport")->property("text").toString(),"New report");
+        QVERIFY(!object(root,"newReport")->property("enabled").toBool());
+        QVERIFY(click(root,"newReport"));QCOMPARE(drafts().size(),1);
+        auto* nameItem=qobject_cast<QQuickItem*>(object(root,"reportName"));QVERIFY(nameItem);nameItem->forceActiveFocus();
+        QVERIFY(click(root,"saveReport"));QTRY_VERIFY(!model.busy());QVERIFY(model.error().isEmpty());
+        QVERIFY(!nameItem->hasActiveFocus());
+        auto* accountSearch=object(root,"reportChoiceSearch_accounts");QVERIFY(accountSearch);
+        accountSearch->setProperty("text","Checking");QVERIFY(click(root,"reportChoiceSearch_accountsClear"));
+        QCOMPARE(accountSearch->property("text").toString(),"");
+        QVERIFY(!visible("saveReport"));QVERIFY(visible("duplicateReport"));
+        QCOMPARE(object(root,"showReport")->property("text").toString(),"Show report");
+        // Duplicate copies the selected edits but never saves its source.
+        QVERIFY(field("name","Edited first"));QVERIFY(click(root,"duplicateReport"));
+        QCOMPARE(drafts().size(),2);QCOMPARE(drafts()[1].toMap().value("name").toString(),"Edited first copy");
+        QCOMPARE(model.state().value("reports").toList()[0].toMap().value("name").toString(),"First report");
+        QVERIFY(field("name","")); // unrelated incomplete new report
+        workspace->setProperty("selectedIndex",0);
+        QVERIFY(!visible("duplicateReport"));
+        QCOMPARE(object(root,"showReport")->property("text").toString(),"Save and show");
+        QVERIFY(click(root,"saveReport"));QTRY_VERIFY(!model.busy());QVERIFY(model.error().isEmpty());
+        QCOMPARE(drafts()[1].toMap().value("name").toString(),"");
+        QVERIFY(workspace->property("dirty").toBool());
+        auto* search=object(root,"reportSearch");search->setProperty("text","no matching report");
+        QTRY_VERIFY(visible("reportNoMatches"));QCOMPARE(workspace->property("selectedIndex").toInt(),0);
+        QVERIFY(visible("reportName"));
+        QVERIFY(click(root,"reportSearchClear"));QCOMPARE(search->property("text").toString(),"");
+        // Named cancellation, Escape and confirmed selected-only deletion.
+        QVERIFY(click(root,"deleteReport"));auto* dialog=object(root,"deleteReportDialog");QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(dialog->property("modal").toBool());
+        QCOMPARE(dialog->property("reportName").toString(),"Edited first");
+        QVERIFY(click(root,"cancelDeleteReport"));QTRY_VERIFY(!dialog->property("visible").toBool());
+        QCOMPARE(model.state().value("reports").toList().size(),1);QCOMPARE(drafts().size(),2);
+        QVERIFY(click(root,"deleteReport"));QTRY_VERIFY(dialog->property("visible").toBool());
+        QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!dialog->property("visible").toBool());
+        QVERIFY(click(root,"deleteReport"));QVERIFY(click(root,"confirmDeleteReport"));QTRY_VERIFY(!model.busy());
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));QCOMPARE(model.state().value("reports").toList().size(),0);
+        QCOMPARE(drafts().size(),1);QCOMPARE(workspace->property("selectedIndex").toInt(),0);
+        QCOMPARE(drafts()[0].toMap().value("name").toString(),"");
+        QVERIFY(click(root,"discardReport"));QVERIFY(drafts().isEmpty());QVERIFY(!workspace->property("dirty").toBool());
+        // Final deletion is durable and does not resurrect on reload.
+        run(model,"report_load");QVERIFY(drafts().isEmpty());
+        QVERIFY(click(root,"newReport"));QVERIFY(field("name","Chart sizing"));
+        window->resize(1000,800);window->show();QTest::qWait(100);
+        auto* date=qobject_cast<QQuickItem*>(object(root,"reportStartDate0"));QVERIFY(date);
+        date->forceActiveFocus();QVERIFY(QMetaObject::invokeMethod(date,"select",Q_ARG(int,3),Q_ARG(int,4)));
+        QTest::keyClick(window,Qt::Key_4);
+        QCOMPARE(date->property("text").toString(),"2024-01-01");
+        QCOMPARE(date->property("cursorPosition").toInt(),4);
+        date->setProperty("cursorPosition",0);
+        for(char c:QByteArray("2023"))QTest::keyClick(window,Qt::Key(c));
+        QCOMPARE(date->property("text").toString(),"2023-01-01");
+        QCOMPARE(date->property("cursorPosition").toInt(),4);
+        QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);
+        // Explicit selection also supports replacing the entire value.
+        QVERIFY(QMetaObject::invokeMethod(date,"selectAll"));
+        for(char c:QByteArray("2022-02-03"))QTest::keyClick(window,Qt::Key(c));
+        QCOMPARE(date->property("text").toString(),"2022-02-03");
+        auto* graph=object(root,"reportGraph");QVERIFY(graph);
+        auto* content=graph->property("contentItem").value<QObject*>();QVERIFY(content);
+        QVERIFY(content->property("width").toDouble()>=content->property("implicitWidth").toDouble());
+        if(qEnvironmentVariableIsSet("SPENTIT_REPORT_UI_CAPTURE")){
+            auto* scroll=object(root,"reportsEditorScroll");QVERIFY(scroll);
+            auto* flick=scroll->property("contentItem").value<QObject*>();QVERIFY(flick);
+            flick->setProperty("contentY",flick->property("contentHeight").toDouble()-flick->property("height").toDouble());
+            QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REPORT_UI_CAPTURE")));
+        }
+        for(const auto& warning:warnings){const auto list=qvariant_cast<QList<QQmlError>>(warning.front());for(const auto& item:list)qWarning().noquote()<<item.toString();}
+        QVERIFY(warnings.isEmpty());
+    }
     void importProgress_data(){QTest::addColumn<bool>("uncategorized");QTest::newRow("selected")<<false;QTest::newRow("uncategorized")<<true;}
     void importProgress(){
         QFETCH(bool,uncategorized);
@@ -68,7 +152,8 @@ private slots:
         QVERIFY(!model.state().value("importCategoryDecisions").toList().isEmpty());QTRY_VERIFY(categories->property("visible").toBool());
         QVERIFY(click(root,uncategorized?"uncategorizedImport":"applyImportCategories"));QVERIFY(progress->property("visible").toBool());
         QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));QVERIFY(model.state().value("importCategoryDecisions").toList().isEmpty());QVERIFY(!progress->property("visible").toBool());
-        for(const char* name:{"correctOpeningCalendar","groupOpeningDateCalendar","transferDateCalendar"}){auto* picker=object(root,name);QVERIFY(picker);auto* field=picker->property("field").value<QObject*>();QVERIFY(field);QVERIFY(QMetaObject::invokeMethod(picker,"choose",Q_ARG(QVariant,QVariant("2024-02-29"))));QCOMPARE(field->property("text").toString(),QString("2024-02-29"));QVERIFY(!model.busy());}
+        QVERIFY(!object(root,"groupOpeningDateCalendar")); // retired staged import opening
+        for(const char* name:{"correctOpeningCalendar","transferDateCalendar"}){auto* picker=object(root,name);QVERIFY(picker);auto* field=picker->property("field").value<QObject*>();QVERIFY(field);QVERIFY(QMetaObject::invokeMethod(picker,"choose",Q_ARG(QVariant,QVariant("2024-02-29"))));QCOMPARE(field->property("text").toString(),QString("2024-02-29"));QVERIFY(!model.busy());}
         for(const auto& warning:warnings)qWarning()<<warning;QCOMPARE(warnings.size(),0);
     }
     void incomeGroups(){
@@ -103,6 +188,24 @@ private slots:
         const auto incomePoint=income->mapToScene(QPointF(income->width()/2,income->height()/2)).toPoint();
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,incomePoint);QVERIFY(!selected().contains(ids[1]));QVERIFY(selected().contains(""));
         if(qEnvironmentVariableIsSet("SPENTIT_INCOME_REPORT_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INCOME_REPORT_SCREENSHOT")+".income.png"));}
+        QVERIFY(click(root,"clearReportExpenses"));QCOMPARE(selected(),QStringList({""}));
+        QVERIFY(QMetaObject::invokeMethod(workspace,"checkGroup",Q_ARG(QVariant,true),Q_ARG(QVariant,true)));
+        QVERIFY(QMetaObject::invokeMethod(workspace,"checkGroup",Q_ARG(QVariant,false),Q_ARG(QVariant,true)));
+        search->setProperty("text","Zulu");
+        QVERIFY(click(root,"clearReportIncome"));QVERIFY(!selected().contains(ids[1]));QVERIFY(selected().contains(ids[0]));QVERIFY(selected().contains(""));
+        QVERIFY(click(root,"reportChoiceSearch_categoriesClear"));QCOMPARE(search->property("text").toString(),"");
+        auto* bar=qobject_cast<QQuickItem*>(object(root,"reportChoiceBar_categories"));QVERIFY(bar);
+        QVERIFY(bar->property("interactive").toBool());QVERIFY(bar->isVisible());
+        auto* thumb=bar->property("contentItem").value<QQuickItem*>();QVERIFY(thumb);
+        QTest::qWait(50);
+        const auto thumbPoint=thumb->mapToScene(QPointF(thumb->width()/2,thumb->height()/2)).toPoint();
+        if(qEnvironmentVariableIsSet("SPENTIT_INCOME_REPORT_SCREENSHOT")){QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_INCOME_REPORT_SCREENSHOT")+".thumb.png"));}
+        QTest::mouseMove(window,thumbPoint);QVERIFY(thumb->isVisible());
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,thumbPoint);
+        QVERIFY(bar->property("pressed").toBool());
+        QTest::mouseMove(window,bar->mapToScene(QPointF(bar->width()/2,2)).toPoint(),50);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,bar->mapToScene(QPointF(bar->width()/2,2)).toPoint());
+        QTRY_VERIFY(flick->property("contentY").toDouble()<1);
         const auto savedSelection=selected();QVERIFY(QMetaObject::invokeMethod(workspace,"save",Q_ARG(QVariant,false),Q_ARG(QVariant,false)));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         // Reclassification changes grouping, never the saved report's explicit selection.
         run(model,"preview_category",{{"action","set_income"},{"id",ids[0]},{"income",true},{"revision",model.state().value("catalogRevision")}});

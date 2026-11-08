@@ -350,3 +350,35 @@ Source: [Rules usability](../features/004-rules-and-explanations.md#rules-worksp
   show disabled text/arrows in both themes.
 - No manual prose or screenshots changed in this implementation or documentation
   reconciliation; temporary synthetic verification captures are not replacements.
+
+
+### MAN-016 — Reports workspace usability
+
+Recorded: 2026-11-08. Status: **pending owner-authorized manual pass**.
+Source: [Reports usability](../features/006-reporting-drill-down.md#reports-workspace-usability--owner-go-2026-11-08).
+
+- Update Answer with reports, navigation and messages guidance for empty/search
+  states, Continue new report, independent drafts and selected-only Save report.
+- Explain Show report versus Save and show, conditional Discard changes/Discard
+  draft, and Duplicate report copying current edits without saving its source.
+- Replace staged deletion with the named Delete report / Cancel confirmation;
+  explain remaining-new-draft selection and the absence of definition Undo.
+- Capture empty, selected/edited/new, no-results, deletion and leave-dialog states,
+  complete chart/preset labels, explicit checklist scope and result account names.
+- Update leaving choices to Save all changes / Discard all changes / Cancel and
+  show stable contextual Help and permanent status feedback.
+- No manual prose or screenshots changed; synthetic verification images remain
+  temporary.
+
+
+MAN-016 follow-up (2026-11-08): replace Continue new report instructions with
+stable, disabled New report above search. Capture Help at the bottom, headings
+above action rows, separate Clear expenses/Clear income, stable draggable
+checklist scrollbars and overwrite date entry. Search X clears each local search;
+saving/selecting reports releases the old text-field focus. No manual text or
+screenshots updated.
+
+
+MAN-016 placement refinement (2026-11-08): capture Duplicate report / Delete
+report below the name, and category actions ordered Clear expenses, Clear income,
+Select all categories, keeping the Clear buttons stationary.

@@ -1,6 +1,6 @@
 # Reports workspace and reusable calendar — next-agent handoff
 
-Last updated: 2026-11-06
+Last updated: 2026-11-08
 
 State: **initial scope implemented under owner Go, 2026-11-04**.
 The owner first authorized this design handoff, then explicitly authorized the
@@ -12,6 +12,13 @@ Read [project status](status.md), [project layout](project-layout.md),
 [reporting requirements](../features/006-reporting-drill-down.md),
 [Rules workspace contract](../features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01),
 and [user-facing language](user-facing-language.md) before continuing.
+
+## Reports usability follow-up — 2026-11-08
+
+The [owner-approved presentation contract](../features/006-reporting-drill-down.md#reports-workspace-usability--owner-go-2026-11-08)
+supersedes earlier Save/Discard/Stay labels, staged deletion and competing Show
+actions. Independent drafts, explicit selections and all financial policies below
+remain unchanged. See status for verification and MAN-016 for deferred manual work.
 
 ## Income selection follow-up — 2026-11-06
 

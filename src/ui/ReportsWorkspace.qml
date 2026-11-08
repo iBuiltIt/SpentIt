@@ -16,7 +16,13 @@ Item {
     property int generation:0
     property string mode:"workspace"
     property string feedback:""
+    property var resultAccountNames:[]
     property bool savingAll:false
+    property string deletingId:""
+    readonly property int newDraftIndex:{generation;return drafts.findIndex(r=>!savedDefinitions.some(b=>b.id===r.id))}
+    readonly property bool currentNew:!!current && !savedDefinitions.some(r=>r.id===current.id)
+    readonly property bool currentChanged:{generation;return !!current && changed(selectedIndex)}
+    readonly property int searchMatches:{generation;return drafts.filter(r=>r.name.toLowerCase().includes(reportSearch.text.toLowerCase())).length}
     property string showAfterSave:""
     property var leaveAction:null
     property bool leaving:false
@@ -32,15 +38,19 @@ Item {
     readonly property var categoryChoices:[{id:"",name:"Uncategorized"}].concat((state.categories||[]).filter(c=>!c.deleted && !c.group).sort((a,b)=>Number(!!a.income)-Number(!!b.income) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id)))
     readonly property var result:state.reportResult||{}
     function copy(v){return JSON.parse(JSON.stringify(v))}
-    function changed(index) {generation;return JSON.stringify(drafts[index])!==JSON.stringify(savedDefinitions.find(r=>r.id===drafts[index].id))}
+    function changed(index) {generation;if(index<0 || index>=drafts.length)return false;return JSON.stringify(drafts[index])!==JSON.stringify(savedDefinitions.find(r=>r.id===drafts[index].id))}
+    onSelectedIndexChanged:{feedback="";if(root.visible && root.mode==="workspace")root.forceActiveFocus()}
     function touch(){generation++;feedback=""}
     function load() {savedDefinitions=copy(state.reports||[]);drafts=copy(savedDefinitions);selectedIndex=Math.min(selectedIndex,drafts.length-1);if(selectedIndex<0 && drafts.length)selectedIndex=0;generation++}
-    function reset(){if(leaving)leaveHiding();drafts=[];savedDefinitions=[];selectedIndex=-1;mode="workspace";feedback="";leaving=false;leaveAction=null;showAfterSave="";generation++}
+    function reset(){if(leaving)leaveHiding();drafts=[];savedDefinitions=[];selectedIndex=-1;mode="workspace";feedback="";leaving=false;leaveAction=null;showAfterSave="";deletingId="";deleteDialog.close();generation++}
+    function revealEditor(){Qt.callLater(function(){editorScroll.contentItem.contentY=Math.max(0,reportName.y+reportName.parent.y-editorScroll.height/4)})}
     function newReport(duplicate) {
-        if(drafts.some(r=>!savedDefinitions.some(b=>b.id===r.id))){feedback="Save or discard the new report first.";return}
+        if(workflow.busy || state.readOnly)return
+        if(duplicate && (!current || currentNew))return
+        if(newDraftIndex>=0){feedback="Save or discard the new report first.";return}
         let value=duplicate && current?copy(current):{name:"New report",graph:"bar",accounts:accountChoices.map(a=>a.id),categories:categoryChoices.map(c=>c.id),periods:[{preset:"ytd",start:"",end:""}]}
         value.id=workflow.newIdentity();if(duplicate)value.name+=" copy"
-        drafts=drafts.concat([value]);selectedIndex=drafts.length-1;touch()
+        drafts=drafts.concat([value]);selectedIndex=drafts.length-1;touch();reportSearch.text="";revealEditor()
     }
     function updatePeriod(index,value){if(current){current.periods[index]=value;touch()}}
     function setField(name,value){if(current){current[name]=value;touch()}}
@@ -77,7 +87,8 @@ Item {
         return rows
     }
     function save(all,show) {
-        if(workflow.busy)return
+        if(workflow.busy || state.readOnly || (!all && !current))return
+        root.forceActiveFocus()
         savingAll=all;showAfterSave=show && current?current.id:""
         let image=all?copy(drafts):copy(savedDefinitions)
         if(!all && current){const index=image.findIndex(r=>r.id===current.id);if(index>=0)image[index]=copy(current);else image.push(copy(current))}
@@ -89,7 +100,19 @@ Item {
         if(original)next[selectedIndex]=copy(original);else next.splice(selectedIndex,1)
         drafts=next;selectedIndex=Math.min(selectedIndex,drafts.length-1);touch()
     }
-    function deleteCurrent(){if(!current)return;drafts=drafts.filter(r=>r.id!==current.id);selectedIndex=Math.min(selectedIndex,drafts.length-1);touch()}
+    function deleteCurrent(){
+        if(!current || currentNew || workflow.busy || state.readOnly)return
+        deleteDialog.reportId=current.id
+        deleteDialog.reportName=current.name || "Unnamed report"
+        deleteDialog.hasEdits=currentChanged
+        deleteDialog.open()
+    }
+    function confirmDelete(){
+        if(workflow.busy || state.readOnly || !savedDefinitions.some(r=>r.id===deleteDialog.reportId))return
+        deletingId=deleteDialog.reportId;savingAll=false;showAfterSave=""
+        deleteDialog.close()
+        workflow.command("report_save",{revision:state.reportRevision,reports:copy(savedDefinitions.filter(r=>r.id!==deletingId))})
+    }
     function show(index){selectedIndex=index;if(changed(index))save(false,true);else workflow.command("report_show",{id:current.id})}
     function requestLeave(action){leaveAction=action;leaving=true;leaveShown()}
     function stay(){if(leaving)leaveHiding();leaving=false;leaveAction=null}
@@ -102,16 +125,28 @@ Item {
             if(["create","open","unlock","close"].indexOf(action)>=0 && success){root.reset();if(root.state.active)root.load()}
             if(action==="report_load" && success && !root.dirty)root.load()
             if(action==="report_save"){
-                if(!success){root.showAfterSave="";root.stay();return}
+                if(!success){root.deletingId="";root.showAfterSave="";root.stay();return}
+                root.feedback=""
                 const saved=root.copy(root.state.reports||[])
                 let id=root.current?root.current.id:""
+                if(root.deletingId){
+                    root.drafts=root.drafts.filter(r=>r.id!==root.deletingId)
+                    root.savedDefinitions=saved;root.deletingId="";root.touch()
+                    root.selectedIndex=root.newDraftIndex>=0?root.newDraftIndex:Math.min(root.selectedIndex,root.drafts.length-1)
+                    if(root.current)root.revealEditor()
+                    return
+                }
                 let merged=root.savingAll?root.copy(saved):root.copy(root.drafts)
                 if(!root.savingAll){const index=merged.findIndex(r=>r.id===id);const stored=saved.find(r=>r.id===id);if(index>=0 && stored)merged[index]=root.copy(stored)}
                 root.drafts=merged;root.savedDefinitions=saved;root.generation++
                 if(root.leaving)root.proceed()
                 else if(root.showAfterSave){let id=root.showAfterSave;root.showAfterSave="";root.workflow.command("report_show",{id:id})}
             }
-            if(action==="report_show" && success)root.mode="result"
+            if(action==="report_show" && success){
+                const definition=root.savedDefinitions.find(r=>r.id===root.result.id)
+                root.resultAccountNames=definition?definition.accounts.map(id=>{const account=root.accountChoices.find(a=>a.id===id);return account?account.name+" · "+account.currency:"Unavailable account"}):[]
+                root.mode="result"
+            }
             if(action==="report_drill" && success)root.mode="detail"
             if(action==="report_leave" && success)root.mode="result"
         }
@@ -119,7 +154,7 @@ Item {
     Window {
         id:leaveDialog;objectName:"reportsLeaveDialog";visible:root.leaving
         modality:Qt.ApplicationModal;flags:Qt.Dialog|Qt.WindowTitleHint|Qt.WindowCloseButtonHint
-        title:"Save changes before leaving Reports?";width:460;height:150
+        title:"Save changes before leaving Reports?";width:640;height:320
         onVisibleChanged:if(visible){x=root.Window.window.x+(root.Window.window.width-width)/2;y=root.Window.window.y+(root.Window.window.height-height)/2;requestActivate()}else if(root.Window.window)root.Window.window.requestActivate()
         onClosing:function(event){if(root.leaving){event.accepted=false;if(!root.workflow.busy)root.stay()}}
         Shortcut {sequence:"Escape";enabled:root.leaving && !root.workflow.busy;onActivated:root.stay()}
@@ -127,11 +162,36 @@ Item {
         ColumnLayout {
             anchors.fill:parent;anchors.margins:20
             Label {textFormat:Text.PlainText;text:"Save your changes to Reports before leaving?";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ScrollView {Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth
+                ColumnLayout {width:parent.width
+                    Repeater {model:{root.generation;return root.drafts.filter((r,i)=>root.changed(i))}
+                        Label {required property var modelData;textFormat:Text.PlainText;text:modelData.name || "Unnamed report";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                    }
+                }
+            }
             RowLayout {Layout.alignment:Qt.AlignRight
                 Button {objectName:"reportsGuardHelp";text:"Help";focusPolicy:Qt.TabFocus;onClicked:root.helpRequested("help:answer-with-reports#keep-and-change-your-reports")}
-                Button {objectName:"reportsGuardSave";enabled:!root.workflow.busy;text:"Save";onClicked:root.save(true,false)}
-                Button {objectName:"reportsGuardDiscard";enabled:!root.workflow.busy;text:"Discard";onClicked:{root.load();root.proceed()}}
-                Button {objectName:"reportsGuardStay";enabled:!root.workflow.busy;text:"Stay";onClicked:root.stay()}
+                Button {objectName:"reportsGuardSave";enabled:!root.workflow.busy;text:"Save all changes";onClicked:root.save(true,false)}
+                Button {objectName:"reportsGuardDiscard";enabled:!root.workflow.busy;text:"Discard all changes";onClicked:{root.load();root.proceed()}}
+                Button {objectName:"reportsGuardStay";enabled:!root.workflow.busy;text:"Cancel";onClicked:root.stay()}
+            }
+        }
+    }
+    Dialog {
+        id:deleteDialog;objectName:"deleteReportDialog"
+        property string reportId:""
+        property string reportName:""
+        property bool hasEdits:false
+        title:"Delete report?";modal:true;anchors.centerIn:parent
+        width:Math.min(480,root.width-24);closePolicy:Popup.CloseOnEscape
+        ColumnLayout {
+            width:parent.width;spacing:12
+            Label {textFormat:Text.PlainText;text:'Delete report “'+deleteDialog.reportName+'”?';wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {text:"This deletes the saved report definition. Transactions are unchanged.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            Label {visible:deleteDialog.hasEdits;text:"Unsaved changes to this report will also be discarded.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {Layout.alignment:Qt.AlignRight
+                Button {objectName:"confirmDeleteReport";text:"Delete report";enabled:!root.workflow.busy;onClicked:root.confirmDelete()}
+                Button {objectName:"cancelDeleteReport";text:"Cancel";onClicked:deleteDialog.close()}
             }
         }
     }
@@ -140,58 +200,68 @@ Item {
         RowLayout {
             Label {textFormat:Text.PlainText;text:root.mode==="workspace"?"Reports":root.mode==="detail"?"Report transactions":root.result.name||"Report";font.pixelSize:22;Layout.fillWidth:true;Layout.minimumWidth:80;elide:Text.ElideRight}
             Button {visible:root.mode!=="workspace";text:root.mode==="detail"?"Back to report":"Back to Reports";onClicked:root.back()}
-            Button {visible:root.mode==="result";text:"Refresh";enabled:!root.workflow.busy;onClicked:root.workflow.command("report_show",{id:root.result.id})}
+            Button {visible:root.mode==="result";text:"Refresh report";enabled:!root.workflow.busy;onClicked:root.workflow.command("report_show",{id:root.result.id})}
         }
-        Label {textFormat:Text.PlainText;visible:root.feedback.length>0;text:root.feedback;wrapMode:Text.Wrap;Layout.fillWidth:true}
-        Button {objectName:"reportFeedbackHelp";text:"Help with reports";focusPolicy:Qt.TabFocus;visible:root.feedback.length>0;onClicked:root.helpRequested("help:answer-with-reports#if-the-result-needs-attention")}
         ScrollView {
-            id:editorScroll;visible:root.mode==="workspace";Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth;enabled:!root.workflow.busy
+            id:editorScroll;objectName:"reportsEditorScroll";rightPadding:20;visible:root.mode==="workspace";Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth;enabled:!root.workflow.busy && !deleteDialog.visible
             ColumnLayout {
                 width:editorScroll.availableWidth;spacing:10
-                RowLayout {
-                    ClearableSearchField {id:reportSearch;placeholderText:"Search reports";Layout.fillWidth:true}
-                    Button {text:"New report";objectName:"newReport";onClicked:root.newReport(false)}
-                    Button {text:"Duplicate";enabled:!!root.current;onClicked:root.newReport(true)}
-                }
+                Button {text:"New report";objectName:"newReport";enabled:!root.state.readOnly && root.newDraftIndex<0;onClicked:root.newReport(false)}
+                ClearableSearchField {id:reportSearch;objectName:"reportSearch";visible:root.drafts.length>0;placeholderText:"Search reports";Layout.fillWidth:true;onClearRequested:clearSearch()}
                 Repeater {
                     model:root.drafts
                     RowLayout {
                         required property var modelData;required property int index
-                        visible:{root.generation;const item=root.drafts[index];return !!item && (index===root.selectedIndex || item.name.toLowerCase().indexOf(reportSearch.text.toLowerCase())>=0)}
+                        visible:{root.generation;const item=root.drafts[index];return !!item && item.name.toLowerCase().indexOf(reportSearch.text.toLowerCase())>=0}
                         Layout.fillWidth:true
-                        Button {text:{root.generation;return root.drafts[index]?root.drafts[index].name+(root.changed(index)?" *":""):""} highlighted:index===root.selectedIndex;Layout.fillWidth:true;onClicked:root.selectedIndex=index
+                        Button {Accessible.name:modelData.name || "Unnamed report";Accessible.description:root.changed(index)?"Unsaved changes":"";text:{root.generation;return root.drafts[index]?root.drafts[index].name+(root.savedDefinitions.some(r=>r.id===root.drafts[index].id)?(root.changed(index)?" · Unsaved changes":""):" · New"):""} highlighted:index===root.selectedIndex;Layout.fillWidth:true;Layout.minimumWidth:0;contentItem:Text {text:parent.text;font:parent.font;color:parent.palette.buttonText;wrapMode:Text.Wrap;verticalAlignment:Text.AlignVCenter} onClicked:{root.forceActiveFocus();root.selectedIndex=index}
                             TapHandler {acceptedButtons:Qt.RightButton;onTapped:{root.selectedIndex=index;reportContext.popup()}}
                         }
-                        Button {text:"Show";onClicked:root.show(index)}
+                        Button {objectName:index===root.selectedIndex?"showReport":"";text:root.changed(index)?"Save and show":"Show report";enabled:!root.state.readOnly || !root.changed(index);onClicked:root.show(index)}
                     }
                 }
-                Menu {id:reportContext;MenuItem {text:"Rename";onTriggered:reportName.forceActiveFocus()} MenuItem {text:"Delete";onTriggered:root.deleteCurrent()}}
-                Label {textFormat:Text.PlainText;visible:!root.drafts.length;text:"Create a report to compare your spending across periods.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Menu {id:reportContext;MenuItem {text:"Rename";onTriggered:reportName.forceActiveFocus()} MenuItem {text:"Delete report…";visible:!root.currentNew;enabled:!root.state.readOnly;onTriggered:root.deleteCurrent()}}
+                Label {textFormat:Text.PlainText;visible:!root.drafts.length;text:"No reports yet.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {objectName:"reportNoMatches";visible:root.drafts.length>0 && root.searchMatches===0;textFormat:Text.PlainText;text:'No reports match “'+reportSearch.text+'”.';wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Button {visible:reportSearch.text.length>0 && root.searchMatches===0;text:"Clear search";onClicked:reportSearch.text=""}
+                Label {visible:root.drafts.length>0 && !root.current;text:"Select a report to edit."}
+                Label {visible:!!root.current && !root.current.name.toLowerCase().includes(reportSearch.text.toLowerCase());text:"The selected report is outside the search results.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 ColumnLayout {
-                    visible:!!root.current;Layout.fillWidth:true;spacing:10
+                    visible:!!root.current;enabled:!root.state.readOnly;Layout.fillWidth:true;spacing:10
                     Label {textFormat:Text.PlainText;text:"Report details";font.pixelSize:18}
                     TextField {id:reportName;objectName:"reportName";text:root.current?root.current.name:"";placeholderText:"Report name";Layout.fillWidth:true;onTextEdited:root.setField("name",text)}
-                    RowLayout {
-                        Label {textFormat:Text.PlainText;text:"Graph"}
-                        ComboBox {objectName:"reportGraph";model:["None","Bar — separate periods","Bar — grouped periods","Pie"];currentIndex:root.current?["none","bar","grouped_bar","pie"].indexOf(root.current.graph):0;onActivated:root.setField("graph",["none","bar","grouped_bar","pie"][currentIndex])}
+                    Flow {visible:!root.currentNew;Layout.fillWidth:true;Layout.preferredHeight:childrenRect.height;spacing:8
+                        Button {objectName:"duplicateReport";text:"Duplicate report";visible:!!root.current && !root.currentNew && root.newDraftIndex<0;onClicked:root.newReport(true)}
+                        Button {objectName:"deleteReport";text:"Delete report…";visible:!!root.current && !root.currentNew;onClicked:root.deleteCurrent()}
                     }
                     GridLayout {
-                        Layout.fillWidth:true;columns:root.width<700?1:2
+                        Layout.fillWidth:true;columns:root.width<1000?1:2
                         Repeater {
                             model:[{key:"accounts",label:"Accounts"},{key:"categories",label:"Categories"}]
                             ColumnLayout {
                                 id:choiceColumn
                                 required property var modelData
                                 readonly property var choices:modelData.key==="accounts"?root.accountChoices:root.categoryChoices
-                                Layout.fillWidth:true;Layout.preferredWidth:300
-                                RowLayout {
+                                Layout.fillWidth:true;Layout.preferredWidth:300;Layout.alignment:Qt.AlignTop
                                     Label {textFormat:Text.PlainText;text:{root.generation;return modelData.label+" ("+(root.current?root.current[modelData.key].length:0)+")"} Layout.fillWidth:true}
-                                    Button {text:"All";onClicked:root.selectAll(modelData.key,choices.map(c=>c.id))}
-                                    Button {text:"None";onClicked:root.selectAll(modelData.key,[])}
+                                Flow {Layout.fillWidth:true;Layout.preferredHeight:childrenRect.height;spacing:8
+                                    Button {visible:{root.generation;return modelData.key==="accounts" && !!root.current && choiceColumn.choices.some(c=>!root.current[modelData.key].includes(c.id))} text:"Select all "+modelData.label.toLowerCase();onClicked:root.selectAll(modelData.key,choices.map(c=>c.id))}
+                                    Button {visible:{root.generation;return modelData.key==="accounts" && !!root.current && root.current.accounts.length>0} text:"Clear "+modelData.label.toLowerCase();onClicked:root.selectAll(modelData.key,[])}
+                                    Button {objectName:"clearReportExpenses";visible:modelData.key==="categories";text:"Clear expenses";enabled:root.groupCheckState(false)!==Qt.Unchecked;onClicked:root.checkGroup(false,false)}
+                                    Button {objectName:"clearReportIncome";visible:modelData.key==="categories";text:"Clear income";enabled:root.groupCheckState(true)!==Qt.Unchecked;onClicked:root.checkGroup(true,false)}
+                                    Button {visible:{root.generation;return modelData.key==="categories" && !!root.current && choiceColumn.choices.some(c=>!root.current[modelData.key].includes(c.id))} text:"Select all "+modelData.label.toLowerCase();onClicked:root.selectAll(modelData.key,choices.map(c=>c.id))}
                                 }
-                                ClearableSearchField {id:choiceSearch;objectName:"reportChoiceSearch_"+choiceColumn.modelData.key;placeholderText:"Search "+modelData.label.toLowerCase();Layout.fillWidth:true}
-                                ScrollView {objectName:"reportChoiceScroll_"+choiceColumn.modelData.key;Layout.fillWidth:true;Layout.preferredHeight:180;contentWidth:availableWidth
-                                    ColumnLayout {width:parent.width
+                                ClearableSearchField {id:choiceSearch;onClearRequested:clearSearch();visible:choiceColumn.choices.length>1 || text.length>0;objectName:"reportChoiceSearch_"+choiceColumn.modelData.key;placeholderText:"Search "+modelData.label.toLowerCase();Layout.fillWidth:true}
+                                ScrollView {id:choiceScroll;clip:true;objectName:"reportChoiceScroll_"+choiceColumn.modelData.key;Layout.fillWidth:true;Layout.preferredHeight:180;contentWidth:availableWidth
+                                    ScrollBar.vertical:ScrollBar {
+                                        id:choiceBar;objectName:"reportChoiceBar_"+choiceColumn.modelData.key
+                                        parent:choiceScroll;x:choiceScroll.width-width;y:choiceScroll.topPadding;height:choiceScroll.availableHeight
+                                        z:10;policy:ScrollBar.AsNeeded;interactive:true;minimumSize:0.08
+                                        implicitWidth:16;padding:2
+                                        contentItem:Rectangle {visible:choiceBar.size<0.999;implicitWidth:12;implicitHeight:12;radius:6;color:choiceBar.pressed?reportTheme.scrollPressed:choiceBar.hovered?reportTheme.scrollHover:reportTheme.scrollThumb}
+                                        background:Rectangle {visible:choiceBar.size<0.999;color:reportTheme.scrollTrack;radius:8}
+                                    }
+                                    ColumnLayout {width:choiceScroll.availableWidth-16
                                         Repeater {model:root.choiceRows(choiceColumn.modelData.key,choiceSearch.text)
                                             CheckBox {
                                                 required property var modelData
@@ -228,33 +298,40 @@ Item {
                                 valuePeriod[field]=parsed.error?"!"+value:parsed.iso
                                 root.updatePeriod(index,valuePeriod)
                             }
-                            RowLayout {
+                            GridLayout {Layout.fillWidth:true;columns:root.width<700?1:3
                                 Label {textFormat:Text.PlainText;text:periodRow.index===0?"Main period":"Comparison "+periodRow.index}
-                                ComboBox {model:periodRow.choices.map(id=>root.presetNames[root.presetIds.indexOf(id)]);currentIndex:periodRow.choices.indexOf(periodRow.period.preset);onActivated:{let value=root.copy(periodRow.period);value.start=periodRow.resolved.start||value.start;value.end=periodRow.resolved.end||value.end;value.preset=periodRow.choices[currentIndex];root.updatePeriod(periodRow.index,value)}}
-                                Button {text:"Remove";visible:periodRow.index>0;onClicked:{let next=root.copy(root.drafts);next[root.selectedIndex].periods.splice(periodRow.index,1);root.drafts=next;root.touch()}}
+                                ComboBox {Layout.fillWidth:true;implicitContentWidthPolicy:ComboBox.WidestText;model:periodRow.choices.map(id=>root.presetNames[root.presetIds.indexOf(id)]);currentIndex:periodRow.choices.indexOf(periodRow.period.preset);onActivated:{let value=root.copy(periodRow.period);value.start=periodRow.resolved.start||value.start;value.end=periodRow.resolved.end||value.end;value.preset=periodRow.choices[currentIndex];root.updatePeriod(periodRow.index,value)}}
+                                Button {text:"Remove comparison";visible:periodRow.index>0;onClicked:{let next=root.copy(root.drafts);next[root.selectedIndex].periods.splice(periodRow.index,1);root.drafts=next;root.touch()}}
                             }
                             RowLayout {
                                 Label {textFormat:Text.PlainText;text:"From"}
-                                TextField {id:startField;objectName:"reportStartDate"+periodRow.index;text:periodRow.resolved.startDisplay||(periodRow.period.start||"").replace(/^!/, "");placeholderText:root.state.dateFormat||"YYYY-MM-DD";onTextEdited:periodRow.setDate("start",text);Layout.fillWidth:true}
-                                CalendarPicker {workflow:root.workflow;field:startField;onSelected:function(value){periodRow.setDate("start",value)}}
+                                NavigableTextField {id:startField;objectName:"reportStartDate"+periodRow.index;overwriteMode:true;selectByMouse:true;placeholderText:root.state.dateFormat||"YYYY-MM-DD";onTextEdited:periodRow.setDate("start",text);Layout.fillWidth:true
+                                    Binding {target:startField;property:"text";when:!startField.activeFocus;restoreMode:Binding.RestoreNone;value:periodRow.resolved.startDisplay||(periodRow.period.start||"").replace(/^!/, "")}
+                                }
+                                CalendarPicker {workflow:root.workflow;field:startField;onSelected:function(value){startField.text=value;periodRow.setDate("start",value)}}
                                 Label {textFormat:Text.PlainText;text:"through"}
-                                TextField {id:endField;objectName:"reportEndDate"+periodRow.index;text:periodRow.resolved.endDisplay||(periodRow.period.end||"").replace(/^!/, "");placeholderText:root.state.dateFormat||"YYYY-MM-DD";onTextEdited:periodRow.setDate("end",text);Layout.fillWidth:true}
-                                CalendarPicker {workflow:root.workflow;field:endField;onSelected:function(value){periodRow.setDate("end",value)}}
+                                NavigableTextField {id:endField;objectName:"reportEndDate"+periodRow.index;overwriteMode:true;selectByMouse:true;placeholderText:root.state.dateFormat||"YYYY-MM-DD";onTextEdited:periodRow.setDate("end",text);Layout.fillWidth:true
+                                    Binding {target:endField;property:"text";when:!endField.activeFocus;restoreMode:Binding.RestoreNone;value:periodRow.resolved.endDisplay||(periodRow.period.end||"").replace(/^!/, "")}
+                                }
+                                CalendarPicker {workflow:root.workflow;field:endField;onSelected:function(value){endField.text=value;periodRow.setDate("end",value)}}
                             }
                             Label {textFormat:Text.PlainText;visible:!!periodRow.resolved.error;text:periodRow.resolved.error||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         }
                     }
                     Button {text:"Add comparison";onClicked:{let next=root.copy(root.drafts);next[root.selectedIndex].periods.push({preset:"previous_year",start:"",end:""});root.drafts=next;root.touch()}}
                     RowLayout {
-                        Button {text:"Save";objectName:"saveReport";onClicked:root.save(false,false)}
-                        Button {text:"Discard";onClicked:root.discard()}
-                        Button {text:"Save and show";objectName:"showReport";onClicked:root.save(false,true)}
-                        Button {text:"Delete";onClicked:root.deleteCurrent()}
+                        Label {textFormat:Text.PlainText;text:"Chart"}
+                        ComboBox {objectName:"reportGraph";implicitContentWidthPolicy:ComboBox.WidestText;Layout.fillWidth:true;model:["None","Bar — separate periods","Bar — grouped periods","Pie"];currentIndex:root.current?["none","bar","grouped_bar","pie"].indexOf(root.current.graph):0;onActivated:root.setField("graph",["none","bar","grouped_bar","pie"][currentIndex])}
+                    }
+                    RowLayout {
+                        visible:root.currentChanged
+                        Button {text:"Save report";objectName:"saveReport";onClicked:root.save(false,false)}
+                        Button {objectName:"discardReport";text:root.currentNew?"Discard draft":"Discard changes";onClicked:root.discard()}
                     }
                 }
-                Button {visible:root.dirty;text:"Save all changes";onClicked:root.save(true,false)}
             }
         }
+        Label {textFormat:Text.PlainText;visible:root.mode!=="workspace";text:"Accounts: "+(root.resultAccountNames.length?root.resultAccountNames.join(", "):"None");wrapMode:Text.Wrap;Layout.fillWidth:true}
         Label {textFormat:Text.PlainText;visible:root.mode!=="workspace";text:"Net spending: outflows are positive; refunds reduce spending; income is negative.";wrapMode:Text.Wrap;Layout.fillWidth:true}
         Label {textFormat:Text.PlainText;visible:root.mode!=="workspace" && (root.state.importFailures||0)>0;text:"This file has "+(root.state.importFailures||0)+" imported records needing repair. They have no reportable amount. Open Review to repair them.";wrapMode:Text.Wrap;Layout.fillWidth:true}
         Button {objectName:"staleReportHelp";text:"Help with this result";focusPolicy:Qt.TabFocus;visible:root.mode!=="workspace" && !!root.result.stale;onClicked:root.helpRequested("help:answer-with-reports#if-the-result-needs-attention")}
@@ -338,5 +415,6 @@ Item {
             Item {id:detailLedgerHost;Layout.fillWidth:true;Layout.fillHeight:true}
 
         }
+        Button {objectName:"reportFeedbackHelp";text:"Help with reports";focusPolicy:Qt.TabFocus;onClicked:root.helpRequested("help:answer-with-reports")}
     }
 }
