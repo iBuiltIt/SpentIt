@@ -2,16 +2,32 @@
 
 Status: **active**  
 Last updated: 2026-11-08  
-Implementation: no license selected or added; local icon/packaging support exists, with platform verification and packaging gaps recorded in current status. No public distribution exists.
+Implementation: About, version copying and offline terms/third-party notices are implemented under the 2026-11-08 Go; see current status for verification. No final SpentIt license is selected or added. Local icon/packaging support exists with platform verification and distribution-compliance gaps. No public distribution exists.
+
+## Copyright attribution — owner decision 2026-11-08
+
+Use exactly **© 2026 Stefan Wessels** in the planned About dialog and application
+copyright metadata. The owner selected personal attribution rather than Wessels
+Consulting Ltd. This records the requested attribution; it is not an assignment
+of rights, a liability determination or selection of the final application license.
+Third-party copyrights remain intact and separately attributed.
+
+The owner subsequently approved the About design and gave implementation Go.
+The plain-language risk notice below is approved for display. Final legal license
+and limitation-of-liability terms remain unselected; no acceptance checkbox or
+contract-assent flow is authorized. The owner's question
+about use at one's own risk does not authorize weakening correctness, security,
+recovery or verification requirements.
 
 ## About and third-party notices — accepted 2026-11-08
 
 The owner accepted About as part of the next usage-driven UI phase, ahead of the
-release plan. This records requirements, not implementation Go. Further UI items
+release plan. The subsequent Go authorizes this About implementation. Further UI items
 remain to be supplied. See [the accepted release plan](../doc/first-release-plan.md).
 
 - Main About panel: application icon, SpentIt name, “Where did my money go?”,
-  version/build, copyright and a brief description.
+  version/build and copyright. The owner explicitly removed the extra description
+  “A local application for understanding your spending.” Do not reintroduce it.
 - **Third-party software…** opens an offline-readable list of the actual shipped
   components and versions, with copyright notices and full applicable licenses.
   Include transitive dependencies and required notices, not only Qt, SQLCipher
@@ -29,6 +45,40 @@ Verification when implemented must check identity/version accuracy, offline
 access, readable/selectable notices, keyboard/focus behavior and agreement between
 bundled notices and the actual shipped dependency inventory. Record any manual
 changes in the deferred backlog rather than updating the manual during feature work.
+
+## About design and implementation Go — 2026-11-08
+
+- A compact read-only window shows the application icon, SpentIt, the tagline,
+  version/build, **Copy version information**, **© 2026 Stefan Wessels**, the
+  warranty summary and a prominent Qt/LGPL acknowledgement.
+- **License and terms…**, **Third-party software…**, and **Close** are the actions.
+  The first two open readable/selectable, scrollable pages within the same window,
+  with Back and Close. Escape returns from a reading page, then closes About.
+- Use the native macOS application-menu About entry; elsewhere use Help → About
+  SpentIt. It works before a file is open. Preserve unsaved edits and financial
+  decision modality; reading/copying invokes no financial command or worker action.
+- Copy version/build, Qt version, OS and architecture only, with no file paths,
+  financial data or personal machine identifiers.
+- Short notice: “Provided as is, without warranty. See License and terms.”
+- Approved plain-language terms text:
+
+> SpentIt is provided free of charge, “as is”, without warranty to the extent
+> permitted by law. Accuracy, availability, security and preservation of data are
+> not guaranteed. Use it at your own risk. Keep independent backups and check
+> important results against your original records. Do not rely on SpentIt as your
+> only financial record.
+
+Until exact licensing terms are selected, the terms page explicitly says that the
+final distribution license is not selected and this notice does not grant
+redistribution rights or replace final terms. Third-party terms remain separate.
+No claim is made that this notice excludes every liability or waives statutory
+rights. The later release process must settle final legal terms and their
+pre-download/use presentation; explicit acceptance remains a separate decision.
+
+The implementation embeds the [reviewed notice set](../third_party/notices/README.md).
+It includes Qt license texts/runtime-source attributions and known macOS transitive
+dependencies, with explicit notice-coverage messages for mismatched installations.
+This does not complete deployed-package source/relinking or license-compliance review.
 
 ## Licensing policy refinements — accepted 2026-11-08
 

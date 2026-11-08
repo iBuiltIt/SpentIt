@@ -17,10 +17,13 @@ The rest of the owner's list has not yet been supplied; do not invent it or trea
 About as the complete phase. Discuss each requested change before implementation Go.
 
 The accepted [About requirements](../features/007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08)
-include application identity/version, offline third-party notices and licenses,
-and access to the final SpentIt license once selected. About is planned, not
-implemented by this documentation change. No manual update is due until the UI
-changes; then record affected chapters/pictures in the [manual backlog](manual-update-backlog.md).
+include application identity/version, the owner-selected **© 2026 Stefan Wessels**,
+offline third-party notices and licenses,
+and access to the final SpentIt license once selected. The owner subsequently gave
+About implementation Go; see [status](status.md) for its verification. The extra
+descriptive sentence was explicitly removed. Other UI items still need their own
+discussion and Go. MAN-013 records deferred About manual work in the
+[manual backlog](manual-update-backlog.md).
 
 ## Accepted first-release scope
 

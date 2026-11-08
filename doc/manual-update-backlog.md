@@ -273,3 +273,24 @@ Current rules and the definitions needed to explain retained transactions remain
 Retries of expired saves require refreshing current data. No workspace controls or
 pictures changed; no new screenshots are required by this change alone. No manual
 text has been updated.
+
+
+### MAN-013 — About, version information and offline notices
+
+Recorded: 2026-11-08. Status: **pending owner-authorized manual pass**.
+Source: [About implementation Go](../features/007-licensing-and-distribution.md#about-design-and-implementation-go--2026-11-08).
+
+No manual text or pictures changed during implementation.
+
+- Update Where to find things, Keyboard and mouse, and Messages/problems with
+  the About entry and Copy version information for reporting problems. macOS uses
+  the application menu; Windows/Linux use Help. Do not claim platform testing
+  beyond the recorded verification.
+- Use the compact component-picker rows (2026-11-08 owner follow-up) in any About capture.
+- Explain License and terms and offline Third-party software, Back/Close/Escape,
+  and the absence of an extra description below the tagline. Copyright is
+  © 2026 Stefan Wessels. Recheck wording after final licensing selection.
+- Review existing menu pictures and decide whether an About screenshot improves
+  the reference. Capture only in the later batch with synthetic data.
+- Keep risk/backup guidance consistent with the approved notice without presenting
+  a disclaimer as guaranteed legal immunity. Verify bundled Help links afterward.

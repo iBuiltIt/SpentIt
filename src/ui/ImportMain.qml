@@ -212,12 +212,13 @@ ApplicationWindow {
                 helpMenuTracking = true
             }
             onClosed: Qt.callLater(function() {
-                if (!(helpWindowInstance && helpWindowInstance.visible)) {
+                if (!aboutWindow.visible && !(helpWindowInstance && helpWindowInstance.visible)) {
                     if (helpMenuReturnItem) helpMenuReturnItem.forceActiveFocus()
                 }
                 helpMenuTracking = false
                 helpMenuReturnItem = null
             })
+            MenuItem { objectName: "openAbout"; text: "About SpentIt"; enabled: !rulesLeaving && !reportsWorkspace.leaving; onTriggered: window.openAbout() }
             MenuItem { objectName: "openHelp"; text: "SpentIt Help"; onTriggered: openHelp() }
             MenuItem { objectName: "openScreenHelp"; text: "Help for this screen"; onTriggered: openContextHelp(screenHelpTarget()) }
         }
@@ -765,6 +766,23 @@ ApplicationWindow {
     property string ruleSavingId: ""
     property bool ruleSavingAll: false
     property bool rulesLeaving: false
+    function openAbout() {
+        helpFocusTransfer = true
+        aboutWindow.present(helpMenuReturnItem || window.activeFocusItem)
+    }
+    AboutWindow {
+        id: aboutWindow
+        information: workflow.aboutInformation
+        mainWindow: window
+        onDismissed: {
+            const item = returnItem
+            Qt.callLater(function() {
+                window.requestActivate()
+                if (item) item.forceActiveFocus()
+                helpFocusTransfer = false
+            })
+        }
+    }
     property var helpWindowInstance: null
     property var helpReturnItem: null
     property var helpMenuReturnItem: null
@@ -774,7 +792,7 @@ ApplicationWindow {
     // Native window deactivation can emit editingFinished. Reading Help must
     // not normalize an amount, restore category text, or save a category draft.
     property bool helpFocusTransfer: false
-    readonly property bool helpFocusSuspended: helpFocusTransfer || helpMenuTracking || helpMenu.visible
+    readonly property bool helpFocusSuspended: helpFocusTransfer || helpMenuTracking || helpMenu.visible || aboutWindow.visible
     property var ruleValidationQueue: []
     property bool ruleValidatingAll: false
     property int unsavedRuleCount: {let generation=ruleEditGeneration;return dirtyRuleIndices().length}

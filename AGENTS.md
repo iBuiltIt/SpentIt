@@ -4,7 +4,9 @@
 
 Read [the accepted release plan](doc/first-release-plan.md) before planning next
 work. The owner's usage-driven UI improvements come first, including About;
-the remaining UI list is open. This is separate from the later busy/readiness
+the remaining UI list is open. About subsequently received implementation Go;
+see current status for its native/offline verification and licensing limits.
+This is separate from the later busy/readiness
 audit. Current-value rule matching and macOS-first release scope are accepted,
 not implementation Go. Licensing policy is settled in the plan; exact legal
 terms and publication remain gated. Preserve deferred retention scope and the

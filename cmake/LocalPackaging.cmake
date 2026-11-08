@@ -4,8 +4,9 @@ if(APPLE)
   # discoverable from the bundle itself before macdeployqt scans dependencies.
   find_package(Qt6 6.8 REQUIRED COMPONENTS Svg)
   qt_add_executable(spentit_macos_bundle MACOSX_BUNDLE EXCLUDE_FROM_ALL import_main.cpp)
-  target_link_libraries(spentit_macos_bundle PRIVATE spentit_import_model spentit_import_store Qt6::Quick Qt6::QuickControls2 Qt6::Svg)
-  qt_add_resources(spentit_macos_bundle "bundle_ui" PREFIX "/spentit" FILES ImportMain.qml)
+  target_link_libraries(spentit_macos_bundle PRIVATE spentit_import_model spentit_import_store spentit_help Qt6::Quick Qt6::QuickControls2 Qt6::Svg)
+  qt_add_resources(spentit_macos_bundle "bundle_ui" PREFIX "/spentit" FILES ImportMain.qml about/AboutWindow.qml ClearableSearchField.qml NavigableTextField.qml CategoryCompletion.qml Theme.qml CalendarPicker.qml ReportsWorkspace.qml ReportChart.qml help/HelpWindow.qml)
+  qt_add_resources(spentit_macos_bundle "bundle_help" PREFIX "/spentit/help" BASE "${SPENTIT_HELP_BUNDLE}" FILES ${SPENTIT_HELP_BUNDLE_FILES})
   qt_add_resources(spentit_macos_bundle "bundle_icons" PREFIX "/spentit/images"
     BASE "${PROJECT_SOURCE_DIR}/assets/images" FILES ${spentit_icon_files})
   set(icon "${PROJECT_SOURCE_DIR}/assets/images/SpentIt_light.icns")
@@ -15,6 +16,7 @@ if(APPLE)
     OUTPUT_NAME SpentIt
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/local-app"
     MACOSX_BUNDLE_BUNDLE_NAME SpentIt
+    MACOSX_BUNDLE_COPYRIGHT "© 2026 Stefan Wessels"
     MACOSX_BUNDLE_GUI_IDENTIFIER "local.spentit.desktop"
     MACOSX_BUNDLE_ICON_FILE SpentIt_light.icns
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"

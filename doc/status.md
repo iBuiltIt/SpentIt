@@ -1,5 +1,82 @@
 # Project status
 
+## Compact About component picker — 2026-11-08
+
+Owner-requested reduction of vertical spacing in the third-party component list.
+Rows now use four pixels of top/bottom padding and a 28-pixel minimum height,
+growing with the existing font metrics. Text size is unchanged. Rebuilt the
+Release application; native light-mode About check passed 3/3 including setup/
+cleanup in 2.05 s, opening the actual component popup for visual inspection.
+The compact list capture was inspected; all 20 current entries fit in that view.
+MAN-013 records the later manual capture update. No financial behavior changed.
+
+## About dialog and offline notices — owner Go, 2026-11-08
+
+Implemented the [approved About design](../features/007-licensing-and-distribution.md#about-design-and-implementation-go--2026-11-08),
+without the rejected extra description. The native macOS application-menu About
+entry opens before or after loading a file; other platforms retain Help → About
+SpentIt. The window shows the icon, tagline, version/build, exact copyright
+**© 2026 Stefan Wessels**, warranty summary and Qt/LGPL acknowledgement. Version
+copying includes only version/build, Qt, OS and architecture. Offline selectable
+terms and third-party pages have Back/Close/Escape navigation. The agreed risk
+notice is displayed with an explicit statement that the final distribution
+license remains unselected; no acceptance checkbox or operative license was added.
+
+The [notice inventory](../third_party/notices/README.md) contains full Qt LGPL/GPL
+texts, Qt Base/Quick runtime-source attribution catalogs, SQLCipher/SQLite/PCRE2
+and the inspected macOS transitive libraries. Package-version mismatches and
+other-platform coverage limits are explicit rather than mislabeled. Final deployed
+plugin/dependency inventory, source/relinking obligations, reference-data terms,
+legal review, signing and notarization remain release work.
+
+About metadata is a read-only UI object, independent of financial commands. Its
+opening/closing participates in the existing focus-suspension guard. The main
+window and unsaved text are retained. The local macOS bundle now embeds the full
+current UI/Help resources and links Help/diagnostic transport; those stale wiring
+gaps surfaced when verifying its About metadata. Bundle copyright is populated.
+No financial/storage behavior or experimental format changed (68/67).
+
+Verification on macOS arm64, rules-enabled Release, Qt 6.12.0, synthetic data:
+
+- Rebuilt `build/SpentIt`, the Help/About test binary and local macOS app bundle.
+- Native selected About and adjacent Help checks passed **9/9 including setup/
+  cleanup** in 8.93 s: actual Cocoa application-menu activation, light/dark views,
+  version clipboard content, offline license texts, keyboard page activation and
+  Escape, unchanged unsaved transaction expression/payee and zero worker commands,
+  plus Help workspace/category focus and Rules/Reports decision modality.
+- Inspected native normal/narrow main, terms and notices captures in light/dark.
+  This caught a clipped Close button at native font sizes; content-based minimum
+  height corrected it and the final geometry assertion passed. The native menu
+  test initially needed Cocoa menu validation before testing enabled state.
+- The initial offscreen focused checks passed **4/4 including setup/cleanup**
+  after accounting for the expected missing-file probe and permitting normal
+  application-data locking. An earlier sandboxed synthetic creation was refused;
+  no locking protection was weakened. Native final checks above cover the later
+  layout refinements and actual menu path.
+- The final registered `import.about_ui` CTest passed **1/1** in 1.44 s;
+  its offscreen dark row deliberately skips (native coverage is recorded above).
+  This also verifies the final platform-independent Qt-notice selection assertion.
+- Help preparation/catalog and application QML smoke passed **3/3** in 1.98 s.
+  The local bundle's offscreen `--smoke` also exited successfully; its plist
+  contains the exact copyright. These are local-build checks, not deployed,
+  signed/notarized-package acceptance.
+
+Changed-document file/heading links passed (529 checked), notice-manifest paths
+and recorded file digests verified, and `git diff --check` passed.
+Manual text/screenshots remain unchanged; MAN-013 records the later update.
+No private files were read. Windows/Linux interaction, complete package compliance,
+and a full financial regression run are not claimed for this UI-only change.
+
+## About copyright attribution — 2026-11-08
+
+The owner selected **© 2026 Stefan Wessels** for the planned About dialog and
+application copyright metadata. Recorded in [licensing and About requirements](../features/007-licensing-and-distribution.md#copyright-attribution--owner-decision-2026-11-08)
+and the release plan. About design must be discussed before implementation;
+warranty/liability wording remains under discussion. No license, application,
+manual or metadata implementation changed. Documentation-only verification:
+relative targets and the new heading anchor checked; `git diff --check` passed.
+No runtime tests were run.
+
 ## First-release decisions and next UI phase — 2026-11-08
 
 The owner accepted the [first-release plan](first-release-plan.md): macOS first,

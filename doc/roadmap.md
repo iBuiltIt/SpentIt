@@ -4,7 +4,9 @@
 
 The [accepted first-release plan](first-release-plan.md) is the current planning
 baseline. Next comes the owner's usage-driven UI work, including About and further
-items still to be supplied. It is separate from the subsequent busy/readiness
+items still to be supplied. About subsequently received Go and is implemented;
+see [status](status.md) for verification and remaining license/package limits.
+This UI phase is separate from the subsequent busy/readiness
 audit. Then follow bounded rule/readiness work, release verification, the batch
 manual refresh, licensing/packages and explicit publication approval. Licensing
 investigation may proceed alongside engineering. Direction acceptance is not

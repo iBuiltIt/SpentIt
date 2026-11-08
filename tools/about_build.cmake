@@ -1,0 +1,13 @@
+execute_process(COMMAND git -C "${SOURCE_DIR}" describe --always --dirty --exclude "*"
+  RESULT_VARIABLE result OUTPUT_VARIABLE revision OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT result EQUAL 0)
+  set(revision "source archive")
+endif()
+set(content "#pragma once\n#define SPENTIT_VERSION \"${VERSION}\"\n#define SPENTIT_BUILD \"${revision} (${CONFIG})\"\n")
+set(previous "")
+if(EXISTS "${OUTPUT}")
+  file(READ "${OUTPUT}" previous)
+endif()
+if(NOT previous STREQUAL content)
+  file(WRITE "${OUTPUT}" "${content}")
+endif()

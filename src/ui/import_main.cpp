@@ -53,6 +53,7 @@ int main(int argc,char** argv) {
         QSettings().setValue("datasetPath",smokeSettings->path()+"/missing.spentit");
     }
     ImportModel model(spentit::storage::document_gateway((QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/verification").toStdString()));
+    app.setApplicationVersion(model.aboutInformation()->version());
     HelpCatalog helpCatalog;
     helpCatalog.load(QStringLiteral(":/spentit/help/manifest.json"));
     QQmlApplicationEngine engine;

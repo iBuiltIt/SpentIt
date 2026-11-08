@@ -1,5 +1,6 @@
 #pragma once
 #include <spentit/document_gateway.hpp>
+#include "about/about_info.hpp"
 #include <spentit/import_view.hpp>
 #include <QAbstractListModel>
 #include <QThreadPool>
@@ -9,6 +10,7 @@
 #include <spentit/diagnostics.hpp>
 class ImportModel final : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(AboutInfo* aboutInformation READ aboutInformation CONSTANT)
     Q_PROPERTY(bool rememberWindowPosition READ rememberWindowPosition WRITE setRememberWindowPosition NOTIFY windowPreferencesChanged)
     Q_PROPERTY(QVariantMap state READ state NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
@@ -25,6 +27,7 @@ class ImportModel final : public QAbstractListModel {
     Q_PROPERTY(bool diagnosticsEnabled READ diagnosticsEnabled CONSTANT)
     Q_PROPERTY(qulonglong diagnosticGeneration READ diagnosticGeneration NOTIFY changed)
 public:
+    AboutInfo* aboutInformation() { return &aboutInformation_; }
     bool rememberWindowPosition() const {return rememberWindowPosition_;}
     void setRememberWindowPosition(bool);
     Q_INVOKABLE void restoreWindowPosition(QObject*);
@@ -73,6 +76,7 @@ public:
     Q_INVOKABLE QVariantMap rowRecord(int row) const;
 signals: void windowPreferencesChanged(); void changed(); void completed(QString action,bool success);
 private:
+    AboutInfo aboutInformation_{this};
     struct Worker;
     std::shared_ptr<Worker> worker_;
     QThreadPool pool_;

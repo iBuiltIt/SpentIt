@@ -2,6 +2,8 @@
 #include "import_model.hpp"
 #include <spentit/storage_document_gateway.hpp>
 #include <QColor>
+#include <QClipboard>
+#include <QSignalSpy>
 #include <QScopeGuard>
 #include <functional>
 #include <QElapsedTimer>
@@ -28,6 +30,9 @@
 #include <QTextLayout>
 #include <QWindow>
 using namespace spentit;
+#ifdef Q_OS_MACOS
+bool triggerNativeAbout();
+#endif
 
 class HelpUiTests : public QObject {
     Q_OBJECT
@@ -148,6 +153,141 @@ private slots:
         QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settings.path());
     }
     void init() { QSettings().clear(); }
+    void aboutBeforeOpeningAndOfflineNotices_data() {
+        QTest::addColumn<bool>("dark");
+        QTest::newRow("light") << false;
+        QTest::newRow("dark") << true;
+    }
+    void aboutBeforeOpeningAndOfflineNotices() {
+        QFETCH(bool, dark);
+        const auto originalScheme = QGuiApplication::styleHints()->colorScheme();
+        QGuiApplication::styleHints()->setColorScheme(dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+        const auto restore = qScopeGuard([&] { QGuiApplication::styleHints()->setColorScheme(originalScheme); });
+        if (dark && QGuiApplication::platformName() == "offscreen")
+            QSKIP("Dark appearance requires the native platform.");
+        QSettings().setValue("datasetPath", settings.filePath("missing.spentit"));
+        Session session(nullptr);
+        QVERIFY(session.root);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QTRY_VERIFY(!session.model.busy());
+        QVERIFY(!session.model.state().value("active").toBool());
+        auto* menu = object(session.root, "openAbout");
+        QVERIFY(menu);
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == "cocoa") {
+            session.window->requestActivate();
+            QTRY_VERIFY(session.window->isActive());
+            QTest::qWait(50);
+            QVERIFY(triggerNativeAbout());
+        } else
+#endif
+        QVERIFY(QMetaObject::invokeMethod(menu, "triggered"));
+        auto* about = namedWindow("aboutWindow");
+        QVERIFY(about);
+        QTRY_VERIFY(about->isVisible());
+        QCOMPARE(about->modality(), Qt::ApplicationModal);
+        QCOMPARE(about->transientParent(), session.window);
+        auto* info = session.model.aboutInformation();
+        QVERIFY(!info->version().isEmpty());
+        QVERIFY(!info->build().isEmpty());
+        QVERIFY(click(about, "copyVersionInformation"));
+        QCOMPARE(QGuiApplication::clipboard()->text(), info->versionInformation());
+        QVERIFY(!info->versionInformation().contains(settings.path()));
+        const auto captureBase = qEnvironmentVariable("SPENTIT_ABOUT_CAPTURE");
+        const auto capture = captureBase.isEmpty() ? QString() : captureBase + (dark ? "-dark" : "-light");
+        if (!capture.isEmpty()) {
+            QTest::qWait(150);
+            QVERIFY(about->grabWindow().save(capture + "-main.png"));
+            about->setWidth(440);
+            QTest::qWait(50);
+            about->setHeight(about->minimumHeight());
+            QTest::qWait(50);
+            QVERIFY(about->grabWindow().save(capture + "-narrow.png"));
+        }
+        auto* close = qobject_cast<QQuickItem*>(object(about, "aboutClose"));
+        QVERIFY(close);
+        QVERIFY(close->mapToScene(QPointF(0, close->height())).y() <= about->height());
+        QVERIFY(tabTo(about, "aboutLicense"));
+        QTest::keyClick(about, Qt::Key_Space);
+        QCOMPARE(about->property("page").toInt(), 1);
+        auto* text = object(about, "aboutNoticeText");
+        QVERIFY(text);
+        QVERIFY(text->property("text").toString().contains("© 2026 Stefan Wessels"));
+        QVERIFY(text->property("text").toString().contains("final distribution license has not yet been selected"));
+        QVERIFY(text->property("readOnly").toBool());
+        if (!capture.isEmpty()) {
+            QTest::qWait(100);
+            QVERIFY(about->grabWindow().save(capture + "-terms.png"));
+        }
+        QVERIFY(click(about, "aboutBack"));
+        QVERIFY(click(about, "aboutNotices"));
+        QCOMPARE(about->property("page").toInt(), 2);
+        const auto rows = info->components();
+        QVERIFY(rows.size() >= 6);
+        for (const auto& value : rows) {
+            const auto entry = value.toMap();
+            QVERIFY(!entry.value("label").toString().isEmpty());
+            QVERIFY(entry.value("text").toString().size() > 100);
+        }
+        int qtIndex = -1;
+        for (int i = 0; i < rows.size(); ++i)
+            if (rows[i].toMap().value("label").toString().startsWith("Qt — ")) qtIndex = i;
+        QVERIFY(qtIndex >= 0);
+        QVERIFY(object(about, "aboutComponents")->setProperty("currentIndex", qtIndex));
+        QTRY_VERIFY(text->property("text").toString().contains("GNU LESSER GENERAL PUBLIC LICENSE"));
+        QVERIFY(text->property("text").toString().contains("GNU GENERAL PUBLIC LICENSE"));
+        if (!capture.isEmpty()) {
+            QTest::qWait(150);
+            QVERIFY(about->grabWindow().save(capture + "-notices.png"));
+            auto* picker = object(about, "aboutComponents");
+            auto* popup = picker->property("popup").value<QObject*>();
+            QVERIFY(popup);
+            QVERIFY(QMetaObject::invokeMethod(popup, "open"));
+            QTest::qWait(100);
+            QVERIFY(about->grabWindow().save(capture + "-components.png"));
+            QVERIFY(QMetaObject::invokeMethod(popup, "close"));
+        }
+        // Escape returns from reading, then closes About, without touching the file.
+        about->requestActivate();
+        QTRY_VERIFY(about->isActive());
+        QTest::keyClick(about, Qt::Key_Escape);
+        QTRY_COMPARE(about->property("page").toInt(), 0);
+        QTest::keyClick(about, Qt::Key_Escape);
+        QTRY_VERIFY(!about->isVisible());
+        QVERIFY(!session.model.state().value("active").toBool());
+    }
+    void aboutPreservesUnsavedTransaction() {
+        Session session(nullptr);
+        QVERIFY(session.root);
+        run(session.model, "create", {{"path", session.path()}, {"protected", false}, {"name", "About test"}, {"currency", "CAD"}});
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        QVERIFY(click(session.root, "addTransaction"));
+        wait(session.model);
+        QVERIFY(edit(session.root, "durablePayee", "Unsaved payee"));
+        QVERIFY(edit(session.root, "durableTotal", "1+2"));
+        auto* field = qobject_cast<QQuickItem*>(object(session.root, "durableTotal"));
+        QVERIFY(field);
+        field->forceActiveFocus();
+        const auto state = session.model.state();
+        QSignalSpy completed(&session.model, &ImportModel::completed);
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == "cocoa") QVERIFY(triggerNativeAbout());
+        else
+#endif
+        QVERIFY(QMetaObject::invokeMethod(session.root, "openAbout"));
+        auto* about = namedWindow("aboutWindow");
+        QVERIFY(about);
+        QTRY_VERIFY(about->isVisible());
+        QVERIFY(click(about, "aboutLicense"));
+        QVERIFY(click(about, "aboutClose"));
+        QTRY_VERIFY(!about->isVisible());
+        QTRY_VERIFY(field->hasActiveFocus());
+        QCOMPARE(field->property("text").toString(), QString("1+2"));
+        QCOMPARE(object(session.root, "durablePayee")->property("text").toString(), QString("Unsaved payee"));
+        QVERIFY(session.root->property("dirty").toBool());
+        QCOMPARE(session.model.state(), state);
+        QCOMPARE(completed.count(), 0);
+    }
     void keyboardHelp_data() {
         QTest::addColumn<bool>("dark");
         QTest::addColumn<int>("width");
