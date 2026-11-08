@@ -12,11 +12,17 @@ This supersedes older placement and button-label descriptions, not rule policy.
   rules remain visible outside search results, with explicit feedback when the
   search matches nothing or the selected rule is outside the results.
 - The selected definition has Save rule / Discard changes (Discard draft for new
-  rules) beneath its fields, visible only with changes. Remove rule stages removal;
-  the summary then offers Save removal / Keep rule. Removing a definition does not
-  reverse transaction changes. Removed definitions show readable scope, pattern
-  and actions and can be copied into a new identity.
-- Enabled selected rules expose a separate Apply section naming the rule. An
+  rules) beneath its fields, visible only with changes. Owner follow-up: Delete
+  rule… opens a modal confirmation naming the rule, with Delete rule / Keep rule.
+  Keep rule and Escape cancel; no category summary or pre-confirmation Deleted badge
+  appears. The workspace cannot create/select rules while deciding. Confirmation
+  durably deletes only this definition using saved surrounding definitions; unrelated
+  drafts remain untouched. Successful deletion opens the existing new draft first,
+  otherwise the nearest remaining rule, or the empty state if none remain. Deletion
+  does not reverse transaction changes. Removed definitions show readable scope,
+  pattern and actions and can be copied into a new identity.
+- Enabled selected rules expose a separate Preview or Apply Rule section naming
+  the rule, with additional space below the divider separating definition actions. An
   account picker stays inside Rules, preserving selection, search and independent
   drafts. Account changes invalidate preview output and update navigation context.
   Transactions selects All transactions (default) or New transactions only, with
@@ -27,7 +33,7 @@ This supersedes older placement and button-label descriptions, not rule policy.
   existing account operation is undoable, in a separate strip naming the account;
   it is independent of current rule selection. Temporarily busy controls stay
   present but unavailable, rather than becoming empty-state instructions.
-- The movable leave dialog lists changed rule names and New / Edited / Remove
+- The movable leave dialog lists changed rule names and New / Edited
   states in a bounded scroll area. Save all changes and Discard all changes retain
   their existing all-drafts semantics. Cancel, Escape and window close stay in
   Rules. Saving validates all changes atomically and never applies transactions.
@@ -36,6 +42,38 @@ No matching, category eligibility, ordering, manual/transfer protection, financi
 retention or format change. Current-value matching remains separately gated.
 Manual prose and pictures are deferred under MAN-015 in the
 [manual backlog](../doc/manual-update-backlog.md#man-015--rules-workspace-usability).
+
+Owner follow-up, 2026-11-08: inset rule numbers and separate definition actions
+from account application with a divider and spacing. Missing-category validation
+from Save/Preview/Apply uses the error-colored status line and clears when editing,
+changing selection or completing a successful command. Rule row accessible names
+contain the definition name; draft status is exposed in the accessible description,
+preserving visual badges. The later modal deletion follow-up removes the earlier
+pending-removal state entirely from the user workflow. See status for the native
+crash investigation and its limits.
+
+
+## Ledger context-menu rule creation — owner Go 2026-11-08
+
+The normal ledger right-click menu offers Create rule… below Add transaction….
+It requires exactly one selected transaction with an eligible creation target,
+Rules support, writable/idle state and room for a new draft. Multiple selection
+never silently chooses one transaction. Existing source-field eligibility,
+applied-rule target exclusions and the one-new-draft limit are unchanged.
+
+Right-click reads the selected transaction's targets through the existing inspect
+command without expanding the transaction editor. Ledger selection and an earlier
+open editor can refer to different identities; the action checks their identity
+agreement after inspection and cannot use stale editor data. Existing unsaved-edit
+guards run before changing that context. One target opens its rule draft directly;
+multiple transaction/split targets use the existing chooser, now with Cancel.
+No new Edit rule menu action or current-value matching is introduced. Report
+ledger creation is outside this entry point's scope.
+
+Ledger menu items and submenu arrows explicitly use enabled/disabled colours in
+both themes. Disabled items have no hover highlight; submenu actions and category
+choices use the same presentation. Existing financial command eligibility remains
+unchanged. See [status](../doc/status.md) for verification and limits.
 
 ## Current-value matching — accepted direction 2026-11-08
 

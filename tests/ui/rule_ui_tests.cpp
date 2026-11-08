@@ -3,6 +3,9 @@
 #include <spentit/storage_document_gateway.hpp>
 #include "../storage/import_schema5_fixture.hpp"
 #include <QTest>
+#include <QAccessible>
+#include <QStyleHints>
+#include <QScopeGuard>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QTimer>
@@ -95,6 +98,148 @@ class RuleUiTests : public QObject {
 private slots:
     void initTestCase(){if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS"))QVERIFY(spentit::diagnostics::Collector::instance().enable());QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("RuleUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
     void init(){QSettings().clear();qunsetenv("SPENTIT_RULE_CANCEL_WINDOW");qunsetenv("SPENTIT_RULE_REFRESH_FAIL");}
+    void ledgerContextCreatesRuleWithoutOpeningEditor_data(){
+        QTest::addColumn<bool>("dark");QTest::newRow("light")<<false;QTest::newRow("dark")<<true;
+    }
+    void ledgerContextCreatesRuleWithoutOpeningEditor(){
+        QFETCH(bool,dark);
+        const auto originalScheme=QGuiApplication::styleHints()->colorScheme();
+        const auto restoreScheme=qScopeGuard([&]{QGuiApplication::styleHints()->setColorScheme(originalScheme);});
+        QGuiApplication::styleHints()->setColorScheme(dark?Qt::ColorScheme::Dark:Qt::ColorScheme::Light);
+        Session s;createDocument(s,"Ledger rule context");QVERIFY(s.root);
+        const auto source=s.path("context.qif");
+        writeQif(source,"!Type:Bank\nD01/01/2026\nT-1.00\nPFirst shop\n^\nD02/01/2026\nT-2.00\nPSecond shop\n^\n");
+        run(s.model,"import",{{"path",source},{"profile","DMY"}});
+        const auto batch=selected(s.model).value("batch").toString();
+        run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(s.root->setProperty("editorClosed",true));
+        auto openContext=[&](int ordinal){return QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(batch,ordinal))));};
+        QTest::qWait(100);
+        auto* row=qobject_cast<QQuickItem*>(object(s.root,"ledgerRow_"+QString::number(s.model.occurrenceIndex(batch,1))));QVERIFY(row);
+        QTest::mouseClick(s.window,Qt::RightButton,Qt::NoModifier,row->mapToScene(QPointF(120,15)).toPoint());wait(s.model);
+        QTRY_VERIFY(object(s.root,"ledgerContext")->property("visible").toBool());
+        QVERIFY(s.root->property("editorClosed").toBool());
+        QCOMPARE(selected(s.model).value("ordinal").toInt(),1);
+        auto* action=object(s.root,"createRuleContext");QVERIFY(action);
+        QVERIFY(action->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(action,"triggered"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
+        QCOMPARE(page(s.root),"rules");
+        QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Second shop");
+        QCOMPARE(object(s.root,"ruleExpression")->property("text").toString(),"^Second shop$");
+        QVERIFY(click(s.root,"discardRules"));QVERIFY(click(s.root,"accountNavigation"));
+        run(s.model,"select",{{"row",s.model.occurrenceIndex(batch,0)}});
+        run(s.model,"select",{{"row",s.model.occurrenceIndex(batch,1)},{"toggle",true}});
+        QVERIFY(openContext(1));wait(s.model);
+        QVERIFY(!action->property("enabled").toBool());
+        QCOMPARE(s.model.state().value("selectionCount").toInt(),2);
+        auto* theme=object(s.root,"applicationTheme");QVERIFY(theme);
+        auto* content=action->property("contentItem").value<QObject*>();QVERIFY(content);
+        QCOMPARE(content->property("color"),theme->property("disabled"));
+        auto* submenu=object(s.root,"ledgerSubmenu_ledgerDuplicateMenu");QVERIFY(submenu);
+        QVERIFY(!submenu->property("enabled").toBool());
+        auto* arrow=submenu->property("arrow").value<QObject*>();QVERIFY(arrow);
+        QCOMPARE(arrow->property("color"),theme->property("disabled"));
+        QVERIFY(submenu->setProperty("highlighted",true));
+        auto* background=submenu->property("background").value<QObject*>();QVERIFY(background);
+        QCOMPARE(background->property("color").value<QColor>().alpha(),0);
+        if(qEnvironmentVariableIsSet("SPENTIT_LEDGER_MENU_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_LEDGER_MENU_SCREENSHOT")+(dark?"-dark.png":"-light.png")));}
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
+        run(s.model,"select",{{"row",s.model.occurrenceIndex(batch,0)}});
+        QVERIFY(openContext(0));wait(s.model);
+        QVERIFY(action->property("enabled").toBool());
+        QCOMPARE(content->property("color"),theme->property("text"));
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
+        const auto splitSource=s.path("split-context.qif");writeQif(splitSource,wise());
+        run(s.model,"import",{{"path",splitSource},{"profile","DMY"}});
+        const auto splitBatch=selected(s.model).value("batch").toString();
+        QVERIFY(s.root->setProperty("editorClosed",true));
+        QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(splitBatch,0)))));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(action,"triggered"));
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
+        QVERIFY(object(s.root,"ruleSplitDialog")->property("visible").toBool());
+        QVERIFY(s.root->property("editorClosed").toBool());
+        QVERIFY(click(s.root,"ruleSplitChoice_0"));wait(s.model);
+        QCOMPARE(object(s.root,"ruleScope")->property("currentIndex").toInt(),1);
+        QCOMPARE(object(s.root,"ruleExpression")->property("text").toString(),"^Wise Charges for: card$");
+        QVERIFY(click(s.root,"discardRules"));QVERIFY(click(s.root,"accountNavigation"));
+        QVERIFY(click(s.root,"addTransaction"));wait(s.model);
+        QVERIFY(edit(s.root,"durablePayee","Manual only"));
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"durableTotal"),"accepted"));wait(s.model);
+        const auto manual=selected(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(manual.value("batch").toString(),0)))));wait(s.model);
+        QVERIFY(!action->property("enabled").toBool());
+    }
+    void discardNewThenRemoveSavedWithAccessibility(){
+        QAccessible::setActive(true);
+        Session s;createDocument(s,"Rule removal regression");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QVERIFY(click(s.root,"newRule"));QVERIFY(edit(s.root,"ruleLabel","test"));
+        QVERIFY(click(s.root,"saveRules"));
+        QCOMPARE(object(s.root,"operationPhase")->property("text").toString(),"Choose an existing category.");
+        QVERIFY(s.model.state().value("rules").toList().isEmpty());
+        QCOMPARE(object(s.root,"operationPhase")->property("color"),object(s.root,"welcomeError")->property("color"));
+        QVERIFY(object(s.root,"ruleNumber_0")->property("leftPadding").toReal()>=8);
+        auto* divider=qobject_cast<QQuickItem*>(object(s.root,"ruleApplyDivider"));QVERIFY(divider && divider->isVisible());
+        auto* save=qobject_cast<QQuickItem*>(object(s.root,"saveRules"));QVERIFY(save);
+        auto* apply=qobject_cast<QQuickItem*>(object(s.root,"applyRules"));QVERIFY(apply);
+        QTest::qWait(100);
+        QVERIFY(divider->mapToScene(QPointF()).y()>save->mapToScene(QPointF(0,save->height())).y());
+        QVERIFY(divider->mapToScene(QPointF()).y()<apply->mapToScene(QPointF()).y());
+        if(qEnvironmentVariableIsSet("SPENTIT_RULE_VALIDATION_SCREENSHOT"))QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_VALIDATION_SCREENSHOT")));
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));
+        QVERIFY(s.root->property("ruleValidationError").toString().isEmpty());
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QCOMPARE(s.model.state().value("rules").toList().size(),1);
+        QVERIFY(click(s.root,"newRule"));
+        QVERIFY(click(s.root,"openRule_0"));QVERIFY(click(s.root,"openRule_1"));
+        QVERIFY(click(s.root,"discardRules"));
+        QCOMPARE(s.root->property("ruleIndex").toInt(),0);
+        auto* button=object(s.root,"openRule_0");QVERIFY(button);
+        auto* accessible=QAccessible::queryAccessibleInterface(button);QVERIFY(accessible);
+        QCOMPARE(accessible->text(QAccessible::Name),QString("test"));
+        QVERIFY(click(s.root,"deleteRule_0"));QTest::qWait(100);
+        QCOMPARE(accessible->text(QAccessible::Name),QString("test"));
+        QCOMPARE(accessible->text(QAccessible::Description),QString("Saved rule"));
+        QVERIFY(object(s.root,"deleteRuleDialog")->property("visible").toBool());
+        QVERIFY(!click(s.root,"newRule"));
+        QCOMPARE(s.model.state().value("rules").toList().size(),1);
+        QVERIFY(click(s.root,"confirmDeleteRule"));wait(s.model);
+        QVERIFY(s.model.state().value("rules").toList().isEmpty());
+        QCOMPARE(s.model.state().value("ruleTombstones").toList().size(),1);
+        run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
+        QVERIFY(s.model.state().value("rules").toList().isEmpty());
+        QCOMPARE(s.model.state().value("ruleTombstones").toList().size(),1);
+    }
+    void deleteConfirmationSelectsRemainingDraft(){
+        Session s;createDocument(s,"Delete confirmation");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"test","^test$","");QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        transactionRule(s.root,"Neighbour","^other$","");QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(click(s.root,"newRule"));QVERIFY(edit(s.root,"ruleLabel","Unfinished draft"));
+        QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(click(s.root,"deleteRule_0"));
+        QVERIFY(object(s.root,"deleteRuleDialog")->property("modal").toBool());
+        QVERIFY(!click(s.root,"openRule_2"));QVERIFY(!click(s.root,"newRule"));
+        QVERIFY(!object(s.root,"openRule_0")->property("text").toString().contains("Deleted"));
+        QVERIFY(click(s.root,"keepRule"));
+        QCOMPARE(s.model.state().value("rules").toList().size(),2);
+        QVERIFY(click(s.root,"deleteRule_0"));
+        QTest::keyClick(s.window,Qt::Key_Escape);
+        QTRY_VERIFY(!object(s.root,"deleteRuleDialog")->property("visible").toBool());
+        QVERIFY(click(s.root,"deleteRule_0"));
+        if(qEnvironmentVariableIsSet("SPENTIT_RULE_DELETE_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_RULE_DELETE_SCREENSHOT")));}
+        QVERIFY(click(s.root,"confirmDeleteRule"));wait(s.model);
+        QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Unfinished draft");
+        QVERIFY(object(s.root,"ruleEditor")->property("visible").toBool());
+        QCOMPARE(s.model.state().value("rules").toList().size(),1);
+        QVERIFY(s.root->property("rulesDirty").toBool());
+        QVERIFY(click(s.root,"discardRules"));
+        QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Neighbour");
+        QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(click(s.root,"confirmDeleteRule"));wait(s.model);
+        QVERIFY(object(s.root,"newRule")->property("visible").toBool());
+        QVERIFY(!object(s.root,"ruleEditor")->property("visible").toBool());
+    }
     void workspaceUsabilityAndAccountPicker(){
         Session s;createDocument(s,"First account");
         const auto first=s.model.state().value("accountId").toString();
@@ -140,9 +285,9 @@ private slots:
         QVERIFY(setChecked(s.root,"ruleEnabled_0",false));
         QVERIFY(!object(s.root,"applyRules")->property("visible").toBool());
         QVERIFY(click(s.root,"discardRules"));
-        QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(!object(s.root,"ruleLabel")->property("visible").toBool());
-        QCOMPARE(object(s.root,"saveRules")->property("text").toString(),"Save removal");
-        QVERIFY(click(s.root,"discardRules"));QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(object(s.root,"ruleLabel")->property("visible").toBool());
+        QVERIFY(object(s.root,"deleteRuleDialog")->property("visible").toBool());
+        QVERIFY(click(s.root,"keepRule"));QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(click(s.root,"confirmDeleteRule"));wait(s.model);
         QVERIFY(object(s.root,"showRemovedRules")->property("visible").toBool());
         QVERIFY(setChecked(s.root,"showRemovedRules",true));
         const auto removed=s.model.state().value("ruleTombstones").toList().front().toMap().value("id").toString();
@@ -697,7 +842,7 @@ private slots:
         QVERIFY(!object(s.root,"transactionRuleAction")->property("enabled").toBool());
         QVERIFY(object(s.root,"editTransactionRule")->property("enabled").toBool());
         QVERIFY(click(s.root,"editTransactionRule"));QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
-        QVERIFY(click(s.root,"deleteRule_1"));QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(click(s.root,"deleteRule_1"));QVERIFY(click(s.root,"confirmDeleteRule"));wait(s.model);
         QVERIFY(click(s.root,"accountNavigation"));run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(object(s.root,"transactionRuleAction")->property("text").toString(),"Create rule…");
         const auto splitFile=s.path("split.qif");writeQif(splitFile,wise());
@@ -785,10 +930,11 @@ private slots:
         if(page(s.root)!="rules"){QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);}
         QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);QVERIFY(click(s.root,"applyRules"));wait(s.model);
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Tfl Travel UK");
-        QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
+        QVERIFY(click(s.root,"deleteRule_0"));QVERIFY(click(s.root,"confirmDeleteRule"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"previewRules"));wait(s.model);
         QCOMPARE(summary(s.model),"0 transactions match. 0 already categorized. 0 handled by earlier rules. 0 eligible; 0 will change.");
         QCOMPARE(s.model.state().value("rulePreview").toMap().value("changed").toInt(),0);
-        QCOMPARE(s.model.state().value("ruleRevision").toString(),"1");
+        QCOMPARE(s.model.state().value("ruleRevision").toString(),"2");
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Tfl Travel UK");
     }
     void enabledPreviewOnlyShowsMatchingRows(){

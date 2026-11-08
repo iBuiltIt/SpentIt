@@ -339,3 +339,22 @@ Source: [Rules usability](../features/004-rules-and-explanations.md#rules-worksp
   pictures in the later batch. Include an explicit target account and narrow layout.
 - No manual prose or screenshots changed in this implementation; temporary
   synthetic verification captures are not manual replacements.
+
+MAN-015 follow-up (2026-11-08): capture the inset row number, divider between
+Save/Discard and account Apply, and error-colored missing-category validation.
+No manual prose or pictures changed during this correction.
+
+MAN-015 deletion follow-up (2026-11-08): supersede Save removal / Keep rule and
+staged-deletion guidance with Delete rule… and its modal Delete rule / Keep rule
+confirmation. Capture the named confirmation without category/action summaries.
+Explain automatic selection of an existing new draft after deletion (otherwise
+the nearest remaining rule, or empty state). Manual updates remain deferred.
+
+MAN-015 heading follow-up (2026-11-08): use “Preview or Apply Rule” plus the rule
+name in the account-operation section, with the larger gap below its divider.
+
+MAN-015 ledger-menu follow-up (2026-11-08): document Create rule… from one eligible
+selected ledger transaction without opening its editor, and the transaction/split
+chooser with Cancel. Update ledger context-menu and Rules entry-point pictures;
+show disabled text/arrows in both themes and retain multiple-selection limits.
+Manual prose and pictures remain unchanged during implementation.

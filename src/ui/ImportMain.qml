@@ -36,6 +36,20 @@ ApplicationWindow {
     palette.disabled.highlightedText: theme.disabled
     // The header Help action never accepts/rejects the dialog or takes pointer
     // focus from an editor. Keyboard users can still Tab to it.
+    component LedgerMenuItem: MenuItem {
+        id: menuItem
+        objectName:subMenu?"ledgerSubmenu_"+subMenu.objectName:""
+        hoverEnabled: enabled
+        palette.windowText: enabled ? theme.text : theme.disabled
+        palette.disabled.windowText: theme.disabled
+        background: Rectangle {
+            implicitWidth:200;implicitHeight:40
+            x:1;y:1;width:menuItem.width-2;height:menuItem.height-2
+            color:menuItem.enabled && (menuItem.highlighted || menuItem.down)?theme.selection:"transparent"
+            border.color:theme.border
+            border.width:menuItem.enabled && menuItem.highlighted && Qt.styleHints.accessibility.contrastPreference===Qt.HighContrast?1:0
+        }
+    }
     component HelpDialog: Dialog {
         id: dialog
         required property string helpTarget
@@ -411,22 +425,25 @@ ApplicationWindow {
     }
     Menu {
         id:ledgerContext;objectName:"ledgerContext";popupType:Popup.Item;cascade:true
-        delegate:MenuItem {hoverEnabled:true}
-        MenuItem {objectName:"addTransactionContext";visible:!window.reportLedger;text:"Add transaction…";enabled:!s.readOnly && !workflow.busy;onTriggered:addTransaction()}
-        MenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
-        MenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
+        delegate:LedgerMenuItem {}
+        LedgerMenuItem {objectName:"addTransactionContext";visible:!window.reportLedger;text:"Add transaction…";enabled:!s.readOnly && !workflow.busy;onTriggered:addTransaction()}
+        LedgerMenuItem {objectName:"createRuleContext";visible:!window.reportLedger && !!s.rulesSupported;text:"Create rule…";enabled:canCreateLedgerRule();onTriggered:if(canCreateLedgerRule())transactionRuleAction()}
+        LedgerMenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
+        LedgerMenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
         Menu {
+            objectName:"ledgerDuplicateMenu";delegate:LedgerMenuItem {}
             title:"Resolve duplicate";visible:!window.reportLedger;enabled:!!duplicateOrigin && !workflow.busy && !s.readOnly
-            MenuItem {text:"Merge";enabled:!!duplicateCandidate;onTriggered:resolveLedgerDuplicate("merge",false)}
-            MenuItem {text:"Keep this pair separate";enabled:!!duplicateCandidate;onTriggered:resolveLedgerDuplicate("separate",false)}
-            MenuItem {text:"None of these match";enabled:duplicateCandidates.length>1;onTriggered:resolveLedgerDuplicate("separate",true)}
-            MenuItem {text:"Show match";enabled:!!duplicateCandidate;onTriggered:showDuplicateInLedger(duplicateCandidate,duplicateOrigin)}
+            LedgerMenuItem {text:"Merge";enabled:!!duplicateCandidate;onTriggered:resolveLedgerDuplicate("merge",false)}
+            LedgerMenuItem {text:"Keep this pair separate";enabled:!!duplicateCandidate;onTriggered:resolveLedgerDuplicate("separate",false)}
+            LedgerMenuItem {text:"None of these match";enabled:duplicateCandidates.length>1;onTriggered:resolveLedgerDuplicate("separate",true)}
+            LedgerMenuItem {text:"Show match";enabled:!!duplicateCandidate;onTriggered:showDuplicateInLedger(duplicateCandidate,duplicateOrigin)}
         }
-        MenuItem {objectName:"duplicateMergeSelection";visible:!window.reportLedger;text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
-        MenuItem {objectName:"mergeSelection";visible:!window.reportLedger;text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
-        MenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
+        LedgerMenuItem {objectName:"duplicateMergeSelection";visible:!window.reportLedger;text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
+        LedgerMenuItem {objectName:"mergeSelection";visible:!window.reportLedger;text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
+        LedgerMenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
         Menu {
-            id:ledgerCategoryMenu;objectName:"ledgerCategoryMenu";title:"Change category";popupType:Popup.Item;cascade:true
+            id:ledgerCategoryMenu;delegate:LedgerMenuItem {}
+            objectName:"ledgerCategoryMenu";title:"Change category";popupType:Popup.Item;cascade:true
             enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0
             width:Math.min(categorySelectorWidth,window.width-40);height:Math.min(420,contentItem.contentHeight+topPadding+bottomPadding)
             contentItem:ListView {
@@ -436,7 +453,7 @@ ApplicationWindow {
             }
             Instantiator {
                 model:ledgerCategoryChoices
-                delegate:MenuItem {
+                delegate:LedgerMenuItem {
                     required property var modelData
                     required property int index
                     objectName:"ledgerCategoryChoice_"+index
@@ -448,6 +465,34 @@ ApplicationWindow {
                 onObjectRemoved:(index,object)=>ledgerCategoryMenu.removeItem(object)
             }
         }
+    }
+    property bool inspectingLedgerRuleContext: false
+    property bool ledgerRuleContextReady: false
+    function canCreateLedgerRule() {
+        let generation=ruleEditGeneration
+        const rows=s.selection||[]
+        return ledgerRuleContextReady && !workflow.busy && !s.readOnly && !!s.rulesSupported
+            && rows.length===1 && !!selected.batch && !selected.newManual
+            && rows[0].batch===selected.batch && rows[0].ordinal===selected.ordinal
+            && newRuleIndex()<0 && ruleModel.count<128 && ruleCreateChoices().length>0
+    }
+    function openLedgerContext(row) {
+        if(workflow.busy)return
+        const target=row>=0?workflow.rowRecord(row):null
+        guard(function(){
+            ledgerRuleContextReady=false
+            if(target && !(s.selectionKeys||{})[target.batch+":"+target.ordinal]) {
+                const index=workflow.occurrenceIndex(target.batch,target.ordinal)
+                if(index<0)return
+                workflow.command("select",{row:index})
+            }
+            const rows=s.selection||[]
+            if(!window.reportLedger && s.rulesSupported && rows.length===1) {
+                inspectingLedgerRuleContext=true;editorClosed=true
+                workflow.command("inspect",{batch:rows[0].batch,ordinal:rows[0].ordinal})
+            }
+            ledgerContext.popup()
+        })
     }
     function restoreViewport(saved) {
         if(!saved || ledger.count===0)return
@@ -1259,6 +1304,7 @@ ApplicationWindow {
     }
     function writeRule() {
         if(ruleSync || ruleIndex<0 || ruleIndex>=ruleModel.count) return
+        ruleValidationError=""
         let inherit=false
         ruleModel.setProperty(ruleIndex,"label",ruleLabel.text)
         ruleModel.setProperty(ruleIndex,"expression",ruleExpression.text)
@@ -1271,6 +1317,7 @@ ApplicationWindow {
         updateRulesDirty()
     }
     function openRule(index) {
+        ruleValidationError=""
         if(index<0 || index>=ruleModel.count) {ruleIndex=-1; return}
         ruleIndex=index; let r=ruleModel.get(index); ruleSync=true
         ruleLabel.text=r.label||""; ruleExpression.text=r.expression||""
@@ -1325,9 +1372,35 @@ ApplicationWindow {
     }
     function toggleRule(index) { let row=ruleModel.get(index); if(!row) return; ruleModel.setProperty(index,"ruleOn",!row.ruleOn); updateRulesDirty() }
     function deleteRule(index) {
-        if(!savedRule(ruleModel.get(index).id)) {ruleModel.remove(index);openRule(Math.min(index,ruleModel.count-1))}
-        else {ruleModel.setProperty(index,"pendingDelete",true);openRule(index)}
-        updateRulesDirty()
+        if(workflow.busy || index<0 || index>=ruleModel.count)return
+        const row=ruleModel.get(index)
+        if(!savedRule(row.id))return
+        deleteRuleDialog.ruleId=row.id
+        deleteRuleDialog.ruleName=row.label||"Unnamed rule"
+        deleteRuleDialog.open()
+    }
+    Dialog {
+        id:deleteRuleDialog;objectName:"deleteRuleDialog"
+        property string ruleId: ""
+        property string ruleName: ""
+        title:"Delete rule?";modal:true;anchors.centerIn:parent
+        width:Math.min(480,window.width-40)
+        closePolicy:Popup.CloseOnEscape
+        ColumnLayout {
+            width:parent.width;spacing:16
+            Label {text:'Delete rule “'+deleteRuleDialog.ruleName+'”?';textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Layout.alignment:Qt.AlignRight
+                Button {objectName:"confirmDeleteRule";text:"Delete rule";enabled:!workflow.busy;onClicked:{
+                    const id=deleteRuleDialog.ruleId
+                    if(!savedRule(id))return
+                    ruleSavingAll=false;ruleSavingId=id
+                    deleteRuleDialog.close()
+                    workflow.command("rules_save",{rules:ruleBaseline.filter(r=>r.id!==id)})
+                }}
+                Button {objectName:"keepRule";text:"Keep rule";onClicked:deleteRuleDialog.close()}
+            }
+        }
     }
     function copyRemoved(id) {
         if(ruleModel.count>=128 || newRuleIndex()>=0) return
@@ -1349,7 +1422,8 @@ ApplicationWindow {
     function acceptRuleCategory() {
         if(ruleIndex<0 || ruleModel.get(ruleIndex).pendingDelete)return true
         let match=ruleCategoryField.model.find(c=>workflow.categoryNameMatches(c.path,ruleCategoryField.text))
-        if(!match){workspaceFeedback="Choose an existing category.";return false}
+        if(!match){ruleValidationError="Choose an existing category.";return false}
+        ruleValidationError=""
         if(ruleCategoryId!==match.id){ruleCategoryId=match.id;writeRule()}
         return true
     }
@@ -1420,6 +1494,8 @@ ApplicationWindow {
     }
     function rulesSaved() {
         let selectedId=ruleIndex>=0?ruleModel.get(ruleIndex).id:""
+        const previousIndex=ruleIndex
+        let removed=false
         if(ruleSavingAll)loadRulesForm()
         else {
             // Refresh the saved baseline without replacing any other local editor
@@ -1428,12 +1504,16 @@ ApplicationWindow {
             for(let i=0;i<ruleModel.count;i++)if(ruleModel.get(i).id===ruleSavingId) {
                 let saved=savedRule(ruleSavingId)
                 if(saved)ruleModel.set(i,ruleRow(saved))
-                else {ruleModel.remove(i);ruleIndex=-1}
+                else {ruleIndex=-1;ruleModel.remove(i);removed=true}
                 break
             }
             let moved=Object.assign({},ruleMovedIds);delete moved[ruleSavingId];ruleMovedIds=moved
         }
         for(let i=0;i<ruleModel.count;i++)if(ruleModel.get(i).id===selectedId){openRule(i);break}
+        if(removed && ruleModel.count>0) {
+            const draftIndex=newRuleIndex()
+            openRule(draftIndex>=0?draftIndex:Math.min(Math.max(0,previousIndex),ruleModel.count-1))
+        }
         updateRulesDirty()
         ruleSavingId="";ruleSavingAll=false
         if(rulesLeaving && !rulesDirty){setRulesLeaving(false);let next=pendingAction;pendingAction=null;if(next)guard(next)}
@@ -1587,6 +1667,9 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onChanged() {if(workflow.busy){cancelAccountDrag();captureReviewView()}}
         function onCompleted(action,success) {
+            const contextInspection=action==="inspect" && inspectingLedgerRuleContext
+            if(contextInspection){inspectingLedgerRuleContext=false;ledgerRuleContextReady=success}
+            if(success)ruleValidationError=""
             if(action===importProgressAction) {
                 importProgressAction=""
                 if(action==="map_import" && !(s.importPlan||[]).length)importMapping.retainChoices=false
@@ -1600,7 +1683,7 @@ ApplicationWindow {
             if(action==="close" && !success && closingRequested){closingRequested=false;closeAuditFailure.open()}
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
 
-            if(success && (action==="inspect" || action==="undo_edit" || action==="import"))editorClosed=false
+            if(success && !contextInspection && (action==="inspect" || action==="undo_edit" || action==="import"))editorClosed=false
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
 
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
@@ -1634,7 +1717,7 @@ ApplicationWindow {
             if(action==="create" && s.overwriteRequired)overwriteDialog.open()
             ledger.currentIndex=workflow.selectedRowIndex()
             if(action==="select")ledger.currentIndex=s.selectionIndex===undefined?-1:s.selectionIndex
-            if (action==="inspect" || action==="import" || action==="map_import")
+            if (!contextInspection && (action==="inspect" || action==="import" || action==="map_import"))
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save_manual" || action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {if(!rulesLeaving)pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
@@ -2102,6 +2185,7 @@ ApplicationWindow {
     HelpDialog {
         helpTarget: "help:use-rules#transaction-and-split-rules"
         id:ruleSplitDialog;objectName:"ruleSplitDialog";title:"Create a rule for";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,600)
+        standardButtons:Dialog.Cancel
         contentItem:ColumnLayout {
             Repeater {model:ruleCreateChoices()
                 Button {required property var modelData;objectName:"ruleSplitChoice_"+modelData.index;text:modelData.label
@@ -2487,6 +2571,7 @@ ApplicationWindow {
         else {reviewPending=args;reviewSurvivors=manual.length>0?manual:chosen;reviewSurvivor.open()}
     }
     property string workspaceFeedback: "Ready"
+    property string ruleValidationError: ""
     // One visible owner for a global operation error. Dialog validation stays
     // beside its controls; closing the dialog returns the error to the status line.
     readonly property var errorDialog: statusDetails.visible?statusDetails:
@@ -2788,8 +2873,8 @@ ApplicationWindow {
                     RowLayout {anchors.fill:parent;anchors.margins:4
                         Label {id:workspaceStatusText;objectName:"operationPhase";Layout.fillWidth:true;Layout.minimumWidth:0
                             textFormat:Text.PlainText;elide:Text.ElideRight
-                            text:workflow.busy?(workflow.cancellationRequested?"Cancellation requested…":workflow.phase):(workflow.error?(errorDialog?"":workflow.error):workspaceFeedback)
-                            color:!workflow.busy && workflow.error && !errorDialog?theme.error:palette.windowText
+                            text:workflow.busy?(workflow.cancellationRequested?"Cancellation requested…":workflow.phase):(workflow.error?(errorDialog?"":workflow.error):(currentPage==="rules" && ruleValidationError?ruleValidationError:workspaceFeedback))
+                            color:!workflow.busy && ((workflow.error && !errorDialog) || (!workflow.error && currentPage==="rules" && ruleValidationError))?theme.error:palette.windowText
                             Accessible.name:text;onTextChanged:function(text){if(text.length)Accessible.announce(text)}
                             ToolTip.visible:statusHover.hovered && truncated;ToolTip.text:text
                             HoverHandler {id:statusHover}
@@ -3164,7 +3249,7 @@ ApplicationWindow {
                 }
                 ReportsWorkspace {id:reportsWorkspace;anchors.fill:parent;workflow:window.workflowBackend;guardAction:window.guard;visible:currentPage==="reports"}
                 UsableScrollView {
-                    id:rulesPage;objectName:"rulesPage";anchors.fill:parent;visible:currentPage==="rules";contentWidth:availableWidth;enabled:!workflow.busy
+                    id:rulesPage;objectName:"rulesPage";anchors.fill:parent;visible:currentPage==="rules";contentWidth:availableWidth;enabled:!workflow.busy && !deleteRuleDialog.visible
                     ColumnLayout {
                         width:rulesPage.availableWidth;spacing:8
                         Label {text:"Rules";font.pixelSize:20}
@@ -3202,9 +3287,12 @@ ApplicationWindow {
                                     enabled:true
                                     RowLayout {
                                     id:ruleRowLayout;anchors.fill:parent
-                                    Label {text:String(index+1);Layout.preferredWidth:28}
+                                    Label {objectName:"ruleNumber_"+index;text:String(index+1);leftPadding:8;Layout.preferredWidth:36}
                                     CheckBox {objectName:"ruleEnabled_"+index;text:"Enabled";enabled:!ruleEntry.deletedDraft;checked:ruleEntry.ruleOn;onClicked:toggleRule(index)}
-                                    Button {objectName:"openRule_"+index;text:(label||("Rule "+(index+1)))+(ruleEntry.isNew?" · New":ruleEntry.deletedDraft?" · Deleted":ruleEntry.changed?" · Unsaved":"");highlighted:ruleIndex===index;onClicked:openRule(index);Layout.fillWidth:true}
+                                    // Keep the action name independent of transient draft/removal badges.
+                                    // Qt otherwise posts a native accessibility NameChanged notification
+                                    // for every status change (the path in the reported macOS EXC_GUARD).
+                                    Button {objectName:"openRule_"+index;Accessible.name:label||"Unnamed rule";Accessible.description:ruleEntry.deletedDraft?"Removal pending; save to remove this rule.":ruleEntry.isNew?"New unsaved rule":ruleEntry.changed?"Unsaved changes":"Saved rule";text:(label||("Rule "+(index+1)))+(ruleEntry.isNew?" · New":ruleEntry.deletedDraft?" · Removal pending":ruleEntry.changed?" · Unsaved":"");highlighted:ruleIndex===index;onClicked:openRule(index);Layout.fillWidth:true}
                                     Label {text:(scope==="split"?"Split":"Transaction")+" · "+(scope==="split" && input==="payee"?"Parent payee":input);visible:rulesPage.availableWidth>=900;Layout.preferredWidth:150}
                                     Label {text:expression;visible:rulesPage.availableWidth>=1100;elide:Text.ElideRight;Layout.preferredWidth:140;textFormat:Text.PlainText}
                                     Label {text:actionSummary(ruleEntry);visible:rulesPage.availableWidth>=1100;elide:Text.ElideRight;Layout.preferredWidth:140;textFormat:Text.PlainText}
@@ -3286,15 +3374,20 @@ ApplicationWindow {
                         RowLayout {
                             Button {objectName:"saveRules";text:rulePendingRemoval?"Save removal":"Save rule";visible:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)} enabled:visible;onClicked:saveRules()}
                             Button {objectName:"discardRules";text:rulePendingRemoval?"Keep rule":ruleIndex>=0 && ruleIndex<ruleModel.count && !savedRule(ruleModel.get(ruleIndex).id)?"Discard draft":"Discard changes";visible:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)} enabled:visible;onClicked:discardRule()}
-                            Button {objectName:ruleIndex>=0?"deleteRule_"+ruleIndex:"removeSelectedRule";text:"Remove rule";visible:ruleIndex>=0 && ruleIndex<ruleModel.count && !rulePendingRemoval && !!savedRule(ruleModel.get(ruleIndex).id);onClicked:deleteRule(ruleIndex)}
+                            Button {objectName:ruleIndex>=0?"deleteRule_"+ruleIndex:"removeSelectedRule";text:"Delete rule…";visible:ruleIndex>=0 && ruleIndex<ruleModel.count && !rulePendingRemoval && !!savedRule(ruleModel.get(ruleIndex).id);onClicked:deleteRule(ruleIndex)}
                         }
                         }
                         Label {textFormat:Text.PlainText;objectName:"ruleSearchEmpty";visible:ruleModel.count>0 && matchingRuleCount===0;text:'No rules match “'+ruleSearch.text+'”.';wrapMode:Text.Wrap;Layout.fillWidth:true}
                         Label {visible:ruleIndex>=0 && !ruleMatchesSearch(ruleModel.get(ruleIndex));text:"Selected rule is outside the search results."}
                         Label {objectName:"ruleApplyHelp";visible:ruleModel.count>0 && ruleIndex<0;text:"Select a rule to edit."}
+                        Rectangle {
+                            objectName:"ruleApplyDivider";visible:ruleCanRun
+                            Layout.fillWidth:true;Layout.preferredHeight:1
+                            Layout.topMargin:12;Layout.bottomMargin:28;color:theme.border
+                        }
                         ColumnLayout {
                             visible:ruleCanRun;Layout.fillWidth:true
-                            Label {textFormat:Text.PlainText;text:'Apply “'+(ruleLabel.text||"Unnamed rule")+'”';font.bold:true}
+                            Label {textFormat:Text.PlainText;text:'Preview or Apply Rule “'+(ruleLabel.text||"Unnamed rule")+'”';font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true}
                             GridLayout {
                                 Layout.fillWidth:true;columns:rulesPage.availableWidth>=760?4:2
                                 Label {text:"Account"}
@@ -3466,7 +3559,7 @@ ApplicationWindow {
                 // Cached offscreen delegates incubate asynchronously across model resets.
                 // Visible delegates remain virtualized and reusable without that queue.
                 cacheBuffer:0
-                MouseArea {parent:ledger;anchors.fill:parent;z:-1;acceptedButtons:Qt.RightButton;enabled:!workflow.busy;onClicked:ledgerContext.popup()}
+                MouseArea {parent:ledger;anchors.fill:parent;z:-1;acceptedButtons:Qt.RightButton;enabled:!workflow.busy;onClicked:openLedgerContext(-1)}
                 Accessible.role:Accessible.List
                 Accessible.name:"Transactions in "+(s.name||"account")
                 Accessible.description:"Use Up and Down to select, Shift to extend selection, and Enter to review a transaction."
@@ -3536,7 +3629,7 @@ ApplicationWindow {
                     ToolTip.text:comparingDuplicate?(record.status==="Draft"?"New":"Accepted")+" · Possible duplicate":"Possible duplicate"
                     HoverHandler {id:duplicateHover}
                     MouseArea {width:parent.width;height:ledgerRow.rowHeight;acceptedButtons:Qt.LeftButton|Qt.RightButton
-                        onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){if(!(s.selectionKeys||{})[record.batch+":"+record.ordinal])selectLedgerRow(ledgerRow.index,0);ledgerContext.popup()}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
+                        onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){openLedgerContext(ledgerRow.index)}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
                         onDoubleClicked:function(mouse){if(mouse.button!==Qt.LeftButton)return;if(record.batch.length)toggleRecord(record.batch,record.ordinal);else editOpening()}
                     }
                     Row {

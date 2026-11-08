@@ -1,5 +1,129 @@
 # Project status
 
+## Ledger Create rule and disabled menu styling — 2026-11-08
+
+Implemented the [approved ledger entry point](../features/004-rules-and-explanations.md#ledger-context-menu-rule-creation--owner-go-2026-11-08).
+Create rule… sits below Add transaction… in the normal ledger context menu. It
+requires one eligible selected transaction, writable idle state and no existing
+new rule draft. The existing transaction/split chooser and prefill are reused;
+the chooser now has Cancel. Multiple selected transactions never silently choose
+one. Manual-only input and already-occupied creation targets retain existing
+eligibility; current-value matching remains separately gated.
+
+Right-click inspects the selected identity without expanding the transaction
+editor or scrolling it into view. This is necessary because ordinary ledger
+selection does not update the separately inspected editor. Create rule remains
+unavailable during inspection and checks inspected/selected identity agreement.
+Existing unsaved-edit guards precede selection/inspection. No engine, storage,
+rule matching or financial command eligibility changed.
+
+A shared ledger MenuItem component explicitly sets the enabled/disabled text
+palette used by Qt Basic for both labels and submenu arrows. Disabled rows have
+no hover highlight; duplicate and category submenus use the same presentation.
+High-contrast highlight borders remain supported. Other application menus were
+not changed.
+
+Rebuilt `build/SpentIt`, Rules and navigation tests (macOS arm64, Qt 6.12.0,
+rules-enabled Release). Native light/dark regression passed **4/4 including
+setup/cleanup**, 3.567 s. It uses an actual right-click on a different transaction
+from the earlier inspector, confirms the editor stays closed and the correct
+original payee seeds the rule, checks multi-selection refusal, split chooser/
+prefill, manual-only refusal, enabled/disabled text and arrow colours, and no
+highlight on a disabled item. Light/dark native captures were inspected.
+
+An initial native test run encountered two QML syntax errors in the new submenu
+delegates; its fixture then dereferenced the missing window and crashed, producing
+the owner's `spentit_rule_ui_tests` macOS alert. Corrected the QML and added a
+missing-root test guard before rerunning. This was a temporary synthetic test
+process, not the owner's SpentIt session; no private financial data was accessed.
+The earlier owner's SpentIt accessibility crash remains separately qualified.
+
+Final offscreen Rules/navigation/QML CTest run passed **3/3**, 52.98 s:
+navigation 21.34 s (**22 passed, 1 opt-in diagnostics skip**), Rules 30.80 s
+(**32/32 including setup/cleanup**), QML smoke 0.83 s. `git diff --check` and
+changed-document relative link-target checks passed. Manual prose/images remain
+deferred under MAN-015; Windows/Linux and sanitizers were not run for this UI change.
+
+## Rules application section heading — 2026-11-08
+
+Owner follow-up: renamed the account-operation heading to “Preview or Apply Rule”
+plus the selected rule name. Increased the divider's bottom margin from 12 to 28
+pixels; long headings wrap. Definition Save/Discard remain above the divider.
+Rebuilt `build/SpentIt` and Rules UI tests. Existing native validation/removal and
+long-list geometry checks passed **4/4 including setup/cleanup**, 2.604 s, on macOS
+arm64 Qt 6.12.0 Release. Inspected the synthetic native capture showing the heading,
+separation and red validation feedback. `git diff --check` passed. No financial
+behaviour changed; manual capture follow-up remains under MAN-015.
+
+## Modal rule deletion and remaining-draft selection — 2026-11-08
+
+Owner approved replacing staged removal with a modal confirmation. Delete rule…
+now asks about the named rule and offers Delete rule / Keep rule. Escape cancels;
+underlying Rules controls are unavailable during the decision. Opening the dialog
+changes no definition or draft and adds no Deleted badge/category summary.
+Confirmation submits only the selected deletion through the existing atomic
+rules-save command, using saved surrounding definitions. Unrelated unfinished
+rules remain untouched; failures leave local definitions available for correction.
+After successful deletion, the existing new draft is selected and its editor
+revealed; otherwise selection falls to the nearest remaining rule or the empty
+state. No matching, transaction application, financial or storage policy changed.
+
+Rebuilt `build/SpentIt` and Rules tests in macOS arm64 rules-enabled Release,
+Qt 6.12.0. Full offscreen Rules/QML checks passed **2/2**, 30.21 s: Rules UI
+**30/30 including setup/cleanup** (28.36 s CTest), QML smoke 1.84 s. Native focused
+confirmation/remaining-draft and accessibility removal tests passed **4/4 including
+setup/cleanup**, 2.949 s. The native confirmation capture was inspected. Coverage
+includes modal blocking of New/select, Keep and Escape cancellation, no premature
+Deleted badge, preservation/selection of an incomplete draft beside another saved
+rule, final empty state, persistence and unchanged earlier transaction assignments.
+
+The earlier reported macOS accessibility crash remains unreproduced; this change
+also avoids the former pending-deletion model/text update but is not proof of a
+general platform crash fix. Windows/Linux and sanitizers were not run. No private
+financial data was accessed. Manual follow-up remains in MAN-015; no manual prose
+or screenshots changed. `git diff --check` and relative document link checks passed.
+
+## Rules feedback and native removal crash investigation — 2026-11-08
+
+Owner-reported follow-up: rule numbers now have an 8-pixel inset, a divider with
+spacing separates definition Save/Discard from account Apply, and missing-category
+validation uses the error-colored status line rather than ordinary feedback.
+Validation clears on rule editing/selection or successful command completion.
+No engine, storage, matching, deletion transaction or format change.
+
+Inspected the latest owner-selected SpentIt crash report locally. Main-thread
+termination is `EXC_GUARD / GUARD_TYPE_MACH_PORT / INVALID_OPTIONS` in
+`_XMIGPostNotification`, through AppKit accessibility posting,
+`QQuickAccessibleAttached::setName`, `setNameImplicitly`, button text update and
+`QQmlListModel::setProperty`. This identifies a native accessibility notification
+path during a model update; it does not establish a storage deletion failure or
+prove the underlying platform cause. No private financial file was opened and no
+raw crash report was copied into the repository.
+
+The exact synthetic save/new/select/select/discard/remove sequence passed natively
+before the mitigation, with Qt accessibility active (**3/3 including setup/cleanup**,
+1.405 s). Therefore the owner crash is **not reproduced or proven resolved**.
+A bounded mitigation gives the rule row an explicit accessible definition name,
+with New/Unsaved/Removal pending in its accessible description. Visual badges
+remain; accessibility is not disabled. Pending removal no longer renames that
+button's accessible action. Qt's
+[Accessible documentation/source](https://raw.githubusercontent.com/qt/qtdeclarative/6.12/src/quick/items/qquickaccessibleattached.cpp)
+distinguishes concise control names from descriptions. Other native accessibility
+notifications remain; this is not a general macOS crash fix.
+
+Rebuilt `build/SpentIt` and the Rules tests (macOS arm64, Qt 6.12.0, Release).
+Final offscreen Rules/QML CTest run passed **2/2**, 28.65 s (Rules 26.99 s;
+smoke 1.65 s). Native new regression plus long-list geometry passed **4/4 including
+setup/cleanup**, 2.864 s. The regression checks error color, number inset, divider
+placement, stable accessible name and updated removal description, unchanged saved
+rule during staged removal, durable deletion and retained removed definition after
+reopen. The native validation capture was inspected. Windows/Linux, sanitizers,
+external assistive-client observation and a reproduction of the original native
+termination remain unverified. No claim of private-file recovery verification.
+
+Manual changes remain deferred under MAN-015. `git diff --check` and changed-document
+relative link-target checks passed.
+
 ## Navigation tests aligned with session history — 2026-11-08
 
 Updated `acceptedManualTransferAssignment` and
