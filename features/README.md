@@ -38,12 +38,17 @@ labels. See [status](../doc/status.md) for verification and limits.
 
 
 **Next work (2026-11-02):** [category-gated rules and imported categories](004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
-Accepted direction, not implemented; the handoff distinguishes remaining split
-and import-lifecycle decisions from the settled category gate.
+Implemented under owner Go; the handoff records split-first categorization and
+the durable import-wide missing-category decision. See status for verification.
 
 The [single rules workspace](004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)
 replaces the focused/all-rules presentation with independent selected-rule saves,
-optional previews and a nonmodal leave-screen decision for all unsaved edits.
+optional previews and a movable application-modal decision for all unsaved edits.
+The [2026-11-08 usability follow-up](004-rules-and-explanations.md#rules-workspace-usability--owner-go-2026-11-08)
+adds the explicit account picker, separate definition/application sections, modal
+deletion and clear empty states. The [ledger Create rule entry point](004-rules-and-explanations.md#ledger-context-menu-rule-creation--owner-go-2026-11-08)
+uses one eligible selection without opening its editor; disabled ledger menu text
+and arrows have distinct colours.
 See [status](../doc/status.md) for verification.
 
 The [account rule scope and Apply follow-up](004-rules-and-explanations.md#rule-scope-and-account-apply--owner-go-2026-11-01)

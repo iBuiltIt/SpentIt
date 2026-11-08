@@ -8,7 +8,7 @@ and [verification record](doc/status.md).
 
 A local, single-user desktop application in development for understanding spending through reliable imports, reviewable categorization, and explainable reports.
 
-SpentIt is the application being developed and used: it persists documents, imports, drafts, committed changes, and history. It supports manual transaction entry, multiple accounts, QIF and OFX-family statements, transfers, categories, rules, search, bulk editing, and Undo. Current work improves its usability piecemeal. Reports, expanded document lifecycle/recovery, and public distribution are deferred. Local application packaging is described in [packaging instructions](packaging/README.md).
+SpentIt is the application being developed and used: it persists documents, imports, drafts, committed changes, and history. It supports manual transaction entry, multiple accounts, QIF and OFX-family statements, transfers, categories, rules, search, bulk editing, and Undo. Current work improves its usability piecemeal. Reports and document lifecycle/recovery have bounded implementations; see [current status](doc/status.md) for verified scope and remaining work. Public distribution remains gated. Local application packaging is described in [packaging instructions](packaging/README.md).
 
 This is an unreleased application. Format compatibility remains governed by the pre-release policy; verification limits and unfinished features are recorded in [project status](doc/status.md). The separate synthetic sheet and storage prototypes are development harnesses, not the application to launch.
 
@@ -36,7 +36,7 @@ cmake --build build/import-ui-rules-release --target spentit_import_experiment -
 ./build/SpentIt
 ```
 
-The current build uses experimental schema **58 with rules / 57 without**. Create a new dataset for this version; older experimental datasets are rejected unchanged, without migration. The [unified Review sheet](doc/review-sheet.md) groups outstanding questions by account and is available from Review and Commit. Imports can accumulate before Commit. Commit accepts new transactions across all accounts; Discard uncommitted work removes the selected account's contributions while preserving accepted and independently owned transactions. See [verified scope](doc/status.md#dataset-acceptance-storage-refactor--2026-10-29).
+The current build uses experimental schema **68 with rules / 67 without**. Create a new dataset for this version; older experimental datasets are rejected unchanged, without migration. The [unified Review sheet](doc/review-sheet.md) groups outstanding questions by account and is available from Review and Commit. Imports can accumulate before Commit. Commit accepts new transactions across all accounts; Discard uncommitted work removes the selected account's contributions while preserving accepted and independently owned transactions. See [verified scope](doc/status.md#dataset-acceptance-storage-refactor--2026-10-29).
 
 The output location is saved in that build's CMake cache; subsequent rebuilds update `./build/SpentIt`. For dependency setup on a fresh checkout, see [building](doc/building.md) and [the UI setup](doc/import-ui.md). Other build trees default to producing `SpentIt` inside their own build directory.
 

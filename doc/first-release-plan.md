@@ -25,6 +25,12 @@ descriptive sentence was explicitly removed. Other UI items still need their own
 discussion and Go. MAN-013 records deferred About manual work in the
 [manual backlog](manual-update-backlog.md).
 
+The owner subsequently authorized Review cleanup, Rules workspace usability and
+ledger context-menu rule creation. These are implemented with verification limits
+recorded in [status](status.md); they do not complete the open usage-driven UI phase
+or authorize current-value matching. Manual follow-ups are tracked as MAN-014 and
+MAN-015 in the [backlog](manual-update-backlog.md).
+
 ## Accepted first-release scope
 
 “Finished” means a reliable first public release with explicit supported scope,

@@ -12,6 +12,12 @@ manual refresh, licensing/packages and explicit publication approval. Licensing
 investigation may proceed alongside engineering. Direction acceptance is not
 implementation Go. Earlier checkpoints below do not override this sequence.
 
+The owner subsequently authorized Review cleanup, Rules workspace usability and
+ledger context-menu rule creation. These are implemented with verification limits
+recorded in [status](status.md); they do not complete the open usage-driven UI phase
+or authorize current-value matching. Manual follow-ups are tracked as MAN-014 and
+MAN-015 in the [backlog](manual-update-backlog.md).
+
 ## Session-only history and baseline — implementation Go, 2026-11-07
 
 Read the [contract](session-history-baseline.md) and [current progress](status.md).

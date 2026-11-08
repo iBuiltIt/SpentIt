@@ -12,6 +12,19 @@ not implementation Go. Licensing policy is settled in the plan; exact legal
 terms and publication remain gated. Preserve deferred retention scope and the
 later batch manual pass. See [About requirements](features/007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08).
 
+## Rules and ledger usability — owner Go 2026-11-08
+
+Use the [current Rules presentation contract](features/004-rules-and-explanations.md#rules-workspace-usability--owner-go-2026-11-08)
+and [ledger entry-point contract](features/004-rules-and-explanations.md#ledger-context-menu-rule-creation--owner-go-2026-11-08).
+Rules has an explicit account picker, independent definition actions and a separate
+Preview or Apply Rule section. Deletion uses a modal named confirmation, not staged
+removal; afterward select the existing new draft first. Leaving uses Save all
+changes / Discard all changes / Cancel. Ledger Create rule… requires exactly one
+eligible selection and retains existing source-field eligibility and guards.
+Current-value matching remains separate. See status for test results and the
+unreproduced native crash investigation; do not claim that crash proven fixed.
+Manual changes remain in MAN-015 for the later batch pass.
+
 ## Bounded ruleset retention — owner Go 2026-11-08
 
 Successful close expires full rule-save requests and superseded ruleset snapshots.
@@ -183,7 +196,8 @@ category fallback, and a durable import-wide missing-category checklist. No old-
 Rules use one searchable list and expanded editor. Save/Discard and optional-
 preview Save and apply concern only the selected rule, retaining unrelated drafts.
 Only one new draft is allowed. Leaving retains the selected rule and shows a
-movable dialog with Save / Discard / Stay (owner follow-up Go, 2026-11-02).
+movable dialog (owner follow-up Go, 2026-11-02), now labelled Save all changes /
+Discard all changes / Cancel under the 2026-11-08 usability follow-up.
 Save validates all outstanding edits before an atomic definition save and does
 not apply transactions.
 See [the contract](features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)

@@ -287,6 +287,11 @@ remain. This changes presentation only. See [status](../doc/status.md).
 
 ## Single rules workspace and independent edits — owner Go 2026-11-01
 
+Presentation follow-up: the [2026-11-08 contract](#rules-workspace-usability--owner-go-2026-11-08)
+supersedes the button labels, pending-deletion state and leave-dialog copy below.
+Independent drafts, selected-save scope and atomic validation remain authoritative.
+
+
 Accepted and implemented under the owner's follow-up Go. This supersedes the
 focused/all-rules presentation, mandatory visible preview before Apply, and
 whole-editor Save behavior described below. Storage still uses atomic full-image

@@ -329,32 +329,24 @@ Source: [Rules usability](../features/004-rules-and-explanations.md#rules-worksp
 
 - Update Use rules (chapter 9), Where to find things, keyboard/navigation and
   messages guidance for the empty state, conditional controls, selected-definition
-  Save rule / Discard changes, staged Save removal / Keep rule, and removed copies.
+  Save rule / Discard changes (Discard draft for new rules), and removed copies.
+- Explain Delete rule… and its modal named Delete rule / Keep rule confirmation.
+  No category/action summary or Deleted badge appears before confirmation. After
+  deletion, open an existing new draft first, otherwise the nearest remaining rule
+  or the empty state. This replaces staged Save removal guidance.
 - Explain the account picker inside Rules, All transactions / New transactions
   only, Uncategorized eligibility, optional Preview and selected Apply rule /
   Save and apply rule. Keep definition saves distinct from transaction changes.
+  Use “Preview or Apply Rule” plus the name, with a divider and larger gap after
+  definition actions. Include inset row numbers and red category validation errors.
 - Explain account-specific Undo application independent of the selected rule and
   Save all changes / Discard all changes / Cancel in the movable leave dialog.
-- Replace Rules empty, selected/new/edited, removed, preview and leave-dialog
-  pictures in the later batch. Include an explicit target account and narrow layout.
-- No manual prose or screenshots changed in this implementation; temporary
-  synthetic verification captures are not manual replacements.
-
-MAN-015 follow-up (2026-11-08): capture the inset row number, divider between
-Save/Discard and account Apply, and error-colored missing-category validation.
-No manual prose or pictures changed during this correction.
-
-MAN-015 deletion follow-up (2026-11-08): supersede Save removal / Keep rule and
-staged-deletion guidance with Delete rule… and its modal Delete rule / Keep rule
-confirmation. Capture the named confirmation without category/action summaries.
-Explain automatic selection of an existing new draft after deletion (otherwise
-the nearest remaining rule, or empty state). Manual updates remain deferred.
-
-MAN-015 heading follow-up (2026-11-08): use “Preview or Apply Rule” plus the rule
-name in the account-operation section, with the larger gap below its divider.
-
-MAN-015 ledger-menu follow-up (2026-11-08): document Create rule… from one eligible
-selected ledger transaction without opening its editor, and the transaction/split
-chooser with Cancel. Update ledger context-menu and Rules entry-point pictures;
-show disabled text/arrows in both themes and retain multiple-selection limits.
-Manual prose and pictures remain unchanged during implementation.
+- Document ledger Create rule… from one eligible selected transaction without
+  opening its editor, and the transaction/split chooser with Cancel. Retain
+  multiple-selection and original-field eligibility limits.
+- Replace Rules empty, selected/new/edited, deletion confirmation, removed, preview
+  and leave-dialog pictures in the later batch. Include an explicit target account
+  and narrow layout. Update ledger context-menu and Rules entry-point pictures;
+  show disabled text/arrows in both themes.
+- No manual prose or screenshots changed in this implementation or documentation
+  reconciliation; temporary synthetic verification captures are not replacements.

@@ -37,6 +37,20 @@ and explicit committed-edit opt-in presentation.
   edits. While typing unaccepted text, the text field retains native text Undo.
   Enter does not advance to another transaction.
 
+## Ledger rule creation and menu availability — owner Go, 2026-11-08
+
+The normal ledger context menu offers Create rule… for exactly one eligible
+selected transaction without opening its editor. Right-click preserves an existing
+multiple selection; the action never silently chooses one row from it. Unsaved-edit
+guards run before context inspection, and stale inspector data cannot supply the
+rule target. One target opens a draft directly; several targets use a chooser with
+Cancel. Existing original-field eligibility and the one-new-rule limit remain.
+See the [Rules entry-point contract](../features/004-rules-and-explanations.md#ledger-context-menu-rule-creation--owner-go-2026-11-08).
+
+Disabled ledger menu text and submenu arrows use a distinct colour in light and
+dark themes and do not highlight on hover. Financial command eligibility is
+unchanged. Verification and platform limits are in [status](status.md).
+
 ## Category completion — owner Go, 2026-11-01
 
 The allocation category button is replaced with a text field. Uncategorized is

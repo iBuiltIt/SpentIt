@@ -1,5 +1,18 @@
 # Project status
 
+## Rules documentation reconciliation — 2026-11-08
+
+Reconciled contributor guidance, feature index, durable-rules and ledger entry
+points with the implemented Rules usability and ledger Create rule contracts.
+Consolidated MAN-015 around the final modal deletion and separate application
+section; manual prose and screenshots remain deferred. Release planning now
+records the subsequent UI Go, and the README identifies formats 68/67 and the
+bounded Reports implementation. Older dated verification remains historical.
+
+Documentation-only follow-up: changed-document relative file links and
+`git diff --check` passed. No runtime tests rerun; the implementation verification
+and native crash limitations below are unchanged.
+
 ## Ledger Create rule and disabled menu styling — 2026-11-08
 
 Implemented the [approved ledger entry point](../features/004-rules-and-explanations.md#ledger-context-menu-rule-creation--owner-go-2026-11-08).

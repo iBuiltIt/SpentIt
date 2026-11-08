@@ -17,8 +17,19 @@ protections remain unchanged.
 
 The [single rules workspace](../features/004-rules-and-explanations.md#single-rules-workspace-and-independent-edits--owner-go-2026-11-01)
 supersedes the focused/all-rules switch and UI save scope described below. Selected
-Save/Apply excludes unrelated drafts; preview is optional. Leaving uses a nonmodal
-Save all / Discard all / Stay bar and retains atomic definition validation.
+Save/Apply excludes unrelated drafts; preview is optional. The
+[current usability contract](../features/004-rules-and-explanations.md#rules-workspace-usability--owner-go-2026-11-08)
+supersedes the older placement and labels below: leaving uses a movable
+application-modal Save all changes / Discard all changes / Cancel dialog and
+retains atomic definition validation. Deletion uses a separate named modal
+confirmation and preserves unrelated drafts. Rules owns its target account picker
+and separates definition saves from Preview or Apply Rule. The
+[ledger Create rule entry point](../features/004-rules-and-explanations.md#ledger-context-menu-rule-creation--owner-go-2026-11-08)
+reuses existing target eligibility and prefill without opening the transaction editor.
+
+Current experimental formats are **68 with rules / 67 without** under
+[ruleset retention](../features/004-rules-and-explanations.md#ruleset-save-retention--owner-go-2026-11-08).
+Format numbers and verification results in the dated baseline below are historical.
 
 The [account-scope Apply contract](../features/004-rules-and-explanations.md#rule-scope-and-account-apply--owner-go-2026-11-01)
 supersedes the separate preview/Apply/Reapply UI described below. New and committed
