@@ -1,6 +1,6 @@
 # Transaction origin and ordinary operations
 
-Last updated: 2026-11-03
+Last updated: 2026-11-08
 Status: transaction/category/transfer cleanup authorized on 2026-11-03;
 verification and implementation limits are recorded in [status](status.md).
 
@@ -13,7 +13,8 @@ commit so a fresh session can take up the cleanup.
 
 The owner subsequently gave implementation Go for the transaction/category/transfer
 cleanup (items 1–4 and 6 below). Rule matching against current rather than original
-values (item 5) remains an explicit, separate decision. The audit below describes
+values (item 5) was subsequently accepted on 2026-11-08 in the
+[first-release plan](first-release-plan.md); implementation still needs its own Go. The audit below describes
 the starting checkpoint, not current restrictions. See the implementation section
 and [status](status.md) for results.
 

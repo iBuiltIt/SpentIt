@@ -1,5 +1,12 @@
 # Feature discovery
 
+**Current planning baseline (2026-11-08):** [Accepted first-release decisions](../doc/first-release-plan.md).
+Usage-driven UI improvements come next, including [About and third-party notices](007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08);
+the rest of the owner's list is open. The release plan settles macOS-first scope,
+current-value rule matching, deferrals and licensing policy without authorizing
+implementation. Historical “undecided” statements below are superseded where
+that plan explicitly settles them.
+
 **Session-history correction (2026-11-07):** [Session history and close-time
 baseline](../doc/session-history-baseline.md) now uses current-baseline verification,
 an encrypted clean marker and dependency-based pruning without permanent ordinary

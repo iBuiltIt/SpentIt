@@ -1,5 +1,15 @@
 # Coordinated implementation roadmap
 
+## First release and next UI work — accepted 2026-11-08
+
+The [accepted first-release plan](first-release-plan.md) is the current planning
+baseline. Next comes the owner's usage-driven UI work, including About and further
+items still to be supplied. It is separate from the subsequent busy/readiness
+audit. Then follow bounded rule/readiness work, release verification, the batch
+manual refresh, licensing/packages and explicit publication approval. Licensing
+investigation may proceed alongside engineering. Direction acceptance is not
+implementation Go. Earlier checkpoints below do not override this sequence.
+
 ## Session-only history and baseline — implementation Go, 2026-11-07
 
 Read the [contract](session-history-baseline.md) and [current progress](status.md).
@@ -38,8 +48,9 @@ outside this scope. Older deferred-report notes below are historical.
 ## Next session: transaction origin cleanup — 2026-11-03
 
 Start with the [transaction-origin handoff](transaction-origin-handoff.md).
-The manual category-menu fix is tested; broader category/transfer cleanup is
-proposed for a fresh session. Current-value rule matching remains undecided.
+The category/transfer cleanup is implemented with verification limits recorded
+in status. Current-value rule matching was accepted on 2026-11-08; its implementation
+remains separate and follows the next usage-driven UI phase.
 The handoff records authorization boundaries, reproducible findings and checks.
 
 

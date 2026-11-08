@@ -1,5 +1,17 @@
 # 004 — Rules and explanations
 
+## Current-value matching — accepted direction 2026-11-08
+
+The owner accepted current transaction/split values as ordinary matching inputs
+for both manual and imported entries, preserving category gating, ordering,
+manual text protection and the prohibition on rule-created transfers. Explicit
+imported-original conditions are deferred. Implement before first release with
+clear previews and an experimental-format boundary if necessary to prevent
+silent reinterpretation. This is not implemented or implementation-authorized
+by the planning decision. See [release scope and sequence](../doc/first-release-plan.md).
+The original/current distinction described in older implementation notes remains
+actual behavior until the separately authorized change is verified.
+
 Status: **active**  
 Last updated: 2026-11-08  
 Implementation: bounded evaluator, preview adapter, durable Save/Preview/Apply, rules sheet, and selected-account committed reapplication are implemented. The schema-6 baseline passed all 72 tests in Release and ASan/UBSan on 2026-10-26. Current rules-enabled documents use experimental schema 68; rules-off documents use schema 67. Schemas 22/21, schema 20 and schema 8 are rejected without migration. See [status and verification](../doc/status.md#point-7-committed-rule-reapplication--2026-10-27), [engineering contract](../doc/rules-engine.md), and [durable rules](../doc/durable-rules.md). Feature 004 stays active. Starter names and the independent category model were subsequently accepted on 2026-10-28 in feature 010. Reports are [feature 006](006-reporting-drill-down.md).

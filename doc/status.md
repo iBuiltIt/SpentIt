@@ -1,5 +1,26 @@
 # Project status
 
+## First-release decisions and next UI phase — 2026-11-08
+
+The owner accepted the [first-release plan](first-release-plan.md): macOS first,
+existing spending workflows, current-value rule matching before release, explicit
+feature/retention deferrals, current release-wide verification, batch manual upkeep
+and final licensing/package/publication gates. Paid-services, hosted access,
+bundles and derivative source-sharing policy are settled; exact license text is not.
+
+The owner's usage-driven UI work comes first and is separate from the subsequent
+busy/readiness audit. About is one accepted item; the remainder of the list has not
+yet been supplied. [About and third-party notices](../features/007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08)
+will provide application identity/version and offline access to bundled component
+notices/licenses. Application license access follows exact-term selection.
+
+This is documentation only, not implementation Go. No application, financial or
+storage behavior, format, license file, package or manual content changed. Current
+formats remain 68/67; existing rule inputs remain unchanged until implementation.
+The release plan is the current planning baseline where older handoffs conflict.
+Documentation verification: changed-document relative file/heading links and
+`git diff --check` passed. No runtime tests were run for this documentation-only work.
+
 ## Bounded ruleset-save retention — 2026-11-08
 
 Owner Go covers ruleset duplication only. The [contract](../features/004-rules-and-explanations.md#ruleset-save-retention--owner-go-2026-11-08)
@@ -4650,7 +4671,7 @@ bounded cache of reconstructed committed snapshots (65,536 entries / 64 MiB
 accounted allocation budget). Each historical reference, ordering, ownership,
 allocation, currency and reconciliation check still runs. Both caches are scoped
 to one audit; no new persistent financial cache is written. See
-[the contract](fast-startup.md#closing-verification-follow-up--owner-go-2026-10-31).
+[the contract](fast-startup.md).
 
 Verification on macOS: the selected Release regression passed 102/103 tests in
 167.76 s. The sole failure was an obsolete benchmark assertion expecting the old

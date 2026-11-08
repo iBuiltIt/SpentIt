@@ -1,12 +1,64 @@
 # 007 — Licensing and distribution
 
 Status: **active**  
-Last updated: 2026-10-28  
-Implementation: no license selected or added; local icon/packaging support exists, with Windows blocked by the storage port and Linux execution unverified. No public distribution exists.
+Last updated: 2026-11-08  
+Implementation: no license selected or added; local icon/packaging support exists, with platform verification and packaging gaps recorded in current status. No public distribution exists.
+
+## About and third-party notices — accepted 2026-11-08
+
+The owner accepted About as part of the next usage-driven UI phase, ahead of the
+release plan. This records requirements, not implementation Go. Further UI items
+remain to be supplied. See [the accepted release plan](../doc/first-release-plan.md).
+
+- Main About panel: application icon, SpentIt name, “Where did my money go?”,
+  version/build, copyright and a brief description.
+- **Third-party software…** opens an offline-readable list of the actual shipped
+  components and versions, with copyright notices and full applicable licenses.
+  Include transitive dependencies and required notices, not only Qt, SQLCipher
+  and PCRE2. Derive the contents from the shipped build and its exact versions.
+- **SpentIt license…** provides the final application terms once selected. Do not
+  present the accepted policy as an operative license before that selection.
+- Bundle notices/license texts with the application and expose them through About;
+  access must not depend on a website or internet connection. Full license texts
+  need not occupy the main About panel. Make Qt use prominently acknowledged.
+- About is the user-visible route to notices, not the whole distribution compliance
+  process. Applicable source availability, replacement/relinking and other
+  dependency obligations remain packaging requirements.
+
+Verification when implemented must check identity/version accuracy, offline
+access, readable/selectable notices, keyboard/focus behavior and agreement between
+bundled notices and the actual shipped dependency inventory. Record any manual
+changes in the deferred backlog rather than updating the manual during feature work.
+
+## Licensing policy refinements — accepted 2026-11-08
+
+The owner accepted these answers to the earlier drafting questions:
+
+- No charging for access to SpentIt or a hosted derivative.
+- Separately purchased human support, training and consulting are allowed when
+  software remains freely available and payment is not required to obtain/use it.
+- Commissioned development services are allowed. Distributed resulting applications
+  remain subject to the same free-access/no-resale terms.
+- Charging for SpentIt through a bundle is prohibited. Clearly itemized actual
+  media/postage costs are allowed.
+- Distributed derivatives must include corresponding source under the same terms;
+  private internal modifications need not be published.
+
+The exact license still needs selection and review against this policy and shipped
+dependencies. No license is installed by these decisions. Use “source-available”
+rather than describing the restrictive intended terms as OSI open source.
+
+Sources checked 2026-11-08: [OSI definition](https://opensource.org/osd),
+[Qt LGPL obligations](https://www.qt.io/development/open-source-lgpl-obligations),
+and [SQLCipher license](https://github.com/sqlcipher/sqlcipher/blob/master/LICENSE.txt).
+Qt guidance calls for prominent notification of LGPL library use and a license
+copy. SQLCipher's binary redistribution conditions require its notices, conditions
+and disclaimer in accompanying materials. Package the texts applicable to the
+actual versions shipped; these web references do not replace that inventory.
 
 ## Local packaging — accepted 2026-10-28
 
-The owner approved the supplied PNG/ICNS artwork for the welcome screen and application icons. Welcome/runtime icons follow system appearance with light as the unknown/default fallback. Installed icons use the light variant. Local macOS bundles, Linux install trees/archives, and Windows resource/packaging preparation are in scope; installers and public distribution are not. Windows application storage still requires a separate portability effort; packaging preparation does not claim a working Windows build. See [local package commands and limits](../packaging/README.md) and [verification](../doc/status.md).
+The owner approved the supplied PNG/ICNS artwork for the welcome screen and application icons. Welcome/runtime icons follow system appearance with light as the unknown/default fallback. Installed icons use the light variant. Local macOS bundles, Linux install trees/archives, and Windows resource/packaging preparation are in scope; installers and public distribution are not. This dated packaging checkpoint predates the subsequent Windows build/launch; current Windows tests and packaging remain incomplete, as recorded in [Windows verification](../doc/windows-development-setup.md). See [local package commands and limits](../packaging/README.md) and [verification](../doc/status.md).
 
 ## Accepted intent
 
@@ -24,7 +76,7 @@ A license that prohibits sale/commercial redistribution is not open source under
 
 The owner has selected the no-resale direction, with free internal business use explicitly allowed. Investigate suitable source-available software terms and check dependency compatibility. GPL is not an alternative that satisfies this decision. Do not improvise a custom legal clause as if it were a vetted license.
 
-A blanket noncommercial restriction would contradict the permitted internal business use. Exact terms still need to distinguish selling copies from paid support, hosting, bundled distribution, and paid modifications. The owner's broader statement that nobody should make money from these efforts expresses the anti-monetization intent; do not silently turn it into a prohibition on the expressly permitted business use. Trademark rules address branding/confusion but cannot prevent someone using a different brand as requested here.
+A blanket noncommercial restriction would contradict the permitted internal business use. The accepted 2026-11-08 refinements above distinguish selling copies from paid support, hosting, bundled distribution, and paid modifications; exact legal wording remains to be selected. The owner's broader statement that nobody should make money from these efforts expresses the anti-monetization intent; do not silently turn it into a prohibition on the expressly permitted business use. Trademark rules address branding/confusion but cannot prevent someone using a different brand as requested here.
 
 Creative Commons advises against using its licenses for software. Do not choose CC BY-NC merely because its name appears to fit the intent.
 
@@ -46,7 +98,7 @@ Creative Commons advises against using its licenses for software. Do not choose 
 
 ## Remaining drafting questions
 
-The sale-versus-business-use policy is resolved. The exact license remains to be selected or reviewed. Determine how proposed terms handle paid hosting/access, support, consulting, paid modifications, bundles, and cost-only distribution without undermining the accepted policy. Source-sharing requirements for derivatives also remain unspecified. Bring concrete wording and its consequences to the owner rather than reopening the settled internal-business-use question.
+The policy questions, including paid services, hosting, bundles, cost-only distribution and derivative source sharing, are resolved above. The exact license remains to be selected or reviewed. Bring concrete wording and its consequences to the owner, checking fit and dependency compatibility rather than reopening settled policy.
 
 These documents record requirements, not an operative license or a guarantee of legal enforceability. No license file has been added. Documentation and local development can proceed while exact terms are resolved.
 

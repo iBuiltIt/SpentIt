@@ -1,5 +1,15 @@
 # SpentIt — Where did my money go?
 
+## First release and next UI phase — accepted 2026-11-08
+
+Read [the accepted release plan](doc/first-release-plan.md) before planning next
+work. The owner's usage-driven UI improvements come first, including About;
+the remaining UI list is open. This is separate from the later busy/readiness
+audit. Current-value rule matching and macOS-first release scope are accepted,
+not implementation Go. Licensing policy is settled in the plan; exact legal
+terms and publication remain gated. Preserve deferred retention scope and the
+later batch manual pass. See [About requirements](features/007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08).
+
 ## Bounded ruleset retention — owner Go 2026-11-08
 
 Successful close expires full rule-save requests and superseded ruleset snapshots.
