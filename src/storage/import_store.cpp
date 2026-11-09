@@ -959,6 +959,7 @@ struct ImportStore::Impl {
     std::string legacy_undo_domain,legacy_undo_digest;
     std::function<void()> legacy_undo_finalize;
     bool composing_rule_save=false;
+    bool composing_definitions=false;
     std::optional<app::ActionToken> undo_token;
     mutable VerificationRows* verification_rows=nullptr;
     struct AuditEntries {
@@ -1305,9 +1306,10 @@ void ImportStore::save_reports(const reports::Catalog& input) {
     if(requested.revision<0 || requested.revision==INT64_MAX || requested.definitions.size()>1000)throw std::invalid_argument("Too many saved reports or report revisions.");
     std::set<std::string> ids;
     for(const auto& d:requested.definitions){reports::validate(d);if(!ids.insert(d.id).second)throw std::invalid_argument("Duplicate report identity.");}
-    Atomic transaction(impl_->db);
+    std::unique_ptr<Atomic> transaction;
+    if(!impl_->composing_definitions)transaction=std::make_unique<Atomic>(impl_->db);
     const auto current=report_catalog();
-    if(current.revision==requested.revision+1 && current.definitions==requested.definitions){transaction.commit();return;}
+    if(current.revision==requested.revision+1 && current.definitions==requested.definitions){if(transaction)transaction->commit();return;}
     if(current.revision!=requested.revision)throw std::invalid_argument("Reports changed. Reload them before saving.");
     exec(impl_->db,"DELETE FROM reports");
     std::int64_t position=0;
@@ -1318,10 +1320,12 @@ void ImportStore::save_reports(const reports::Catalog& input) {
         std::int64_t index=0;for(const auto& p:d.periods){Statement period(impl_->db,"INSERT INTO report_periods VALUES(?,?,?,?,?)");period.text(1,d.id);period.integer(2,index++);period.text(3,p.preset);period.text(4,p.start);period.text(5,p.end);period.done();}
     }
     Statement revision(impl_->db,"UPDATE report_state SET revision=? WHERE singleton=1");revision.integer(1,requested.revision+1);revision.done();
-    ActionChain(impl_->db).compatible_change(action_token());
-    if(impl_->observer)impl_->observer(ImportPhase::before_commit);
-    transaction.commit();
-    if(impl_->observer)impl_->observer(ImportPhase::after_commit);
+    if(!impl_->composing_definitions){
+        ActionChain(impl_->db).compatible_change(action_token());
+        if(impl_->observer)impl_->observer(ImportPhase::before_commit);
+        transaction->commit();
+        if(impl_->observer)impl_->observer(ImportPhase::after_commit);
+    }
 }
 std::vector<reports::Entry> ImportStore::report_entries(const std::vector<std::int64_t>& selected,const app::OperationContext& context) const {
     // The document lock and serial worker exclude concurrent writers. This read
@@ -2444,4 +2448,5 @@ namespace { std::int64_t review_generation(sqlite3*); }
 #include "ledger_selection_store.inc"
 #include "rule_account_store.inc"
 #include "action_store.inc"
+#include "definition_import.inc"
 } // namespace spentit::storage

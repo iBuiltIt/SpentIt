@@ -1,6 +1,6 @@
 # First release decisions and next UI work
 
-Last updated: 2026-11-08
+Last updated: 2026-11-09
 Status: **accepted direction; implementation requires a separate Go**.
 
 The owner accepted the decisions below, then placed usage-driven UI improvements
@@ -41,6 +41,11 @@ ledger context-menu rule creation, followed by Reports workspace usability. Thes
 recorded in [status](status.md); they do not complete the open usage-driven UI phase
 or authorize current-value matching. Manual follow-ups are tracked as MAN-014,
 MAN-015 and MAN-016 in the [backlog](manual-update-backlog.md).
+
+The owner also authorized [File exchange and the Backup menu](file-exchange.md)
+on 2026-11-09: portable QIF and JSON exports, selected definition import and the
+existing backup flow. See [status](status.md) for checks and MAN-018 for deferred
+manual work. This does not change the experimental database compatibility policy.
 
 ## Accepted first-release scope
 

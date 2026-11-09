@@ -46,6 +46,8 @@ public:
     std::optional<app::ActionReceipt> undo_action_outcome(std::string_view,const app::UndoPreview&) const override;
     app::ActionReceipt undo_action(std::string_view,const app::UndoPreview&) override;
     reports::Catalog report_catalog() const override;
+    bool definition_import_completed(std::string_view,const app::DefinitionImport&) const override;
+    void import_definitions(std::string_view,const app::DefinitionImport&,const app::OperationContext&) override;
     void save_reports(const reports::Catalog&) override;
     std::vector<reports::Entry> report_entries(const std::vector<std::int64_t>&,const app::OperationContext&) const override;
     std::string date_format() const override;

@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-08
+Last updated: 2026-11-09
 
 Owner direction: accumulate manual changes here while application work continues,
 then update and verify the manual together in a later owner-authorized pass.
@@ -417,3 +417,22 @@ retains accounts/categories/openings; older-import removal and Discard require a
 empty chain. Update the transaction, review, import, account, rule, recovery and
 history instructions together in the later manual pass. No manual prose or
 screenshots changed in this implementation; verification uses synthetic fixtures.
+
+### MAN-018 — File export/import and Backup menu
+
+Recorded: 2026-11-09. Status: **pending the later owner-authorized manual pass**.
+Source: [File exchange contract](file-exchange.md).
+
+- Update File menu/navigation, import/export, Rules, Reports, Categories and
+  backup/recovery chapters for the four commands and their unsaved-edit guards.
+- Explain account/date selection, inclusive ranges, optional opening balances,
+  optional ordinary categories, retained transfers, plaintext QIF and per-account
+  currency choice on reimport. Partial-period openings precede the first selected date.
+- Explain independent Rules/Reports/Categories JSON selection, stacked import
+  sections, All toggles, namesake rules/reports, category merge/Income choices,
+  missing category/account mapping, and importing definitions without applying rules.
+- Distinguish portable reconstruction files from complete encrypted backups; File
+  Backup and Settings Save backup are the same operation.
+- Capture menu, QIF export, definition export/import and dependency/conflict dialogs
+  during the later batch pass. No manual prose, captions or screenshots were changed
+  in this implementation; synthetic verification screenshots are not manual assets.

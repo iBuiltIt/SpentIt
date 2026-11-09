@@ -1,5 +1,66 @@
 # Project status
 
+## File exchange and File Backup — implemented, 2026-11-09
+
+The owner-authorized [four File menu commands](file-exchange.md) are implemented:
+QIF Export, SpentIt Export, SpentIt Import and the existing Settings Backup flow.
+[Feature 015](../features/015-file-exchange.md) records scope; the contract documents
+the independent JSON version 1 format. Database formats remain **70/69**.
+
+QIF selects active/archived accounts and independent inclusive periods initialized
+from current ledger dates. It writes current New/accepted rows, exact signed splits,
+current category names, transfer references and optional immediately-before-period
+openings in account B fields. Categories are optional; only used category catalog
+entries are emitted. Account selection, including no selection, is restored after
+cross-account reads. Date pickers use the shared calendar and file date format.
+
+JSON exports independently selected Rules, Reports and Categories. Import shows
+nonempty stacked sections with checked items and All toggles, explicit account/
+category mapping and Income-conflict choices. Rules/reports append with fresh IDs;
+categories merge by full name. Selected definitions save atomically without applying
+rules or adding/clearing financial Undo. Missing dependencies, currency mismatches,
+stale previews, malformed/ambiguous JSON and unsupported versions refuse. Atomic
+export publication preserves the old destination on failure/cancellation and refuses
+active datasets, symlinks and unrelated existing files. The dialogs identify exports
+as unencrypted text. Existing unsaved-edit guards precede all four commands.
+
+Verification on macOS arm64, Qt 6.12.0:
+
+- `import.file_exchange` passes with rules on (6.59 s), rules off (6.15 s), and
+  ASan/UBSan (12.80 s; leak detection disabled for the Qt GUI process). These are
+  the final archived-account/cancellation-wiring builds. No sanitizer diagnostics.
+- The suite covers all definition kinds, namesake imports, exact retries and
+  conflicting operation IDs, category mapping/Income choices, missing dependencies,
+  stale tokens, malformed/version/duplicate-key/Unicode rejection, and cancellation.
+- Injected first/middle/last write/sync failures and disk-full failures check
+  all-or-none catalog changes. Process exits before and after commit, reopened
+  verification, a restored backup and lost-acknowledgement retry pass.
+- QIF checks current edits, signed splits, partial openings, categories off,
+  omission of unused categories, both transfer postings, archived/no-selected-account
+  reads and failed/cancelled export preservation. A complete two-account QIF is
+  reimported through the normal group/category-decision workflow: balances and
+  current transaction counts reconcile, including transfer counterpart suppression.
+- Eight nearby regressions passed: report storage/UI, Rules UI, category catalog,
+  rule definitions, action repository and backup cancellation, plus the exchange
+  suite at that checkpoint. The later shared-QML Rules/Reports/Categories UI run
+  passed 3/3 (31.29 s). Native Cocoa synthetic menu/dialog smoke also passes;
+  QIF and definition-import screenshots were visually inspected for clipping/layout.
+- The rules-enabled application builds to `build/SpentIt`. Raw passing logs and
+  reproducible commands are in [the verification record](../review/file-exchange/README.md).
+  This is targeted verification, not a full-repository green claim.
+
+Limits: Linux/Windows and interactive native file-picker/overwrite workflows were
+not exercised. The POSIX fault/process-exit harness is skipped on Windows. Export
+publication uses QSaveFile without direct-write fallback; file-picker selections
+use existing Qt FileDialog machinery. QIF uses Bank sections, no currency extension,
+and refuses line-breaking/control characters it cannot represent faithfully. JSON
+is capped at 16 MiB and QIF at 64 MiB; exports refuse instead of truncating. These
+portable files preserve current transactions/selected definitions, not the complete
+originals, recognition, history or document settings supplied by Backup. No private
+financial data was used. Manual text/screenshots remain unchanged; MAN-018 records
+that separate publication work.
+
+
 ## Unified Undo replacement — implemented and verified, 2026-11-09
 
 The authorized replacement is integrated in storage and the application, with

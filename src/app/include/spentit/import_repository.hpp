@@ -181,6 +181,14 @@ struct LedgerRow {
     imports::DraftRow draft;
     bool committed;
 };
+// One atomic portable-definition import. References are resolved before saving.
+struct DefinitionImport {
+    ActionToken token;
+    std::vector<CategoryRequest> categories;
+    std::optional<RuleSaveRequest> rules;
+    std::int64_t rules_revision=0;
+    std::optional<reports::Catalog> reports;
+};
 class ImportRepository {
 public:
     virtual ~ImportRepository() = default;
@@ -191,6 +199,8 @@ public:
     virtual UndoPreview preview_undo(std::string_view,const ActionToken&) const {throw std::logic_error("Undo unavailable");}
     virtual std::optional<ActionReceipt> undo_action_outcome(std::string_view,const UndoPreview&) const { return {}; }
     virtual ActionReceipt undo_action(std::string_view,const UndoPreview&) {throw std::logic_error("Undo unavailable");}
+    virtual bool definition_import_completed(std::string_view,const DefinitionImport&) const {return false;}
+    virtual void import_definitions(std::string_view,const DefinitionImport&,const OperationContext&) {throw std::logic_error("Definition import unavailable");}
     virtual reports::Catalog report_catalog() const { return {}; }
     virtual void save_reports(const reports::Catalog&) {throw std::logic_error("Reports unavailable");}
     virtual std::vector<reports::Entry> report_entries(const std::vector<std::int64_t>&,const OperationContext&) const {throw std::logic_error("Reports unavailable");}

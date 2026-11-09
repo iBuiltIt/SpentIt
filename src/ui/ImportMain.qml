@@ -210,6 +210,12 @@ ApplicationWindow {
         Menu {
             id:diagnosticFileMenu
             title: "File"
+            MenuItem {objectName:"fileQifExport";text:"QIF Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){workflow.command("exchange_qif_prepare")})}
+            MenuItem {objectName:"fileSpentItExport";text:"SpentIt Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){definitionExportDialog.open()})}
+            MenuItem {objectName:"fileSpentItImport";text:"SpentIt Import…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){exchangeOpenDialog.open()})}
+            MenuItem {objectName:"fileBackup";text:"Backup…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){backupDialog.open()})}
+            MenuSeparator {}
+
             MenuItem {
                 objectName: "fileCloseDataset";text: "Close file"
                 enabled: !!s.active && !workflow.busy
@@ -1686,6 +1692,9 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onChanged() {if(workflow.busy){cancelAccountDrag();captureReviewView()}}
         function onCompleted(action,success) {
+            if(success && action==="exchange_qif_prepare"){qifExportRows=(s.qifExportAccounts||[]).map(r=>Object.assign({},r));qifExportDialog.open()}
+            if(success && action==="exchange_read")prepareDefinitionImport()
+            if(success && (action==="exchange_qif_export" || action==="exchange_export" || action==="exchange_import")){qifExportDialog.close();definitionExportDialog.close();definitionImportDialog.close();exchangeResultDialog.title=action==="exchange_import"?"Import complete":"Export saved";exchangeResultDialog.open()}
             const contextInspection=action==="inspect" && inspectingLedgerRuleContext
             if(contextInspection){inspectingLedgerRuleContext=false;ledgerRuleContextReady=success}
             if(success)ruleValidationError=""
@@ -2066,6 +2075,196 @@ ApplicationWindow {
     }
     property string importTarget: ""
     FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),account:importTarget}) }
+    property var qifExportRows: []
+    property var exchangeData: ({})
+    property var exchangeSelections: ({rules:[],reports:[],categories:[]})
+    property var exchangeCategoryMappings: ({})
+    property var exchangeAccountMappings: ({})
+    property var exchangeIncomeChoices: ({})
+    property string exchangeSaveKind: ""
+    property var exchangeSaveArgs: ({})
+    readonly property bool fileExchangeEnabled: !!s.active && !workflow.busy && !s.actionPreparing && !rulesLeaving && !reportsWorkspace.leaving
+    function updateQifRow(index,key,value) {
+        if(key==="start" || key==="end"){qifExportRows[index][key]=value;return}
+        let rows=qifExportRows.slice();rows[index]=Object.assign({},rows[index]);rows[index][key]=value;qifExportRows=rows
+    }
+    function toggleExchange(section,index,checked) {
+        let selections=Object.assign({},exchangeSelections),values=(selections[section]||[]).slice()
+        if(checked && values.indexOf(index)<0)values.push(index)
+        if(!checked)values=values.filter(i=>i!==index)
+        selections[section]=values;exchangeSelections=selections
+    }
+    function allExchange(section,checked) {
+        let selections=Object.assign({},exchangeSelections);selections[section]=checked?(exchangeData[section]||[]).map(r=>r.index):[];exchangeSelections=selections
+    }
+    function exchangeMapping(account,key,value) {
+        let map=Object.assign({},account?exchangeAccountMappings:exchangeCategoryMappings);map[key]=value
+        if(account)exchangeAccountMappings=map;else exchangeCategoryMappings=map
+    }
+    function prepareDefinitionImport() {
+        exchangeData=s.exchangePreview||{}
+        let selections={};for(let section of ["rules","reports","categories"])selections[section]=(exchangeData[section]||[]).map(r=>r.index)
+        exchangeSelections=selections;exchangeIncomeChoices={};exchangeCategoryMappings={};exchangeAccountMappings={}
+        for(let r of exchangeData.categoryReferences||[])exchangeMapping(false,r.key,r.target)
+        for(let r of exchangeData.accountReferences||[])exchangeMapping(true,r.key,r.target)
+        definitionImportDialog.open()
+    }
+    function chooseExport(kind,args) {
+        exchangeSaveKind=kind;exchangeSaveArgs=args
+        exchangeSaveDialog.nameFilters=kind==="qif"?["QIF files (*.qif)"]:["SpentIt exports (*.spentit.json)"]
+        exchangeSaveDialog.defaultSuffix=kind==="qif"?"qif":"spentit.json"
+        exchangeSaveDialog.open()
+    }
+    FileDialog {
+        id:exchangeSaveDialog;objectName:"exchangeSaveDialog";fileMode:FileDialog.SaveFile;title:"Save export"
+        onAccepted:{let args=Object.assign({},exchangeSaveArgs);args.path=workflow.localPath(selectedFile);workflow.command(exchangeSaveKind==="qif"?"exchange_qif_export":"exchange_export",args)}
+    }
+    FileDialog {
+        id:exchangeOpenDialog;objectName:"exchangeOpenDialog";fileMode:FileDialog.OpenFile;title:"Open SpentIt export"
+        nameFilters:["SpentIt exports (*.spentit.json)","JSON files (*.json)"]
+        onAccepted:workflow.command("exchange_read",{path:workflow.localPath(selectedFile)})
+    }
+    Dialog {
+        id:qifExportDialog;closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape;objectName:"qifExportDialog";title:"QIF Export";modal:true;anchors.centerIn:parent
+        width:Math.min(window.width-48,820);height:Math.min(window.height-80,650)
+        ColumnLayout {
+            anchors.fill:parent
+            Label {text:"Select accounts and inclusive date ranges.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ScrollView {
+                Layout.fillWidth:true;Layout.fillHeight:true;clip:true;contentWidth:availableWidth
+                ColumnLayout {
+                    width:parent.width
+                    Repeater {
+                        model:window.qifExportRows
+                        delegate:ColumnLayout {
+                            required property var modelData;required property int index
+                            Layout.fillWidth:true
+                            CheckBox {objectName:"qifAccount_"+index;text:modelData.name+" ("+modelData.currency+")";checked:modelData.checked;onClicked:window.updateQifRow(index,"checked",checked)}
+                            RowLayout {
+                                Layout.fillWidth:true;Layout.leftMargin:28
+                                Label {text:"From"}
+                                TextField {id:qifFrom;objectName:"qifFrom_"+index;text:modelData.start;Layout.fillWidth:true;Accessible.name:"Start date for "+modelData.name;onTextEdited:window.updateQifRow(index,"start",text)}
+                                CalendarPicker {workflow:window.workflowBackend;field:qifFrom;onSelected:function(value){qifFrom.text=value;window.updateQifRow(index,"start",value)}}
+                                Label {text:"To"}
+                                TextField {id:qifTo;objectName:"qifTo_"+index;text:modelData.end;Layout.fillWidth:true;Accessible.name:"End date for "+modelData.name;onTextEdited:window.updateQifRow(index,"end",text)}
+                                CalendarPicker {workflow:window.workflowBackend;field:qifTo;onSelected:function(value){qifTo.text=value;window.updateQifRow(index,"end",value)}}
+                            }
+                        }
+                    }
+                }
+            }
+            CheckBox {id:qifCategories;objectName:"qifIncludeCategories";text:"Include categories";checked:true}
+            CheckBox {id:qifOpening;objectName:"qifIncludeOpening";text:"Include opening balance";checked:true}
+            Label {text:"Transfer references are included. Exports are unencrypted text files.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Layout.alignment:Qt.AlignRight
+                Button {text:"Cancel";onClicked:{if(workflow.busy)workflow.requestCancel();else qifExportDialog.close()}}
+                Button {objectName:"qifExportSave";text:"Export…";enabled:!workflow.busy && window.qifExportRows.some(r=>r.checked);onClicked:window.chooseExport("qif",{accounts:window.qifExportRows.filter(r=>r.checked),categories:qifCategories.checked,opening:qifOpening.checked})}
+            }
+        }
+    }
+    Dialog {
+        id:definitionExportDialog;closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape;objectName:"definitionExportDialog";title:"SpentIt Export";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,480)
+        ColumnLayout {
+            anchors.fill:parent
+            CheckBox {id:exportRules;objectName:"exportRules";text:"Rules";enabled:!!s.rulesSupported;checked:false}
+            CheckBox {id:exportReports;objectName:"exportReports";text:"Reports";checked:false}
+            CheckBox {id:exportCategories;objectName:"exportCategories";text:"Categories";checked:false}
+            Label {text:"Export saved definitions as an unencrypted text file.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Layout.alignment:Qt.AlignRight
+                Button {text:"Cancel";onClicked:{if(workflow.busy)workflow.requestCancel();else definitionExportDialog.close()}}
+                Button {objectName:"definitionExportSave";text:"Export…";enabled:!workflow.busy && ((exportRules.enabled && exportRules.checked)||exportReports.checked||exportCategories.checked);onClicked:window.chooseExport("definitions",{rules:exportRules.enabled && exportRules.checked,reports:exportReports.checked,categories:exportCategories.checked})}
+            }
+        }
+    }
+    component ExchangeSection: ColumnLayout {
+        required property string section
+        required property string heading
+        readonly property var items:window.exchangeData[section]||[]
+        visible:items.length>0;Layout.fillWidth:true
+        RowLayout {
+            Label {text:heading;font.bold:true;Layout.fillWidth:true}
+            CheckBox {text:"All";tristate:true;checkState:(window.exchangeSelections[section]||[]).length===0?Qt.Unchecked:(window.exchangeSelections[section]||[]).length===items.length?Qt.Checked:Qt.PartiallyChecked;nextCheckState:function(){return checkState===Qt.Checked?Qt.Unchecked:Qt.Checked};onClicked:window.allExchange(section,checkState===Qt.Checked)}
+        }
+        Repeater {
+            model:items
+            delegate:ColumnLayout {
+                required property var modelData
+                Layout.fillWidth:true
+                CheckBox {objectName:"import_"+section+"_"+modelData.index;text:modelData.name;checked:(window.exchangeSelections[section]||[]).indexOf(modelData.index)>=0;onClicked:window.toggleExchange(section,modelData.index,checked)}
+                RowLayout {
+                    visible:section==="categories" && !!modelData.incomeConflict && (window.exchangeSelections.categories||[]).indexOf(modelData.index)>=0
+                    Layout.leftMargin:28;Layout.fillWidth:true
+                    Label {text:"Income setting differs:"}
+                    ComboBox {
+                        Layout.fillWidth:true;model:["Choose…","Keep existing ("+(modelData.existingIncome?"Income":"Expense")+")","Use imported ("+(modelData.incomingIncome?"Income":"Expense")+")"]
+                        onActivated:{let choices=Object.assign({},window.exchangeIncomeChoices);choices[modelData.index]=currentIndex;window.exchangeIncomeChoices=choices}
+                    }
+                }
+            }
+        }
+    }
+    Dialog {
+        id:definitionImportDialog;closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape;objectName:"definitionImportDialog";title:"SpentIt Import";modal:true;anchors.centerIn:parent
+        width:Math.min(window.width-48,760);height:Math.min(window.height-80,740)
+        ColumnLayout {
+            anchors.fill:parent
+            ScrollView {
+                Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth;clip:true
+                ColumnLayout {
+                    width:parent.width
+                    ExchangeSection {section:"rules";heading:"Rules"}
+                    ExchangeSection {section:"reports";heading:"Reports"}
+                    ExchangeSection {section:"categories";heading:"Categories"}
+                    Label {visible:!(window.exchangeData.rules||[]).length && !(window.exchangeData.reports||[]).length && !(window.exchangeData.categories||[]).length;text:"This file contains no definitions."}
+                    CheckBox {id:showExchangeMappings;text:"Account and category mapping";checked:true;visible:(window.exchangeData.accountReferences||[]).length>0 || (window.exchangeData.categoryReferences||[]).length>0}
+                    ColumnLayout {
+                        visible:showExchangeMappings.checked;Layout.fillWidth:true
+                        Label {text:"Mappings are needed only for the rules and reports you select. Select missing categories above to create them, or choose an existing category below.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Repeater {
+                            model:window.exchangeData.accountReferences||[]
+                            delegate:ColumnLayout {
+                                required property var modelData
+                                Layout.fillWidth:true
+                                Label {text:"Account: "+modelData.name;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                                ComboBox {
+                                    Layout.fillWidth:true;textRole:"name";valueRole:"id"
+                                    model:(window.exchangeData.accountTargets||[]).filter(a=>!a.id || a.currency===modelData.currency)
+                                    currentIndex:Math.max(0,model.findIndex(a=>a.id===(window.exchangeAccountMappings[modelData.key]||"")))
+                                    onActivated:window.exchangeMapping(true,modelData.key,currentValue)
+                                }
+                            }
+                        }
+                        Repeater {
+                            model:window.exchangeData.categoryReferences||[]
+                            delegate:ColumnLayout {
+                                required property var modelData
+                                Layout.fillWidth:true
+                                Label {text:"Category: "+modelData.name;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                                ComboBox {
+                                    Layout.fillWidth:true;textRole:"name";valueRole:"id";model:window.exchangeData.categoryTargets||[]
+                                    currentIndex:Math.max(0,model.findIndex(c=>c.id===(window.exchangeCategoryMappings[modelData.key]||"")))
+                                    onActivated:window.exchangeMapping(false,modelData.key,currentValue)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Label {text:"Rules and reports are added as new definitions. Rules are not applied to transactions.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            RowLayout {
+                Layout.alignment:Qt.AlignRight
+                Button {text:"Cancel";onClicked:{if(workflow.busy)workflow.requestCancel();else definitionImportDialog.close()}}
+                Button {objectName:"definitionImportSave";text:"Import";enabled:!workflow.busy && (window.exchangeSelections.rules.length+window.exchangeSelections.reports.length+window.exchangeSelections.categories.length)>0;onClicked:{let args=Object.assign({},window.exchangeSelections);args.categoryMappings=window.exchangeCategoryMappings;args.accountMappings=window.exchangeAccountMappings;args.incomeChoices=window.exchangeIncomeChoices;workflow.command("exchange_import",args)}}
+            }
+        }
+    }
+    Dialog {
+        id:exchangeResultDialog;objectName:"exchangeResultDialog";title:"File saved";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,420);standardButtons:Dialog.Ok
+        Label {text:s.exchangeMessage||"";textFormat:Text.PlainText}
+    }
+
     FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save a backup to a new file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
     HelpDialog {
         helpTarget: "help:add-correct-transactions#divide-a-purchase-into-splits"

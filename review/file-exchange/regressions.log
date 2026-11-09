@@ -1,0 +1,21 @@
+Test project /Volumes/EXTERNAL/swessels/Develop/github/personal/SpentIt/build/import-ui-rules-release
+    Start 121: import.backup_cancellation
+    Start  45: import.reports
+    Start 184: import.file_exchange
+    Start 192: import.rules_ui
+1/8 Test #184: import.file_exchange .............   Passed    7.54 sec
+    Start  42: storage.action_repository
+2/8 Test #121: import.backup_cancellation .......   Passed   12.51 sec
+    Start 185: import.reports_ui
+3/8 Test  #42: storage.action_repository ........   Passed    7.22 sec
+    Start 148: category.catalog
+4/8 Test #148: category.catalog .................   Passed    0.73 sec
+    Start 164: rulestore.definitions
+5/8 Test  #45: import.reports ...................   Passed   15.74 sec
+6/8 Test #164: rulestore.definitions ............   Passed    0.71 sec
+7/8 Test #185: import.reports_ui ................   Passed    9.67 sec
+8/8 Test #192: import.rules_ui ..................   Passed   35.26 sec
+
+100% tests passed out of 8
+
+Total Test time (real) =  35.28 sec

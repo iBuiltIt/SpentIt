@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <spentit/diagnostics.hpp>
 #include "import_model.hpp"
+#include "file_exchange_codec.hpp"
 #include <spentit/import_view.hpp>
 #include <spentit/split_editor.hpp>
 #include <spentit/statements.hpp>
@@ -224,6 +225,8 @@ QString phaseFor(const QString& action){
     if(action=="commit")return "Accepting transactions";
     if(action=="check_file")return "Checking file";
     if(action=="backup")return "Saving backup";
+    if(action=="exchange_import")return "Importing definitions";
+    if(action.startsWith("exchange_"))return "Preparing file exchange";
     if(action=="review_answer")return "Saving Review decision";
     if(action=="review_batch")return "Checking selected matches";
     if(action=="assign_transfer_batch")return "Assigning selected transfers";
@@ -361,6 +364,12 @@ struct ImportModel::Worker {
     int sort=0; bool descending=true;
     QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt,transferMergePreview;
     QVariantMap reviewLinkPreview, linkExclusionPreview;
+    QVariantMap exchangePreview;
+    QJsonObject exchangeDocument;
+    app::ActionToken exchangeToken;
+    QVariantList qifExportAccounts;
+    QString exchangeMessage;
+
     std::optional<app::UndoPreview> cachedUndo;
     std::optional<app::LinkExclusion> preparedLinkExclusion;
     std::int64_t linkExclusionGeneration=0;
@@ -1068,6 +1077,7 @@ struct ImportModel::Worker {
         } else state=metadata;
         if(reportLedgerActive && !cachedView)buildReportLedger(context);
         if(!reportsLoaded)loadReports();
+        state["exchangePreview"]=exchangePreview;state["qifExportAccounts"]=qifExportAccounts;state["exchangeMessage"]=exchangeMessage;state["actionPreparing"]=repo.action_preparing();
         state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;state["reportLedgerActive"]=reportLedgerActive;state["reportRowInfo"]=reportRowInfo;
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         QVariantMap actionUndo;
@@ -1225,8 +1235,8 @@ struct ImportModel::Worker {
         // Income grouping changes no ledger values, labels, filters or Review facts.
         const bool incomeOnly=action=="apply_category" &&
             (a.contains("income") || (preparedCategory && preparedCategory->request.action==app::CategoryAction::set_income));
-        if(!incomeOnly && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="check_file" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(!incomeOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="check_file" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();exchangeMessage.clear();reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -1261,6 +1271,43 @@ struct ImportModel::Worker {
         if(action=="cancel_reapply") {preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
         auto& repo=gateway->repository();
+        if(action.startsWith("exchange_")) {
+            if(repo.action_preparing())throw std::invalid_argument("Finish the import decisions before exporting or importing definitions.");
+            exchangeMessage.clear();
+            if(action=="exchange_qif_prepare") {
+                qifExportAccounts.clear();for(const auto& item:app::qif_export_accounts(repo,context))qifExportAccounts.append(QVariantMap{{"id",QString::number(item.account.identity)},{"name",text(item.account.name)+(item.account.archived?" (archived)":"")},{"currency",text(item.account.currency.code())},{"start",dateText(item.first)},{"end",dateText(item.last)},{"checked",false}});
+            } else if(action=="exchange_qif_export") {
+                std::vector<app::QifExportRange> ranges;
+                for(const auto& v:a.value("accounts").toList()){const auto r=v.toMap();ranges.push_back({r.value("id").toString().toLongLong(),parse_display_date(str(r.value("start")),dateFormat),parse_display_date(str(r.value("end")),dateFormat)});}
+                const auto bytes=app::export_qif(repo,ranges,a.value("categories").toBool(),a.value("opening",true).toBool(),context);
+                ui::exchange::publish(a.value("path").toString(),QByteArray::fromStdString(bytes),path,true,context);observedSaved();exchangeMessage="QIF export saved.";
+            } else if(action=="exchange_export") {
+                const auto bytes=ui::exchange::encode(repo,a.value("rules").toBool(),a.value("reports").toBool(),a.value("categories").toBool());
+                ui::exchange::publish(a.value("path").toString(),bytes,path,false,context);observedSaved();exchangeMessage="SpentIt export saved.";
+            } else if(action=="exchange_read") {
+                exchangeDocument={};exchangePreview.clear();
+                QFile file(a.value("path").toString());if(!file.open(QIODevice::ReadOnly))throw std::runtime_error("Cannot open the export file.");
+                if(file.size()>16*1024*1024)throw std::invalid_argument("The export file is too large.");
+                exchangeDocument=ui::exchange::decode(file.read(16*1024*1024+1));
+                exchangePreview=ui::exchange::preview(repo,exchangeDocument);exchangeToken=repo.action_token();
+            } else if(action=="exchange_import") {
+                if(exchangeDocument.isEmpty())throw std::invalid_argument("Open a SpentIt export file first.");
+                const auto request=ui::exchange::plan(repo,exchangeDocument,a,exchangeToken);
+                if(request.rules || request.reports || !request.categories.empty()) {
+                    const auto operation=identity();
+                    try {repo.import_definitions(operation,request,context);}catch(...){
+                        const auto failure=std::current_exception();bool completed=false;
+                        try{completed=repo.definition_import_completed(operation,request);}catch(...){throw app::OperationOutcomeUnknown();}
+                        if(!completed)std::rethrow_exception(failure);
+                    }
+                    observedSaved();exchangeDocument={};exchangePreview.clear();clearChanges();invalidate();reportsLoaded=false;
+                    try{loadReports();if(repo.rules_supported())loadRules();}catch(...){throw std::runtime_error("Definitions were imported, but the screen could not refresh. Reopen the file before importing again.");}
+                }
+                exchangeDocument={};exchangePreview.clear();exchangeMessage="Selected definitions imported.";
+            } else if(action=="exchange_cancel") {exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();}
+            else throw std::invalid_argument("Unknown file command.");
+            return;
+        }
         if(action=="report_load"){loadReports();return;}
         if(action=="report_save"){
             reports::Catalog requested;requested.revision=a.value("revision").toString().toLongLong();
@@ -2442,7 +2489,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(action!="report_show" && action!="probe" && action!="backup" && action!="check_file" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
+    if(!action.startsWith("exchange_") && action!="report_show" && action!="probe" && action!="backup" && action!="check_file" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();

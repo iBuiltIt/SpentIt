@@ -1,5 +1,17 @@
 # SpentIt — Where did my money go?
 
+## File exchange — owner Go 2026-11-09
+
+Read the [File exchange contract](doc/file-exchange.md) before export/import work.
+File adds QIF Export, SpentIt Export/Import and the existing Backup flow. QIF uses
+current unfiltered ledger rows, exact period openings when requested, optional
+ordinary categories and retained transfer references. JSON independently selects
+Rules, Reports and Categories, with explicit dependency mapping and Income conflict
+choices. Import appends rules/reports and merges categories atomically without
+applying rules or clearing transaction Undo. Experimental database formats remain
+70/69; the independent exchange format is version 1. See status for actual checks;
+MAN-018 is deferred manual work, not authorization to edit the manual now.
+
 ## Unified Undo replacement — implementation, 2026-11-09
 
 The owner authorized implementation in a new session, including the replacement's
