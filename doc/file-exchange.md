@@ -10,7 +10,7 @@ file is open. Existing unsaved-edit decisions apply before these commands.
 Backup uses exactly the Settings Save backup flow.
 
 QIF Export lists live and archived accounts with checkboxes and independent inclusive date ranges,
-initially their oldest/newest active ledger dates. It exports the current unfiltered
+initially their oldest/newest active ledger dates. All accounts initially checked. It exports the current unfiltered
 ledger, including new and accepted transactions and current edits, excluding removed
 or duplicate-suppressed postings. One destination file contains all selected accounts.
 Include categories controls ordinary category information. Transfer account references
@@ -19,7 +19,7 @@ stored opening; partial ranges add all current transactions before the start dat
 Unchecked exports have no opening. Export requires at least one selected account and
 ranges are validated before writing; Cancel remains available. Empty accounts use their opening date.
 
-SpentIt Export independently selects Rules, Reports and Categories. Export requires
+SpentIt Export independently selects Rules, Reports and Categories, all initially checked. Export requires
 at least one group. A versioned UTF-8 JSON exchange format is independent of the
 experimental database schema. It contains saved definitions, not transactions,
 credentials, history, deleted definitions or unsaved editor drafts. Categories retain
@@ -49,8 +49,16 @@ QIF uses named Bank account sections and exact ungrouped decimal amounts. Its ac
 B field carries the optional opening, which SpentIt's existing import mapping can
 use literally. Dates use unambiguous four-digit years. Currency remains per-account;
 QIF import requires the existing explicit currency selection (no conversion).
-Line-breaking/control characters that cannot be represented faithfully in QIF are
-refused rather than escaped into different financial/text values.
+Owner follow-up: normalize text only in the QIF output. Replace each consecutive
+run of C0/C1 controls (including tabs, CR/LF and DEL) or Unicode line/paragraph
+separators with one space; preserve other Unicode and all stored/imported values.
+Invalid UTF-8 still refuses. Account-name normalization must not make distinct
+accounts match, because QIF transfer references use names. The importer preserves
+permitted tabs and embedded CR in source text and strips CRLF record endings;
+export must accept that imported text.
+
+Export dialogs show progress and errors inside the modal; Export is disabled while
+busy. The destination picker uses Save.
 
 JSON version 1 identifies `SpentIt` and uses distinct definitions and reference lists.
 Readers reject unsupported versions, malformed fields and bounded-size violations.

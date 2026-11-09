@@ -226,7 +226,9 @@ QString phaseFor(const QString& action){
     if(action=="check_file")return "Checking file";
     if(action=="backup")return "Saving backup";
     if(action=="exchange_import")return "Importing definitions";
-    if(action.startsWith("exchange_"))return "Preparing file exchange";
+    if(action=="exchange_qif_export")return "Exporting QIF…";
+    if(action=="exchange_export")return "Exporting SpentIt definitions…";
+    if(action.startsWith("exchange_"))return "Preparing file exchange…";
     if(action=="review_answer")return "Saving Review decision";
     if(action=="review_batch")return "Checking selected matches";
     if(action=="assign_transfer_batch")return "Assigning selected transfers";
@@ -1275,7 +1277,7 @@ struct ImportModel::Worker {
             if(repo.action_preparing())throw std::invalid_argument("Finish the import decisions before exporting or importing definitions.");
             exchangeMessage.clear();
             if(action=="exchange_qif_prepare") {
-                qifExportAccounts.clear();for(const auto& item:app::qif_export_accounts(repo,context))qifExportAccounts.append(QVariantMap{{"id",QString::number(item.account.identity)},{"name",text(item.account.name)+(item.account.archived?" (archived)":"")},{"currency",text(item.account.currency.code())},{"start",dateText(item.first)},{"end",dateText(item.last)},{"checked",false}});
+                qifExportAccounts.clear();for(const auto& item:app::qif_export_accounts(repo,context))qifExportAccounts.append(QVariantMap{{"id",QString::number(item.account.identity)},{"name",text(item.account.name)+(item.account.archived?" (archived)":"")},{"currency",text(item.account.currency.code())},{"start",dateText(item.first)},{"end",dateText(item.last)},{"checked",true}});
             } else if(action=="exchange_qif_export") {
                 std::vector<app::QifExportRange> ranges;
                 for(const auto& v:a.value("accounts").toList()){const auto r=v.toMap();ranges.push_back({r.value("id").toString().toLongLong(),parse_display_date(str(r.value("start")),dateFormat),parse_display_date(str(r.value("end")),dateFormat)});}

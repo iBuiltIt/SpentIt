@@ -56,3 +56,27 @@ The full repository suite was not run. Linux and Windows are unverified, as are
 interactive native file-picker selection/overwrite flows and cross-application QIF
 compatibility. Native QIF/definition dialog screenshots were inspected from temporary
 synthetic captures; these were not added to the manual.
+
+
+## Export failure follow-up — 2026-11-09
+
+Rebuild `spentit_file_exchange_tests` in each existing build directory, then run:
+
+```sh
+ctest --test-dir build/import-ui-rules-release -R '^import.file_exchange$' --output-on-failure
+ctest --test-dir build/exchange-rules-off -R '^import.file_exchange$' --output-on-failure
+ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build/exchange-sanitized -R '^import.file_exchange$' --output-on-failure
+QT_QPA_PLATFORM=cocoa build/import-ui-rules-release/src/ui/spentit_file_exchange_tests menuAndDialogs
+```
+
+Rules-enabled and disabled suites passed in 6.78 s and 6.30 s. ASan/UBSan passed
+in 13.89 s with Qt leak detection disabled and no sanitizer diagnostics. Cocoa passed
+3 Qt test results in 4.38 s. The menu test deliberately uses Qt's fallback picker,
+entering filenames with/without an extension, accepting them, and verifying files
+and inline busy/error feedback. This is not OS-native save-panel automation.
+It imports synthetic tab/embedded-CR text before exporting two checked accounts.
+The text regression independently checks original/current field preservation,
+CRLF record endings, split memos, exact money, unchanged Undo, Unicode controls,
+invalid UTF-8 and normalized account-name collisions. No private data was read.
+The initial added picker test omitted the import destination and therefore had no
+transaction to export; specifying that destination fixed the test setup.

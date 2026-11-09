@@ -53,12 +53,41 @@ Limits: Linux/Windows and interactive native file-picker/overwrite workflows wer
 not exercised. The POSIX fault/process-exit harness is skipped on Windows. Export
 publication uses QSaveFile without direct-write fallback; file-picker selections
 use existing Qt FileDialog machinery. QIF uses Bank sections, no currency extension,
-and refuses line-breaking/control characters it cannot represent faithfully. JSON
+and normalizes text controls in exported fields as described below. JSON
 is capped at 16 MiB and QIF at 64 MiB; exports refuse instead of truncating. These
 portable files preserve current transactions/selected definitions, not the complete
 originals, recognition, history or document settings supplied by Backup. No private
 financial data was used. Manual text/screenshots remain unchanged; MAN-018 records
 that separate publication work.
+
+
+### Export failure follow-up — 2026-11-09
+
+The owner reported QIF export returning to its modal without creating a file.
+Export errors and busy feedback were hidden behind that modal; the dialogs now
+show progress/errors beside their controls and disable Export during work. The
+save picker says Save. All accounts and Rules/Reports/Categories default checked.
+
+After the error became visible, it identified the new exporter's overly strict
+control-character rejection. Source inspection and synthetic QIF tests show the
+importer preserves permitted tabs and embedded CR in text, while removing CRLF
+record endings. It does not introduce those characters in this reproduction.
+The owner's original file was not inspected, so its specific triggering field is
+not established. Owner-authorized export-only normalization now replaces runs of
+C0/C1 controls, DEL and Unicode line/paragraph separators with one space. Stored
+source/current text, exact amounts and Undo remain unchanged. Invalid UTF-8 and
+account-name collisions after normalization still refuse.
+
+The updated exchange suite passes with rules enabled (6.78 s) and disabled
+(6.30 s), plus ASan/UBSan (13.89 s, Qt leak detection disabled; no sanitizer
+diagnostics). It includes source-text preservation, Unicode/control normalization,
+account collision refusal and actual file publication through a typed filename
+in Qt's fallback save picker, including import-then-export and two accounts.
+Cocoa menu/dialog testing also passes (3 Qt test results, 4.38 s), deliberately
+using that fallback picker. OS-native save-panel/overwrite interaction remains
+unverified. The application was rebuilt at `build/SpentIt`; manual changes remain
+in MAN-018. The owner confirmed the rebuilt export works on 2026-11-09.
+See the verification record for reproducible commands.
 
 
 ## Unified Undo replacement — implemented and verified, 2026-11-09

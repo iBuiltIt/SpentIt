@@ -425,6 +425,8 @@ Source: [File exchange contract](file-exchange.md).
 
 - Update File menu/navigation, import/export, Rules, Reports, Categories and
   backup/recovery chapters for the four commands and their unsaved-edit guards.
+- Explain initially checked accounts and Rules/Reports/Categories, inline export
+  progress/errors, and export-only replacement of text control characters with spaces.
 - Explain account/date selection, inclusive ranges, optional opening balances,
   optional ordinary categories, retained transfers, plaintext QIF and per-account
   currency choice on reimport. Partial-period openings precede the first selected date.

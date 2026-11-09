@@ -18,6 +18,10 @@ are authoritative; [status](../doc/status.md) records implementation and actual 
 - Referenced categories/accounts must match or be explicitly mapped. Missing
   categories can be created only when selected from the imported category section.
   Selected definitions save atomically; importing rules never applies transactions.
+- Export accounts and all three definition groups default on. Progress and errors
+  appear inside the exchange dialogs. QIF output normalizes text controls to spaces
+  without changing imported/stored text; see the contract for exact characters and
+  account-name collision protection.
 - Backup is the existing Settings backup operation, exposed from File.
 
 Plaintext exports are an intentional reconstruction path. They do not preserve all

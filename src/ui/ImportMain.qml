@@ -1692,6 +1692,7 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onChanged() {if(workflow.busy){cancelAccountDrag();captureReviewView()}}
         function onCompleted(action,success) {
+            if(action.startsWith("exchange_"))exchangeFailure=success?"":workflow.error
             if(success && action==="exchange_qif_prepare"){qifExportRows=(s.qifExportAccounts||[]).map(r=>Object.assign({},r));qifExportDialog.open()}
             if(success && action==="exchange_read")prepareDefinitionImport()
             if(success && (action==="exchange_qif_export" || action==="exchange_export" || action==="exchange_import")){qifExportDialog.close();definitionExportDialog.close();definitionImportDialog.close();exchangeResultDialog.title=action==="exchange_import"?"Import complete":"Export saved";exchangeResultDialog.open()}
@@ -2081,6 +2082,7 @@ ApplicationWindow {
     property var exchangeCategoryMappings: ({})
     property var exchangeAccountMappings: ({})
     property var exchangeIncomeChoices: ({})
+    property string exchangeFailure: ""
     property string exchangeSaveKind: ""
     property var exchangeSaveArgs: ({})
     readonly property bool fileExchangeEnabled: !!s.active && !workflow.busy && !s.actionPreparing && !rulesLeaving && !reportsWorkspace.leaving
@@ -2110,19 +2112,32 @@ ApplicationWindow {
         definitionImportDialog.open()
     }
     function chooseExport(kind,args) {
-        exchangeSaveKind=kind;exchangeSaveArgs=args
+        exchangeFailure="";exchangeSaveKind=kind;exchangeSaveArgs=args
         exchangeSaveDialog.nameFilters=kind==="qif"?["QIF files (*.qif)"]:["SpentIt exports (*.spentit.json)"]
         exchangeSaveDialog.defaultSuffix=kind==="qif"?"qif":"spentit.json"
         exchangeSaveDialog.open()
     }
     FileDialog {
-        id:exchangeSaveDialog;objectName:"exchangeSaveDialog";fileMode:FileDialog.SaveFile;title:"Save export"
+        id:exchangeSaveDialog;objectName:"exchangeSaveDialog";fileMode:FileDialog.SaveFile;title:"Save export";acceptLabel:"Save";currentFolder:workflow.documentsFolder
         onAccepted:{let args=Object.assign({},exchangeSaveArgs);args.path=workflow.localPath(selectedFile);workflow.command(exchangeSaveKind==="qif"?"exchange_qif_export":"exchange_export",args)}
     }
     FileDialog {
         id:exchangeOpenDialog;objectName:"exchangeOpenDialog";fileMode:FileDialog.OpenFile;title:"Open SpentIt export"
         nameFilters:["SpentIt exports (*.spentit.json)","JSON files (*.json)"]
         onAccepted:workflow.command("exchange_read",{path:workflow.localPath(selectedFile)})
+    }
+    component ExchangeFeedback: RowLayout {
+        required property var owner
+        Layout.fillWidth:true
+        visible:workflow.busy || (window.errorDialog===owner && !!window.exchangeFailure)
+        ActivitySpinner {objectName:"exchangeSpinner";running:workflow.busy;Layout.alignment:Qt.AlignTop}
+        Label {
+            objectName:"exchangeFeedbackText"
+            Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+            text:workflow.busy?(workflow.cancellationRequested?"Cancelling…":(workflow.phase||"Please wait…")):(window.errorDialog===owner?window.exchangeFailure:"")
+            color:workflow.busy?theme.text:theme.error
+            Accessible.name:text
+        }
     }
     Dialog {
         id:qifExportDialog;closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape;objectName:"qifExportDialog";title:"QIF Export";modal:true;anchors.centerIn:parent
@@ -2156,6 +2171,7 @@ ApplicationWindow {
             CheckBox {id:qifCategories;objectName:"qifIncludeCategories";text:"Include categories";checked:true}
             CheckBox {id:qifOpening;objectName:"qifIncludeOpening";text:"Include opening balance";checked:true}
             Label {text:"Transfer references are included. Exports are unencrypted text files.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ExchangeFeedback {objectName:"qifExportFeedback";owner:qifExportDialog}
             RowLayout {
                 Layout.alignment:Qt.AlignRight
                 Button {text:"Cancel";onClicked:{if(workflow.busy)workflow.requestCancel();else qifExportDialog.close()}}
@@ -2165,12 +2181,14 @@ ApplicationWindow {
     }
     Dialog {
         id:definitionExportDialog;closePolicy:workflow.busy?Popup.NoAutoClose:Popup.CloseOnEscape;objectName:"definitionExportDialog";title:"SpentIt Export";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,480)
+        onOpened:{exchangeFailure="";exportRules.checked=true;exportReports.checked=true;exportCategories.checked=true}
         ColumnLayout {
             anchors.fill:parent
-            CheckBox {id:exportRules;objectName:"exportRules";text:"Rules";enabled:!!s.rulesSupported;checked:false}
-            CheckBox {id:exportReports;objectName:"exportReports";text:"Reports";checked:false}
-            CheckBox {id:exportCategories;objectName:"exportCategories";text:"Categories";checked:false}
+            CheckBox {id:exportRules;objectName:"exportRules";text:"Rules";enabled:!!s.rulesSupported;checked:true}
+            CheckBox {id:exportReports;objectName:"exportReports";text:"Reports";checked:true}
+            CheckBox {id:exportCategories;objectName:"exportCategories";text:"Categories";checked:true}
             Label {text:"Export saved definitions as an unencrypted text file.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ExchangeFeedback {objectName:"definitionExportFeedback";owner:definitionExportDialog}
             RowLayout {
                 Layout.alignment:Qt.AlignRight
                 Button {text:"Cancel";onClicked:{if(workflow.busy)workflow.requestCancel();else definitionExportDialog.close()}}
@@ -2253,6 +2271,7 @@ ApplicationWindow {
                 }
             }
             Label {text:"Rules and reports are added as new definitions. Rules are not applied to transactions.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+            ExchangeFeedback {objectName:"definitionImportFeedback";owner:definitionImportDialog}
             RowLayout {
                 Layout.alignment:Qt.AlignRight
                 Button {text:"Cancel";onClicked:{if(workflow.busy)workflow.requestCancel();else definitionImportDialog.close()}}
@@ -2792,6 +2811,7 @@ ApplicationWindow {
     // One visible owner for a global operation error. Dialog validation stays
     // beside its controls; closing the dialog returns the error to the status line.
     readonly property var errorDialog: statusDetails.visible?statusDetails:
+        qifExportDialog.visible?qifExportDialog:definitionExportDialog.visible?definitionExportDialog:definitionImportDialog.visible?definitionImportDialog:
         importUndoConfirm.visible?importUndoConfirm:importUndoPicker.visible?importUndoPicker:closeAuditFailure.visible?closeAuditFailure:reviewDifference.visible?reviewDifference:
         linkExclusionDialog.visible?linkExclusionDialog:reapplyDialog.visible?reapplyDialog:
         bulkDialog.visible?bulkDialog:mergePreview.visible?mergePreview:

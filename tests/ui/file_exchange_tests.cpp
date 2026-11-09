@@ -103,6 +103,33 @@ private slots:
         }
 #endif
     }
+    void qifTextRoundTrip(){
+        QCOMPARE(app::qif_export_text("Café\tshop\r\nnext\nline"),std::string("Café shop next line"));
+        const std::string allControls="one\x01\x7f\xc2\x85\xe2\x80\xa8\xe2\x80\xa9two";
+        QCOMPARE(app::qif_export_text(allControls),std::string("one two"));
+        QCOMPARE(app::qif_export_text(std::string("a\0b",3)),std::string("a b"));
+        QVERIFY_THROWS_EXCEPTION(std::exception,app::qif_export_text(std::string("\xff",1)));
+        QTemporaryDir dir;const Currency cad("CAD");auto store=ImportStore::create(dir.filePath("text").toStdString(),"test","Checking",cad,"2026-01-01");
+        // Tabs and embedded CR are legal source text under the existing QIF
+        // profile. CRLF field delimiters themselves must never enter values.
+        const std::string bytes="!Type:Bank\r\nD1/2/2026\r\nT-12.34\r\nPCafé\tshop\rbranch\r\nMfirst\rsecond\tline\r\nS\r\nEsplit\tnote\rcontinued\r\n$-12.34\r\n^\r\n";
+        store.ingest("text",bytes,qif::DateOrder::mdy);
+        const auto before=store.row({"text",0});QVERIFY(before.draft);
+        QCOMPARE(before.source.payee,std::string("Café\tshop\rbranch"));QCOMPARE(before.draft->payee,before.source.payee);
+        QCOMPARE(before.source.memo,std::string("first\rsecond\tline"));QCOMPARE(before.draft->memo,before.source.memo);
+        QCOMPARE(before.draft->transaction.allocations()[0].memo,std::string("split\tnote\rcontinued"));
+        const auto token=store.action_token();app::OperationContext context;
+        const auto exported=app::export_qif(store,{{1,"2026-01-01","2026-12-31"}},true,true,context);
+        QVERIFY(exported.find('\t')==std::string::npos);QVERIFY(exported.find('\r')==std::string::npos);
+        const auto doc=qif::index_document(exported);QVERIFY(!doc.diagnostic);const auto parsed=qif::parse_account(exported,doc,0,qif::DateOrder::mdy,cad);
+        QVERIFY(parsed.valid());QCOMPARE(parsed.records.size(),std::size_t(1));const auto& row=parsed.records.front();
+        QCOMPARE(row.payee,std::string("Café shop branch"));QCOMPARE(row.memo,std::string("first second line"));QCOMPARE(row.source_allocations[0].memo,std::string("split note continued"));QCOMPARE(row.transaction->effective_total().units(),std::int64_t(-1234));
+        const auto after=store.row({"text",0});QCOMPARE(after.draft->payee,before.draft->payee);QCOMPARE(after.draft->memo,before.draft->memo);QCOMPARE(after.draft->transaction.allocations()[0].memo,before.draft->transaction.allocations()[0].memo);QCOMPARE(store.action_token(),token);
+        // An ordinary CRLF QIF has no control characters inserted into its values.
+        const auto clean=qif::parse("!Type:Bank\r\nD1/2/2026\r\nT-1\r\nPClean payee\r\nMClean memo\r\n^\r\n",qif::DateOrder::mdy,cad);QVERIFY(clean.valid());QCOMPARE(clean.records[0].payee,std::string("Clean payee"));QCOMPARE(clean.records[0].memo,std::string("Clean memo"));
+        auto names=ImportStore::create(dir.filePath("names").toStdString(),"test","One\tAccount",cad,"2026-01-01");names.create_account(2,"One Account",cad,"2026-01-01");
+        QVERIFY_THROWS_EXCEPTION(std::exception,app::export_qif(names,{{1,"2026-01-01","2026-01-01"},{2,"2026-01-01","2026-01-01"}},false,true,context));
+    }
     void qifContents(){
         QTemporaryDir dir;const Currency cad("CAD");auto store=ImportStore::create(dir.filePath("doc").toStdString(),"test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(10000,cad));category(store,"food","Food");category(store,"unused","Unused private category");
         store.ingest("before","D1/1/2026\nT-10\nPBefore\n^\n",qif::DateOrder::dmy);store.accept_all("accept");
@@ -135,9 +162,50 @@ private slots:
         for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport","fileBackup"}){QVERIFY(find(name));QVERIFY(!find(name)->property("enabled").toBool());}
         run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
         for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport","fileBackup"})QVERIFY(find(name)->property("enabled").toBool());
-        QVERIFY(QMetaObject::invokeMethod(find("fileQifExport"),"triggered"));QTRY_VERIFY(!model.busy());QVERIFY(model.error().isEmpty());QTRY_VERIFY(find("qifExportDialog")->property("visible").toBool());QVERIFY(find("qifIncludeOpening")->property("checked").toBool());QVERIFY(!find("qifExportSave")->property("enabled").toBool());
-        QTRY_VERIFY(find("qifAccount_0"));find("qifAccount_0")->setProperty("checked",true);QVERIFY(QMetaObject::invokeMethod(find("qifAccount_0"),"clicked"));QTRY_VERIFY(find("qifExportSave")->property("enabled").toBool());QTest::qWait(100);if(auto* window=qobject_cast<QQuickWindow*>(root))window->grabWindow().save("/tmp/spentit-qif-export.png");QMetaObject::invokeMethod(find("qifExportDialog"),"close");
-        QVERIFY(QMetaObject::invokeMethod(find("fileSpentItExport"),"triggered"));QTRY_VERIFY(find("definitionExportDialog")->property("visible").toBool());QVERIFY(!find("definitionExportSave")->property("enabled").toBool());QMetaObject::invokeMethod(find("definitionExportDialog"),"close");
+        QFile imported(dir.filePath("input.qif"));QVERIFY(imported.open(QIODevice::WriteOnly));imported.write("!Type:Bank\nD2026-02-01\nT-12.34\nPMerchant\tbranch\nMMemo\rcontinued\n^\n");imported.close();run(model,"import",{{"path",imported.fileName()},{"account","1"},{"profile","MDY"}});QCOMPARE(model.state().value("balance").toString(),"-12.34");
+        run(model,"create_account",{{"id","2"},{"name","Other"},{"currency","CAD"},{"date","2026-01-01"}});run(model,"select_account",{{"id","1"}});
+
+        QVERIFY(QMetaObject::invokeMethod(find("fileQifExport"),"triggered"));QTRY_VERIFY(!model.busy());QVERIFY(model.error().isEmpty());QTRY_VERIFY(find("qifExportDialog")->property("visible").toBool());QVERIFY(find("qifIncludeOpening")->property("checked").toBool());QVERIFY(find("qifExportSave")->property("enabled").toBool());
+        QTRY_VERIFY(find("qifAccount_0"));QTRY_VERIFY(find("qifAccount_1"));
+        for(const auto* name:{"qifAccount_0","qifAccount_1"}){QVERIFY(find(name)->property("checked").toBool());find(name)->setProperty("checked",false);QVERIFY(QMetaObject::invokeMethod(find(name),"clicked"));}
+        QVERIFY(!find("qifExportSave")->property("enabled").toBool());
+        for(const auto* name:{"qifAccount_0","qifAccount_1"}){find(name)->setProperty("checked",true);QVERIFY(QMetaObject::invokeMethod(find(name),"clicked"));}QTRY_VERIFY(find("qifExportSave")->property("enabled").toBool());QTest::qWait(100);if(auto* window=qobject_cast<QQuickWindow*>(root))window->grabWindow().save("/tmp/spentit-qif-export.png");
+        auto* picker=find("exchangeSaveDialog");QVERIFY(picker);QCOMPARE(picker->property("fileMode").toInt(),2);
+        // Exercise the typed filename control deterministically on every platform.
+        picker->setProperty("options",8); // QFileDialogOptions::DontUseNativeDialog
+        picker->setProperty("currentFolder",QUrl::fromLocalFile(dir.path()));
+        QVERIFY(QMetaObject::invokeMethod(find("qifExportSave"),"clicked"));
+        QTRY_VERIFY(picker->property("visible").toBool());
+        QCOMPARE(picker->property("fileMode").toInt(),2);
+        auto* filename=find("fileNameTextField");QVERIFY(filename);
+        filename->setProperty("text","via-picker.qif");
+        QVERIFY(QMetaObject::invokeMethod(filename,"textEdited"));
+        QVERIFY(QMetaObject::invokeMethod(filename,"editingFinished"));
+        QObject* impl=filename;while(impl && !impl->inherits("QQuickFileDialogImpl"))impl=impl->parent();
+        QVERIFY(impl);
+        QVERIFY(QMetaObject::invokeMethod(impl,"accept"));
+        QVERIFY(model.busy());QVERIFY(find("qifExportFeedback")->property("visible").toBool());QVERIFY(!find("qifExportSave")->property("enabled").toBool());
+        QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));QVERIFY(QFileInfo::exists(dir.filePath("via-picker.qif")));
+        QFile qifOutput(dir.filePath("via-picker.qif"));QVERIFY(qifOutput.open(QIODevice::ReadOnly));const auto exportedBytes=qifOutput.readAll();QVERIFY(exportedBytes.contains("PMerchant branch\nMMemo continued\n"));QCOMPARE(exportedBytes.count("!Account\n"),2);
+        QMetaObject::invokeMethod(find("exchangeResultDialog"),"close");
+        QVERIFY(QMetaObject::invokeMethod(find("fileQifExport"),"triggered"));QTRY_VERIFY(!model.busy());QTRY_VERIFY(find("qifExportDialog")->property("visible").toBool());
+        const auto selectDestination=[&](const QString& name){
+            auto* filenameField=find("fileNameTextField");if(!filenameField)return false;
+            filenameField->setProperty("text",name);
+            if(!QMetaObject::invokeMethod(filenameField,"textEdited") || !QMetaObject::invokeMethod(filenameField,"editingFinished"))return false;
+            auto* dialogImpl=filenameField;while(dialogImpl && !dialogImpl->inherits("QQuickFileDialogImpl"))dialogImpl=dialogImpl->parent();
+            return dialogImpl && QMetaObject::invokeMethod(dialogImpl,"accept");
+        };
+        QVERIFY(QMetaObject::invokeMethod(find("qifExportSave"),"clicked"));QTRY_VERIFY(picker->property("visible").toBool());QVERIFY(selectDestination("bare-name"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));QVERIFY(QFileInfo::exists(dir.filePath("bare-name.qif")));QMetaObject::invokeMethod(find("exchangeResultDialog"),"close");
+        // A rejected destination stays visible beside the export controls.
+        QVERIFY(QMetaObject::invokeMethod(find("fileQifExport"),"triggered"));QTRY_VERIFY(!model.busy());QTRY_VERIFY(find("qifExportDialog")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(find("qifExportSave"),"clicked"));QTRY_VERIFY(picker->property("visible").toBool());QVERIFY(selectDestination("wrong.txt"));QTRY_VERIFY(!model.busy());QVERIFY(!model.error().isEmpty());QVERIFY(find("qifExportFeedback")->property("visible").toBool());QVERIFY(find("qifExportSave")->property("enabled").toBool());QVERIFY(!QFileInfo::exists(dir.filePath("wrong.txt")));QMetaObject::invokeMethod(find("qifExportDialog"),"close");
+        QVERIFY(QMetaObject::invokeMethod(find("fileSpentItExport"),"triggered"));QTRY_VERIFY(find("definitionExportDialog")->property("visible").toBool());QVERIFY(find("definitionExportSave")->property("enabled").toBool());
+        for(const auto* name:{"exportRules","exportReports","exportCategories"})QVERIFY(find(name)->property("checked").toBool());
+        for(const auto* name:{"exportRules","exportReports","exportCategories"})find(name)->setProperty("checked",false);QVERIFY(!find("definitionExportSave")->property("enabled").toBool());QMetaObject::invokeMethod(find("definitionExportDialog"),"close");
+        QVERIFY(QMetaObject::invokeMethod(find("fileSpentItExport"),"triggered"));QTRY_VERIFY(find("definitionExportDialog")->property("visible").toBool());
+        for(const auto* name:{"exportRules","exportReports","exportCategories"})QVERIFY(find(name)->property("checked").toBool());
+        QVERIFY(QMetaObject::invokeMethod(find("definitionExportSave"),"clicked"));QTRY_VERIFY(picker->property("visible").toBool());QVERIFY(selectDestination("via-picker"));QVERIFY(model.busy());QVERIFY(find("definitionExportFeedback")->property("visible").toBool());QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));QVERIFY(QFileInfo::exists(dir.filePath("via-picker.spentit.json")));QMetaObject::invokeMethod(find("exchangeResultDialog"),"close");
         run(model,"exchange_export",{{"path",dir.filePath("empty.spentit.json")},{"categories",true}});QMetaObject::invokeMethod(find("exchangeResultDialog"),"close");run(model,"exchange_read",{{"path",dir.filePath("empty.spentit.json")}});QTRY_VERIFY(find("definitionImportDialog")->property("visible").toBool());QVERIFY(!find("definitionImportSave")->property("enabled").toBool());
         QMetaObject::invokeMethod(find("definitionImportDialog"),"close");
         {auto source=ImportStore::create(dir.filePath("source").toStdString(),"test","Checking",Currency("CAD"),"2026-01-01");definitions(source);QFile file(dir.filePath("definitions.spentit.json"));QVERIFY(file.open(QIODevice::WriteOnly));file.write(ex::encode(source,source.rules_supported(),true,true));}

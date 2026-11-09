@@ -1,5 +1,6 @@
 #include <spentit/file_exchange.hpp>
 #include <algorithm>
+#include <iterator>
 #include <map>
 #include <set>
 #include <tuple>
@@ -11,12 +12,21 @@ struct RestoreAccount {
     void restore(){if(home)repo.select_account(home);else repo.release_account_selection();}
     ~RestoreAccount(){try{restore();}catch(...) {}}
 };
-std::string field(std::string_view value) {
-    if(!qif::valid_utf8(value))throw std::invalid_argument("QIF export contains invalid text.");
-    for(char c:value)if(static_cast<unsigned char>(c)<32 || c==127)throw std::invalid_argument("QIF cannot export text containing line breaks or control characters. Edit that text before exporting.");
-    return std::string(value);
-}
+std::string field(std::string_view value) {return qif_export_text(value);}
 std::string decimal(const Money& value){AmountFormat format;format.enabled=false;return display_amount(value,format);}
+}
+std::string qif_export_text(std::string_view value) {
+    if(!qif::valid_utf8(value))throw std::invalid_argument("QIF export contains invalid text.");
+    std::string result;result.reserve(value.size());bool replacing=false;
+    for(std::size_t i=0;i<value.size();) {
+        const auto start=i;unsigned code=static_cast<unsigned char>(value[i++]);unsigned trailing=0;
+        if(code>=0xf0){code&=7;trailing=3;}else if(code>=0xe0){code&=15;trailing=2;}else if(code>=0xc0){code&=31;trailing=1;}
+        while(trailing--)code=(code<<6)|(static_cast<unsigned char>(value[i++])&63);
+        const bool control=code<32 || (code>=0x7f && code<=0x9f) || code==0x2028 || code==0x2029;
+        if(control){if(!replacing)result.push_back(' ');replacing=true;}
+        else {result.append(value.substr(start,i-start));replacing=false;}
+    }
+    return result;
 }
 std::vector<QifExportAccount> qif_export_accounts(ImportRepository& repo,const OperationContext& context) {
     RestoreAccount restore(repo);std::vector<QifExportAccount> result;
@@ -31,7 +41,12 @@ std::vector<QifExportAccount> qif_export_accounts(ImportRepository& repo,const O
 std::string export_qif(ImportRepository& repo,const std::vector<QifExportRange>& ranges,bool categories,bool opening,const OperationContext& context) {
     if(ranges.empty())throw std::invalid_argument("Select at least one account.");
     RestoreAccount restore(repo);auto accounts=repo.accounts();const auto archived=repo.archived_accounts();accounts.insert(accounts.end(),archived.begin(),archived.end());
-    std::map<std::int64_t,std::string> names;for(const auto& a:accounts)names.emplace(a.identity,field(a.name));
+    std::map<std::int64_t,std::string> names;bool changedName=false;
+    for(const auto& a:accounts){auto clean=field(a.name);changedName|=clean!=a.name;names.emplace(a.identity,std::move(clean));}
+    // QIF addresses transfers by account name. Normalization must not merge two
+    // distinct accounts or make a transfer point to a different account.
+    if(changedName)for(auto a=names.begin();a!=names.end();++a)for(auto b=std::next(a);b!=names.end();++b)
+        if(account_name_matches(a->second,b->second))throw std::invalid_argument("Two account names become identical in QIF. Give those accounts distinct names before exporting.");
     using Key=std::tuple<std::int64_t,imports::Occurrence,std::string>;
     std::map<Key,std::string> transfers;
     for(const auto& value:repo.transfers())if(!value.link.unresolved && !value.link.destination_released && value.link.origin.state!=transfers::State::removed && value.link.destination.state!=transfers::State::removed){
