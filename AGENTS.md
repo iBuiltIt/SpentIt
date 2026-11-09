@@ -1,5 +1,16 @@
 # SpentIt — Where did my money go?
 
+## Selected Set memo — owner Go 2026-11-09
+
+The ledger right-click menu offers **Set memo…** beside **Rename payee…**. One
+dialog sets the transaction memo for the selection. It fills blank memos unless
+**Overwrite N existing memos** is checked. An empty memo with that box on clears
+existing memos. Split memos stay unchanged. The command is one atomic Undo and
+uses the same selection guards as Rename payee. A memo it writes is manual, so
+a later rule leaves it alone. See the
+[contract](doc/ledger-editing.md#selected-set-memo--owner-go-2026-11-09). Manual
+text stays in MAN-019.
+
 ## File exchange — owner Go 2026-11-09
 
 Read the [File exchange contract](doc/file-exchange.md) before export/import work.

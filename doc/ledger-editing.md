@@ -195,6 +195,50 @@ ordinary edits. Cancellation remains available until the final durable commit
 gate. Read-only selection changes cannot acknowledge mutations. See
 [status](status.md) for actual verification and remaining limits.
 
+## Selected Set memo — owner Go 2026-11-09
+
+The ledger right-click menu offers **Set memo…** for one or multiple selected
+transactions, including a search selection. The menu name stays **Set memo…**.
+The dialog is where the user sees how many selected transactions already have a
+memo.
+
+The dialog says “Enter a memo for 1 selected transaction.” or “Enter a memo for
+N selected transactions.” When any transaction memo already contains text, it
+adds “1 of N already has a memo.” or “K of N already have a memo.” and shows an
+unchecked box, **Overwrite 1 existing memo** or **Overwrite K existing memos**.
+The text field is filled only when every selected transaction memo is the same
+nonempty text. Otherwise it is empty.
+
+**Set memo** writes that text onto each selected transaction whose memo is blank.
+A memo made only of spaces, tabs, carriage returns, line feeds, vertical tabs, or
+form feeds counts as blank, both in the selection and in the field. Real text,
+including surrounding spaces, is stored as typed. Checking the box writes the text
+onto every selected transaction, including a memo that already matches that text.
+If every selected memo already has text and the box is unchecked, **Set memo**
+stays disabled. If the field is blank and the box is checked, the button says
+**Clear memo** or **Clear memos** and removes those existing memos.
+Transactions that are already blank stay as they are. Cancel or dismissal does
+nothing.
+
+This changes the transaction memo only, the Memo field in the transaction editor.
+Split memos, including the memo on a transaction’s only split, stay unchanged.
+Payee, date, amount, category and transfer links stay unchanged. A memo this
+command writes is a manual memo, so a later rule leaves it alone. A memo left in
+place because overwrite was off stays as it is.
+
+The command follows Rename payee for membership. One or many new and accepted
+rows are one atomic operation, with one **Undo Set memo…** action. The whole
+selection is rejected when any row cannot be edited, including a generated
+transfer entry, a merged row, a stale selection or an invalid member. No selected
+row is skipped because it is invalid. Rows that already have a memo are left
+unchanged only when overwrite is off; that is a successful partial update, not a
+rejected selection. When the command changes nothing, it adds no Undo action.
+Search, selection and the ledger viewport are retained where their identities
+remain available. Storage validates the frozen selection and records the memo and
+overwrite choice for an exact retry. A changed retry is rejected. Help for the
+dialog stays on Add/correct transactions, “Change a selection or delete entries.”
+The manual text is unchanged; MAN-019 records the later pass.
+
 ## Split-only editor actions — owner Go 2026-11-02
 
 Remove and Create rule from split memo appear only when the editor has more than

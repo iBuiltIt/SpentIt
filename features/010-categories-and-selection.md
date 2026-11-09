@@ -16,7 +16,7 @@ durable. See [current verification and limits](../doc/status.md); earlier Resume
 source-retention and toolbar descriptions below are historical.
 
 Status: **active**  
-Last updated: 2026-11-06  
+Last updated: 2026-11-09  
 Implementation: independent assignable categories, one optional colon, case-insensitive identity matching, and the creation-time starter catalog are implemented on experimental schemas 30/29. This supersedes the earlier explicit group/leaf model below. See [current category behavior](../doc/categories.md) and [verification](../doc/status.md). Reporting stays deferred.
 
 The 2026-10-26 follow-up adds committed bulk assignment to every selected allocation, with exact preview, one atomic operation, and group Undo. See the [search/ledger contract](../doc/search-ledger.md). Experimental-format migration and compatibility obligations start only at an owner-announced release.
@@ -104,6 +104,18 @@ rows, with one group Undo and retained selection/viewport. See the
 for original-value validation, transfer restrictions and the session Undo scope,
 and [status](../doc/status.md) for verification. This does not add a rule override
 mode; rules still match imported text and operate only on Uncategorized items.
+
+## Selected Set memo — owner Go 2026-11-09
+
+The ledger context menu adds **Set memo…** beside Rename payee. One dialog sets
+the transaction memo for a single or multiple selection. Blank memos are filled
+unless **Overwrite N existing memos** is checked. A blank field with that box
+checked clears existing memos. Split memos stay unchanged, including the memo
+on a transaction’s only split. The command is one
+atomic group Undo and uses the Rename payee selection guards. A memo it writes
+is manual, so a later rule leaves it alone. See the
+[contract](../doc/ledger-editing.md#selected-set-memo--owner-go-2026-11-09)
+and [status](../doc/status.md). Manual text is MAN-019.
 
 ## Direct ledger category menu — owner Go 2026-11-01
 

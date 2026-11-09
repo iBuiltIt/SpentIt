@@ -438,3 +438,22 @@ Source: [File exchange contract](file-exchange.md).
 - Capture menu, QIF export, definition export/import and dependency/conflict dialogs
   during the later batch pass. No manual prose, captions or screenshots were changed
   in this implementation; synthetic verification screenshots are not manual assets.
+
+### MAN-019 — Selected Set memo
+
+Recorded: 2026-11-09. Status: **pending the later owner-authorized manual pass**.
+Source: [Selected Set memo](ledger-editing.md#selected-set-memo--owner-go-2026-11-09).
+
+- Add **Set memo…** beside **Rename payee…** in Add/correct transactions and
+  Where to find it. The command changes the transaction Memo field for the
+  selection. Split memos stay as they are, including the memo copied onto an
+  unsplit transaction’s only split at import. Help already opens “Change a
+  selection or delete entries”; keep that target.
+- Explain the dialog: the count of selected transactions that already have a
+  memo, the unchecked **Overwrite 1 existing memo** or **Overwrite N existing
+  memos** box, and **Clear memo** or **Clear memos** when the field is left
+  blank with that box on.
+- Say that a memo entered here is kept when rules run later, and that a memo
+  left alone because overwrite is off is not changed.
+- Capture the dialog during the later batch pass. No manual prose, captions or
+  screenshots were changed in this implementation.

@@ -392,41 +392,83 @@ ApplicationWindow {
     }
     property var selectedEditRequest: null
     property bool restoringSelection: false
+    property bool settingMemo: false
+    property int selectedMemoCount: 0
     readonly property int selectedEditCount:selectedEditRequest?selectedEditRequest.selected.length:0
+    function memoHasText(value) {return /[^\t\n\r\v\f ]/.test(value||"")}
+    function selectedMemoMessage() {
+        const count=selectedEditCount
+        const existing=selectedMemoCount
+        let message="Enter a memo for "+count+" selected "+(count===1?"transaction.":"transactions.")
+        if(existing>0) message+=" "+existing+" of "+count+" already "+(existing===1?"has":"have")+" a memo."
+        if(overwriteMemos.checked && !memoHasText(selectedMemo.text)) message+=existing===1?" This clears that memo.":" This clears those memos."
+        return message
+    }
+    function selectedMemoCanConfirm() {
+        if(workflow.busy) return false
+        if(!settingMemo) return true
+        if(memoHasText(selectedMemo.text)) return overwriteMemos.checked || selectedMemoCount<selectedEditCount
+        return overwriteMemos.checked && selectedMemoCount>0
+    }
     function editSelectedTransactions(restore) {
         const rows=(s.selection||[]).map(function(r){return {batch:r.batch,ordinal:r.ordinal,payee:r.payee}})
         if(!rows.length || workflow.busy || s.readOnly)return
         ledgerContext.close()
         guard(function(){
             restoringSelection=restore
+            settingMemo=false
             selectedEditRequest={selected:rows,account:s.accountId,generation:s.ledgerEditGeneration}
             selectedPayee.text=rows.every(r=>r.payee===rows[0].payee)?rows[0].payee:""
             selectedEditDialog.open()
             if(!restore)selectedPayee.forceActiveFocus()
         })
     }
+    function editSelectedMemos() {
+        const rows=(s.selection||[]).map(function(r){return {batch:r.batch,ordinal:r.ordinal,memo:r.memo||""}})
+        if(!rows.length || workflow.busy || s.readOnly)return
+        ledgerContext.close()
+        guard(function(){
+            restoringSelection=false
+            settingMemo=true
+            selectedEditRequest={selected:rows,account:s.accountId,generation:s.ledgerEditGeneration}
+            selectedMemoCount=rows.filter(function(r){return memoHasText(r.memo)}).length
+            const agreed=rows.every(function(r){return r.memo===rows[0].memo})
+            selectedMemo.text=agreed && memoHasText(rows[0].memo)?rows[0].memo:""
+            overwriteMemos.checked=false
+            selectedEditDialog.open()
+            selectedMemo.forceActiveFocus()
+        })
+    }
     function applySelectedEdit() {
-        if(!selectedEditRequest || workflow.busy)return
+        if(!selectedEditRequest || !selectedMemoCanConfirm())return
         const request=selectedEditRequest
-        if(!restoringSelection)request.payee=selectedPayee.text
+        let action="rename_payee_selection"
+        if(restoringSelection) action="restore_imported_selection"
+        else if(settingMemo) {
+            action="set_memo_selection"
+            request.memo=memoHasText(selectedMemo.text)?selectedMemo.text:""
+            request.overwriteMemo=overwriteMemos.checked
+        } else request.payee=selectedPayee.text
         captureLedgerView("selected-edit")
         selectedEditDialog.close()
         ledger.forceActiveFocus()
-        workflow.command(restoringSelection?"restore_imported_selection":"rename_payee_selection",request)
+        workflow.command(action,request)
     }
     HelpDialog {
         helpTarget: restoringSelection ? "help:add-correct-transactions#compare-with-the-imported-transaction" : "help:add-correct-transactions#change-a-selection-or-delete-entries"
         id:selectedEditDialog;objectName:"selectedEditDialog";modal:true;anchors.centerIn:parent;width:Math.min(560,window.width-40)
-        title:restoringSelection?"Restore imported values?":"Rename payee"
+        title:settingMemo?"Set memo":restoringSelection?"Restore imported values?":"Rename payee"
         contentItem:ColumnLayout {
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:restoringSelection?
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:settingMemo?selectedMemoMessage():restoringSelection?
                 "Restore imported values for "+selectedEditCount+" selected "+(selectedEditCount===1?"transaction":"transactions")+"? This replaces their current dates, amounts, payees, memos, and splits/categories.":
                 "Enter a payee name for "+selectedEditCount+" selected "+(selectedEditCount===1?"transaction.":"transactions.")}
-            NavigableTextField {id:selectedPayee;objectName:"selectedPayee";visible:!restoringSelection;Layout.fillWidth:true;Accessible.name:"New payee name";onAccepted:applySelectedEdit()}
+            NavigableTextField {id:selectedPayee;objectName:"selectedPayee";visible:!restoringSelection && !settingMemo;Layout.fillWidth:true;Accessible.name:"New payee name";onAccepted:applySelectedEdit()}
+            NavigableTextField {id:selectedMemo;objectName:"selectedMemo";visible:settingMemo;Layout.fillWidth:true;Accessible.name:"New memo";onAccepted:if(selectedMemoCanConfirm())applySelectedEdit()}
+            CheckBox {id:overwriteMemos;objectName:"overwriteExistingMemos";visible:settingMemo && selectedMemoCount>0;Layout.fillWidth:true;text:"Overwrite "+selectedMemoCount+" existing memo"+(selectedMemoCount===1?"":"s")}
         }
         footer:DialogButtonBox {
             Button {objectName:"cancelSelectedEdit";text:"Cancel";DialogButtonBox.buttonRole:DialogButtonBox.RejectRole;onClicked:selectedEditDialog.close()}
-            Button {objectName:"confirmSelectedEdit";text:restoringSelection?"Restore":"Rename";enabled:!workflow.busy;DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole;onClicked:applySelectedEdit()}
+            Button {objectName:"confirmSelectedEdit";text:settingMemo?(overwriteMemos.checked && !memoHasText(selectedMemo.text)?(selectedMemoCount===1?"Clear memo":"Clear memos"):"Set memo"):restoringSelection?"Restore":"Rename";enabled:selectedMemoCanConfirm();DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole;onClicked:applySelectedEdit()}
         }
     }
     Menu {
@@ -435,6 +477,7 @@ ApplicationWindow {
         LedgerMenuItem {objectName:"addTransactionContext";visible:!window.reportLedger;text:"Add transaction…";enabled:!s.readOnly && !workflow.busy;onTriggered:addTransaction()}
         LedgerMenuItem {objectName:"createRuleContext";visible:!window.reportLedger && !!s.rulesSupported;text:"Create rule…";enabled:canCreateLedgerRule();onTriggered:if(canCreateLedgerRule())transactionRuleAction()}
         LedgerMenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
+        LedgerMenuItem {objectName:"setMemoSelection";text:"Set memo…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedMemos()}
         LedgerMenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
         Menu {
             objectName:"ledgerDuplicateMenu";delegate:LedgerMenuItem {}
@@ -555,7 +598,7 @@ ApplicationWindow {
         if(ledgerViewKind==="review") {
             related=action==="review_answer" || action==="review_undo";restore=related;clear=true
         } else if(ledgerViewKind==="selected-edit") {
-            related=action==="delete_selection" || action==="rename_payee_selection" || action==="restore_imported_selection" || (action==="undo_edit" || action==="undo_action")
+            related=action==="delete_selection" || action==="rename_payee_selection" || action==="set_memo_selection" || action==="restore_imported_selection" || (action==="undo_edit" || action==="undo_action")
             restore=related;clear=true
         } else if(ledgerViewKind==="category") {
             related=action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment"
@@ -1814,7 +1857,7 @@ ApplicationWindow {
                 if(action==="apply_change") dismiss(changePreview)
                 if(action==="transfer_merge" && (s.transferMergePreview||{}).id) mergePreview.open()
                 if(action==="transfer_merge_apply") dismiss(mergePreview)
-                if(["delete_selection","rename_payee_selection","restore_imported_selection","begin_manual","cancel_manual","save_manual","undo_manual","inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","undo_action","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
+                if(["delete_selection","rename_payee_selection","set_memo_selection","restore_imported_selection","begin_manual","cancel_manual","save_manual","undo_manual","inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","undo_action","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
                 if(action==="save" || action==="save_manual" || action==="cancel_manual" || action==="accept_edit" || action==="apply_change") {
                     dirty=false
                     if(pendingAction) {let next=pendingAction;pendingAction=null;guard(next)}

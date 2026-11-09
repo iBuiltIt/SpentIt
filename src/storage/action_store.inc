@@ -26,7 +26,7 @@ void ImportStore::publish_review_action(std::string_view operation) {
         question.starts_with("ledger-")?app::ActionKind::transaction:app::ActionKind::review;
     action.label=question=="ledger-transfer"?"Change transfer":question=="review-exclusion"?"Change transfer exclusions":question.starts_with("rules-")?"Apply rules":question=="ledger-delete"?"Delete transactions":
         question=="transfer-assignment"?"Change category":question.starts_with("ledger-")?"Edit transactions":"Review transactions";
-    if(question=="ledger-edit-batch"){const auto encoded=saved.bytes(1);transfer_codec::Reader request{encoded};const auto kind=static_cast<app::LedgerSelectionAction>(request.number());action.label=kind==app::LedgerSelectionAction::rename_payee?"Rename payee":"Restore imported values";}
+    if(question=="ledger-edit-batch"){const auto encoded=saved.bytes(1);transfer_codec::Reader request{encoded};const auto kind=static_cast<app::LedgerSelectionAction>(request.number());action.label=kind==app::LedgerSelectionAction::rename_payee?"Rename payee":kind==app::LedgerSelectionAction::set_memo?"Set memo":"Restore imported values";}
     Statement count(impl_->db,"SELECT count(*) FROM review_members WHERE answer=?1 OR answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||?1)");count.text(1,operation);
     if(!count.row())fail(SQLITE_CORRUPT);action.count=question=="review-exclusion"?1:count.integer(0);
     auto digest=session_snapshot::digest(saved.bytes(1));

@@ -21,13 +21,16 @@ public:
     explicit OperationAlreadyCompleted(std::string id):std::runtime_error("This change was already saved. Refresh the current transactions."),operation(std::move(id)){}
     std::string operation;
 };
-enum class LedgerSelectionAction { rename_payee, restore_imported, remove };
+enum class LedgerSelectionAction { rename_payee, restore_imported, remove, set_memo };
 struct LedgerSelectionEdit {
     LedgerSelectionAction action=LedgerSelectionAction::rename_payee;
     std::int64_t account=0, generation=0;
     std::vector<imports::Occurrence> selected;
     std::string payee;
     bool delete_counterparts=false;
+    std::string memo;
+    // When false, a transaction memo that already contains text is left unchanged.
+    bool overwrite_memo=false;
 };
 struct DeletionImpact {std::int64_t account;std::string name;Money change;std::size_t removed=0,changed=0;};
 struct DeletionPreview {std::size_t links=0;std::vector<DeletionImpact> accounts;};

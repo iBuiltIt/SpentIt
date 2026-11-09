@@ -1,13 +1,13 @@
 # Search, selection, and bulk ledger changes
 
-Last updated: 2026-11-06
+Last updated: 2026-11-09
 
 This is the bounded durable QIF experiment; search and bulk actions operate within the selected [account workspace](accounts.md). Requirements and owner decisions are in [feature 005](../features/005-transaction-sheet-navigation.md). The owner confirmed that experimental formats are disposable until an explicitly announced release; migration and backward-compatibility work are not required during this phase. This work introduces no migration.
 
 ## Selection size — owner Go, 2026-11-06
 
 Current ledger range/toggle selection and selection restoration have no fixed row
-count ceiling. Rename, Restore imported values, Delete, category/account assignment,
+count ceiling. Rename, Set memo, Restore imported values, Delete, category/account assignment,
 and Review decisions/batch Merge likewise have no fixed selection count ceiling.
 Batch Merge's former 2,048-group ceiling and matching Undo-reader limit are removed.
 Nonempty/unique selections, account ownership, stale-generation checks, relationship

@@ -460,7 +460,10 @@ std::int64_t edit_revision(ImportStore& s,const imports::Occurrence& id){for(con
 std::optional<EntryToken> edit_token(ImportStore& s,const imports::Occurrence& id){return s.transaction_accepted(id)?std::optional(s.committed_entry(id).token):std::nullopt;}
 imports::DraftRow edit_row(ImportStore& s,const imports::Occurrence& id){return s.transaction_accepted(id)?s.committed_entry(id).current.draft:*s.row(id).draft;}
 LedgerSelectionEdit selection_request(ImportStore& s,LedgerSelectionAction action,std::vector<imports::Occurrence> ids,std::string payee={}){
-    return {action,s.account().identity,s.ledger_edit_generation(),std::move(ids),std::move(payee)};
+    return {action,s.account().identity,s.ledger_edit_generation(),std::move(ids),std::move(payee),false,{},false};
+}
+LedgerSelectionEdit memo_request(ImportStore& s,std::vector<imports::Occurrence> ids,std::string memo,bool overwrite){
+    auto request=selection_request(s,LedgerSelectionAction::set_memo,std::move(ids));request.memo=std::move(memo);request.overwrite_memo=overwrite;return request;
 }
 void selection_edit_tests(const std::filesystem::path& dir){
     const Currency cad("CAD");const std::vector<imports::Occurrence> ids{{"old",0},{"old",1},{"new",0},{"new",1}};
@@ -884,6 +887,83 @@ void ledger_duplicate_tests(const std::filesystem::path& dir) {
     check(linked.row({"download",0}).decision.duplicate_of==imports::Occurrence{"linked-old",0},"Linked established transaction survives");
     check(linked.transfers().size()==1 && linked.balance().units()==-1000,"Account link and balance survive Merge");linked.verify();linked.undo_review("undo-linked");linked.verify();
 }
+void selection_memo_tests(const std::filesystem::path& dir){
+    const Currency cad("CAD");
+    auto s=ImportStore::create(dir/"memo","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+    const std::string rows=
+        "!Type:Bank\nD01/01/2026\nT-10.00\nPAlpha\nMBank note\nSFees\nESplit note\n$-4.00\nSFood\nESecond note\n$-6.00\n^\n"
+        "D02/01/2026\nT-3.00\nPBlank\n^\n"
+        "D03/01/2026\nT-4.00\nPKept\nMKeep me\n^\n"
+        "D04/01/2026\nT-5.00\nPSpaces\nM   \n^\n";
+    s.ingest("old",rows.substr(0,rows.find("D03/01/2026")),qif::DateOrder::dmy);s.accept_all("accept",false);
+    s.ingest("new",std::string("!Type:Bank\n")+rows.substr(rows.find("D03/01/2026")),qif::DateOrder::dmy);
+    const std::vector<imports::Occurrence> ids{{"old",0},{"old",1},{"new",0},{"new",1}};
+    const auto original=[&]{std::vector<imports::DraftRow> rows;for(const auto& id:ids)rows.push_back(edit_row(s,id));return rows;}();
+    check(original[0].memo=="Bank note" && original[0].transaction.allocations().at(0).memo=="Split note" && original[0].transaction.allocations().at(1).memo=="Second note","Split memos stay distinct from the transaction memo");
+    check(original[1].memo.empty() && original[2].memo=="Keep me" && original[3].memo=="   ","Blank and whitespace memos are distinct");
+    const auto balances=[&]{return std::pair{s.committed_balance(),*s.projected_balance()};};
+    const auto money=balances();
+    const auto same_money=[&]{const auto now=balances();check(now.first==money.first && now.second==money.second,"Memo edits preserve balances");};
+    const auto splits_held=[&]{for(std::size_t i=0;i<ids.size();++i){const auto& before=original[i].transaction.allocations();const auto after=edit_row(s,ids[i]).transaction.allocations();check(before.size()==after.size(),"Split count preserved");for(std::size_t n=0;n<before.size();++n)check(before[n].memo==after[n].memo && before[n].amount==after[n].amount && before[n].category==after[n].category,"Split memo, amount and category preserved");check(edit_row(s,ids[i]).payee==original[i].payee && edit_row(s,ids[i]).date==original[i].date,"Payee and date preserved");}};
+    OperationContext context;
+    auto fill=memo_request(s,ids,"Shared",false);
+    s.edit_transactions("fill",fill,context);s.edit_transactions("fill",fill,context);
+    check(edit_row(s,ids[0]).memo=="Bank note" && edit_row(s,ids[0]).memo_owner==FieldOwnership::source,"Existing memo stays when overwrite is off");
+    check(edit_row(s,ids[2]).memo=="Keep me" && edit_row(s,ids[2]).memo_owner==FieldOwnership::source,"A second existing memo stays");
+    check(edit_row(s,ids[1]).memo=="Shared" && edit_row(s,ids[1]).memo_owner==FieldOwnership::manual && !edit_row(s,ids[1]).memo_rule,"A blank memo is set and becomes manual");
+    check(edit_row(s,ids[3]).memo=="Shared" && edit_row(s,ids[3]).memo_owner==FieldOwnership::manual,"Whitespace-only memo counts as blank");
+    check(s.action_head() && s.action_head()->label=="Set memo","Set memo is one Undo action");
+    same_money();splits_held();
+    auto changed=fill;changed.memo="Changed retry";bool refused=false;try{s.edit_transactions("fill",changed,context);}catch(...){refused=true;}
+    check(refused && edit_row(s,ids[1]).memo=="Shared","A changed retry is rejected");
+    s.backup_to(dir/"memo-backup","test");
+    {auto reopened=ImportStore::open(dir/"memo-backup","test");reopened.verify();check(edit_row(reopened,ids[1]).memo=="Shared" && edit_row(reopened,ids[0]).memo=="Bank note","Set memo survives reopen");reopened.undo_transaction_edit("reopen-undo","fill");reopened.verify();check(edit_row(reopened,ids[1]).memo.empty() && edit_row(reopened,ids[3]).memo=="   " && edit_row(reopened,ids[1]).memo_owner==FieldOwnership::source,"Reopened Undo restores blank and whitespace memos");}
+    s.undo_transaction_edit("undo-fill","fill");
+    for(std::size_t i=0;i<ids.size();++i)check(edit_row(s,ids[i]).memo==original[i].memo && edit_row(s,ids[i]).memo_owner==original[i].memo_owner,"Undo restores every transaction memo and its ownership");
+    splits_held();s.verify();
+    const auto head=s.action_head()->id;
+    auto noop=memo_request(s,{ids[0],ids[2]},"Nope",false);
+    s.edit_transactions("noop",noop,context);
+    check(s.action_head()->id==head && edit_row(s,ids[0]).memo=="Bank note" && edit_row(s,ids[2]).memo=="Keep me","Leaving every existing memo unchanged adds no Undo");
+    auto all=memo_request(s,ids,"Shared",true);
+    s.edit_transactions("overwrite",all,context);
+    for(const auto& id:ids){const auto row=edit_row(s,id);check(row.memo=="Shared" && row.memo_owner==FieldOwnership::manual && !row.memo_rule,"Overwrite sets every transaction memo manually");}
+    splits_held();same_money();
+    s.undo_transaction_edit("undo-overwrite","overwrite");
+    for(std::size_t i=0;i<ids.size();++i)check(edit_row(s,ids[i]).memo==original[i].memo && edit_row(s,ids[i]).memo_owner==original[i].memo_owner,"Overwrite Undo restores memos");
+    auto clear=memo_request(s,ids,"   \t",true);
+    s.edit_transactions("clear",clear,context);
+    check(edit_row(s,ids[0]).memo.empty() && edit_row(s,ids[0]).memo_owner==FieldOwnership::manual,"A blank replacement clears an existing memo");
+    check(edit_row(s,ids[2]).memo.empty() && edit_row(s,ids[2]).memo_owner==FieldOwnership::manual,"Clear applies to every existing memo");
+    check(edit_row(s,ids[1]).memo.empty() && edit_row(s,ids[1]).memo_owner==original[1].memo_owner,"Clearing leaves an already blank memo untouched");
+    check(edit_row(s,ids[3]).memo=="   " && edit_row(s,ids[3]).memo_owner==original[3].memo_owner,"Clearing leaves whitespace-only text untouched");
+    s.undo_transaction_edit("undo-clear","clear");
+    auto same=memo_request(s,{ids[0]},"Bank note",true);
+    s.edit_transactions("same-text",same,context);
+    check(edit_row(s,ids[0]).memo=="Bank note" && edit_row(s,ids[0]).memo_owner==FieldOwnership::manual,"Retyping the same memo makes it manual");
+    s.undo_transaction_edit("undo-same","same-text");
+    auto invalid=memo_request(s,{ids[0],{"~transfer-no-source",0}},"No",true);
+    refused=false;try{s.edit_transactions("invalid",invalid,context);}catch(...){refused=true;}
+    check(refused && !s.review_outcome("invalid") && edit_row(s,ids[0]).memo=="Bank note","An invalid member rejects the whole memo selection");
+    auto stale=memo_request(s,ids,"Stale",true);s.ingest("another",source("Another","5"),qif::DateOrder::dmy);
+    refused=false;try{s.edit_transactions("stale",stale,context);}catch(...){refused=true;}
+    check(refused && !s.review_outcome("stale") && edit_row(s,ids[1]).memo.empty(),"A stale selection rejects every memo change");
+    auto with_payee=memo_request(s,{ids[1]},"Nope",true);with_payee.payee="Payee";
+    refused=false;try{s.edit_transactions("payee",with_payee,context);}catch(...){refused=true;}
+    check(refused && edit_row(s,ids[1]).payee=="Blank","Set memo does not accept a payee");
+    auto rename=selection_request(s,LedgerSelectionAction::rename_payee,{ids[1]},"Blank");rename.memo="Hidden";
+    refused=false;try{s.edit_transactions("rename-memo",rename,context);}catch(...){refused=true;}
+    check(refused && edit_row(s,ids[1]).memo.empty(),"Rename does not accept a memo");
+    auto huge=memo_request(s,{ids[1]},std::string(65537,'m'),true);
+    refused=false;try{s.edit_transactions("huge",huge,context);}catch(...){refused=true;}
+    check(refused && edit_row(s,ids[1]).memo.empty(),"An oversized memo is rejected");
+    auto cancelled=memo_request(s,{ids[1],ids[3]},"Cancelled",false);
+    OperationContext cancel;int writes=0;cancel.progress=[&](auto phase){if(phase=="Updating selected transactions" && ++writes==2)cancel.request();};
+    refused=false;try{s.edit_transactions("cancel",cancelled,cancel);}catch(const OperationCancelled&){refused=true;}
+    check(refused && writes==2 && !s.review_outcome("cancel") && edit_row(s,ids[1]).memo.empty() && edit_row(s,ids[3]).memo=="   ","Cancellation rolls back every memo in the selection");
+    s.verify();
+    std::cout<<"Selected Set memo, overwrite, clear, Undo, retry and rejection passed\n";
+}
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
@@ -895,6 +975,7 @@ int main(int argc,char** argv){
         if(argc>1 && std::string(argv[1])=="large_review"){large_review_batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="large_selection"){large_selection_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="selection"){selection_edit_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="memo"){selection_memo_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="selection_faults"){selection_edit_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="editor"){editor_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="editor_faults"){editor_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

@@ -1,5 +1,46 @@
 # Project status
 
+## Selected Set memo — implemented, 2026-11-09
+
+The ledger context menu adds **Set memo…** beside **Rename payee…**. The dialog
+sets the transaction memo for the current selection. Blank memos, including
+whitespace-only memos, are filled unless **Overwrite N existing memos** is
+checked. A blank field with that box on clears existing memos and the button
+reads **Clear memo** or **Clear memos**. Split memos stay unchanged, including
+the allocation copy of an unsplit imported memo. A memo this command writes is
+manual, so a later rule leaves it alone. Rows left unchanged because overwrite
+is off keep their text and ownership. The command is one atomic Undo,
+**Undo Set memo…**, and uses the Rename payee selection guards. When nothing
+changes, no Undo action is added. Database formats remain **70/69**. See the
+[contract](ledger-editing.md#selected-set-memo--owner-go-2026-11-09).
+
+Verification on macOS arm64, Qt 6.12.0 (Qt Test reported macos 27.2.0), rules-enabled Release:
+
+- `spentit_review_sheet_tests memo` (`import.selection_memo`) passed in 0.86 s.
+  It covers mixed new and accepted rows, overwrite off and on, whitespace-only
+  memos, clear, identical text becoming manual, split memos left unchanged,
+  payee/date/balance unchanged, one Undo labelled Set memo, exact retry,
+  changed-retry rejection, backup reopen and Undo, a generated-transfer member,
+  a stale selection, payee-on-memo and memo-on-rename rejection, an oversized
+  memo, and cancellation on the second selected write. An all-existing overwrite-off
+  request leaves the Undo head unchanged.
+- `spentit_review_sheet_tests selection` (`import.selection_edit`) passed in 1.43 s
+  after the shared selection-edit encoding change.
+- Offscreen `spentit_committed_ui_tests selectedSetMemo selectedRenameRestoreAndUndo`
+  passed in 2.57 s (process wall 2.61 s). The Set memo slot checks the dialog
+  title, the existing-memo count, the unchecked overwrite box, an empty field,
+  disabled confirm, **Set memo**, **Clear memos**, prefill when every memo matches,
+  split memos, manual ownership, Undo, and zero QML warnings. The existing rename
+  slot still passes.
+
+Limits: Linux, Windows, ASan/UBSan, rules-off, and a native Cocoa menu were not
+run. Set memo was not separately exercised from a search filter, a report ledger,
+or the viewport-retention slot; those paths share the existing selection command.
+Injected disk-full and process-exit checks were not repeated for this command.
+No private financial data was used. The rules-enabled application was rebuilt at
+`build/SpentIt`; the running application was not restarted. Manual text and
+screenshots remain unchanged; MAN-019 records that later pass.
+
 ## File exchange and File Backup — implemented, 2026-11-09
 
 The owner-authorized [four File menu commands](file-exchange.md) are implemented:

@@ -242,6 +242,7 @@ QString phaseFor(const QString& action){
     if(action=="preview_deletion")return "Checking transactions to delete";
     if(action=="delete_selection")return "Deleting selected transactions";
     if(action=="rename_payee_selection")return "Renaming selected payees";
+    if(action=="set_memo_selection")return "Setting selected memos";
     if(action=="restore_imported_selection")return "Restoring imported values";
     if(action=="preview_change")return "Preparing change preview";
     if(action=="apply_change")return "Saving changes";
@@ -2017,11 +2018,11 @@ struct ImportModel::Worker {
             const auto keep=repo.preview_deletion(request,context);request.delete_counterparts=true;const auto both=repo.preview_deletion(request,context);
             deletionPreview={{"links",static_cast<int>(keep.links)},{"keep",describe(keep)},{"both",describe(both)}};
         }
-        else if(action=="rename_payee_selection" || action=="restore_imported_selection" || action=="delete_selection") {
+        else if(action=="rename_payee_selection" || action=="set_memo_selection" || action=="restore_imported_selection" || action=="delete_selection") {
             app::LedgerSelectionEdit request;
-            request.action=action=="delete_selection"?app::LedgerSelectionAction::remove:action=="rename_payee_selection"?app::LedgerSelectionAction::rename_payee:app::LedgerSelectionAction::restore_imported;
+            request.action=action=="delete_selection"?app::LedgerSelectionAction::remove:action=="rename_payee_selection"?app::LedgerSelectionAction::rename_payee:action=="set_memo_selection"?app::LedgerSelectionAction::set_memo:app::LedgerSelectionAction::restore_imported;
             request.account=a.value("account").toString().toLongLong();request.generation=a.value("generation").toString().toLongLong();
-            request.payee=str(a.value("payee"));request.delete_counterparts=a.value("deleteCounterparts").toBool();
+            request.payee=str(a.value("payee"));request.memo=str(a.value("memo"));request.overwrite_memo=a.value("overwriteMemo").toBool();request.delete_counterparts=a.value("deleteCounterparts").toBool();
             for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
             if(reportLedgerActive){reportSelectionAccount(std::set<imports::Occurrence>(request.selected.begin(),request.selected.end()));request.account=repo.account().identity;}
             const auto operation=identity();
@@ -2491,7 +2492,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(!action.startsWith("exchange_") && action!="report_show" && action!="probe" && action!="backup" && action!="check_file" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
+    if(!action.startsWith("exchange_") && action!="report_show" && action!="probe" && action!="backup" && action!="check_file" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="set_memo_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
@@ -2612,7 +2613,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             worker->invalidate();
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
-            result.error=((action=="save_manual" || action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
+            result.error=((action=="save_manual" || action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="set_memo_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
                 :(action=="undo_action" && worker->diagnosticSaved)?"The action was undone, but the screen could not update. Reopen the file before continuing."
                 :(action=="delete_selection" && worker->diagnosticSaved)?"The transactions were deleted, but the screen could not update. Reopen the file before continuing."
                  :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."

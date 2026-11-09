@@ -53,6 +53,7 @@ add_test(NAME import.large_review_batch COMMAND spentit_review_sheet_tests large
 set_tests_properties(import.large_selection PROPERTIES TIMEOUT 1800)
 set_tests_properties(import.large_review_batch PROPERTIES TIMEOUT 600)
 add_test(NAME import.selection_edit COMMAND spentit_review_sheet_tests selection)
+add_test(NAME import.selection_memo COMMAND spentit_review_sheet_tests memo)
 add_test(NAME import.selection_edit_faults COMMAND spentit_review_sheet_tests selection_faults)
 set_tests_properties(import.selection_edit_faults PROPERTIES TIMEOUT 600)
 add_test(NAME import.editor_faults COMMAND spentit_review_sheet_tests editor_faults)

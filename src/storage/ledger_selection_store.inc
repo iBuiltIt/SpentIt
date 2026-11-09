@@ -138,14 +138,18 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
     ScopedStatements statements(impl_->db,&context);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     if(request.selected.empty())fail(SQLITE_CONSTRAINT,"Select at least one transaction");
-    if(request.action!=app::LedgerSelectionAction::rename_payee && request.action!=app::LedgerSelectionAction::restore_imported && request.action!=app::LedgerSelectionAction::remove)fail(SQLITE_CONSTRAINT,"Choose Rename payee, Restore imported values, or Delete");
+    if(request.action!=app::LedgerSelectionAction::rename_payee && request.action!=app::LedgerSelectionAction::restore_imported && request.action!=app::LedgerSelectionAction::remove && request.action!=app::LedgerSelectionAction::set_memo)fail(SQLITE_CONSTRAINT,"Choose Rename payee, Set memo, Restore imported values, or Delete");
     if(request.action!=app::LedgerSelectionAction::rename_payee && !request.payee.empty())fail(SQLITE_CONSTRAINT,"This action does not accept a replacement payee");
     if(request.payee.size()>65536)fail(SQLITE_CONSTRAINT,"The payee name is too long");
+    if(request.action!=app::LedgerSelectionAction::set_memo && (!request.memo.empty() || request.overwrite_memo))fail(SQLITE_CONSTRAINT,"This action does not accept a replacement memo");
+    if(request.action==app::LedgerSelectionAction::set_memo && request.delete_counterparts)fail(SQLITE_CONSTRAINT,"This action does not delete transactions");
+    if(request.memo.size()>65536)fail(SQLITE_CONSTRAINT,"The memo is too long");
     const bool removing=request.action==app::LedgerSelectionAction::remove;
     const std::string question=removing?"ledger-delete":"ledger-edit-batch";
     transfer_codec::Writer encoded;encoded.number(static_cast<int>(request.action));encoded.number(request.account);encoded.number(request.generation);encoded.text(request.payee);
     std::set<imports::Occurrence> identities;
     for(const auto& id:request.selected){context.checkpoint("Checking selected transactions");if(!identities.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once");encoded.text(review_key(id));}
+    if(request.action==app::LedgerSelectionAction::set_memo){encoded.text(request.memo);encoded.number(request.overwrite_memo?1:0);}
     const auto request_hash=session_snapshot::digest(encoded.bytes);
     session_snapshot::retry(impl_->db,operation,"selection",request_hash);
     if(const auto outcome=ActionChain(impl_->db).durable_outcome(operation,request_hash);outcome && *outcome==ActionChain::Outcome::no_change)return {std::string(operation)};
@@ -162,6 +166,7 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
     std::vector<Plan> plans;const auto before_links=all_transfers();std::set<std::string> changed_links;
     const auto catalog=category_catalog();
     auto balance=committed_balance();
+    const auto memo_has_text=[](std::string_view value){return std::any_of(value.begin(),value.end(),[](unsigned char c){return c!=' ' && c!='\t' && c!='\n' && c!='\r' && c!='\v' && c!='\f';});};
     for(const auto& id:request.selected){
         context.checkpoint("Checking selected transactions");
         if(id.batch.starts_with("~transfer-"))fail(SQLITE_CONSTRAINT,"Select imported transactions. Generated transfer entries cannot use this action.");
@@ -173,6 +178,13 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
         const auto before=committed?committed_entry(id).current.draft:*row.draft;
         auto draft=before;
         if(request.action==app::LedgerSelectionAction::rename_payee){draft.payee=request.payee;draft.payee_owner=FieldOwnership::manual;draft.payee_rule.reset();}
+        else if(request.action==app::LedgerSelectionAction::set_memo){
+            const bool existing=memo_has_text(draft.memo);
+            if(!existing || request.overwrite_memo){
+                const auto next=memo_has_text(request.memo)?request.memo:std::string{};
+                if(existing || !next.empty()){draft.memo=next;draft.memo_owner=FieldOwnership::manual;draft.memo_rule.reset();}
+            }
+        }
         else if(!removing) {
             const auto& source=row.source;
             if(!source.transaction || !source.original_amount || source.date.empty())fail(SQLITE_CONSTRAINT,"An original date or amount is unavailable. Restore that transaction in its editor and complete the missing fields.");
@@ -191,6 +203,16 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
             }
             draft={source.date,source.payee,source.memo,Transaction::repaired_import(source.original_amount,*source.original_amount,std::move(allocations)),FieldOwnership::source,FieldOwnership::source};
             draft.manual_split_amounts=before.manual_split_amounts;draft.remainder_allocation=before.remainder_allocation;
+        }
+        // An unchanged memo must not be canonicalized into a new revision. The row
+        // is still rejected when this command cannot edit it.
+        if(request.action==app::LedgerSelectionAction::set_memo && same_draft(before,draft)){
+            if(committed){if(plan_entry_links(before_links,id,before,draft,false).changed.empty())continue;}
+            else{
+                require_unlinked(id);
+                if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"This transaction cannot be edited.");
+                continue;
+            }
         }
         std::optional<EntryLinkPlan> links;
         if(committed){

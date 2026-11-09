@@ -166,6 +166,75 @@ private slots:
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Single rename");QVERIFY(!model.state().value("canUndoEdit").toBool());
         QCOMPARE(warnings.size(),0);
     }
+    void selectedSetMemo(){
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(QTest::qWaitForWindowExposed(window));
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);
+        run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Synthetic memos"},{"currency","CAD"}});
+        run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        QFile file(dir.path()+"/memos.qif");QVERIFY(file.open(QIODevice::WriteOnly));
+        const QByteArray source=
+            "D1/1/2026\nT-10.00\nPAlpha\nMBank note\nSFees\nESplit note\n$-4.00\nSFood\nESecond note\n$-6.00\n^\n"
+            "D2/1/2026\nT-3.00\nPBlank\n^\n"
+            "D3/1/2026\nT-4.00\nPKept\nMKeep me\n^\n"
+            "D4/1/2026\nT-5.00\nPSpaces\nM   \n^\n";
+        QCOMPARE(file.write(source),source.size());file.close();
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});run(model,"commit");
+        QString batch;for(int row=0;row<model.rowCount();++row){const auto record=model.rowRecord(row);if(record.value("payee").toString()=="Alpha"){batch=record.value("batch").toString();break;}}
+        QVERIFY(!batch.isEmpty());
+        auto record=[&](int ordinal){return model.rowRecord(model.occurrenceIndex(batch,ordinal));};
+        auto memo=[&](int ordinal){return record(ordinal).value("memo").toString();};
+        auto splitMemo=[&](int ordinal,int split){return record(ordinal).value("splits").toList().at(split).toMap().value("memo").toString();};
+        QCOMPARE(memo(0),QString("Bank note"));QCOMPARE(splitMemo(0,0),QString("Split note"));QCOMPARE(splitMemo(0,1),QString("Second note"));
+        QCOMPARE(memo(1),QString());QCOMPARE(memo(2),QString("Keep me"));QCOMPARE(memo(3),QString("   "));
+        run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
+        for(int ordinal=1;ordinal<4;++ordinal)run(model,"select",{{"row",model.occurrenceIndex(batch,ordinal)},{"toggle",true}});
+        QCOMPARE(model.state().value("selectionCount").toInt(),4);
+        auto* item=object(root,"setMemoSelection");QVERIFY(item);QVERIFY(item->property("enabled").toBool());QCOMPARE(item->property("text").toString(),"Set memo…");
+        QVERIFY(QMetaObject::invokeMethod(item,"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());
+        QCOMPARE(object(root,"selectedEditDialog")->property("title").toString(),"Set memo");
+        QCOMPARE(root->property("selectedMemoCount").toInt(),2);
+        QCOMPARE(object(root,"overwriteExistingMemos")->property("visible").toBool(),true);
+        QCOMPARE(object(root,"overwriteExistingMemos")->property("text").toString(),"Overwrite 2 existing memos");
+        QCOMPARE(object(root,"overwriteExistingMemos")->property("checked").toBool(),false);
+        QCOMPARE(object(root,"selectedMemo")->property("text").toString(),QString());
+        QVERIFY(!object(root,"confirmSelectedEdit")->property("enabled").toBool());
+        QVERIFY(object(root,"selectedMemo")->setProperty("text","Shared"));
+        QVERIFY(object(root,"confirmSelectedEdit")->property("enabled").toBool());
+        QCOMPARE(object(root,"confirmSelectedEdit")->property("text").toString(),"Set memo");
+        QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
+        QCOMPARE(memo(0),QString("Bank note"));QCOMPARE(memo(1),QString("Shared"));QCOMPARE(memo(2),QString("Keep me"));QCOMPARE(memo(3),QString("Shared"));
+        QCOMPARE(splitMemo(0,0),QString("Split note"));QCOMPARE(splitMemo(0,1),QString("Second note"));
+        QCOMPARE(record(1).value("memoOwner").toString(),"manual");QCOMPARE(record(0).value("memoOwner").toString(),"source");
+        QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo Set memo…");
+        QVERIFY(click(root,"undoEdit"));QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QCOMPARE(memo(1),QString());QCOMPARE(memo(3),QString("   "));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"setMemoSelection"),"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());
+        QVERIFY(object(root,"overwriteExistingMemos")->setProperty("checked",true));
+        QVERIFY(object(root,"selectedMemo")->setProperty("text","Shared"));
+        QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
+        for(int ordinal:{0,1,2,3}) QCOMPARE(memo(ordinal),QString("Shared"));
+        QCOMPARE(splitMemo(0,0),QString("Split note"));QCOMPARE(record(2).value("splits").toList().front().toMap().value("memo").toString(),"Keep me");
+        QVERIFY(click(root,"undoEdit"));QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QVERIFY(QMetaObject::invokeMethod(object(root,"setMemoSelection"),"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());
+        QVERIFY(object(root,"overwriteExistingMemos")->setProperty("checked",true));
+        QVERIFY(object(root,"selectedMemo")->setProperty("text",""));
+        QCOMPARE(object(root,"confirmSelectedEdit")->property("text").toString(),"Clear memos");
+        QVERIFY(object(root,"confirmSelectedEdit")->property("enabled").toBool());
+        QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
+        QCOMPARE(memo(0),QString());QCOMPARE(memo(2),QString());QCOMPARE(memo(1),QString());QCOMPARE(memo(3),QString("   "));
+        QCOMPARE(record(0).value("memoOwner").toString(),"manual");QCOMPARE(record(3).value("memoOwner").toString(),"source");
+        QVERIFY(click(root,"undoEdit"));QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QCOMPARE(memo(0),QString("Bank note"));QCOMPARE(memo(2),QString("Keep me"));
+        run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
+        QVERIFY(QMetaObject::invokeMethod(object(root,"setMemoSelection"),"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());
+        QCOMPARE(object(root,"selectedMemo")->property("text").toString(),"Bank note");
+        QCOMPARE(object(root,"overwriteExistingMemos")->property("text").toString(),"Overwrite 1 existing memo");
+        QCOMPARE(object(root,"confirmSelectedEdit")->property("enabled").toBool(),false);
+        QVERIFY(click(root,"cancelSelectedEdit"));QCOMPARE(memo(0),QString("Bank note"));
+        QCOMPARE(warnings.size(),0);
+    }
     void selectionEditRetainsViewport(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
