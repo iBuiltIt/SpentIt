@@ -18,8 +18,12 @@ cf8f1a5's 32,268,288 and b4b65df's 31,977,472. Retained payload is lower too;
 temporary journal peaks and small-workload fixed costs are reported separately.
 Financial fault sweeps, rules-off/sanitizer integration and native synthetic text/
 dirty-target Undo have passed. The final eight-mode Review recovery sweep and Help
-suite passed. Four obsolete account fixtures also fail on unchanged b4b65df and
-remain documented failures; this is not an all-green repository test claim.
+suite passed. The four obsolete account fixtures identified in that verification
+were updated in the owner-authorized follow-up: basics, validation, combined and
+groups now pass with rules enabled and disabled. The shared combined I/O regression
+also passes with rules enabled. Only fixtures and verification documentation changed;
+production guards are unchanged. See the verification record for commands and
+results. This is not an all-green repository test claim.
 No private financial data or manual prose/screenshots were changed. MAN-017 and
 final Change History layout remain separate work; Linux/Windows are unverified.
 

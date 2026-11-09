@@ -72,14 +72,30 @@ write/sync failures, exact retries, restored backups, encrypted storage and proc
 interruptions before/after durable commit. Its paired Help run also passed
 (110.42 seconds).
 
-This is not a claim of an all-green repository test run. Four legacy account
-fixtures (`accounts.basics`, `accounts.validation`, `accounts.combined`, and
-`accounts.groups`) also fail on unchanged b4b65df: they still expect obsolete
-category-free rules, forced category replacement, or pre-decision import behavior.
-They remain failing in the working tree; the replacement additionally rejects
-reusing a cancelled source ID and writes during preparation. These fixture failures
-are recorded separately from the passing current-contract tests above. No production
-guard was weakened to satisfy them.
+The initial verification found four legacy account fixtures failing on both the
+replacement and unchanged b4b65df. In the owner-authorized 2026-11-09 follow-up,
+`accounts.basics`, `accounts.validation`, `accounts.combined`, and `accounts.groups`
+were updated and all passed on macOS with rules enabled and disabled. Production
+sources and guards were unchanged. Fixtures now provide mandatory rule categories,
+resolve initial import choices explicitly, apply rules only to Uncategorized rows,
+use fresh IDs after capture cleanup, and retain completed import-created accounts.
+They use current revision tokens and successful close/reopen before older removal.
+Corruption fixtures assert that their SQL actually changes rows and recovery rejects
+the inconsistent state. Refusal assertions still cover payee-only rules, forced
+application, premature acceptance, archived-category assignment and active-chain
+Discard. The combined workflow includes interruption before/after the category
+decision as well as subsequent repair, acceptance, correction and Undo.
+
+Verification commands used `ctest --test-dir BUILD --output-on-failure -j4` with
+`-R '^accounts\.(basics|validation|combined|groups)$'` for the rules-disabled build
+(`build/category-rules-off`, 4/4 passed in 30.61 seconds). The rules-enabled run
+(`build/import-ui-rules-release`) additionally selected `combined_io`: validation,
+groups, combined and combined_io passed in 11.95, 17.68, 40.56 and 51.79 seconds.
+After correcting the new payee-only rejection assertion to recognize the engine's
+validation error, its focused `accounts.basics` rerun passed in 1.37 seconds.
+The shared combined I/O scenario retains first/middle/last injected write failures,
+recovery, exact balances and restored-backup checks. This follow-up did not rerun
+the full repository suite and does not claim it is all green.
 
 Native Cocoa synthetic tests passed dirty-target revalidation, stale-token refusal,
 native text Undo, linked deletion Undo and immediate editor behavior (5 Qt test
