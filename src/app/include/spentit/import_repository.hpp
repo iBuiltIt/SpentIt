@@ -1,4 +1,5 @@
 #pragma once
+#include <spentit/action_history.hpp>
 #include <spentit/amount_format.hpp>
 #include <spentit/reports.hpp>
 #include <spentit/import_review.hpp>
@@ -183,6 +184,13 @@ struct LedgerRow {
 class ImportRepository {
 public:
     virtual ~ImportRepository() = default;
+    virtual bool action_preparing() const { return false; }
+    virtual ActionToken action_token() const { return {}; }
+    virtual std::optional<ActionSummary> action_head() const { return {}; }
+    virtual std::vector<ActionSummary> action_history(std::int64_t, std::size_t) const { return {}; }
+    virtual UndoPreview preview_undo(std::string_view,const ActionToken&) const {throw std::logic_error("Undo unavailable");}
+    virtual std::optional<ActionReceipt> undo_action_outcome(std::string_view,const UndoPreview&) const { return {}; }
+    virtual ActionReceipt undo_action(std::string_view,const UndoPreview&) {throw std::logic_error("Undo unavailable");}
     virtual reports::Catalog report_catalog() const { return {}; }
     virtual void save_reports(const reports::Catalog&) {throw std::logic_error("Reports unavailable");}
     virtual std::vector<reports::Entry> report_entries(const std::vector<std::int64_t>&,const OperationContext&) const {throw std::logic_error("Reports unavailable");}
@@ -370,6 +378,7 @@ public:
     virtual std::vector<RuleTombstone> rule_tombstones() const { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual RuleSaveReceipt save_rules(std::string_view,const RuleSaveRequest&,std::int64_t,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual std::optional<RuleSaveReceipt> rule_save_outcome(std::string_view) const { throw std::logic_error("Rules are not enabled for this dataset"); }
+    virtual ReviewReceipt save_and_apply_rules(std::string_view,const RuleSaveRequest&,std::int64_t,const AccountRuleRequest&,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual ReviewReceipt apply_account_rules(std::string_view,const AccountRuleRequest&,const OperationContext&) { throw std::logic_error("Rules are not enabled for this dataset"); }
     virtual bool can_undo_account_rules() const { return false; }
     virtual ReviewReceipt undo_account_rules(std::string_view) { throw std::logic_error("No rule application to undo"); }

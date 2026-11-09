@@ -199,7 +199,7 @@ private slots:
         category()->setProperty("text","");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
         QTest::keyClick(window,Qt::Key_Tab);wait(model);QTRY_VERIFY(assigned().isEmpty());QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
         QCOMPARE(category()->property("text").toString(),QString());
-        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));wait(model);QTRY_COMPARE(assigned(),gas);
+        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));QVERIFY(root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("confirmActionUndo"),"clicked"));wait(model);QTRY_COMPARE(assigned(),gas);
         QTRY_VERIFY(field("durableMemo")->hasActiveFocus());QTest::qWait(50);category()->forceActiveFocus();category()->setProperty("text","Parking");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
         QTest::qWait(50);QVERIFY(pointer(window,root,"inlineCategoryChoice_"+parking));wait(model);QTRY_COMPARE(assigned(),parking);
         QVERIFY(file.open(QIODevice::WriteOnly|QIODevice::Truncate));file.write("D2/1/2026\nT-10\nPSynthetic splits\nS\n$-5\nS\n$-5\n^\n");file.close();

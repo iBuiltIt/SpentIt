@@ -1,0 +1,16 @@
+{
+  "identifier_configuration": "SPENTIT_WORKLOAD_UUID_IDS in all three binaries; first/second source IDs fixed36-character synthetic UUIDs",
+  "overlap": "Runs overlap the separate short-ID matrix; file-length/storage results only, no comparative timing claim. Each process tracks its own VFS files.",
+  "source_sha256": {
+    "action_storage_workloads.cpp": "8b36ed1f3f43ed5e7f9fe0a17f68dda46bd0c95d5e14ce23d843d39843ddbda5",
+    "action_journal_runtime.hpp": "e9ca9749830c065c3e846df61bb5009b49b62d622ccccc1b4e3dcfaa3c82bc1d",
+    "measure_vfs.hpp": "1258357f09958ef33e55e930875e0f4258e56b71eb35dcb86f11e6145ceb048c",
+    "action_payload_schema.hpp": "77b5529fa2eaf03f3a438f0018dac89500b61101f947d808321373cd202bd88d",
+    "action_payload_store.cpp": "d8a25d6ca21809cfda31ab6f6f3b6105d2da9ef6729a33a12836751c10d25ede"
+  },
+  "shared_baseline_driver_headers_identical": {
+    "action_storage_workloads.cpp": true,
+    "action_journal_runtime.hpp": true,
+    "measure_vfs.hpp": true
+  }
+}

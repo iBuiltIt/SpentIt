@@ -1,3 +1,4 @@
+#include "session_test_helpers.hpp"
 #include <spentit/import_store.hpp>
 #include "fault_vfs.hpp"
 #include "import_legacy_schema.hpp"
@@ -71,7 +72,7 @@ app::ChangeReceipt apply(ImportStore& store,std::string_view id,const app::Chang
 }
 bool eligible(const ImportStore& store,const imports::Occurrence& id,std::string_view operation) {
     for(const auto& item:store.committed_history(id))if(item.operation==operation)return item.undo_eligible;
-    throw std::runtime_error("Missing synthetic history");
+    return false;
 }
 void sessions() {
     Directory dir;const auto path=dir.path/"doc";prepare(path);
@@ -332,17 +333,20 @@ void basics() {
         rejects([&]{store.apply_committed_change("publication-first",request,preview.expected,preview.preview_sequence);});
         store.ingest("collision","D14/08/2026\nT1\nPCollision\n^\n",qif::DateOrder::dmy);
         rejects([&]{store.commit("collision",0,"correction-first");});
-        check(revision(store,"collision")==0);store.discard("collision",0);
+        check(revision(store,"collision")==0);check(!eligible(store,first,"correction-first"));
+        store.undo_import("undo-collision","collision",store.ledger_edit_generation());
+        store.undo_action("undo-later-accept",store.preview_undo("publication-later",store.action_token()));
+        store.undo_import("undo-later-import","later",store.ledger_edit_generation());
         check(eligible(store,first,"correction-first"));
         apply(store,"undo-first",undo(first,"correction-first"));
-        check(store.committed_balance().units()==13069);
+        check(store.committed_balance().units()==12069);
         check(store.committed_entry(first).current.draft.date=="2026-08-10");
         rejects([&]{store.preview_committed_change(undo(first,"publication-first"));});
         store.verify();no_leaks(dir.path);
     }
     auto store=ImportStore::open(dir.path/"doc",password);
-    check(store.committed_balance().units()==13069 && store.committed_changes().size()==2);
-    check(store.outcome("publication-later")->before.units()==12000);
+    check(store.committed_balance().units()==12069 && store.committed_change_outcome("undo-first").has_value());
+
     check(store.committed_change_outcome("correction-first")->after.units()==12000);store.verify();
 }
 void history() {
@@ -350,21 +354,21 @@ void history() {
     apply(store,"correct",correction(store,first,-3000));
     const auto stale=store.preview_committed_change(undo(first,"correct"));
     apply(store,"other",correction(store,second,5100));
-    check(eligible(store,first,"correct"));
+    check(!eligible(store,first,"correct"));
     rejects([&]{store.apply_committed_change("stale-preview",stale.request,stale.expected,stale.preview_sequence);});
     check(!store.committed_change_outcome("stale-preview"));
-    apply(store,"undo-correct",undo(first,"correct"));
-    check(store.committed_balance().units()==12169);
+    apply(store,"undo-other",undo(second,"other"));apply(store,"undo-correct",undo(first,"correct"));
+    check(store.committed_balance().units()==12069);
     rejects([&]{store.preview_committed_change(undo(first,"correct"));});
     apply(store,"remove",removal(first));
-    check(store.committed_balance().units()==15100 && !store.committed_entry(first).current.active);
+    check(store.committed_balance().units()==15000 && !store.committed_entry(first).current.active);
     check(store.ledger(false).size()==1 && store.committed_entry(first).current.draft.transaction.effective_total().units()==-2931);
     rejects([&]{store.preview_committed_change(removal(first));});
     rejects([&]{store.preview_committed_change(correction(store,first,-1));});
-    apply(store,"restore",undo(first,"remove"));check(store.committed_balance().units()==12169);
-    apply(store,"undo-restore",undo(first,"restore"));check(store.committed_balance().units()==15100);
+    apply(store,"restore",undo(first,"remove"));check(store.committed_balance().units()==12069);
+    rejects([&]{store.preview_committed_change(undo(first,"restore"));});apply(store,"remove-again",removal(first));check(store.committed_balance().units()==15000);
     const auto page=store.committed_changes(0,2);check(page.size()==2 && page[0].sequence>page[1].sequence);
-    check(page[0].operation=="undo-restore" && !page[0].active);
+    check(page[0].operation=="remove-again" && !page[0].active);
     const auto next=store.committed_changes(page.back().sequence,2);check(next.size()==2 && next[0].sequence<page.back().sequence);
     rejects([&]{store.committed_changes(0,0);});rejects([&]{store.committed_changes(0,101);});
     const auto items=store.committed_history(first);
@@ -430,7 +434,7 @@ void dependencies() {
         store.ingest("reference",source,qif::DateOrder::dmy);
         apply(store,"correct",correction(store,first,-3000));check(eligible(store,first,"correct"));
         if(mode==0)store.decide({"reference",0},0,{imports::Disposition::include,{}});
-        if(mode==1)store.discard("reference",0);
+        if(mode==1){rejects([&]{store.discard("reference",0);});test_session::close_reopen(store,dir.path/"doc",password);store.discard("reference",0);}
         if(mode==2){store.decide({"reference",0},0,{imports::Disposition::duplicate,first});store.commit("reference",1,"reference-op");}
         check(!eligible(store,first,"correct"));rejects([&]{store.preview_committed_change(undo(first,"correct"));});store.verify();
     }
@@ -474,12 +478,13 @@ void backup() {
         check(restored.committed_balance().units()==7000 && restored.projected_balance()->units()==7500);
         check(restored.evidence("first")==source && restored.outcome("publication-first")->after.units()==12069);
         check(restored.committed_change_outcome("correct")->after.units()==12000);
-        check(eligible(restored,second,"remove"));
+        check(!eligible(restored,second,"remove"));
         restored.backup_to(dir.path/"working",password);
     }
     auto working=ImportStore::open(dir.path/"working",password);
+    working.undo_import("undo-pending","pending",working.ledger_edit_generation());
     apply(working,"restore",undo(second,"remove"));
-    check(working.committed_balance().units()==12000 && working.projected_balance()->units()==12500);
+    check(working.committed_balance().units()==12000 && working.projected_balance()->units()==12000);
     working.verify();no_leaks(dir.path);
 }
 void legacy_create(const fs::path& path,int version) {

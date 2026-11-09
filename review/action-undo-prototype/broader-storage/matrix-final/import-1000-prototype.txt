@@ -1,0 +1,25 @@
+phase,import,session-created,file_bytes=999424,live_page_bytes=999424,free_page_bytes=0,vfs_total_peak=1008176,vfs_cumulative_peak=1008176,vfs_total_current=999424,vfs_main_db_peak=999424,vfs_rollback_journal_peak=25136,vfs_wal_peak=0,vfs_temp_peak=0,vfs_other_peak=0,shm_logical_peak=0,write_bytes=1142492,write_calls=326,sync_calls=21,elapsed_seconds=0.747970
+logical,import,opening-precoalesce,inverse_rows=1,inverse_key_bytes=11,inverse_image_bytes=90,pin_references=0,unique_pinned_only_bodies=0,pinned_only_codec_bytes=0,peak_inverse_rows=1,peak_inverse_codec_bytes=101,peak_pinned_only_codec_bytes=0
+logical,import,opening-active,inverse_rows=1,inverse_key_bytes=11,inverse_image_bytes=90,pin_references=0,unique_pinned_only_bodies=0,pinned_only_codec_bytes=0,peak_inverse_rows=1,peak_inverse_codec_bytes=101,peak_pinned_only_codec_bytes=0
+phase,import,opening,file_bytes=999424,live_page_bytes=999424,free_page_bytes=0,vfs_total_peak=1016352,vfs_cumulative_peak=1016352,vfs_total_current=999424,vfs_main_db_peak=999424,vfs_rollback_journal_peak=16928,vfs_wal_peak=0,vfs_temp_peak=0,vfs_other_peak=0,shm_logical_peak=0,write_bytes=58448,write_calls=32,sync_calls=6,elapsed_seconds=0.013618
+logical,import,import-first-precoalesce,inverse_rows=7008,inverse_key_bytes=196078,inverse_image_bytes=90,pin_references=0,unique_pinned_only_bodies=0,pinned_only_codec_bytes=0,peak_inverse_rows=7008,peak_inverse_codec_bytes=196168,peak_pinned_only_codec_bytes=0
+logical,import,import-first-active,inverse_rows=7008,inverse_key_bytes=196078,inverse_image_bytes=90,pin_references=0,unique_pinned_only_bodies=0,pinned_only_codec_bytes=0,peak_inverse_rows=7008,peak_inverse_codec_bytes=196168,peak_pinned_only_codec_bytes=0
+phase,import,import-first,file_bytes=2002944,live_page_bytes=2002944,free_page_bytes=0,vfs_total_peak=2204552,vfs_cumulative_peak=2204552,vfs_total_current=2002944,vfs_main_db_peak=2002944,vfs_rollback_journal_peak=201608,vfs_wal_peak=0,vfs_temp_peak=0,vfs_other_peak=0,shm_logical_peak=0,write_bytes=1430968,write_calls=457,sync_calls=6,elapsed_seconds=0.810065
+logical,import,initial-close-closed,inverse_rows=0,inverse_key_bytes=0,inverse_image_bytes=0,pin_references=0,unique_pinned_only_bodies=0,pinned_only_codec_bytes=0,peak_inverse_rows=7008,peak_inverse_codec_bytes=196168,peak_pinned_only_codec_bytes=0
+phase,import,initial-close,file_bytes=2002944,live_page_bytes=1683456,free_page_bytes=319488,vfs_total_peak=2401544,vfs_cumulative_peak=2401544,vfs_total_current=2002944,vfs_main_db_peak=2002944,vfs_rollback_journal_peak=398600,vfs_wal_peak=0,vfs_temp_peak=0,vfs_other_peak=0,shm_logical_peak=0,write_bytes=795924,write_calls=390,sync_calls=3,elapsed_seconds=0.074441
+phase,import,session-opened,file_bytes=2002944,live_page_bytes=1683456,free_page_bytes=319488,vfs_total_peak=2011664,vfs_cumulative_peak=2401544,vfs_total_current=2002944,vfs_main_db_peak=2002944,vfs_rollback_journal_peak=8720,vfs_wal_peak=0,vfs_temp_peak=0,vfs_other_peak=0,shm_logical_peak=0,write_bytes=25648,write_calls=16,sync_calls=6,elapsed_seconds=0.276144
+logical,import,reopened-close-closed,inverse_rows=0,inverse_key_bytes=0,inverse_image_bytes=0,pin_references=0,unique_pinned_only_bodies=0,pinned_only_codec_bytes=0,peak_inverse_rows=7008,peak_inverse_codec_bytes=196168,peak_pinned_only_codec_bytes=0
+phase,import,reopened-close,file_bytes=2002944,live_page_bytes=1683456,free_page_bytes=319488,vfs_total_peak=2028080,vfs_cumulative_peak=2401544,vfs_total_current=2002944,vfs_main_db_peak=2002944,vfs_rollback_journal_peak=25136,vfs_wal_peak=0,vfs_temp_peak=0,vfs_other_peak=0,shm_logical_peak=0,write_bytes=49724,write_calls=26,sync_calls=3,elapsed_seconds=0.011522
+phase,import,final-closed,file_bytes=2002944,live_page_bytes=1683456,free_page_bytes=319488,vfs_total_peak=2028080,vfs_cumulative_peak=2401544,vfs_total_current=2002944,vfs_main_db_peak=2002944,vfs_rollback_journal_peak=25136,vfs_wal_peak=0,vfs_temp_peak=0,vfs_other_peak=0,shm_logical_peak=0,write_bytes=49724,write_calls=26,sync_calls=3,elapsed_seconds=0.021824
+payload_audit,allocations,bodies=1000,members=1000,without_live_membership=0
+payload_audit,draft_allocation_meta,bodies=1000,members=1000,without_live_membership=0
+payload_audit,entry_allocation_meta,bodies=0,members=0,without_live_membership=0
+payload_audit,entry_allocations,bodies=0,members=0,without_live_membership=0
+payload_audit,entry_revisions,bodies=0,members=0,without_live_membership=0
+payload_audit,records,bodies=1000,members=1000,without_live_membership=0
+payload_audit,source_headers,bodies=1,members=1,without_live_membership=0
+payload_audit,source_occurrences,bodies=1000,members=1000,without_live_membership=0
+payload_audit,sources,bodies=1,members=1,without_live_membership=0
+payload_audit,versions,bodies=1000,members=1000,without_live_membership=0
+payload_audit,total_without_live_membership=0
+Workload passed; forward/close semantics only, not full unified Undo delivery.

@@ -101,7 +101,17 @@ void ImportStore::resolve_group_transfers(std::string_view id,const app::Operati
     validate_transfer_set(values);
 }
 void ImportStore::resolve_import_transfers(std::string_view id,app::OperationContext& context) {
-    Atomic transaction(impl_->db);resolve_group_transfers(id,context);generate_explicit_transfers(&context);context.seal();finish([&]{transaction.commit();});
+    const auto token=action_token();const auto before=financial_sequence(impl_->db);
+    const auto pending=ActionChain(impl_->db).preparing();
+    if(pending && pending->id!=id)fail(SQLITE_CONSTRAINT,"Finish the current import first.");
+    Atomic transaction(impl_->db);resolve_group_transfers(id,context);generate_explicit_transfers(&context);
+    if(!pending && impl_->import_action.empty()) {
+        std::vector<std::string> children;Statement changed(impl_->db,"SELECT id FROM ledger_operations WHERE sequence>? ORDER BY sequence");changed.integer(1,before);while(changed.row())children.push_back(changed.bytes(0));
+        if(!children.empty()){const auto operation="resolve-transfers-"+std::to_string(token.session)+"-"+std::to_string(token.epoch);record_transaction_action(operation,"ledger-transfer",session_snapshot::digest(std::string(id)+":"+std::to_string(token.epoch)),children);}
+    }
+    context.seal();
+    if(pending){struct Scope{std::string& value;std::string prior;~Scope(){value=std::move(prior);}} scope{impl_->import_action,std::exchange(impl_->import_action,std::string(id))};finish([&]{transaction.commit();});}
+    else finish([&]{transaction.commit();},true);
 }
 app::ImportGroup ImportStore::import_group(std::string_view id) const {
     if(!impl_->verifying && !impl_->preparing_review && (impl_->publishing_review || impl_->review_changes==sqlite3_total_changes64(impl_->db))) {
@@ -224,7 +234,10 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
 }
 std::optional<app::ImportGroup> ImportStore::import_group_outcome(std::string_view id) const {
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
-    Statement found(impl_->db,"SELECT 1 FROM import_groups WHERE id=?");found.text(1,id);if(!found.row())return {};return import_group(id);
+    Statement found(impl_->db,"SELECT 1 FROM import_groups WHERE id=?");found.text(1,id);if(found.row())return import_group(id);
+    Statement cancelled(impl_->db,"SELECT 1 FROM action_receipts WHERE id=?1 AND kind=3 AND status=2 UNION ALL SELECT 1 FROM rollback_receipt WHERE source=?1 AND operation IN('abort-'||?1,'abort-'||?1||'.'||?1)");cancelled.text(1,id);
+    if(cancelled.row())return app::ImportGroup{std::string(id),app::GroupState::aborted,qif::DateOrder::dmy,{}};
+    return {};
 }
 std::vector<app::ImportGroup> ImportStore::import_groups() const {
     if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
@@ -273,7 +286,11 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
         const auto& target=mapping.creation?mapping.creation->currency:account_by_id(mapping.account).currency;
         if(code!=target.code()) {const auto message="Statement currency "+code+" does not match the target account; no conversion was applied";fail(SQLITE_CONSTRAINT,message.c_str());}
     }
-    Statement source(impl_->db,"INSERT INTO sources VALUES(?,?)");source.text(1,id);source.blob(2,bytes);source.done();
+    ImportActionScope action_scope(impl_->import_action,id);
+    transfer_codec::Writer action_request;action_request.text("group-import");action_request.text(session_snapshot::digest(bytes));action_request.number(static_cast<int>(profile));action_request.text(document.format);
+    for(const auto& mapping:mappings){action_request.number(integer(mapping.source_account));action_request.number(mapping.account);action_request.number(mapping.creation.has_value());if(mapping.creation){action_request.text(mapping.creation->name);action_request.text(mapping.creation->currency.definition_id());action_request.text(mapping.creation->date);}action_request.number(mapping.use_reported_opening.has_value());if(mapping.use_reported_opening)action_request.number(*mapping.use_reported_opening);}
+    begin_import_action(id,action_request.bytes);
+    Statement source(impl_->db,"INSERT INTO sources(id,bytes) VALUES(?,?)");source.text(1,id);source.blob(2,bytes);source.done();
     retain_source_header(impl_->db,id,document.format,document.grammar,source_header_text(document));
     Statement group(impl_->db,"INSERT INTO import_groups(id,profile,state) VALUES(?,?,0)");group.text(1,id);group.integer(2,static_cast<int>(profile));group.done();
     GroupSelection selection(impl_->selected_account);
@@ -311,6 +328,7 @@ app::ImportGroup ImportStore::prepare_import_group(std::string_view id,std::stri
 app::ImportGroup ImportStore::resume_import_group(std::string_view id,app::OperationContext& context) {
     diag::Span phaseSpan(diag::Code::import_prepare);
     auto group=import_group(id);if(group.state!=app::GroupState::captured){context.seal();return group;}
+    ImportActionScope action_scope(impl_->import_action,id);
     GroupSelection selection(impl_->selected_account);Atomic transaction(impl_->db);
     for(const auto& member:group.accounts) {
         impl_->selected_account=member.account;const auto b=batch(impl_->db,member.batch);
@@ -326,54 +344,27 @@ app::ImportGroup ImportStore::resume_import_group(std::string_view id,app::Opera
     resolve_group_transfers(id,context);
     generate_explicit_transfers(&context);
     stage_import_categories(id,context);
+    Statement awaiting(impl_->db,"SELECT resolved FROM import_category_decisions WHERE source=?");awaiting.text(1,id);if(!awaiting.row())fail(SQLITE_CORRUPT);
+    complete_import_action(id,awaiting.integer(0)==0);
     context.seal();finish([&]{transaction.commit();});return import_group(id);
 }
 void ImportStore::review_import_balance(std::string_view,std::size_t,std::int64_t,app::ReportedBalanceChoice,std::string_view) {
     fail(SQLITE_CONSTRAINT,"Opening is chosen during account creation; use Correct opening to change it");
 }
 void ImportStore::abort_import_group(std::string_view id) {
-    ScopedStatements plans(impl_->db);
-    const auto group=import_group(id);if(group.state==app::GroupState::aborted){Statement retired(impl_->db,"SELECT 1 FROM retired_import_accounts WHERE account_id=spentit_account()");if(retired.row())impl_->selected_account=smallest_active_account(impl_->db);return;}
-    if(group.state==app::GroupState::started)fail(SQLITE_CONSTRAINT,"This import has committed effects; whole-import Abort is no longer available");
-    GroupSelection selection(impl_->selected_account);Atomic transaction(impl_->db);
-    // Release both independently imported sides before discarding any member.
-    // This is independent of account order, including reciprocal account cycles.
-    std::set<std::string> member_batches;for(const auto& member:group.accounts)member_batches.insert(member.batch);
-    std::map<std::int64_t,Money> starting_balances; // Clearing these draft-only links cannot change committed money.
-    for(auto value:all_transfers()) {
-        if(!value.link.origin.independent_evidence || !value.link.destination.independent_evidence ||
-           !member_batches.contains(value.link.origin.endpoint.entry.batch) || !member_batches.contains(value.link.destination.endpoint.entry.batch) ||
-           value.link.origin.state==transfers::State::committed || value.link.destination.state==transfers::State::committed)continue;
-        for(const auto account:{value.link.origin.endpoint.account,value.link.destination.endpoint.account}) {
-            if((account==value.link.origin.endpoint.account?value.link.origin:value.link.destination).state==transfers::State::removed)continue;
-            impl_->selected_account=account;const auto sequence=transfer_sequence();if(sequence==INT64_MAX)fail(SQLITE_FULL);
-            app::TransferRequest request{};request.action=app::TransferAction::clear_local;request.link=value.link.identity;request.expected_sequence=sequence;
-            const auto next=transition_transfer(value,request,account);
-            if(transfer_codec::encode(next)==transfer_codec::encode(value))continue;
-            const auto operation="group-clear-"+std::to_string(sequence+1);
-            auto balance=starting_balances.find(account);
-            if(balance==starting_balances.end())balance=starting_balances.emplace(account,committed_balance()).first;
-            const auto before=balance->second;const Money zero(0,before.currency());
-            Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,operation);event.integer(2,account);event.blob(3,transfer_codec::encode(request));event.integer(4,0);event.integer(5,0);event.done();
-            store_transfer(impl_->db,next,sequence+1,false);
-            append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,zero,before,"",sequence,catalog_sequence(impl_->db));value=next;
-        }
+    identifier(id);
+    if(const auto done=import_group_outcome(id);done && done->state==app::GroupState::aborted)return;
+    const auto pending=ActionChain(impl_->db).preparing();
+    if(pending) {
+        if(pending->id!=id)fail(SQLITE_CONSTRAINT,"Finish or cancel the current import first.");
+        if(ActionChain(impl_->db).import_stage(id)==app::ImportStage::captured){(void)cleanup_incomplete_imports(id);return;}
+        struct Cancel {std::string& value;~Cancel(){value.clear();}} cancel{impl_->cancelling_import};
+        impl_->cancelling_import=id;
+        (void)rollback_scope("abort-"+std::string(id),ledger_edit_generation(),id);return;
     }
-    for(const auto& member:group.accounts) {
-        impl_->selected_account=member.account;const auto b=batch(impl_->db,member.batch);
-        if(b.state!=app::BatchState::pending && b.state!=app::BatchState::captured)fail(SQLITE_CONSTRAINT,"Import group has committed or protected effects");
-        if(!protected_import_rows(member.batch).empty())fail(SQLITE_CONSTRAINT,"Import group has protected effects");
-        (void)transfer_import_transition(member.batch,"group-abort-"+member.batch+"-"+std::to_string(b.revision),false);
-        advance(impl_->db,member.batch,b.revision,"discard",2);
-    }
-    for(const auto& member:group.accounts)if(member.created) {
-        Statement used(impl_->db,"SELECT 1 FROM batches WHERE account_id=? AND source_id!=? AND state!=2");used.integer(1,member.account);used.text(2,id);
-        bool unused=!used.row() && !account_by_id(member.account).frozen;
-        for(const auto& transfer:all_transfers())if((transfer.link.origin.endpoint.account==member.account || transfer.link.destination.endpoint.account==member.account) && (transfer.link.origin.state!=transfers::State::removed || transfer.link.destination.state!=transfers::State::removed))unused=false;
-        if(unused){Statement retired(impl_->db,"INSERT INTO retired_import_accounts VALUES(?,?)");retired.integer(1,member.account);retired.text(2,id);retired.done();}
-    }
-    Statement update(impl_->db,"UPDATE import_groups SET state=3 WHERE id=?");update.text(1,id);update.done();finish([&]{transaction.commit();});
-    Statement retired(impl_->db,"SELECT 1 FROM retired_import_accounts WHERE account_id=?");retired.integer(1,selection.prior);if(retired.row())selection.prior=smallest_active_account(impl_->db);
+    // Completed imports use the same head/empty-chain and ownership policy as
+    // every other whole-import removal. Setup definitions are retained.
+    (void)undo_import("abort-"+std::string(id),id,ledger_edit_generation());
 }
 void ImportStore::require_group_ready(std::string_view batch_id) const {
     Statement categories(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=0");categories.text(1,batch_id);
@@ -406,7 +397,7 @@ void ImportStore::verify_import_groups(const app::OperationContext* context) con
     for(const auto& group:import_groups()) {
         if(context)context->checkpoint("Verifying grouped source review");
         Statement states(impl_->db,"SELECT state FROM import_group_events WHERE group_id=? ORDER BY sequence");states.text(1,group.id);
-        int prior=-1;while(states.row()){const auto next=static_cast<int>(states.integer(0));if(!((prior==-1 && next==0) || (prior==0 && (next==1 || next==3)) || (prior==1 && (next==2 || next==3))))fail(SQLITE_CORRUPT,"Invalid group transition history");prior=next;}
+        int prior=-1;while(states.row()){const auto next=static_cast<int>(states.integer(0));if(!((prior==-1 && next==0) || (prior==0 && (next==1 || next==3)) || (prior==1 && (next==2 || next==3)) || (prior==2 && next==1)))fail(SQLITE_CORRUPT,"Invalid group transition history");prior=next;}
         if(prior!=static_cast<int>(group.state))fail(SQLITE_CORRUPT,"Group history does not replay");
 
         if(group.state==app::GroupState::started && !group.accounts.empty()) {

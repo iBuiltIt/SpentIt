@@ -203,8 +203,9 @@ app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const ap
     auto compiled=compile_images(impl_->db,request.ordered,true);
     { rules::RuleSet compiled_set(std::move(compiled)); }
     context.checkpoint("Saving rules");
-    context.seal();
-    Atomic transaction(impl_->db);
+    if(!impl_->composing_rule_save)context.seal();
+    std::unique_ptr<Atomic> transaction;
+    if(!impl_->composing_rule_save)transaction=std::make_unique<Atomic>(impl_->db);
     const auto current=ruleset_revision(impl_->db);
     if(current!=expected) fail(SQLITE_CONSTRAINT,refresh_rules);
     auto heads=stored_heads(impl_->db);
@@ -241,7 +242,7 @@ app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const ap
     }
     session_snapshot::completed(impl_->db,operation,"rule-save",digest);
     Statement bump(impl_->db,"UPDATE rule_state SET revision=? WHERE singleton=1 AND revision=?");bump.integer(1,current+1);bump.integer(2,current);bump.done();
-    finish([&]{transaction.commit();});
+    finish([&]{if(transaction)transaction->commit();},true);
     return *rule_save_outcome(operation);
 }
 std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string_view operation) const {
@@ -262,7 +263,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
     const auto scope=(request.single_rule || request.account_scope)?PreparedScope{}:pending_scope(*this,request.batch);
     if(scope.present && request.batch_revision!=-1 && request.batch_revision!=scope.batch_revision) fail(SQLITE_CONSTRAINT,refresh_rules);
     app::RulePreviewResult result;result.batch=scope.batch;result.batch_revision=scope.batch_revision;result.catalog_revision=catalog_sequence(impl_->db);result.replace_manual=request.replace_manual;result.unsaved_rules=request.editor.has_value();result.ruleset_revision=request.editor?-1:ruleset_revision(impl_->db);
-    if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+    if(!impl_->composing_rule_save && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     result.account_request={account().identity,review_generation(impl_->db),ruleset_revision(impl_->db),result.catalog_revision,request.new_only,request.replace_manual,request.saved_rule};
     auto definitions=rules_at(impl_->db,ruleset_revision(impl_->db));
     std::string selected=request.saved_rule;
@@ -353,7 +354,7 @@ app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operatio
         return {"",scope.batch,scope.batch_revision,scope.batch_revision,ruleset_revision(impl_->db),catalog,request.replace_manual,0,0};
     }
     if(scope.batch_revision!=request.batch_revision || ruleset_revision(impl_->db)!=request.ruleset_revision || catalog!=request.catalog_revision)fail(SQLITE_CONSTRAINT,refresh_rules);
-    if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+    if(!impl_->composing_rule_save && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     struct Prepared { imports::Occurrence identity; imports::DraftRow before; imports::Decision decision; app::RuleProposal proposal; std::vector<app::RuleFieldDiff> diffs; };
     std::vector<Prepared> prepared;
     std::size_t evaluated=0,prepared_bytes=0;
@@ -398,8 +399,12 @@ app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operatio
         advance(impl_->db,scope.batch,request.batch_revision,"apply_rules");
     }
     Statement application(impl_->db,"INSERT INTO rule_applications VALUES(?,?,?,?,?,?,?,?,?)");application.text(1,operation);application.text(2,scope.batch);application.integer(3,request.batch_revision);application.integer(4,after_revision);application.integer(5,request.ruleset_revision);application.integer(6,request.catalog_revision);application.integer(7,request.replace_manual?1:0);application.integer(8,integer(evaluated));application.integer(9,integer(changed));application.done();
+    if(changed && impl_->import_action.empty() && !impl_->composing_review) {
+        record_transaction_action(operation,"rules-pending",request_hash,{});
+        Statement members(impl_->db,"INSERT INTO review_members SELECT ?1,v.batch,v.ordinal,0,(SELECT max(p.revision) FROM versions p WHERE p.batch=v.batch AND p.ordinal=v.ordinal AND p.revision<v.revision),v.revision,?1||'-pending-'||v.ordinal FROM versions v WHERE v.batch=?2 AND v.revision=?3");members.text(1,operation);members.text(2,scope.batch);members.integer(3,after_revision);members.done();
+    }
     session_snapshot::completed(impl_->db,operation,"rule-apply",request_hash);
-    finish([&]{transaction.commit();});
+    finish([&]{transaction.commit();},changed==0);
     return *rule_apply_outcome(operation);
 }
 app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence& id,const app::OperationContext& context) const {
@@ -414,7 +419,7 @@ app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence& id,cons
     app::RuleMatch match;
     try {
         context.checkpoint("Evaluating rules");
-        if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+        if(!impl_->composing_rule_save && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
         app::RowView row;row.identity=id;row.source=viewed.source;row.draft=draft;
         rules::RuleSet ruleset(rules_at(impl_->db,ruleset_revision(impl_->db)));
         auto proposals=app::preview_rules(ruleset,category_catalog(),inputs_from({row},*this),false,[&]{return context.state.load()==app::OperationContext::requested;});

@@ -119,6 +119,16 @@ void ImportStore::verify_link_exclusions() const {
         try{const auto pattern=exclusion_pattern(rule);(void)pattern;}catch(const rules::RegexError&){fail(SQLITE_CORRUPT,"Invalid retained link exclusion");}
         Statement registered(impl_->db,"SELECT 1 FROM operation_registry WHERE id=? AND domain=6");registered.text(1,events.bytes(0));if(!registered.row())fail(SQLITE_CORRUPT);
     }
+    Statement inverses(impl_->db,R"SQL(
+SELECT 1 FROM review_undos u JOIN review_answers a ON a.id=u.answer
+JOIN link_exclusion_events f ON f.operation=a.id
+LEFT JOIN link_exclusion_events e ON e.operation=u.id||'-exclusion'
+LEFT JOIN link_exclusion_events p ON p.identity=f.identity AND p.sequence=(SELECT max(sequence) FROM link_exclusion_events WHERE identity=f.identity AND sequence<f.sequence)
+WHERE a.question='review-exclusion' AND (e.operation IS NULL OR e.sequence<=f.sequence OR e.identity!=f.identity
+ OR e.field!=coalesce(p.field,f.field) OR e.expression!=coalesce(p.expression,f.expression)
+ OR e.account!=coalesce(p.account,f.account) OR e.regex!=coalesce(p.regex,f.regex) OR e.removed!=coalesce(p.removed,1))
+)SQL");
+    if(inverses.row())fail(SQLITE_CORRUPT,"Transfer exclusion restoration is inconsistent");
     const auto current=link_exclusions();if(std::count_if(current.begin(),current.end(),[](const auto& rule){return !rule.removed;})>128)fail(SQLITE_CORRUPT);
 }
 app::LinkExclusionPreview ImportStore::preview_link_exclusion(const app::LinkExclusion& rule) const {
@@ -145,6 +155,10 @@ app::ReviewReceipt ImportStore::save_link_exclusion(std::string_view operation,c
     Atomic transaction(impl_->db);
     Statement event(impl_->db,"INSERT INTO link_exclusion_events VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM link_exclusion_events),?,?,?,?,?,?,?)");
     event.text(1,operation);event.text(2,rule.identity);event.text(3,rule.field);event.text(4,rule.expression);event.integer(5,rule.account);event.integer(6,rule.regex);event.integer(7,rule.removed);event.integer(8,generation);event.done();
+    transfer_codec::Writer request;request.text(rule.identity);request.text(rule.field);request.text(rule.expression);request.number(rule.account);request.number(rule.regex);request.number(rule.removed);request.number(generation);
+    const auto digest=session_snapshot::digest(request.bytes);
+    record_transaction_action(operation,"review-exclusion",digest,{});
+    session_snapshot::completed(impl_->db,operation,"exclusion",digest);
     finish([&]{transaction.commit();});return {std::string(operation)};
 }
 app::ReviewSheet ImportStore::review_sheet() const {
@@ -157,8 +171,8 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     ScopedStatements plans(impl_->db);
     struct Scope{Impl& state;std::int64_t selected;~Scope(){state.selected_account=selected;}} scope{*impl_,impl_->selected_account};
     app::ReviewSheet result;result.generation=review_generation(impl_->db);
-    Statement undo(impl_->db,"SELECT s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
-    result.can_undo=undo.row() && undo.integer(0)==result.generation && undo.bytes(1)!="ledger-edit" && undo.bytes(1)!="ledger-edit-batch" && undo.bytes(1)!="ledger-delete" && undo.bytes(1)!="rules-account";
+    Statement undo(impl_->db,"SELECT a.id,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
+    result.can_undo=undo.row() && action_head() && action_head()->id==undo.bytes(0) && undo.bytes(1)!="ledger-edit" && undo.bytes(1)!="ledger-edit-batch" && undo.bytes(1)!="ledger-delete" && undo.bytes(1)!="rules-account";
     std::map<imports::Occurrence,app::ReviewTransaction> rows;
     std::set<imports::Occurrence> unresolved;
     auto all_accounts=accounts();const auto archived=archived_accounts();all_accounts.insert(all_accounts.end(),archived.begin(),archived.end());
@@ -374,8 +388,8 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     return result;
 }
 std::optional<app::ReviewReceipt> ImportStore::review_outcome(std::string_view operation) const {
-    if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
-    Statement s(impl_->db,"SELECT id FROM review_answers WHERE id=?1 UNION ALL SELECT id FROM review_undos WHERE id=?1 UNION ALL SELECT operation FROM link_exclusion_events WHERE operation=?1 UNION ALL SELECT id FROM command_completions WHERE id=?1 AND domain IN('editor','selection')");s.text(1,operation);if(!s.row())return {};return app::ReviewReceipt{std::string(operation)};
+    if(!impl_->composing_rule_save && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    Statement s(impl_->db,"SELECT id FROM review_answers WHERE id=?1 UNION ALL SELECT id FROM review_undos WHERE id=?1 UNION ALL SELECT operation FROM link_exclusion_events WHERE operation=?1 UNION ALL SELECT id FROM command_completions WHERE id=?1 AND domain IN('editor','selection','save-apply')");s.text(1,operation);if(!s.row())return {};return app::ReviewReceipt{std::string(operation)};
 }
 imports::DraftRow ImportStore::review_draft(const imports::Occurrence& id,std::int64_t revision) const {
     const auto original=load_row(id,false).source;const auto currency=account_for_batch(id.batch).currency;
@@ -394,13 +408,13 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
     const auto source=committed?current_entry->source:load_row(id,false).source;
     imports::validate_draft(source,draft,source.source_currency && *source.source_currency!=draft.transaction.effective_total().currency());
     std::optional<ReviewRestore> loaded_restore;
-    if(committed && undoing && !known_restore){
+    if(undoing && !known_restore){
         Statement saved(impl_->db,"SELECT prior,result,child FROM review_members WHERE answer=? AND batch=? AND ordinal=?");saved.text(1,answer);saved.text(2,id.batch);saved.integer(3,integer(id.ordinal));if(!saved.row())fail(SQLITE_CORRUPT);
         loaded_restore=ReviewRestore{saved.integer(0),saved.integer(1),saved.bytes(2)};known_restore=&*loaded_restore;
     }
     if(committed){
         const auto& current=*current_entry;prior=current.current.revision;if(prior==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");result=prior+1;
-        if(undoing){const auto expected=known_restore->result==current.current.revision?current.current:entry_snapshot(id,known_restore->result,&source);if(expected.active!=current.current.active || !same_draft(expected.draft,current.current.draft))fail(SQLITE_CONSTRAINT,"Later transaction changes prevent Review Undo");}
+        if(undoing){const auto expected=known_restore->result==current.current.revision?current.current:entry_snapshot(id,known_restore->result,&source);if(!review_restores_revision(impl_->db,id,true,current.current.revision,known_restore->result) || expected.active!=current.current.active || !same_draft(expected.draft,current.current.draft))fail(SQLITE_CONSTRAINT,"Later transaction changes prevent Review Undo");}
         auto after=current.current;after.revision=result;after.active=active;after.draft=draft;
         const auto before=running_balance?*running_balance:unchanged_balance?*unchanged_balance:committed_balance();const Money zero(0,before.currency());
         const auto delta=(active?draft.transaction.effective_total():zero)-(current.current.active?current.current.draft.transaction.effective_total():zero);
@@ -417,10 +431,10 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
         if(undoing)undo_of=known_restore->child;
         append_financial(impl_->db,child,undoing?app::ChangeKind::undo:active?app::ChangeKind::correct:app::ChangeKind::remove,id,prior,result,before,delta,before+delta,undo_of,financial_sequence(impl_->db),catalog_sequence(impl_->db));
         if(running_balance)*running_balance=before+delta;
-        if(undoing){Statement member(impl_->db,"INSERT INTO review_undo_members SELECT id,?1,?2 FROM review_undos WHERE answer=?3");member.text(1,child);member.text(2,undo_of);member.text(3,answer);member.done();}
         for(const auto& dependency:current.token.dependencies){Statement d(impl_->db,"INSERT INTO change_dependencies VALUES(?,?,?,?)");d.text(1,child);d.text(2,dependency.batch);d.integer(3,dependency.revision);d.integer(4,static_cast<int>(dependency.state));d.done();}
     }else{
         Statement v(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");v.text(1,id.batch);v.integer(2,integer(id.ordinal));if(!v.row() || v.null(0))fail(SQLITE_CORRUPT);prior=v.integer(0);
+        if(undoing && !review_restores_revision(impl_->db,id,false,prior,known_restore->result))fail(SQLITE_CONSTRAINT,"Later transaction changes prevent Undo");
         const auto info=batch(impl_->db,id.batch);if(info.revision==INT64_MAX)fail(SQLITE_FULL);result=info.revision+1;
         const auto old=load_row(id,false);const auto kind=fresh_review && old.draft && same_draft(*old.draft,draft)?"decide":"save";
         std::optional<std::int64_t> ruleset;
@@ -430,6 +444,7 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
         if(applied_ruleset)ruleset=applied_ruleset;
         version(impl_->db,id,result,draft,decision,fresh_review,ruleset);advance(impl_->db,id.batch,info.revision,kind,static_cast<int>(info.state));
     }
+    if(undoing){Statement member(impl_->db,"INSERT INTO review_undo_members SELECT id,?1,?2,?4,?5 FROM review_undos WHERE answer=?3");member.text(1,child);member.text(2,known_restore->child);member.text(3,answer);member.integer(4,prior);member.integer(5,result);member.done();}
     if(!undoing){Statement member(impl_->db,"INSERT INTO review_members VALUES(?,?,?,?,?,?,?)");member.text(1,answer);member.text(2,id.batch);member.integer(3,integer(id.ordinal));member.integer(4,committed?1:0);member.integer(5,prior);member.integer(6,result);member.text(7,child);member.done();}
 }
 app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const app::ReviewAnswer& answer) {
@@ -460,8 +475,8 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
         app::TransferRequest request{};request.action=app::TransferAction::accept;request.link=old->link.identity;request.expected_sequence=transfer_sequence();
         const auto child=std::string(operation)+"-accept";apply_transfer(child,request);impl_->composing_review=false;
         const auto updated=all_transfers();const auto next=std::find_if(updated.begin(),updated.end(),[&](const auto& v){return v.link.identity==request.link;});
-        Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,request.link);history.blob(3,transfer_codec::encode(*old));history.blob(4,transfer_codec::encode(*next));history.text(5,child);history.done();
-        Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();
+        Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");history.text(1,operation);history.text(2,request.link);history.blob(3,transfer_codec::encode(*old));history.blob(4,transfer_codec::encode(*next));history.text(5,child);history.integer(6,old->sequence);history.done();
+        Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();impl_->pending_review_action=operation;
         finish([&]{transaction.commit();});return {std::string(operation)};
     }
     const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){return q.key==answer.question;});if(question==sheet.questions.end())fail(SQLITE_CONSTRAINT,"This question has already changed");
@@ -592,11 +607,11 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
             for(const auto& value:all_transfers()){
                 const auto old=std::find_if(prior.begin(),prior.end(),[&](const auto& v){return v.link.identity==value.link.identity;});const auto payload=transfer_codec::encode(value);
                 if(old!=prior.end() && payload==transfer_codec::encode(*old))continue;
-                Statement h(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");h.text(1,operation);h.text(2,value.link.identity);if(old!=prior.end())h.blob(3,transfer_codec::encode(*old));h.blob(4,payload);h.text(5,link_operation);h.done();
+                Statement h(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");h.text(1,operation);h.text(2,value.link.identity);if(old!=prior.end())h.blob(3,transfer_codec::encode(*old));h.blob(4,payload);Statement saved_link(impl_->db,"SELECT l.id FROM ledger_operations l JOIN transfer_heads t ON t.sequence=l.sequence WHERE t.identity=?");saved_link.text(1,value.link.identity);if(!saved_link.row())fail(SQLITE_CORRUPT);h.text(5,saved_link.bytes(0));h.integer(6,old==prior.end()?0:old->sequence);h.done();
             }
         }
     }
-    if(parent.empty()){Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();finish([&]{transaction->commit();});if(same)retain_review_ledger_entries(*impl_,cache_changes,selected);}
+    if(parent.empty()){Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();impl_->pending_review_action=operation;finish([&]{transaction->commit();});if(same)retain_review_ledger_entries(*impl_,cache_changes,selected);}
     return {std::string(operation)};
 }
 app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
@@ -606,7 +621,12 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     Statement top(impl_->db,"SELECT answer,generation FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1");
     if(!top.row())fail(SQLITE_CONSTRAINT,"There is no Review decision to undo");
     const auto answer=top.bytes(0);const auto generation=top.integer(1);if(generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
-    if(generation!=review_generation(impl_->db))fail(SQLITE_CONSTRAINT,"Later changes prevent Review Undo");
+    const auto common_head=action_head();
+    if(!common_head || common_head->id!=answer)fail(SQLITE_CONSTRAINT,"Undo the latest action first.");
+    if(!impl_->undo_token) {
+        const auto result=undo_action(operation,preview_undo(answer,action_token()));
+        return {result.operation};
+    }
     struct Scope{Impl& state;std::int64_t selected;bool cleaning;~Scope(){state.selected_account=selected;state.cleaning=cleaning;}} scope{*impl_,impl_->selected_account,impl_->cleaning};
     const auto cache_changes=sqlite3_total_changes64(impl_->db);
     std::set<imports::Occurrence> cache_changed;
@@ -638,6 +658,7 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
         }
     }
     std::size_t child=0;for(const auto& id:ids)restore_review_answer(std::string(operation)+"-group-"+std::to_string(++child),id);
+    if(impl_->legacy_undo_finalize)impl_->legacy_undo_finalize();
     Statement pop(impl_->db,"DELETE FROM review_stack WHERE answer=?");pop.text(1,answer);pop.done();
     // Reversing the top decision makes the preceding stack entry current again.
     Statement prior(impl_->db,"UPDATE review_stack SET generation=? WHERE answer=(SELECT answer FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1) AND generation=(SELECT generation FROM review_answers WHERE id=?2)");prior.integer(1,generation+1);prior.text(2,answer);prior.done();
@@ -649,11 +670,22 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
 void ImportStore::restore_review_answer(std::string_view operation,std::string_view answer) {
     const auto prior_cleaning=impl_->cleaning;
     Statement receipt(impl_->db,"INSERT INTO review_undos VALUES(?,?)");receipt.text(1,operation);receipt.text(2,answer);receipt.done();
+    {Statement exclusion(impl_->db,"SELECT e.identity,e.field,e.expression,e.account,e.regex,e.removed,e.sequence FROM link_exclusion_events e JOIN review_answers a ON a.id=e.operation WHERE e.operation=? AND a.question='review-exclusion'");exclusion.text(1,answer);
+     if(exclusion.row()){
+        const auto identity=exclusion.bytes(0);auto field=exclusion.bytes(1),expression=exclusion.bytes(2);auto account=exclusion.integer(3),regex=exclusion.integer(4),removed=std::int64_t{1};
+        Statement previous(impl_->db,"SELECT field,expression,account,regex,removed FROM link_exclusion_events WHERE identity=? AND sequence<? ORDER BY sequence DESC LIMIT 1");previous.text(1,identity);previous.integer(2,exclusion.integer(6));
+        if(previous.row()){field=previous.bytes(0);expression=previous.bytes(1);account=previous.integer(2);regex=previous.integer(3);removed=previous.integer(4);}
+        Statement inverse(impl_->db,"INSERT INTO link_exclusion_events VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM link_exclusion_events),?,?,?,?,?,?,?)");inverse.text(1,std::string(operation)+"-exclusion");inverse.text(2,identity);inverse.text(3,field);inverse.text(4,expression);inverse.integer(5,account);inverse.integer(6,regex);inverse.integer(7,removed);inverse.integer(8,ledger_edit_generation());inverse.done();
+     }}
     // Restore transfer relationships first, then allocation snapshots. All writes
     // remain inside this single transaction, so no intermediate state is visible.
-    Statement links(impl_->db,"SELECT identity,prior_payload,result_payload FROM review_link_history WHERE answer=?");links.text(1,answer);
+    Statement links(impl_->db,"SELECT identity,prior_payload,result_payload,operation,prior_sequence FROM review_link_history WHERE answer=?");links.text(1,answer);
     std::vector<app::TransferView> restored;
+    std::map<std::string,std::pair<std::int64_t,std::int64_t>> link_lineage;
     while(links.row()){
+        Statement original(impl_->db,"SELECT l.sequence,h.sequence,(SELECT coalesce(max(v.sequence),0) FROM transfer_versions v WHERE v.identity=h.identity AND v.sequence<l.sequence) FROM ledger_operations l JOIN transfer_heads h ON h.identity=?2 WHERE l.id=?1");original.text(1,links.bytes(3));original.text(2,links.bytes(0));
+        if(!original.row() || !review_restores_link(impl_->db,links.bytes(0),original.integer(1),original.integer(0)))fail(SQLITE_CONSTRAINT,"Undo later transfer changes first.");
+        link_lineage.emplace(links.bytes(0),std::pair{original.integer(1),links.integer(4)});
         auto view=transfer_codec::view(links.bytes(2));
         if(!links.null(1))view=transfer_codec::view(links.bytes(1));
         else {undo_new_relationship(view);}
@@ -665,7 +697,14 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
         const auto active_count=[&](const app::TransferView& value){const auto found=std::find_if(current.begin(),current.end(),[&](const auto& v){return v.link.identity==value.link.identity;});if(found==current.end())fail(SQLITE_CORRUPT);return int(found->link.origin.state!=transfers::State::removed)+int(found->link.destination.state!=transfers::State::removed);};
         std::stable_sort(restored.begin(),restored.end(),[&](const auto& a,const auto& b){return active_count(a)>active_count(b);});
         std::size_t link_serial=0;
-        for(const auto& view:restored){
+        for(const auto& target:restored){
+            const auto initial=std::find_if(working.begin(),working.end(),[&](const auto& v){return v.link.identity==target.link.identity;});if(initial==working.end())fail(SQLITE_CORRUPT);
+            const auto origin_account=target.link.origin.endpoint.account,destination_account=target.link.destination.endpoint.account;
+            const bool two_accounts=(local_total({target},origin_account,account_by_id(origin_account).currency,false)-local_total({*initial},origin_account,account_by_id(origin_account).currency,false)).units()!=0 && (local_total({target},destination_account,account_by_id(destination_account).currency,false)-local_total({*initial},destination_account,account_by_id(destination_account).currency,false)).units()!=0;
+            auto intermediate=target;intermediate.link.destination=initial->link.destination;
+            std::int64_t intermediate_sequence=0;
+            for(int stage=two_accounts?1:0;stage<=(two_accounts?2:0);++stage){
+            const auto& view=stage==1?intermediate:target;
             const auto old=std::find_if(working.begin(),working.end(),[&](const auto& v){return v.link.identity==view.link.identity;});if(old==working.end())fail(SQLITE_CORRUPT);
             const auto origin=view.link.origin.endpoint.account,destination=view.link.destination.endpoint.account;
             const auto origin_currency=account_by_id(origin).currency;
@@ -681,17 +720,25 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             balance->second=before+delta;
             const auto previous_sequence=financial_sequence(impl_->db);if(previous_sequence==INT64_MAX)fail(SQLITE_FULL,"History capacity exhausted");const auto sequence=previous_sequence+1;
             const auto child=std::string(operation)+"-links-"+std::to_string(++link_serial);
-            app::TransferRequest request{};request.action=app::TransferAction::review_undo;request.link=answer;request.allocation=view.link.identity;request.expected_sequence=sequence-1;
+            app::TransferRequest request{};request.action=app::TransferAction::review_undo;request.link=answer;request.allocation=view.link.identity;request.expected_sequence=sequence-1;request.mode=stage;
             Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,child);event.integer(2,impl_->selected_account);event.blob(3,transfer_codec::encode(request));event.integer(4,delta.units()!=0?1:0);event.integer(5,delta.units());event.done();
             store_transfer(impl_->db,view,sequence,false);
+            const auto lineage=link_lineage.at(view.link.identity);
+            if(stage==1)intermediate_sequence=sequence;
+            else { Statement restoration(impl_->db,"INSERT INTO review_link_restorations VALUES(?,?,?,?,?,?)");restoration.text(1,operation);restoration.text(2,view.link.identity);restoration.integer(3,lineage.first);restoration.integer(4,sequence);restoration.integer(5,lineage.second);restoration.integer(6,intermediate_sequence);restoration.done();}
             append_financial(impl_->db,child,app::ChangeKind::transfer,{"",0},-1,0,before,delta,before+delta,"",sequence-1,catalog_sequence(impl_->db));
+            }
         }
     }
     Statement edit(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND (question IN('ledger-edit','ledger-edit-batch','ledger-delete','rules-account') OR question LIKE 'ledger-delete-kept:%')");edit.text(1,answer);const bool editor_undo=edit.row();
     Statement rules_group(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question='rules-account'");rules_group.text(1,answer);const bool rules_undo=rules_group.row();
     std::map<std::int64_t,Money> rule_balances, balances;
     std::size_t serial=0;
-    Statement members(impl_->db,"SELECT batch,ordinal,committed,prior,result,child FROM review_members WHERE answer=? ORDER BY rowid DESC");members.text(1,answer);
+    Statement root_kind(impl_->db,"SELECT question FROM review_answers WHERE id=?");root_kind.text(1,answer);if(!root_kind.row())fail(SQLITE_CORRUPT);
+    const bool direct=root_kind.bytes(0)=="ledger-committed" || (root_kind.bytes(0)=="ledger-edit" && impl_->legacy_undo_domain=="committed");
+    const bool grouped=root_kind.bytes(0)=="ledger-bulk" || root_kind.bytes(0)=="rules-reapply";
+    const auto next_child=[&]{if(direct)return std::string(operation);if(grouped){const auto index=serial++;return index==0?std::string(operation):std::string(operation)+"-"+std::to_string(index);}return std::string(operation)+"-"+std::to_string(++serial);};
+    Statement members(impl_->db,grouped?"SELECT batch,ordinal,committed,prior,result,child FROM review_members WHERE answer=? ORDER BY rowid":"SELECT batch,ordinal,committed,prior,result,child FROM review_members WHERE answer=? ORDER BY rowid DESC");members.text(1,answer);
     while(members.row()){
         const imports::Occurrence id{members.bytes(0),static_cast<std::size_t>(members.integer(1))};impl_->selected_account=account_for_batch(id.batch).identity;
         if(members.integer(2)){
@@ -702,14 +749,30 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             if(rules_undo){auto it=rule_balances.find(impl_->selected_account);if(it==rule_balances.end())it=rule_balances.emplace(impl_->selected_account,committed_balance()).first;unchanged=it->second;}
             auto balance=balances.find(impl_->selected_account);
             if(balance==balances.end())balance=balances.emplace(impl_->selected_account,committed_balance()).first;
-            write_review_row(answer,std::string(operation)+"-"+std::to_string(++serial),id,before.draft,{imports::Disposition::include,{}},before.active,true,true,{},unchanged,&balance->second,&current,&restore);
+            write_review_row(answer,next_child(),id,before.draft,{imports::Disposition::include,{}},before.active,true,true,{},unchanged,&balance->second,&current,&restore);
         }else{
             Statement decision(impl_->db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? AND revision=?");decision.text(1,id.batch);decision.integer(2,integer(id.ordinal));decision.integer(3,members.integer(3));if(!decision.row())fail(SQLITE_CORRUPT);
             imports::Decision value{static_cast<imports::Disposition>(decision.integer(0)),{}};if(value.disposition==imports::Disposition::duplicate)value.duplicate_of=imports::Occurrence{decision.bytes(1),static_cast<std::size_t>(decision.integer(2))};
-            write_review_row(answer,std::string(operation)+"-"+std::to_string(++serial),id,review_draft(id,members.integer(3)),value,true,true,!editor_undo);
+            write_review_row(answer,next_child(),id,review_draft(id,members.integer(3)),value,true,true,!editor_undo);
         }
     }
     impl_->cleaning=true;
+    // A direct bank-source match owns only the association it created. The
+    // source row remains and becomes visible again when that action is undone.
+    {Statement matches(impl_->db,"DELETE FROM generated_source_matches AS g WHERE EXISTS(SELECT 1 FROM review_link_history h JOIN ledger_operations l ON l.id=h.operation WHERE h.answer=? AND h.identity=g.link AND g.sequence>h.prior_sequence AND g.sequence<=l.sequence)");matches.text(1,answer);matches.done();}
+    {Statement repair(impl_->db,"SELECT batch,ordinal,blocked,result FROM review_repairs WHERE answer=?");repair.text(1,answer);
+     if(repair.row()){
+        const imports::Occurrence id{repair.bytes(0),static_cast<std::size_t>(repair.integer(1))};const auto state=batch(impl_->db,id.batch);
+        Statement latest(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");latest.text(1,id.batch);latest.integer(2,integer(id.ordinal));if(!latest.row() || !review_restores_revision(impl_->db,id,false,latest.integer(0),repair.integer(3)))fail(SQLITE_CONSTRAINT,"Undo later transaction changes first.");
+        {Statement inverse(impl_->db,"DELETE FROM review_undo_members WHERE original_child IN(SELECT child FROM review_members WHERE batch=? AND ordinal=?)");inverse.text(1,id.batch);inverse.integer(2,integer(id.ordinal));inverse.done();Statement members(impl_->db,"DELETE FROM review_members WHERE batch=? AND ordinal=?");members.text(1,id.batch);members.integer(2,integer(id.ordinal));members.done();}
+        for(const auto* table:{"draft_rule_allocations","draft_rule_fields","draft_allocation_meta","draft_fields","allocations","review_stamps","versions","records"}){
+#ifndef SPENTIT_RULES_STORAGE
+            if(std::string_view(table).starts_with("draft_rule"))continue;
+#endif
+            const auto sql="DELETE FROM "+std::string(table)+" WHERE batch=? AND ordinal=?";Statement remove(impl_->db,sql.c_str());remove.text(1,id.batch);remove.integer(2,integer(id.ordinal));remove.done();
+        }
+        advance(impl_->db,id.batch,state.revision,"unrepair",static_cast<int>(state.state),static_cast<int>(repair.integer(2)));
+     }}
     Statement sources(impl_->db,"SELECT source_batch,source_ordinal,prior_batch,prior_ordinal FROM review_sources WHERE answer=?");sources.text(1,answer);
     while(sources.row()){
         Statement del(impl_->db,"DELETE FROM source_associations WHERE source_batch=? AND source_ordinal=?");del.text(1,sources.bytes(0));del.integer(2,sources.integer(1));del.done();
@@ -743,7 +806,7 @@ app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,co
         try{write_review_answer(std::string(operation)+"-group-"+std::to_string(i+1),answers[i],sheet,operation);}
         catch(const storage::ImportError& error){fail(error.code(),("Selected match "+std::to_string(i+1)+": "+error.what()).c_str());}
     }
-    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,sheet.generation+1);stack.done();
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,sheet.generation+1);stack.done();impl_->pending_review_action=operation;
     context.checkpoint("Validating merged matches");
     finish([&]{context.seal();transaction.commit();});
     return {std::string(operation)};
@@ -752,8 +815,8 @@ app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,co
 // Category assignment uses the same durable relationship snapshots and mutation
 // barrier as Review Link. Child transfers never commit outside this transaction.
 bool ImportStore::can_undo_transfer_assignment() const {
-    Statement top(impl_->db,"SELECT s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
-    return top.row() && top.bytes(1)=="transfer-assignment" && top.integer(0)==review_generation(impl_->db);
+    Statement top(impl_->db,"SELECT a.id,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
+    return top.row() && top.bytes(1)=="transfer-assignment" && action_head() && action_head()->kind==app::ActionKind::review && action_head()->id==top.bytes(0);
 }
 app::ReviewReceipt ImportStore::assign_categories(std::string_view operation,const app::CategorySelection& selection,const app::OperationContext& context) {
     identifier(operation);
@@ -881,12 +944,12 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
             const auto old=std::find_if(before.begin(),before.end(),[&](const auto& v){return v.link.identity==value.link.identity;});const auto payload=transfer_codec::encode(value);
             if(old!=before.end() && payload==transfer_codec::encode(*old))continue;
             if(!changed.insert(value.link.identity).second)fail(SQLITE_CONSTRAINT,"Selected transfers affect the same relationship");
-            Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
+            Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
             if(old!=before.end())history.blob(3,transfer_codec::encode(*old));
-            history.blob(4,payload);history.text(5,child);history.done();
+            history.blob(4,payload);history.text(5,child);history.integer(6,old==before.end()?0:old->sequence);history.done();
         }
     }
-    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();impl_->pending_review_action=operation;
     session_snapshot::completed(impl_->db,operation,"transfer-assignment",request_hash);
     context.checkpoint("Validating transfer assignments");
     finish([&]{context.seal();transaction.commit();});return {std::string(operation)};
@@ -901,6 +964,7 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
     const auto encoded=request.bytes;
     session_snapshot::request_draft(request,input);const auto request_hash=session_snapshot::digest(request.bytes);
     session_snapshot::retry(impl_->db,operation,"editor",request_hash);
+    if(const auto outcome=ActionChain(impl_->db).durable_outcome(operation,request_hash);outcome && *outcome==ActionChain::Outcome::no_change)return {std::string(operation)};
     require_account(id.batch);require_writable_account(impl_->db,impl_->selected_account);
     if(const auto receipt=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT a.request,m.committed,m.prior,m.result FROM review_answers a JOIN review_members m ON m.answer=a.id WHERE a.id=? AND a.question='ledger-edit' AND m.batch=? AND m.ordinal=?");
@@ -917,13 +981,13 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
     if(!row.draft || row.excluded_by_clear || row.matched_generated)fail(SQLITE_CONSTRAINT,"Resolve this record before editing");
     const bool committed=transaction_accepted(id);
     if(committed!=token.has_value())fail(SQLITE_CONSTRAINT,"Transaction acceptance changed; refresh before editing");
-    auto canonical=*row.draft;
+    auto canonical=*row.draft;auto original=canonical;
     std::optional<EntryLinkPlan> links;
     const auto before_links=all_transfers();
     if(committed){
         const auto current=committed_entry(id);if(current.token!=*token)fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before editing");
         const auto preview=preview_committed_change({app::ChangeKind::correct,id,input,{}});
-        canonical=preview.after_entry.draft;
+        original=current.current.draft;canonical=preview.after_entry.draft;
         links=plan_entry_links(before_links,id,current.current.draft,canonical,false);
     }else{
         require_unlinked(id);if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"This draft is not editable");
@@ -933,6 +997,11 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
     }
     const auto generation=review_generation(impl_->db);if(generation==INT64_MAX)fail(SQLITE_FULL);
     Atomic transaction(impl_->db);
+    if(same_draft(original,canonical) && (!links || links->changed.empty())){
+        ActionChain(impl_->db).no_change(action_token(),operation,request_hash);
+        session_snapshot::completed(impl_->db,operation,"editor",request_hash);
+        transaction.commit();return {std::string(operation)};
+    }
     Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,'ledger-edit',?,?)");
     receipt.text(1,operation);receipt.text(2,encoded);receipt.integer(3,generation);receipt.done();
     const auto child=std::string(operation)+"-edit";
@@ -941,18 +1010,18 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
         write_entry_links(child,impl_->selected_account,app::TransferAction::relink,financial_sequence(impl_->db),links->changed);
         for(const auto& value:links->changed){
             const auto old=std::find_if(before_links.begin(),before_links.end(),[&](const auto& v){return v.link.identity==value.link.identity;});
-            Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
+            Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
             if(old!=before_links.end())history.blob(3,transfer_codec::encode(*old));
-            history.blob(4,transfer_codec::encode(value));history.text(5,child);history.done();
+            history.blob(4,transfer_codec::encode(value));history.text(5,child);history.integer(6,old==before_links.end()?0:old->sequence);history.done();
         }
     }
-    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();impl_->pending_review_action=operation;
     session_snapshot::completed(impl_->db,operation,"editor",request_hash);
     finish([&]{transaction.commit();});return {std::string(operation)};
 }
 bool ImportStore::can_undo_transaction_edit(std::string_view edit) const {
     Statement top(impl_->db,"SELECT s.answer,s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");
-    return top.row() && top.bytes(0)==edit && (top.bytes(2)=="ledger-edit" || top.bytes(2)=="ledger-edit-batch" || top.bytes(2)=="ledger-delete") && top.integer(1)==review_generation(impl_->db);
+    return top.row() && top.bytes(0)==edit && (top.bytes(2)=="ledger-edit" || top.bytes(2)=="ledger-edit-batch" || top.bytes(2)=="ledger-delete") && action_head() && action_head()->id==edit;
 }
 app::ReviewReceipt ImportStore::undo_transaction_edit(std::string_view operation,std::string_view edit) {
     if(const auto receipt=review_outcome(operation)){

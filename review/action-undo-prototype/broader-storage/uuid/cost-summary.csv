@@ -1,0 +1,7 @@
+workload,rows_per_source,variant,file_bytes,btree_allocated_bytes,btree_payload_bytes,vfs_cumulative_peak,peak_inverse_codec_bytes,peak_pinned_only_codec_bytes
+import,10000,baseline,14061568,14061568,11343616,14230344,0,0
+import,10000,current,12791808,12259328,9720361,14171264,0,0
+import,10000,prototype,21434368,15011840,11868518,28723584,4440323,0
+import,50000,baseline,68014080,68014080,57455057,68183632,0,0
+import,50000,current,61399040,58712064,49156708,68249128,0,0
+import,50000,prototype,105791488,72089600,59831026,143726072,22200323,0

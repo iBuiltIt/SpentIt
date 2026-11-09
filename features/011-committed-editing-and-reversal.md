@@ -1,13 +1,14 @@
 # 011 — Committed editing, removal, and undo
 
-Accepted next direction, 2026-11-08: [unified session action Undo and
-implementation handoff](../doc/action-undo-design.md). One strict file-wide action
-chain includes acceptance, full current-session import reversal and undoable
-removal of eligible older imports. Design/review is complete; the owner approved
-the reviewed design and granted fresh-session implementation Go on 2026-11-08.
-The older mechanisms below describe current code, not the
-new target. Final History layout follows this design; no new runtime behaviour is
-claimed.
+Replacement implementation, 2026-11-09: the owner authorized the
+[replacement design](../doc/action-undo-design.md), including its explicit scope
+choices. Storage and UI now use one newest-first durable action chain with typed
+restoration, reversible acceptance and source-owned import rollback. See the
+[implementation/verification record](../doc/action-undo-implementation.md) for
+executed checks and platform limits. Working formats are 70/69. Successful close
+expires ordinary Undo; eligible import removal survives and requires an empty chain.
+The earlier design-only stop and generic row-capture experiment are historical.
+Final Change History layout remains separate, so this broader feature stays active.
 
 Implementation Go, 2026-11-07: [session-only history and a close-time
 baseline](../doc/session-history-baseline.md). The owner requests ordinary history

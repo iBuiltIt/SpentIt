@@ -28,18 +28,28 @@ void ImportStore::prune_session(const app::OperationContext* context) {
     // identity survives as a fingerprint; expired Undo never needs this text.
     exec(impl_->db,"UPDATE review_answers SET request='' WHERE (question IN('ledger-edit-batch','ledger-delete','transfer-assignment','rules-account') OR question LIKE 'ledger-delete-%') AND request!='' AND id IN(SELECT id FROM command_completions WHERE expired=0)");
     // No changed snapshot means no payload scan/rewrite for an unchanged close.
-    Statement pending(impl_->db,"SELECT 1 FROM draft_fields WHERE baseline=0 UNION ALL SELECT 1 FROM entry_fields WHERE baseline=0 UNION ALL SELECT 1 FROM ledger_operations WHERE sequence>(SELECT financial_cut FROM document_session) LIMIT 1");
-    if(!pending.row()){
+    const bool changed=[&]{Statement pending(impl_->db,"SELECT 1 FROM draft_fields WHERE baseline=0 UNION ALL SELECT 1 FROM entry_fields WHERE baseline=0 UNION ALL SELECT 1 FROM ledger_operations WHERE sequence>(SELECT financial_cut FROM document_session) LIMIT 1");
+    return pending.row();}();
+    if(!changed){
 #ifdef SPENTIT_RULES_STORAGE
         Statement saves(impl_->db,"SELECT 1 FROM command_completions WHERE domain='rule-save' AND expired=0 LIMIT 1");if(saves.row())prune_rule_saves(impl_->db);
 #endif
         exec(impl_->db,"UPDATE command_completions SET expired=1 WHERE expired=0");return;
     }
+    exec(impl_->db,R"SQL(
+CREATE TEMP TABLE IF NOT EXISTS expired_acceptance_operations(id TEXT PRIMARY KEY) WITHOUT ROWID;
+DELETE FROM expired_acceptance_operations;
+INSERT INTO expired_acceptance_operations SELECT operation FROM acceptance_operations WHERE parent IN(SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL);
+INSERT OR IGNORE INTO expired_acceptance_operations SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL AND id IN(SELECT id FROM operations);
+DELETE FROM review_link_restorations;
+DELETE FROM review_link_history WHERE answer IN(SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL);
+DELETE FROM acceptance_operations WHERE parent IN(SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL);
+)SQL");
     // Ordinary editor restoration is not a permanent link-history archive.
     // Keep only the latest live restoration input for each current relationship;
     // Review matching decisions remain dependencies for source-owned rollback.
     exec(impl_->db,R"SQL(
-DELETE FROM review_link_history AS h WHERE answer IN(SELECT id FROM review_answers WHERE question IN('ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR question LIKE 'ledger-delete-%')
+DELETE FROM review_link_history AS h WHERE answer IN(SELECT id FROM review_answers WHERE question IN('ledger-draft','ledger-transfer','ledger-committed','ledger-bulk','rules-pending','rules-reapply','acceptance','ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR question LIKE 'ledger-delete-%')
 AND (EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=h.answer)
  OR NOT EXISTS(SELECT 1 FROM transfer_heads t JOIN transfer_versions v USING(identity,sequence) WHERE t.identity=h.identity AND v.payload=h.result_payload)
  OR EXISTS(SELECT 1 FROM review_link_history n JOIN review_answers newer ON newer.id=n.answer JOIN review_answers older ON older.id=h.answer WHERE n.identity=h.identity AND newer.sequence>older.sequence AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=n.answer)));
@@ -56,6 +66,7 @@ AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.link=v.identity 
 AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.link=v.identity AND v.sequence=(SELECT max(p.sequence) FROM transfer_versions p WHERE p.identity=g.link AND p.sequence<g.sequence));
 DELETE FROM transfer_events WHERE NOT EXISTS(SELECT 1 FROM ledger_operations l JOIN transfer_versions v ON v.sequence=l.sequence WHERE l.id=transfer_events.operation)
 AND NOT EXISTS(SELECT 1 FROM acceptance_operations a WHERE a.operation=transfer_events.operation)
+AND NOT EXISTS(SELECT 1 FROM acceptance_states a WHERE a.id=transfer_events.operation AND a.undo_id IS NULL)
 AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.operation=transfer_events.operation);
 )SQL");
     exec(impl_->db,R"SQL(
@@ -63,11 +74,11 @@ CREATE TEMP TABLE IF NOT EXISTS session_keep(kind INTEGER,batch TEXT,ordinal INT
 DELETE FROM session_keep;
 -- Current state, immutable acceptance references, and original/manual origins.
 INSERT OR IGNORE INTO session_keep SELECT 1,batch,ordinal,revision FROM entry_heads;
-INSERT OR IGNORE INTO session_keep SELECT 1,batch,ordinal,0 FROM entry_revisions WHERE revision=0;
+INSERT OR IGNORE INTO session_keep SELECT 1,a.batch,a.ordinal,m.publication_revision FROM accepted_transactions a JOIN acceptance_members m ON m.operation=a.operation AND m.ordinal=a.ordinal;
 INSERT OR IGNORE INTO session_keep SELECT 0,batch,ordinal,min(revision) FROM versions GROUP BY batch,ordinal;
 INSERT OR IGNORE INTO session_keep SELECT 0,batch,ordinal,max(revision) FROM versions GROUP BY batch,ordinal;
-INSERT OR IGNORE INTO session_keep SELECT 0,batch,ordinal,draft_revision FROM entry_revisions WHERE draft_revision IS NOT NULL;
-INSERT OR IGNORE INTO session_keep SELECT 0,o.batch,m.ordinal,m.draft_revision FROM acceptance_members m JOIN operations o ON o.id=m.operation;
+INSERT OR IGNORE INTO session_keep SELECT 0,e.batch,e.ordinal,e.draft_revision FROM entry_revisions e JOIN session_keep k ON k.kind=1 AND k.batch=e.batch AND k.ordinal=e.ordinal AND k.revision=e.revision WHERE e.draft_revision IS NOT NULL;
+INSERT OR IGNORE INTO session_keep SELECT 0,o.batch,m.ordinal,m.draft_revision FROM acceptance_members m JOIN operations o ON o.id=m.operation WHERE o.id NOT IN(SELECT id FROM expired_acceptance_operations);
 -- Duplicate recognition retains the recorded decision and target, not every
 -- ordinary edit that happened to carry that decision.
 -- Pending duplicate targets retain their reviewed original state even if a
@@ -99,14 +110,14 @@ INSERT OR IGNORE INTO session_keep SELECT 1,v.duplicate_batch,v.duplicate_ordina
         }
     }
     exec(impl_->db,"DELETE FROM account_amount_revisions WHERE kind IN(0,1,2,3) AND NOT EXISTS(SELECT 1 FROM session_keep k WHERE k.kind=CASE WHEN account_amount_revisions.kind<2 THEN 0 ELSE 1 END AND k.batch=account_amount_revisions.batch AND k.ordinal=account_amount_revisions.ordinal AND k.revision=account_amount_revisions.revision)");
-    {Statement undos(impl_->db,"SELECT u.id FROM review_undos u JOIN review_answers a ON a.id=u.answer WHERE (a.question IN('ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR a.question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=a.id) AND NOT EXISTS(SELECT 1 FROM command_completions c WHERE c.id=u.id)");
+    {Statement undos(impl_->db,"SELECT u.id FROM review_undos u JOIN review_answers a ON a.id=u.answer WHERE (a.question IN('ledger-draft','ledger-transfer','ledger-committed','ledger-bulk','rules-pending','rules-reapply','acceptance','ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR a.question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=a.id) AND NOT EXISTS(SELECT 1 FROM command_completions c WHERE c.id=u.id)");
      while(undos.row())session_snapshot::completed(impl_->db,undos.bytes(0),"review-undo",session_snapshot::digest(undos.bytes(0)));}
     // Operations referenced by retained relationship restoration remain inputs.
     // Their expired ordinary predecessors do not form a replay chain.
     exec(impl_->db,R"SQL(
 CREATE TEMP TABLE IF NOT EXISTS session_operations(id TEXT PRIMARY KEY) WITHOUT ROWID;
 DELETE FROM session_operations;
-INSERT OR IGNORE INTO session_operations SELECT l.id FROM ledger_operations l WHERE l.kind IN(0,5) OR EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=l.id) OR EXISTS(SELECT 1 FROM transfer_versions v WHERE v.sequence=l.sequence);
+INSERT OR IGNORE INTO session_operations SELECT l.id FROM ledger_operations l WHERE (l.kind IN(0,5) AND l.id NOT IN(SELECT id FROM expired_acceptance_operations)) OR EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=l.id) OR EXISTS(SELECT 1 FROM transfer_versions v WHERE v.sequence=l.sequence);
 INSERT OR IGNORE INTO session_operations SELECT m.child FROM review_members m JOIN review_link_history h ON h.answer=m.answer WHERE m.committed=1;
 )SQL");
 #ifdef SPENTIT_RULES_STORAGE
@@ -132,13 +143,20 @@ INSERT OR IGNORE INTO session_operations SELECT m.child FROM review_members m JO
 #endif
     exec(impl_->db,R"SQL(
 DELETE FROM review_stack;
+DELETE FROM review_repairs;
 DELETE FROM review_undo_members WHERE child NOT IN(SELECT id FROM session_operations) OR original_child NOT IN(SELECT id FROM session_operations);
-DELETE FROM review_members WHERE (committed=1 OR answer NOT IN(SELECT id FROM review_answers WHERE question='ledger-delete') OR EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_members.answer)) AND answer IN(SELECT id FROM review_answers WHERE question IN('ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=review_members.answer);
-DELETE FROM review_undos WHERE answer IN(SELECT a.id FROM review_answers a WHERE (a.question IN('ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR a.question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_members m WHERE m.answer=a.id) AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=a.id));
-DELETE FROM review_answers WHERE (question IN('ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_members m WHERE m.answer=review_answers.id) AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=review_answers.id) AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_answers.id);
+DELETE FROM review_members WHERE (committed=1 OR answer NOT IN(SELECT id FROM review_answers WHERE question='ledger-delete') OR EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_members.answer)) AND answer IN(SELECT id FROM review_answers WHERE question IN('ledger-draft','ledger-transfer','ledger-committed','ledger-bulk','rules-pending','rules-reapply','acceptance','ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=review_members.answer);
+DELETE FROM review_link_restorations WHERE undo_id IN(SELECT id FROM review_undos WHERE answer IN(SELECT a.id FROM review_answers a WHERE (a.question IN('ledger-draft','ledger-transfer','ledger-committed','ledger-bulk','rules-pending','rules-reapply','acceptance','ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR a.question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_members m WHERE m.answer=a.id) AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=a.id)));
+DELETE FROM review_undos WHERE answer IN(SELECT a.id FROM review_answers a WHERE (a.question IN('ledger-draft','ledger-transfer','ledger-committed','ledger-bulk','rules-pending','rules-reapply','acceptance','ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR a.question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_members m WHERE m.answer=a.id) AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=a.id));
+DELETE FROM review_answers WHERE (question IN('ledger-draft','ledger-transfer','ledger-committed','ledger-bulk','rules-pending','rules-reapply','acceptance','ledger-edit','ledger-edit-batch','rules-account','ledger-delete','transfer-assignment') OR question LIKE 'ledger-delete-%') AND NOT EXISTS(SELECT 1 FROM review_members m WHERE m.answer=review_answers.id) AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=review_answers.id) AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_answers.id);
 DELETE FROM change_dependencies WHERE operation NOT IN(SELECT id FROM session_operations);
 DELETE FROM history_order WHERE operation IS NOT NULL AND operation NOT IN(SELECT id FROM session_operations);
 DELETE FROM operation_registry WHERE domain=0 AND id NOT IN(SELECT id FROM session_operations);
+DELETE FROM acceptance_members WHERE operation IN(SELECT id FROM expired_acceptance_operations);
+DELETE FROM operations WHERE id IN(SELECT id FROM expired_acceptance_operations);
+DELETE FROM dataset_acceptances WHERE id IN(SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL);
+DELETE FROM operation_registry WHERE domain=5 AND id IN(SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL);
+DELETE FROM acceptance_states WHERE undo_id IS NOT NULL;
 DELETE FROM ledger_operations WHERE id NOT IN(SELECT id FROM session_operations);
 CREATE TEMP TABLE IF NOT EXISTS session_events(batch TEXT,revision INTEGER,PRIMARY KEY(batch,revision)) WITHOUT ROWID;
 DELETE FROM session_events;
@@ -150,4 +168,9 @@ UPDATE command_completions SET expired=1 WHERE expired=0;
 DELETE FROM session_keep;
 DELETE FROM session_operations;
 )SQL");
+    std::vector<std::string> retired;
+    {Statement sources(impl_->db,"SELECT DISTINCT b.source_id FROM batches b JOIN events e ON e.batch=b.id WHERE b.state=2 AND e.kind='undo-import'");while(sources.row())retired.push_back(sources.bytes(0));}
+    for(const auto& source:retired)rollback_scope("close-retired-source",0,source,true);
+    exec(impl_->db,"DELETE FROM expired_acceptance_operations");
+
 }

@@ -68,10 +68,14 @@ void ImportStore::accept_local(std::string_view operation,const app::TransferReq
 }
 app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool ignore_warnings) {
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE,"Acceptance operation identifier is too long");
+    const auto digest=session_snapshot::digest(ignore_warnings?"accept:1":"accept:0");
+    if(const auto saved=ActionChain(impl_->db).durable_outcome(operation,digest);saved && *saved!=ActionChain::Outcome::applied && *saved!=ActionChain::Outcome::no_change)throw app::OperationAlreadyCompleted(std::string(operation));
     if(const auto prior=acceptance_outcome(operation)) {
         if(prior->ignored_warnings!=ignore_warnings)fail(SQLITE_CONSTRAINT,"Acceptance retry changed its warning decision");
         return *prior;
     }
+    ActionChain(impl_->db).require_idle();
+    const auto baseline=acceptance_baseline(impl_->db,all_transfers());
     const auto review=acceptance_review();
     for(const auto& warning:review.warnings)if(!ignore_warnings || !warning.overridable)fail(SQLITE_CONSTRAINT,warning.reason.c_str());
     struct Scope {Impl& state;std::int64_t selected;~Scope(){state.selected_account=selected;state.accepting_dataset=false;state.publishing_review=false;}} scope{*impl_,impl_->selected_account};
@@ -125,6 +129,8 @@ app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool i
         if(!side.accepted_unmatched){request.action=app::TransferAction::accept;request.expected_sequence=transfer_sequence();const auto op=child();accept_local(op,request);member(op);}
         request.action=app::TransferAction::commit_local;request.expected_sequence=transfer_sequence();const auto op=child();accept_local(op,request);member(op);
     }
-    finish([&]{transaction.commit();});
+    if(serial)record_acceptance_action(operation,acceptance_recipe(impl_->db,baseline),baseline.links,digest,review.transactions);
+    else ActionChain(impl_->db).no_change(action_token(),operation,digest);
+    finish([&]{transaction.commit();},serial==0);
     return {std::string(operation),review.transactions,review.failed_records,ignore_warnings};
 }

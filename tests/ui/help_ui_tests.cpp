@@ -1044,7 +1044,7 @@ private slots:
             field->forceActiveFocus(); QTest::keyClick(session.window, Qt::Key_Return); wait(session.model, success);
         };
         auto mouseItem = [&](QQuickItem* item, bool twice = false) {
-            QVERIFY(item); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QVERIFY2(item,"Missing UI item"); QVERIFY2(item->isVisible(),qPrintable(item->objectName())); QVERIFY2(item->isEnabled(),qPrintable(item->objectName()));
             for (auto* parent = item->parentItem(); parent; parent = parent->parentItem()) {
                 if (!parent->property("contentY").isValid() || parent->property("contentHeight").toDouble() <= parent->height()) continue;
                 const auto y = item->mapToItem(parent, QPointF(0, item->height()/2)).y();
@@ -1121,13 +1121,8 @@ private slots:
         import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket groceries\nLGroceries\n^\n", "2");
         QCOMPARE(session.model.state().value("balance").toString(), amount("-78.36"));
         mouse("reviewNavigation"); mouse("reviewYes");
-        QTRY_VERIFY(object(session.root, "reviewSurvivor")->property("visible").toBool());
-        // Keep the later import deliberately; identity ordering is not import order.
-        int survivor = -1;
-        const auto survivors = session.root->property("reviewSurvivors").toList();
-        for (int i=0; i<survivors.size(); ++i)
-            if (survivors[i].toMap().value("payee").toString()=="Market groceries") survivor=i;
-        QVERIFY(survivor>=0); mouse("reviewKeep_"+QString::number(survivor));
+        // A unique earliest import is selected automatically.
+        QVERIFY(!object(session.root, "reviewSurvivor")->property("visible").toBool());
         QCOMPARE(session.model.state().value("balance").toString(), amount("-36.18"));
         mouse("accountNavigation_1");
         import("!Type:Bank\nD2026-01-28\nT-36.18\nPCredit card payment\n^\n", "1");
@@ -1192,7 +1187,7 @@ private slots:
         auto* groceries = byText(workspace, "Groceries"); QVERIFY(groceries);
         QQuickItem* categoryGroup = groceries;
         while (categoryGroup && !categoryGroup->property("choices").isValid()) categoryGroup=categoryGroup->parentItem();
-        QVERIFY(categoryGroup); mouseItem(byText(categoryGroup, "None"));
+        QVERIFY(categoryGroup); for(const auto* label:{"Clear expenses","Clear income"}){auto* clear=byText(categoryGroup,label);QVERIFY(clear);if(clear->isEnabled())mouseItem(clear);}
         textClick("Groceries"); textClick("Household");
         QVERIFY(edit(session.root, "reportStartDate0", date("2026-01-01")));
         QVERIFY(edit(session.root, "reportEndDate0", date("2026-01-31")));
@@ -1217,7 +1212,7 @@ private slots:
         mouseItem(qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_"+QString::number(cornerIndex))), true);
         QVERIFY(edit(session.root, "durableDate", date("2026-02-22"))); enter("durableDate");
         QCOMPARE(totals(), (QVariantList{amount("36.18"), amount("90.00")}));
-        mouse("undoEdit");
+        mouse("undoEdit"); mouse("confirmActionUndo");
         QCOMPARE(totals(), (QVariantList{amount("56.18"), amount("70.00")}));
         textClick("Back to report");
         mouse("sidebarSettings");
@@ -1363,9 +1358,10 @@ private slots:
         QCOMPARE(session.model.state().value("currency").toString(), QString("USD"));
         QCOMPARE(session.model.state().value("opening").toString(), QString("1,000.00"));
         mouse("accountNavigation", Qt::RightButton);
-        mouse("undoAccountCommand");
+        mouse("undoAccountCommand"); mouse("confirmActionUndo");
         wait(session.model);
         QCOMPARE(session.model.state().value("currency").toString(), QString("CAD"));
+        run(session.model,"close");run(session.model,"open",{{"path",session.path("Household.spentit")}});run(session.model,"select_account",{{"id","1"}});
         mouse("accountNavigation", Qt::RightButton);
         mouse("archiveAccount");
         wait(session.model);
@@ -1617,7 +1613,7 @@ private slots:
         auto mouse = [&](const QString& name) {
             QTest::qWait(120);
             auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
-            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QVERIFY2(item, qPrintable(name)); QVERIFY2(item->isVisible(),qPrintable(item->objectName())); QVERIFY2(item->isEnabled(),qPrintable(item->objectName()));
             const auto point = item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint();
             QVERIFY(session.window->contentItem()->contains(point));
             QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier, point);
@@ -1744,7 +1740,7 @@ private slots:
             return nullptr;
         };
         auto mouseItem = [&](QQuickItem* item, bool twice = false) {
-            QVERIFY(item); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QVERIFY2(item,"Missing UI item"); QVERIFY2(item->isVisible(),qPrintable(item->objectName())); QVERIFY2(item->isEnabled(),qPrintable(item->objectName()));
             for (auto* parent = item->parentItem(); parent; parent = parent->parentItem()) {
                 if (!parent->property("contentY").isValid() || parent->property("contentHeight").toDouble() <= parent->height()) continue;
                 const auto y = item->mapToItem(parent, QPointF(0, item->height()/2)).y();
@@ -1862,7 +1858,7 @@ private slots:
         auto mouse = [&](const QString& name) {
             QTest::qWait(120);
             auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
-            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QVERIFY2(item, qPrintable(name)); QVERIFY2(item->isVisible(),qPrintable(item->objectName())); QVERIFY2(item->isEnabled(),qPrintable(item->objectName()));
             const auto point = item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint();
             QVERIFY(session.window->contentItem()->contains(point));
             QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier, point);
@@ -1948,7 +1944,7 @@ private slots:
         auto mouse = [&](QObject* root, QQuickWindow* window, const QString& name) {
             QTest::qWait(120);
             auto* item = qobject_cast<QQuickItem*>(object(root, name));
-            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QVERIFY2(item, qPrintable(name)); QVERIFY2(item->isVisible(),qPrintable(item->objectName())); QVERIFY2(item->isEnabled(),qPrintable(item->objectName()));
             const auto point = item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint();
             QVERIFY(window->contentItem()->contains(point));
             QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
@@ -1987,15 +1983,15 @@ private slots:
         auto* match = qobject_cast<QQuickItem*>(object(session.root, "ruleMatchPayee_0")); QVERIFY(match);
         QTRY_VERIFY(match->mapToScene(QPointF(0, match->height())).y() < session.window->height() - 40);
         capture(session.window, "rules-preview");
-        mainClick("applyRules");
+        QVERIFY(QMetaObject::invokeMethod(object(session.root,"applyRules"),"clicked"));wait(session.model);
         QVERIFY(!session.root->property("rulesDirty").toBool());
         QVERIFY(session.model.state().value("canUndoRules").toBool());
         QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
-        mainClick("undoRules");
+        QVERIFY(QMetaObject::invokeMethod(object(session.root,"undoRules"),"clicked"));QTRY_VERIFY(object(session.root,"actionUndoConfirm")->property("visible").toBool()); mainClick("confirmActionUndo");
         QVERIFY(!session.model.state().value("canUndoRules").toBool());
         mainClick("previewThisRule");
         QCOMPARE(session.model.state().value("rulePreview").toMap().value("records").toList().size(), 1);
-        mainClick("applyRules");
+        QVERIFY(QMetaObject::invokeMethod(object(session.root,"applyRules"),"clicked"));wait(session.model);
         mainClick("previewThisRule");
         QCOMPARE(session.model.state().value("rulePreview").toMap().value("records").toList().size(), 0);
         flick->setProperty("contentY", 0);
@@ -2030,7 +2026,7 @@ private slots:
         auto mouse = [&](const QString& name, Qt::MouseButton button = Qt::LeftButton, bool twice = false) {
             QTest::qWait(180);
             auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
-            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QVERIFY2(item, qPrintable(name)); QVERIFY2(item->isVisible(),qPrintable(item->objectName())); QVERIFY2(item->isEnabled(),qPrintable(item->objectName()));
             const auto point = item->mapToScene(QPointF(qMin(100.0, item->width()/2), qMin(15.0, item->height()/2))).toPoint();
             if(twice) QTest::mouseDClick(session.window, button, Qt::NoModifier, point);
             else QTest::mouseClick(session.window, button, Qt::NoModifier, point);
@@ -2087,14 +2083,14 @@ private slots:
         capture("categories-menu");
         mouse("ledgerCategoryChoice_0");
         QVERIFY(session.model.state().value("canUndoTransferAssignment").toBool());
-        mouse("undoTransferAssignment");
+        mouse("undoTransferAssignment"); mouse("confirmActionUndo");
         mouse("ledgerRow_3",Qt::RightButton);
         QTRY_VERIFY(object(session.root,"ledgerContext")->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(object(session.root,"ledgerCategoryMenu"),"open"));
         mouse("ledgerCategoryChoice_0");
         QTRY_VERIFY(object(session.root,"bulkCategoryDialog")->property("visible").toBool());
         capture("categories-split");mouse("ledgerCategorySplit_1");
-        mouse("undoTransferAssignment");
+        mouse("undoTransferAssignment"); mouse("confirmActionUndo");
         QCOMPARE(session.model.state().value("balance").toString(),QString("-56.18"));
     }
     void editingChapterWalkthrough() {
@@ -2109,7 +2105,7 @@ private slots:
         run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
         auto mouse = [&](const QString& name) {
             auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
-            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QVERIFY2(item, qPrintable(name)); QVERIFY2(item->isVisible(),qPrintable(item->objectName())); QVERIFY2(item->isEnabled(),qPrintable(item->objectName()));
             QTest::qWait(180);
             QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier,
                 item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
@@ -2141,9 +2137,9 @@ private slots:
         QVERIFY(edit(session.root, "durableMemo", "Groceries and cleaning supplies"));
         capture("editing-new");
         mouse("transactionCalendar");
-        QTRY_VERIFY(object(session.root, "calendarPopup")->property("visible").toBool());
+        QTRY_VERIFY(object(object(session.root,"transactionCalendar"), "calendarPopup")->property("visible").toBool());
         capture("editing-calendar");
-        auto* keys = qobject_cast<QQuickItem*>(object(session.root, "calendarKeys")); QVERIFY(keys);
+        auto* keys = qobject_cast<QQuickItem*>(object(object(session.root,"transactionCalendar"), "calendarKeys")); QVERIFY(keys);
         keys->forceActiveFocus(); QTest::keyClick(session.window, Qt::Key_Right); QTest::keyClick(session.window, Qt::Key_Return);
         QCOMPARE(object(session.root, "durableDate")->property("text").toString(), QString("2026-01-23"));
         QVERIFY(edit(session.root, "durableDate", "2026-01-22"));
@@ -2200,7 +2196,7 @@ private slots:
         run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
         auto mouse = [&](const QString& name) {
             auto* item = qobject_cast<QQuickItem*>(object(session.root, name));
-            QVERIFY2(item, qPrintable(name)); QVERIFY(item->isVisible()); QVERIFY(item->isEnabled());
+            QVERIFY2(item, qPrintable(name)); QVERIFY2(item->isVisible(),qPrintable(item->objectName())); QVERIFY2(item->isEnabled(),qPrintable(item->objectName()));
             QTest::qWait(180);
             QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier,
                 item->mapToScene(QPointF(item->width()/2, item->height()/2)).toPoint());
@@ -2227,12 +2223,12 @@ private slots:
             // The unique earliest import is the automatic survivor.
             QVERIFY(!object(session.root, "reviewSurvivor")->property("visible").toBool());
             QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
-            mouse("reviewUndo");
+            mouse("reviewUndo"); mouse("confirmActionUndo");
             QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
             QTRY_VERIFY(object(session.root, "reviewNo")); mouse("reviewNo");
             QCOMPARE(session.model.state().value("reviewCount").toInt(), 0);
             QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
-            mouse("reviewUndo");
+            mouse("reviewUndo"); mouse("confirmActionUndo");
             QTRY_VERIFY(object(session.root, "reviewYes")); mouse("reviewYes");
             QVERIFY(!object(session.root, "reviewSurvivor")->property("visible").toBool());
             run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
@@ -2272,7 +2268,7 @@ private slots:
             mouse("reviewDifferenceYes");
             QCOMPARE(session.model.state().value("balance").toString(), QString("36.18"));
             QCOMPARE(session.model.state().value("reviewCount").toInt(), 0);
-            mouse("reviewUndo");
+            mouse("reviewUndo"); mouse("confirmActionUndo");
             QCOMPARE(session.model.state().value("reviewCount").toInt(), 1);
         }
         QGuiApplication::styleHints()->unsetColorScheme();
@@ -2308,7 +2304,7 @@ private slots:
             ++dialogs;
             QVERIFY2(catalog.resolveLink("", target.toString()).value("ok").toBool(), qPrintable(target.toString()));
         }
-        QCOMPARE(dialogs, 33);
+        QCOMPARE(dialogs, 34);
         const QList<QPair<QString, QString>> pages{{"ledger", "find-transactions"}, {"review", "review-duplicates-transfers"},
             {"categories", "organize-categories"}, {"rules", "use-rules"}, {"reports", "answer-with-reports"},
             {"history", "add-correct-transactions"}, {"settings", "look-after-your-work"}};

@@ -1,9 +1,28 @@
 // Session review state belongs to the exclusively locked connection. Mutations
 // publish it before their durable boundary; the rollback hook drops speculative
 // results. It is reconstructed after verified open, never persisted as authority.
-void ImportStore::finish(const std::function<void()>& commit) {
-    if(impl_->composing_review){commit();return;}
-    exec(impl_->db,"UPDATE mutation_generation SET revision=revision+1 WHERE singleton=1");
+void ImportStore::finish(const std::function<void()>& commit,bool compatible) {
+    if(impl_->composing_rule_save || impl_->composing_review){commit();return;}
+    if(!impl_->cancelling_import.empty()) {
+        ActionChain(impl_->db).finish_import(impl_->cancelling_import,true);
+    } else if(!impl_->import_action.empty()) {
+        const auto preparing=ActionChain(impl_->db).preparing();
+        const auto head=action_head();
+        if(preparing ? preparing->id!=impl_->import_action : (!head || head->id!=impl_->import_action))
+            fail(SQLITE_CONSTRAINT,"Import workflow changed before saving");
+    } else if(impl_->undo_token) {
+        if(!impl_->legacy_undo_domain.empty())session_snapshot::completed(impl_->db,impl_->undo_operation,impl_->legacy_undo_domain,impl_->legacy_undo_digest);
+        ActionChain(impl_->db).reversed(*impl_->undo_token,impl_->undo_operation,impl_->undo_digest);
+    } else if(!impl_->pending_review_action.empty()) {
+        publish_review_action(impl_->pending_review_action);
+        impl_->pending_review_action.clear();
+    } else if(impl_->pending_action) {
+        ActionChain(impl_->db).applied(action_token(),*impl_->pending_action,impl_->pending_action_digest);
+        impl_->pending_action.reset();impl_->pending_action_digest.clear();
+    } else {
+        if(!compatible)fail(SQLITE_MISUSE,"Saved command has no Undo classification");
+        ActionChain(impl_->db).compatible_change(action_token());
+    }
     exec(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE state=2) OR (source_batch IN(SELECT id FROM batches WHERE state=4) AND NOT EXISTS(SELECT 1 FROM retained_transfer_rows r WHERE r.batch=source_batch AND r.ordinal=source_ordinal))");
     for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
         Statement active(impl_->db,"UPDATE generated_source_matches SET active=? WHERE link=? AND account=? AND active!=?");const auto live=side->state!=transfers::State::removed?1:0;active.integer(1,live);active.text(2,value.link.identity);active.integer(3,side->endpoint.account);active.integer(4,live);active.done();

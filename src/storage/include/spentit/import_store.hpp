@@ -38,6 +38,13 @@ public:
     ~ImportStore();
     ImportStore(ImportStore&&) noexcept;
     ImportStore& operator=(ImportStore&&) noexcept;
+    bool action_preparing() const override;
+    app::ActionToken action_token() const override;
+    std::optional<app::ActionSummary> action_head() const override;
+    std::vector<app::ActionSummary> action_history(std::int64_t, std::size_t) const override;
+    app::UndoPreview preview_undo(std::string_view,const app::ActionToken&) const override;
+    std::optional<app::ActionReceipt> undo_action_outcome(std::string_view,const app::UndoPreview&) const override;
+    app::ActionReceipt undo_action(std::string_view,const app::UndoPreview&) override;
     reports::Catalog report_catalog() const override;
     void save_reports(const reports::Catalog&) override;
     std::vector<reports::Entry> report_entries(const std::vector<std::int64_t>&,const app::OperationContext&) const override;
@@ -135,6 +142,7 @@ public:
     std::vector<app::RuleTombstone> rule_tombstones() const override;
     app::RuleSaveReceipt save_rules(std::string_view,const app::RuleSaveRequest&,std::int64_t,const app::OperationContext&) override;
     std::optional<app::RuleSaveReceipt> rule_save_outcome(std::string_view) const override;
+    app::ReviewReceipt save_and_apply_rules(std::string_view,const app::RuleSaveRequest&,std::int64_t,const app::AccountRuleRequest&,const app::OperationContext&) override;
     app::ReviewReceipt apply_account_rules(std::string_view,const app::AccountRuleRequest&,const app::OperationContext&) override;
     bool can_undo_account_rules() const override;
     app::ReviewReceipt undo_account_rules(std::string_view) override;
@@ -180,14 +188,21 @@ public:
     app::AcceptanceReceipt accept_all(std::string_view,bool=false) override;
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
 private:
+    void publish_review_action(std::string_view);
+    void verify_action_restorations() const;
+    void undo_acceptance(std::string_view,std::string_view);
+    void record_acceptance_action(std::string_view,std::string_view,const std::vector<app::TransferView>&,std::string_view,std::size_t);
+    void record_transaction_action(std::string_view,std::string_view,std::string_view,const std::vector<std::string>&);
+    void begin_import_action(std::string_view,std::string_view);
+    void complete_import_action(std::string_view,bool awaiting_decision=false);
     std::vector<std::string> import_link_undos(std::string_view) const;
     app::RollbackReceipt undo_linked_import(std::string_view,std::string_view,const app::RollbackReview&,const std::vector<std::string>&);
-    app::RollbackReceipt rollback_scope(std::string_view,std::int64_t,std::string_view);
+    app::RollbackReceipt rollback_scope(std::string_view,std::int64_t,std::string_view,bool collecting=false);
     std::vector<imports::Occurrence> duplicate_candidates(const qif::Record&,std::string_view,bool first_only) const;
     app::Receipt publish_review(std::string_view,std::int64_t,std::string_view);
     void accept_local(std::string_view,const app::TransferRequest&);
     void prepare_review();
-    void finish(const std::function<void()>&);
+    void finish(const std::function<void()>&,bool compatible=false);
     void require_account_name(std::string_view,std::int64_t) const;
     std::optional<std::string> transfer_name(std::string_view) const;
     bool review_link_category(std::string_view,std::int64_t counterpart_account) const;

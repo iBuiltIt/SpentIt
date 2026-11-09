@@ -95,6 +95,7 @@ app::ReviewReceipt ImportStore::delete_transactions(std::string_view operation,c
     if(request.delete_counterparts)encoded.text("delete-counterparts");
     const auto request_hash=session_snapshot::digest(encoded.bytes);
     session_snapshot::retry(impl_->db,operation,"selection",request_hash);
+    if(const auto outcome=ActionChain(impl_->db).durable_outcome(operation,request_hash);outcome && *outcome==ActionChain::Outcome::no_change)return {std::string(operation)};
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question='ledger-delete'");saved.text(1,operation);
         if(!saved.row() || saved.bytes(0)!=encoded.bytes)fail(SQLITE_CONSTRAINT,"Retry changed the deletion choice or selection");return *prior;
@@ -114,8 +115,9 @@ app::ReviewReceipt ImportStore::delete_transactions(std::string_view operation,c
         context.checkpoint("Unlinking selected transactions");
         impl_->selected_account=link.account;impl_->composing_review=true;
         app::TransferRequest action{};action.action=app::TransferAction::delete_selection;action.link=link.before.link.identity;action.expected_sequence=transfer_sequence();action.destination=link.mask;
+        Statement prior_link(impl_->db,"SELECT sequence FROM transfer_heads WHERE identity=?");prior_link.text(1,action.link);if(!prior_link.row())fail(SQLITE_CORRUPT);const auto prior_sequence=prior_link.integer(0);
         const auto child=std::string(operation)+"-link-"+std::to_string(++serial);apply_transfer(child,action);impl_->composing_review=false;
-        Statement h(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");h.text(1,link.first?unlink:std::string(operation));h.text(2,action.link);h.blob(3,transfer_codec::encode(link.before));h.blob(4,transfer_codec::encode(link.after));h.text(5,child);h.done();
+        Statement h(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");h.text(1,link.first?unlink:std::string(operation));h.text(2,action.link);h.blob(3,transfer_codec::encode(link.before));h.blob(4,transfer_codec::encode(link.after));h.text(5,child);h.integer(6,prior_sequence);h.done();
     }
     std::map<std::int64_t,Money> balances;
     for(const auto& row:plan.rows){
@@ -124,7 +126,7 @@ app::ReviewReceipt ImportStore::delete_transactions(std::string_view operation,c
         const auto child=std::string(operation)+"-edit-"+std::to_string(++serial);
         write_review_row(row.remove?std::string(operation):kept,child,row.id,row.draft,row.decision,!row.remove,false,false,{},{},&balance->second);
     }
-    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();impl_->pending_review_action=operation;
     session_snapshot::completed(impl_->db,operation,"selection",request_hash);
     context.checkpoint("Finishing deletion");finish([&]{context.seal();transaction.commit();});return {std::string(operation)};
 }
@@ -146,6 +148,7 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
     for(const auto& id:request.selected){context.checkpoint("Checking selected transactions");if(!identities.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once");encoded.text(review_key(id));}
     const auto request_hash=session_snapshot::digest(encoded.bytes);
     session_snapshot::retry(impl_->db,operation,"selection",request_hash);
+    if(const auto outcome=ActionChain(impl_->db).durable_outcome(operation,request_hash);outcome && *outcome==ActionChain::Outcome::no_change)return {std::string(operation)};
     if(const auto prior=review_outcome(operation)){
         Statement saved(impl_->db,"SELECT request FROM review_answers WHERE id=? AND question=?");saved.text(1,operation);saved.text(2,question);
         if(!saved.row() || saved.bytes(0)!=encoded.bytes)fail(SQLITE_CONSTRAINT,"Retry changed the selected transactions or values");
@@ -202,9 +205,11 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
             draft=canonical_draft(id,draft,before,info.revision+1,false);
             imports::validate_draft(row.source,draft,row.source.source_currency && *row.source.source_currency!=draft.transaction.effective_total().currency());
         }
+        if(same_draft(before,draft) && (!links || links->changed.empty()))continue;
         plans.push_back({id,std::move(draft),row.decision,std::move(links)});
     }
     Atomic transaction(impl_->db);if(!current())fail(SQLITE_CONSTRAINT,"Transactions changed. Select them again before editing.");
+    if(plans.empty()){ActionChain(impl_->db).no_change(action_token(),operation,request_hash);session_snapshot::completed(impl_->db,operation,"selection",request_hash);context.seal();transaction.commit();return {std::string(operation)};}
     Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,?,?,?)");receipt.text(1,operation);receipt.text(2,question);receipt.text(3,encoded.bytes);receipt.integer(4,request.generation);receipt.done();
     std::size_t serial=0;
     for(const auto& plan:plans){
@@ -214,13 +219,13 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
             write_entry_links(child,request.account,app::TransferAction::relink,financial_sequence(impl_->db),plan.links->changed);
             for(const auto& value:plan.links->changed){
                 const auto old=std::find_if(before_links.begin(),before_links.end(),[&](const auto& v){return v.link.identity==value.link.identity;});
-                Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
+                Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);
                 if(old!=before_links.end())history.blob(3,transfer_codec::encode(*old));
-                history.blob(4,transfer_codec::encode(value));history.text(5,child);history.done();
+                history.blob(4,transfer_codec::encode(value));history.text(5,child);history.integer(6,old==before_links.end()?0:old->sequence);history.done();
             }
         }
     }
-    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();impl_->pending_review_action=operation;
     session_snapshot::completed(impl_->db,operation,"selection",request_hash);
     context.checkpoint("Finishing selected transaction changes");finish([&]{context.seal();transaction.commit();});return {std::string(operation)};
 }

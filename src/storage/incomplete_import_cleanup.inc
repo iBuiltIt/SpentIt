@@ -6,6 +6,7 @@ bool ImportStore::startup_import_cleanup() const { return impl_->startup_cleanup
 bool ImportStore::cleanup_incomplete_imports(std::string_view source) {
     {Statement pending(impl_->db,"SELECT 1 FROM batches WHERE state=3 AND (?1='' OR source_id=?1) LIMIT 1");pending.text(1,source);
     if(!pending.row())return false;}
+    struct Scope {std::string& target;std::string prior;~Scope(){target=std::move(prior);}} scope{impl_->import_action,std::exchange(impl_->import_action,{})};
     Atomic transaction(impl_->db);
     struct Cleanup {bool& flag;~Cleanup(){flag=false;}} cleanup{impl_->cleaning};impl_->cleaning=true;
     exec(impl_->db,"CREATE TEMP TABLE IF NOT EXISTS incomplete_sources(id TEXT PRIMARY KEY); DELETE FROM incomplete_sources");
@@ -27,13 +28,17 @@ bool ImportStore::cleanup_incomplete_imports(std::string_view source) {
     exec(impl_->db,"DELETE FROM import_balance_events WHERE group_id IN(SELECT id FROM import_groups WHERE id IN(SELECT id FROM incomplete_sources)); DELETE FROM import_group_accounts WHERE group_id IN(SELECT id FROM import_groups WHERE id IN(SELECT id FROM incomplete_sources)); DELETE FROM import_group_events WHERE group_id IN(SELECT id FROM import_groups WHERE id IN(SELECT id FROM incomplete_sources)); DELETE FROM retained_group_counts WHERE group_id IN(SELECT id FROM import_groups WHERE id IN(SELECT id FROM incomplete_sources)); DELETE FROM import_groups WHERE id IN(SELECT id FROM incomplete_sources)");
     exec(impl_->db,"DELETE FROM history_order WHERE batch IN(SELECT id FROM batches WHERE source_id IN(SELECT id FROM incomplete_sources)); DELETE FROM events WHERE batch IN(SELECT id FROM batches WHERE source_id IN(SELECT id FROM incomplete_sources)); DELETE FROM batch_source_currency WHERE batch IN(SELECT id FROM batches WHERE source_id IN(SELECT id FROM incomplete_sources)); DELETE FROM batches WHERE source_id IN(SELECT id FROM incomplete_sources); DELETE FROM source_headers WHERE source_id IN(SELECT id FROM incomplete_sources) AND source_id NOT IN(SELECT source_id FROM batches); DELETE FROM sources WHERE id IN(SELECT id FROM incomplete_sources) AND id NOT IN(SELECT source_id FROM batches)");
     exec(impl_->db,"DELETE FROM incomplete_accounts WHERE EXISTS(SELECT 1 FROM batches b WHERE b.account_id=incomplete_accounts.id); DELETE FROM account_creations WHERE identity IN(SELECT id FROM incomplete_accounts); DELETE FROM account WHERE singleton IN(SELECT id FROM incomplete_accounts); DELETE FROM incomplete_accounts; DELETE FROM incomplete_sources");
+    const auto pending=ActionChain(impl_->db).preparing();
+    if(!pending || (!source.empty() && pending->id!=source) || ActionChain(impl_->db).import_stage(pending->id)!=app::ImportStage::captured)
+        fail(SQLITE_CORRUPT,"Incomplete import has no matching preparation action");
+    ActionChain(impl_->db).finish_import(pending->id,true);
     const auto previous=impl_->selected_account;
     {Statement retained(impl_->db,"SELECT 1 FROM account WHERE singleton=?");retained.integer(1,previous);
      if(!retained.row())impl_->selected_account=smallest_active_account(impl_->db);}
     // The checked roots above contain no published financial rows. Foreign-key
     // constraints and the ownership/stage checks protect this bounded deletion;
     // do not turn normal startup cleanup into another full-document audit.
-    try { finish([&]{transaction.commit();}); }
+    try { finish([&]{transaction.commit();},true); }
     catch(...) {
         const auto failure=std::current_exception();
         if(!sqlite3_get_autocommit(impl_->db)){impl_->selected_account=previous;throw app::OperationOutcomeUnknown();}

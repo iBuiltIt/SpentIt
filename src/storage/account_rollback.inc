@@ -25,7 +25,12 @@ std::vector<app::UndoableImport> ImportStore::undoable_imports() const {
     return result;
 }
 app::RollbackReview ImportStore::review_import_undo(std::string_view source) const {
-    identifier(source);const auto imports=undoable_imports();
+    identifier(source);auto imports=undoable_imports();
+    const auto head=action_head();
+    if(head && head->kind==app::ActionKind::manual_creation && head->payload==source) {
+        Statement manual(impl_->db,"SELECT account_id FROM batches WHERE id=? AND parser='manual-v1' AND state=0 AND NOT EXISTS(SELECT 1 FROM accepted_transactions WHERE batch=?1)");manual.text(1,source);
+        if(manual.row()){app::UndoableImport item;item.source=source;item.format="manual";item.accounts.push_back(manual.integer(0));item.records=1;imports.push_back(std::move(item));}
+    }
     const auto found=std::find_if(imports.begin(),imports.end(),[&](const auto& item){return item.source==source;});
     if(found==imports.end())fail(SQLITE_CONSTRAINT,"This import cannot be undone. Refresh the import list.");
     app::RollbackReview result;Statement generation(impl_->db,"SELECT revision FROM mutation_generation WHERE singleton=1");if(!generation.row())fail(SQLITE_CORRUPT);result.token=generation.integer(0);
@@ -84,8 +89,20 @@ std::optional<app::RollbackReceipt> ImportStore::import_undo_outcome(std::string
 }
 app::RollbackReceipt ImportStore::undo_import(std::string_view operation,std::string_view source,std::int64_t expected) {
     identifier(operation);identifier(source);
-    if(auto prior=import_undo_outcome(operation,source))return *prior;
+    if(auto prior=import_undo_outcome(operation,source)){
+        Statement saved(impl_->db,"SELECT epoch FROM rollback_receipt WHERE operation=?");saved.text(1,std::string(operation)+"."+std::string(source));if(!saved.row() || saved.integer(0)!=expected)fail(SQLITE_CONSTRAINT,"Import Undo retry changed its request");return *prior;
+    }
     Statement collision(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?1 UNION ALL SELECT 1 FROM rollback_receipt WHERE operation=?1");collision.text(1,operation);if(collision.row())fail(SQLITE_CONSTRAINT,"Operation identifier is already used");
+    const auto head=action_head();
+    if(!impl_->undo_token) {
+        if(head && head->kind==app::ActionKind::import && head->payload==source) {
+            if(expected!=ledger_edit_generation())fail(SQLITE_CONSTRAINT,"Work changed; review this import again.");
+            const auto review=review_import_undo(source);
+            undo_action(operation,preview_undo(head->id,action_token()));
+            return {std::string(operation),account().identity,review.transactions,review.failures};
+        }
+        ActionChain(impl_->db).require_empty();
+    }
     const auto linked=import_link_undos(source);
     if(!linked.empty()) {
         const auto review=review_import_undo(source);
@@ -97,7 +114,7 @@ app::RollbackReceipt ImportStore::undo_import(std::string_view operation,std::st
 }
 
 // Rollback deletes transient ownership roots, then collects exclusively owned
-// rows. The one-slot receipt resolves retries without archiving forgotten imports.
+// rows. Compact per-operation receipts resolve retries without retaining row payloads.
 app::RollbackReview ImportStore::rollback_review() const {
     app::RollbackReview result;Statement generation(impl_->db,"SELECT revision FROM mutation_generation WHERE singleton=1");if(!generation.row())fail(SQLITE_CORRUPT,"Missing mutation generation");result.token=generation.integer(0);
     std::set<std::int64_t> affected;
@@ -120,17 +137,42 @@ std::optional<app::RollbackReceipt> ImportStore::rollback_outcome(std::string_vi
     return app::RollbackReceipt{std::string(operation),receipt.integer(0),static_cast<std::size_t>(receipt.integer(1)),static_cast<std::size_t>(receipt.integer(2))};
 }
 app::RollbackReceipt ImportStore::rollback_account(std::string_view operation,std::int64_t expected) {
+    ActionChain(impl_->db).require_empty();
     identifier(operation);return rollback_scope(operation,expected,{});
 }
-app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std::int64_t expected,std::string_view source) {
-    if(auto previous=rollback_outcome(operation)){if(previous->account!=impl_->selected_account)fail(SQLITE_CONSTRAINT,"Rollback retry changed account");return *previous;}
+app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std::int64_t expected,std::string_view source,bool collecting) {
+    if(!collecting)if(auto previous=rollback_outcome(operation)){Statement saved(impl_->db,"SELECT source,epoch FROM rollback_receipt WHERE operation=?");saved.text(1,operation);if(!saved.row() || saved.bytes(0)!=source || saved.integer(1)!=expected || (source.empty() && previous->account!=impl_->selected_account))fail(SQLITE_CONSTRAINT,"Rollback retry changed its request");return *previous;}
     Statement collision(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");collision.text(1,operation);if(collision.row())fail(SQLITE_CONSTRAINT,"Operation id is already used");
     if(source.empty())require_writable_account(impl_->db,impl_->selected_account);
-    const auto review=source.empty()?rollback_review():review_import_undo(source);
-    if(review.token!=expected)fail(SQLITE_CONSTRAINT,"Work changed; review rollback again");
+    const auto review=collecting?app::RollbackReview{}:source.empty()?rollback_review():review_import_undo(source);
+    if(!collecting && review.token!=expected)fail(SQLITE_CONSTRAINT,"Work changed; review rollback again");
     const auto owner=impl_->selected_account;const auto aliases=account_aliases();
-    Atomic transaction(impl_->db);
-    struct Cleanup {bool& flag;~Cleanup(){flag=false;}} cleanup{impl_->cleaning};impl_->cleaning=true;
+    if(collecting && (sqlite3_get_autocommit(impl_->db) || !impl_->cleaning || source.empty()))fail(SQLITE_MISUSE);
+    std::unique_ptr<Atomic> transaction;if(!collecting)transaction=std::make_unique<Atomic>(impl_->db);
+    struct Cleanup {bool& flag;bool prior;~Cleanup(){flag=prior;}} cleanup{impl_->cleaning,impl_->cleaning};impl_->cleaning=true;
+    if(!source.empty()) {
+        bool financial_history=false;
+        {Statement retained(impl_->db,"SELECT 1 FROM entry_revisions e JOIN batches b ON b.id=e.batch WHERE b.source_id=? LIMIT 1");retained.text(1,source);financial_history=retained.row();}
+        if(financial_history) {
+            if(collecting)fail(SQLITE_CORRUPT,"Retired source still has financial dependencies");
+            Statement shared(impl_->db,"SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.ledger_batch JOIN batches owner ON owner.id=a.source_batch WHERE b.source_id=? AND owner.source_id!=?1 LIMIT 1");shared.text(1,source);
+            if(shared.row())fail(SQLITE_CONSTRAINT,"A retained import still owns transactions from this source.");
+            // Revoked acceptance still supplies this session's financial replay.
+            // Retire visibility now; close collects the no-longer-needed proof
+            // after publishing the current baseline. No deleted-row copies are made.
+            std::vector<std::pair<std::string,std::int64_t>> batches;
+            {Statement rows(impl_->db,"SELECT id,revision FROM batches WHERE source_id=? AND state IN(0,4)");rows.text(1,source);while(rows.row())batches.emplace_back(rows.bytes(0),rows.integer(1));}
+            for(const auto& [id,revision]:batches) {
+                impl_->selected_account=account_for_batch(id).identity;
+                (void)transfer_import_transition(id,std::string(operation)+"-retire-"+id,false);
+                advance(impl_->db,id,revision,"undo-import",2);
+            }
+            impl_->selected_account=owner;
+            Statement detach(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE source_id=?)");detach.text(1,source);detach.done();
+            Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(?,?,?,?,?,?)");receipt.text(1,operation);receipt.integer(2,owner);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.text(5,source);receipt.integer(6,expected);receipt.done();
+            if(!collecting){finish([&]{verify();transaction->commit();},true);}return {std::string(operation),owner,review.transactions,review.failures};
+        }
+    }
     exec(impl_->db,"CREATE TEMP TABLE rollback_batches(id TEXT PRIMARY KEY); CREATE TEMP TABLE rollback_rows(batch TEXT,ordinal INTEGER,PRIMARY KEY(batch,ordinal)); CREATE TEMP TABLE rollback_operations(id TEXT PRIMARY KEY); CREATE TEMP TABLE rollback_links(id TEXT PRIMARY KEY)");
     if(source.empty())exec(impl_->db,"INSERT INTO rollback_batches SELECT id FROM batches WHERE account_id=spentit_account() AND state IN(0,3,4)");
     else {Statement scope(impl_->db,"INSERT INTO rollback_batches SELECT id FROM batches WHERE source_id=?");scope.text(1,source);scope.done();}
@@ -221,13 +263,13 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
     std::vector<std::pair<std::string,std::int64_t>> partial;
     Statement remaining(impl_->db,"SELECT id,revision FROM batches WHERE state IN(0,4) AND ((?1='' AND account_id=spentit_account()) OR source_id=?1)");remaining.text(1,source);while(remaining.row())partial.emplace_back(remaining.bytes(0),remaining.integer(1));
     for(const auto& [id,revision]:partial){Statement count(impl_->db,"UPDATE retained_source_counts SET count=(SELECT count(*) FROM source_occurrences WHERE batch=?1) WHERE batch=?1");count.text(1,id);count.done();advance(impl_->db,id,revision,"rollback",0,0);}
-    exec(impl_->db,"DELETE FROM rollback_receipt");Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(1,?,?,?,?)");receipt.text(1,operation);receipt.integer(2,owner);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.done();
+    if(!collecting){Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(?,?,?,?,?,?)");receipt.text(1,operation);receipt.integer(2,owner);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.text(5,source);receipt.integer(6,expected);receipt.done();}
     exec(impl_->db,"DROP TABLE rollback_links; DROP TABLE rollback_operations; DROP TABLE rollback_rows; DROP TABLE rollback_batches");
     impl_->reviews.clear();impl_->reviewed_groups.clear();impl_->reviewed_sources.clear();impl_->read_rows=VerificationRows{};impl_->read_stamps.clear();impl_->reviewed_transfers.reset();impl_->reviewed_transfer_stamp.clear();impl_->review_changes=-1;
     // Full verification is appropriate for destructive collection, and runs
     // before durability so any broken retained relationship rolls back intact.
-    exec(impl_->db,"DELETE FROM review_merges WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_merges.batch AND r.ordinal=review_merges.ordinal) OR NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_merges.target_batch AND r.ordinal=review_merges.target_ordinal); DELETE FROM review_choices WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_choices.batch AND r.ordinal=review_choices.ordinal); DELETE FROM review_sources WHERE NOT EXISTS(SELECT 1 FROM source_occurrences o WHERE o.batch=source_batch AND o.ordinal=source_ordinal); DELETE FROM review_members WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_members.batch AND r.ordinal=review_members.ordinal); DELETE FROM review_link_history WHERE NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=review_link_history.operation); DELETE FROM review_stack");
-    verify();finish([&]{transaction.commit();});return {std::string(operation),owner,review.transactions,review.failures};
+    exec(impl_->db,"DELETE FROM review_merges WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_merges.batch AND r.ordinal=review_merges.ordinal) OR NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_merges.target_batch AND r.ordinal=review_merges.target_ordinal); DELETE FROM review_choices WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_choices.batch AND r.ordinal=review_choices.ordinal); DELETE FROM review_sources WHERE NOT EXISTS(SELECT 1 FROM source_occurrences o WHERE o.batch=source_batch AND o.ordinal=source_ordinal); DELETE FROM review_undo_members WHERE original_child IN(SELECT child FROM review_members m WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=m.batch AND r.ordinal=m.ordinal)); DELETE FROM review_members WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_members.batch AND r.ordinal=review_members.ordinal); DELETE FROM review_link_restorations WHERE prior=0 AND undo_id IN(SELECT u.id FROM review_undos u JOIN review_link_history h ON h.answer=u.answer WHERE NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=h.operation)); DELETE FROM review_link_history WHERE NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=review_link_history.operation); DELETE FROM review_stack WHERE NOT EXISTS(SELECT 1 FROM action_headers h WHERE h.id=review_stack.answer AND h.state=1)");
+    if(!collecting){finish([&]{verify();transaction->commit();},true);}return {std::string(operation),owner,review.transactions,review.failures};
 }
 
 // A Review Link may have changed a committed relationship. Reverse its recorded
@@ -291,8 +333,8 @@ app::RollbackReceipt ImportStore::undo_linked_import(std::string_view operation,
     for(const auto& [id,account]:retained){(void)account;for(const auto& category:source_categories(id)){Statement keep(impl_->db,"INSERT OR IGNORE INTO retained_category_names VALUES(?)");keep.text(1,category.name);keep.done();}}
     Statement opening(impl_->db,"INSERT OR REPLACE INTO retained_opening_reviews SELECT m.account_id,m.opening,m.opening_date FROM import_group_accounts m JOIN account a ON a.singleton=m.account_id WHERE m.group_id=? AND m.created=1 AND m.opening IS NOT NULL AND a.confirmed=0");opening.text(1,source);opening.done();
     Statement group(impl_->db,"UPDATE import_groups SET state=3 WHERE id=? AND state=1");group.text(1,source);group.done();
-    exec(impl_->db,"DELETE FROM review_stack; DELETE FROM rollback_receipt");
-    Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(1,?,?,?,?)");receipt.text(1,key);receipt.integer(2,selected);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.done();
+    exec(impl_->db,"DELETE FROM review_stack WHERE NOT EXISTS(SELECT 1 FROM action_headers h WHERE h.id=review_stack.answer AND h.state=1)");
+    Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(?,?,?,?,?,?)");receipt.text(1,key);receipt.integer(2,selected);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.text(5,source);receipt.integer(6,review.token);receipt.done();
     impl_->selected_account=selected;impl_->reviews.clear();impl_->reviewed_groups.clear();impl_->reviewed_sources.clear();impl_->read_rows=VerificationRows{};impl_->read_stamps.clear();impl_->reviewed_transfers.reset();impl_->reviewed_transfer_stamp.clear();impl_->review_changes=-1;
-    verify();finish([&]{transaction.commit();});return {std::string(operation),selected,review.transactions,review.failures};
+    finish([&]{verify();transaction.commit();},true);return {std::string(operation),selected,review.transactions,review.failures};
 }

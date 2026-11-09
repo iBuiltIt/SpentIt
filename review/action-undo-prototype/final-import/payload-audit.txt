@@ -1,0 +1,12 @@
+Codec/capture regressions passed (ignored insert, same-PK replacement, key-change refusal, rollback, net no-op, integer extrema, NULL/empty/binary, malformed and REAL refusal; original/missing/wrong-domain registration).
+payload_audit,allocations,bodies=1000,members=1000,without_live_membership=0
+payload_audit,draft_allocation_meta,bodies=1000,members=1000,without_live_membership=0
+payload_audit,entry_allocation_meta,bodies=0,members=0,without_live_membership=0
+payload_audit,entry_allocations,bodies=0,members=0,without_live_membership=0
+payload_audit,entry_revisions,bodies=0,members=0,without_live_membership=0
+payload_audit,records,bodies=1000,members=1000,without_live_membership=0
+payload_audit,source_headers,bodies=1,members=1,without_live_membership=0
+payload_audit,source_occurrences,bodies=1000,members=1000,without_live_membership=0
+payload_audit,sources,bodies=1,members=1,without_live_membership=0
+payload_audit,versions,bodies=1000,members=1000,without_live_membership=0
+payload_audit,total_without_live_membership=0

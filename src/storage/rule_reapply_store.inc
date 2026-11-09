@@ -15,7 +15,7 @@ constexpr const char* reapply_membership="Invalid rule reapply Undo membership";
 constexpr const char* head_where=
     "FROM entry_heads h JOIN entry_values e ON e.batch=h.batch AND e.ordinal=h.ordinal AND e.revision=h.revision "
     "JOIN batches b ON b.id=h.batch WHERE e.active=1 AND b.account_id=spentit_account() AND b.state=1 AND substr(h.batch,1,10)<>'~transfer-'";
-bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="68";}
+bool reapply_schema(sqlite3* db){return scalar(db,"PRAGMA user_version")=="70";}
 std::string protection_stamp(const std::vector<app::TransferView>& links,std::int64_t account){
     std::set<std::pair<imports::Occurrence,std::string>> keys;
     for(const auto& value:links){
@@ -105,6 +105,7 @@ app::RuleReapplyPreview ImportStore::preview_rule_reapply(bool replace_manual,st
     const auto selected=account().identity;
     if(!undo_of.empty()){
         require_session_history(undo_of);
+        if(!action_head() || action_head()->id!=undo_of)fail(SQLITE_CONSTRAINT,reapply_undo);
         const auto original=rule_reapply_outcome(undo_of);if(!original)fail(SQLITE_CONSTRAINT,reapply_missing);
         if(original->request.changed!=original->entries.size())fail(SQLITE_CORRUPT,reapply_membership);
         if(sequence>INT64_MAX-integer(original->entries.size()))fail(SQLITE_FULL,"History capacity exhausted");
@@ -112,8 +113,7 @@ app::RuleReapplyPreview ImportStore::preview_rule_reapply(bool replace_manual,st
         for(const auto& member:original->entries){
             context.checkpoint("Loading committed rows");
             const auto current=committed_entry(member.identity);
-            if(!current.current.active || current.current.revision!=member.after_entry.revision || current.token.dependencies!=member.result_token.dependencies)fail(SQLITE_CONSTRAINT,reapply_undo);
-            if(later_relationship_blocks(member.identity,member.operation))fail(SQLITE_CONSTRAINT,reapply_undo);
+            if(!current.current.active || !review_restores_revision(impl_->db,member.identity,true,current.current.revision,member.after_entry.revision) || !same_draft(current.current.draft,member.after_entry.draft))fail(SQLITE_CONSTRAINT,reapply_undo);
             if(current.current.revision==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
             if(!member.before_entry.active || member.before_entry.draft.transaction.effective_total()!=current.current.draft.transaction.effective_total())fail(SQLITE_CONSTRAINT,reapply_money);
             app::RuleProposal proposal{member.identity,member.before_entry.draft,{},{}};
@@ -212,6 +212,15 @@ app::RuleReapplyReceipt ImportStore::apply_rule_reapply(std::string_view operati
         if(!request.undo_of.empty())fail(SQLITE_CORRUPT,reapply_membership);
         return {"",request,{},preview.before,Money(0,preview.before.currency()),preview.after};
     }
+    if(!request.undo_of.empty() && !impl_->undo_token) {
+        struct Legacy {Impl& state;~Legacy(){state.legacy_undo_finalize={};state.legacy_undo_domain.clear();state.legacy_undo_digest.clear();}} legacy{*impl_};
+        impl_->legacy_undo_domain="reapply";impl_->legacy_undo_digest=request_hash;
+        impl_->legacy_undo_finalize=[&]{
+            Statement group(impl_->db,"INSERT INTO rule_reapplications VALUES(?,?,?,?,?,?,?,?,?)");group.text(1,operation);group.integer(2,account().identity);group.integer(3,request.ruleset_revision);group.integer(4,request.catalog_revision);group.integer(5,request.replace_manual);group.integer(6,integer(request.evaluated));group.integer(7,integer(request.changed));group.integer(8,request.preview_sequence);group.text(9,request.undo_of);group.done();
+            Statement members(impl_->db,"INSERT INTO rule_reapplication_members SELECT ?1,row_number() OVER(ORDER BY l.sequence)-1,u.child FROM review_undo_members u JOIN ledger_operations l ON l.id=u.child WHERE u.undo_id=?1");members.text(1,operation);members.done();
+        };
+        undo_action(operation,preview_undo(request.undo_of,action_token()));return *rule_reapply_outcome(operation);
+    }
     const bool forward=request.undo_of.empty();
     std::vector<std::string> operations;std::vector<std::optional<std::int64_t>> rulesets;
     for(std::size_t index=0;index<preview.records.size();++index){
@@ -253,6 +262,7 @@ app::RuleReapplyReceipt ImportStore::apply_rule_reapply(std::string_view operati
     if(!request.undo_of.empty())group.text(9,request.undo_of);
     group.done();
     for(std::size_t index=0;index<operations.size();++index){Statement member(impl_->db,"INSERT INTO rule_reapplication_members VALUES(?,?,?)");member.text(1,operation);member.integer(2,integer(index));member.text(3,operations[index]);member.done();}
+    if(forward)record_transaction_action(operation,"rules-reapply",request_hash,operations);
     session_snapshot::completed(impl_->db,operation,"reapply",request_hash);
     finish([&]{transaction.commit();});
     return *rule_reapply_outcome(operation);

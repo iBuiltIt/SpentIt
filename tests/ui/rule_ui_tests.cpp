@@ -275,7 +275,7 @@ private slots:
         QVERIFY(object(s.root,"undoRules")->property("visible").toBool());
         run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Changed shop");
-        QVERIFY(click(s.root,"openRule_1"));QVERIFY(click(s.root,"undoRules"));wait(s.model);
+        QVERIFY(click(s.root,"openRule_1"));QVERIFY(click(s.root,"undoRules"));QVERIFY(object(s.root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(s.root,"confirmActionUndo"));wait(s.model);
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Shop");
         QVERIFY(!object(s.root,"undoRules")->property("visible").toBool());
         QVERIFY(click(s.root,"discardRules"));QVERIFY(click(s.root,"openRule_0"));
@@ -370,7 +370,9 @@ private slots:
         QTRY_VERIFY(object(s.root,"importCategories")->property("visible").toBool());
         QCOMPARE(s.model.state().value("importCategoryDecisions").toList().size(),1);
         QVERIFY(QMetaObject::invokeMethod(object(s.root,"importCategories"),"close"));
-        run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
+        run(s.model,"close",{},false); // A preparing import cannot expire its session.
+        run(s.model,"close",{{"skipAudit",true}}); // Simulate interruption, then recover.
+        run(s.model,"open",{{"path",s.path()}});
         QTRY_VERIFY(object(s.root,"importCategories")->property("visible").toBool());
         QVERIFY(!s.model.state().value("startupImportCleanup").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_SCREENSHOT"))QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_SCREENSHOT")));
@@ -657,7 +659,7 @@ private slots:
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking renamed");
         QCOMPARE(draftOf(s.model).value("memo").toString(),"Rule memo");
-        QVERIFY(click(s.root,"undoRules"));wait(s.model);
+        QVERIFY(click(s.root,"undoRules"));QVERIFY(object(s.root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(s.root,"confirmActionUndo"));wait(s.model);
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Parking original");
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
         run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
@@ -700,7 +702,7 @@ private slots:
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
         QVERIFY(click(s.root,"openRule_0"));
         QVERIFY(click(s.root,"applyRules"));wait(s.model);QCOMPARE(memo(),"Fee renamed");
-        QVERIFY(click(s.root,"undoRules"));wait(s.model);QCOMPARE(memo(),"Wise Charges for: card");
+        QVERIFY(click(s.root,"undoRules"));QVERIFY(object(s.root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(s.root,"confirmActionUndo"));wait(s.model);QCOMPARE(memo(),"Wise Charges for: card");
         run(s.model,"close");run(s.model,"open",{{"path",s.path()}});
         run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});QCOMPARE(memo(),"Wise Charges for: card");
     }
@@ -720,12 +722,12 @@ private slots:
         QVERIFY(click(s.root,"applyRules"));wait(s.model);QTRY_VERIFY(s.model.state().value("canUndoRules").toBool());
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
         run(s.model,"inspect",{{"batch",oldBatch},{"ordinal",0}});QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride old");
-        QVERIFY(click(s.root,"undoRules"));wait(s.model);
+        QVERIFY(click(s.root,"undoRules"));QVERIFY(object(s.root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(s.root,"confirmActionUndo"));wait(s.model);
         run(s.model,"inspect",{{"batch",newBatch},{"ordinal",0}});QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride new");
         QVERIFY(choose(s.root,"ruleTransactionScope",0));QVERIFY(click(s.root,"previewThisRule"));wait(s.model);QCOMPARE(summary(s.model),"2 transactions match. 0 already categorized. 0 handled by earlier rules. 2 eligible; 2 will change.");
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
         run(s.model,"inspect",{{"batch",oldBatch},{"ordinal",0}});QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
-        QVERIFY(click(s.root,"undoRules"));wait(s.model);QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride old");
+        QVERIFY(click(s.root,"undoRules"));QVERIFY(object(s.root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(s.root,"confirmActionUndo"));wait(s.model);QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride old");
         run(s.model,"inspect",{{"batch",newBatch},{"ordinal",0}});QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride new");
     }
     void appliedSplitAndTransactionTargets() {

@@ -1,0 +1,7 @@
+workload,rows_per_source,comparator,metric,comparator_bytes,prototype_bytes,delta_bytes,delta_percent
+mixed,10000,baseline,file_bytes,22249472,29442048,7192576,32.3270
+mixed,10000,baseline,btree_payload_bytes,15642810,15912862,270052,1.7264
+mixed,10000,baseline,vfs_cumulative_peak,26091344,37147480,11056136,42.3747
+mixed,10000,current,file_bytes,21237760,29442048,8204288,38.6307
+mixed,10000,current,btree_payload_bytes,14796896,15912862,1115966,7.5419
+mixed,10000,current,vfs_cumulative_peak,24931880,37147480,12215600,48.9959

@@ -14,7 +14,8 @@ struct TransferRequest {
     std::optional<Money> amount;
     std::string date,payee,memo;
     std::optional<transfers::BankEvidence> evidence;
-    // Encoded only for merge and retarget. mode 0 releases to a category; mode 1
+    // For Review Undo, mode 0 is a single step; 1/2 restore two account sides.
+    // For merge and retarget, mode 0 releases to a category; mode 1
     // generates or replaces a destination. Facts are the caller's complete request.
     std::string kept;
     int mode=0;
@@ -38,6 +39,8 @@ struct TransferView {
     std::int64_t created_sequence;
     // Derived source ownership for the selected account; not part of link history.
     bool source_matched=false;
+    // Current persisted relationship revision; excluded from the financial payload.
+    std::int64_t sequence=0;
 };
 struct TransferReceipt {
     std::string operation;

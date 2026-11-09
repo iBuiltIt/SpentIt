@@ -1,0 +1,13 @@
+metrics,original,file_bytes=61399040,page_size=4096,pages=14990,freelist_pages=656,live_page_bytes=58712064
+sqlite,3.53.4
+sqlcipher,4.19.0 community
+logical_equality,tables=95,rows=350018,typed_values=equal,implicit_rowids=equal,schema=equal
+logical_equality,tables=95,rows=350018,typed_values=equal,implicit_rowids=equal,schema=equal
+metrics,vacuum,file_bytes=54345728,page_size=4096,pages=13268,freelist_pages=0,live_page_bytes=54345728
+logical_equality,tables=95,rows=350018,typed_values=equal,implicit_rowids=equal,schema=equal
+protection,unkeyed=refused,wrong_key=refused
+logical_equality,tables=95,rows=350018,typed_values=equal,implicit_rowids=equal,schema=equal
+metrics,backup,file_bytes=61399040,page_size=4096,pages=14990,freelist_pages=656,live_page_bytes=58712064
+logical_equality,tables=95,rows=350018,typed_values=equal,implicit_rowids=equal,schema=equal
+protection,unkeyed=refused,wrong_key=refused
+checks,integrity=ok,cipher_integrity=ok,foreign_keys=ok,reopen=ok

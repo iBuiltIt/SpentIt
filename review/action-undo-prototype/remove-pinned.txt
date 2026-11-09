@@ -1,0 +1,38 @@
+Codec/capture regressions passed (ignored insert, same-PK replacement, key-change refusal, rollback, net no-op, integer extrema, NULL/empty/binary, malformed and REAL refusal; original/missing/wrong-domain registration).
+installed,file=2322432,live_page_bytes=2293760,free_page_bytes=28672,inverse_keys=0,inverse_key_bytes=0,inverse_image_bytes=0
+captured,file=2985984,live_page_bytes=2985984,free_page_bytes=0,inverse_keys=7009,inverse_key_bytes=196100,inverse_image_bytes=264230
+table,captured,allocations_membership,keys=1000,key_bytes=36000,image_bytes=36000
+table,captured,batch_source_currency,keys=1,key_bytes=9,image_bytes=29
+table,captured,batches,keys=1,key_bytes=9,image_bytes=89
+table,captured,draft_allocation_meta_membership,keys=1000,key_bytes=36000,image_bytes=37000
+table,captured,draft_fields,keys=1000,key_bytes=27000,image_bytes=94000
+table,captured,events,keys=1,key_bytes=11,image_bytes=35
+table,captured,history_order,keys=1,key_bytes=11,image_bytes=32
+table,captured,records_membership,keys=1000,key_bytes=18000,image_bytes=18000
+table,captured,retained_account_aliases,keys=1,key_bytes=22,image_bytes=0
+table,captured,retained_source_counts,keys=1,key_bytes=9,image_bytes=18
+table,captured,rollback_receipt,keys=1,key_bytes=11,image_bytes=0
+table,captured,source_associations,keys=1000,key_bytes=34000,image_bytes=34000
+table,captured,source_headers_membership,keys=1,key_bytes=9,image_bytes=9
+table,captured,source_occurrences_membership,keys=1000,key_bytes=18000,image_bytes=18000
+table,captured,sources_membership,keys=1,key_bytes=9,image_bytes=18
+table,captured,versions_membership,keys=1000,key_bytes=27000,image_bytes=27000
+Pinned source inactive; one original body retained; membership-only inverse.
+restored,file=3272704,live_page_bytes=2969600,free_page_bytes=303104,inverse_keys=7009,inverse_key_bytes=196100,inverse_image_bytes=264230
+table,restored,allocations_membership,keys=1000,key_bytes=36000,image_bytes=36000
+table,restored,batch_source_currency,keys=1,key_bytes=9,image_bytes=29
+table,restored,batches,keys=1,key_bytes=9,image_bytes=89
+table,restored,draft_allocation_meta_membership,keys=1000,key_bytes=36000,image_bytes=37000
+table,restored,draft_fields,keys=1000,key_bytes=27000,image_bytes=94000
+table,restored,events,keys=1,key_bytes=11,image_bytes=35
+table,restored,history_order,keys=1,key_bytes=11,image_bytes=32
+table,restored,records_membership,keys=1000,key_bytes=18000,image_bytes=18000
+table,restored,retained_account_aliases,keys=1,key_bytes=22,image_bytes=0
+table,restored,retained_source_counts,keys=1,key_bytes=9,image_bytes=18
+table,restored,rollback_receipt,keys=1,key_bytes=11,image_bytes=0
+table,restored,source_associations,keys=1000,key_bytes=34000,image_bytes=34000
+table,restored,source_headers_membership,keys=1,key_bytes=9,image_bytes=9
+table,restored,source_occurrences_membership,keys=1000,key_bytes=18000,image_bytes=18000
+table,restored,sources_membership,keys=1,key_bytes=9,image_bytes=18
+table,restored,versions_membership,keys=1000,key_bytes=27000,image_bytes=27000
+Representative inverse round trip passed; payload split, coordinator and storage acceptance remain unverified.

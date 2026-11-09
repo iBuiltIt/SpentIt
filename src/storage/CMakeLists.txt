@@ -32,7 +32,7 @@ set_target_properties(spentit_storage_prototype PROPERTIES CXX_EXTENSIONS OFF)
 spentit_compiler_options(spentit_storage_prototype)
 
 if(SPENTIT_IMPORT_WORKFLOW)
-add_library(spentit_import_store STATIC import_store.cpp document_gateway.cpp verification_cache.cpp document_lock.cpp)
+add_library(spentit_import_store STATIC import_store.cpp action_chain.cpp document_gateway.cpp verification_cache.cpp document_lock.cpp)
 target_link_libraries(spentit_import_store PRIVATE OpenSSL::Crypto)
 if(WIN32)
   target_link_libraries(spentit_import_store PRIVATE shell32 ole32 uuid)

@@ -95,8 +95,8 @@ void income_review(){Directory dir;
  check(!definition(s,"parking").income && s.category_change_outcome("saved-income").has_value());check(s.review_sheet().generation==after.generation+1);
  const auto sheet=s.review_sheet();app::ReviewAnswer answer;answer.generation=sheet.generation;answer.question=sheet.questions.front().key;answer.action=app::ReviewAction::separate;
  for(const auto& row:sheet.questions.front().rows)answer.selected.push_back(row.identity);
- s.answer_review("separate",answer);check(s.review_sheet().can_undo);apply(s,"income-again",request);check(!s.review_sheet().can_undo);s.verify();}
- {auto s=ImportStore::open(dir.path/"doc",password);check(definition(s,"parking").income && !s.review_sheet().can_undo);s.verify();}
+ s.answer_review("separate",answer);check(s.review_sheet().can_undo);apply(s,"income-again",request);check(s.review_sheet().can_undo);s.verify();}
+ {auto s=ImportStore::open(dir.path/"doc",password);check(definition(s,"parking").income && s.review_sheet().can_undo);s.verify();}
 }
 void setup(){Directory dir;
  {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check(s.category_catalog().categories.size()==46);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}

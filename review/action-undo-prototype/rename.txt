@@ -1,0 +1,14 @@
+Codec/capture regressions passed (ignored insert, same-PK replacement, key-change refusal, rollback, net no-op, integer extrema, NULL/empty/binary, malformed and REAL refusal; original/missing/wrong-domain registration).
+installed,file=1683456,live_page_bytes=1675264,free_page_bytes=8192,inverse_keys=0,inverse_key_bytes=0,inverse_image_bytes=0
+captured,file=1683456,live_page_bytes=1675264,free_page_bytes=8192,inverse_keys=4,inverse_key_bytes=51,inverse_image_bytes=90
+table,captured,account,keys=1,key_bytes=11,image_bytes=90
+table,captured,account_operations,keys=1,key_bytes=10,image_bytes=0
+table,captured,history_order,keys=1,key_bytes=11,image_bytes=0
+table,captured,session_history,keys=1,key_bytes=19,image_bytes=0
+Full legacy verifier failed with SQLITE_CORRUPT after reversal; this is not a passing full verification. Registry-policy conversion remains required.
+restored,file=1748992,live_page_bytes=1712128,free_page_bytes=36864,inverse_keys=4,inverse_key_bytes=51,inverse_image_bytes=90
+table,restored,account,keys=1,key_bytes=11,image_bytes=90
+table,restored,account_operations,keys=1,key_bytes=10,image_bytes=0
+table,restored,history_order,keys=1,key_bytes=11,image_bytes=0
+table,restored,session_history,keys=1,key_bytes=19,image_bytes=0
+Representative inverse round trip passed; payload split, coordinator and storage acceptance remain unverified.

@@ -1,17 +1,29 @@
 # SpentIt — Where did my money go?
 
-## Unified action Undo — accepted direction 2026-11-08
+## Unified Undo replacement — implementation, 2026-11-09
 
-Read the [action Undo design and next-session handoff](doc/action-undo-design.md)
-before further history/Undo work. The owner accepted one strict file-wide session
-chain, reversible acceptance, full reversal of current-session imports including
-their setup, and undoable removal of eligible older imports. Design/review and
-handoff are complete; the owner approved implementation in a fresh session on
-2026-11-08. Use the design-review-implement workflow for implementation and an
-independent implementation review. Existing code
-does not yet implement this contract. Preserve session-close expiry, recovery,
-exact financial/source relationships and the measured storage acceptance. Final
-Change History layout follows the Undo design; manual changes remain deferred.
+The owner authorized implementation in a new session, including the replacement's
+visible scope choices. The earlier design-only stop is historical. Read the
+[design](doc/action-undo-design.md), [operation inventory](doc/action-undo-inventory.md)
+and [implementation/verification record](doc/action-undo-implementation.md) before
+Undo/history changes. The replacement is integrated; see status for verification and limits.
+Working experimental formats are **70 with rules / 69 without**.
+
+Ordinary Undo uses one durable newest-first file-wide action chain for transaction
+operations, opening/currency correction and acceptance. Import is one atomic
+source-owned rollback with no ordinary edit journal for new rows. Retain permitted
+import-created setup, including accounts/categories and explicit openings.
+Definitions/settings preserve the chain and invalidate previews. Save and apply is
+atomic; its inverse retains the definition. Older-import removal and Discard require
+an empty chain. Successful close expires ordinary history; preserve recovery on
+failure/crash and block successful close during initial import decisions.
+
+The [rethink handoff](doc/action-undo-rethink-handoff.md) and archived rejected
+experiment explain why generic storage-row capture was rejected. Do not resume that
+architecture, its agent/reviewer loop or proposed storage multipliers. Prototype
+sources are archived under `review/action-undo-prototype/retired-source/`.
+Preserve financial/recovery/session-expiry and measured storage gates. Final Change
+History layout and MAN-017 manual publication remain separate work.
 
 ## First release and next UI phase — accepted 2026-11-08
 

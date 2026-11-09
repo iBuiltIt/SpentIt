@@ -314,7 +314,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(object(root,"deleteSelectedContext"),"triggered"));
         QTRY_VERIFY(object(root,"deleteSelectionDialog")->property("visible").toBool());QVERIFY(click(root,"confirmDeleteSelection"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         QCOMPARE(model.occurrenceIndex(batch,0),-1);QCOMPARE(model.state().value("newTransactions").toInt(),0);
-        run(model,"undo_edit");QVERIFY(model.occurrenceIndex(batch,0)>=0);
+        run(model,"undo_edit");QVERIFY(model.occurrenceIndex(batch,0)>=0);run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
         QVERIFY(QMetaObject::invokeMethod(object(root,"deleteSelectedContext"),"triggered"));
         QTRY_VERIFY(object(root,"deleteSelectionDialog")->property("visible").toBool());
         QVERIFY(click(root,"confirmDeleteSelection"));QTRY_VERIFY(!model.busy());

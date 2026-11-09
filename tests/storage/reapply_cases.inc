@@ -34,7 +34,7 @@ void reapply_basics(){
         rejects_text([&]{preview(s,"rows",batch_revision(s,"rows"));},"Committed records are not changed by rules");
         auto undo=reapply_preview(s,false,"reapply");check(undo.request.undo_of=="reapply" && undo.request.changed==2 && undo.records[0].after.payee==marker && undo.records[0].after.payee_owner==FieldOwnership::source);
         auto undone=reapply_apply(s,"undo-reapply",undo.request);check(undone.operation=="undo-reapply" && s.committed_entry({"rows",0}).current.draft.payee==marker && !s.committed_entry({"rows",0}).current.draft.payee_rule && s.committed_balance()==balance);
-        auto redo=reapply_preview(s,false,"undo-reapply");auto redone=reapply_apply(s,"redo-reapply",redo.request);check(redone.operation=="redo-reapply" && s.committed_entry({"rows",1}).current.draft.payee=="Ruled Payee" && s.committed_entry({"rows",1}).current.draft.payee_rule==RuleMark{"payee-rule",0});
+        rejects_text([&]{reapply_preview(s,false,"undo-reapply");},"Newer transaction");auto redo=reapply_preview(s);auto redone=reapply_apply(s,"redo-reapply",redo.request);check(redone.operation=="redo-reapply" && s.committed_entry({"rows",1}).current.draft.payee=="Ruled Payee" && s.committed_entry({"rows",1}).current.draft.payee_rule==RuleMark{"payee-rule",0});
         auto later=s.committed_entry({"rows",0}).current.draft;later.memo="Later";later.memo_owner=FieldOwnership::manual;later.memo_rule.reset();correct(s,"later-memo",{"rows",0},later);
         rejects_text([&]{reapply_preview(s,false,"redo-reapply");},"Newer transaction, transfer relationship, or source association prevents Undo");
         s.verify();

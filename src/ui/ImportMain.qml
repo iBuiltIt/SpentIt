@@ -549,7 +549,7 @@ ApplicationWindow {
         if(ledgerViewKind==="review") {
             related=action==="review_answer" || action==="review_undo";restore=related;clear=true
         } else if(ledgerViewKind==="selected-edit") {
-            related=action==="delete_selection" || action==="rename_payee_selection" || action==="restore_imported_selection" || action==="undo_edit"
+            related=action==="delete_selection" || action==="rename_payee_selection" || action==="restore_imported_selection" || (action==="undo_edit" || action==="undo_action")
             restore=related;clear=true
         } else if(ledgerViewKind==="category") {
             related=action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment"
@@ -723,7 +723,7 @@ ApplicationWindow {
         MenuItem {height:visible?implicitHeight:0;objectName:"deleteAccount";text:"Delete…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){deleteAccountDialog.open()})}
         MenuItem {height:visible?implicitHeight:0;objectName:"correctOpening";text:"Correct opening…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:editOpening()}
         MenuItem {height:visible?implicitHeight:0;objectName:"reassignCurrency";text:"Reassign currency…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:guard(function(){currencySearch.text="";currencyDialog.open()})}
-        MenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("undo_account",{operation:workflow.newIdentity(),undoOf:s.undoableAccountOperation})})}
+        MenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:undoEdit()}
     }
     function revealHistoryOperation(operation) {
         let entries=s.entryHistory||[]
@@ -759,7 +759,6 @@ ApplicationWindow {
     property string rulePreviewKey: ""
     property string rulePendingPreviewKey: ""
     property bool currentRulePreview: !!rulePreviewKey && rulePreviewKey===rulesPreviewKey()
-    property bool ruleApplyAfterSave: false
     property bool ruleApplyAfterPreview: false
     function rulesPreviewKey() {return JSON.stringify([s.accountId,rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,false])}
     property int ruleEditGeneration: 0
@@ -1468,7 +1467,7 @@ ApplicationWindow {
         if(choices.length===1)editMatched(choices[0].rule)
         else if(choices.length>1)matchedRuleDialog.open()
     }
-    function saveRules() {
+    function saveRules(apply) {
         if(ruleIndex<0 || !acceptRuleCategory())return
         let row=ruleModel.get(ruleIndex)
         let image=ruleBaseline.filter(r=>r.id!==row.id)
@@ -1482,14 +1481,14 @@ ApplicationWindow {
             image.splice(position,0,ruleImage(row))
         }
         ruleSavingAll=false;ruleSavingId=row.id
-        workflow.command("rules_save",{rules:image})
+        workflow.command("rules_save",{rules:image,apply:apply===true,rule:row.id,newOnly:ruleTransactionScope.currentIndex===1})
     }
     function previewRules() {rulePreviewSingle=false;previewAccountRules()}
     function applyReady() {return !workflow.busy && !!s.accountId && ruleCanRun}
     function applyRules() {
         if(!applyReady() || !acceptRuleCategory())return
         rulePreviewSingle=true
-        if(ruleChanged(ruleIndex)){ruleApplyAfterSave=true;saveRules()}
+        if(ruleChanged(ruleIndex)){saveRules(true)}
         else {ruleApplyAfterPreview=true;previewAccountRules()}
     }
     function rulesSaved() {
@@ -1589,8 +1588,28 @@ ApplicationWindow {
             })
         })
     }
+    property var pendingUndo: ({})
     function undoEdit() {
-        guard(function(){if(s.canUndoManual){workflow.command("undo_manual");return;}if(s.groupEditUndo)captureLedgerView("selected-edit");else rememberEditView();workflow.command("undo_edit")})
+        if(!s.canUndoAction || workflow.busy)return
+        const target=Object.assign({},s.actionUndo)
+        const show=function(){
+            const current=s.actionUndo||{}
+            if(current.id!==target.id || current.epoch!==target.epoch || current.session!==target.session){workspaceFeedback="The latest action changed. Choose Undo again to review it.";return}
+            pendingUndo=target;if((s.selectionCount||0)>1){captureLedgerView("selected-edit");editView=null;editFocus=null}else rememberEditView();actionUndoConfirm.open()
+        }
+        // Undo changes saved transactions, openings and source ownership. Rule,
+        // report and category definition drafts remain independent.
+        if(dirty){pendingAction=show;if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open()}
+        else show()
+    }
+    HelpDialog {
+        id:actionUndoConfirm;objectName:"actionUndoConfirm";helpTarget:"help:add-correct-transactions#undo-a-saved-change";modal:true;anchors.centerIn:parent;width:540
+        title:"Undo "+(pendingUndo.label||"action")+"?"
+        Label {width:500;wrapMode:Text.Wrap;text:(pendingUndo.count?pendingUndo.count+" transaction"+(pendingUndo.count===1?"":"s")+".\n":"")+(pendingUndo.accounts?"Accounts: "+pendingUndo.accounts+".\n":"")+(pendingUndo.kind===7?"Remove the whole import. Accounts and categories created during import remain.":pendingUndo.kind===2?"Reverse the transaction changes. Saved rules remain.":pendingUndo.kind===6?"Return these transactions to New without changing their amounts.":"Restore the state before this action.")}
+        footer:DialogButtonBox {
+            Button {objectName:"confirmActionUndo";text:"Undo";onClicked:{actionUndoConfirm.close();workflow.command("undo_action",pendingUndo)}}
+            Button {text:"Cancel";onClicked:actionUndoConfirm.close()}
+        }
     }
     function selectLedgerRow(row, modifiers) {
         guard(function(){workflow.command("select",{row:row,range:!!(modifiers & Qt.ShiftModifier),toggle:!!(modifiers & (Qt.ControlModifier|Qt.MetaModifier)),firstSearchSelection:!!searchReturn && !searchReturn.chosen})})
@@ -1683,7 +1702,7 @@ ApplicationWindow {
             if(action==="close" && !success && closingRequested){closingRequested=false;closeAuditFailure.open()}
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
 
-            if(success && !contextInspection && (action==="inspect" || action==="undo_edit" || action==="import"))editorClosed=false
+            if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action") || action==="import"))editorClosed=false
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
 
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
@@ -1694,10 +1713,10 @@ ApplicationWindow {
             if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
             if(success && action==="release_transfer_batch")workspaceFeedback="Category changed. Undo is available."
             if(success && action==="undo_transfer_assignment")workspaceFeedback="Category change undone."
-            if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session until another kind of change.":"Edit saved."
-            if(success && action==="undo_edit")workspaceFeedback="Edit undone."
+            if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session.":"Edit saved."
+            if(success && (action==="undo_edit" || action==="undo_action"))workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
-            if(!success){ruleApplyAfterSave=false;ruleApplyAfterPreview=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
+            if(!success){ruleApplyAfterPreview=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
             if(success && (action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
             if(success && action.indexOf("transfer_")===0 && !(s.transferMergePreview||{}).id && (s.transferReceipt||{}).operation)workspaceFeedback="Transfer operation saved."
@@ -1785,7 +1804,7 @@ ApplicationWindow {
                 if(action==="apply_change") dismiss(changePreview)
                 if(action==="transfer_merge" && (s.transferMergePreview||{}).id) mergePreview.open()
                 if(action==="transfer_merge_apply") dismiss(mergePreview)
-                if(["delete_selection","rename_payee_selection","restore_imported_selection","begin_manual","cancel_manual","save_manual","undo_manual","inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
+                if(["delete_selection","rename_payee_selection","restore_imported_selection","begin_manual","cancel_manual","save_manual","undo_manual","inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","undo_action","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
                 if(action==="save" || action==="save_manual" || action==="cancel_manual" || action==="accept_edit" || action==="apply_change") {
                     dirty=false
                     if(pendingAction) {let next=pendingAction;pendingAction=null;guard(next)}
@@ -1794,7 +1813,6 @@ ApplicationWindow {
                 if(action==="rules_save")rulesSaved()
                 if(action==="rules_discard"){loadRulesForm();setRulesLeaving(false);if(pendingAction){let next=pendingAction;pendingAction=null;guard(next)}}
                 if((action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo") && !dirty) loadEditor()
-                if(action==="rules_save" && ruleApplyAfterSave){ruleApplyAfterSave=false;ruleApplyAfterPreview=true;previewAccountRules()}
                 if(action==="rules_preview" && ruleValidatingAll){validateNextRule()}
                 else if(action==="rules_preview"){
                     rulePreviewKey=rulePendingPreviewKey
@@ -1806,7 +1824,7 @@ ApplicationWindow {
                 if(action==="close") {settingUp=false;probeTimer.restart();if(closingRequested){allowClose=true;Qt.callLater(function(){window.close();Qt.quit()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
             settleLedgerView(action,success)
-            if(action==="save" || action==="save_manual" || action==="accept_edit" || action==="undo_edit")restoreEditView()
+            if(action==="save" || action==="save_manual" || action==="accept_edit" || (action==="undo_edit" || action==="undo_action"))restoreEditView()
             if(success && action==="begin_manual"){editorClosed=false;Qt.callLater(function(){ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain);editPayee.forceActiveFocus()})}
         }
     }
@@ -2402,8 +2420,8 @@ ApplicationWindow {
     }
     Shortcut {
         sequences:[StandardKey.Undo]
-        enabled:!reviewSheet.visible && (!!s.canUndoManual || !!s.canUndoEdit || !!s.canUndoReview || !!s.canUndoTransferAssignment) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
-        onActivated:if(s.canUndoEdit || s.canUndoManual)undoEdit();else {captureLedgerView(s.canUndoTransferAssignment?"category":"review");workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")}
+        enabled:!reviewSheet.visible && !actionUndoConfirm.visible && (!!s.canUndoAction) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        onActivated:undoEdit()
     }
     property var exclusionEndpoint: ({})
     property var exclusionEditing: ({})
@@ -2495,7 +2513,7 @@ ApplicationWindow {
         const index=rows.findIndex(row=>row.key===duplicateOriginKey)
         if(rows.length)showDuplicateInLedger(rows[(index+1)%rows.length])
     }
-    function undoLedgerReview() {guard(function(){captureLedgerView("review");workflow.command("review_undo")})}
+    function undoLedgerReview() {undoEdit()}
     property bool reviewInspecting: false
     property bool pendingReviewInspection: false
     function inspectReviewTransaction(row) {
@@ -2899,7 +2917,7 @@ ApplicationWindow {
             GridLayout {Layout.fillWidth:true;Layout.margins:12;columns:width>800?2:1
                 Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true}
                 Flow {Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredHeight:childrenRect.height;spacing:6;layoutDirection:Qt.RightToLeft
-                    Button {text:"Undo last review decision";objectName:"reviewUndo";visible:!!s.canUndoReview;enabled:!workflow.busy;onClicked:workflow.command("review_undo")}
+                    Button {text:s.editUndoLabel||"Undo";objectName:"reviewUndo";visible:!!s.canUndoAction;enabled:!workflow.busy;onClicked:undoEdit()}
                     Button {objectName:"openReviewTransfers";text:"Transfers…";visible:!!s.transfersSupported;enabled:!workflow.busy;onClicked:guard(function(){transferDialog.open()})}
                     Button {objectName:"chooseImportUndo";text:"Undo import…";visible:(s.undoableImports||[]).length>0;enabled:!workflow.busy;onClicked:guard(openImportUndoPicker)}
                 }
@@ -2962,8 +2980,8 @@ ApplicationWindow {
             onMovementEnded:captureReviewView()
     Shortcut {objectName:"reviewUndoShortcut";
         sequences:[StandardKey.Undo]
-        enabled:reviewSheet.visible && !acceptanceDialog.visible && !mappedTransferConfirm.visible && !importUndoPicker.visible && !importUndoConfirm.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoReview && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
-        onActivated:{if(s.canUndoTransferAssignment)captureLedgerView("category");workflow.command(s.canUndoTransferAssignment?"undo_transfer_assignment":"review_undo")}
+        enabled:reviewSheet.visible && !actionUndoConfirm.visible && !acceptanceDialog.visible && !mappedTransferConfirm.visible && !importUndoPicker.visible && !importUndoConfirm.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoAction && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        onActivated:undoEdit()
     }
             ScrollBar.vertical:UsableScrollBar {}
             ScrollBar.horizontal:UsableScrollBar {}
@@ -3427,7 +3445,7 @@ ApplicationWindow {
                         RowLayout {
                             visible:!!s.canUndoRules;Layout.fillWidth:true;Layout.topMargin:16
                             Label {textFormat:Text.PlainText;text:"Last rule application · "+rulesAccountName;Layout.fillWidth:true;wrapMode:Text.Wrap}
-                            Button {objectName:"undoRules";text:"Undo application";enabled:!workflow.busy;onClicked:workflow.command("rules_account_undo")}
+                            Button {objectName:"undoRules";text:"Undo application";enabled:!workflow.busy;onClicked:undoEdit()}
                         }
                     }
                     }
@@ -3519,8 +3537,8 @@ ApplicationWindow {
                 Button {objectName:"searchHelp";text:"Search help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp("help:search-examples")}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
                 Button {objectName:"addTransaction";visible:!window.reportLedger;text:"+ New transaction";enabled:!s.readOnly && !workflow.busy;onClicked:addTransaction();ToolTip.visible:hovered;ToolTip.text:"Add transaction";Accessible.name:"Add transaction"}
-                Button {objectName:"undoEdit";text:s.editUndoLabel||"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo edits from this session. Other changes end this Undo sequence.";ToolTip.visible:hovered}
-                Button {objectName:"undoTransferAssignment";text:"Undo category change";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:guard(function(){captureLedgerView("category");workflow.command("undo_transfer_assignment")})}
+                Button {objectName:"undoEdit";text:s.editUndoLabel||"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo the latest saved action in this file.";ToolTip.visible:hovered}
+                Button {objectName:"undoTransferAssignment";text:"Undo category change";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:undoEdit()}
             }
             ColumnLayout {
                 objectName:"ledgerDuplicateBar";Layout.fillWidth:true;visible:!window.reportLedger && (!!duplicateOrigin || !!s.canUndoReview || s.reviewReady===false || Object.values(duplicateRows).some(row=>row.account===s.accountId))
@@ -3702,7 +3720,7 @@ ApplicationWindow {
         Keys.onPressed:function(event) {
             if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter)event.accepted=true
             else if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}
-            else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}
+
         }
         enabled:!workflow.busy
         width:parent.width;height:330
@@ -3723,12 +3741,12 @@ ApplicationWindow {
                 }
                 RowLayout {
                     visible:!!selected.draft
-                    NavigableTextField {id:editDate;KeyNavigation.tab:editPayee;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                    NavigableTextField {id:editDate;KeyNavigation.tab:editPayee;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
                     CalendarPicker {objectName:"transactionCalendar";workflow:window.workflowBackend;field:editDate;enabled:editEnabled;onSelected:function(value){editDate.text=value;dirty=true}}
-                    NavigableTextField {id:editPayee;KeyNavigation.tab:editTotal;KeyNavigation.backtab:editDate;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                    NavigableTextField {id:editPayee;KeyNavigation.tab:editTotal;KeyNavigation.backtab:editDate;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
-                    NavigableTextField {id:editTotal;onEditingFinished:if(!window.helpFocusSuspended && selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                    NavigableTextField {id:editTotal;onEditingFinished:if(!window.helpFocusSuspended && selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
                 }
                 Repeater {
@@ -3775,17 +3793,17 @@ ApplicationWindow {
                             canUndoAssignment:!dirty && !!s.canUndoEdit
                             onUndoAssignmentRequested:undoEdit()
                         }
-                        NavigableTextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                        NavigableTextField {visible:!s.categoriesSupported;text:category;placeholderText:"Category";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
-                        NavigableTextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                        NavigableTextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
-                        NavigableTextField {id:splitAmount;onEditingFinished:{if(!window.helpFocusSuspended && selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                        NavigableTextField {id:splitAmount;onEditingFinished:{if(!window.helpFocusSuspended && selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1};splitEditMessage="";dirty=true} Accessible.name:"Split amount"}
                         Label {objectName:"splitRemainder_"+index;visible:!manualSplitAmounts && automaticSplitIndex===index;text:"Automatic remainder"}
                         Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && !category.startsWith("[");onClicked:{if(!enabled || splitModel.count<=1)return;window.removeEditorSplit(index)}}
                     }
                 }
-                NavigableTextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}else if(event.matches(StandardKey.Undo) && !dirty && (s.canUndoEdit || s.canUndoManual)){undoEdit();event.accepted=true}}
+                NavigableTextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
                 RowLayout {
                     visible:editEnabled || (!!s.rulesSupported && !!selected.batch)

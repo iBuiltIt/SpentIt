@@ -1,4 +1,4 @@
-bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="68";}
+bool ImportStore::bulk_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="70";}
 std::string ImportStore::bulk_group(std::string_view operation) const {if(!bulk_supported())return {};Statement group(impl_->db,"SELECT operation FROM bulk_members WHERE entry_operation=?");group.text(1,operation);return group.row()?group.bytes(0):std::string{};}
 namespace {
 constexpr const char* bulk_refresh="Bulk preview changed; refresh before applying";
@@ -78,6 +78,16 @@ app::BulkReceipt ImportStore::apply_bulk(std::string_view operation,const app::B
         return *prior;
     }
     const auto preview=preview_bulk(supplied.request);if(!same_preview(preview,supplied))fail(SQLITE_CONSTRAINT,bulk_refresh);
+    if(preview.request.kind==app::ChangeKind::undo && !impl_->undo_token) {
+        struct Legacy {Impl& state;~Legacy(){state.legacy_undo_finalize={};state.legacy_undo_domain.clear();state.legacy_undo_digest.clear();}} legacy{*impl_};
+        impl_->legacy_undo_domain="bulk";impl_->legacy_undo_digest=request_hash;
+        impl_->legacy_undo_finalize=[&]{
+            Statement group(impl_->db,"INSERT INTO bulk_operations VALUES(?,3,NULL,?,?,?,?)");group.text(1,operation);group.text(2,preview.request.undo_of);group.integer(3,preview.preview_sequence);group.integer(4,preview.catalog_revision);group.integer(5,integer(preview.entries.size()));group.done();
+            Statement members(impl_->db,"INSERT INTO bulk_members SELECT ?1,row_number() OVER(ORDER BY l.sequence)-1,u.child FROM review_undo_members u JOIN ledger_operations l ON l.id=u.child WHERE u.undo_id=?1");members.text(1,operation);members.done();
+        };
+        undo_action(operation,preview_undo(preview.request.undo_of,action_token()));return *bulk_outcome(operation);
+    }
+    if(preview.request.kind==app::ChangeKind::correct && std::all_of(preview.entries.begin(),preview.entries.end(),[](const auto& e){return same_draft(e.before_entry.draft,e.after_entry.draft);}))fail(SQLITE_CONSTRAINT,"No changes to save.");
     std::vector<std::string> operations;std::vector<std::optional<std::int64_t>> rulesets;
     for(std::size_t i=0;i<preview.entries.size();++i){
         operations.push_back(i==0?std::string(operation):std::string(operation)+"-"+std::to_string(i));
@@ -99,6 +109,7 @@ app::BulkReceipt ImportStore::apply_bulk(std::string_view operation,const app::B
     }
     Statement group(impl_->db,"INSERT INTO bulk_operations VALUES(?,?,?,?,?,?,?)");group.text(1,operation);group.integer(2,static_cast<int>(preview.request.kind));if(preview.request.kind==app::ChangeKind::correct)group.text(3,preview.request.category);if(preview.request.kind==app::ChangeKind::undo)group.text(4,preview.request.undo_of);group.integer(5,preview.preview_sequence);group.integer(6,preview.catalog_revision);group.integer(7,integer(preview.entries.size()));group.done();
     for(std::size_t i=0;i<operations.size();++i){Statement member(impl_->db,"INSERT INTO bulk_members VALUES(?,?,?)");member.text(1,operation);member.integer(2,integer(i));member.text(3,operations[i]);member.done();}
+    if(preview.request.kind!=app::ChangeKind::undo)record_transaction_action(operation,"ledger-bulk",request_hash,operations);
     session_snapshot::completed(impl_->db,operation,"bulk",request_hash);
     finish([&]{transaction.commit();});return *bulk_outcome(operation);
 }

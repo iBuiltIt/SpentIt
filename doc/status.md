@@ -1,6 +1,134 @@
 # Project status
 
-## Unified action Undo — reviewed design handoff, 2026-11-08
+## Unified Undo replacement — implemented and verified, 2026-11-09
+
+The authorized replacement is integrated in storage and the application, with
+working experimental formats **70 with rules / 69 without**. One durable file-wide
+head covers financial transaction actions, acceptance and whole-import rollback.
+All financial Undo entry points confirm the same action/account/count scope; native
+text Undo is preserved. Save and apply is atomic and its inverse retains the rule.
+Successful close expires ordinary history; failed close and abnormal recovery
+preserve it. The rejected generic row-capture prototype is archived separately.
+
+See [implementation and verification](action-undo-implementation.md) for actual
+passes and limits and [raw storage evidence](../review/action-undo-replacement/).
+The 50,000-row import gate has one root and zero ordinary imported-row members.
+The completed 19,000-row accumulated workload retains 31,850,496 bytes, below
+cf8f1a5's 32,268,288 and b4b65df's 31,977,472. Retained payload is lower too;
+temporary journal peaks and small-workload fixed costs are reported separately.
+Financial fault sweeps, rules-off/sanitizer integration and native synthetic text/
+dirty-target Undo have passed. The final eight-mode Review recovery sweep and Help
+suite passed. Four obsolete account fixtures also fail on unchanged b4b65df and
+remain documented failures; this is not an all-green repository test claim.
+No private financial data or manual prose/screenshots were changed. MAN-017 and
+final Change History layout remain separate work; Linux/Windows are unverified.
+
+## Unified Undo replacement design — design only, 2026-11-08
+
+The owner requested a replacement design after the failed generic import row-capture
+experiment, then authorized design and explicitly prohibited implementation in this
+session. The [replacement handoff](action-undo-design.md) and
+[operation inventory](action-undo-inventory.md) are written for a new agent/session.
+The owner explicitly accepts retaining import-created accounts and categories.
+
+The design keeps one newest-first file-wide action chain and reversible acceptance,
+with typed user-operation restoration using existing domain snapshots. Import is
+one atomic source-owned rollback, with zero ordinary edit-Undo members for new
+imported rows. Added restoration data concerns actual changes to pre-existing state.
+The existing production import rollback and mixed Review/edit/rule stack were
+source-inspected as foundations, not represented as a finished replacement.
+
+Visible replacement choices include definitions/settings outside ordinary Undo,
+retained import setup/openings, transaction-only reversal of Save and apply, and
+non-undoable older-import removal/Discard guarded by an empty active chain. These
+choices are proposed explicitly for owner review; no separate implementation Go,
+new storage budget or production readiness claim is implied. Acceptance reversal,
+restoration lineage, command coverage and recovery remain implementation work.
+
+The earlier design/inventory are archived as rejected history; discovery pointers
+and MAN-017 now describe the replacement. Prototype code, CMake additions and raw
+measurements remain untouched. Production `src/`, runtime tests and manual content/
+screenshots were not changed. No agents/reviewer loop, builds, runtime tests,
+private-data inspection or native application actions were performed. Documentation
+verification: `git diff --check` passed; 753 relative links across 14 affected
+documents resolved, and checked Undo/backlog heading anchors were valid. The
+repository diff has no production `src/` changes. These are documentation/source
+inspection results, not runtime correctness or performance evidence. Work stops
+at design delivery.
+
+
+## Undo architecture rejected — stopped for next-session rethink, 2026-11-08
+
+The owner rejected generic per-row import Undo capture and stopped both implementer
+and reviewer. Read the [authoritative rethink handoff](action-undo-rethink-handoff.md).
+No replacement design, storage budget or production compaction feature is approved.
+The earlier approvals and measurements below are historical evidence, not a
+continuation instruction. Production code is unchanged; the experimental working
+tree is retained. This handoff has no reviewer. Next work is an owner discussion
+of operation-level Undo, not resuming the rejected implementation.
+
+## Unified action Undo — broader measurements complete, budget decision pending, 2026-11-08
+
+**Owner follow-up:** the owner declined to adopt the proposed limits pending an
+explanation and measurement of compaction, ordinary-backup behavior and reportable
+reusable space. Their accumulated dataset is about 19,000 transactions; the
+50,000-row case is a scale probe, not a typical editing session. That case only
+imports rows and closes/reopens; it does not edit all rows. Investigate disposable
+synthetic copies and retain the uncompacted measurements. No storage cap or
+production Compact feature has been approved.
+
+After reviewing the measured storage excess below, the owner considered roughly
+8% lasting overhead potentially acceptable and gave Go to broader prototype
+measurements before a final storage limit is agreed. The investigation followed the
+[recorded follow-up](action-undo-rejected-design.md#owner-follow-up--broader-storage-measurement-go-2026-11-08).
+It measured after-successful-close physical/retained storage and active-session
+journal/pin/sidecar peaks across representative workloads. The old no-growth stop
+was lifted for this investigation; no final overhead budget, production readiness,
+financial-correctness waiver or recovery waiver is implied.
+
+The broader opt-in prototype now captures actual forward writes, records body pins,
+and expires inverse/action rows and pins while collecting unreachable bodies inside
+the existing successful-close transaction. A common driver compares `cf8f1a5`,
+unchanged current storage and the prototype across import, repeated edits, older
+import removal, linked transfers and mixed multi-session workloads. It records
+simultaneous SQLite-VFS file-length peaks separately from sampled inverse/body
+codec bytes and final DBSTAT payload. **All 36 unique runs passed:** three variants
+for five modes at 1,000/10,000 rows, plus UUID import at 10,000/50,000 rows.
+Across these cases versus current storage, retained payload grows **7.5–22.1%**,
+the final physical main file **26.4–89.6%**, and simultaneous VFS peak
+**27.4–117.9%**. UUID-length import sensitivity at 50,000 rows measures
+**59,831,026 bytes retained payload, 105,791,488 bytes main file after close and
+143,726,072 bytes simultaneous VFS peak**: respectively **+21.7%, +72.3% and
++110.6%** versus unchanged current storage. Retained payload is +4.1% versus
+`cf8f1a5`; the comparator matters. Inverse/pin rows and unreferenced bodies are
+zero after close, but freed pages remain a lasting physical-file cost. These are
+prototype observations, not an accepted budget or final feature prediction.
+
+The broader measurement checks pass **3/3 CTests** on macOS Release with rules:
+typed capture/registry cases, VFS measurement tests, and bounded actual SQLCipher
+close failure/cancellation/disk-full/interruption cases. Failed closes preserve
+the complete persistent journal/pin/body/marker state; successful close expires
+the prototype journal and collects unreachable bodies. This is bounded lifecycle
+verification, not completed unified Undo recovery acceptance. See the
+[methodology and test output](../review/action-undo-prototype/broader-storage/README.md).
+
+Independent implementation review returned **APPROVED, zero blocking findings**
+for this bounded prototype and storage evidence, independently reconciling the
+30-run matrix and 810 physical phase rows plus the six UUID cases. See the
+[review verdict](../review/action-undo-prototype/broader-storage/implementation-review.md).
+This does not approve production unified Undo or a new owner budget. The proposed
+next-stage fixed-workload gates are **1.30× retained payload, 2.00× final main-file
+length and 2.50× simultaneous VFS peak** versus current `b4b65df`; every measured
+case fits. They remain **unaccepted**, require full-feature remeasurement, and are
+not universal session limits or permission to truncate/expire Undo early.
+
+The common coordinator/API, complete command/payload conversion, preparing-import
+protocol, full allocation/recovery coverage and UI integration remain unimplemented.
+Financial, encryption/durability and recovery requirements are unchanged. Final
+Change History layout and manual text/screenshots remain separate work.
+
+### Prior prototype gate and evidence
+
 
 The owner accepted one strict file-wide session action chain, reversible
 acceptance, full reversal of current-session imports including import-created
@@ -8,9 +136,49 @@ setup, and undoable removal of eligible prior-session imports. The owner then
 authorized design and independent review, then approved the reviewed design and
 granted implementation Go for a fresh session on 2026-11-08. Use the
 design-review-implement workflow for implementation and independent implementation
-review. See the [reviewed design and implementation handoff](action-undo-design.md).
-**Implementation has not started; no runtime change is claimed.** Final Change
-History layout remains a subsequent design task.
+review. See the [historical reviewed design](action-undo-rejected-design.md).
+**The initial prototype stopped at its original storage gate. Investigation has
+now resumed under the follow-up above. Production Undo is unchanged; broad command
+conversion and UI integration have not begun.**
+The [historical conversion inventory](action-undo-rejected-inventory.md) covers 94 persistent tables,
+command families and allocator/ancestry assumptions. The opt-in prototype executes
+actual repository commands against SQLCipher and an isolated initialization that
+splits ten immutable-body tables from active memberships. It preserves live FKs,
+explicit source order and temporary body pins; it is not a shipped format.
+
+The stable, byte-identical import-only driver was run against `cf8f1a5` and the
+prototype, using the same Release toolchain, SQLCipher and OpenSSL settings and
+1,000 synthetic transactions. After close/reopen, prototype physical size is
+**1,683,456 versus 1,556,480 bytes (+126,976)**; retained B-tree payload is
+**663,049 versus 602,151 bytes (+60,898)**. All ten payload tables have **zero**
+bodies without active memberships at this checkpoint, so this excess is not
+uncollected removed data. The structural-only driver contains no inverse journal:
+this representation already exceeds the hard limit before action capture.
+The [paired results, raw data and reproducible script](../review/action-undo-prototype/README.md#hard-storage-gate--stable-final-comparison)
+record the measurements and limits. No VACUUM, padding, weaker durability or
+omitted dependencies was used to obtain the comparison.
+
+Representative 1,000-row rename, acceptance and earlier-of-two-import removal
+round trips pass canonical semantic-state equality, FK and exact-balance checks.
+Removal also passes the existing full verifier. Rename and acceptance reversal
+fail that legacy verifier with `SQLITE_CORRUPT`; they are **not** full-verification
+passes. Registry policy and action-aware verification still require conversion.
+The codec/capture/registry regression CTest passed 1/1. Normal production opening
+refuses the distinct prototype application ID and leaves the entire file unchanged.
+Independent implementation review returned **APPROVED for the bounded prototype,
+evidence and gate stop, with zero blockers for this checkpoint**; it does not
+approve full unified Undo as delivered. See the
+[investigation](../review/action-undo-prototype/README.md) for checks and limits.
+
+At that checkpoint the measured representation failed the original gate; this did
+**not** prove that every possible encoding was too large. The initial recommendation
+was to rework the representation under that cap. The broader-measurement Go above
+supersedes that stop and leaves the final storage budget undecided. Full coordinator,
+prepared-import protocol, command/payload-family coverage,
+compound actions, high-water allocation, recovery/fault verification and UI remain
+unimplemented. Only macOS Release, rules enabled, was exercised; sanitizer,
+rules-disabled, Linux/Windows and native UI checks remain unverified. Final
+Change History layout and manual prose/screenshots remain separate and untouched.
 
 Separate Designer and Reviewer agents inspected the current code and contracts.
 The first review requested explicit registry/restore and version-allocation rules,
@@ -22,12 +190,14 @@ The proposed implementation uses a durable root-action chain, typed inverse
 capture, immutable payloads with active memberships and temporary Undo pins,
 monotonic freshness/identity/version allocation, and one common Undo API. It
 requires a new experimental format and changes to storage verifiers, command
-composition, lifecycle and UI command routing. The early prototype must meet the
-existing storage acceptance; design review is not proof of size, performance or
+composition, lifecycle and UI command routing. The initial prototype was subject
+to the original storage acceptance, now under investigation as described above;
+design review is not proof of size, performance or
 recovery correctness. Deferred unrelated retention cleanup remains excluded.
 
-Documentation-only work: contributor guidance, feature discovery, release plan
-and roadmap point to the handoff. MAN-017 records future manual work as pending
+Prior design-handoff verification (before this implementation prototype):
+Documentation-only work updated contributor guidance, feature discovery, the release
+plan and roadmap to point to the handoff. MAN-017 records future manual work as pending
 implementation; manual text/screenshots are unchanged. Relative file links and
 `git diff --check` were checked. No builds, runtime tests, private-data inspection
 or native UI verification were performed for this design handoff.

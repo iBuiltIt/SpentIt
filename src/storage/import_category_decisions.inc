@@ -38,6 +38,7 @@ void ImportStore::stage_import_categories(std::string_view source,const app::Ope
 }
 void ImportStore::resolve_import_categories(std::string_view source,const std::vector<std::string>& selected,app::OperationContext& context) {
     diag::Span phase(diag::Code::import_category_resolution);
+    ImportActionScope action_scope(impl_->import_action,source);
     ScopedStatements plans(impl_->db);
     Atomic transaction(impl_->db);
     Statement state(impl_->db,"SELECT d.resolved,g.state FROM import_category_decisions d JOIN import_groups g ON g.id=d.source WHERE d.source=?");state.text(1,source);
@@ -65,6 +66,7 @@ void ImportStore::resolve_import_categories(std::string_view source,const std::v
         Statement choice(impl_->db,"UPDATE import_category_choices SET chosen=? WHERE source=? AND name=?");choice.integer(1,include?1:0);choice.text(2,source);choice.text(3,name);choice.done();++ordinal;
     }
     finish_import_categories(source,context);
+    ActionChain(impl_->db).finish_import(source,false);
     context.seal();finish([&]{transaction.commit();});
 }
 void ImportStore::finish_import_categories(std::string_view source,const app::OperationContext& context) {

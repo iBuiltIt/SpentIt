@@ -1,0 +1,17 @@
+{
+  "probe_sha256": "5bbe3901285ae6366bd82230fa87636983566df29c3b9bb5bef02cab3cd17199",
+  "variants": {
+    "current": {
+      "source_sha256_before": "4f6ad97ebc7eb663eb066993fb0141363943c1a7f114d4ea942f70a82323e1ff",
+      "source_sha256_after": "4f6ad97ebc7eb663eb066993fb0141363943c1a7f114d4ea942f70a82323e1ff",
+      "source_unchanged": true,
+      "exit_code": 0
+    },
+    "prototype": {
+      "source_sha256_before": "276020d1caa264e6c2f84d3bbad74e25a2c6d740f725d723b2a62f6393695c46",
+      "source_sha256_after": "276020d1caa264e6c2f84d3bbad74e25a2c6d740f725d723b2a62f6393695c46",
+      "source_unchanged": true,
+      "exit_code": 0
+    }
+  }
+}

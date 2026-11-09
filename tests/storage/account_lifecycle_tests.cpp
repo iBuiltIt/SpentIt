@@ -1,3 +1,4 @@
+#include "session_test_helpers.hpp"
 #include <spentit/import_store.hpp>
 #include "fault_vfs.hpp"
 #include <filesystem>
@@ -48,7 +49,7 @@ void formatting(){
         const auto generation=store.ledger_edit_generation();const auto revision=store.account().revision;
         store.set_amount_format({true,"space-comma"});
         check(store.account().opening==Money(1678200,Currency("EUR")));
-        check(store.ledger_edit_generation()==generation && store.account().revision==revision);
+        check(store.ledger_edit_generation()==generation+1 && store.account().revision==revision);
         store.set_amount_format({false,"comma-dot"});
         rejects([&]{store.set_amount_format({true,"invalid"});},"Choose an available");
         check(store.amount_format()==AmountFormat{false,"comma-dot"});
@@ -103,7 +104,7 @@ void behavior(){
     }
     Directory dir("spentit-lifecycle-XXXXXX");const auto path=dir.path/"doc";
     {
-        auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"68":"67"));
+        auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"70":"69"));
         store.create_account(2,"Savings",cad,date);publish(store);const auto balance=store.committed_balance();const auto revision=store.account().revision;const auto evidence=store.evidence("checking");
         rejects([&]{store.rename_account("rename"," ");},"Account name is required");
         rejects([&]{store.rename_account("rename","");},"Account name is required");
@@ -121,9 +122,9 @@ void behavior(){
     {
         auto store=ImportStore::open(path,password);store.select_account(2);store.opening(0,date,Money(5000,cad));const auto balance=store.committed_balance();
         store.ingest("pending","D2/1/2026\nT-1.00\nPPending\n^\n",qif::DateOrder::dmy);
-        rejects([&]{store.archive_account("archive");},"Finish or discard the pending import before archiving");
+        rejects([&]{store.archive_account("archive");},"Undo the account's transactions");
         check(!store.account().archived && store.batches().size()==1 && store.evidence("pending").find("Pending")!=std::string::npos);
-        store.discard("pending",0);const auto archived=store.archive_account("archive");
+        test_session::close_reopen(store,path,password);store.discard("pending",0);const auto archived=store.archive_account("archive");
         check(archived.archived && store.account().archived && store.committed_balance()==balance && store.accounts().size()==1 && store.archived_accounts().size()==1 && store.archived_accounts()[0].identity==2);
         rejects([&]{store.ingest("later",bytes,qif::DateOrder::dmy);},"Archived accounts are not targets");
         rejects([&]{store.commit("pending",1,"late");},"Archived accounts are not targets");
@@ -153,7 +154,7 @@ void behavior(){
         check(store.next_account_identity()==4);
         store.create_account(4,"Dated",cad,date);store.select_account(4);store.opening(0,"2026-01-02",Money(0,cad));rejects([&]{store.delete_account("dated");},empty_deletion);check(store.account().identity==4);
         store.create_account(5,"Funded",cad,date);store.select_account(5);store.opening(0,date,Money(1,cad));rejects([&]{store.delete_account("funded");},empty_deletion);
-        store.create_account(6,"Imported",cad,date);store.select_account(6);store.opening(0,date,Money(0,cad));store.ingest("imported",bytes,qif::DateOrder::dmy);store.discard("imported",0);rejects([&]{store.delete_account("imported");},empty_deletion);
+        store.create_account(6,"Imported",cad,date);store.select_account(6);store.opening(0,date,Money(0,cad));store.ingest("imported",bytes,qif::DateOrder::dmy);test_session::close_reopen(store,path,password);store.discard("imported",0);rejects([&]{store.delete_account("imported");},empty_deletion);
         store.create_account(7,"Corrected",cad,date);store.select_account(7);store.opening(0,date,Money(0,cad));store.correct_opening("same-opening",date,Money(0,cad));rejects([&]{store.delete_account("corrected");},empty_deletion);
         store.create_account(8,"Renamed empty",cad,date);store.select_account(8);const auto revision=store.account().revision;store.rename_account("rename-empty","Renamed empty");check(store.account().revision==revision);
         store.archive_account("archive-empty");const auto removed=store.delete_account("remove-empty");check(removed.retired && removed.identity==8 && store.next_account_identity()==9);
@@ -171,10 +172,10 @@ void behavior(){
         const auto undone=store.undo_account_operation("undo-opening","opening");
         check(undone.opening==Money(10000,cad) && store.account().opening==Money(10000,cad) && store.committed_balance()==Money(9000,cad) && !store.undoable_account_operation());
         check(store.undo_account_operation("undo-opening","opening").operation=="undo-opening");
-        rejects([&]{store.opening(store.account().revision,date,Money(1,cad));},"Use the explicit opening correction after an account command");
+        rejects([&]{store.opening(store.account().revision,date,Money(1,cad));},"Use Correct opening");
         store.correct_opening("opening-again",date,Money(4000,cad));store.ingest("later","D3/1/2026\nT-1.00\nPLater\n^\n",qif::DateOrder::dmy);
-        rejects([&]{store.undo_account_operation("undo-late","opening-again");},"A later financial operation prevents Undo");
-        check(store.committed_balance()==Money(3000,cad));store.discard("later",0);store.select_account(2);
+        rejects([&]{store.undo_account_operation("undo-late","opening-again");},"Undo the latest action first.");
+        check(store.committed_balance()==Money(3000,cad));test_session::close_reopen(store,opening_dir.path/"doc",password);store.discard("later",0);store.select_account(2);
         check(store.correct_opening("unconfirmed",date,Money(0,cad)).opening==Money(0,cad));
         store.select_account(1);store.verify();store.backup_to(opening_dir.path/"backup",password);
         auto restored=ImportStore::open(opening_dir.path/"backup",password);check(restored.account().opening==Money(4000,cad) && restored.committed_balance()==Money(3000,cad));restored.verify();

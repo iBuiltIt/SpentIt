@@ -1,0 +1,7 @@
+Test project /Volumes/EXTERNAL/swessels/Develop/github/personal/SpentIt/build/import-ui-rules-release
+    Start 180: storage.action_journal_codec
+1/1 Test #180: storage.action_journal_codec .....   Passed    0.26 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.27 sec

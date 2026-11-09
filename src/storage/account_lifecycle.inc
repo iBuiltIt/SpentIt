@@ -30,13 +30,13 @@ std::optional<app::AccountCommandReceipt> ImportStore::account_command_outcome(s
     return {};
 }
 std::optional<std::string> ImportStore::undoable_account_operation() const {
-    if(impl_->selected_account<=0) return {};
-    Statement row(impl_->db,"SELECT o.id,o.kind FROM account_operations o JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.id IN(SELECT id FROM session_history WHERE domain='account') AND o.kind IN(4,5,6) ORDER BY h.sequence DESC LIMIT 1");
-    row.integer(1,impl_->selected_account);if(!row.row() || row.integer(1)==6) return {};
-    const auto id=row.bytes(0);const auto kind=static_cast<int>(row.integer(1));
-    if(!command_image_current(impl_->db,id) || later_financial(impl_->db,impl_->selected_account,account_anchor(impl_->db,id,kind))) return {};
-    return id;
+    const auto head=action_head();
+    if(!head || (head->kind!=app::ActionKind::opening && head->kind!=app::ActionKind::currency))return {};
+    Statement owner(impl_->db,"SELECT account FROM account_operations WHERE id=?");owner.text(1,head->payload);
+    if(!owner.row() || owner.integer(0)!=impl_->selected_account)return {};
+    return head->id;
 }
+
 bool ImportStore::account_currency_warning() const {
     if(impl_->selected_account<=0) return false;
     const auto acct=account();if(acct.archived) return false;
@@ -54,7 +54,7 @@ app::AccountCommandReceipt ImportStore::rename_account(std::string_view operatio
     require_account_name(name,acct.identity);
     insert_account_op(impl_->db,id,acct.identity,0,name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),acct.opening.units(),acct.opening.units(),acct.opening_date,acct.opening_date,acct.archived?1:0,acct.archived?1:0,0,"",content,acct.revision,acct.frozen?1:0,acct.opening_confirmed?1:0);
     Statement update(impl_->db,"UPDATE account SET name=? WHERE singleton=?");update.text(1,name);update.integer(2,acct.identity);update.done();
-    finish([&]{transaction.commit();});return *account_command_row(impl_->db,id);
+    finish([&]{transaction.commit();},true);return *account_command_row(impl_->db,id);
 }
 app::AccountCommandReceipt ImportStore::archive_account(std::string_view operation) {
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
@@ -62,6 +62,17 @@ app::AccountCommandReceipt ImportStore::archive_account(std::string_view operati
     if(auto prior=matching_account_command(impl_->db,id,content)) return *prior;
     const auto acct=command_account(false);
     if(acct.archived) fail(SQLITE_CONSTRAINT,"Account is already archived");
+    Statement dependent(impl_->db,R"SQL(
+SELECT 1 FROM action_headers h WHERE h.state=1 AND (
+ EXISTS(SELECT 1 FROM account_operations o WHERE o.id=h.payload AND o.account=?1)
+ OR EXISTS(SELECT 1 FROM review_members m JOIN batches b ON b.id=m.batch WHERE b.account_id=?1 AND (m.answer=h.payload OR m.answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||h.payload)))
+ OR (h.kind IN(3,7) AND EXISTS(SELECT 1 FROM batches b WHERE b.source_id=h.payload AND b.account_id=?1))
+ OR (h.kind=6 AND EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id=?1 AND (o.id=h.payload OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=h.payload)))))
+)SQL");dependent.integer(1,acct.identity);
+    if(dependent.row())fail(SQLITE_CONSTRAINT,"Undo the account's transactions, or close and reopen the file before archiving it.");
+    Statement relationships(impl_->db,"SELECT r.prior_payload,r.result_payload FROM review_link_history r JOIN action_headers h ON h.payload=r.answer WHERE h.state=1");
+    while(relationships.row())for(int column:{0,1})if(!relationships.null(column) && link_mentions(transfer_codec::view(relationships.bytes(column)).link,acct.identity))fail(SQLITE_CONSTRAINT,"Undo the account's transfer changes, or close and reopen the file before archiving it.");
+
     Statement pending(impl_->db,"SELECT 1 FROM batches WHERE account_id=? AND state IN(0,3,4) LIMIT 1");pending.integer(1,acct.identity);
     if(pending.row()) fail(SQLITE_CONSTRAINT,"Finish or discard the pending import before archiving");
     Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
@@ -69,7 +80,7 @@ app::AccountCommandReceipt ImportStore::archive_account(std::string_view operati
     Statement existing(impl_->db,"SELECT 1 FROM account_status WHERE identity=?");existing.integer(1,acct.identity);
     if(existing.row()) {Statement update(impl_->db,"UPDATE account_status SET archived=1 WHERE identity=?");update.integer(1,acct.identity);update.done();}
     else {Statement insert(impl_->db,"INSERT INTO account_status VALUES(?,1)");insert.integer(1,acct.identity);insert.done();}
-    finish([&]{transaction.commit();});return *account_command_row(impl_->db,id);
+    finish([&]{transaction.commit();},true);return *account_command_row(impl_->db,id);
 }
 app::AccountCommandReceipt ImportStore::reactivate_account(std::string_view operation) {
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
@@ -80,7 +91,7 @@ app::AccountCommandReceipt ImportStore::reactivate_account(std::string_view oper
     Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
     insert_account_op(impl_->db,id,acct.identity,2,acct.name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),acct.opening.units(),acct.opening.units(),acct.opening_date,acct.opening_date,0,1,0,"",content,acct.revision,acct.frozen?1:0,acct.opening_confirmed?1:0);
     Statement update(impl_->db,"UPDATE account_status SET archived=0 WHERE identity=?");update.integer(1,acct.identity);update.done();
-    finish([&]{transaction.commit();});return *account_command_row(impl_->db,id);
+    finish([&]{transaction.commit();},true);return *account_command_row(impl_->db,id);
 }
 app::AccountCommandReceipt ImportStore::delete_account(std::string_view operation) {
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
@@ -100,7 +111,7 @@ app::AccountCommandReceipt ImportStore::delete_account(std::string_view operatio
     Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
     insert_account_op(impl_->db,id,acct.identity,3,acct.name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),acct.opening.units(),acct.opening.units(),acct.opening_date,acct.opening_date,acct.archived?1:0,acct.archived?1:0,1,"",content,acct.revision,acct.frozen?1:0,acct.opening_confirmed?1:0);
     Statement retirement(impl_->db,"INSERT INTO account_retirements VALUES(?,?)");retirement.integer(1,acct.identity);retirement.text(2,id);retirement.done();
-    finish([&]{transaction.commit();});return *account_command_row(impl_->db,id);
+    finish([&]{transaction.commit();},true);return *account_command_row(impl_->db,id);
 }
 app::AccountCommandReceipt ImportStore::correct_opening(std::string_view operation,std::string_view date,const Money& amount) {
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
@@ -117,10 +128,14 @@ app::AccountCommandReceipt ImportStore::correct_opening(std::string_view operati
     if(earliest && date>*earliest) fail(SQLITE_CONSTRAINT,"The opening date must be on or before the earliest accepted transaction.");
     if(acct.revision==INT64_MAX) fail(SQLITE_FULL,"Revision capacity exhausted");
     guard_money([&]{(void)(committed_balance()-acct.opening+amount);});
+    const bool changed=acct.opening!=amount || acct.opening_date!=date || !acct.opening_confirmed;
     Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
-    insert_account_op(impl_->db,id,acct.identity,4,acct.name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),amount.units(),acct.opening.units(),date,acct.opening_date,acct.archived?1:0,acct.archived?1:0,0,"",content,acct.revision+1,acct.frozen?1:0,1);
-    Statement update(impl_->db,"UPDATE account SET opening_date=?,opening=?,revision=revision+1,confirmed=1 WHERE singleton=?");update.text(1,date);update.integer(2,amount.units());update.integer(3,acct.identity);update.done();
-    finish([&]{transaction.commit();});return *account_command_row(impl_->db,id);
+    insert_account_op(impl_->db,id,acct.identity,4,acct.name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),amount.units(),acct.opening.units(),date,acct.opening_date,acct.archived?1:0,acct.archived?1:0,0,"",content,acct.revision+(changed?1:0),acct.frozen?1:0,1);
+    if(changed){Statement update(impl_->db,"UPDATE account SET opening_date=?,opening=?,revision=revision+1,confirmed=1 WHERE singleton=?");update.text(1,date);update.integer(2,amount.units());update.integer(3,acct.identity);update.done();}
+    if(changed){app::ActionSummary action;action.id=id;action.payload=id;action.kind=app::ActionKind::opening;action.label="Correct opening";action.count=1;
+    impl_->pending_action=std::move(action);impl_->pending_action_digest=session_snapshot::digest("account:"+std::to_string(acct.identity)+":"+content);
+    }else ActionChain(impl_->db).no_change(action_token(),id,session_snapshot::digest("account:"+std::to_string(acct.identity)+":"+content));
+    finish([&]{transaction.commit();},!changed);return *account_command_row(impl_->db,id);
 }
 app::AccountCommandReceipt ImportStore::reassign_currency(std::string_view operation,const Currency& currency) {
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
@@ -204,19 +219,25 @@ app::AccountCommandReceipt ImportStore::reassign_currency(std::string_view opera
     append_financial(impl_->db,ledger_id,static_cast<app::ChangeKind>(5),{"",static_cast<std::size_t>(acct.identity)},-1,0,before,Money(0,before.currency()),after,id,sequence,catalog_sequence(impl_->db));
     const auto written=financial_sequence(impl_->db);
     for(const auto& plan:links) store_transfer(impl_->db,plan.view,written,false);
+    app::ActionSummary action;action.id=id;action.payload=id;action.kind=app::ActionKind::currency;action.label="Change currency";action.count=1;
+    impl_->pending_action=std::move(action);impl_->pending_action_digest=session_snapshot::digest("account:"+std::to_string(acct.identity)+":"+content);
     finish([&]{transaction.commit();});return *account_command_row(impl_->db,id);
 }
 app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view operation,std::string_view undo_of) {
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     const auto id=command_id(operation);command_id(undo_of);const auto content="6\n"+std::string(undo_of);
     if(auto prior=matching_account_command(impl_->db,id,content)) return *prior;
+    if(!impl_->undo_token) {
+        const auto head=action_head();if(!head || head->id!=undo_of)fail(SQLITE_CONSTRAINT,"Undo the latest action first.");
+        undo_action(operation,preview_undo(undo_of,action_token()));return *account_command_row(impl_->db,id);
+    }
     require_session_history(undo_of);
     Statement target(impl_->db,"SELECT account,kind,name,definition,prior_definition,opening,prior_opening,opening_date,prior_opening_date,archived,revision,frozen,confirmed FROM account_operations WHERE id=?");
     target.text(1,undo_of);if(!target.row() || (target.integer(1)!=4 && target.integer(1)!=5)) fail(SQLITE_CONSTRAINT,"Choose an opening balance or currency change to undo.");
     const auto acct=command_account(false);
     if(target.integer(0)!=acct.identity) fail(SQLITE_CONSTRAINT,"Account command belongs to another account");
     const auto kind=static_cast<int>(target.integer(1));
-    if(!command_image_current(impl_->db,undo_of) || later_financial(impl_->db,acct.identity,account_anchor(impl_->db,undo_of,kind))) fail(SQLITE_CONSTRAINT,later_undo_block);
+    if(!command_image_current(impl_->db,undo_of) || !action_head() || action_head()->id!=undo_of) fail(SQLITE_CONSTRAINT,later_undo_block);
     if(acct.revision==INT64_MAX) fail(SQLITE_FULL,"Revision capacity exhausted");
     if(kind==4) {
         const auto restored_units=target.integer(6);const auto restored_date=target.bytes(8);const auto restored=Money(restored_units,acct.currency);
@@ -237,7 +258,8 @@ app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view 
     Statement marked(impl_->db,"SELECT batch,ordinal,revision,prior_units,units FROM account_amount_revisions WHERE operation=? AND kind=0 AND position=0 ORDER BY batch,ordinal");marked.text(1,undo_of);
     while(marked.row()) {
         const auto batch_id=marked.bytes(0);imports::Occurrence occ{batch_id,static_cast<std::size_t>(marked.integer(1))};
-        const auto info=batch(impl_->db,batch_id);if(info.revision!=marked.integer(2)) fail(SQLITE_CONSTRAINT,later_undo_block);
+        const auto info=batch(impl_->db,batch_id);
+        Statement current_revision(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");current_revision.text(1,batch_id);current_revision.integer(2,marked.integer(1));if(!current_revision.row() || current_revision.null(0) || !review_restores_revision(impl_->db,occ,false,current_revision.integer(0),marked.integer(2)))fail(SQLITE_CONSTRAINT,later_undo_block);
         Statement prior(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=? AND revision<?");prior.text(1,batch_id);prior.integer(2,marked.integer(1));prior.integer(3,marked.integer(2));
         if(!prior.row() || prior.null(0)) fail(SQLITE_CORRUPT);
         const auto source=load_row(occ,false).source;auto draft=draft_at(impl_->db,occ,prior.integer(0),source);
@@ -254,8 +276,9 @@ app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view 
     while(entry_marks.row()) {
         imports::Occurrence occ{entry_marks.bytes(0),static_cast<std::size_t>(entry_marks.integer(1))};
         Statement head(impl_->db,"SELECT revision FROM entry_heads WHERE batch=? AND ordinal=?");head.text(1,occ.batch);head.integer(2,integer(occ.ordinal));
-        if(!head.row() || head.integer(0)!=entry_marks.integer(2) || entry_marks.integer(2)<=0) fail(SQLITE_CONSTRAINT,later_undo_block);
-        auto prior_snapshot=entry_snapshot(occ,entry_marks.integer(2)-1);auto current=entry_snapshot(occ,entry_marks.integer(2));
+        if(!head.row() || !review_restores_revision(impl_->db,occ,true,head.integer(0),entry_marks.integer(2)) || entry_marks.integer(2)<=0) fail(SQLITE_CONSTRAINT,later_undo_block);
+        Statement prior(impl_->db,"SELECT max(revision) FROM entry_revisions WHERE batch=? AND ordinal=? AND revision<?");prior.text(1,occ.batch);prior.integer(2,integer(occ.ordinal));prior.integer(3,entry_marks.integer(2));if(!prior.row() || prior.null(0))fail(SQLITE_CORRUPT);
+        auto prior_snapshot=entry_snapshot(occ,prior.integer(0));auto current=entry_snapshot(occ,head.integer(0));
         if(current.draft.transaction.effective_total().units()!=entry_marks.integer(4) || prior_snapshot.draft.transaction.effective_total().units()!=entry_marks.integer(3)) fail(SQLITE_CONSTRAINT,later_undo_block);
         std::vector<std::int64_t> prior_alloc;for(const auto& allocation:current.draft.transaction.allocations()) prior_alloc.push_back(allocation.amount.units());
         prior_snapshot.revision=current.revision+1;entries.push_back({occ,std::move(prior_snapshot),entry_marks.integer(4),std::move(prior_alloc)});
@@ -272,6 +295,8 @@ app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view 
             else fail(SQLITE_CORRUPT);
         }
         if(!any) continue;
+        Statement original_link(impl_->db,"SELECT sequence FROM ledger_operations WHERE kind=5 AND undo_of=?");original_link.text(1,undo_of);
+        if(!original_link.row() || !review_restores_link(impl_->db,value.link.identity,value.sequence,original_link.integer(0)))fail(SQLITE_CONSTRAINT,later_undo_block);
         auto copy=value;guard_money([&]{rescale_link_account(copy.link,acct.identity,restored_currency);});
         links.push_back({std::move(copy),origin,destination,origin_prior,destination_prior});
     }

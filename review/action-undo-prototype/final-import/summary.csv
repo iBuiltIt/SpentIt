@@ -1,0 +1,6 @@
+workload,checkpoint,metric,baseline,candidate,delta
+import,initial,file,1556480,1683456,126976
+import,initial,live_page_bytes,1556480,1667072,110592
+import,reopened,file,1556480,1683456,126976
+import,reopened,live_page_bytes,1556480,1667072,110592
+import,final,btree_payload_bytes,602151,663049,60898

@@ -232,6 +232,7 @@ QString phaseFor(const QString& action){
     if(action=="review_undo")return "Undoing Review decision";
     if(action=="create")return "Creating file";
     if(action=="save" || action=="accept_edit")return "Accepting edit";
+    if(action=="undo_action")return "Undoing action";
     if(action=="undo_edit")return "Undoing edit";
     if(action=="preview_deletion")return "Checking transactions to delete";
     if(action=="delete_selection")return "Deleting selected transactions";
@@ -360,6 +361,7 @@ struct ImportModel::Worker {
     int sort=0; bool descending=true;
     QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt,transferMergePreview;
     QVariantMap reviewLinkPreview, linkExclusionPreview;
+    std::optional<app::UndoPreview> cachedUndo;
     std::optional<app::LinkExclusion> preparedLinkExclusion;
     std::int64_t linkExclusionGeneration=0;
     std::optional<app::TransferRequest> preparedMerge;
@@ -645,7 +647,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {newManual.reset();newManualId.clear();manualUndo.clear();revealManual.reset();sessionEdits.clear();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {cachedUndo.reset();newManual.reset();newManualId.clear();revealManual.reset();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
     void listHistory(std::int64_t before=0,bool append=false) {
         PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository();
@@ -680,25 +682,22 @@ struct ImportModel::Worker {
     std::shared_ptr<const app::LedgerView> cachedView;
     std::set<imports::Occurrence> cachedLinkedRows;
     bool deferReview=false;
-    struct SessionEdit {std::string operation;imports::Occurrence identity;std::int64_t account;std::vector<imports::Occurrence> selection={};QString label="Undo edit";};
-    std::vector<SessionEdit> sessionEdits;
     std::optional<imports::DraftRow> newManual;
-    std::string newManualId,manualUndo;
-    std::int64_t manualUndoGeneration=-1;
+    std::string newManualId;
     std::optional<imports::Occurrence> revealManual;
 
     void acceptEdit(const imports::DraftRow& edit,app::OperationContext& context) {
         auto& repo=gateway->repository();const imports::Occurrence id{selectedBatch,selectedOrdinal};
-        const auto account=repo.account().identity;const auto operation=identity();
+        const auto operation=identity();
         try {repo.edit_transaction(operation,id,selectedRevision,selectedCommittedToken,edit);}
         catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;
             try {outcome=repo.review_outcome(operation);}catch(...){throw app::OperationOutcomeUnknown();}
             if(!outcome)std::rethrow_exception(failure);
         }
-        observedSaved();sessionEdits.push_back({operation,id,account});
+        observedSaved();
         selection={id};selectionFocus=id;selectionAnchor=id;
         try {inspect(id.batch,id.ordinal,context);if(selectedCommittedToken){entryDetails(id);if(historyLoaded)listHistory();}}
-        catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();sessionEdits.clear();throw std::runtime_error("Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying.");}
+        catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying.");}
     }
     void invalidate() {if(!reportResult.isEmpty())reportResult["stale"]=true;if(!reportLedgerActive)reportDetails.clear();diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
     std::string selectedBatch;
@@ -1071,10 +1070,16 @@ struct ImportModel::Worker {
         if(!reportsLoaded)loadReports();
         state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;state["reportLedgerActive"]=reportLedgerActive;state["reportRowInfo"]=reportRowInfo;
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
-        if(!sessionEdits.empty() && !repo.can_undo_transaction_edit(sessionEdits.back().operation))sessionEdits.clear();
-        if(!manualUndo.empty() && repo.ledger_edit_generation()!=manualUndoGeneration)manualUndo.clear();
-        state["canUndoManual"]=!manualUndo.empty();
-        state["canUndoEdit"]=!sessionEdits.empty();state["groupEditUndo"]=!sessionEdits.empty() && !sessionEdits.back().selection.empty();state["editUndoLabel"]=sessionEdits.empty()?QString("Undo edit"):sessionEdits.back().label;state["ledgerEditGeneration"]=QString::number(repo.ledger_edit_generation());
+        QVariantMap actionUndo;
+        if(const auto head=repo.action_head();head && !repo.action_preparing()) {
+                const auto token=repo.action_token();if(!cachedUndo || cachedUndo->token!=token)cachedUndo=repo.preview_undo(head->id,token);
+                const auto& preview=*cachedUndo;QStringList names;
+                const auto accounts=repo.accounts();for(const auto id:preview.accounts){const auto found=std::find_if(accounts.begin(),accounts.end(),[&](const auto& value){return value.identity==id;});if(found!=accounts.end())names.push_back(text(found->name));}
+                actionUndo={{"id",text(head->id)},{"session",QString::number(preview.token.session)},{"epoch",QString::number(preview.token.epoch)},{"label",text(preview.action.label)},{"count",static_cast<qlonglong>(preview.action.count)},{"accounts",names.join(", ")},{"kind",static_cast<int>(head->kind)},{"refusal",text(preview.refusal)}};
+        }
+        state["actionUndo"]=actionUndo;state["canUndoAction"]=!actionUndo.isEmpty() && actionUndo.value("refusal").toString().isEmpty();
+        state["canUndoManual"]=false;state["canUndoEdit"]=state["canUndoAction"];state["groupEditUndo"]=false;
+        state["editUndoLabel"]=actionUndo.isEmpty()?QString("Undo"):QString("Undo %1…").arg(actionUndo.value("label").toString());state["ledgerEditGeneration"]=QString::number(repo.ledger_edit_generation());
         state["importUndoPreview"]=importUndoPreview;
         state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
         QVariantList aliasList;for(const auto& alias:repo.account_aliases())aliasList.push_back(QVariantMap{{"name",text(alias.name)},{"accountId",QString::number(alias.account)}});
@@ -1297,6 +1302,27 @@ struct ImportModel::Worker {
             return;
         }
         if(action=="query" || action=="select_account")revealManual.reset();
+        if(action=="undo_action" || action=="undo_edit" || action=="undo_manual") {
+            const auto head=repo.action_head();
+            if(action!="undo_action" && (!head || (action=="undo_manual"?head->kind!=app::ActionKind::manual_creation:head->kind!=app::ActionKind::transaction)))throw std::logic_error("Undo the latest action first.");
+            const app::ActionToken token=action=="undo_action"?app::ActionToken{a.value("session").toString().toLongLong(),a.value("epoch").toString().toLongLong(),str(a.value("id"))}:repo.action_token();
+            const auto preview=repo.preview_undo(token.head,token);const auto operation=identity();
+            try {repo.undo_action(operation,preview);}
+            catch(...) {const auto failure=std::current_exception();std::optional<app::ActionReceipt> saved;
+                try{saved=repo.undo_action_outcome(operation,preview);}catch(...){gateway->close();active=false;throw std::runtime_error("Reopen the file and check the transactions before retrying Undo.");}
+                if(!saved)std::rethrow_exception(failure);
+            }
+            observedSaved();
+            const imports::Occurrence inspected{selectedBatch,selectedOrdinal};const auto priorSelection=selection;const auto priorFocus=selectionFocus,priorAnchor=selectionAnchor;
+            selection.clear();selectionFocus.reset();selectionAnchor.reset();selected.clear();selectedBatch.clear();selectedCommittedToken.reset();
+            const auto rows=repo.current_ledger();std::set<imports::Occurrence> retained;for(const auto& row:rows)retained.insert(row.identity);
+            if(!inspected.batch.empty() && retained.contains(inspected))inspect(inspected.batch,inspected.ordinal,context);
+            for(const auto& id:priorSelection)if(retained.contains(id))selection.insert(id);
+            if(priorFocus && selection.contains(*priorFocus))selectionFocus=priorFocus;
+            if(priorAnchor && selection.contains(*priorAnchor))selectionAnchor=priorAnchor;
+            changePreview.clear();preparedChange.reset();bulkPreview.clear();preparedBulk.reset();rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();importUndoPreview.clear();
+            if(historyLoaded)listHistory();invalidate();return;
+        }
         if(action=="review_load") {context.checkpoint("Preparing Review");return;}
         if(action=="link_exclusion_cancel"){preparedLinkExclusion.reset();linkExclusionPreview.clear();return;}
         if(action=="link_exclusion_preview"){
@@ -1957,24 +1983,10 @@ struct ImportModel::Worker {
             }
             observedSaved();
             const auto inspected=selectedBatch.empty()?request.selected.front():imports::Occurrence{selectedBatch,selectedOrdinal};
-            sessionEdits.push_back({operation,inspected,request.account,request.selected,action=="delete_selection"?QString("Undo delete"):action=="rename_payee_selection"?QString("Undo payee rename"):QString("Undo restore")});
             selection=std::set<imports::Occurrence>(request.selected.begin(),request.selected.end());
             if(action=="delete_selection") {selection.clear();selectionFocus.reset();selectionAnchor.reset();selected.clear();selectedBatch.clear();selectedCommittedToken.reset();}
             else try {inspect(inspected.batch,inspected.ordinal,context);if(selectedCommittedToken){entryDetails(inspected);if(historyLoaded)listHistory();}}
-            catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();sessionEdits.clear();throw std::runtime_error("Changes were saved, but the view could not update. Reopen the file and check the transactions before trying again.");}
-        }
-        else if(action=="undo_edit") {
-            if(sessionEdits.empty())throw std::logic_error("No edits to undo in this session");
-            const auto edit=sessionEdits.back();const auto operation=identity();
-            try {repo.undo_transaction_edit(operation,edit.operation);}
-            catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;
-                try {outcome=repo.review_outcome(operation);}catch(...){throw app::OperationOutcomeUnknown();}
-                if(!outcome)std::rethrow_exception(failure);
-            }
-            observedSaved();sessionEdits.pop_back();
-            selection=edit.selection.empty()?std::set<imports::Occurrence>{edit.identity}:std::set<imports::Occurrence>(edit.selection.begin(),edit.selection.end());selectionFocus=edit.identity;selectionAnchor=edit.identity;
-            try {repo.select_account(edit.account);inspect(edit.identity.batch,edit.identity.ordinal,context);if(selectedCommittedToken){entryDetails(edit.identity);if(historyLoaded)listHistory();}}
-            catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();sessionEdits.clear();throw std::runtime_error("Undo was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying.");}
+            catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Changes were saved, but the view could not update. Reopen the file and check the transactions before trying again.");}
         }
         else if(action=="accept_edit") {
             if(!selectedCommittedToken || !selected.value("canCorrect").toBool())throw std::logic_error("This transaction cannot be edited");
@@ -2001,13 +2013,9 @@ struct ImportModel::Worker {
             const imports::Occurrence id{newManualId,0};
             try {repo.create_manual(newManualId,edit);}
             catch(...) {const auto failure=std::current_exception();bool saved=false;try{saved=repo.manual_outcome(newManualId);}catch(...){throw app::OperationOutcomeUnknown();}if(!saved)std::rethrow_exception(failure);}
-            observedSaved();manualUndo=id.batch;manualUndoGeneration=repo.ledger_edit_generation();
-            newManual.reset();newManualId.clear();revealManual=id;sessionEdits.clear();selection={id};selectionFocus=id;selectionAnchor=id;
+            observedSaved();
+            newManual.reset();newManualId.clear();revealManual=id;selection={id};selectionFocus=id;selectionAnchor=id;
             inspect(id.batch,id.ordinal,context);
-        }
-        else if(action=="undo_manual") {
-            if(manualUndo.empty())throw std::logic_error("No new transaction to undo");
-            repo.undo_manual(manualUndo,manualUndoGeneration);observedSaved();manualUndo.clear();selected.clear();selectedBatch.clear();selection.clear();selectionFocus.reset();selectionAnchor.reset();revealManual.reset();
         }
         else if(action=="save") {
             if(selectedBatch.empty()) throw std::logic_error("Select a draft first");
@@ -2164,6 +2172,19 @@ struct ImportModel::Worker {
                 if(!rulesLoaded) loadRules();
                 const auto expected=ruleRevision;
                 const auto operation=identity();
+                if(a.value("apply").toBool()) {
+                    const app::AccountRuleRequest request{repo.account().identity,repo.ledger_edit_generation(),expected,repo.category_catalog().revision,a.value("newOnly").toBool(),false,str(a.value("rule"))};
+                    try {repo.save_and_apply_rules(operation,{images()},expected,request,context);}
+                    catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> saved;
+                        try{saved=repo.review_outcome(operation);}catch(...){closeUnknown("Reopen the file and check the rule and transactions before retrying.");}
+                        if(!saved)std::rethrow_exception(failure);
+                    }
+                    observedSaved();ruleReceipt={{"operation",text(operation)},{"unchanged",false},{"summary","Rule saved and applied. Undo reverses the transaction changes; the saved rule remains."}};
+                    rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();
+                    try {loadRules();if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);}
+                    catch(...){refreshFailed("The rule and its application were saved, but the view could not update. Reopen the file before continuing.");}
+                    return;
+                }
                 std::optional<app::RuleSaveReceipt> result;
                 try {result=repo.save_rules(operation,{images()},expected,context);}
                 catch(...) {
@@ -2543,6 +2564,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
             result.error=((action=="save_manual" || action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
+                :(action=="undo_action" && worker->diagnosticSaved)?"The action was undone, but the screen could not update. Reopen the file before continuing."
                 :(action=="delete_selection" && worker->diagnosticSaved)?"The transactions were deleted, but the screen could not update. Reopen the file before continuing."
                  :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."

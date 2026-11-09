@@ -1,3 +1,4 @@
+#include "session_test_helpers.hpp"
 #include <spentit/import_store.hpp>
 #include <spentit/statements.hpp>
 #include "fault_vfs.hpp"
@@ -193,7 +194,7 @@ void review() {
     check(query(path, "SELECT format||'/'||grammar FROM source_headers WHERE source_id='overlap'") == "ofx/ofx-sgml");
     check(query(path, "SELECT ledger_batch||':'||ledger_ordinal FROM source_associations WHERE source_batch='overlap-account-0' AND source_ordinal=0") == "qif:0");
     check(query(path, "SELECT count(*) FROM source_associations WHERE source_batch='qif'") == "1");
-    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "68" : "67"));
+    check(query(path, "PRAGMA user_version") == (query(path, "SELECT count(*) FROM sqlite_master WHERE name='rule_state'") == "1" ? "70" : "69"));
     {
         auto restored = ImportStore::open(d.path / "backup", password);
         restored.select_account(1);
@@ -613,7 +614,7 @@ void exact_reimport() {
         s.ingest("base",coffee,qif::DateOrder::dmy);
         if(accepted)s.accept_all("accept");
         s.ingest("repeat",changed+"D02/02/2026\nT-2\nPNew\n^\n",qif::DateOrder::dmy);
-        s.rollback_account("rollback",s.rollback_review().token);
+        test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("rollback",s.rollback_review().token);
         check(s.current_ledger().size()==(accepted?1:0) && s.balance()==Money(accepted?-100:0,cad));
         s.verify();s.backup_to(d.path/"backup",password);
         auto restored=ImportStore::open(d.path/"backup",password);restored.verify();
@@ -632,7 +633,7 @@ void exact_reimport() {
 void import_undo(bool close_sessions=false) {
     int session_checkpoint=0;
     auto review_source=[&](ImportStore& store,const fs::path& path,std::string_view source){
-        if(close_sessions){
+        if(close_sessions || (store.action_head() && store.action_head()->id!=source)){
             std::cout<<"Import Undo session checkpoint "<<++session_checkpoint<<std::endl;
             const auto selected=store.account().identity;
             {auto previous=std::move(store);previous.certify({});}
@@ -728,7 +729,7 @@ void rollback() {
         s.ingest("keep","D01/02/2026\nT-1\nPAccepted\n^\n",qif::DateOrder::dmy);s.accept_all("accept");
         const std::string source="D02/02/2026\nT-2\nPTransient\n^\n";
         s.ingest("first",source,qif::DateOrder::dmy);s.ingest("second",source,qif::DateOrder::dmy);
-        auto preview=s.rollback_review();check(preview.transactions==1);
+        test_session::close_reopen(s,d.path/"doc",password);auto preview=s.rollback_review();check(preview.transactions==1);
         check(s.rollback_account("rollback",preview.token).transactions==1);check(s.rollback_account("rollback",preview.token).transactions==1);
         check(s.balance()==Money(-100,cad) && s.current_ledger().size()==1 && s.batches().size()==1);s.verify();
         check(query(d.path/"doc","SELECT count(*) FROM sources")=="1");
@@ -737,7 +738,7 @@ void rollback() {
     {
         Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));
         s.ingest("partial","D01/02/2026\nT-1\nPAccepted\n^\nD02/02/2026\nTbad\nPFailed\n^\n",qif::DateOrder::dmy);s.accept_all("accept");
-        check(s.rollback_review().failures==1);s.rollback_account("remove-failure",s.rollback_review().token);
+        check(s.rollback_review().failures==1);test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("remove-failure",s.rollback_review().token);
         check(s.balance()==Money(-100,cad) && s.acceptance_review().failed_records==0);check(s.row({"partial",1}).excluded_by_clear);s.verify();
         s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.verify();
     }
@@ -745,7 +746,7 @@ void rollback() {
         Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Other",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
         const auto bytes=sgml(bank(txn("ONE","20260201","-1.00"),"CAD","1001")+bank(txn("TWO","20260201","2.00"),"CAD","1002"));
         capture(s,"group",bytes,{{0,1,{}},{1,2,{}}});materialize(s,"group");
-        s.rollback_account("first-account",s.rollback_review().token);check(s.batches().empty());s.select_account(2);check(s.balance()==Money(200,cad));s.verify();
+        test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("first-account",s.rollback_review().token);check(s.batches().empty());s.select_account(2);check(s.balance()==Money(200,cad));s.verify();
         s.accept_all("accept-other");s.verify();s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.verify();
     }
     {
@@ -753,14 +754,14 @@ void rollback() {
         s.ingest("origin","D01/02/2026\nT-10\nL[Old Visa export]\n^\n",qif::DateOrder::dmy);
         app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="payment";r.expected_sequence=s.transfer_sequence();r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;s.apply_transfer("make",r);s.accept_all("accept",true);
         s.select_account(2);s.ingest("bank","D01/02/2026\nT10\nPBank payment\n^\n",qif::DateOrder::dmy);r={};r.action=app::TransferAction::propose_match;r.link="payment";r.expected_sequence=s.transfer_sequence();r.evidence=transfers::BankEvidence{{2,{"bank",0},"source-0"},Money(1000,cad),"2026-02-01"};s.apply_transfer("match",r);
-        s.rollback_account("remove-bank-source",s.rollback_review().token);check(s.balance()==Money(1000,cad) && s.current_ledger().size()==1);check(!s.transfers().front().link.destination.proposed_evidence);s.verify();
+        test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("remove-bank-source",s.rollback_review().token);check(s.balance()==Money(1000,cad) && s.current_ledger().size()==1);check(!s.transfers().front().link.destination.proposed_evidence);s.verify();
         s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.verify();
     }
     {
         Directory d;auto s=create(d.path/"doc");
         const std::string bytes="!Type:Cat\nNUnused category\nE\n^\n!Account\nNExport name\nTBank\nB25\n^\n!Type:Bank\nD01/02/2026\nT-1\nPTransient\n^\n";
-        app::OperationContext context;s.prepare_import_group("created",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export name",cad,"2026-01-01"},true}},context);materialize(s,"created");s.select_account(2);
-        s.rollback_account("remove-work",s.rollback_review().token);
+        app::OperationContext context;s.prepare_import_group("created",bytes,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"Export name",cad,"2026-01-01"},true}},context);materialize(s,"created");{app::OperationContext decisions;s.resolve_import_categories("created",std::vector<std::string>{"Unused category"},decisions);}s.select_account(2);
+        test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("remove-work",s.rollback_review().token);
         check(s.accounts().size()==2 && s.resolve_account_name("Export name")==2);check(s.batches().empty());s.verify();
         s.ingest("later","D02/02/2026\nT-2\nPNew transaction\n^\n",qif::DateOrder::dmy);s.accept_all("accept-later");check(s.account().opening==Money(2500,cad));check(s.balance()==Money(2300,cad));check(s.category_catalog().categories.size()==1);s.verify();
         s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.verify();
@@ -771,15 +772,15 @@ void rollback() {
         s.ingest("accepted",bytes,qif::DateOrder::dmy);s.accept_all("accept");s.ingest("repeat",bytes,qif::DateOrder::dmy);
         auto edit=s.committed_entry({"accepted",0}).current.draft;edit.payee="Corrected";
         app::ChangeRequest change{app::ChangeKind::correct,{"accepted",0},edit,{}};auto preview=s.preview_committed_change(change);s.apply_committed_change("correct",change,preview.expected,preview.preview_sequence);
-        s.rollback_account("remove-repeat",s.rollback_review().token);s.verify();check(s.committed_entry({"accepted",0}).current.draft.payee=="Corrected");
-        app::ChangeRequest undo{app::ChangeKind::undo,{"accepted",0},{},"correct"};preview=s.preview_committed_change(undo);s.apply_committed_change("undo",undo,preview.expected,preview.preview_sequence);check(s.balance()==Money(-100,cad));s.verify();
+        test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("remove-repeat",s.rollback_review().token);s.verify();check(s.committed_entry({"accepted",0}).current.draft.payee=="Corrected");
+        app::ChangeRequest undo{app::ChangeKind::undo,{"accepted",0},{},"correct"};rejected([&]{s.preview_committed_change(undo);});check(s.balance()==Money(-100,cad));s.verify();
     }
     for(bool independent:{false,true}) {
         Directory d;auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
         s.ingest("origin","D01/02/2026\nT-10\nL[Old Visa export]\n^\n",qif::DateOrder::dmy);
         app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="payment";r.expected_sequence=s.transfer_sequence();r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;s.apply_transfer("make",r);
         if(independent){s.select_account(2);s.ingest("bank","D01/02/2026\nT10\nPBank payment\n^\n",qif::DateOrder::dmy);r={};r.action=app::TransferAction::propose_match;r.link="payment";r.expected_sequence=s.transfer_sequence();r.evidence=transfers::BankEvidence{{2,{"bank",0},"source-0"},Money(1000,cad),"2026-02-01"};s.apply_transfer("match",r);s.select_account(1);}
-        s.rollback_account("clear",s.rollback_review().token);check(s.current_ledger().empty());s.select_account(2);check(s.balance()==Money(independent?1000:0,cad));check(s.transfers().empty());s.verify();
+        test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("clear",s.rollback_review().token);check(s.current_ledger().empty());s.select_account(2);check(s.balance()==Money(independent?1000:0,cad));check(s.transfers().empty());s.verify();
         s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.verify();
     }
 }
@@ -792,7 +793,7 @@ void partial_transfer_guards() {
 }
 void rollback_stale_reopen() {
     Directory d;std::int64_t stale;
-    {auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));s.ingest("one","D01/02/2026\nT1\n^\n",qif::DateOrder::dmy);stale=s.rollback_review().token;s.rollback_account("first",stale);s.ingest("two","D02/02/2026\nT2\n^\n",qif::DateOrder::dmy);s.rollback_account("second",s.rollback_review().token);s.ingest("three","D03/02/2026\nT3\n^\n",qif::DateOrder::dmy);}
+    {auto s=create(d.path/"doc");s.opening(0,"2026-01-01",Money(0,cad));s.ingest("one","D01/02/2026\nT1\n^\n",qif::DateOrder::dmy);test_session::close_reopen(s,d.path/"doc",password);stale=s.rollback_review().token;s.rollback_account("first",stale);s.ingest("two","D02/02/2026\nT2\n^\n",qif::DateOrder::dmy);test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("second",s.rollback_review().token);s.ingest("three","D03/02/2026\nT3\n^\n",qif::DateOrder::dmy);}
     {auto s=ImportStore::open(d.path/"doc",password);rejected([&]{s.rollback_account("first",stale);});check(s.balance()==Money(300,cad));s.verify();}
 }
 void generated_ownership() {
@@ -809,7 +810,7 @@ void generated_ownership() {
         capture(s,"repeat",sgml(bank(payment+(retain?txn("NEW","20260202","-2.00"):""))),{{0,2,{}}},"qfx");materialize(s,"repeat");
         check(s.row({"repeat-account-0",0}).decision.disposition==imports::Disposition::duplicate);
         check(s.acceptance_review().transactions==(retain?1:0));if(retain)s.accept_all("accept-new");s.verify();
-        s.rollback_account("forget-bank",s.rollback_review().token);check(s.balance()==Money(retain?800:1000,cad));check(s.current_ledger().size()==(retain?2:1));s.verify();
+        test_session::close_reopen(s,d.path/"doc",password);s.rollback_account("forget-bank",s.rollback_review().token);check(s.balance()==Money(retain?800:1000,cad));check(s.current_ledger().size()==(retain?2:1));s.verify();
         s.backup_to(d.path/"backup",password);auto restored=ImportStore::open(d.path/"backup",password);restored.select_account(2);check(restored.balance()==Money(retain?800:1000,cad));restored.verify();
     }
 }
@@ -824,6 +825,7 @@ void generated_faults() {
             const auto payment=txn("PAYMENT","20260201","10.00");capture(s,"bank",sgml(bank(payment)),{{0,2,{}}});materialize(s,"bank");
             if(mode>0)match(s);
             if(mode==2){capture(s,"retained",sgml(bank(payment+txn("NEW","20260202","-2.00"))),{{0,2,{}}},"qfx");materialize(s,"retained");s.accept_all("retain");}
+            s.certify({});
         };
         const auto apply=[&](ImportStore& s){s.select_account(2);if(mode==0)match(s);else s.rollback_account("forget",s.rollback_review().token);};
         const auto completed=[&](ImportStore& s){s.select_account(2);return mode==0?s.transfer_outcome("match").has_value():s.rollback_outcome("forget").has_value();};
@@ -836,11 +838,11 @@ void generated_faults() {
 }
 void rollback_faults() {
     fault_vfs::install();
-    auto setup=[](const fs::path& path){auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));s.ingest("accepted","D01/02/2026\nT-1\nPAccepted\n^\n",qif::DateOrder::dmy);s.accept_all("accept");s.ingest("pending","D02/02/2026\nT-2\nPDiscarded\n^\n",qif::DateOrder::dmy);};
-    auto recover=[](const fs::path& path){auto s=ImportStore::open(path,password);const bool complete=s.rollback_outcome("clear").has_value();check(s.balance()==Money(complete?-100:-300,cad));check(s.current_ledger().size()==(complete?1:2));s.rollback_account("clear",s.rollback_review().token);check(s.balance()==Money(-100,cad));s.verify();};
+    auto setup=[](const fs::path& path){auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));s.ingest("accepted","D01/02/2026\nT-1\nPAccepted\n^\n",qif::DateOrder::dmy);s.accept_all("accept");s.ingest("pending","D02/02/2026\nT-2\nPDiscarded\n^\n",qif::DateOrder::dmy);s.certify({});return s.ledger_edit_generation();};
+    auto recover=[](const fs::path& path,std::int64_t token){auto s=ImportStore::open(path,password);const bool complete=s.rollback_outcome("clear").has_value();check(s.balance()==Money(complete?-100:-300,cad));check(s.current_ledger().size()==(complete?1:2));s.rollback_account("clear",token);check(s.balance()==Money(-100,cad));s.verify();};
     int count=0;{Directory d;setup(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);const auto token=s.rollback_review().token;fault_vfs::arm(-1);s.rollback_account("clear",token);count=fault_vfs::seen;fault_vfs::disarm();}check(count>0);
-    for(int n=1;n<=count;++n){Directory d;setup(d.path/"doc");{auto s=ImportStore::open(d.path/"doc",password);const auto token=s.rollback_review().token;fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.rollback_account("clear",token);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}fault_vfs::disarm();}recover(d.path/"doc");no_leaks(d.path);}
-    for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;setup(d.path/"doc");const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.observer([&](ImportPhase p){if(p==phase)_exit(72);});s.rollback_account("clear",s.rollback_review().token);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);{auto s=ImportStore::open(d.path/"doc",password);check(s.rollback_outcome("clear").has_value()==(phase==ImportPhase::after_commit));}recover(d.path/"doc");}
+    for(int n=1;n<=count;++n){Directory d;const auto expected=setup(d.path/"doc");{auto s=ImportStore::open(d.path/"doc",password);const auto token=s.rollback_review().token;fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.rollback_account("clear",token);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}fault_vfs::disarm();}recover(d.path/"doc",expected);no_leaks(d.path);}
+    for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;const auto expected=setup(d.path/"doc");const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.observer([&](ImportPhase p){if(p==phase)_exit(72);});s.rollback_account("clear",s.rollback_review().token);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);{auto s=ImportStore::open(d.path/"doc",password);check(s.rollback_outcome("clear").has_value()==(phase==ImportPhase::after_commit));}recover(d.path/"doc",expected);}
     std::cout<<"Rollback fault positions: "<<count<<'\n';
 }
 void import_undo_faults() {
@@ -848,16 +850,16 @@ void import_undo_faults() {
     for(bool linked:{false,true}) {
     auto setup=[linked](const fs::path& path){
         auto s=create(path);s.opening(0,"2026-01-01",Money(0,cad));s.ingest("accepted","D01/02/2026\nT-1\nPAccepted\n^\n",qif::DateOrder::dmy);s.accept_all("accept");
-        if(!linked){s.ingest("pending","D02/02/2026\nT-2\nPDiscarded\n^\n",qif::DateOrder::dmy);return;}
+        if(!linked){s.ingest("pending","D02/02/2026\nT-2\nPDiscarded\n^\n",qif::DateOrder::dmy);s.certify({});return s.ledger_edit_generation();}
         s.create_account(2,"Other",cad,"2026-01-01");s.select_account(2);s.ingest("pending","D01/02/2026\nT1\nPAccepted\n^\n",qif::DateOrder::dmy);
         const auto sheet=s.review_sheet();const auto q=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& q){return q.kind==app::ReviewKind::link && q.rows.size()>1;});check(q!=sheet.questions.end());
-        app::ReviewAnswer a;a.generation=sheet.generation;a.question=q->key;a.action=app::ReviewAction::link;a.selected={{"accepted",0},{"pending",0}};s.answer_review("link",a);
+        app::ReviewAnswer a;a.generation=sheet.generation;a.question=q->key;a.action=app::ReviewAction::link;a.selected={{"accepted",0},{"pending",0}};s.answer_review("link",a);s.certify({});return s.ledger_edit_generation();
     };
-    auto recover=[linked](const fs::path& path){auto s=ImportStore::open(path,password);const bool complete=s.import_undo_outcome("clear","pending").has_value();check(s.balance()==Money(linked?-100:complete?-100:-300,cad));if(linked)s.select_account(2);check(s.current_ledger().size()==(linked?(complete?0:1):(complete?1:2)));s.undo_import("clear","pending",s.import_undo_outcome("clear","pending")?0:s.review_import_undo("pending").token);check(s.balance()==Money(linked?0:-100,cad));s.verify();};
+    auto recover=[linked](const fs::path& path,std::int64_t token){auto s=ImportStore::open(path,password);const bool complete=s.import_undo_outcome("clear","pending").has_value();check(s.balance()==Money(linked?-100:complete?-100:-300,cad));if(linked)s.select_account(2);check(s.current_ledger().size()==(linked?(complete?0:1):(complete?1:2)));s.undo_import("clear","pending",token);check(s.balance()==Money(linked?0:-100,cad));s.verify();};
     int count=0;{Directory d;setup(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);const auto token=s.review_import_undo("pending").token;fault_vfs::arm(-1);s.undo_import("clear","pending",token);count=fault_vfs::seen;fault_vfs::disarm();}check(count>0);
-    for(int n=1;n<=count;++n){Directory d;setup(d.path/"doc");{auto s=ImportStore::open(d.path/"doc",password);const auto token=s.review_import_undo("pending").token;fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.undo_import("clear","pending",token);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}fault_vfs::disarm();}recover(d.path/"doc");no_leaks(d.path);}
-    for(int n=1;n<=count;++n){Directory d;setup(d.path/"doc");const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(d.path/"doc",password);const auto token=s.review_import_undo("pending").token;fault_vfs::arm(n,SQLITE_IOERR_WRITE,true,true);s.undo_import("clear","pending",token);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71);recover(d.path/"doc");}
-    for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;setup(d.path/"doc");const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.observer([&](ImportPhase p){if(p==phase)_exit(72);});s.undo_import("clear","pending",s.import_undo_outcome("clear","pending")?0:s.review_import_undo("pending").token);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);{auto s=ImportStore::open(d.path/"doc",password);check(s.import_undo_outcome("clear","pending").has_value()==(phase==ImportPhase::after_commit));}recover(d.path/"doc");}
+    for(int n=1;n<=count;++n){Directory d;const auto expected=setup(d.path/"doc");{auto s=ImportStore::open(d.path/"doc",password);const auto token=s.review_import_undo("pending").token;fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.undo_import("clear","pending",token);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}fault_vfs::disarm();}recover(d.path/"doc",expected);no_leaks(d.path);}
+    for(int n=1;n<=count;++n){Directory d;const auto expected=setup(d.path/"doc");const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(d.path/"doc",password);const auto token=s.review_import_undo("pending").token;fault_vfs::arm(n,SQLITE_IOERR_WRITE,true,true);s.undo_import("clear","pending",token);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71);recover(d.path/"doc",expected);}
+    for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;const auto expected=setup(d.path/"doc");const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.observer([&](ImportPhase p){if(p==phase)_exit(72);});s.undo_import("clear","pending",expected);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);{auto s=ImportStore::open(d.path/"doc",password);check(s.import_undo_outcome("clear","pending").has_value()==(phase==ImportPhase::after_commit));}recover(d.path/"doc",expected);}
     std::cout<<"Import undo fault positions (linked="<<linked<<"): "<<count<<'\n';
     }
 }
@@ -905,37 +907,37 @@ void overlap_faults(bool exact=false) {
             s.ingest("base-account-0","D01/02/2026\nT-1\nPSYNTHETIC-STATEMENT-MARKER\n^\n",qif::DateOrder::dmy);
         } else { capture(s,"base",text,{{0,1,{}}},"aso");materialize(s,"base"); }
         s.commit("base-account-0",revision(s,"base-account-0"),"base-commit");
-        capture(s,"overlap",text,{{0,1,{}}},"qfx");
+        capture(s,"interrupted-overlap",text,{{0,1,{}}},"qfx");
     };
-    auto reimport=[&](ImportStore& s){if(!s.import_group_outcome("overlap"))capture(s,"overlap",text,{{0,1,{}}},"qfx");};
+    auto reimport=[&](ImportStore& s){std::string id="overlap";while(const auto old=s.import_group_outcome(id)){if(old->state!=app::GroupState::aborted)return id;id+="-retry";}capture(s,id,text,{{0,1,{}}},"qfx");return id;};
     auto recovered=[&](const fs::path& path) {
-        auto s=ImportStore::open(path,password);reimport(s);
-        materialize(s,"overlap");
-        check(s.row({"overlap-account-0",0}).decision.disposition==imports::Disposition::duplicate);
+        auto s=ImportStore::open(path,password);const auto attempt=reimport(s);
+        materialize(s,attempt);
+        check(s.row({attempt+"-account-0",0}).decision.disposition==imports::Disposition::duplicate);
         check(s.current_ledger().size()==1 && s.balance()==Money(-100,cad));
-        if(!s.outcome("overlap-commit"))s.commit("overlap-account-0",revision(s,"overlap-account-0"),"overlap-commit");
+        if(!s.outcome(attempt+"-commit"))s.commit(attempt+"-account-0",revision(s,attempt+"-account-0"),attempt+"-commit");
         check(s.current_ledger().size()==1 && s.balance()==Money(-100,cad));s.verify();
     };
     for(bool publication:{false,true}) {
         int count=0;
         {
-            Directory d;setup(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);reimport(s);
-            if(publication)materialize(s,"overlap");
+            Directory d;setup(d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);const auto attempt=reimport(s);
+            if(publication)materialize(s,attempt);
             fault_vfs::arm(-1);
-            if(publication)s.commit("overlap-account-0",revision(s,"overlap-account-0"),"overlap-commit");
-            else materialize(s,"overlap");
+            if(publication)s.commit(attempt+"-account-0",revision(s,attempt+"-account-0"),attempt+"-commit");
+            else materialize(s,attempt);
             count=fault_vfs::seen;fault_vfs::disarm();
         }
         check(count>0);
         for(int n=1;n<=count;++n) {
             Directory d;setup(d.path/"doc");
             {
-                auto s=ImportStore::open(d.path/"doc",password);reimport(s);
-                if(publication)materialize(s,"overlap");
+                auto s=ImportStore::open(d.path/"doc",password);const auto attempt=reimport(s);
+                if(publication)materialize(s,attempt);
                 fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
                 try {
-                    if(publication)s.commit("overlap-account-0",revision(s,"overlap-account-0"),"overlap-commit");
-                    else materialize(s,"overlap");
+                    if(publication)s.commit(attempt+"-account-0",revision(s,attempt+"-account-0"),attempt+"-commit");
+                    else materialize(s,attempt);
                 } catch(const ImportError&) {} catch(const app::OperationOutcomeUnknown&) {}
                 fault_vfs::disarm();
             }
@@ -943,13 +945,13 @@ void overlap_faults(bool exact=false) {
         }
         for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}) {
             Directory d;setup(d.path/"doc");
-            if(publication){auto s=ImportStore::open(d.path/"doc",password);reimport(s);materialize(s,"overlap");}
+            if(publication){auto s=ImportStore::open(d.path/"doc",password);const auto attempt=reimport(s);materialize(s,attempt);}
             const auto child=fork();check(child>=0);
             if(child==0) {
-                auto s=ImportStore::open(d.path/"doc",password);reimport(s);
+                auto s=ImportStore::open(d.path/"doc",password);const auto attempt=reimport(s);
                 s.observer([&](ImportPhase at){if(at==phase)_exit(72);});
-                if(publication)s.commit("overlap-account-0",revision(s,"overlap-account-0"),"overlap-commit");
-                else materialize(s,"overlap");
+                if(publication)s.commit(attempt+"-account-0",revision(s,attempt+"-account-0"),attempt+"-commit");
+                else materialize(s,attempt);
                 _exit(0);
             }
             int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
@@ -957,7 +959,7 @@ void overlap_faults(bool exact=false) {
                 auto s=ImportStore::open(d.path/"doc",password);
                 if(publication)check(s.outcome("overlap-commit").has_value()==(phase==ImportPhase::after_commit));
                 else if(phase==ImportPhase::after_commit)check(s.import_group_outcome("overlap")->state==app::GroupState::reviewing);
-                else check(!s.import_group_outcome("overlap"));
+                else check(s.import_group_outcome("overlap")->state==app::GroupState::aborted);
             }
             recovered(d.path/"doc");no_leaks(d.path);
         }

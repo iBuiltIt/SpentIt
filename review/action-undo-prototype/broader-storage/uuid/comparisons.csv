@@ -1,0 +1,13 @@
+workload,rows_per_source,comparator,metric,comparator_bytes,prototype_bytes,delta_bytes,delta_percent
+import,10000,baseline,file_bytes,14061568,21434368,7372800,52.4323
+import,10000,baseline,btree_payload_bytes,11343616,11868518,524902,4.6273
+import,10000,baseline,vfs_cumulative_peak,14230344,28723584,14493240,101.8474
+import,10000,current,file_bytes,12791808,21434368,8642560,67.5632
+import,10000,current,btree_payload_bytes,9720361,11868518,2148157,22.0996
+import,10000,current,vfs_cumulative_peak,14171264,28723584,14552320,102.6889
+import,50000,baseline,file_bytes,68014080,105791488,37777408,55.5435
+import,50000,baseline,btree_payload_bytes,57455057,59831026,2375969,4.1354
+import,50000,baseline,vfs_cumulative_peak,68183632,143726072,75542440,110.7926
+import,50000,current,file_bytes,61399040,105791488,44392448,72.3015
+import,50000,current,btree_payload_bytes,49156708,59831026,10674318,21.7149
+import,50000,current,vfs_cumulative_peak,68249128,143726072,75476944,110.5903

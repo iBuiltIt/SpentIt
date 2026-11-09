@@ -1,3 +1,4 @@
+#include "session_test_helpers.hpp"
 #include <spentit/import_store.hpp>
 #include <filesystem>
 #include <algorithm>
@@ -128,7 +129,7 @@ void origin_import_undo(const std::filesystem::path& dir) {
     {auto s=ImportStore::create(path,"test-password","Checking",cad,"2025-01-01");s.create_account(2,"Savings",cad,"2025-01-01");s.ingest("bank","!Type:Bank\nD01/01/2026\nT-10.00\nPBank\n^\n",qif::DateOrder::dmy);auto left=category_requests(s,{{"bank",0}}).front();
     s.select_account(2);s.create_manual("manual",manual("10.00"));auto right=category_requests(s,{{"manual",0}}).front();right.left->ledger_entry=true;s.select_account(1);
     TransferRequest r{};r.action=TransferAction::merge;r.link="pair";r.kept="kept";r.expected_sequence=s.transfer_sequence();r.left=left.left;r.right=right.left;r.batch_revision=left.batch_revision;r.right_revision=right.batch_revision;s.apply_transfer("link",r);s.verify();
-    const auto preview=s.review_import_undo("bank");s.undo_import("undo-bank","bank",preview.token);check(s.balance().units()==0,"Import undo removes imported posting");s.select_account(2);check(s.balance().units()==1000 && s.current_ledger().size()==1,"Import undo preserves independent manual posting");check(!s.imported_original({"manual",0}),"Import undo invents no manual source");s.verify();}
+    test_session::close_reopen(s,path,"test-password");const auto preview=s.review_import_undo("bank");s.undo_import("undo-bank","bank",preview.token);check(s.balance().units()==0,"Import undo removes imported posting");s.select_account(2);check(s.balance().units()==1000 && s.current_ledger().size()==1,"Import undo preserves independent manual posting");check(!s.imported_original({"manual",0}),"Import undo invents no manual source");s.verify();}
     {auto s=ImportStore::open(path,"test-password");s.select_account(2);check(s.balance().units()==1000,"Manual counterpart survives import undo reopen");s.verify();}
 }
 void origin_splits(const std::filesystem::path& dir) {
@@ -298,7 +299,7 @@ int main(){
         s.undo_transaction_edit("undo-edit","edit");check(s.balance().units()==-1000 && s.row(id).draft->date=="2026-01-01","Manual edit Undo");s.verify();
         s.accept_all("accept-manual");auto entry=s.committed_entry(id);edit=entry.current.draft;edit.date="2026-03-03";
         s.edit_transaction("accepted-edit",id,s.batches().front().revision,entry.token,edit);s.verify();s.undo_transaction_edit("accepted-undo","accepted-edit");s.verify();
-        s.create_manual("discardable",manual("5.00"));const auto review=s.rollback_review();s.rollback_account("discard",review.token);check(s.current_ledger().size()==1 && s.balance().units()==-1000,"Account discard preserves accepted manual work");s.verify();
+        s.create_manual("discardable",manual("5.00"));rejects([&]{s.rollback_account("blocked-discard",s.rollback_review().token);});test_session::close_reopen(s,extra,"test-password");const auto review=s.rollback_review();s.rollback_account("discard",review.token);check(s.current_ledger().size()==1 && s.balance().units()==-1000,"Account discard preserves accepted manual work");s.verify();
         auto bad=manual();bad.date="2026-02-30";rejects([&]{s.create_manual("bad-date",bad);});
         rejects([&]{auto invalid=manual();invalid.transaction=Transaction::manual(Money(1,Currency("CAD")),{{"","",Money(2,Currency("CAD"))}});s.create_manual("bad-splits",invalid);});
         s.observer([](auto phase){if(phase==storage::ImportPhase::after_commit)throw std::runtime_error("lost acknowledgement");});

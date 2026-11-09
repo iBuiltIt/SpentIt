@@ -11,13 +11,16 @@ See [current status](status.md) for implemented behavior and actual verification
 
 ## Next phase: usage-driven UI improvements
 
-Change History discussion led to the accepted [unified action Undo
-direction and handoff](action-undo-design.md): a strict file-wide session chain,
-including reversible acceptance and imports. The owner authorized design and
-independent review, then approved the reviewed design and granted implementation
-Go for a fresh session on 2026-11-08. This is a substantive Undo behaviour change,
-not merely presentation cleanup. Implementation has not started; the final Change
-History layout is not yet settled.
+Change History discussion led to a unified Undo proposal, whose generic per-row
+import capture architecture the owner rejected. The [replacement design and
+handoff](action-undo-design.md) now describes user-operation restoration plus one
+atomic source-owned import rollback. It retains file-wide ordering and reversible
+acceptance, permits retained import-created accounts/categories, and explicitly
+narrows the definition/removal scope. The owner initially authorized design only,
+then authorized implementation in a new session. The replacement is implemented;
+see its [verification record](action-undo-implementation.md) for measured storage,
+passing checks and remaining limits. The final Change History layout remains
+separate. Earlier design approval is not authority to resume the rejected architecture.
 
 Address the owner's items discovered through use first. This is a separate phase
 from the essential busy/readiness audit below, and is not limited to About.

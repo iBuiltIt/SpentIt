@@ -82,7 +82,7 @@ bool ImportStore::review_draft_undo(const imports::Occurrence& id,std::int64_t r
     if(!predecessor.row() || predecessor.null(0))return false;
     const auto previous=review_draft(id,predecessor.integer(0));
     // Only retained restoration dependencies and this session can supply Undo.
-    Statement restored(impl_->db,"SELECT m.prior,m.result FROM review_members m JOIN review_undos u ON u.answer=m.answer JOIN versions p ON p.batch=m.batch AND p.ordinal=m.ordinal AND p.revision=m.prior JOIN versions r ON r.batch=m.batch AND r.ordinal=m.ordinal AND r.revision=m.result WHERE m.batch=? AND m.ordinal=? AND m.committed=0 AND m.result<?");
+    Statement restored(impl_->db,"SELECT m.prior,x.consumed FROM review_members m JOIN review_undos u ON u.answer=m.answer JOIN review_undo_members x ON x.undo_id=u.id AND x.original_child=m.child JOIN versions p ON p.batch=m.batch AND p.ordinal=m.ordinal AND p.revision=m.prior JOIN versions r ON r.batch=m.batch AND r.ordinal=m.ordinal AND r.revision=m.result WHERE m.batch=? AND m.ordinal=? AND m.committed=0 AND x.restored=?");
     restored.text(1,id.batch);restored.integer(2,integer(id.ordinal));restored.integer(3,revision);
     const auto wanted=session_snapshot::image(draft),before=session_snapshot::image(previous);
     while(restored.row())if(session_snapshot::image(review_draft(id,restored.integer(0)))==wanted && session_snapshot::image(review_draft(id,restored.integer(1)))==before)return true;
@@ -141,17 +141,17 @@ app::CategoryReceipt ImportStore::apply_category_change(std::string_view operati
     if(request.action==app::CategoryAction::set_income) {
         // This flag cannot change import completion, matching, transfers or amounts.
         // Retain already-current Review facts, but advance mutation/Undo guards.
-        exec(impl_->db,"UPDATE mutation_generation SET revision=revision+1 WHERE singleton=1");
+        ActionChain(impl_->db).compatible_change(action_token());
         if(impl_->observer)impl_->observer(ImportPhase::before_commit);
         transaction.commit();
         const auto savedChanges=sqlite3_total_changes64(impl_->db);
         if(reviewsCurrent)impl_->review_changes=savedChanges;
         if(sheetCurrent) {
-            impl_->sheet_cache->generation=ledger_edit_generation();impl_->sheet_cache->can_undo=false;
+            impl_->sheet_cache->generation=ledger_edit_generation();
             impl_->sheet_changes=savedChanges;
         }
         if(impl_->observer)impl_->observer(ImportPhase::after_commit);
-    } else finish([&]{transaction.commit();});
+    } else finish([&]{transaction.commit();},true);
     return *category_change_outcome(operation);
 }
 void ImportStore::write_category_change(std::string_view operation,const app::CategoryPreview& preview) {
@@ -262,10 +262,12 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
                 draft={fields.bytes(0),fields.bytes(1),fields.bytes(2),Transaction::repaired_import(source.original_amount,Money(fields.integer(3),currency),std::move(aa),reassigned)};load_metadata(impl_->db,id,revision,draft,false);
             }
             if((draft.payee_owner==FieldOwnership::source && draft.payee!=source.payee) || (draft.memo_owner==FieldOwnership::source && draft.memo!=source.memo))fail(SQLITE_CORRUPT);
+            std::optional<std::int64_t> publication_draft;
+            if(entry){Statement publication(impl_->db,"SELECT draft_revision FROM entry_revisions WHERE batch=? AND ordinal=? AND revision=?");publication.text(1,id.batch);publication.integer(2,integer(id.ordinal));publication.integer(3,revision);if(!publication.row())fail(SQLITE_CORRUPT);if(!publication.null(0))publication_draft=publication.integer(0);}
             std::int64_t order=0;bool undo=false;std::optional<std::int64_t> prior_revision;
             const bool baseline=session_snapshot::baseline(impl_->db,entry,id,revision);
             if(baseline){Statement stamp(impl_->db,entry?"SELECT baseline_order FROM entry_fields WHERE batch=? AND ordinal=? AND revision=?":"SELECT baseline_order FROM draft_fields WHERE batch=? AND ordinal=? AND revision=?");stamp.text(1,id.batch);stamp.integer(2,integer(id.ordinal));stamp.integer(3,revision);if(!stamp.row())fail(SQLITE_CORRUPT);order=stamp.integer(0);}
-            else if(entry){const auto operation=revision_history(impl_->db,id,revision);if(operation){order=operation->order;undo=operation->kind==static_cast<int>(app::ChangeKind::undo);}else{Statement mark(impl_->db,"SELECT operation FROM account_amount_revisions WHERE kind=2 AND batch=? AND ordinal=? AND revision=? AND position=0");mark.text(1,id.batch);mark.integer(2,integer(id.ordinal));mark.integer(3,revision);if(!mark.row())fail(SQLITE_CORRUPT);Statement ledger(impl_->db,"SELECT h.sequence FROM ledger_operations l JOIN history_order h ON h.operation=l.id WHERE l.kind=5 AND l.undo_of=?");ledger.text(1,mark.bytes(0));if(!ledger.row())fail(SQLITE_CORRUPT);order=ledger.integer(0);undo=false;}if(revision>0)prior_revision=revision-1;}
+            else if(entry){const auto operation=revision_history(impl_->db,id,revision);if(operation){order=operation->order;undo=operation->kind==static_cast<int>(app::ChangeKind::undo);}else{Statement mark(impl_->db,"SELECT operation FROM account_amount_revisions WHERE kind=2 AND batch=? AND ordinal=? AND revision=? AND position=0");mark.text(1,id.batch);mark.integer(2,integer(id.ordinal));mark.integer(3,revision);if(!mark.row())fail(SQLITE_CORRUPT);Statement ledger(impl_->db,"SELECT h.sequence FROM ledger_operations l JOIN history_order h ON h.operation=l.id WHERE l.kind=5 AND l.undo_of=?");ledger.text(1,mark.bytes(0));if(!ledger.row())fail(SQLITE_CORRUPT);order=ledger.integer(0);undo=false;}if(revision>0 && !publication_draft)prior_revision=revision-1;}
             else {Statement event(impl_->db,"SELECT sequence FROM history_order WHERE batch=? AND event_revision=?");event.text(1,id.batch);event.integer(2,revision);if(!event.row())fail(SQLITE_CORRUPT);order=event.integer(0);Statement prior(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=? AND revision<?");prior.text(1,id.batch);prior.integer(2,integer(id.ordinal));prior.integer(3,revision);if(!prior.row())fail(SQLITE_CORRUPT);if(!prior.null(0))prior_revision=prior.integer(0);}
             if(baseline){prior_revision.reset();undo=true;}
             // Pending Review Undo restores the exact saved draft, including
@@ -292,9 +294,9 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
                 else if(allocation.identity.starts_with("source-"))fail(SQLITE_CORRUPT);
                 if((allocation.memo_owner==FieldOwnership::source && (!original || allocation.memo!=original->memo)) || (allocation.category_owner==FieldOwnership::source && !source_category_equal(allocation,original)))fail(SQLITE_CORRUPT);
                 bool carried=false,previous_identity=false;
-                const bool prior_entry=entry && revision>0;
+                const bool prior_entry=entry && !publication_draft;
                 std::optional<std::int64_t> previous_revision=prior_revision;
-                if(entry && revision==0){Statement prior(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");prior.text(1,id.batch);prior.integer(2,integer(id.ordinal));if(!prior.row() || prior.null(0))fail(SQLITE_CORRUPT);previous_revision=prior.integer(0);}
+                if(publication_draft)previous_revision=publication_draft;
                 if(previous_revision){Statement prior_allocation(impl_->db,prior_entry?"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM entry_allocation_meta m JOIN entry_allocation_values a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?":"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM draft_allocation_meta m JOIN allocations a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?");prior_allocation.text(1,id.batch);prior_allocation.integer(2,integer(id.ordinal));prior_allocation.integer(3,*previous_revision);prior_allocation.text(4,allocation.identity);if(prior_allocation.row()){if(!undo && prior_allocation.integer(3)==static_cast<int>(FieldOwnership::manual) && allocation.category_owner==FieldOwnership::source)fail(SQLITE_CORRUPT,"Manual allocation ownership was silently removed");previous_identity=true;carried=allocation.category_binding && !prior_allocation.null(0) && prior_allocation.bytes(0)==allocation.category_binding->identity && prior_allocation.integer(1)==allocation.category_binding->catalog_revision && prior_allocation.bytes(2)==allocation.category;}}
                 if(allocation.source_ordinal && previous_revision && !previous_identity && !undo)fail(SQLITE_CORRUPT,"Source association was recreated without Undo");
                 if(allocation.category_binding){validate_binding(impl_->db,allocation);if(allocation.category_binding->catalog_revision>current_catalog || (!carried && !undo && allocation.category_owner!=FieldOwnership::source && allocation.category_binding->catalog_revision!=current_catalog))fail(SQLITE_CORRUPT,"Category assignment bypassed catalog freshness");}

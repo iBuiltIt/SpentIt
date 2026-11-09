@@ -1,0 +1,4 @@
+Compared allocation-read-optimized mixed-1000 prototype to frozen matrix-final mixed-1000 prototype.
+All workload lines identical after removing elapsed_seconds fields only.
+All DBSTAT rows byte-identical.
+All scoped CTests passed 3/3, including complete snapshot/allocation audit query plans and typed edge cases.

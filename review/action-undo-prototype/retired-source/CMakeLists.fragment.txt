@@ -1,0 +1,77 @@
+
+# Explicitly opt in to this development measurement executable. It instruments
+# real repository commands but is not the unified Undo implementation.
+option(SPENTIT_ACTION_JOURNAL_PROBE "Build the development action-journal measurement probe" OFF)
+if(SPENTIT_IMPORT_WORKFLOW AND SPENTIT_ACTION_JOURNAL_PROBE)
+  add_executable(spentit_action_journal_probe action_journal_probe.cpp)
+  target_link_libraries(spentit_action_journal_probe PRIVATE spentit_import_store spentit_sqlcipher)
+  spentit_compiler_options(spentit_action_journal_probe)
+endif()
+
+if(SPENTIT_IMPORT_WORKFLOW AND SPENTIT_ACTION_JOURNAL_PROBE)
+  # Compile the actual store in a separate test library. No prototype SQL
+  # translation or schema shape enters the application library.
+  find_package(OpenSSL 3.0 REQUIRED COMPONENTS Crypto)
+  add_library(spentit_action_payload_store STATIC
+    action_payload_store.cpp
+    ../../src/storage/document_gateway.cpp
+    ../../src/storage/verification_cache.cpp
+    ../../src/storage/document_lock.cpp)
+  get_target_property(action_probe_links spentit_import_store LINK_LIBRARIES)
+  get_target_property(action_probe_includes spentit_import_store INCLUDE_DIRECTORIES)
+  target_link_libraries(spentit_action_payload_store PRIVATE ${action_probe_links} PUBLIC SpentIt::engine spentit_diagnostics)
+  target_include_directories(spentit_action_payload_store PUBLIC ${action_probe_includes})
+  if(SPENTIT_RULES)
+    target_compile_definitions(spentit_action_payload_store PRIVATE SPENTIT_RULES_STORAGE)
+  endif()
+  spentit_compiler_options(spentit_action_payload_store)
+  add_executable(spentit_action_payload_probe action_journal_probe.cpp)
+  target_compile_definitions(spentit_action_payload_probe PRIVATE SPENTIT_ACTION_PAYLOAD_PROBE)
+  target_link_libraries(spentit_action_payload_probe PRIVATE spentit_action_payload_store spentit_sqlcipher)
+  spentit_compiler_options(spentit_action_payload_probe)
+endif()
+
+if(TARGET spentit_action_payload_store)
+  add_executable(spentit_action_payload_storage_measure session_storage_measure.cpp)
+  target_link_libraries(spentit_action_payload_storage_measure PRIVATE spentit_action_payload_store spentit_sqlcipher)
+  spentit_compiler_options(spentit_action_payload_storage_measure)
+endif()
+
+if(TARGET spentit_action_journal_probe)
+  add_test(NAME storage.action_journal_codec COMMAND spentit_action_journal_probe --self-check)
+endif()
+
+if(TARGET spentit_action_payload_store)
+  add_executable(spentit_action_storage_workloads action_storage_workloads.cpp)
+  target_compile_definitions(spentit_action_storage_workloads PRIVATE SPENTIT_ACTION_PAYLOAD_PROBE SPENTIT_ACTION_CAPTURE)
+  target_link_libraries(spentit_action_storage_workloads PRIVATE spentit_action_payload_store spentit_sqlcipher)
+  spentit_compiler_options(spentit_action_storage_workloads)
+  add_executable(spentit_current_storage_workloads action_storage_workloads.cpp)
+  target_link_libraries(spentit_current_storage_workloads PRIVATE spentit_import_store spentit_sqlcipher)
+  spentit_compiler_options(spentit_current_storage_workloads)
+endif()
+
+if(TARGET spentit_action_payload_store)
+  add_executable(spentit_measure_vfs_tests measure_vfs_tests.cpp)
+  target_link_libraries(spentit_measure_vfs_tests PRIVATE spentit_sqlcipher)
+  target_compile_features(spentit_measure_vfs_tests PRIVATE cxx_std_20)
+  spentit_compiler_options(spentit_measure_vfs_tests)
+  add_test(NAME storage.action_measure_vfs COMMAND spentit_measure_vfs_tests)
+  add_executable(spentit_action_lifecycle_tests action_lifecycle_tests.cpp)
+  target_compile_definitions(spentit_action_lifecycle_tests PRIVATE SPENTIT_ACTION_PAYLOAD_PROBE)
+  target_link_libraries(spentit_action_lifecycle_tests PRIVATE spentit_action_payload_store spentit_sqlcipher)
+  spentit_compiler_options(spentit_action_lifecycle_tests)
+  add_test(NAME storage.action_prototype_lifecycle COMMAND spentit_action_lifecycle_tests)
+  set_tests_properties(storage.action_prototype_lifecycle PROPERTIES TIMEOUT 180)
+endif()
+
+if(TARGET spentit_action_payload_store)
+  add_executable(spentit_action_uuid_storage_workloads action_storage_workloads.cpp)
+  target_compile_definitions(spentit_action_uuid_storage_workloads PRIVATE SPENTIT_ACTION_PAYLOAD_PROBE SPENTIT_ACTION_CAPTURE SPENTIT_WORKLOAD_UUID_IDS)
+  target_link_libraries(spentit_action_uuid_storage_workloads PRIVATE spentit_action_payload_store spentit_sqlcipher)
+  spentit_compiler_options(spentit_action_uuid_storage_workloads)
+  add_executable(spentit_current_uuid_storage_workloads action_storage_workloads.cpp)
+  target_compile_definitions(spentit_current_uuid_storage_workloads PRIVATE SPENTIT_WORKLOAD_UUID_IDS)
+  target_link_libraries(spentit_current_uuid_storage_workloads PRIVATE spentit_import_store spentit_sqlcipher)
+  spentit_compiler_options(spentit_current_uuid_storage_workloads)
+endif()

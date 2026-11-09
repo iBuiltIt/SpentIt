@@ -1,3 +1,4 @@
+#include "session_test_helpers.hpp"
 #include <spentit/import_store.hpp>
 #include <spentit/diagnostics.hpp>
 #include <filesystem>
@@ -10,7 +11,7 @@
 using namespace spentit;
 using namespace spentit::app;
 using spentit::storage::ImportStore;
-void check(bool value,const char* why){if(!value)throw std::runtime_error(why);}
+void check(bool value,const char* why){if(std::getenv("SPENTIT_TEST_TRACE"))std::cerr<<why<<"\n";if(!value)throw std::runtime_error(why);}
 std::string source(std::string payee,std::string amount="-10.00",std::string memo="") {return "!Type:Bank\nD01/01/2026\nT"+amount+"\nP"+payee+"\nM"+memo+"\n^\n";}
 void answer(ImportStore& store,std::string op,ReviewAction action,std::vector<imports::Occurrence> selected={},std::optional<imports::Occurrence> keep={}){
     const auto sheet=store.review_sheet();const auto kind=action==ReviewAction::merge || action==ReviewAction::separate?ReviewKind::same:ReviewKind::link;
@@ -712,8 +713,8 @@ void editor_tests(const std::filesystem::path& dir){
 void editor_faults(const std::filesystem::path& dir){
     fault_vfs::install();const Currency cad("CAD");
     for(int mode=0;mode<6;++mode){const imports::Occurrence id{mode>=4?"out":"edit",0};const auto base=dir/("editor-base-"+std::to_string(mode));std::optional<imports::DraftRow> edit;std::optional<EntryToken> token;std::int64_t revision=0;
-        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");if(mode>=4){assignment_setup(s);auto requests=assignment_requests(s);OperationContext context;s.assign_transfer_batch("assign",requests,context);}else{s.opening(0,"2026-01-01",Money(0,cad));s.ingest(id.batch,source("Original"),qif::DateOrder::dmy);}if(mode>=2)s.accept_all("accept",mode>=4);edit=edit_row(s,id);edit->remainder_allocation=edit->transaction.allocations()[0].identity;edit->manual_split_amounts=true;edit->payee="Edited";edit->payee_owner=FieldOwnership::manual;if(mode>=4){auto aa=edit->transaction.allocations();aa[0].amount=Money(-40000,cad);edit->transaction=edit->transaction.corrected(Money(-40000,cad),aa);}revision=edit_revision(s,id);token=edit_token(s,id);if(mode%2)s.edit_transaction("edit",id,revision,token,*edit);}
-        const auto apply=[&](ImportStore& s){if(mode%2)s.undo_transaction_edit("operation","edit");else s.edit_transaction("operation",id,revision,token,*edit);};
+        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");if(mode>=4){assignment_setup(s);auto requests=assignment_requests(s);OperationContext context;s.assign_transfer_batch("assign",requests,context);}else{s.opening(0,"2026-01-01",Money(0,cad));s.ingest(id.batch,source("Original"),qif::DateOrder::dmy);}if(mode>=2)s.accept_all("accept",mode>=4);edit=edit_row(s,id);edit->remainder_allocation=edit->transaction.allocations()[0].identity;edit->manual_split_amounts=true;edit->payee="Edited";edit->payee_owner=FieldOwnership::manual;if(mode>=4){auto aa=edit->transaction.allocations();aa[0].amount=Money(-40000,cad);edit->transaction=edit->transaction.corrected(Money(-40000,cad),aa);}revision=edit_revision(s,id);token=edit_token(s,id);if(mode%2)s.edit_transaction("saved-edit",id,revision,token,*edit);}
+        const auto apply=[&](ImportStore& s){if(mode%2)s.undo_transaction_edit("operation","saved-edit");else s.edit_transaction("operation",id,revision,token,*edit);};
         const auto verify=[&](ImportStore& s,bool complete){const bool edited=complete!=(mode%2!=0);check(edit_row(s,id).remainder_allocation==(edited?edit->remainder_allocation:std::string{}) && edit_row(s,id).manual_split_amounts==edited && edit_row(s,id).payee==(edited?"Edited":mode>=4?"One":"Original"),"All-or-none edit values and manual split choice");check(s.balance().units()==(mode>=4?(edited?-415639:-425639):-1000),"Exact balance after failure");if(mode>=4){s.select_account(2);check(s.balance().units()==425639,"Committed counterpart retained");s.select_account(1);}s.verify();};
         int positions=0;
         for(int nth=1;nth<2000;++nth){const auto trial=dir/"editor-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
@@ -995,7 +996,7 @@ int main(int argc,char** argv){
             {auto store=ImportStore::create(cleanup,"test","Visa",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
             store.ingest("a",source("One"),qif::DateOrder::dmy);if(accepted)store.accept_all("accept");store.ingest("b",source("Two"),qif::DateOrder::dmy);
             answer(store,"merge-cleanup",ReviewAction::merge,{{"a",0},{"b",0}},imports::Occurrence{"a",0});
-            store.rollback_account("rollback",store.rollback_review().token);check(store.current_ledger().size()==(accepted?1:0),"Rollback preserves accepted survivor only");check(!store.review_sheet().can_undo,"Rollback clears Review stack");store.verify();}
+            test_session::close_reopen(store,cleanup,"test");store.rollback_account("rollback",store.rollback_review().token);check(store.current_ledger().size()==(accepted?1:0),"Rollback preserves accepted survivor only");check(!store.review_sheet().can_undo,"Rollback clears Review stack");store.verify();}
             auto store=ImportStore::open(cleanup,"test");store.verify();
         }
         const auto splits=std::filesystem::canonical(dir)/"split-exact";
@@ -1011,5 +1012,5 @@ int main(int argc,char** argv){
             store.answer_review("split-link",a);check(store.balance().units()==1150,"Split total preserved");store.verify();store.undo_review("undo-split");store.verify();
         }
         std::filesystem::remove_all(dir);std::cout<<"Review sheet passed\n";return 0;
-    }catch(const std::exception& e){std::cerr<<e.what()<<"\n";std::filesystem::remove_all(dir);return 1;}
+    }catch(const storage::ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<"\n";std::filesystem::remove_all(dir);return 1;}catch(const std::exception& e){std::cerr<<e.what()<<"\n";std::filesystem::remove_all(dir);return 1;}
 }

@@ -1,0 +1,11 @@
+{
+  "probe_sha256": "5a24b5628e47f345f16685c9f475cafb09ece079088c35c0ec1aae341b826441",
+  "variants": {
+    "current": {
+      "source_sha256_before": "4f6ad97ebc7eb663eb066993fb0141363943c1a7f114d4ea942f70a82323e1ff",
+      "source_sha256_after": "4f6ad97ebc7eb663eb066993fb0141363943c1a7f114d4ea942f70a82323e1ff",
+      "source_unchanged": true,
+      "exit_code": 1
+    }
+  }
+}

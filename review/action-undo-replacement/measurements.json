@@ -1,0 +1,242 @@
+[
+  {
+    "mode": "accumulated",
+    "rows": 19000,
+    "seconds": 374.7970633750083,
+    "sampled_peak_journal_bytes": 2196152,
+    "sampled_peak_database_and_journal_bytes": 34312888,
+    "exit": 0,
+    "output": "categorized-open,file=32116736,pages=7841,free=0,live_page_bytes=32116736,versions=19000,entry_revisions=38000,ledger_operations=19001,review_members=19000,review_link_history=0,review_undo_members=0\ncategorized-close,file=32116736,pages=7841,free=0,live_page_bytes=32116736,versions=19000,entry_revisions=38000,ledger_operations=19001,review_members=19000,review_link_history=0,review_undo_members=0\nsession 0 open\ningest\naccept\nedit\nverify\nclose\nlater-close-1,file=32137216,pages=7846,free=0,live_page_bytes=32137216,versions=19050,entry_revisions=38026,ledger_operations=19003,review_members=19000,review_link_history=0,review_undo_members=0\nsession 1 open\ningest\naccept\nedit\nverify\nclose\nlater-close-2,file=32198656,pages=7861,free=0,live_page_bytes=32198656,versions=19100,entry_revisions=38052,ledger_operations=19005,review_members=19000,review_link_history=0,review_undo_members=0\nsession 2 open\ningest\naccept\nedit\nverify\nclose\nlater-close-3,file=32231424,pages=7869,free=0,live_page_bytes=32231424,versions=19150,entry_revisions=38078,ledger_operations=19007,review_members=19000,review_link_history=0,review_undo_members=0\nsession 3 open\ningest\naccept\nedit\nverify\nclose\nlater-close-4,file=32268288,pages=7878,free=0,live_page_bytes=32268288,versions=19200,entry_revisions=38104,ledger_operations=19009,review_members=19000,review_link_history=0,review_undo_members=0\nreopened,file=32268288,pages=7878,free=0,live_page_bytes=32268288,versions=19200,entry_revisions=38104,ledger_operations=19009,review_members=19000,review_link_history=0,review_undo_members=0\n",
+    "variant": "cf8f1a5",
+    "dbstat": {
+      "pages": 7878,
+      "bytes": 32268288,
+      "payload": 24718313,
+      "unused": 2499651
+    }
+  },
+  {
+    "mode": "accumulated",
+    "rows": 19000,
+    "seconds": 175.9151750410092,
+    "sampled_peak_journal_bytes": 11820032,
+    "sampled_peak_database_and_journal_bytes": 43797504,
+    "exit": 0,
+    "output": "categorized-open,file=30908416,pages=7546,free=0,live_page_bytes=30908416,versions=19000,entry_revisions=38000,ledger_operations=19001,command_completions=2,review_members=19000,review_link_history=0,review_undo_members=0\ncategorized-close,file=31977472,pages=7807,free=2117,live_page_bytes=23306240,versions=19000,entry_revisions=38000,ledger_operations=1,command_completions=19002,review_members=0,review_link_history=0,review_undo_members=0\nsession 0 open\ningest\naccept\nedit\nverify\nclose\nlater-close-1,file=31977472,pages=7807,free=2112,live_page_bytes=23326720,versions=19050,entry_revisions=38025,ledger_operations=2,command_completions=19003,review_members=0,review_link_history=0,review_undo_members=0\nsession 1 open\ningest\naccept\nedit\nverify\nclose\nlater-close-2,file=31977472,pages=7807,free=2100,live_page_bytes=23375872,versions=19100,entry_revisions=38050,ledger_operations=3,command_completions=19004,review_members=0,review_link_history=0,review_undo_members=0\nsession 2 open\ningest\naccept\nedit\nverify\nclose\nlater-close-3,file=31977472,pages=7807,free=2093,live_page_bytes=23404544,versions=19150,entry_revisions=38075,ledger_operations=4,command_completions=19005,review_members=0,review_link_history=0,review_undo_members=0\nsession 3 open\ningest\naccept\nedit\nverify\nclose\nlater-close-4,file=31977472,pages=7807,free=2085,live_page_bytes=23437312,versions=19200,entry_revisions=38100,ledger_operations=5,command_completions=19006,review_members=0,review_link_history=0,review_undo_members=0\nreopened,file=31977472,pages=7807,free=2085,live_page_bytes=23437312,versions=19200,entry_revisions=38100,ledger_operations=5,command_completions=19006,review_members=0,review_link_history=0,review_undo_members=0\n",
+    "variant": "b4b65df",
+    "dbstat": {
+      "pages": 5722,
+      "bytes": 23437312,
+      "payload": 18263445,
+      "unused": 2502905
+    }
+  },
+  {
+    "mode": "accumulated",
+    "rows": 19000,
+    "seconds": 188.12974075000966,
+    "sampled_peak_journal_bytes": 11840552,
+    "sampled_peak_database_and_journal_bytes": 43691048,
+    "exit": 0,
+    "output": "categorized-open,file=30781440,pages=7515,free=0,live_page_bytes=30781440,versions=19000,entry_revisions=38000,ledger_operations=19001,command_completions=2,action_headers=3,action_receipts=3,review_members=19000,review_link_history=0,review_undo_members=0,review_repairs=0\ncategorized-close,file=31850496,pages=7776,free=2117,live_page_bytes=23179264,versions=19000,entry_revisions=38000,ledger_operations=1,command_completions=19002,action_headers=0,action_receipts=3,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nsession 0 open\ningest\naccept\nedit\nverify\nclose\nlater-close-1,file=31850496,pages=7776,free=2113,live_page_bytes=23195648,versions=19050,entry_revisions=38025,ledger_operations=2,command_completions=19003,action_headers=0,action_receipts=6,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nsession 1 open\ningest\naccept\nedit\nverify\nclose\nlater-close-2,file=31850496,pages=7776,free=2101,live_page_bytes=23244800,versions=19100,entry_revisions=38050,ledger_operations=3,command_completions=19004,action_headers=0,action_receipts=9,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nsession 2 open\ningest\naccept\nedit\nverify\nclose\nlater-close-3,file=31850496,pages=7776,free=2093,live_page_bytes=23277568,versions=19150,entry_revisions=38075,ledger_operations=4,command_completions=19005,action_headers=0,action_receipts=12,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nsession 3 open\ningest\naccept\nedit\nverify\nclose\nlater-close-4,file=31850496,pages=7776,free=2085,live_page_bytes=23310336,versions=19200,entry_revisions=38100,ledger_operations=5,command_completions=19006,action_headers=0,action_receipts=15,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nreopened,file=31850496,pages=7776,free=2085,live_page_bytes=23310336,versions=19200,entry_revisions=38100,ledger_operations=5,command_completions=19006,action_headers=0,action_receipts=15,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\n",
+    "variant": "replacement-working-tree",
+    "dbstat": {
+      "pages": 5691,
+      "bytes": 23310336,
+      "payload": 18155220,
+      "unused": 2544119
+    }
+  },
+  {
+    "mode": "edits",
+    "rows": 1000,
+    "seconds": 8.895028540981002,
+    "sampled_peak_journal_bytes": 168776,
+    "sampled_peak_database_and_journal_bytes": 2016064,
+    "exit": 0,
+    "output": "before-close,file=1851392,pages=452,free=0,live_page_bytes=1851392,versions=1000,entry_revisions=1000,ledger_operations=1,review_members=0,review_link_history=0,review_undo_members=0\ninitial,file=1851392,pages=452,free=0,live_page_bytes=1851392,versions=1000,entry_revisions=1000,ledger_operations=1,review_members=0,review_link_history=0,review_undo_members=0\nedit-close-1,file=1851392,pages=452,free=0,live_page_bytes=1851392,versions=1000,entry_revisions=1008,ledger_operations=9,review_members=0,review_link_history=0,review_undo_members=0\nedit-close-2,file=1855488,pages=453,free=0,live_page_bytes=1855488,versions=1000,entry_revisions=1016,ledger_operations=17,review_members=0,review_link_history=0,review_undo_members=0\nedit-close-3,file=1855488,pages=453,free=0,live_page_bytes=1855488,versions=1000,entry_revisions=1024,ledger_operations=25,review_members=0,review_link_history=0,review_undo_members=0\nedit-close-4,file=1855488,pages=453,free=0,live_page_bytes=1855488,versions=1000,entry_revisions=1032,ledger_operations=33,review_members=0,review_link_history=0,review_undo_members=0\nreopened,file=1855488,pages=453,free=0,live_page_bytes=1855488,versions=1000,entry_revisions=1032,ledger_operations=33,review_members=0,review_link_history=0,review_undo_members=0\n",
+    "variant": "cf8f1a5",
+    "dbstat": {
+      "pages": 453,
+      "bytes": 1855488,
+      "payload": 822085,
+      "unused": 867147
+    }
+  },
+  {
+    "mode": "edits",
+    "rows": 1000,
+    "seconds": 5.91115095897112,
+    "sampled_peak_journal_bytes": 168776,
+    "sampled_peak_database_and_journal_bytes": 1946440,
+    "exit": 0,
+    "output": "before-close,file=1777664,pages=434,free=0,live_page_bytes=1777664,versions=1000,entry_revisions=1000,ledger_operations=1,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\ninitial,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1000,ledger_operations=1,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\nedit-close-1,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=8,review_members=0,review_link_history=0,review_undo_members=0\nedit-close-2,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=16,review_members=0,review_link_history=0,review_undo_members=0\nedit-close-3,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=24,review_members=0,review_link_history=0,review_undo_members=0\nedit-close-4,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=32,review_members=0,review_link_history=0,review_undo_members=0\nreopened,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=32,review_members=0,review_link_history=0,review_undo_members=0\n",
+    "variant": "b4b65df",
+    "dbstat": {
+      "pages": 426,
+      "bytes": 1744896,
+      "payload": 760417,
+      "unused": 857006
+    }
+  },
+  {
+    "mode": "edits",
+    "rows": 1000,
+    "seconds": 7.05439554201439,
+    "sampled_peak_journal_bytes": 300104,
+    "sampled_peak_database_and_journal_bytes": 2118728,
+    "exit": 0,
+    "output": "before-close,file=1818624,pages=444,free=0,live_page_bytes=1818624,versions=1000,entry_revisions=1000,ledger_operations=1,command_completions=0,action_headers=2,action_receipts=2,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\ninitial,file=1818624,pages=444,free=8,live_page_bytes=1785856,versions=1000,entry_revisions=1000,ledger_operations=1,command_completions=0,action_headers=0,action_receipts=2,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nedit-close-1,file=1818624,pages=444,free=8,live_page_bytes=1785856,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=8,action_headers=0,action_receipts=10,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nedit-close-2,file=1818624,pages=444,free=8,live_page_bytes=1785856,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=16,action_headers=0,action_receipts=18,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nedit-close-3,file=1818624,pages=444,free=8,live_page_bytes=1785856,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=24,action_headers=0,action_receipts=26,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nedit-close-4,file=1818624,pages=444,free=8,live_page_bytes=1785856,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=32,action_headers=0,action_receipts=34,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nreopened,file=1818624,pages=444,free=8,live_page_bytes=1785856,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=32,action_headers=0,action_receipts=34,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\n",
+    "variant": "replacement-working-tree",
+    "dbstat": {
+      "pages": 436,
+      "bytes": 1785856,
+      "payload": 761314,
+      "unused": 898974
+    }
+  },
+  {
+    "mode": "undo",
+    "rows": 1000,
+    "seconds": 5.308895084017422,
+    "sampled_peak_journal_bytes": 882872,
+    "sampled_peak_database_and_journal_bytes": 3029176,
+    "exit": 0,
+    "output": "before-close,file=1556480,pages=380,free=0,live_page_bytes=1556480,versions=1000,entry_revisions=0,ledger_operations=0,review_members=0,review_link_history=0,review_undo_members=0\ninitial,file=1556480,pages=380,free=0,live_page_bytes=1556480,versions=1000,entry_revisions=0,ledger_operations=0,review_members=0,review_link_history=0,review_undo_members=0\nbefore-import-undo,file=2146304,pages=524,free=0,live_page_bytes=2146304,versions=2000,entry_revisions=0,ledger_operations=0,review_members=0,review_link_history=0,review_undo_members=0\nafter-import-undo,file=2146304,pages=524,free=140,live_page_bytes=1572864,versions=1000,entry_revisions=0,ledger_operations=0,review_members=0,review_link_history=0,review_undo_members=0\nreopened,file=2146304,pages=524,free=140,live_page_bytes=1572864,versions=1000,entry_revisions=0,ledger_operations=0,review_members=0,review_link_history=0,review_undo_members=0\n",
+    "variant": "cf8f1a5",
+    "dbstat": {
+      "pages": 384,
+      "bytes": 1572864,
+      "payload": 602202,
+      "unused": 863429
+    }
+  },
+  {
+    "mode": "undo",
+    "rows": 1000,
+    "seconds": 4.0736819169833325,
+    "sampled_peak_journal_bytes": 780272,
+    "sampled_peak_database_and_journal_bytes": 2820080,
+    "exit": 0,
+    "output": "before-close,file=1503232,pages=367,free=0,live_page_bytes=1503232,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\ninitial,file=1503232,pages=367,free=4,live_page_bytes=1486848,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\nbefore-import-undo,file=2039808,pages=498,free=5,live_page_bytes=2019328,versions=2000,entry_revisions=0,ledger_operations=0,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\nafter-import-undo,file=2039808,pages=498,free=133,live_page_bytes=1495040,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\nreopened,file=2039808,pages=498,free=133,live_page_bytes=1495040,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\n",
+    "variant": "b4b65df",
+    "dbstat": {
+      "pages": 365,
+      "bytes": 1495040,
+      "payload": 569950,
+      "unused": 839100
+    }
+  },
+  {
+    "mode": "undo",
+    "rows": 1000,
+    "seconds": 4.1011633750167675,
+    "sampled_peak_journal_bytes": 755648,
+    "sampled_peak_database_and_journal_bytes": 2824128,
+    "exit": 0,
+    "output": "before-close,file=1544192,pages=377,free=0,live_page_bytes=1544192,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0,action_headers=1,action_receipts=1,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\ninitial,file=1544192,pages=377,free=4,live_page_bytes=1527808,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0,action_headers=0,action_receipts=1,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nbefore-import-undo,file=2068480,pages=505,free=5,live_page_bytes=2048000,versions=2000,entry_revisions=0,ledger_operations=0,command_completions=0,action_headers=0,action_receipts=2,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nafter-import-undo,file=2068480,pages=505,free=130,live_page_bytes=1536000,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0,action_headers=0,action_receipts=2,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nreopened,file=2068480,pages=505,free=130,live_page_bytes=1536000,versions=1000,entry_revisions=0,ledger_operations=0,command_completions=0,action_headers=0,action_receipts=2,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\n",
+    "variant": "replacement-working-tree",
+    "dbstat": {
+      "pages": 375,
+      "bytes": 1536000,
+      "payload": 568302,
+      "unused": 883717
+    }
+  },
+  {
+    "mode": "linked",
+    "rows": 1000,
+    "seconds": 15.914588249986991,
+    "sampled_peak_journal_bytes": 349352,
+    "sampled_peak_database_and_journal_bytes": 2868392,
+    "exit": 0,
+    "output": "initial,file=1851392,pages=452,free=0,live_page_bytes=1851392,versions=1001,entry_revisions=1001,ledger_operations=4,review_members=0,review_link_history=0,review_undo_members=0\nbefore-linked-import-undo,file=2519040,pages=615,free=0,live_page_bytes=2519040,versions=2002,entry_revisions=1001,ledger_operations=5,review_members=0,review_link_history=1,review_undo_members=0\nafter-linked-import-undo,file=2519040,pages=615,free=18,live_page_bytes=2445312,versions=2002,entry_revisions=1001,ledger_operations=6,review_members=0,review_link_history=1,review_undo_members=0\nreopened,file=2519040,pages=615,free=18,live_page_bytes=2445312,versions=2002,entry_revisions=1001,ledger_operations=6,review_members=0,review_link_history=1,review_undo_members=0\n",
+    "variant": "cf8f1a5",
+    "dbstat": {
+      "pages": 597,
+      "bytes": 2445312,
+      "payload": 1314653,
+      "unused": 892503
+    }
+  },
+  {
+    "mode": "linked",
+    "rows": 1000,
+    "seconds": 12.155298249970656,
+    "sampled_peak_journal_bytes": 328832,
+    "sampled_peak_database_and_journal_bytes": 2704512,
+    "exit": 0,
+    "output": "initial,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1001,entry_revisions=1001,ledger_operations=3,command_completions=1,review_members=0,review_link_history=0,review_undo_members=0\nbefore-linked-import-undo,file=2375680,pages=580,free=5,live_page_bytes=2355200,versions=2002,entry_revisions=1001,ledger_operations=4,command_completions=2,review_members=0,review_link_history=1,review_undo_members=0\nafter-linked-import-undo,file=2375680,pages=580,free=23,live_page_bytes=2281472,versions=2002,entry_revisions=1001,ledger_operations=5,command_completions=2,review_members=0,review_link_history=1,review_undo_members=0\nreopened,file=2375680,pages=580,free=23,live_page_bytes=2281472,versions=2002,entry_revisions=1001,ledger_operations=5,command_completions=2,review_members=0,review_link_history=1,review_undo_members=0\n",
+    "variant": "b4b65df",
+    "dbstat": {
+      "pages": 557,
+      "bytes": 2281472,
+      "payload": 1216879,
+      "unused": 884543
+    }
+  },
+  {
+    "mode": "linked",
+    "rows": 1000,
+    "seconds": 13.631903417001013,
+    "sampled_peak_journal_bytes": 328832,
+    "sampled_peak_database_and_journal_bytes": 2733184,
+    "exit": 0,
+    "output": "initial,file=1818624,pages=444,free=8,live_page_bytes=1785856,versions=1001,entry_revisions=1001,ledger_operations=3,command_completions=1,action_headers=0,action_receipts=2,review_members=0,review_link_history=1,review_undo_members=0,review_repairs=0\nbefore-linked-import-undo,file=2404352,pages=587,free=5,live_page_bytes=2383872,versions=2002,entry_revisions=1001,ledger_operations=4,command_completions=2,action_headers=0,action_receipts=4,review_members=0,review_link_history=1,review_undo_members=0,review_repairs=0\nafter-linked-import-undo,file=2404352,pages=587,free=23,live_page_bytes=2310144,versions=2002,entry_revisions=1001,ledger_operations=5,command_completions=2,action_headers=0,action_receipts=4,review_members=0,review_link_history=1,review_undo_members=0,review_repairs=0\nreopened,file=2404352,pages=587,free=23,live_page_bytes=2310144,versions=2002,entry_revisions=1001,ledger_operations=5,command_completions=2,action_headers=0,action_receipts=4,review_members=0,review_link_history=1,review_undo_members=0,review_repairs=0\n",
+    "variant": "replacement-working-tree",
+    "dbstat": {
+      "pages": 564,
+      "bytes": 2310144,
+      "payload": 1209376,
+      "unused": 925996
+    }
+  },
+  {
+    "mode": "import",
+    "rows": 50000,
+    "seconds": 77.12398437497905,
+    "sampled_peak_journal_bytes": 169552,
+    "sampled_peak_database_and_journal_bytes": 35333712,
+    "exit": 0,
+    "output": "before-close,file=35164160,pages=8585,free=0,live_page_bytes=35164160,versions=50000,entry_revisions=0,ledger_operations=0,review_members=0,review_link_history=0,review_undo_members=0\ninitial,file=35164160,pages=8585,free=0,live_page_bytes=35164160,versions=50000,entry_revisions=0,ledger_operations=0,review_members=0,review_link_history=0,review_undo_members=0\nreopened,file=35164160,pages=8585,free=0,live_page_bytes=35164160,versions=50000,entry_revisions=0,ledger_operations=0,review_members=0,review_link_history=0,review_undo_members=0\n",
+    "variant": "cf8f1a5",
+    "dbstat": {
+      "pages": 8585,
+      "bytes": 35164160,
+      "payload": 28004592,
+      "unused": 2568010
+    }
+  },
+  {
+    "mode": "import",
+    "rows": 50000,
+    "seconds": 54.996351875015534,
+    "sampled_peak_journal_bytes": 3230360,
+    "sampled_peak_database_and_journal_bytes": 36387480,
+    "exit": 0,
+    "output": "before-close,file=33157120,pages=8095,free=0,live_page_bytes=33157120,versions=50000,entry_revisions=0,ledger_operations=0,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\ninitial,file=33157120,pages=8095,free=220,live_page_bytes=32256000,versions=50000,entry_revisions=0,ledger_operations=0,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\nreopened,file=33157120,pages=8095,free=220,live_page_bytes=32256000,versions=50000,entry_revisions=0,ledger_operations=0,command_completions=0,review_members=0,review_link_history=0,review_undo_members=0\n",
+    "variant": "b4b65df",
+    "dbstat": {
+      "pages": 7875,
+      "bytes": 32256000,
+      "payload": 25906243,
+      "unused": 2964736
+    }
+  },
+  {
+    "mode": "import",
+    "rows": 50000,
+    "seconds": 55.757774624973536,
+    "sampled_peak_journal_bytes": 3250880,
+    "sampled_peak_database_and_journal_bytes": 35838656,
+    "exit": 0,
+    "output": "before-close,file=32587776,pages=7956,free=0,live_page_bytes=32587776,versions=50000,entry_revisions=0,ledger_operations=0,command_completions=0,action_headers=1,action_receipts=1,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\ninitial,file=32587776,pages=7956,free=220,live_page_bytes=31686656,versions=50000,entry_revisions=0,ledger_operations=0,command_completions=0,action_headers=0,action_receipts=1,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\nreopened,file=32587776,pages=7956,free=220,live_page_bytes=31686656,versions=50000,entry_revisions=0,ledger_operations=0,command_completions=0,action_headers=0,action_receipts=1,review_members=0,review_link_history=0,review_undo_members=0,review_repairs=0\n",
+    "variant": "replacement-working-tree",
+    "dbstat": {
+      "pages": 7736,
+      "bytes": 31686656,
+      "payload": 25509841,
+      "unused": 2954513
+    }
+  }
+]

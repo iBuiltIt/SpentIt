@@ -85,11 +85,10 @@ Currency version_currency(sqlite3* db,std::string_view batch,std::int64_t ordina
 // One bounded, append-aware index per repository operation. Existing history is
 // immutable; new Undo writes are ingested by sequence, and rollback drops it.
 std::optional<ScopedStatements::RevisionHistory> revision_history(sqlite3* db,const imports::Occurrence& id,std::int64_t revision) {
-    if(revision==0){
-        Statement initial(db,"SELECT h.sequence,o.kind,b.account_id FROM accepted_transactions a JOIN ledger_operations o ON o.id=a.operation AND o.batch=a.batch JOIN history_order h ON h.operation=o.id JOIN batches b ON b.id=o.batch WHERE a.batch=? AND a.ordinal=? AND o.kind=0");
-        initial.text(1,id.batch);initial.integer(2,integer(id.ordinal));if(!initial.row())return {};
-        const ScopedStatements::RevisionHistory result{initial.integer(0),initial.integer(1),initial.integer(2)};
-        if(initial.row())fail(SQLITE_CORRUPT,"Ambiguous acceptance history");return result;
+    {
+        Statement initial(db,"SELECT h.sequence,o.kind,b.account_id FROM acceptance_members m JOIN operations p ON p.id=m.operation JOIN ledger_operations o ON o.id=p.id JOIN history_order h ON h.operation=o.id JOIN batches b ON b.id=o.batch WHERE p.batch=? AND m.ordinal=? AND m.publication_revision=? AND o.kind=0");
+        initial.text(1,id.batch);initial.integer(2,integer(id.ordinal));initial.integer(3,revision);
+        if(initial.row()){const ScopedStatements::RevisionHistory result{initial.integer(0),initial.integer(1),initial.integer(2)};if(initial.row())fail(SQLITE_CORRUPT,"Ambiguous acceptance history");return result;}
     }
     if(auto* scope=ScopedStatements::current(db)){
         Statement latest(db,"SELECT max(coalesce(max(sequence),0),(SELECT financial_cut FROM document_session),(SELECT coalesce(max(seq),0) FROM sqlite_sequence WHERE name='ledger_operations')) FROM ledger_operations");if(!latest.row())fail(SQLITE_CORRUPT);const auto last=latest.integer(0);
@@ -211,31 +210,6 @@ bool transfer_participation(sqlite3* db,std::int64_t account) {
         if(!request.link.empty()) {Statement payload(db,"SELECT payload FROM transfer_versions WHERE identity=? LIMIT 1");payload.text(1,request.link);if(payload.row() && link_mentions(transfer_codec::view(payload.bytes(0)).link,account)) return true;}
     }
     return false;
-}
-bool later_financial(sqlite3* db,std::int64_t account,std::int64_t anchor) {
-    Statement ops(db,"SELECT 1 FROM account_operations o CROSS JOIN history_order h ON h.account_operation=o.id WHERE o.account=? AND o.kind IN(3,4,5,6) AND h.sequence>? LIMIT 1");
-    ops.integer(1,account);ops.integer(2,anchor);if(ops.row()) return true;
-    Statement ledger(db,"SELECT 1 FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE h.sequence>? AND (o.batch IN(SELECT id FROM batches WHERE account_id=?) OR (o.kind=5 AND o.ordinal=?) OR EXISTS(SELECT 1 FROM transfer_events t WHERE t.operation=o.id AND t.account=?)) LIMIT 1");
-    ledger.integer(1,anchor);ledger.integer(2,account);ledger.integer(3,account);ledger.integer(4,account);if(ledger.row()) return true;
-    Statement events(db,"SELECT 1 FROM events e JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision JOIN batches b ON b.id=e.batch WHERE b.account_id=? AND h.sequence>? LIMIT 1");
-    events.integer(1,account);events.integer(2,anchor);if(events.row()) return true;
-    Statement versions(db,"SELECT v.payload FROM transfer_versions v JOIN ledger_operations o ON o.sequence=v.sequence JOIN history_order h ON h.operation=o.id WHERE h.sequence>?");
-    versions.integer(1,anchor);while(versions.row()) if(link_mentions(transfer_codec::view(versions.bytes(0)).link,account)) return true;
-    Statement links(db,"SELECT e.request FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN history_order h ON h.operation=o.id WHERE h.sequence>? AND e.account!=?");
-    links.integer(1,anchor);links.integer(2,account);
-    while(links.row()) {
-        const auto request=transfer_codec::request(links.bytes(0));if(request.link.empty()) continue;
-        Statement payload(db,"SELECT payload FROM transfer_versions WHERE identity=? ORDER BY sequence DESC LIMIT 1");payload.text(1,request.link);
-        if(payload.row() && link_mentions(transfer_codec::view(payload.bytes(0)).link,account)) return true;
-    }
-    return false;
-}
-std::int64_t account_anchor(sqlite3* db,std::string_view operation,int kind) {
-    if(kind==5) {
-        Statement row(db,"SELECT h.sequence FROM ledger_operations o JOIN history_order h ON h.operation=o.id WHERE o.id=? AND o.kind=5");
-        row.text(1,std::string(operation)+"#scale");if(!row.row()) fail(SQLITE_CORRUPT);return row.integer(0);
-    }
-    Statement row(db,"SELECT sequence FROM history_order WHERE account_operation=?");row.text(1,operation);if(!row.row()) fail(SQLITE_CORRUPT);return row.integer(0);
 }
 bool command_image_current(sqlite3* db,std::string_view operation) {
     Statement op(db,"SELECT account,definition,opening,opening_date FROM account_operations WHERE id=?");op.text(1,operation);if(!op.row()) return false;

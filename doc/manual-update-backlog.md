@@ -383,24 +383,37 @@ MAN-016 placement refinement (2026-11-08): capture Duplicate report / Delete
 report below the name, and category actions ordered Clear expenses, Clear income,
 Select all categories, keeping the Clear buttons stationary.
 
-### MAN-017 — Unified action Undo (design only)
+### MAN-017 — Unified transaction Undo and whole-import rollback
 
-Recorded: 2026-11-08. Status: **pending implementation and the later
+Recorded: 2026-11-08. Status: **implementation integrated; pending the later
 owner-authorized manual pass**.
-Source: [reviewed action Undo design](action-undo-design.md).
+Source: [replacement Undo design](action-undo-design.md).
+The generic row-capture prototype was rejected. Its historical measurements are
+not evidence of replacement behavior. See the current
+[implementation record](action-undo-implementation.md) for actual verification.
 
-- After implementation, reconcile Add/correct transactions, Accept transactions,
+- Reconcile Add/correct transactions, Accept transactions,
   Import transactions, Review duplicates/transfers, Accounts, Categories, Use
   rules, Answer with reports, keyboard/navigation, recovery and messages guidance
-  with one strict file-wide session action chain. This supplements MAN-008 and
-  supersedes older action-specific Undo instructions only when implemented.
-- Explain whole-action scope, newer-action blockers across accounts, reversible
-  acceptance, complete current-session import/setup reversal, and Remove import
-  for eligible prior-session imports. Distinguish removing an import from Undo.
+  with the actual file-wide session chain. Supplement MAN-008; supersede older
+  action-specific instructions only when the replacement is implemented.
+- Explain whole-operation scope, newer-action blockers across accounts, reversible
+  acceptance and one whole-import rollback. Accounts/categories and their permitted
+  setup remain; a retained new account can still have its chosen opening balance.
+- Document the final accepted scope for definitions/settings, Save and apply,
+  dependency-protected deletion/archive, older-import removal and account Discard.
+  The replacement uses empty-chain removal without Undo of the removal itself.
 - Cover recovery of the chain, successful-close expiry, failed/cancelled close,
-  unsaved-draft guards and no Redo. Describe undone-action detail availability
-  according to the final History UI design; that layout is not settled yet.
+  import preparation/initial decisions, unsaved-buffer guards and no Redo. Describe
+  undone-action details according to the later History UI design.
 - Replace affected Undo/History, acceptance, import removal, Rules and account
-  pictures during the later batch pass, after native verification of the final
-  implementation. Do not capture proposed behaviour as though already shipped.
-- No manual text, captions or screenshots changed in this design session.
+  pictures during the later batch pass, after native verification. All listed
+  manual text, captions and screenshots remain unchanged by this design session.
+
+MAN-017 implementation follow-up (2026-11-09): common durable Undo, whole-action
+confirmation, affected accounts/count, native text Undo, dirty Save revalidation,
+reversible acceptance and atomic Save and apply are implemented. Whole-import Undo
+retains accounts/categories/openings; older-import removal and Discard require an
+empty chain. Update the transaction, review, import, account, rule, recovery and
+history instructions together in the later manual pass. No manual prose or
+screenshots changed in this implementation; verification uses synthetic fixtures.

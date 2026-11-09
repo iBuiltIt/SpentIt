@@ -1,0 +1,10 @@
+{
+  "status": "Nine unique edits/undo/linked runs completed and assembled. Remaining redundant mixed repeats intentionally stopped after the independent identical-binary mixed-final component completed all three variants.",
+  "selected_completed_groups": [
+    "edits:10000",
+    "undo:10000",
+    "linked:10000"
+  ],
+  "replacement_mixed_component": "../mixed-final",
+  "authoritative_full_matrix": "../completed-matrix"
+}

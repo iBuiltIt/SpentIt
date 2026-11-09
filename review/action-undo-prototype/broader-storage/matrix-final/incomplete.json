@@ -1,0 +1,31 @@
+{
+  "status": "continued in separate component after allocation-query correction",
+  "complete_comparison_groups": [
+    [
+      "import",
+      1000
+    ],
+    [
+      "edits",
+      1000
+    ],
+    [
+      "undo",
+      1000
+    ],
+    [
+      "linked",
+      1000
+    ],
+    [
+      "mixed",
+      1000
+    ],
+    [
+      "import",
+      10000
+    ]
+  ],
+  "remaining_groups": "edits/undo/linked/mixed 10000 in continuation",
+  "reason": "Equivalent read-only allocation lookup avoids repeated nested-view materialization. No stored schema/writes or verification checks changed."
+}

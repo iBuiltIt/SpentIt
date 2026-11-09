@@ -17,7 +17,7 @@ const std::string mapped="!Account\nNChecking\nTBank\n^\n!Type:Bank\nD2026-02-01
 std::vector<app::ImportAccountMapping> mappings={{0,1,{}},{1,2,app::AccountCreation{2,"New account",cad,"2026-02-01"},false}};
 ImportStore create(const fs::path& path){auto s=ImportStore::create(path,key,"Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));s.ingest("prior",prior,qif::DateOrder::dmy);return s;}
 void preserved(ImportStore& s){s.select_account(1);check(s.balance().units()==-1000);check(s.batches().size()==1 && s.batches()[0].id=="prior");check(s.accounts().size()==1);s.verify();}
-void capture(ImportStore& s){app::OperationContext c;s.prepare_import_group("interrupted",mapped,qif::DateOrder::dmy,mappings,c);}
+void capture(ImportStore& s,std::string_view id="interrupted"){app::OperationContext c;s.prepare_import_group(id,mapped,qif::DateOrder::dmy,mappings,c);}
 void run(){
  Directory d;fault_vfs::install();
  // Explicit source-scoped removal is idempotent, retaining prior pending work.
@@ -26,8 +26,8 @@ void run(){
  {auto s=ImportStore::open(d.path/"basic",key);check(s.accounts().size()==2);check(!s.startup_import_cleanup());s.select_account(1);check(s.balance().units()==-1200);s.select_account(2);check(s.balance().units()==200);s.verify();}
  // Accepted linked postings and a later pending import are independent owners.
  {auto s=ImportStore::open(d.path/"basic",key);s.accept_all("accept-all");s.select_account(1);s.ingest("later","!Type:Bank\nD2026-03-01\nT-1\nPLater\n^\n",qif::DateOrder::dmy);const auto journal=s.transfer_journal().size();app::OperationContext c;s.prepare_import_group("owned",mapped,qif::DateOrder::dmy,{{0,1,{}},{1,2,{}}},c);check(s.cleanup_incomplete_imports("owned"));check(s.transfer_journal().size()==journal);check(s.acceptance_review().transactions==1);check(s.balance().units()==-1300);s.select_account(2);check(s.balance().units()==200);s.verify();}
- // Startup cleanup also runs after hash-bound approval reuse.
- {auto s=create(d.path/"cached");capture(s);s.certify(d.path/"cache");}
+ // A preparing import prevents clean close; dirty reopen performs scoped cleanup.
+ {auto s=create(d.path/"cached");capture(s);bool refused=false;try{s.certify(d.path/"cache");}catch(const ImportError&){refused=true;}check(refused && s.accounts().size()==2);}
  {auto s=ImportStore::open_cached(d.path/"cached",key,d.path/"cache");check(s.startup_import_cleanup());preserved(s);}
  // Cancellation during row population rolls back all generated relationships.
  for(int row:{1,2}){auto s=create(d.path/("cancel"+std::to_string(row)));capture(s);app::OperationContext c;int rows=0;s.observer([&](ImportPhase p){if(p==ImportPhase::materialize_row && ++rows==row)c.request();});bool cancelled=false;try{s.resume_import_group("interrupted",c);}catch(const app::OperationCancelled&){cancelled=true;}s.observer({});check(cancelled);s.cleanup_incomplete_imports("interrupted");preserved(s);}
@@ -40,8 +40,8 @@ void run(){
   const auto child=fork();check(child>=0);
   if(child==0){
    // Open would clean capture: create a fresh capture within the live connection.
-   auto s=ImportStore::open(path,key);capture(s);s.observer([&](ImportPhase phase){if(phase==(after?ImportPhase::after_commit:ImportPhase::before_commit))_exit(72);});
-   if(preparing){app::OperationContext c;s.resume_import_group("interrupted",c);}else s.cleanup_incomplete_imports("interrupted");_exit(1);
+   auto s=ImportStore::open(path,key);capture(s,"replacement");s.observer([&](ImportPhase phase){if(phase==(after?ImportPhase::after_commit:ImportPhase::before_commit))_exit(72);});
+   if(preparing){app::OperationContext c;s.resume_import_group("replacement",c);}else s.cleanup_incomplete_imports("replacement");_exit(1);
   }
   int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
   auto s=ImportStore::open(path,key);if(preparing && after){check(s.accounts().size()==2);s.select_account(1);check(s.balance().units()==-1200);s.verify();}else preserved(s);

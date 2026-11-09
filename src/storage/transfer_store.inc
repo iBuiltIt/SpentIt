@@ -197,8 +197,8 @@ std::vector<app::TransferView> ImportStore::all_transfers() const {
     Statement heads(impl_->db,"SELECT identity,sequence FROM transfer_heads ORDER BY identity");
     while(heads.row())stamp+=std::to_string(heads.bytes(0).size())+":"+heads.bytes(0)+":"+std::to_string(heads.integer(1))+";";
     if(!impl_->verifying && impl_->reviewed_transfers && impl_->reviewed_transfer_stamp==stamp)return *impl_->reviewed_transfers;
-    Statement rows(impl_->db,"SELECT v.identity,v.payload FROM transfer_heads h JOIN transfer_versions v USING(identity,sequence) ORDER BY v.identity");std::vector<app::TransferView> out;
-    while(rows.row()){auto value=transfer_codec::view(rows.bytes(1));if(value.link.identity!=rows.bytes(0))fail(SQLITE_CORRUPT);out.push_back(std::move(value));if(out.size()>qif::max_records)fail(SQLITE_TOOBIG);}
+    Statement rows(impl_->db,"SELECT v.identity,v.payload,v.sequence FROM transfer_heads h JOIN transfer_versions v USING(identity,sequence) ORDER BY v.identity");std::vector<app::TransferView> out;
+    while(rows.row()){auto value=transfer_codec::view(rows.bytes(1));value.sequence=rows.integer(2);if(value.link.identity!=rows.bytes(0))fail(SQLITE_CORRUPT);out.push_back(std::move(value));if(out.size()>qif::max_records)fail(SQLITE_TOOBIG);}
     validate_transfer_set(out);
     if(!impl_->verifying){impl_->reviewed_transfer_stamp=std::move(stamp);impl_->reviewed_transfers=out;}
     return out;
@@ -265,7 +265,10 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     if(request.expected_sequence!=transfer_sequence() || request.expected_sequence==INT64_MAX)fail(SQLITE_CONSTRAINT,"Transfer preview changed; refresh before applying");
     std::unique_ptr<Atomic> transaction;
     if(!impl_->composing_review)transaction=std::make_unique<Atomic>(impl_->db);
+    const auto acceptance_before=acceptance_baseline(impl_->db,all_transfers());
     if(request.action==app::TransferAction::commit_local){start_import_groups(financial_group_batches(impl_->selected_account),operation);}
+    std::optional<std::pair<imports::Occurrence,std::int64_t>> pending_before;
+    if(request.action==app::TransferAction::retarget && request.mode==0 && request.left && (request.left->imported || request.left->ledger_entry) && request.left->state==transfers::State::draft){const auto id=request.left->endpoint.entry;Statement prior(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");prior.text(1,id.batch);prior.integer(2,integer(id.ordinal));if(!prior.row() || prior.null(0))fail(SQLITE_CORRUPT);pending_before=std::pair{id,prior.integer(0)};}
     const auto account=this->account();auto values=all_transfers();auto found=std::find_if(values.begin(),values.end(),[&](const auto& v){return v.link.identity==request.link;});
     const bool create=request.action==app::TransferAction::manual || request.action==app::TransferAction::from_draft;
     const bool managed=request.action==app::TransferAction::merge || request.action==app::TransferAction::retarget;
@@ -358,7 +361,11 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             append_financial(impl_->db,operation,app::ChangeKind::correct,entry_identity,entry_after->revision-1,entry_after->revision,before,zero,before,"",request.expected_sequence,catalog_sequence(impl_->db));
             for(const auto& dependency:entry_dependencies){Statement d(impl_->db,"INSERT INTO change_dependencies VALUES(?,?,?,?)");d.text(1,operation);d.text(2,dependency.batch);d.integer(3,dependency.revision);d.integer(4,static_cast<int>(dependency.state));d.done();}
         }else append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,before+change,"",request.expected_sequence,catalog_sequence(impl_->db));
-        session_snapshot::completed(impl_->db,operation,"transfer",request_hash);
+        record_transaction_action(operation,"ledger-transfer",request_hash,{std::string(operation)});
+        if(pending_before && !impl_->composing_review && impl_->import_action.empty()){
+            Statement member(impl_->db,"INSERT INTO review_members SELECT ?1,?2,?3,0,?4,max(revision),?1 FROM versions WHERE batch=?2 AND ordinal=?3");member.text(1,operation);member.text(2,pending_before->first.batch);member.integer(3,integer(pending_before->first.ordinal));member.integer(4,pending_before->second);member.done();
+        }
+    session_snapshot::completed(impl_->db,operation,"transfer",request_hash);
     finish([&]{if(transaction)transaction->commit();});return {std::string(operation),account.identity,sequence,before,entry_category?zero:change,before+(entry_category?zero:change)};
     }
     if(create){
@@ -397,16 +404,21 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
     store_transfer(impl_->db,*found,sequence,create);
     append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,after,"",request.expected_sequence,catalog_sequence(impl_->db));
     if(did_commit)exec(impl_->db,"UPDATE account SET frozen=1 WHERE singleton=spentit_account()");
+    std::vector<std::string> action_children{std::string(operation)};
     if(request.action==app::TransferAction::propose_match && request.evidence){
         const auto& side=found->link.origin.endpoint.account==account.identity?found->link.origin:found->link.destination;
         const auto row=load_row(request.evidence->endpoint.entry,false);
         if(side.state==transfers::State::committed && local_side(side) && row.draft && row.draft->transaction.allocations().size()==1){
             Statement match(impl_->db,"INSERT INTO generated_source_matches VALUES(?,?,?,?,?,1)");match.text(1,row.identity.batch);match.integer(2,integer(row.identity.ordinal));match.text(3,request.link);match.integer(4,account.identity);match.integer(5,sequence);match.done();
             app::TransferRequest complete=request;complete.action=app::TransferAction::discard_match;complete.expected_sequence=sequence;
-            const auto restored=transition_transfer(*found,complete,account.identity);const auto completed=std::string(operation)+"-matched";identifier(completed);
+            const auto restored=transition_transfer(*found,complete,account.identity);const auto completed=std::string(operation)+"-matched";identifier(completed);action_children.push_back(completed);
             Statement matched_event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,0,0)");matched_event.text(1,completed);matched_event.integer(2,account.identity);matched_event.blob(3,transfer_codec::encode(complete));matched_event.done();store_transfer(impl_->db,restored,sequence+1,false);
             append_financial(impl_->db,completed,app::ChangeKind::transfer,{"",0},-1,0,after,Money(0,account.currency),after,"",sequence,catalog_sequence(impl_->db));
         }
+    }
+    if(!impl_->composing_review && impl_->import_action.empty()) {
+        if(committing_local)record_acceptance_action(operation,acceptance_recipe(impl_->db,acceptance_before),acceptance_before.links,request_hash,1);
+        else record_transaction_action(operation,"ledger-transfer",request_hash,action_children);
     }
     session_snapshot::completed(impl_->db,operation,"transfer",request_hash);
     finish([&]{if(transaction)transaction->commit();});return {std::string(operation),account.identity,sequence,before,change,after};
@@ -534,12 +546,17 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
             count+=changed;continue;
         }
         if(request.action==app::TransferAction::review_undo){
-            Statement history(impl_->db,"SELECT identity,prior_payload,result_payload FROM review_link_history WHERE answer=? AND (?2='' OR identity=?2)");history.text(1,request.link);history.text(2,request.allocation);
+            Statement history(impl_->db,"SELECT identity,prior_payload,result_payload FROM review_link_history WHERE answer=? AND (?2='' OR identity=?2) UNION ALL SELECT r.identity,p.payload,p.payload FROM review_link_restorations r JOIN review_undos u ON u.id=r.undo_id JOIN transfer_versions p ON p.identity=r.identity AND p.sequence=r.prior WHERE u.answer=?1 AND (?2='' OR r.identity=?2) AND r.restored=?3 AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=u.answer AND h.identity=r.identity)");history.text(1,request.link);history.text(2,request.allocation);history.integer(3,sequence);
             std::vector<app::TransferView> before;for(const auto& [id,v]:previous){(void)id;before.push_back(v);}
             std::size_t restored=0;
             while(history.row()){
-                const auto found=previous.find(history.bytes(0));if(found==previous.end() || transfer_codec::encode(found->second)!=history.bytes(2))fail(SQLITE_CORRUPT,"Review Undo relationship changed");
-                auto value=found->second;if(history.null(1)){undo_new_relationship(value);}else value=transfer_codec::view(history.bytes(1));
+                const auto original=transfer_codec::view(history.bytes(2));
+                auto target=original;if(history.null(1)){undo_new_relationship(target);}else target=transfer_codec::view(history.bytes(1));
+                auto intermediate=target;intermediate.link.destination=original.link.destination;
+                const auto& expected=request.mode==2?intermediate:original;
+                const auto found=previous.find(history.bytes(0));if(found==previous.end() || transfer_codec::encode(found->second)!=transfer_codec::encode(expected))fail(SQLITE_CORRUPT,"Review Undo relationship changed");
+                const auto value=request.mode==1?intermediate:target;
+                Statement lineage(impl_->db,"SELECT 1 FROM review_link_restorations r JOIN review_undos u ON u.id=r.undo_id WHERE u.answer=? AND r.identity=? AND ((?3=1 AND r.intermediate=?4) OR (?3=2 AND r.restored=?4 AND r.intermediate>0) OR (?3=0 AND r.restored=?4 AND r.intermediate=0))");lineage.text(1,request.link);lineage.text(2,history.bytes(0));lineage.integer(3,request.mode);lineage.integer(4,sequence);if(!lineage.row())fail(SQLITE_CORRUPT,"Relationship restoration stage is missing");
                 Statement stored(impl_->db,"SELECT payload FROM transfer_versions WHERE identity=? AND sequence=?");stored.text(1,history.bytes(0));stored.integer(2,sequence);if(!stored.row() || stored.bytes(0)!=transfer_codec::encode(value))fail(SQLITE_CORRUPT,"Review Undo history does not replay");
                 previous.insert_or_assign(history.bytes(0),value);++restored;++count;
             }

@@ -1,0 +1,21 @@
+{
+  "baseline_revision": "cf8f1a5c40e375a0a448189c9182359ad297ee8a",
+  "current_revision": "b4b65df9358a17e5a696cfd9f24ab41b32ab50aa",
+  "baseline_src_files_verified": 110,
+  "baseline_src_mismatches": 0,
+  "source_sha256": {
+    "tests/storage/action_storage_workloads.cpp": "13bac787bfdab7487995650ccc6e793e184d851a11f22f74490d6f73947be671",
+    "tests/storage/action_journal_runtime.hpp": "e9ca9749830c065c3e846df61bb5009b49b62d622ccccc1b4e3dcfaa3c82bc1d",
+    "tests/storage/measure_vfs.hpp": "1258357f09958ef33e55e930875e0f4258e56b71eb35dcb86f11e6145ceb048c",
+    "tests/storage/action_payload_schema.hpp": "77b5529fa2eaf03f3a438f0018dac89500b61101f947d808321373cd202bd88d",
+    "tests/storage/action_payload_store.cpp": "d8a25d6ca21809cfda31ab6f6f3b6105d2da9ef6729a33a12836751c10d25ede",
+    "tests/storage/action_journal_probe.cpp": "b37fffbcf9c6037e785ef8918460031b137f40ede234539d5930f0bd67f0295c",
+    "tests/storage/measure_vfs_tests.cpp": "baaf96e032a87135aa74007cd3b8b673270f8a5ef423e3abe1ef7be30f2c3f4a",
+    "tests/storage/action_lifecycle_tests.cpp": "c709b47071ece7b16f61e68c648f8cf238e33803a863d85bd62298358ae80748"
+  },
+  "shared_baseline_driver_headers_identical": {
+    "action_storage_workloads.cpp": true,
+    "action_journal_runtime.hpp": true,
+    "measure_vfs.hpp": true
+  }
+}

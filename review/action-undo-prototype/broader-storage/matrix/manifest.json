@@ -1,0 +1,52 @@
+{
+  "driver_sha256": "13bac787bfdab7487995650ccc6e793e184d851a11f22f74490d6f73947be671",
+  "executables": {
+    "baseline": "68ce7f7f55cc0a9b2dc5202866ce707d697c18be07f04eba6bc55cb79e23d90e",
+    "current": "916eea258c26b5c480e48fbe88051856ed7ca8fcbf43fdc1720700dbff22765d",
+    "prototype": "5381fbe550fa0367f2fb8ffca958e927bc98c5c14e123c02ba43d9243da62859"
+  },
+  "cases": [
+    [
+      "import",
+      1000
+    ],
+    [
+      "edits",
+      1000
+    ],
+    [
+      "undo",
+      1000
+    ],
+    [
+      "linked",
+      1000
+    ],
+    [
+      "mixed",
+      1000
+    ],
+    [
+      "import",
+      10000
+    ],
+    [
+      "edits",
+      10000
+    ],
+    [
+      "undo",
+      10000
+    ],
+    [
+      "linked",
+      10000
+    ],
+    [
+      "mixed",
+      10000
+    ]
+  ],
+  "scope": "Measured prototype costs, not full unified Undo correctness/recovery acceptance or a final storage limit.",
+  "dbstat_sha256": "8e47fcbfbd1df8f1515a868ee7e046f89a21ba2b926f4c231efc4039f8ffc526"
+}

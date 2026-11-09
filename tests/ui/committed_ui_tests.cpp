@@ -145,19 +145,19 @@ private slots:
         run(model,"select",{{"row",0}});run(model,"select",{{"row",2},{"range",true}});QCOMPARE(model.state().value("selectionCount").toInt(),3);
         auto open=[&](const char* action){auto* item=object(root,QString::fromLatin1(action));QVERIFY(item);QVERIFY(item->property("enabled").toBool());QVERIFY(QMetaObject::invokeMethod(item,"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());};
         open("renamePayeeSelection");QVERIFY(object(root,"selectedPayee")->setProperty("text","APPLE"));QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
-        QCOMPARE(model.rowCount(),0);QVERIFY(model.state().value("canUndoEdit").toBool());QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo payee rename");
+        QCOMPARE(model.rowCount(),0);QVERIFY(model.state().value("canUndoEdit").toBool());QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo Rename payee…");
         run(model,"query",{{"filter","regex:\"^APPLE$\""}});QCOMPARE(model.rowCount(),3);
         open("restoreImportedSelection");QVERIFY(root->property("restoringSelection").toBool());QCOMPARE(root->property("selectedEditCount").toInt(),3);
         QVERIFY(click(root,"cancelSelectedEdit"));QCOMPARE(model.rowCount(),3);
         open("restoreImportedSelection");
         if(qEnvironmentVariableIsSet("SPENTIT_SELECTION_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_SELECTION_SCREENSHOT")));}
         QVERIFY(click(root,"confirmSelectedEdit"));wait(model);QCOMPARE(model.rowCount(),0);
-        QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo restore");
+        QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo Restore imported values…");
         // Native Undo shortcut reverses the entire selection even after it leaves the filter.
         qobject_cast<QQuickItem*>(object(root,"durableLedger"))->forceActiveFocus();
-        QTest::keySequence(window,QKeySequence::Undo);wait(model);QTRY_COMPARE(model.rowCount(),3);
-        QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo payee rename");
-        QVERIFY(click(root,"undoEdit"));wait(model);QCOMPARE(model.rowCount(),0);
+        QTest::keySequence(window,QKeySequence::Undo);QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);QTRY_COMPARE(model.rowCount(),3);
+        QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo Rename payee…");
+        QVERIFY(click(root,"undoEdit"));QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);QCOMPARE(model.rowCount(),0);
         run(model,"query",{{"filter",""}});
         run(model,"inspect",{{"batch",oldBatch},{"ordinal",0}});QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Synthetic purchase");
         run(model,"inspect",{{"batch",newBatch},{"ordinal",0}});QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Synthetic new");
@@ -183,7 +183,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(object(root,"renamePayeeSelection"),"triggered"));QVERIFY(object(root,"selectedPayee")->setProperty("text","Renamed"));QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
         QTRY_COMPARE(snapshot().value("anchor"),saved.value("anchor"));QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
         QCOMPARE(model.state().value("selectionCount").toInt(),3);
-        QVERIFY(click(root,"undoEdit"));wait(model);
+        QVERIFY(click(root,"undoEdit"));QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);
         QTRY_COMPARE(snapshot().value("anchor"),saved.value("anchor"));QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
         QCOMPARE(model.state().value("selectionCount").toInt(),3);
     }

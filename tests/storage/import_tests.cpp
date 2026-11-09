@@ -1,3 +1,4 @@
+#include "session_test_helpers.hpp"
 #include <spentit/diagnostics.hpp>
 #include <cstdlib>
 #include <spentit/import_store.hpp>
@@ -86,7 +87,7 @@ void basics(){
     Directory d;const auto p=d.path/"doc";prepare(p);
     {
         auto s=ImportStore::open(p,password);check(s.committed_balance().units()==10000 && s.projected_balance()->units()==12069);
-        check(s.ingest("first",source,qif::DateOrder::dmy).id=="first");check(s.ingest("retry",source,qif::DateOrder::dmy).id=="retry");check(s.row({"retry",0}).decision.disposition==imports::Disposition::duplicate);s.discard("retry",0);
+        check(s.ingest("first",source,qif::DateOrder::dmy).id=="first");check(s.ingest("retry",source,qif::DateOrder::dmy).id=="retry");check(s.row({"retry",0}).decision.disposition==imports::Disposition::duplicate);s.undo_import("undo-retry","retry",s.ledger_edit_generation());
         fails([&]{s.ingest("first",source+"\n",qif::DateOrder::dmy);});
         auto row=s.row({"first",0});auto edit=*row.draft;
         edit.transaction=edit.transaction.corrected(Money(-3000,cad),{{"Fees","fee",Money(-14,cad)},{"Transport","trip",Money(-2986,cad)}});
@@ -132,7 +133,7 @@ void errors(){
     Directory d;auto s=create(d.path/"doc");
     const auto b=s.ingest("bad","!Type:Bank\nD1/1/2026\nT1\nL[Other\n^\n",qif::DateOrder::dmy);
     check(b.blocked && !s.projected_balance());fails([&]{s.ledger(true);});fails([&]{s.commit("bad",0,"bad-op");});
-    check(s.committed_balance().units()==0);s.discard("bad",0);s.discard("bad",0);check(!s.evidence("bad").empty());
+    check(s.committed_balance().units()==0);fails([&]{s.discard("bad",0);});test_session::close_reopen(s,d.path/"doc",password);s.discard("bad",0);s.discard("bad",0);check(!s.evidence("bad").empty());
     s.ingest("good",source,qif::DateOrder::dmy);auto edit=*s.row({"good",0}).draft;edit.date="2026-02-30";
     fails([&]{s.save({"good",0},0,edit);});check(s.batches().back().revision==0);
     edit=*s.row({"good",0}).draft;edit.transaction=Transaction::manual(Money(-2931,cad),{{"","",Money(-2931,cad)}});
@@ -222,7 +223,7 @@ void repairs(){
     {auto s=ImportStore::open(d.path/"doc",password);
         s.ingest("again",repair_source,qif::DateOrder::dmy);
         check(s.batches().back().blocked); // no auto-repair or silent exclusion
-        s.discard("again",0);s.verify();}
+        s.undo_import("undo-again","again",s.ledger_edit_generation());s.verify();}
     // A repairable first diagnostic must not hide later unsupported content.
     {auto s=create(d.path/"unsafe");s.ingest("bad","D31/02/2026\nT-10\nL[Other\n^\n",qif::DateOrder::dmy);
         check(!s.row({"bad",0}).source.repairable);
@@ -264,14 +265,14 @@ void cancellation(){
     for(int cancel_row:{1,2}) {
         auto s=ImportStore::open(path,password);app::OperationContext context;int rows=0;
         s.observer([&](ImportPhase phase){if(phase==ImportPhase::materialize_row && ++rows==cancel_row)context.request();});
-        bool cancelled=false;try{s.ingest_controlled("new",source,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){cancelled=true;}
+        bool cancelled=false;try{s.ingest_controlled("new-"+std::to_string(cancel_row),source,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){cancelled=true;}
         check(cancelled && rows==cancel_row && s.batches().empty());s.observer({});s.verify();
     }
     {auto s=ImportStore::open(path,password);app::OperationContext context;
-        const auto prepared=s.ingest_controlled("new",source,qif::DateOrder::dmy,context);check(!prepared.processing_incomplete);
-        auto row=*s.row({"new",0}).draft;row.payee="Saved later";s.save({"new",0},1,row);
+        const auto prepared=s.ingest_controlled("completed",source,qif::DateOrder::dmy,context);check(!prepared.processing_incomplete);
+        auto row=*s.row({"completed",0}).draft;row.payee="Saved later";s.save({"completed",0},1,row);
         s.opening(0,"2026-08-01",Money(0,cad));
-        const auto receipt=s.commit("new",3,"op");check(receipt.change.units()==2069);s.verify();
+        const auto receipt=s.commit("completed",2,"op");check(receipt.change.units()==2069);s.verify();
         app::OperationContext duplicates;s.ingest_controlled("again",source,qif::DateOrder::dmy,duplicates);
         check(s.row({"again",0}).decision.disposition==imports::Disposition::duplicate);s.verify();
     }
@@ -301,7 +302,7 @@ void cancellation(){
         if(boundary==2 && after)check(s.batches()[0].state==app::BatchState::pending);
         else check(s.batches().empty());
         app::OperationContext retry;
-        if(s.batches().empty())s.ingest_controlled("new",source,qif::DateOrder::dmy,retry);
+        if(s.batches().empty())s.ingest_controlled("replacement",source,qif::DateOrder::dmy,retry);
         else if(s.batches()[0].state==app::BatchState::captured)s.resume("new",0,retry);
         check(s.projected_balance()->units()==2069 && s.batches().size()==1);no_leaks(one.path);
     }
@@ -319,7 +320,7 @@ void cancellation(){
             damage==1?"DROP TRIGGER event_immutable;UPDATE events SET kind='save' WHERE revision=1":
             damage==2?"DROP TRIGGER source_immutable;UPDATE batches SET materialized_revision=0":
             damage==3?"DROP TRIGGER source_immutable;UPDATE batches SET count=count+1":
-            "DROP TRIGGER record_pending;INSERT INTO records VALUES('new',0,1,X'44','2026-01-01',0,'','')";
+            "DROP TRIGGER record_pending;INSERT INTO records(batch,ordinal,sequence,raw,source_date,original,payee,reference) VALUES('new',0,1,X'44','2026-01-01',0,'','')";
         check(sqlite3_exec(db,changes,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
         const auto unchanged=bytes(one.path/"doc");fails([&]{ImportStore::open(one.path/"doc",password);});check(bytes(one.path/"doc")==unchanged);
     }
@@ -327,8 +328,8 @@ void cancellation(){
         context.progress=[&](std::string_view phase){if(phase=="Import saved")context.request();};
         const std::string invalid="\xff";try{s.ingest_controlled("invalid",invalid,qif::DateOrder::dmy,context);}catch(const app::OperationCancelled&){}
         check(s.batches().empty());
-        app::OperationContext retry;const auto resumed=s.ingest_controlled("invalid",invalid,qif::DateOrder::dmy,retry);check(resumed.blocked && resumed.count==0);
-        fails([&]{s.commit("invalid",1,"invalid-op");});s.discard("invalid",1);s.verify();
+        app::OperationContext retry;const auto resumed=s.ingest_controlled("invalid-retry",invalid,qif::DateOrder::dmy,retry);check(resumed.blocked && resumed.count==0);
+        fails([&]{s.commit("invalid-retry",1,"invalid-op");});s.undo_import("undo-invalid","invalid-retry",s.ledger_edit_generation());s.verify();
     }
     for(int version:{1,2}) {Directory old;legacy_create(old.path/"doc",version);const auto before=bytes(old.path/"doc");fails([&]{ImportStore::open(old.path/"doc",password);});check(bytes(old.path/"doc")==before);}
     no_leaks(d.path);

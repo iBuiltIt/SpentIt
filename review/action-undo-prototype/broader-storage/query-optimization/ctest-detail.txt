@@ -1,0 +1,77 @@
+Start testing: Nov 08 17:28 MST
+----------------------------------------------------------
+180/199 Testing: storage.action_journal_codec
+180/199 Test: storage.action_journal_codec
+Command: "/Volumes/EXTERNAL/swessels/Develop/github/personal/SpentIt/build/import-ui-rules-release/tests/storage/spentit_action_journal_probe" "--self-check"
+Directory: /Volumes/EXTERNAL/swessels/Develop/github/personal/SpentIt/build/import-ui-rules-release/tests/storage
+"storage.action_journal_codec" start time: Nov 08 17:28 MST
+Output:
+----------------------------------------------------------
+Codec/capture regressions passed (ignored insert, same-PK replacement, key-change refusal, rollback, net no-op, integer extrema, NULL/empty/binary, malformed and REAL refusal; original/missing/wrong-domain registration).
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"storage.action_journal_codec" end time: Nov 08 17:28 MST
+"storage.action_journal_codec" time elapsed: 00:00:00
+----------------------------------------------------------
+
+181/199 Testing: storage.action_measure_vfs
+181/199 Test: storage.action_measure_vfs
+Command: "/Volumes/EXTERNAL/swessels/Develop/github/personal/SpentIt/build/import-ui-rules-release/tests/storage/spentit_measure_vfs_tests"
+Directory: /Volumes/EXTERNAL/swessels/Develop/github/personal/SpentIt/build/import-ui-rules-release/tests/storage
+"storage.action_measure_vfs" start time: Nov 08 17:28 MST
+Output:
+----------------------------------------------------------
+VFS measurement tests passed: DELETE, TRUNCATE, PERSIST, WAL, temporary lifetimes, reopening and exact simultaneous peaks.
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"storage.action_measure_vfs" end time: Nov 08 17:28 MST
+"storage.action_measure_vfs" time elapsed: 00:00:00
+----------------------------------------------------------
+
+182/199 Testing: storage.action_prototype_lifecycle
+182/199 Test: storage.action_prototype_lifecycle
+Command: "/Volumes/EXTERNAL/swessels/Develop/github/personal/SpentIt/build/import-ui-rules-release/tests/storage/spentit_action_lifecycle_tests"
+Directory: /Volumes/EXTERNAL/swessels/Develop/github/personal/SpentIt/build/import-ui-rules-release/tests/storage
+"storage.action_prototype_lifecycle" start time: Nov 08 17:28 MST
+Output:
+----------------------------------------------------------
+Original snapshot query plan:
+MATERIALIZE versions
+SCAN p USING INDEX retained_references
+SEARCH m USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+SEARCH p USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+SEARCH m USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+SCAN v LEFT-JOIN
+Scalar snapshot query plan:
+SEARCH p USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+SEARCH m USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+CORRELATED SCALAR SUBQUERY 1
+SEARCH p USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+SEARCH m USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+CORRELATED SCALAR SUBQUERY 2
+SEARCH p USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+SEARCH m USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH p USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+SEARCH m USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH p USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+SEARCH m USING PRIMARY KEY (batch=? AND ordinal=? AND revision=?)
+Original/scalar snapshot and audit UNION typed equality passed for fallback, corrected, NULL draft reference and absent keys.
+Close cleanup failure, cancellation after cleanup, precommit refusal, disk-full and lost acknowledgement passed.
+Precommit process exit recovered coherent journal/pins/payloads and money.
+Postcommit process exit recovered coherent journal/pins/payloads and money.
+Prototype close lifecycle checks passed (bounded tests, not a full fault sweep).
+<end of output>
+Test time =   5.27 sec
+----------------------------------------------------------
+Test Passed.
+"storage.action_prototype_lifecycle" end time: Nov 08 17:28 MST
+"storage.action_prototype_lifecycle" time elapsed: 00:00:05
+----------------------------------------------------------
+
+End testing: Nov 08 17:28 MST

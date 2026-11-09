@@ -1,11 +1,15 @@
 # Feature discovery
 
-**Next Undo design (2026-11-08):** [Unified action Undo and implementation
-handoff](../doc/action-undo-design.md). The owner accepted a strict file-wide
-session chain including acceptance/import reversal and undoable older-import
-removal. Design/review is complete; the owner approved the design and granted
-fresh-session implementation Go on 2026-11-08. Implementation has not started. The
-existing session-baseline implementation below remains current until replaced.
+**Replacement Undo (2026-11-09):** The authorized replacement is integrated in
+storage and UI. Read the [design](../doc/action-undo-design.md),
+[operation inventory](../doc/action-undo-inventory.md) and
+[implementation/verification record](../doc/action-undo-implementation.md).
+User operations use typed restoration in one file-wide session chain; import uses
+one atomic source-owned rollback with zero ordinary edit members for new rows.
+Acceptance is reversible. Definitions/settings preserve the chain, and Save and
+apply reverses transaction changes while retaining the saved definition. Accounts,
+categories and permitted import setup remain after whole-import Undo. Final History
+layout/manual publication and the rejected generic row-capture experiment are separate.
 
 **Current planning baseline (2026-11-08):** [Accepted first-release decisions](../doc/first-release-plan.md).
 Usage-driven UI improvements come next, including [About and third-party notices](007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08);
