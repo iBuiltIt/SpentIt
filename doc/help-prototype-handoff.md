@@ -1,6 +1,6 @@
 # Help viewer prototype handoff
 
-Last updated: 2026-11-06
+Last updated: 2026-11-09
 
 **Deferred manual upkeep:** collect application-driven text and screenshot work
 in the [manual update backlog](manual-update-backlog.md). The owner wants one
@@ -15,6 +15,21 @@ is [013 — Help system and user manual](../features/013-help-system.md). This
 file is the progress record for the next session. The subsequent 2026-11-06 Go
 covers contextual Help, followed by search excerpts and keyboard/appearance
 closeout. The latest checkpoint is first below. Update it when a step changes.
+
+## Recapturing manual pictures — 2026-11-09
+
+`tools/capture_manual_images.py` runs the eleven chapter walkthroughs in
+`spentit_help_ui_tests` and writes their pictures to a staging directory. It
+checks those files against the image links in `manual/`. `--install` copies
+them into `manual/images` only after every walkthrough has passed and the
+names match. Rebuild the help UI test first. The script refuses a binary
+older than `src/ui` QML or `tests/ui/help_ui_tests.cpp`. Running it does not
+by itself change the manual.
+
+The Reports chart is chosen from its open list, because its index follows the
+draft. The Review keep picture uses two new copies from one later import.
+The chapter's own pair still has one earlier import, and Merge keeps that
+copy without asking.
 
 ## Help keyboard and appearance closeout — 2026-11-06
 

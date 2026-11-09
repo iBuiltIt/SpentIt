@@ -135,6 +135,13 @@ Record manual work caused by user-visible application changes in the
 pictures and already-completed text changes explicit. Accumulate these items for
 one later owner-authorized manual update pass; do not update manual text or
 screenshots as part of feature work unless the owner explicitly requests it.
+When that pass includes pictures, recapture them with
+[tools/capture_manual_images.py](tools/capture_manual_images.py) as described in
+the [backlog](doc/manual-update-backlog.md#recapturing-pictures). Rebuild the
+help UI test first, stage the pictures, and copy them into `manual/images` only
+with `--install` after the check passes. If a walkthrough fails, update that
+walkthrough and rerun. Revise the chapter text and captions in the same pass.
+Do not point `SPENTIT_GUIDE_CAPTURE` at `manual/images`.
 
 ## Category income grouping — owner Go 2026-11-06
 

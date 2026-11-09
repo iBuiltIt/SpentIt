@@ -1800,7 +1800,28 @@ private slots:
         QVERIFY(edit(session.root, "reportStartDate1", "2026-02-01"));
         QVERIFY(edit(session.root, "reportEndDate1", "2026-02-28"));
         auto* graph = qobject_cast<QQuickItem*>(object(session.root, "reportGraph")); QVERIFY(graph);
-        mouseItem(graph); QTest::keyClick(session.window, Qt::Key_Home); QTest::keyClick(session.window, Qt::Key_Down); QTest::keyClick(session.window, Qt::Key_Down); QTest::keyClick(session.window, Qt::Key_Return);
+        // The chart's current index follows the draft, so arrow keys cannot move it.
+        // Open the list and choose the visible entry.
+        auto chooseChart = [&](const QString& label) {
+            mouseItem(graph);
+            QTest::qWait(200);
+            std::function<QQuickItem*(QQuickItem*)> labeled = [&](QQuickItem* parent) -> QQuickItem* {
+                if (!parent || !parent->isVisible()) return nullptr;
+                if (parent != graph && parent->property("text").toString() == label) return parent;
+                for (auto* child : parent->childItems()) if (auto* found = labeled(child)) return found;
+                return nullptr;
+            };
+            QQuickItem* choice = nullptr;
+            for (QWindow* candidate : QGuiApplication::allWindows()) {
+                auto* quick = qobject_cast<QQuickWindow*>(candidate);
+                if (!quick || !quick->isVisible()) continue;
+                choice = labeled(quick->contentItem());
+                if (choice) break;
+            }
+            QVERIFY2(choice, qPrintable(label));
+            mouseItem(choice);
+        };
+        chooseChart(QStringLiteral("Bar — grouped periods"));
         QCOMPARE(graph->property("currentIndex").toInt(), 2);
         capture("reports-editor");
         mouse("showReport");
@@ -1826,7 +1847,7 @@ private slots:
         run(session.model, "undo_edit");
         QCOMPARE(currency().value("totals").toList(), (QVariantList{"56.18", "70.00"}));
         textClick("Back to report"); textClick("Back to Reports");
-        mouseItem(graph); QTest::keyClick(session.window, Qt::Key_End); QTest::keyClick(session.window, Qt::Key_Return);
+        chooseChart(QStringLiteral("Pie"));
         QCOMPARE(graph->property("currentIndex").toInt(), 3);
         mouse("showReport");
         QTRY_COMPARE(workspace->property("mode").toString(), QString("result"));
@@ -2215,6 +2236,53 @@ private slots:
             run(session.model, "import", {{"path", file.fileName()}, {"account", account}});
         };
         if (!difference) {
+            // The chapter pair has one earlier import, so Merge keeps it without asking.
+            // This picture needs two new copies from the same later import, which still asks.
+            run(session.model, "close");
+            run(session.model, "create", {{"path", session.path("keep-picture.spentit")}, {"protected", false},
+                {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+            run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+            import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket statement\n^\n", "1");
+            import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket groceries\n^\nD2026-01-15\nT-42.18\nPMarket\n^\n", "1");
+            mouse("reviewNavigation");
+            const auto keepQuestions = session.model.state().value("reviewQuestions").toList();
+            QVERIFY(!keepQuestions.isEmpty());
+            const auto keepRows = keepQuestions.front().toMap().value("rows").toList();
+            int market = -1, groceries = -1;
+            QString sameOrder;
+            for (int i = 0; i < keepRows.size(); ++i) {
+                const auto row = keepRows.at(i).toMap();
+                if (row.value("payee").toString() == QString("Market groceries")) {
+                    groceries = i;
+                    sameOrder = row.value("importOrder").toString();
+                }
+            }
+            for (int i = 0; i < keepRows.size(); ++i) {
+                const auto row = keepRows.at(i).toMap();
+                if (row.value("payee").toString() == QString("Market") && row.value("importOrder").toString() == sameOrder) market = i;
+            }
+            QStringList described;
+            for (const auto& value : keepRows) {
+                const auto row = value.toMap();
+                described << row.value("payee").toString() + " / " + row.value("importOrder").toString();
+            }
+            QVERIFY2(market >= 0 && groceries >= 0, qPrintable(described.join(" | ")));
+            QTRY_VERIFY(object(session.root, "reviewRowSelect_" + QString::number(market)));
+            mouse("reviewRowSelect_" + QString::number(market));
+            mouse("reviewRowSelect_" + QString::number(groceries));
+            auto* merge = object(session.root, "reviewYes");
+            QTRY_VERIFY(merge && merge->property("enabled").toBool());
+            mouse("reviewYes");
+            auto* keep = object(session.root, "reviewSurvivor");
+            QVERIFY(keep);
+            QTRY_VERIFY(keep->property("visible").toBool());
+            capture("review-keep");
+            QVERIFY(QMetaObject::invokeMethod(keep, "reject"));
+            QTRY_VERIFY(!keep->property("visible").toBool());
+            run(session.model, "close");
+            run(session.model, "create", {{"path", session.path("Household.spentit")}, {"protected", false}, {"overwrite", true},
+                {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+            run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
             import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\n^\nD2026-01-20\nT6.00\nPMarket refund\n^\n", "1");
             import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket groceries\n^\n", "1");
             QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));

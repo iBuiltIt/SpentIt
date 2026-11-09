@@ -1,5 +1,28 @@
 # Project status
 
+## Manual picture capture — 2026-11-09
+
+`tools/capture_manual_images.py` reruns the eleven chapter walkthroughs in
+`spentit_help_ui_tests` and stages every picture linked from `manual/`.
+`--install` copies them into `manual/images` only after the names match.
+`AGENTS.md` and the [manual backlog](manual-update-backlog.md#recapturing-pictures)
+point here for an owner-authorized picture pass.
+The script refuses a test binary older than `src/ui` QML or the walkthrough
+source. It is not part of a normal application run. Pictures were not installed.
+
+Verification on macOS arm64, Qt 6.12.0, rules-enabled Release:
+
+- `python3 tests/ui/capture_manual_images_tests.py` passed 7/7. `ctest`
+  `help.capture_manual_images` passed in 0.08 s.
+- One native staging run captured all 38 linked pictures. The Reports
+  walkthrough reached grouped bars, pie, and the January 56.18 / February
+  70.00 totals. The Review walkthrough reached the keep dialog for two new
+  copies, then the existing link and amount-difference pictures.
+
+Limits: Linux, Windows, and dark appearance were not captured. The staged
+pictures were not compared visually with the published manual, and they were
+not copied into `manual/images`.
+
 ## Selected Set memo — implemented, 2026-11-09
 
 The ledger context menu adds **Set memo…** beside **Rename payee…**. The dialog

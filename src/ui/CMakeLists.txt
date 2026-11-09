@@ -194,6 +194,7 @@ if(SPENTIT_IMPORT_UI)
       set_tests_properties(import.help_ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 600)
     endif()
     add_test(NAME help.prepare COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/ui/help_prepare_tests.py")
+    add_test(NAME help.capture_manual_images COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/ui/capture_manual_images_tests.py")
     qt_add_executable(spentit_help_tests ../../tests/ui/help_catalog_tests.cpp)
     target_link_libraries(spentit_help_tests PRIVATE spentit_help Qt6::Test)
     target_compile_definitions(spentit_help_tests PRIVATE
