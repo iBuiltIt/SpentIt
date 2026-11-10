@@ -39,41 +39,49 @@ If you followed the earlier category chapter, it already has Groceries
 and this rule will correctly leave it alone. There is no need to clear
 its category just to try a rule.
 
-You can also select an imported transaction in the ledger and choose
-**Create rule…**. With several splits, choose the transaction or the
-relevant split when asked. Check the proposed pattern and category.
-**Edit rule…** opens an available rule that assigned a value to that entry.
-For a manually entered transaction, start with New rule in Rules instead.
+You can also select one imported transaction in the ledger and choose
+**Create rule…**. You do not need to open its editor first. With several
+splits, **Create a rule for** asks whether the rule is for the transaction
+or one split. Check the proposed pattern and category. When the transaction
+is open, **Edit rule…** opens a rule that assigned a value to that entry.
+A selection of several transactions, or a transaction you typed yourself,
+does not offer this. Start with **New rule** in Rules instead.
 
 ## Preview, save and apply {#preview-save-and-apply}
 
-**Include** chooses which transactions to consider in the selected account:
+Under **Preview or Apply Rule**, choose the **Account**. **Transactions**
+chooses which entries in that account to consider:
 
-- **All transactions in this account** includes both new and accepted entries.
-- **New transactions only** excludes entries you have already accepted.
+- **All transactions** includes both new and accepted entries.
+- **New transactions only** leaves out entries you have already accepted.
 
-Choose **Preview this rule**. The list shows eligible matching transactions with
+The line **Uncategorized transactions only.** is a reminder. A rule does
+not replace a category you have already chosen.
+
+Choose **Preview**. The list shows eligible matching transactions with
 their imported payee, date and amount. A split match still appears as one
 transaction row. Preview does not change your transactions.
 
 ![Rules preview listing the Market purchase for -42.18 beneath the selected rule’s controls.](images/rules-preview.png)
 *The Uncategorized Market purchase matches. The already categorized entries stay as they are.*
 
-Use **Save** to keep the selected rule without applying it to existing
-transactions. Use **Save and apply** to save it and apply it to the chosen
-account scope. Once saved, that button reads **Apply to this account now**.
-You can apply without previewing, but a preview is useful while learning a pattern.
+**Save rule** keeps the selected rule without changing transactions.
+**Discard changes** restores that rule. A new unsaved rule uses
+**Discard draft** instead. While the selected rule still has unsaved edits,
+the other button reads **Save and apply rule**. After the rule is saved, it
+reads **Apply rule**. You can apply without previewing, but a preview is
+useful while learning a pattern.
 
 These buttons concern the selected rule. Other unfinished rule edits stay
-unfinished. There is no separate all-rules Apply button in this workspace.
-Saved enabled rules run during later imports, after any missing-category
-choices are resolved. They work across your file’s accounts; the Include choice controls this account application,
-not which accounts may use the rule during import.
+unfinished. Saved enabled rules run during later imports, after any
+missing-category choices are resolved. They can match in any account.
+The Transactions choice applies only when you run the rule yourself.
 
-**Undo rule application** reverses an eligible account application as one
-operation. It does not delete the saved rule. Check the result before making
-other changes, which can make Undo unavailable. Disabling or deleting a rule
-also leaves its earlier assignments in place.
+**Undo application** undoes a rule application when that is the latest
+saved action for the account named beside it. It keeps the saved rule.
+A later saved action replaces it. Disabling or deleting a rule leaves
+its earlier assignments in place. If the rule has no category, SpentIt
+says **Choose an existing category.** Choose one, then try again.
 
 ## What a rule reads
 
@@ -111,31 +119,41 @@ rules: it does not take a match that an earlier rule would categorize.
 ## Keep and change your rules {#keep-and-change-your-rules}
 
 Use **Search rules** to find a name, pattern or action, then select its row
-to edit. **Save** keeps that rule’s changes; **Discard** restores its saved
-version or removes an unsaved new rule. Finish or discard the one new rule
-before starting another.
+to edit. **Save rule** keeps that rule’s changes. **Discard changes**
+restores its saved version. **Discard draft** removes an unsaved new rule.
+**New rule** stays unavailable while a new draft is open. Finish or discard
+the one new rule before starting another.
 
-Select the rule before changing it. Uncheck **Enabled** to stop using it,
-or choose **Delete** to remove it, then Save. **Show removed** lets you find deleted rules and **Copy into new
-rule** if you want to start again from one.
+Select the rule before changing it. Uncheck **Enabled** to stop using it.
+**Delete rule…** asks **Delete rule “name”?** Choose **Delete rule** to
+remove it now, or **Keep rule**. The removal is saved immediately.
+Afterward, an unfinished new rule opens if you have one. Otherwise the
+nearest remaining rule opens, or the list is empty.
+
+Check **Removed rules (N)** to see rules you have deleted. **Copy into new
+rule** starts a new draft from one of them.
 
 If you leave Rules with unfinished changes, SpentIt asks what to do.
 
-![Save changes before leaving Rules dialog with Save, Discard and Stay choices.](images/rules-leave.png)
-*Stay returns to your unfinished edits.*
+![Save changes before leaving Rules, with Save all changes, Discard all changes and Cancel.](images/rules-leave.png)
+*Cancel keeps you in Rules with your unfinished edits.*
 
-Here, **Save** validates and saves all outstanding rule edits before leaving;
-it does not apply them to transactions. **Discard** drops those unfinished
-edits. **Stay** keeps you in Rules. If Save finds a problem, correct the rule
-it shows and try again.
+**Save all changes** checks and saves every unfinished rule edit before
+leaving. It does not apply those rules to transactions. **Discard all
+changes** drops the unfinished edits. **Cancel**, and Escape, keep you in
+Rules. If Save finds a problem, correct the rule it shows and try again.
+
+**File → SpentIt Export…** can copy saved rules to another SpentIt file.
+See [Copy transactions or saved definitions](backup-recovery.md#copy-transactions-or-saved-definitions).
+Importing those rules does not apply them.
 
 ## If the matches aren’t what you expected
 
-Check the selected account and Include choice first. Then check whether the
-transaction’s relevant parts are already categorized, whether the rule is
-Enabled, and whether an earlier rule takes the match. For imported entries,
-compare the pattern with the original text, not a renamed payee. Transfers
-are not ordinary rule targets.
+Check the selected account and the Transactions choice first. Then check
+whether the transaction’s relevant parts are already categorized, whether
+the rule is Enabled, and whether an earlier rule takes the match. For
+imported entries, compare the pattern with the original text, not a renamed
+payee. Transfers are not ordinary rule targets.
 
 If there are too many matches, try Whole field or a more specific pattern.
 A pattern error needs correcting; it is not the same as no matches.

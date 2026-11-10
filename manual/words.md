@@ -37,8 +37,10 @@ destination instead.
 ## File and backup
 
 Your SpentIt **file** holds your accounts and transactions together.
-A **backup** is a separate saved copy you can use if you need to recover
+A **backup** is a separate encrypted copy you can use if you need to recover
 work. It does not receive later changes to the working file.
+**QIF Export** copies transactions as plain text. **SpentIt Export** copies
+saved rules, reports and categories, not the transactions.
 [Save and check a backup](backup-recovery.md#save-a-backup).
 
 ## Import and imported original

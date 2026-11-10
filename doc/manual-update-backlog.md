@@ -45,11 +45,30 @@ chapter are historical. Do not write captures straight into the manual.
 6. Check the changed topics in bundled Help before marking the backlog entry
    complete.
 
-## Pending
+## Completed — 2026-11-09 manual pass
+
+MAN-001 through MAN-020 are complete. The live screens were checked against
+the backlog before writing. Later labels replaced earlier ones: Accept
+transactions is the footer button, Accept anyway and Return to review replace
+the old acceptance buttons, Rules and Reports leave with Save all changes /
+Discard all changes / Cancel, and Set up transfers replaces Resolve mapped
+transfers. Image links stay `images/<name>.png`. One new picture,
+`images/change-history.png`, was added. Set memo, export and About stay in
+the text.
+
+Verification on macOS, Qt 6.12.0, rules-enabled Release, 2026-11-09. No commit
+yet. `python3 tools/capture_manual_images.py` staged 39 pictures;
+`--install` copied them into `manual/images`. The staged Change history,
+Reports editor, acceptance, Rules leave, Categories and Settings pictures were
+read against their captions. `help.prepare` passed in 0.18 s and `help.catalog`
+passed in 0.08 s. Offscreen `createOpenChapterReading` passed 18/18 in 15.2 s,
+including every bundled picture and the named section in each topic. The eleven
+chapter walkthroughs passed in the staging run and again on install, about 65 s
+each. Linux, Windows and a person clicking Help were not checked.
 
 ### MAN-001 — Income categories and report group selection
 
-Recorded: 2026-11-06. Status: **pending**.
+Recorded: 2026-11-06. Status: **complete**.
 Source: commit `90d4a73`; [Income grouping contract](../features/010-categories-and-selection.md#income-grouping--owner-go-2026-11-06)
 and [refresh correction](status.md#income-checkbox-refresh-correction--2026-11-06).
 
@@ -86,7 +105,7 @@ Remaining work:
 
 ### MAN-002 — Import progress and date calendars
 
-Recorded: 2026-11-06. Status: **pending**.
+Recorded: 2026-11-06. Status: **complete**.
 Source: [owner-approved import progress follow-up](../features/014-busy-feedback-and-progress.md#import-progress-dialogs-and-remaining-date-pickers--owner-go-2026-11-06).
 
 No manual text or pictures were changed during implementation.
@@ -104,13 +123,9 @@ No manual text or pictures were changed during implementation.
 - Verify revised chapters, pictures and context targets in bundled Help during
   the later owner-authorized manual pass.
 
-## Completed
-
-None yet.
-
 ### MAN-003 — Visible shutdown progress
 
-Recorded: 2026-11-06. Status: **pending**.
+Recorded: 2026-11-06. Status: **complete**.
 Source: [shutdown contract](fast-startup.md), owner correction and Go.
 
 No manual text or pictures changed during implementation.
@@ -127,7 +142,7 @@ No manual text or pictures changed during implementation.
 
 ### MAN-004 — Larger transaction selections
 
-Recorded: 2026-11-06. Status: **pending**.
+Recorded: 2026-11-06. Status: **complete**.
 Source: [selection-size contract](search-ledger.md#selection-size--owner-go-2026-11-06).
 
 No manual text or pictures changed during implementation.
@@ -143,7 +158,7 @@ No manual text or pictures changed during implementation.
 
 ### MAN-005 — Selection keyboard shortcuts
 
-Recorded: 2026-11-06. Status: **pending**.
+Recorded: 2026-11-06. Status: **complete**.
 Source: [selection shortcut contract](search-ledger.md#selection-shortcuts--owner-go-2026-11-06).
 
 No manual text or pictures changed during implementation.
@@ -161,7 +176,7 @@ No manual text or pictures changed during implementation.
 
 ### MAN-006 — Delete linked selections
 
-Recorded: 2026-11-06. Status: **pending**.
+Recorded: 2026-11-06. Status: **complete**.
 Source: [linked-deletion contract](ledger-editing.md#linked-selection-deletion-and-large-operation-performance--owner-go-2026-11-06).
 
 No manual text or pictures changed during implementation.
@@ -179,7 +194,7 @@ No manual text or pictures changed during implementation.
 
 ### MAN-007 — Navigation availability and Settings cleanup
 
-Recorded: 2026-11-06. Status: **pending**.
+Recorded: 2026-11-06. Status: **complete**.
 Source: owner Go for disabled Back/Forward appearance and removal of Settings'
 Return to account button; [implementation record](status.md#navigation-and-settings-cleanup--2026-11-06).
 
@@ -200,7 +215,7 @@ No manual text or pictures changed during implementation.
 
 ### MAN-008 — Session Change History and close recovery
 
-Recorded: 2026-11-07. Status: **pending owner-authorized manual pass**.
+Recorded: 2026-11-07. Status: **complete**.
 Source: [session-history contract](session-history-baseline.md) and
 [implementation progress](status.md#session-history-correction--2026-11-07).
 
@@ -237,7 +252,7 @@ No manual text, captions or pictures have been changed.
 
 ### MAN-009 — Ledger duplicate review
 
-Recorded: 2026-11-07. Status: **pending owner-authorized manual pass**.
+Recorded: 2026-11-07. Status: **complete**.
 Source: [ledger duplicate contract](review-sheet.md#ledger-duplicate-resolution--owner-go-2026-11-07).
 
 No manual text, captions or pictures have been changed.
@@ -260,7 +275,7 @@ No manual text, captions or pictures have been changed.
 
 ### MAN-010 — OFX statement validation
 
-Date: 2026-11-07. Pending owner-authorized manual pass.
+Date: 2026-11-07. Status: **complete**.
 Contract: [statement header validation](../features/003-ofx-profile.md#statement-header-validation--owner-go-2026-11-07).
 
 - Update `manual/import-transactions.md` to explain refusal of conflicting statement
@@ -273,7 +288,7 @@ Contract: [statement header validation](../features/003-ofx-profile.md#statement
 
 ### MAN-011 — Explicit import openings and retired staging
 
-Date: 2026-11-08. Pending owner-authorized manual pass.
+Date: 2026-11-08. Status: **complete**.
 Contract: [legacy staged-balance retirement](qif-account-imports.md#legacy-staged-balance-retirement--owner-go-2026-11-08).
 
 - Audit `manual/import-transactions.md` and `manual/accounts.md` for stale
@@ -289,7 +304,7 @@ Contract: [legacy staged-balance retirement](qif-account-imports.md#legacy-stage
 
 ### MAN-012 — Rule save history expires at successful close
 
-Recorded: 2026-11-08. Status: **pending**.
+Recorded: 2026-11-08. Status: **complete**.
 Source: [ruleset-retention contract](../features/004-rules-and-explanations.md#ruleset-save-retention--owner-go-2026-11-08).
 
 During the later manual pass, check Rules and file/recovery chapters for any promise
@@ -302,7 +317,7 @@ text has been updated.
 
 ### MAN-013 — About, version information and offline notices
 
-Recorded: 2026-11-08. Status: **pending owner-authorized manual pass**.
+Recorded: 2026-11-08. Status: **complete**.
 Source: [About implementation Go](../features/007-licensing-and-distribution.md#about-design-and-implementation-go--2026-11-08).
 
 No manual text or pictures changed during implementation.
@@ -322,7 +337,7 @@ No manual text or pictures changed during implementation.
 
 ### MAN-014 — Review workspace cleanup
 
-Recorded: 2026-11-08. Status: **pending owner-authorized manual pass**.
+Recorded: 2026-11-08. Status: **complete**.
 Source: [Review cleanup](review-sheet.md#review-workspace-cleanup--owner-go-2026-11-08).
 
 - Update Review, Accept transactions, Bring in transactions, Settings, and
@@ -349,7 +364,7 @@ pictures updated during this correction.
 
 ### MAN-015 — Rules workspace usability
 
-Recorded: 2026-11-08. Status: **pending owner-authorized manual pass**.
+Recorded: 2026-11-08. Status: **complete**.
 Source: [Rules usability](../features/004-rules-and-explanations.md#rules-workspace-usability--owner-go-2026-11-08).
 
 - Update Use rules (chapter 9), Where to find things, keyboard/navigation and
@@ -379,7 +394,7 @@ Source: [Rules usability](../features/004-rules-and-explanations.md#rules-worksp
 
 ### MAN-016 — Reports workspace usability
 
-Recorded: 2026-11-08. Status: **pending owner-authorized manual pass**.
+Recorded: 2026-11-08. Status: **complete**.
 Source: [Reports usability](../features/006-reporting-drill-down.md#reports-workspace-usability--owner-go-2026-11-08).
 
 - Update Answer with reports, navigation and messages guidance for empty/search
@@ -410,8 +425,7 @@ Select all categories, keeping the Clear buttons stationary.
 
 ### MAN-017 — Unified transaction Undo and whole-import rollback
 
-Recorded: 2026-11-08. Status: **implementation integrated; pending the later
-owner-authorized manual pass**.
+Recorded: 2026-11-08. Status: **complete**.
 Source: [replacement Undo design](action-undo-design.md).
 The generic row-capture prototype was rejected. Its historical measurements are
 not evidence of replacement behavior. See the current
@@ -447,7 +461,7 @@ screenshots changed in this implementation; verification uses synthetic fixtures
 
 ### MAN-018 — File export/import and Backup menu
 
-Recorded: 2026-11-09. Status: **pending the later owner-authorized manual pass**.
+Recorded: 2026-11-09. Status: **complete**.
 Source: [File exchange contract](file-exchange.md).
 
 - Update File menu/navigation, import/export, Rules, Reports, Categories and
@@ -468,7 +482,7 @@ Source: [File exchange contract](file-exchange.md).
 
 ### MAN-019 — Selected Set memo
 
-Recorded: 2026-11-09. Status: **pending the later owner-authorized manual pass**.
+Recorded: 2026-11-09. Status: **complete**.
 Source: [Selected Set memo](ledger-editing.md#selected-set-memo--owner-go-2026-11-09).
 
 - Add **Set memo…** beside **Rename payee…** in Add/correct transactions and
@@ -487,8 +501,7 @@ Source: [Selected Set memo](ledger-editing.md#selected-set-memo--owner-go-2026-1
 
 ### MAN-020 — Change history workspace
 
-Recorded: 2026-11-09. Status: **implemented; the later owner-authorized manual
-pass remains**.
+Recorded: 2026-11-09. Status: **complete**.
 Source: [Change history handoff](change-history-handoff.md).
 
 - Replace the History sentence in Add/correct transactions. The page lists

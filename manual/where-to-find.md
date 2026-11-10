@@ -18,8 +18,15 @@ Most controls appear after you open a file.
   the welcome screen. [Close or switch files](create-open-file.md#close-or-switch-files).
 - **Check which file is open:** choose **Settings** in the left sidebar
   and read **Current file**.
-- **Save a backup:** choose **Settings → Save backup…**.
+- **Save a backup:** choose **Settings → Save backup…** or **File → Backup…**.
   [Save a backup](backup-recovery.md#save-a-backup).
+- **Copy transactions to a QIF file:** choose **File → QIF Export…**.
+- **Copy or bring in saved rules, reports and categories:** choose
+  **File → SpentIt Export…** or **File → SpentIt Import…**. These are not
+  backups. [Copy transactions or saved definitions](backup-recovery.md#copy-transactions-or-saved-definitions).
+- **See the version:** on a Mac, choose **About SpentIt** in the application
+  menu. On Windows and Linux, choose **Help → About SpentIt**.
+  [If you still need help](backup-recovery.md#if-you-still-need-help).
 - **Change amount formatting or remember the window position:** open
   **Settings**. It also shows the file’s date format, but cannot change it.
   [Settings choices](backup-recovery.md#adjust-how-you-read-and-enter-amounts).
@@ -56,8 +63,8 @@ Most controls appear after you open a file.
 - **Create or rename a category:** choose **Categories** in the sidebar.
   [Create a category](categories.md#create-a-category) or
   [manage the list](categories.md#keep-your-category-list-useful).
-- **Rename a payee or delete entries:** select the rows, then right-click
-  for **Rename payee…** or **Delete selected…**.
+- **Rename a payee, set a memo, or delete entries:** select the rows, then
+  right-click for **Rename payee…**, **Set memo…** or **Delete selected…**.
   [Change a selection or delete entries](add-correct-transactions.md#change-a-selection-or-delete-entries).
 
 ## Review, rules and reports
@@ -65,7 +72,7 @@ Most controls appear after you open a file.
 - **Check duplicates or link transfer postings:** choose **Review** in
   the sidebar. [Review duplicates and link transfers](review-duplicates-transfers.md).
 - **Mark new transactions as checked:** open **Review**, then choose
-  **Accept transactions** at the top. This covers all accounts.
+  **Accept transactions** at the bottom. This covers all accounts.
   [Accept the transactions you’ve checked](accept-transactions.md#accept-the-transactions-you-ve-checked).
 - **Set up repeated categorization:** select an account, choose **Rules**
   in the sidebar, then **New rule**. [Make a rule](rules.md#make-a-market-rule).
@@ -78,19 +85,15 @@ Most controls appear after you open a file.
 
 Undo depends on what you changed. Later changes can make it unavailable.
 
-- **Undo an edit or deletion:** look beside search for **Undo edit**
-  or the named Undo for your selection change. Open an accepted entry’s
-  editor for **History**.
-  [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
-- **Undo a category change:** use **Undo category change** beside ledger
-  search. [Change selected transactions](categories.md#change-selected-transactions).
-- **Undo a rule application:** use **Undo rule application** in Rules.
-  [Preview, save and apply](rules.md#preview-save-and-apply).
+- **Undo the latest saved action:** look beside search. The button names
+  that action, such as **Undo edit…**. The same Undo is at the top of
+  Review, and **Undo application** in Rules when the latest action is a
+  rule application. [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
+- **See changes since you opened the file:** choose **Change history**
+  in the sidebar, or **History** on an accepted transaction.
 - **Undo an import:** right-click the account for **Undo last import…**,
   or use **Undo import…** in Review. Accepted transactions can prevent it.
   [Undo a mistaken import](import-transactions.md#undo-a-mistaken-import).
-- **Undo a Review answer:** use **Undo** at the bottom of
-  Review. [Undo a mistaken answer](review-duplicates-transfers.md#undo-a-mistaken-answer).
 - **Read a long status message:** choose **Details** beside the bottom
   status line when available. [When a change needs attention](backup-recovery.md#a-change-failed-or-its-result-is-unclear).
 

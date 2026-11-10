@@ -15,12 +15,13 @@ accepted yet. Finish any edit with **Save** or **Enter** first.
 
 1. Open **Settings** in the left sidebar. Check the path under **Current file**
    so you know which file you’re copying.
-2. Choose **Save backup…**. Choose a folder and a new filename, such as
+2. Choose **Save backup…**, or **File → Backup…**. They are the same
+   command. Choose a folder and a new filename, such as
    `Household-backup-2026-02-28.spentit`. Use a different name for each backup.
 3. Wait for the operation to finish. The bottom status line returns to
    **Ready** on success; there is no separate completion dialog.
 
-![Settings showing the current Household file, amount style, Save backup button and Ready status.](images/recovery-backup.png)
+![Settings for the Household file, with Check file, Save backup and the current file path.](images/recovery-backup.png)
 *Save backup makes a separate copy. The Current file path still names the file you are working in.*
 
 Keep a copy on another drive if you want protection against losing the drive
@@ -40,15 +41,17 @@ A backup made without password protection can be read by anyone who has it.
 - **You cancelled:** wait for cancellation to finish. An unfinished `.partial`
   file may remain; it is not a completed backup. Use a new name when retrying.
 
-![Settings showing Backup publication failed and a Details button beside the message.](images/recovery-existing.png)
-*Here, an existing destination is refused. Choose another name; use Details to read a long message.*
+![Settings showing Backup publication failed, with Check file and a Details button.](images/recovery-existing.png)
+*Here, an existing destination is refused. Choose another name. Use Details to read a long message.*
 
 ## Check a backup or recover your work
 
 Open a backup to check that it contains what you expect. If you need to recover,
 make a new working copy from it so you can keep the backup for another attempt.
 
-1. In Settings, choose **Close file…**. Resolve any unfinished edits first.
+1. Choose **File → Close file**. Resolve any unfinished edits first.
+   Settings has no Close file button. Use **Back**, or an account in the
+   sidebar, to leave Settings.
 2. On the welcome screen, use **Browse…** to select the backup, enter its
    password if asked, and choose **Open file**.
 3. Check the accounts, balances and recent transactions. Open a saved report
@@ -80,9 +83,46 @@ See [Enter an amount or a calculation](add-correct-transactions.md#enter-an-amou
 for examples.
 
 **Remember window size and position** controls how the application window
-opens next time. Settings has no control to change a password or turn password
+opens next time. **Check file** checks the open file. It does not clear
+Undo. After SpentIt stops unexpectedly, it checks the file when you open
+it again.
+
+Settings has no control to change a password or turn password
 protection on or off for an existing file. There is no forgotten-password
 recovery for the file or its backups.
+
+## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}
+
+A backup is an encrypted copy of the whole file. These File menu commands
+write ordinary text. They are not backups. If you have an unfinished edit,
+SpentIt asks you to save or discard it first.
+
+**QIF Export…** copies transactions. The accounts start checked, including
+archived ones. Set **From** and **To** for each account you want. Both
+dates are included. Leave **Include categories** checked to keep ordinary
+categories. Leave **Include opening balance** checked to include an opening.
+A range that covers the whole account uses the stored opening. A range that
+starts later adds the earlier transactions into the opening, so the balance
+still matches. Uncheck it for no opening line. Transfers are included either
+way. Choose **Export…**, then a new filename. Line breaks in the export
+become spaces. Your transactions in SpentIt stay as they are. The file is
+plain text. Anyone who has it can read it. When you import it again, each
+account still needs its currency. SpentIt does not convert amounts.
+
+**SpentIt Export…** copies saved **Rules**, **Reports** and **Categories**.
+They start checked. It does not copy transactions, or edits you have not
+saved. Choose **Export…** and a new filename. The file is unencrypted text.
+If the export fails or you cancel it, an existing file is left as it was.
+
+**SpentIt Import…** reads that file into the open SpentIt file. Each section
+starts with its items selected. **All** selects or clears that section.
+Rules and reports are added as new items, even when a name matches one you
+already have. The imported rules are not applied. Categories merge by name.
+If the Income setting differs, choose **Keep existing** or **Use imported**.
+A missing category must be selected so SpentIt can create it, or mapped to
+a category you already have. A missing account must be mapped to an account
+with the same currency. Choose **Import** when the choices are complete.
+**Cancel** stops the step while that is still possible.
 
 ## When a file or change needs attention
 
@@ -121,14 +161,29 @@ for records that still need attention.
 
 ### Checking could not finish on quit {#checking-could-not-finish-on-quit}
 
+While SpentIt is closing, wait for **Closing SpentIt…** to finish.
+
 If **Couldn’t finish checking the file** appears, **Return** brings you back
 to the app. **Quit anyway** closes it; SpentIt will check the file again the
 next time you open it. Neither choice repairs a damaged file.
 
+If closing itself cannot finish, the title is **Couldn’t close the file**.
+**Return** brings you back so you can try again. **Quit anyway** closes
+SpentIt and checks the file the next time you open it. Neither repairs
+damage. Undo remains until a close succeeds. See
+[When Undo is no longer offered](add-correct-transactions.md#undo-a-saved-change).
+
 ### If you still need help
 
-Note the exact message, the action you took, your operating system and the
-SpentIt version or build you are using. A small made-up example can help explain
+Note the exact message, the action you took, and your operating system.
+On a Mac, choose **About SpentIt** in the application menu. On Windows and
+Linux, choose **Help → About SpentIt**. **Copy version information** copies
+the version and build. **License and terms…** and **Third-party software…**
+open in that window, without a network connection. **Back** returns from
+those pages. **Close** leaves About. **Provided as is, without warranty**
+is not a promise that a file cannot be damaged. Keep a backup.
+
+A small made-up example can help explain
 the problem. Remove names, account details and amounts from screenshots you
 share; do not send passwords, your financial file or bank exports.
 

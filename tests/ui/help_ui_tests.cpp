@@ -672,7 +672,7 @@ private slots:
             << QStringList{"review-keep.png", "review-link.png", "review-linked.png", "review-difference.png"}
             << QString("when-the-amounts-differ") << QString("When the amounts differ");
         QTest::newRow("editing") << QString("add-correct-transactions")
-            << QStringList{"editing-new.png", "editing-calendar.png", "editing-splits.png", "editing-mismatch.png"}
+            << QStringList{"editing-new.png", "editing-calendar.png", "editing-splits.png", "editing-mismatch.png", "change-history.png"}
             << QString("divide-a-purchase-into-splits") << QString("Divide a purchase into splits");
         QTest::newRow("categories") << QString("organize-categories")
             << QStringList{"categories-workspace.png", "categories-completion.png", "categories-menu.png", "categories-split.png"}
@@ -1513,6 +1513,12 @@ private slots:
         run(session.model, "commit", {{"ignoreWarnings", true}});
         session.root->setProperty("editorClosed", true);
         run(session.model, "query", {{"sort", 0}, {"descending", false}});
+        mouse("historyNavigation");
+        QTRY_COMPARE(session.root->property("currentPage").toString(), QString("history"));
+        QTRY_VERIFY(object(session.root, "historyRow_0"));
+        capture("change-history");
+        mouse("navigationBack");
+        QTRY_COMPARE(session.root->property("currentPage").toString(), QString("ledger"));
         QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
         mouse("ledgerRow_1");
         QCOMPARE(session.model.state().value("selectionCount").toInt(), 1);
@@ -1765,6 +1771,14 @@ private slots:
         };
         mouse("categoryNavigation");
         for (const auto& name : {"Groceries", "Household", "Income"}) createCategory(session.model, session.root, name);
+        QString incomeId;
+        for (const auto& item : session.model.state().value("categories").toList()) {
+            const auto category = item.toMap();
+            if (category.value("path").toString() == QString("Income")) incomeId = category.value("id").toString();
+        }
+        QVERIFY(!incomeId.isEmpty());
+        mouse("categoryIncome_" + incomeId);
+        QTRY_VERIFY(!session.root->property("categorySaving").toBool());
         mouse("accountNavigation");
         QFile card(session.path("card.qif")); QVERIFY(card.open(QIODevice::WriteOnly));
         card.write("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nLGroceries\n^\nD2026-01-20\nT6.00\nPMarket refund\nLGroceries\n^\nD2026-01-22\nT-20.00\nPCorner shop\nSGroceries\n$-12.00\nSHousehold\n$-8.00\n^\nD2026-02-15\nT-55.00\nPMarket\nLGroceries\n^\nD2026-02-22\nT-15.00\nPHome supplies\nLHousehold\n^\n"); card.close();
@@ -1823,6 +1837,22 @@ private slots:
         };
         chooseChart(QStringLiteral("Bar — grouped periods"));
         QCOMPARE(graph->property("currentIndex").toInt(), 2);
+        auto* expenses = qobject_cast<QQuickItem*>(object(session.root, "reportExpensesGroup"));
+        auto* incomeGroup = qobject_cast<QQuickItem*>(object(session.root, "reportIncomeGroup"));
+        QVERIFY(expenses);
+        QVERIFY(incomeGroup);
+        for (auto* item : {expenses, incomeGroup}) {
+            for (auto* parent = item->parentItem(); parent; parent = parent->parentItem()) {
+                if (!parent->property("contentY").isValid() || parent->property("contentHeight").toDouble() <= parent->height()) continue;
+                const auto y = item->mapToItem(parent, QPointF(0, item->height()/2)).y();
+                if (y < 0 || y > parent->height()) parent->setProperty("contentY", qBound(0.0,
+                    parent->property("contentY").toDouble() + y - parent->height()/2,
+                    parent->property("contentHeight").toDouble() - parent->height()));
+            }
+        }
+        QTest::qWait(150);
+        QVERIFY(session.window->contentItem()->contains(expenses->mapToScene(QPointF(8, expenses->height()/2)).toPoint()));
+        QVERIFY(session.window->contentItem()->contains(incomeGroup->mapToScene(QPointF(8, incomeGroup->height()/2)).toPoint()));
         capture("reports-editor");
         mouse("showReport");
         QTRY_COMPARE(workspace->property("mode").toString(), QString("result"));
@@ -2067,6 +2097,15 @@ private slots:
         createCategory(session.model,session.root,"Groceries");
         createCategory(session.model,session.root,"Household");
         createCategory(session.model,session.root,"Food: Meals out");
+        createCategory(session.model,session.root,"Income");
+        QString incomeId;
+        for (const auto& item : session.model.state().value("categories").toList()) {
+            const auto category = item.toMap();
+            if (category.value("path").toString() == QString("Income")) incomeId = category.value("id").toString();
+        }
+        QVERIFY(!incomeId.isEmpty());
+        mouse("categoryIncome_" + incomeId);
+        QTRY_VERIFY(!session.root->property("categorySaving").toBool());
         mouse("categorySortAscending");
         capture("categories-workspace");
         // Manage a category through its real row context menu.

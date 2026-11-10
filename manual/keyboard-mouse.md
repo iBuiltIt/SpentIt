@@ -21,6 +21,10 @@ Click a row to select it without opening its editor.
 - With the transaction list focused, **Up/Down** moves the selection;
   **Home/End** goes to the first or last row. Hold **Shift** to extend
   the selection.
+- **Command+A** on macOS, or **Ctrl+A**, selects every transaction in the
+  current list, including rows that are off screen. It leaves out Opening
+  Balance. **Command+Shift+A**, or **Ctrl+Shift+A**, clears the selection.
+  In a text field those shortcuts act on the text.
 - **Enter:** open the focused transaction.
 - **Right-click:** open the actions for the selection. Check the selected
   rows before changing or deleting them.
@@ -42,10 +46,10 @@ another row leaves that editor where it is.
 - **Home/End** in a text field: move to the start or end of its text.
   Hold **Shift** to select the text along the way.
 
-For a saved editor change, use **Undo edit**. In a clean editor,
-**Command+Z** on macOS or **Ctrl+Z** on other platforms does the same;
-while typing, it undoes text instead. Other actions have their own Undo
-controls, and later changes can make Undo unavailable.
+For a saved change, use the **Undo** button beside search. Its name
+follows the action. In a clean editor, **Command+Z** on macOS or
+**Ctrl+Z** does the same; while typing, it undoes text instead. A later
+saved action replaces it.
 
 [Editing and Undo](add-correct-transactions.md#correct-an-entry).
 
@@ -72,7 +76,8 @@ Choosing a date fills the field. Save the surrounding edit when ready.
 - Click a sortable column heading to sort; click it again to reverse
   the order. **Date** returns to date order.
 - Click the arrow beside a transfer category to visit its other posting.
-- Use **Back** and **Forward** to return to places you’ve visited.
+- Use **Back** and **Forward** to return to places you’ve visited. They
+  are dimmed when there is nowhere to go.
 - Double-click a category or Total amount in a report to see the
   transactions behind it.
 
@@ -107,3 +112,5 @@ and search.
 
 Use **Close Help** to return to your work, including when a Save / Discard /
 Stay dialog is waiting behind Help. Escape in that dialog means Stay.
+In the Rules or Reports leave dialog, Escape means **Cancel**.
+Closing Help does not choose a button for you.

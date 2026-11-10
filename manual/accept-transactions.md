@@ -18,9 +18,9 @@ in balances and reports. Accepting marks them as checked; it isn’t needed to s
 ## Accept the transactions you’ve checked
 
 Open **Review** in the sidebar. Look through any remaining questions, then
-choose **Accept transactions** at the top.
+choose **Accept transactions** at the bottom.
 
-![Review with no remaining questions and the Accept transactions button at the top.](images/accept-ready.png)
+![Review with no remaining questions. Accept transactions is in the footer.](images/accept-ready.png)
 *Accept transactions covers the new entries in both Chequing and Credit card.*
 
 These screenshots show the purchases and refund before recording the card payment.
@@ -42,23 +42,28 @@ with **Undo import…**. Check the imported account and amounts before accepting
 
 A remaining Review item does not always prevent acceptance. Read the question
 and decide whether to resolve it now or leave the transactions new.
-The action at the bottom of Review tells you whether you can proceed.
+Choosing **Accept transactions** while questions or warnings remain opens
+**Accept transactions?**
 
 - **Possible duplicates or transfers:** use the
   [Review choices](review-duplicates-transfers.md) to say which entries belong
-  together. Acceptance does not merge duplicates or link transfers for you.
-- **Warnings you may proceed with:** **Ignore warnings and accept** becomes
-  available when there are no blocking problems. Use it only if you understand
+  together. You can also answer a duplicate from the rose bar in its ledger.
+  Acceptance does not merge duplicates or link transfers for you.
+- **Warnings you may proceed with:** **Accept anyway** is available when
+  there is no problem that must be fixed first. Use it only if you understand
   the warnings. Suspected duplicates are kept as separate transactions.
-- **Problems that must be resolved first:** an unresolved account or transfer
-  destination, or a missing imported-category choice, can prevent acceptance.
-  Complete the offered choices; ignoring warnings cannot bypass these problems.
-- **Failed imported records:** **Accept valid transactions** can accept the
-  usable entries while leaving failed records in Review. It does not repair or
-  accept those failed records.
+- **Problems that must be resolved first:** the warning says **Must be fixed
+  before accepting**. An unresolved account or transfer destination, or a
+  missing imported-category choice, can prevent acceptance. Complete the
+  offered choices. **Accept anyway** cannot bypass them.
+- **Failed imported records:** **Accept anyway** accepts the usable new
+  transactions and leaves the failed records in Review. It does not repair
+  those records.
 
-![Review showing a record with an unreadable amount and the Accept valid transactions button below.](images/accept-review.png)
-*Accept valid transactions accepts the usable entries; this unreadable amount still needs attention.*
+**Return to review** closes the question without accepting.
+
+![Accept transactions dialog with Accept anyway, while one import problem remains.](images/accept-review.png)
+*Accept anyway accepts the usable new entries. The amount that still needs repair stays in Review.*
 
 This later export contains a **5.00** Coffee purchase and an unreadable amount.
 Accepting the Coffee purchase leaves the card balance at **-61.18**.
@@ -88,6 +93,13 @@ quitting?**
   a decision or acceptance fails, SpentIt stays open so you can deal with it.
 - **Quit without accepting** leaves the saved transactions new for next time.
 - **Cancel** returns to SpentIt without quitting.
+
+After you choose to quit, wait for **Closing SpentIt…** to finish. If it
+cannot, the window stays open. See
+[Checking could not finish on quit](backup-recovery.md#checking-could-not-finish-on-quit).
+
+Undoing **Accept transactions** returns those transactions to New. See
+[Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
 
 ## Choose the action you mean {#choose-the-action-you-mean}
 

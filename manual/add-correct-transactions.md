@@ -144,11 +144,33 @@ Select the rows you want, then right-click **Rename payee…** to give them
 the same payee. This changes all selected entries together. Use the
 selection methods in [Find your way around transactions](find-transactions.md).
 
-For a transaction that should not be in the account, choose **Delete selected…**
-from the selection’s right-click menu. Check the confirmation before
-continuing. Deleting changes the account balance and report results.
-For a selection containing new transactions, confirm with **Delete**.
-For an accepted-only selection, inspect the preview and choose **Apply all**.
+**Set memo…** sets the memo on the selected transactions. Memos on
+individual splits stay as they are.
+
+The question says how many selected transactions already have a memo.
+Leave **Overwrite N existing memos** unchecked to fill only the blank
+ones. Check it to replace memos that are already there. Leave the field
+blank with that box checked to clear them. The button then says
+**Clear memo** or **Clear memos**. **Cancel** leaves every memo unchanged.
+
+A memo you enter here stays when rules run later.
+
+For a transaction that should not be in the account, choose **Delete selected…**.
+The question shows how many transactions you selected and each account’s
+balance change.
+
+If a selected transaction is linked to another account, choose:
+
+- **Delete selected only**, which breaks those links and keeps the other
+  account’s entries. Their linked parts become Uncategorized. A draft
+  SpentIt created for the link is removed.
+- **Delete linked entries too**, which removes the linked parts from the
+  other account. Its other parts stay. If nothing remains, that
+  transaction is deleted too.
+
+Choose **Delete** to continue, or **Cancel** to keep the transactions.
+One Undo reverses the whole deletion. An unresolved import match can
+refuse it; settle that match, then try again.
 
 For an entire mistaken import, use
 [Undo last import…](import-transactions.md#undo-a-mistaken-import)
@@ -167,18 +189,72 @@ Check both accounts afterward; see [Review and linking](review-duplicates-transf
 
 ## Undo a saved change {#undo-a-saved-change}
 
-Use **Undo edit** for the latest saved editor changes. In a clean editor,
-**Command+Z** on macOS or **Ctrl+Z** on other platforms does the same;
-while typing, the shortcut undoes text instead.
+The **Undo** button beside search undoes the latest saved action in
+the file. Its name follows that action, such as **Undo edit…** or
+**Undo payee rename…**. **Command+Z** on macOS, or **Ctrl+Z**, does
+the same when you are not typing. While typing, the shortcut undoes
+the text instead.
 
-This sequence is available during the current session. Another change
-to the file, such as an import or acceptance, ends it. Selecting rows
-or searching does not. For selection changes, look for **Undo payee rename**, **Undo restore**
-or **Undo delete**, depending on the operation.
+SpentIt asks before it undoes. The question names the action, how many
+transactions it covers, and which accounts. Choose **Undo**, or
+**Cancel** to leave it.
 
-Accepted transactions also have **History**, where an earlier change
-may still offer Undo after reopening. Later changes can make it
-unavailable. Check what is being reversed before continuing.
+The same Undo covers an edit, a selection change, a category change, a
+rule application, an opening or currency correction, accepting
+transactions, and a whole import. There is no Redo. The next saved
+action replaces it. Selecting rows or searching does not.
+
+One import is one action, including rules that ran during the import.
+Undoing it removes those transaction changes. Accounts, categories and
+opening balances created for the import stay. A rule you run yourself
+later is its own action, and undoing it keeps the saved rule. Undoing
+**Accept transactions** returns those transactions to New.
+
+### Change history
+
+Choose **Change history** in the sidebar, or **History** on an accepted
+transaction. The page lists saved changes since you opened the file,
+for the account in the heading, one row for each action. The account
+name is a menu. It starts as the account you came from. Choose another
+account to see its changes.
+
+Closing the file clears the list. The changes stay in the file until
+you undo them. An empty page has no **Back to account** button. Use
+the window **Back** button to leave.
+
+![Change history for Credit card, with Accept transactions, the import and the opening correction.](images/change-history.png)
+*Each row is one saved action. Open it to read the transactions it changed.*
+
+Open a row to read the transactions. Each one is a line: date, payee,
+category, amount, and New, Accepted or Removed. A memo or further
+splits appear under that line. Another account is named only when the
+action touched it too. A balance line appears when the money changed.
+
+**Show in ledger** opens the highlighted transaction. A removed
+transaction has no ledger button. **Undo** is on every open action.
+When nothing later changed those transactions, confirm **Undo**. When
+later changes share a transaction, the question is **To undo, these
+changes also need to be undone**. Those changes are listed newest
+first. **Yes, undo all** undoes the whole list. **Cancel** leaves them.
+Changes that do not share those transactions stay.
+
+The Undo button beside search undoes only the newest action in the file.
+
+### When Undo is no longer offered
+
+A successful **File → Close file**, switching files, or quit clears
+Undo. Transactions you left new are still there. **Undo last import…**
+can still be available.
+
+If closing fails or you cancel it, or SpentIt stops unexpectedly, Undo
+is still there when you return. **Check file** in Settings does not
+clear Undo.
+
+**Discard new transactions…**, and undoing an import that is not the
+latest action, wait until Undo is empty. The message is **Undo the
+current actions, or close and reopen the file first.** Undo the actions
+beside search, or close the file successfully, then try again. If that
+import is the latest action, the Undo button beside search undoes it.
 
 If SpentIt cannot confirm that a change was saved, reopen the file and
 check the transaction before trying again.

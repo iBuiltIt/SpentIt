@@ -1,5 +1,25 @@
 # Project status
 
+## Manual and Help pass — 2026-11-09
+
+The owner gave Go for the accumulated manual pass. MAN-001 through MAN-020
+are written into the chapters. Live labels were used where the backlog had
+been overtaken. Image links stay `images/<name>.png`. The bundle has 39
+pictures, including new `images/change-history.png`. Set memo, file exchange
+and About are explained in the text without new pictures.
+
+On macOS, Qt 6.12.0, rules-enabled Release: the eleven chapter walkthroughs
+staged and then installed all 39 pictures. `help.prepare` passed in 0.18 s.
+`help.catalog` passed in 0.08 s. Offscreen `createOpenChapterReading` passed
+18/18 in 15.2 s. `./build/SpentIt` was relinked with that bundle. Linux,
+Windows and a person clicking Help were not checked. No commit was made.
+Formats stay **70 with rules / 69 without**.
+
+The owner then asked for a language revision of these uncommitted chapters.
+Extra sentences were removed. Wording the application change did not require
+was restored. Pictures were not recaptured. `help.prepare` passed again,
+9 tests in 0.06 s. The installed Help bundle was not rebuilt.
+
 ## Change history workspace — implemented, 2026-11-09
 
 The owner gave implementation Go for the [Change history handoff](change-history-handoff.md).

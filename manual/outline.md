@@ -205,13 +205,13 @@ up, unavailable original values and unavailable Undo.
   and that rules do not create transfers.
 - Explain transaction rules and split rules using the same example transaction.
 - Explain rule ordering and when rules are applied during import.
-- Choose All transactions in this account or New transactions only.
+- Choose All transactions or New transactions only for the account in Rules.
 - Preview matching transactions; distinguish saving a rule from applying it.
 - Explain Save and apply, selected-rule actions, available all-enabled actions
   and Undo without implying unrelated drafts are saved together.
 - Enable, disable or delete a rule; explain that this alone does not reverse
   categories already assigned.
-- Leave with unfinished edits: Save, Discard or Stay.
+- Leave with unfinished edits: Save all changes, Discard all changes or Cancel.
 
 **Screenshots:** Rules list/editor, preview and leave-screen decision.
 **Problems here:** No matches, unexpected matches, already categorized items,
@@ -264,7 +264,8 @@ matching behavior before explaining original versus edited text.
 and contributing transactions with a split included only in part.
 **Problems here:** Empty report, unexpected total, unavailable selected account/category,
 negative pie values and results that could not refresh. Do not promise printing
-or export before those actions are available.
+before that action is available. SpentIt Export can copy a saved report
+definition. It does not print the chart or copy the transactions.
 
 ## 12. Look after your work and resolve remaining problems
 

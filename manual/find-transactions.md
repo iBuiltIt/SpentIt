@@ -47,9 +47,10 @@ the arrow for the part you want.
 ### Is it accepted?
 
 Row shading distinguishes new transactions, but selection can cover
-that shading. Double-click the row: **History** appears for an accepted
-transaction. A saved transaction without that button has not yet been
-accepted. Double-click again to close the editor.
+that shading. Double-click an accepted row and **History** opens
+[Change history](add-correct-transactions.md#undo-a-saved-change).
+A saved transaction without that button has not yet been accepted.
+Double-click again to close the editor.
 
 Both kinds already count in the account balance. You do not need to
 accept a transaction just to keep it when you close the file.
@@ -66,9 +67,15 @@ transaction you are editing before typing.
 - With the ledger focused, **Up/Down** moves the selection and
   **Home/End** moves to the first or last row. **Enter** opens the
   focused transaction.
+- With the transaction list focused, **Command+A** on macOS, or
+  **Ctrl+A**, selects every transaction in the current list, including
+  rows that are off screen. The Opening Balance row is left out.
+  **Command+Shift+A**, or **Ctrl+Shift+A**, clears the selection.
+  In a text field those shortcuts act on the text.
 
-Right-click a selection to see its available actions. Those actions
-can affect several transactions, so check the selection first.
+The bottom status line shows **Selected: n**. Right-click a selection
+to see its actions. One action covers the whole selection, and one
+Undo reverses it. Check the rows before you continue.
 
 ## Find a purchase
 
@@ -118,6 +125,17 @@ longer visible, it returns nearby.
 
 ## See what needs attention
 
+A rose mark on a row means this account has a possible duplicate.
+Above the list, **Possible duplicate** names the entries and whether
+each is **New** or **Accepted**. When more than one match is offered,
+choose it, then use **Merge**, **Keep this pair separate**, or
+**None of these match**. **Show match** finds the other entry. If a
+search is hiding it, the button says **Reveal hidden match (clear
+filter)**. **Next possible duplicate** moves to another marked row.
+**Undo review** reverses the latest review answer while it is available.
+You can answer the same questions in Review. Selecting a row does not
+answer them.
+
 Choose **Review** in the sidebar. Its count is the number of outstanding
 review items, not the number of new transactions. Items are grouped by
 account and can include possible duplicates, transfer matches, and
@@ -128,11 +146,11 @@ Both entries currently count, making the card balance -98.36 while
 both remain.
 
 ![Review showing an accepted Market purchase and a new Market groceries entry as a possible duplicate in Credit card.](images/transactions-review.png)
-*These entries might describe the same purchase. Review presents the question; opening it does not answer it.*
+*These entries might describe the same purchase. Review presents the question; opening a row does not answer it.*
 
-Read the question and compare the entries before choosing an answer.
-**Inspect** opens transaction details; **Correct** opens a repairable
-record. Duplicate and transfer decisions
+Read the question and compare the entries before choosing **Merge** or
+**Keep separate**. **Show in ledger** opens a duplicate in its account.
+**Correct** opens a repairable record. Duplicate and transfer decisions
 come next in the guide.
 
 The bottom status line reports activity and outcomes. **Nothing left

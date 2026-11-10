@@ -105,8 +105,13 @@ Choose an ordinary category in the rule’s editor. Rules cannot create transfer
 
 **“Transactions changed. Refresh the report to see current amounts.”**
 
-Choose **Refresh** before opening another amount.
+Choose **Refresh report** before opening another amount.
 [Check report results](reports.md#if-the-result-needs-attention).
+
+**“No accounts selected. Edit the report to choose accounts.”**
+
+Return to the report and check at least one account.
+[Choose what belongs](reports.md#make-your-first-report).
 
 ## Saved changes and uncertain results {#saved-changes-and-uncertain-results}
 
@@ -129,5 +134,33 @@ transactions before trying again.
 Choose **Return** to go back to the app. **Quit anyway** closes it;
 SpentIt checks again next time you open the file. Neither choice repairs damage.
 [Checking on quit](backup-recovery.md#checking-could-not-finish-on-quit).
+
+**“Couldn’t close the file”**
+
+Closing did not finish. **Return** keeps you in the file so you can try
+again. **Quit anyway** closes SpentIt and checks the file the next time
+you open it. Neither choice repairs damage. Undo remains until a close
+succeeds.
+[Checking on quit](backup-recovery.md#checking-could-not-finish-on-quit).
+
+**“Undo the current actions, or close and reopen the file first.”**
+
+**Discard new transactions…**, and undoing an import that is not the
+latest action, wait until Undo is empty. Undo the actions beside search,
+or close the file successfully, then try again.
+[When Undo is no longer offered](add-correct-transactions.md#undo-a-saved-change).
+
+**“Statement contains conflicting fields; no import was saved. Obtain a corrected export and try again.”**
+
+**“The statement balance could not be read; no import was saved. Obtain a corrected export and try again.”**
+
+Get a corrected export. These refusals happen before you choose accounts.
+A statement that simply has no balance can still be imported.
+[When something needs attention](import-transactions.md#when-something-needs-attention).
+
+**“Choose an existing category.”**
+
+The selected rule has no category yet. Choose one in its editor.
+[Set up a rule](rules.md#make-a-market-rule).
 
 If your message is not listed, read [When a file or change needs attention](backup-recovery.md#when-a-file-or-change-needs-attention).

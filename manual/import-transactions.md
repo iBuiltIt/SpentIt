@@ -56,17 +56,25 @@ For a new account, check:
   show 1900-01-01.
 - **Opening balance:** leave **0.00**, or choose **Use reported balance
   as opening** when offered and appropriate. This uses the reported
-  amount exactly; it does not work backward from a closing balance.
+  amount exactly. It does not work backward from a closing balance.
 
 New accounts take their names from the export. Existing accounts
-keep their openings. See [Set the starting balance](accounts.md#set-the-starting-balance)
-if you are unsure which balance to use.
+keep their openings. To change an opening later, use
+[Correct opening](accounts.md#set-the-starting-balance).
+The calendar beside **Opening date** fills that date.
 
 ![Account mapping for Credit card and Cash, creating both in CAD with their opening choices.](images/import-mapping.png)
 *Our Cash example uses a known opening of 50.00. Credit card starts at zero.*
 
 Choose **Import** after every account has a destination. **Cancel**
 leaves the mapping without importing.
+
+While the import runs, **Importing transactions…** replaces the mapping.
+**Applying imported categories…** does the same for a category choice.
+**Cancel** is there only while the step can still be cancelled. If you
+cancel or the step fails, choices that are still pending come back.
+Cancelling a category choice does not undo transactions already saved.
+A finished import stays until you undo it.
 
 ## Choose which categories to keep {#choose-which-categories-to-keep}
 
@@ -99,9 +107,12 @@ The destination must be another active account in the same currency.
 Create or reactivate it first if needed. Selecting an account creates
 the transfer posting in that account; it does not merely change a label.
 
-For mapped imports, **Resolve mapped transfers** uses the account
-choices you confirmed. Matching the two sides of a payment is covered
-later in the guide.
+For mapped imports, **Set up imported transfers?** can use the account
+names you confirmed. **Set up transfers** links matching postings and
+can create the other side of an explicit transfer. It can change
+balances in those accounts. It is not a search for similar payments.
+**Cancel** leaves them for Review. Matching the two sides of a payment
+is covered later in the guide.
 
 ## Check the result
 
@@ -131,10 +142,17 @@ If the whole export is unsupported, obtain a supported transaction
 export. If its currency differs from the account, choose the correct
 account; changing a currency label does not convert the money.
 
-While processing, **Cancel** or **Cancel processing** is available
-only when the operation can still be cancelled. Wait for its outcome.
-Completed imports remain saved. After an interrupted import, SpentIt
-may report that the incomplete import was removed and can be imported again.
+If an OFX, QFX, QBO or ASO statement repeats a field with conflicting
+values, SpentIt says **Statement contains conflicting fields; no import
+was saved. Obtain a corrected export and try again.** If the statement’s
+balance cannot be read, it says **The statement balance could not be
+read; no import was saved. Obtain a corrected export and try again.**
+Get a corrected export. A statement that simply has no balance can
+still be imported. A new account then starts at zero unless a reported
+opening is offered.
+
+After an interrupted import, SpentIt may report that the incomplete
+import was removed and can be imported again.
 
 If a message says SpentIt could not confirm whether the import was
 saved, reopen the file and check the transactions before trying again.
@@ -143,7 +161,8 @@ saved, reopen the file and check the transactions before trying again.
 
 Use **Import…** again for the next export. SpentIt recognizes certain
 repeated transactions in the same account as already present.
-Possible duplicates that need a decision appear in **Review**.
+Possible duplicates that need a decision appear in **Review**, and
+on the rose bar in the account’s ledger.
 Two purchases with the same date and amount are not necessarily duplicates.
 
 ## Undo a mistaken import {#undo-a-mistaken-import}
@@ -151,18 +170,23 @@ Two purchases with the same date and amount are not necessarily duplicates.
 For an import into the wrong account, undo it first, then import the
 file into the correct account.
 
-Right-click an account and choose **Undo last import…** for its newest
-eligible import. To choose an earlier one, open **Review → Undo import…**,
-select the account, then the import. The list is newest first and uses
-file type, dates, and record counts to help identify it.
+If that import is the latest saved action in the file, the **Undo**
+button beside search can undo it. Right-click an account and choose
+**Undo last import…** for its newest eligible import. To choose one,
+open **Review → Undo import…**, select the account, then the import.
+The list is newest first and uses file type, dates, and record counts
+to help identify it. An older import waits until Undo is empty. The
+message is **Undo the current actions, or close and reopen the file
+first.**
 
 ![Undo this import confirmation showing three new transactions to remove and Credit card and Cash as affected accounts.](images/import-undo.png)
 *Check the removal counts and affected accounts before choosing Undo import.*
 
 Undo applies to the **whole selected file import**, including its other
-accounts and transfer matches. Earlier imports remain; transactions
-also kept by another import may remain. Created accounts, categories,
-and opening settings remain too.
+accounts, transfer matches, and any rules that ran while it was
+importing. Earlier imports remain. Transactions also kept by another
+import may remain. Accounts, categories and opening balances created
+for the import stay, including a new account’s chosen opening.
 
 Check the preview, then choose **Undo import**, or **Cancel** to keep it.
 An import containing accepted transactions is not eligible. Later
@@ -172,7 +196,14 @@ conflicting edits or links can also prevent Undo.
 work across imports in the selected account, not just one file import.
 Its confirmation lists affected accounts, including generated matching
 transactions that may also be removed. Accepted transactions remain.
-Use it only when you intend that wider removal.
+It also waits until Undo is empty, with the same message.
+Use it only when you intend that wider removal. There is no Undo for
+the removal itself.
+
+To copy transactions out of SpentIt, or to copy rules, reports and
+categories without the transactions, see
+[Copy transactions or saved definitions](backup-recovery.md#copy-transactions-or-saved-definitions).
+That is separate from a backup.
 
 Next, get familiar with the transaction list and find the entries
 you want to check.

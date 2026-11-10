@@ -21,14 +21,14 @@ Choose **Reports** in the sidebar, then **New report**.
    Chequing and Credit card checked.
 3. Under **Categories**, keep **Groceries** and **Household** checked.
    Uncheck Income, Uncategorized and any other categories for this example.
-4. Choose **Bar — grouped periods** under **Graph**.
+4. Under **Chart**, choose **Bar — grouped periods**.
 5. Set the **Main period** From **2026-01-01** through **2026-01-31**.
 6. Choose **Add comparison** and set its dates to **2026-02-01** through
    **2026-02-28**.
-7. Choose **Save and show**. Scroll down if the button is below the window.
+7. On the report’s row, choose **Save and show**.
 
-![Report details for Household spending, with account and category choices, a grouped bar graph and custom dates.](images/reports-editor.png)
-*Choose the accounts, categories and dates that answer your question.*
+![Household spending report details. Groceries and Household are checked, the Income group is clear, and the chart is Bar — grouped periods.](images/reports-editor.png)
+*The Income checkbox above the list selects that group.*
 
 The screenshots use the earlier Market purchase and refund, plus Corner shop’s
 12.00 Groceries / 8.00 Household split. To try the February comparison,
@@ -51,10 +51,12 @@ actions include categories hidden by search; Uncategorized stays separate.
 Set each category’s Income checkbox in **Categories** to choose its group.
 Changing that flag leaves saved reports’ selections as you chose them.
 
-Search a checklist to find a name. **All** and **None** affect the whole
-checklist, including choices hidden by the search. Saved reports do not
-automatically include accounts or categories you create later; edit their
-selections when needed.
+Search a checklist to find a name. The **X** in that search clears it.
+**Clear expenses** and **Clear income** clear those groups, including
+categories the search is hiding. **Select all categories** selects every
+category, including hidden ones. Accounts use **Select all accounts** and
+**Clear accounts**. Saved reports do not automatically include accounts
+or categories you create later; edit their selections when needed.
 
 Checking a category such as Auto also checks matching names such as Auto: Gas.
 You can uncheck each separately. Results give each category its own row;
@@ -122,7 +124,7 @@ complete.
 
 ## Choose a chart
 
-Use **Back to Reports** to change Graph, then **Save and show**.
+Use **Back to Reports** to change **Chart**, then **Save and show**.
 
 - **None** shows just the table.
 - **Bar — separate periods** gives each period its own chart. Periods in the
@@ -171,32 +173,47 @@ return to an ordinary account ledger.
 
 ## Keep and change your reports {#keep-and-change-your-reports}
 
-**Save** keeps the selected report’s settings. **Save and show** also opens its
-results. **Show** beside a report name saves that report’s changed settings
-before opening it; unrelated drafts remain unfinished.
+**New report** is at the top of the list. It stays unavailable while a new
+report is still unfinished. An empty list says **No reports yet.**
 
-Select a report to rename it in **Report details**, then Save. **Duplicate**
-starts a copy you can name and adjust. Save or discard a new report before
-starting another.
+Each report’s row has **Show report**. While that report has unsaved
+changes, the button reads **Save and show**. It saves that report and
+opens it. Other unfinished reports stay unfinished.
 
-**Delete** removes the selected report from the draft list. Choose **Save all
-changes** to keep that deletion. This saves your other report drafts too; it
-does not delete any transactions. Until then, leaving Reports and choosing
-**Discard** restores the saved list.
+**Save report** keeps the selected report without opening it. **Discard
+changes** drops that report’s unsaved edits. A new report uses **Discard
+draft**. **Duplicate report** starts a copy of the selected report,
+including edits you have not saved yet. Save or discard that new draft
+before starting another.
 
-When leaving with unfinished report changes, **Save** saves all report drafts,
-**Discard** restores all saved reports, and **Stay** keeps editing. Use the
-selected report’s own **Discard** button to undo just its unfinished changes.
+Select a report to rename it in **Report details**, then **Save report**.
+
+**Delete report…** asks **Delete report “name”?** **Delete report** removes
+the saved report now and does not change transactions. **Cancel** keeps
+the report. There is no Undo for removing the report. If a new draft is
+still open, that draft is selected afterward.
+
+When leaving with unfinished report changes, the question is **Save
+changes before leaving Reports?** **Save all changes** saves every
+unfinished report. **Discard all changes** restores the saved reports.
+**Cancel**, and Escape, keep you in Reports. Use the selected report’s
+own **Discard changes** or **Discard draft** to drop only its edits.
+
+Printing a report is not available. **File → SpentIt Export…** can copy
+the saved report. It does not copy the transactions.
 
 ### If the result needs attention {#if-the-result-needs-attention}
 
-- **Transactions changed:** choose **Refresh** before opening another amount.
+- **Transactions changed. Refresh the report to see current amounts.**
+  Choose **Refresh report** before opening another amount.
+- **No accounts selected. Edit the report to choose accounts.** Return to
+  the report’s settings and check at least one account.
 - **A saved edit could not refresh the report:** return to the report and choose
-  Refresh. Do not repeat the financial edit just to refresh the screen.
+  **Refresh report**. Do not repeat the financial edit just to refresh the screen.
 - **A selected account or category is no longer available:** return to the
   report’s settings and correct the selection.
 - **An empty or unexpected result:** check accounts, categories, currency and
   the resolved dates. Open an amount to see which parts of which transactions
   count. Check Review for imported records needing repair.
 
-Printing and exporting reports are not available yet.
+The result names the accounts it used.

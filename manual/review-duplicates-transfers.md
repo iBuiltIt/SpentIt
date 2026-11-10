@@ -15,21 +15,24 @@ to Credit card belongs in both accounts.
 **Link** connects the two sides of a transfer between accounts.
 
 Open **Review** in the sidebar. Read the question above each group
-before answering **Yes** or **No**. Use **Inspect** to read a transaction’s
-details; opening it does not answer the question.
+before you answer it. **Accept transactions** is at the bottom and
+covers every account.
 
 ## Is it the same purchase? {#is-it-the-same-purchase}
 
-Under **Are these the same?**, compare the date, amount and payee
-with your statement. Expand the category’s split count to see its
-parts and memos. Two purchases with the same date and amount can
-still be separate purchases.
+Under **Possible duplicates**, compare the date, amount and payee
+with your statement. Each row is marked **New** or **Accepted**.
+Expand the category’s split count to see its parts and memos. Two
+purchases with the same date and amount can still be separate purchases.
 
-- **Yes** merges the displayed transactions. Keep this for entries
-  that really describe the same event.
-- **No** keeps them separate and remembers that answer.
-- For more than two entries, select the transaction rows you want
-  to merge and choose **Selected yes**. The other entries remain.
+- **Merge 2 rows** keeps one transaction for a pair that describes
+  the same event.
+- **Keep separate** remembers that they are different.
+- For more than two entries, check the rows that belong together.
+  The button then says **Merge N selected rows…**. Until two rows
+  are checked, it says **Select rows to merge**.
+- **Show in ledger** opens one of the entries in its account.
+- **Inspect** opens a row so you can read it. It does not answer the question.
 
 If asked **Choose the transaction to keep**, choose the entry whose
 current details you want to retain. Its payee, memo, categories and
@@ -53,19 +56,21 @@ these pictures show only the Market example.
 
 ### Merge several matches
 
-Use **Include match** beside each duplicate question you have checked.
-For a group larger than two, select at least two transaction rows
-first. Choose the entry to keep if asked.
+**Select all merges** includes every duplicate group that is ready.
+You can also check **Include match** beside the groups you have
+compared. For a group larger than two, check at least two transaction
+rows first. Choose the entry to keep if asked.
 
 The group’s label changes to **Selected match** with a number.
-Choose **Merge N selected matches** to merge those groups together.
-One **Undo** reverses that whole batch.
+Choose **Merge N groups** to merge those groups together. One **Undo**
+reverses that whole batch. **Clear merge selection** drops the pending
+groups without merging them.
 
-Selecting transaction rows chooses the entries within a group;
+Checking transaction rows chooses the entries within a group.
 **Include match** chooses the group for the batch. Leaving Review or
 changing the file’s transactions clears the pending group choices.
-Inspection alone keeps them. If any selected match is no longer
-valid, the batch is refused rather than partly merged.
+Reading a row does not clear them. If any selected match is no longer
+valid, the batch is refused and nothing in it is merged.
 
 ## Is it a payment between accounts? {#is-it-a-payment-between-accounts}
 
@@ -78,12 +83,12 @@ dates. Select the matching candidate’s round button if there is more
 than one. A preselected candidate is only a suggestion.
 
 ![Review transfer question connecting a 36.18 Credit card deposit with the 36.18 Chequing withdrawal dated one day earlier.](images/review-link.png)
-*Both accounts need their posting. Yes links the selected pair; it does not merge them into one account.*
+*Both accounts need their posting. Link connects the selected pair. It does not merge them into one account.*
 
-Choose **Yes** to link the selected pair, or **No** to reject all the displayed
-comparisons, keeping the transactions. If either transaction has several
-splits, use **Split to link** to choose the relevant part on each side.
-Check any preselected split before proceeding.
+Choose **Link** for the selected pair, or **Not a transfer** to reject
+the displayed comparisons and keep both transactions. If either
+transaction has several splits, use **Split to link** to choose the
+relevant part on each side. Check any preselected split before proceeding.
 
 Suggestions use the same currency, opposite signs, and dates no more
 than seven calendar days apart. Ordinary spending categories can
@@ -119,8 +124,8 @@ Suppose Chequing shows **37.18 paid** but Credit card received **36.18**.
 If the extra **1.00** is a real fee, it belongs in an ordinary category,
 not in the amount transferred.
 
-For eligible suggestions, **Yes** opens **Link the matching amount**.
-Choose the category for the difference, then **Link**. **Cancel**
+Choose **Link**. When the amounts differ, **Link the matching amount**
+opens. Choose the category for the difference, then **Link**. **Cancel**
 leaves the question unanswered.
 
 ![Link the matching amount dialog offering to link 36.18 and categorise the 1.00 difference, with Link and Cancel buttons.](images/review-difference.png)
@@ -139,33 +144,36 @@ and categories rather than changing accurate values to force a match.
 ## If there is no suitable question
 
 For a duplicate you have identified yourself, select the entries in
-one account’s ledger, right-click and choose **Merge**. Check which
-entry will be kept, just as in Review.
+one account’s ledger, right-click and choose **Merge**. You can also
+use the duplicate line above the ledger, described in
+[Find your way around transactions](find-transactions.md#see-what-needs-attention).
+Check which entry will be kept, just as in Review.
 
 For a transfer whose two entries each have just one split, select
 the first entry, right-click and choose **Link**. Switch accounts,
 select the other entry, then right-click and choose **Link** again.
-Review any confirmation before applying it. The command still checks
+Read the confirmation before applying it. The command still checks
 whether the two postings can be linked.
 
-For recurring unwanted suggestions, **Exclude…** on a transfer row
-opens **Don’t suggest links**. By default, payee or memo text must
-match the whole field, ignoring capitalization but keeping spaces and
-punctuation. You can limit the
-exclusion to that account. Choose **Preview** before **Save**;
-it affects future suggestions, not just the current question. Manage
-these exclusions through **Transfer suggestions…** in Review.
+For suggestions you do not want to see again, choose **Hide suggestions…**
+on a transfer row. **Don’t suggest links** asks for payee or memo text.
+By default that text must match the whole field, ignoring capitalization
+but keeping spaces and punctuation. You can limit it to that account.
+Choose **Preview** before **Save**. It affects later suggestions.
+**Transfers…** in Review is where you add a transfer yourself.
+Hidden suggestions are listed in **Settings → Hidden transfer suggestions…**.
 
 ## Undo a mistaken answer
 
-Use **Undo** at the bottom of Review while it is available. It reverses
-the latest review decision, including a Merge or Link. You can step back
-through a sequence of review decisions; a batch Merge is one step.
+**Undo** at the top of Review reverses the latest saved action in the
+file, including a Merge, a Link or a batch of merges. Confirm it before
+continuing. A batch is one step. There is no separate **Unlink** button.
 
-Other changes to the file end that Undo sequence. If Undo is unavailable,
-don’t delete a posting just to break a link: that also changes the account
-balance. Inspect both sides before making a correction. The current UI
-has no separate **Unlink** button.
+A later saved action replaces that Undo. If a later change shares a
+transaction, Change history can still undo the review answer with it.
+See [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
+If Undo is unavailable, look at both sides before you delete a posting.
+Deletion also changes the account balance.
 
 A refused Merge or Link leaves a message explaining what needs attention.
 Different current totals or existing transfer relationships can prevent

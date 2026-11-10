@@ -64,7 +64,8 @@ valid date and an amount with the decimal places your currency supports.
 A statement’s reported balance might be its closing balance, after
 all the listed transactions. Don’t use it as the opening as well:
 those transactions would be counted twice. When an import offers a
-reported amount, check what it represents before choosing it.
+reported amount, you choose it while matching accounts. Check what it
+represents before choosing it.
 
 ## Read and switch accounts
 
@@ -73,8 +74,9 @@ The highlighted account is the one you’re viewing. Its balance includes
 the opening and saved transactions, even those not yet accepted.
 Check the currency code beside the balance too.
 
-Use **Back** and **Forward** to return to places you’ve visited. If
-you have an unfinished edit, answer the prompt before leaving it.
+Use **Back** and **Forward** to return to places you’ve visited. They
+are dimmed when there is nowhere to go. If you have an unfinished edit,
+answer the prompt before leaving it.
 
 ## Later: manage your accounts
 
@@ -120,9 +122,8 @@ This changes the currency without converting the amounts:
 to an account, not to exchange money. If the new currency cannot
 represent an existing amount exactly, SpentIt refuses the change.
 
-When **Undo opening or currency…** appears in the account menu,
-it can undo the eligible change. Later financial changes can make
-that Undo unavailable.
+When **Undo opening or currency…** appears in the account menu, it
+undoes that correction. A later saved action replaces it.
 
 Account actions may be unavailable while SpentIt is busy. Reactivate
 an archived account before correcting its opening or currency.

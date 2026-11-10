@@ -1,9 +1,9 @@
 # 013 — Help system and user manual
 
 Status: **active**  
-Last updated: 2026-11-06  
+Last updated: 2026-11-09  
 Implementation: the offline viewer, twelve chapters and five quick references
-are bundled with 38 screenshots. The whole-manual audit and continuous synthetic
+are bundled with 39 screenshots. The whole-manual audit and continuous synthetic
 walkthrough were completed under the 2026-11-06 Go. A discovered acceptance-replay
 defect received its own implementation Go and correction. Application-wide
 contextual Help is implemented under the subsequent Go; see the contract below.
