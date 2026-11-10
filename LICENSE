@@ -1,0 +1,105 @@
+SpentIt
+Copyright (c) 2026 Stefan Wessels
+
+SpentIt is released under the Unlicense. The dedication below applies to
+SpentIt. It does not apply to third-party components, which keep the licenses
+named after the dedication. Their texts are in third_party/notices/ and are
+shown in About.
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <https://unlicense.org>
+
+Third-party components
+
+These components are not dedicated to the public domain by the Unlicense
+above. A binary of SpentIt includes them under their own terms. Qt is used
+under the LGPL version 3, not under the GPL text that is also copied in
+third_party/notices/. The macOS development build links the platform libraries
+below.
+
+These are the versions in the latest macOS development build.
+
+- Qt 6.12.0, including Core, Gui, Qml, Quick, Quick Controls, Concurrent,
+  Network, Svg, and runtime plugins. LGPL-3.0-only.
+  Source: https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/qtbase-everywhere-src-6.12.0.tar.xz
+  https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/qtdeclarative-everywhere-src-6.12.0.tar.xz
+  https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/qtsvg-everywhere-src-6.12.0.tar.xz
+  Notice: third_party/notices/LGPL-3.0-only.txt
+- Code bundled inside Qt Base and Qt Quick. Permissive notices in
+  third_party/notices/qtbase-notices.txt and qtdeclarative-notices.txt
+- SQLCipher Community 4.19.0. BSD-3-Clause.
+  Source: https://github.com/sqlcipher/sqlcipher/archive/refs/tags/v4.19.0.tar.gz
+  Notice: third_party/sqlcipher/LICENSE.md
+- SQLite 3.53.4, the copy included in that SQLCipher archive. Public domain.
+  Notice: third_party/notices/sqlite.txt
+- PCRE2 10.49. BSD-3-Clause with the PCRE2 binary-distribution exception.
+  Source: https://github.com/PCRE2Project/pcre2/releases/tag/pcre2-10.49
+  Notice: third_party/pcre2/LICENSE.md
+- OpenSSL 3.5.9 and OpenSSL 4.1.0. Apache-2.0.
+  Source: https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz
+  https://github.com/openssl/openssl/releases/download/openssl-4.1.0/openssl-4.1.0.tar.gz
+  Notice: third_party/notices/openssl-3.txt and openssl-4.txt
+- Brotli 1.2.1. MIT.
+  Source: https://github.com/google/brotli/archive/refs/tags/v1.2.1.tar.gz
+  Notice: third_party/notices/brotli.txt
+- Double Conversion 3.4.0. BSD-3-Clause.
+  Source: https://github.com/google/double-conversion/archive/refs/tags/v3.4.0.tar.gz
+  Notice: third_party/notices/double-conversion.txt
+- FreeType 2.15.0. FreeType License.
+  Source: https://downloads.sourceforge.net/project/freetype/freetype2/2.15.0/freetype-2.15.0.tar.xz
+  Notice: third_party/notices/freetype-FTL.txt
+- Graphite2 1.3.15. MIT, or LGPL-2.1-or-later, MPL-2.0, or GPL-2.0-or-later,
+  at the user's choice.
+  Source: https://github.com/silnrsi/graphite/releases/download/1.3.15/graphite2-1.3.15.tgz
+  Notice: third_party/notices/graphite2.txt
+- HarfBuzz 15.1.0. MIT-style.
+  Source: https://github.com/harfbuzz/harfbuzz/releases/download/15.1.0/harfbuzz-15.1.0.tar.xz
+  Notice: third_party/notices/harfbuzz.txt
+- ICU 79.1. Unicode-3.0.
+  Source: https://github.com/unicode-org/icu/releases/download/release-79.1/icu4c-79.1-sources.tgz
+  Notice: third_party/notices/icu4c-79.txt
+- libb2 0.98.1. CC0-1.0.
+  Source: https://github.com/BLAKE2/libb2/releases/download/v0.98.1/libb2-0.98.1.tar.gz
+  Notice: third_party/notices/libb2.txt
+- libpng 1.6.59. libpng license.
+  Source: https://downloads.sourceforge.net/project/libpng/libpng16/1.6.59/libpng-1.6.59.tar.xz
+  Notice: third_party/notices/libpng.txt
+- MD4C 0.6.0. MIT.
+  Source: https://github.com/mity/md4c/archive/refs/tags/v0.6.0.tar.gz
+  Notice: third_party/notices/md4c.txt
+- Zstandard 1.5.7. BSD.
+  Source: https://github.com/facebook/zstd/archive/refs/tags/v1.5.7.tar.gz
+  Notice: third_party/notices/zstd.txt
+- GLib 2.90.1. LGPL-2.1-or-later.
+  Source: https://download.gnome.org/sources/glib/2.90/glib-2.90.1.tar.xz
+  Notice: third_party/notices/glib.txt
+- GNU gettext libintl 1.0. LGPL-2.1-or-later.
+  Source: https://ftpmirror.gnu.org/gettext/gettext-1.0.tar.gz
+  Notice: third_party/notices/gettext.txt
+
+The currency reference files in third_party/iso4217/ are upstream data. This
+dedication does not relicense them. The optional libFuzzer runtime is a
+developer tool, is not part of the application, and stays under Apache-2.0
+with the LLVM exception.

@@ -1,6 +1,6 @@
 # SQLCipher prototype dependency
 
-Selected for the isolated prototype by the owner on 2026-10-25. This does not select the final application architecture or SpentIt license.
+Selected for storage on 2026-10-25. SQLCipher stays under its own license. SpentIt is under the Unlicense.
 
 - Upstream: [SQLCipher Community Edition](https://github.com/sqlcipher/sqlcipher).
 - Pin: release tag **v4.19.0**, SQLite **3.53.4**.
@@ -12,6 +12,6 @@ Selected for the isolated prototype by the owner on 2026-10-25. This does not se
 - SQLCipher license: upstream BSD-style three-clause terms, copied unmodified in [LICENSE.md](LICENSE.md). SQLite's upstream public-domain material is included in the source archive; retain upstream notices in distribution review.
 - Crypto provider used for verification: installed **OpenSSL 3.5.9**, Apache-2.0, through `OpenSSL::Crypto`. OpenSSL is a separately supplied system dependency, not downloaded or version-pinned by this prototype. CMake requires OpenSSL 3.x or newer compatible with that minimum; the exact tested version is recorded, not a reproducible full dependency closure. A shipping build must pin/package/review it separately and retain its notices.
 
-No project license has been added. Third-party terms do not inherit the owner's intended SpentIt resale restriction. See [licensing requirements](../../features/007-licensing-and-distribution.md).
+SpentIt is under the Unlicense. SQLCipher and OpenSSL do not become Unlicense by that choice. See [licensing requirements](../../features/007-licensing-and-distribution.md).
 
 Build instructions: [building](../../doc/building.md).

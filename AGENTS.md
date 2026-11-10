@@ -171,10 +171,8 @@ These are the current rules. The linked documents are the full contracts.
 
 ## Licensing
 
-Public GitHub availability and permanent free access are the owner's intent.
-Selling SpentIt or its derivatives is prohibited. Businesses may use it
-internally for free. Paid human support, training, consulting, and commissioned
-development are allowed only while the software stays free to obtain and use.
-Do not add an Unlicense, GPL, or any other license without an explicit decision.
-Source visibility is not an open-source license. Third-party libraries keep
-their own terms. See [feature 007](features/007-licensing-and-distribution.md).
+SpentIt is released under the Unlicense. See [LICENSE](LICENSE). That
+dedication applies to SpentIt. Third-party libraries and the currency reference
+files keep their own terms. Do not relicense those components, and do not
+replace the Unlicense without an explicit decision. See
+[feature 007](features/007-licensing-and-distribution.md).

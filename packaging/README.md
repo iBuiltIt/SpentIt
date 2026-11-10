@@ -2,7 +2,7 @@
 
 Owner-approved scope, 2026-10-28: use the supplied light/dark artwork, adapt welcome/running icons to system appearance, and prepare local packages. The light artwork is the fixed installed icon. All supplied PNG sizes and both platform containers now preserve transparent outer corners; see [asset maintenance](../assets/images/README.md). Unknown system appearance falls back to light. Desktop environments decide whether they display runtime icon updates; installed Finder/Explorer/launcher icons do not switch. This does not restyle the rest of the existing UI.
 
-These packages are for local development/use. Signing with a distribution identity, notarization, installers, public release and final licensing remain deferred. Dependency metadata accompanies packages; it is not a complete redistribution notice/source compliance bundle. See [licensing scope](../features/007-licensing-and-distribution.md).
+These packages are for local development and use. Signing with a distribution identity, notarization, installers, and public release remain deferred. SpentIt is under the Unlicense. Dependency notices still have to travel with a published package. See [LICENSE](../LICENSE).
 
 ## macOS
 

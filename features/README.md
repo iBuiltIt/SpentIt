@@ -16,7 +16,7 @@ Acceptance criteria are obligations, not reports that tests passed.
 | [004 — Rules and explanations](004-rules-and-explanations.md) | active | Category-gated rules on imported fields. Current-value matching is accepted and not implemented. |
 | [005 — Transaction sheet and navigation](005-transaction-sheet-navigation.md) | active | Ledger, search, selection, return position. Multiline notes and saved layout are deferred. |
 | [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Saved reports, exact allocation totals, charts, calendar, editable drill-down. |
-| [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | Free access and no resale are settled. The license text is not selected. |
+| [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | SpentIt is under the Unlicense. Third-party components keep their own licenses. Publication is not done. |
 | [008 — Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) | active | Explicit same-currency links. Account moves and source-link rewrite are not done. |
 | [009 — Durable import](009-durable-import-milestone.md) | active | The import workflow in the application. Further dialects are not authorized. |
 | [010 — Categories and selection](010-categories-and-selection.md) | active | Independent categories, Income flag, starter list, ledger category menu. |

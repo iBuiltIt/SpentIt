@@ -48,4 +48,6 @@ Track source, tests, documentation, dependency metadata/notices and deliberately
 
 ## Licensing
 
-No project license has been selected. The owner's intent is permanent free access, no sale of SpentIt or its derivatives, and free internal business use; exact terms remain unresolved. These statements are not an operative license. See [licensing and distribution](features/007-licensing-and-distribution.md). Third-party material retains its own terms and notices.
+SpentIt is released under the Unlicense. See [LICENSE](LICENSE). Third-party
+components keep their own licenses, which are named in that file and shown in
+About.

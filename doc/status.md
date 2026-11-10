@@ -65,10 +65,10 @@ implementation, except where a document already says the owner deferred them.
   announced; until then older experimental files stay rejected. Backup and
   restore exist. A further polished recovery workflow is still open. There is
   no forgotten-password recovery.
-- Distribution is not complete. Linux and Windows are development builds and
-  are not release validation. Packaging for publication, signing, and the
-  license text are open. The application UI is Qt. See the
-  [release plan](first-release-plan.md).
+- Distribution is not complete. SpentIt is under the Unlicense in
+  [LICENSE](../LICENSE). Linux and Windows are development builds and are not
+  release validation. Packaging for publication and signing are open. The
+  application UI is Qt. See the [release plan](first-release-plan.md).
 - Category history, undone Review-link history, link-exclusion history, and
   account, opening, and currency command history still survive successful close.
   The owner deferred that retention cleanup. It is not the next task. Revisit

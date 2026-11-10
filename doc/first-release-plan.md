@@ -30,32 +30,17 @@ scope, not every possible extension.
 | File compatibility | The announced first release starts the compatibility commitment. Until then, experimental formats stay disposable and older files stay rejected. After release, require a supported upgrade and recovery policy. Never silently invalidate a released file. |
 | Verification | Establish a release-wide regression baseline for every shipped platform, resolve failures, check financial faults and recovery, restore backups, and walk through key native workflows. Fix stale fixtures without weakening assertions. |
 | Manual | The 2026-11-09 pass covered MAN-001 through MAN-020. Freeze release behavior, then update the manual for changes after that pass. Verify screenshots, examples, links, and contextual Help against the release candidate. |
-| Distribution | Select exact license terms, assemble dependency notices, finish tested packages and signing or notarization, then obtain explicit publication approval. |
+| Distribution | SpentIt is under the Unlicense. Assemble dependency notices for each shipped build, finish tested packages and signing or notarization, then obtain explicit publication approval. |
 
 Windows has a development build with a failing UI check and excluded storage
 tests. WSL has failures. That is not a claim that Windows cannot build, and it
 is not release readiness. See [Windows setup](windows-development-setup.md).
 
-## Accepted licensing policy
+## License
 
-Free personal and internal business use, no sale of SpentIt or derivatives, and
-permanent free access are settled.
-
-- Prohibit charging for access to SpentIt or a hosted derivative.
-- Allow separately purchased human support, training, and consulting, provided
-  the software remains free to obtain and use.
-- Allow commissioned development. Distribution of the result stays under the
-  same free-access and no-resale terms.
-- Prohibit charging for SpentIt through a bundle. Allow clearly itemized actual
-  media and postage costs.
-- Require corresponding source for distributed derivatives under the same terms.
-  Private internal modifications need not be published.
-- Select and review concrete license terms against these decisions before
-  publication. Do not improvise or install an assumed license.
-
-These are policy requirements, not an operative license. The intended
-classification is source-available, not OSI open source. Third-party terms stay
-independent. See [feature 007](../features/007-licensing-and-distribution.md).
+The owner selected the Unlicense for SpentIt. The text is [LICENSE](../LICENSE).
+Third-party components keep their own licenses. Package publication still needs
+explicit approval. See [feature 007](../features/007-licensing-and-distribution.md).
 
 ## Sequence
 
@@ -63,7 +48,7 @@ independent. See [feature 007](../features/007-licensing-and-distribution.md).
    under separate authorization.
 2. Complete release verification and fix discovered blockers.
 3. Refresh the manual against frozen release behavior.
-4. Finalize licensing and packages. Obtain explicit approval before publication.
+4. Finish packages and obtain explicit approval before publication.
 
-Remaining inputs are designs and Go for each change, a tested OS range,
-reviewed license text, and release approval.
+Remaining inputs are designs and Go for each change, a tested OS range, and
+release approval.

@@ -3,29 +3,10 @@
 Status: **active**
 Last updated: 2026-11-09
 
-No license file is installed. These requirements are not an operative license
-and not a guarantee of enforceability.
-
-## Settled policy
-
-- Public source availability and permanent free access.
-- Selling SpentIt or a derivative, including a rebranded build, is prohibited.
-- Internal business use is free. A user's own commercial activity is not
-  prohibited use of SpentIt.
-- Charging for access to SpentIt or a hosted derivative is prohibited.
-- Paid human support, training, consulting, and commissioned development are
-  allowed while the software remains free to obtain and use.
-- A bundle may not charge for SpentIt. Itemized actual media and postage costs
-  are allowed.
-- Distributed derivatives need corresponding source under the same terms.
-  Private internal modifications need not be published.
-- The classification is source-available, not OSI open source. Do not call
-  restrictive terms open source.
-
-Unlicense and MIT permit commercial redistribution. GPL permits selling copies.
-Neither satisfies the no-resale decision. Do not install either, or a custom
-clause presented as a finished license. Creative Commons is not for this
-software. Select concrete terms with the owner before publication.
+The owner selected the Unlicense for SpentIt. The text is [LICENSE](../LICENSE).
+It permits any use, including selling copies. That choice replaces the earlier
+no-resale drafting. Third-party components are excluded from the dedication and
+keep their own licenses.
 
 ## Dependencies
 
@@ -37,8 +18,8 @@ relinking obligations when distributing. Avoid GPL-only Qt modules.
 ## About
 
 About shows the application identity and version, **© 2026 Stefan Wessels**,
-and offline third-party notices. It will also show the SpentIt license once
-one is selected. The extra descriptive sentence was removed. Notices must work
+and offline third-party notices. The Unlicense text lives in the repository
+LICENSE file. About does not yet display that text. Notices must work
 without a network.
 
 ## Packaging
@@ -51,5 +32,5 @@ release-ready.
 
 ## Not done
 
-The exact license text, a dependency inventory of the shipped build, signing
-or notarization, and publication approval.
+A dependency inventory of each shipped build, signing or notarization, and
+publication approval. Linux and Windows library lists are not in LICENSE yet.
