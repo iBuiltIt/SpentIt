@@ -108,3 +108,17 @@ Pictures: recapture a picture that shows a button which cannot be used.
 Import button stays available. Back and Forward in the window behind a dialog
 may be unavailable. Check those during the manual pass. Do not edit `manual/`
 for this entry until that pass.
+
+### MAN-024 — Close Help with the window shortcut
+
+Date: 2026-11-10. Contract: [Help](../features/013-help-system.md).
+
+Chapter: [Keyboard and mouse](../manual/keyboard-mouse.md), section "Read Help".
+
+Text still outstanding. **Command+W** on macOS, or **Ctrl+W** on other
+platforms, closes Help and returns to the previous work. In a narrow window
+it closes Help even when Contents is open. **Escape** still closes Contents
+first. On an enlarged picture, **Escape** or **Close** returns to the article.
+On Windows, **Ctrl+F4** is the same Close shortcut.
+
+Pictures: none. Do not edit `manual/` for this entry until the manual pass.

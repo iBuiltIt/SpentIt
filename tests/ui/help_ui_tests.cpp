@@ -2721,6 +2721,85 @@ private slots:
         QCOMPARE(help->transientParent(), session.window);
         QCOMPARE(session.root->property("currentPage").toString(), QString("reports"));
     }
+    void quitClosesHelpBeforeTheQuestion() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        run(session.model, "create", {{"path", session.path()}, {"protected", false},
+            {"name", "Quit Help"}, {"currency", "CAD"}, {"defaultCategories", false}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        QFile card(session.path("card.qif"));
+        QVERIFY(card.open(QIODevice::WriteOnly));
+        card.write("!Type:Bank\nD2026-01-15\nT-4.00\nPMarket\n^\n");
+        card.close();
+        run(session.model, "import", {{"path", card.fileName()}, {"account", "1"}});
+        QCOMPARE(session.model.state().value("newTransactions").toInt(), 1);
+        auto* help = openHelp(session.root);
+        QVERIFY2(help, qPrintable(session.root->property("helpLoadError").toString()));
+        const auto topic = help->property("topicId").toString();
+        QVERIFY(!topic.isEmpty());
+        session.window->close();
+        QTRY_VERIFY(!help->isVisible());
+        QTRY_VERIFY(object(session.root, "quitCommitDialog")->property("visible").toBool());
+        QVERIFY(session.model.state().value("active").toBool());
+        QVERIFY(click(session.root, "quitCommitCancel"));
+        QTRY_VERIFY(!object(session.root, "quitCommitDialog")->property("visible").toBool());
+        QVERIFY(!help->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(session.root, "openHelp"));
+        QTRY_VERIFY(help->isVisible());
+        QCOMPARE(help->property("topicId").toString(), topic);
+        session.window->close();
+        QTRY_VERIFY(!help->isVisible());
+        QTRY_VERIFY(object(session.root, "quitCommitDialog")->property("visible").toBool());
+        QVERIFY(click(session.root, "quitCommitDialogHelp"));
+        QTRY_VERIFY(help->isVisible());
+        QTRY_COMPARE(help->property("topicId").toString(), QString("accept-transactions"));
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Leave them new and return later"));
+        QVERIFY(object(session.root, "quitCommitDialog")->property("visible").toBool());
+        session.window->close();
+        QTRY_VERIFY(!help->isVisible());
+        QVERIFY(object(session.root, "quitCommitDialog")->property("visible").toBool());
+        QVERIFY(session.model.state().value("active").toBool());
+        QVERIFY(click(session.root, "quitCommitCancel"));
+    }
+    void standardCloseKeyClosesHelp() {
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        auto* help = openHelp(session.root);
+        QVERIFY2(help, qPrintable(session.root->property("helpLoadError").toString()));
+        QVERIFY(help->setProperty("width", 500));
+        QVERIFY(help->setProperty("contentsOpen", true));
+        auto* search = qobject_cast<QQuickItem*>(object(help, "helpSearch"));
+        QVERIFY(search);
+        search->forceActiveFocus();
+        help->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(help));
+        QTest::keySequence(help, QKeySequence(QKeySequence::Close));
+        QTRY_VERIFY(!help->isVisible());
+        QVERIFY(!session.model.state().value("active").toBool());
+
+        createDocument(session, "Close Help");
+        QVERIFY(click(session.root, "rulesNavigation"));
+        wait(session.model);
+        QVERIFY(click(session.root, "newRule"));
+        QVERIFY(edit(session.root, "ruleExpression", "^Close help$"));
+        QVERIFY(click(session.root, "accountNavigation"));
+        auto* dialog = qobject_cast<QQuickWindow*>(object(session.root, "rulesLeaveDialog"));
+        QTRY_VERIFY(dialog && dialog->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(session.root, "openHelp"));
+        QTRY_VERIFY(help->isVisible());
+        QCOMPARE(help->transientParent(), dialog);
+        help->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(help));
+        QTest::keySequence(help, QKeySequence(QKeySequence::Close));
+        QTRY_VERIFY(!help->isVisible());
+        QVERIFY(dialog->isVisible());
+        QVERIFY(session.root->property("rulesDirty").toBool());
+        QCOMPARE(object(session.root, "ruleExpression")->property("text").toString(), QString("^Close help$"));
+    }
 };
 
 QTEST_MAIN(HelpUiTests)

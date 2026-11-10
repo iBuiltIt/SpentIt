@@ -1,7 +1,7 @@
 # 013 — Help and the user manual
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-10
 
 Help is an offline viewer of the bundled manual: twelve chapters, five quick
 references, and 39 pictures. Sample topics in tests are fixtures, not the
@@ -33,8 +33,15 @@ user-visible change in [doc/manual-update-backlog.md](../doc/manual-update-backl
   reverse scrolling does not drop text.
 - Help does not change financial state, selection, or unsaved edits. Closing
   it restores the previous interaction.
+- Quitting closes Help, including an enlarged picture, before a quit question
+  or the close itself. Help opened from that question stays until the next
+  quit attempt. Cancel leaves Help closed. **SpentIt Help** still returns to
+  the same place.
 - Keyboard use includes Tab through contents and results, article links and
-  pictures, and Close Help beside a decision dialog.
+  pictures, and Close Help beside a decision dialog. The platform Close
+  shortcut (**Command+W** on macOS) closes Help. In a narrow window it closes
+  Help even when Contents is open. Escape still closes Contents first. On an
+  enlarged picture, **Escape** or **Close** returns to the article.
 
 Topic and section identifiers stay stable. Picture capture for a future
 authorized pass is in the manual backlog.

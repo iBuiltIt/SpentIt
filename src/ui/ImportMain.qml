@@ -1818,6 +1818,9 @@ ApplicationWindow {
         if(allowClose) return
         close.accepted=false
         if(workflow.busy || closingRequested) return
+        // Help is a separate window above this one. The quit question is drawn
+        // here, so close Help before that question or the close itself.
+        if(helpWindowInstance && helpWindowInstance.visible) helpWindowInstance.dismiss()
         guard(requestQuit)
     }
     Connections {

@@ -123,6 +123,14 @@ Window {
         enabled: !imageWindow.visible
         onActivated: root.escapeHelp()
     }
+    // The platform Close key is Command+W on macOS. Call dismiss() rather than
+    // close(): a transient child of an application-modal dialog can ignore close().
+    Shortcut {
+        objectName: "helpCloseWindow"
+        sequences: [StandardKey.Close]
+        context: Qt.WindowShortcut
+        onActivated: root.dismiss()
+    }
     Shortcut { sequences: [StandardKey.Find]; context: Qt.WindowShortcut; onActivated: { if (root.narrow) root.contentsOpen = false; findField.forceActiveFocus() } }
 
     function topicIndex() {
