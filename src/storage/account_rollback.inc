@@ -132,7 +132,7 @@ app::RollbackReview ImportStore::rollback_review() const {
     result.affected_accounts.assign(affected.begin(),affected.end());return result;
 }
 std::optional<app::RollbackReceipt> ImportStore::rollback_outcome(std::string_view operation) const {
-    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !impl_->undo_joined && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement receipt(impl_->db,"SELECT account,transactions,failures FROM rollback_receipt WHERE operation=?");receipt.text(1,operation);if(!receipt.row())return {};
     return app::RollbackReceipt{std::string(operation),receipt.integer(0),static_cast<std::size_t>(receipt.integer(1)),static_cast<std::size_t>(receipt.integer(2))};
 }
@@ -148,7 +148,7 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
     if(!collecting && review.token!=expected)fail(SQLITE_CONSTRAINT,"Work changed; review rollback again");
     const auto owner=impl_->selected_account;const auto aliases=account_aliases();
     if(collecting && (sqlite3_get_autocommit(impl_->db) || !impl_->cleaning || source.empty()))fail(SQLITE_MISUSE);
-    std::unique_ptr<Atomic> transaction;if(!collecting)transaction=std::make_unique<Atomic>(impl_->db);
+    std::unique_ptr<Atomic> transaction;if(!collecting)transaction=std::make_unique<Atomic>(impl_->db,impl_->undo_joined?&impl_->undo_depth:nullptr);
     struct Cleanup {bool& flag;bool prior;~Cleanup(){flag=prior;}} cleanup{impl_->cleaning,impl_->cleaning};impl_->cleaning=true;
     if(!source.empty()) {
         bool financial_history=false;
@@ -312,7 +312,7 @@ app::RollbackReceipt ImportStore::undo_linked_import(std::string_view operation,
     if(shared.row())fail(SQLITE_CONSTRAINT,"Another import now uses these linked transactions. Undo that import first.");
     const auto selected=impl_->selected_account;
     struct Scope {Impl& impl;std::int64_t selected;bool cleaning;~Scope(){impl.selected_account=selected;impl.cleaning=cleaning;}} scope{*impl_,selected,impl_->cleaning};
-    Atomic transaction(impl_->db);impl_->cleaning=true;
+    Atomic transaction(impl_->db,impl_->undo_joined?&impl_->undo_depth:nullptr);impl_->cleaning=true;
     std::size_t serial=0;
     for(const auto& answer:answers)restore_review_answer(std::string(operation)+"-restore-"+std::to_string(++serial),answer);
     Statement batches(impl_->db,"SELECT id,account_id FROM batches WHERE source_id=? ORDER BY rowid");batches.text(1,source);

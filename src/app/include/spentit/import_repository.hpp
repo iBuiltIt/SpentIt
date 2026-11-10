@@ -205,6 +205,9 @@ public:
     virtual UndoPreview preview_undo(std::string_view,const ActionToken&) const {throw std::logic_error("Undo unavailable");}
     virtual std::optional<ActionReceipt> undo_action_outcome(std::string_view,const UndoPreview&) const { return {}; }
     virtual ActionReceipt undo_action(std::string_view,const UndoPreview&) {throw std::logic_error("Undo unavailable");}
+    virtual ConnectedUndoPreview preview_connected_undo(std::string_view,const ActionToken&) const {throw std::logic_error("Undo unavailable");}
+    virtual ActionReceipt undo_connected(std::string_view,const ConnectedUndoPreview&) {throw std::logic_error("Undo unavailable");}
+    virtual std::optional<ActionReceipt> undo_connected_outcome(std::string_view,const ConnectedUndoPreview&) const { return {}; }
     virtual bool definition_import_completed(std::string_view,const DefinitionImport&) const {return false;}
     virtual void import_definitions(std::string_view,const DefinitionImport&,const OperationContext&) {throw std::logic_error("Definition import unavailable");}
     virtual reports::Catalog report_catalog() const { return {}; }

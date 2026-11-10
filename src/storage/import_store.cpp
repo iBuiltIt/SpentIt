@@ -157,12 +157,44 @@ std::string scalar(sqlite3* db, const char* sql) {
 }
 class Atomic {
 public:
-    explicit Atomic(sqlite3* db) : db_(db) { exec(db_, "BEGIN IMMEDIATE"); }
-    ~Atomic() { if (active_) {sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);if(auto* scope=ScopedStatements::current(db_))scope->clear_revisions();} }
-    void commit() { diag::Span commitSpan(diag::Code::transaction);exec(db_, "COMMIT"); active_ = false; }
+    // depth is set only while one Undo restores several actions. The outer call
+    // starts the real transaction. A nested call joins it with a savepoint.
+    explicit Atomic(sqlite3* db, int* depth = nullptr) : db_(db), depth_(depth) {
+        if (depth_ && *depth_ > 0) {
+            name_ = "spentit_undo_" + std::to_string(*depth_);
+            exec(db_, ("SAVEPOINT " + name_).c_str());
+            savepoint_ = true;
+        } else {
+            exec(db_, "BEGIN IMMEDIATE");
+        }
+        if (depth_) { ++*depth_; held_ = true; }
+        active_ = true;
+    }
+    ~Atomic() {
+        if (active_) {
+            if (savepoint_) {
+                sqlite3_exec(db_, ("ROLLBACK TO " + name_).c_str(), nullptr, nullptr, nullptr);
+                sqlite3_exec(db_, ("RELEASE " + name_).c_str(), nullptr, nullptr, nullptr);
+            } else {
+                sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            }
+            if (auto* scope = ScopedStatements::current(db_)) scope->clear_revisions();
+        }
+        if (depth_ && held_) { --*depth_; held_ = false; }
+    }
+    void commit() {
+        if (savepoint_) exec(db_, ("RELEASE " + name_).c_str());
+        else { diag::Span commitSpan(diag::Code::transaction); exec(db_, "COMMIT"); }
+        active_ = false;
+        if (depth_ && held_) { --*depth_; held_ = false; }
+    }
 private:
     sqlite3* db_;
-    bool active_ = true;
+    int* depth_ = nullptr;
+    bool savepoint_ = false;
+    bool active_ = false;
+    bool held_ = false;
+    std::string name_;
 };
 void identifier(std::string_view id) {
     if (id.empty() || id.size() > 128 || id.find_first_not_of(
@@ -955,7 +987,9 @@ struct ImportStore::Impl {
     std::string pending_action_digest;
     std::string import_action;
     std::string cancelling_import;
-    std::string undo_operation, undo_digest;
+    std::string undo_operation, undo_digest, undo_target;
+    bool undo_joined = false;
+    int undo_depth = 0;
     std::string legacy_undo_domain,legacy_undo_digest;
     std::function<void()> legacy_undo_finalize;
     bool composing_rule_save=false;
@@ -2449,5 +2483,6 @@ namespace { std::int64_t review_generation(sqlite3*); }
 #include "rule_account_store.inc"
 #include "action_store.inc"
 #include "history_page.inc"
+#include "connected_undo.inc"
 #include "definition_import.inc"
 } // namespace spentit::storage

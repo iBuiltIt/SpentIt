@@ -20,10 +20,16 @@ The account line appears only when the action also touched another account.
 The balance line appears only when the money changed. Each transaction is one
 line, with its category when it has one split. A memo and extra splits are
 further lines under that transaction. The selected transaction is highlighted.
-**Show in ledger** and **Undo** sit once on the open action. Undo is offered
-only when that action is the newest one in the file, through the same
-confirmation as the ledger button. A newer action is named, and the other
-account is named when the newest action is elsewhere. The page has no
+**Show in ledger** and **Undo** sit once on the open action. The history
+button says **Undo** on every open action. When nothing later wrote one of
+that action’s transactions, the existing confirmation undoes that action,
+even when a newer unrelated action is still the head. When later actions
+share a transaction, one dialog lists that closure, newest first, including
+the action that was opened. The title is “To undo, these changes also need
+to be undone”. **Yes, undo all** restores the whole list, newest first, or
+none of it. **Cancel** writes nothing. The list is read from membership
+already stored with each action. Ctrl+Z and the ledger Undo button beside
+search still undo only the newest action in the file. The page has no
 Refresh, Inspect, Show full transaction, Hide transaction, Redo, skip, or
 undo-to-here. The Review Undo button is gone from this page. The
 review-workspace Undo button and the ledger Undo button stay. Help still
@@ -45,6 +51,7 @@ Verification on macOS arm64, Qt 6.12.0, rules-enabled Release
 - `import.ui` includes the bulk history labels and the first-repair save path. Its 117.61 s has no same-machine before measurement for this change, so this record makes no performance claim.
 - `cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_import_navigation_tests -j 4`, then `ctest --test-dir build/import-ui-rules-release --output-on-failure -R '^import\.navigation$'`, exit 0. `import.navigation` passed in 20.98 s. That suite’s history command remains the superseded diagnostics operation. The application was relinked at `build/SpentIt`.
 - Follow-up the same day, after the compact-row Go: `cmake --build build/import-ui-rules-release --target spentit_committed_ui_tests spentit_import_experiment -j 4`, then `ctest --test-dir build/import-ui-rules-release --output-on-failure -R '^import\.committed_ui$'`, exit 0. `import.committed_ui` passed in 17.66 s. The open payee edit has **Show in ledger** and no balance line. The older amount edit shows the balance line and names the newer edit. The application was relinked at `build/SpentIt` again. The running application was not restarted.
+- Follow-up the same day, after the connected-undo Go: `cmake --build build/import-ui-rules-release --target spentit_action_repository_tests spentit_committed_ui_tests -j 4`, then `ctest --test-dir build/import-ui-rules-release --output-on-failure -R '^(storage\.action_repository|import\.committed_ui)$'`, exit 0. `storage.action_repository` passed in 7.50 s. `import.committed_ui` passed in 17.63 s. Four separate payee renames: the oldest undoes alone and the other three stay. The shared payee chain restores A, B, and C, leaves D and E, and leaves a later opening as the head. Acceptance after a rename is on that rename’s list; Undo returns the row to New and keeps the import. A stale token writes nothing. An import closure includes its later edit and leaves an unrelated manual as the head. A failure before the save leaves the payees applied. In the UI, the older amount edit opens the two-line dialog, Cancel writes nothing, and Undo of the newest removal still uses the single confirmation. Linux, Windows, ASan/UBSan, rules-off, and the Help UI suite were not run for this follow-up. The application was relinked at `build/SpentIt`. The running application was not restarted. `import.ui` was recompiled and not run.
 
 Limits: Linux, Windows, ASan/UBSan, rules-off, and the Help UI suite were not
 run for this page. `import.committed_ui` already opens History. No private

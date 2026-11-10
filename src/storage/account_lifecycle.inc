@@ -23,7 +23,7 @@ std::vector<app::Account> ImportStore::archived_accounts() const {
     std::vector<app::Account> result;while(ids.row()) result.push_back(account_by_id(ids.integer(0)));return result;
 }
 std::optional<app::AccountCommandReceipt> ImportStore::account_command_outcome(std::string_view operation) const {
-    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !impl_->undo_joined && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     if(auto found=account_command_row(impl_->db,operation)) return found;
     Statement reg(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");reg.text(1,operation);
     if(reg.row()) fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");
@@ -224,7 +224,7 @@ app::AccountCommandReceipt ImportStore::reassign_currency(std::string_view opera
     finish([&]{transaction.commit();});return *account_command_row(impl_->db,id);
 }
 app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view operation,std::string_view undo_of) {
-    if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+    if(!impl_->undo_joined && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     const auto id=command_id(operation);command_id(undo_of);const auto content="6\n"+std::string(undo_of);
     if(auto prior=matching_account_command(impl_->db,id,content)) return *prior;
     if(!impl_->undo_token) {
@@ -237,12 +237,12 @@ app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view 
     const auto acct=command_account(false);
     if(target.integer(0)!=acct.identity) fail(SQLITE_CONSTRAINT,"Account command belongs to another account");
     const auto kind=static_cast<int>(target.integer(1));
-    if(!command_image_current(impl_->db,undo_of) || !action_head() || action_head()->id!=undo_of) fail(SQLITE_CONSTRAINT,later_undo_block);
+    if(!command_image_current(impl_->db,undo_of) || !(!impl_->undo_target.empty()?impl_->undo_target==std::string(undo_of):(action_head() && action_head()->id==undo_of))) fail(SQLITE_CONSTRAINT,later_undo_block);
     if(acct.revision==INT64_MAX) fail(SQLITE_FULL,"Revision capacity exhausted");
     if(kind==4) {
         const auto restored_units=target.integer(6);const auto restored_date=target.bytes(8);const auto restored=Money(restored_units,acct.currency);
         guard_money([&]{(void)(committed_balance()-acct.opening+restored);});
-        Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
+        Atomic transaction(impl_->db,impl_->undo_joined?&impl_->undo_depth:nullptr);CommandFlag flag(impl_->account_command);
         insert_account_op(impl_->db,id,acct.identity,6,acct.name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),restored_units,acct.opening.units(),restored_date,acct.opening_date,acct.archived?1:0,acct.archived?1:0,0,undo_of,content,acct.revision+1,acct.frozen?1:0,1);
         Statement update(impl_->db,"UPDATE account SET opening_date=?,opening=?,revision=revision+1,confirmed=1 WHERE singleton=?");update.text(1,restored_date);update.integer(2,restored_units);update.integer(3,acct.identity);update.done();
         finish([&]{transaction.commit();});return *account_command_row(impl_->db,id);
@@ -304,7 +304,7 @@ app::AccountCommandReceipt ImportStore::undo_account_operation(std::string_view 
     if(acct.opening.units()!=target.integer(5) || acct.opening_date!=target.bytes(7)) fail(SQLITE_CONSTRAINT,later_undo_block);
     const auto after=guard_money([&]{return before.rescale(restored_currency);});
     if(opening.units()!=after.units() && entries.empty() && links.empty()) {if(opening.units()!=acct.opening.rescale(restored_currency).units()) fail(SQLITE_CONSTRAINT,later_undo_block);} 
-    Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
+    Atomic transaction(impl_->db,impl_->undo_joined?&impl_->undo_depth:nullptr);CommandFlag flag(impl_->account_command);
     insert_account_op(impl_->db,id,acct.identity,6,acct.name,acct.name,restored_currency.definition_id(),acct.currency.definition_id(),opening.units(),acct.opening.units(),target.bytes(8),acct.opening_date,acct.archived?1:0,acct.archived?1:0,0,undo_of,content,acct.revision+1,acct.frozen?1:0,1);
     Statement update(impl_->db,"UPDATE account SET definition=?,opening=?,opening_date=?,revision=revision+1,confirmed=1 WHERE singleton=?");
     update.text(1,restored_currency.definition_id());update.integer(2,opening.units());update.text(3,target.bytes(8));update.integer(4,acct.identity);update.done();

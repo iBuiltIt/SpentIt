@@ -19,7 +19,8 @@ void ImportStore::record_acceptance_action(std::string_view operation,std::strin
 }
 
 void ImportStore::undo_acceptance(std::string_view operation,std::string_view original) {
-    if(!impl_->undo_token || !action_head() || action_head()->id!=original)fail(SQLITE_CONSTRAINT,"Undo the latest action first.");
+    if(!impl_->undo_token)fail(SQLITE_CONSTRAINT,"Undo the latest action first.");
+    if(!impl_->undo_target.empty()?impl_->undo_target!=original:(!action_head() || action_head()->id!=original))fail(SQLITE_CONSTRAINT,"Undo the latest action first.");
     std::string payload;
     {Statement saved(impl_->db,"SELECT payload FROM acceptance_states WHERE id=? AND undo_id IS NULL");saved.text(1,original);if(!saved.row())fail(SQLITE_CONSTRAINT,"Acceptance cannot be undone");payload=saved.bytes(0);}
     transfer_codec::Reader in{payload};if(in.number()!=1)fail(SQLITE_CORRUPT);
@@ -31,7 +32,7 @@ void ImportStore::undo_acceptance(std::string_view operation,std::string_view or
     std::vector<std::string> publications;
     {Statement rows(impl_->db,"SELECT id FROM ledger_operations WHERE kind=0 AND (id=?1 OR id IN(SELECT operation FROM acceptance_operations WHERE parent=?1)) ORDER BY sequence DESC");rows.text(1,original);while(rows.row())publications.push_back(rows.bytes(0));}
     struct Scope {Impl& state;std::int64_t selected;bool cleaning;~Scope(){state.selected_account=selected;state.cleaning=cleaning;}} scope{*impl_,impl_->selected_account,impl_->cleaning};
-    Atomic transaction(impl_->db);CommandFlag command(impl_->account_command);impl_->cleaning=true;
+    Atomic transaction(impl_->db,impl_->undo_joined?&impl_->undo_depth:nullptr);CommandFlag command(impl_->account_command);impl_->cleaning=true;
     Statement reversal(impl_->db,"UPDATE acceptance_states SET undo_id=? WHERE id=? AND undo_id IS NULL");reversal.text(1,operation);reversal.text(2,original);reversal.done();
     std::size_t serial=0;
     for(const auto& publication:publications) {

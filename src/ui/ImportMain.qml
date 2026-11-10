@@ -778,15 +778,6 @@ ApplicationWindow {
         MenuItem {height:visible?implicitHeight:0;objectName:"reassignCurrency";text:"Reassign currency…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:guard(function(){currencySearch.text="";currencyDialog.open()})}
         MenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:undoEdit()}
     }
-    function historyBlockedText() {
-        const head=s.actionUndo||{}
-        const label=head.label||"the latest action"
-        const names=head.accountList||[]
-        let here=false
-        for(let i=0;i<names.length;++i) if(names[i]===s.name) here=true
-        if(!here && (head.accounts||"").length) return "Undo "+label+" in "+head.accounts+" first."
-        return "Undo "+label+" first."
-    }
     function historyAccountChoices() {
         const rows=(s.sidebarAccounts||s.accounts||[]).slice()
         if(s.accountId && !rows.some(function(account){return account.id===s.accountId}))
@@ -1720,8 +1711,42 @@ ApplicationWindow {
         title:"Undo "+(pendingUndo.label||"action")+"?"
         Label {width:500;wrapMode:Text.Wrap;text:(pendingUndo.count?pendingUndo.count+" transaction"+(pendingUndo.count===1?"":"s")+".\n":"")+(pendingUndo.accounts?"Accounts: "+pendingUndo.accounts+".\n":"")+(pendingUndo.change?pendingUndo.change+"\n":"")+(pendingUndo.kind===7?"Remove the whole import. Accounts and categories created during import remain.":pendingUndo.kind===2?"Reverse the transaction changes. Saved rules remain.":pendingUndo.kind===6?"Return these transactions to New without changing their amounts.":"Restore the state before this action.")}
         footer:DialogButtonBox {
-            Button {objectName:"confirmActionUndo";text:"Undo";onClicked:{actionUndoConfirm.close();workflow.command("undo_action",pendingUndo)}}
+            Button {objectName:"confirmActionUndo";text:"Undo";onClicked:{actionUndoConfirm.close();workflow.command(pendingUndo.connected?"undo_connected":"undo_action",pendingUndo)}}
             Button {text:"Cancel";onClicked:actionUndoConfirm.close()}
+        }
+    }
+    function undoOpenHistory(action) {
+        if(workflow.busy || !action || !action.actionId)return
+        const target=action.actionId
+        const show=function(){workflow.command("preview_connected_undo",{id:target})}
+        if(dirty){pendingAction=show;if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open()}
+        else show()
+    }
+    HelpDialog {
+        id:connectedUndoConfirm;objectName:"connectedUndoConfirm";helpTarget:"help:add-correct-transactions#undo-a-saved-change";modal:true;anchors.centerIn:parent;width:540
+        title:"To undo, these changes also need to be undone"
+        contentItem:ColumnLayout {
+            UsableScrollView {
+                id:connectedUndoScroll;Layout.fillWidth:true;Layout.maximumHeight:240
+                Layout.preferredHeight:Math.min(240,Math.max(24,connectedUndoList.implicitHeight));clip:true
+                Column {
+                    id:connectedUndoList;width:connectedUndoScroll.availableWidth;spacing:6
+                    Repeater {
+                        model:(s.connectedUndo||{}).lines||[]
+                        delegate:Label {
+                            required property var modelData
+                            required property int index
+                            objectName:"connectedUndoLine_"+index
+                            width:connectedUndoList.width;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                            text:modelData.text||""
+                        }
+                    }
+                }
+            }
+        }
+        footer:DialogButtonBox {
+            Button {objectName:"confirmConnectedUndo";text:"Yes, undo all";enabled:!workflow.busy;onClicked:{connectedUndoConfirm.close();workflow.command("undo_connected",s.connectedUndo||{})}}
+            Button {objectName:"cancelConnectedUndo";text:"Cancel";onClicked:connectedUndoConfirm.close()}
         }
     }
     function selectLedgerRow(row, modifiers) {
@@ -1815,11 +1840,21 @@ ApplicationWindow {
             if(success && action==="report_leave"){search.text=s.filter||"";editorClosed=true}
             if(action==="report_leave" && pendingReportNavigation){let next=pendingReportNavigation;pendingReportNavigation=null;if(success)Qt.callLater(next)}
             if(success && action==="preview_import_undo")importUndoConfirm.open()
+            if(success && action==="preview_connected_undo"){
+                const lines=(s.connectedUndo||{}).lines||[]
+                if(lines.length>1)connectedUndoConfirm.open()
+                else if(lines.length===1){
+                    pendingUndo=Object.assign({connected:true},s.connectedUndo||{})
+                    if((s.selectionCount||0)>1){captureLedgerView("selected-edit");editView=null;editFocus=null}else rememberEditView()
+                    actionUndoConfirm.open()
+                }
+            }
+            if(success && action==="undo_connected"){connectedUndoConfirm.close();actionUndoConfirm.close()}
             if(success && action==="undo_import"){importUndoConfirm.close();importUndoPicker.close();workspaceFeedback=(s.receipt||{}).summary||"Import undone."}
             if(action==="close" && !success && closingRequested){closingRequested=false;closeAuditFailure.open()}
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
 
-            if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action") || action==="import"))editorClosed=false
+            if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action" || action==="undo_connected") || action==="import"))editorClosed=false
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
 
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
@@ -1831,7 +1866,7 @@ ApplicationWindow {
             if(success && action==="release_transfer_batch")workspaceFeedback="Category changed. Undo is available."
             if(success && action==="undo_transfer_assignment")workspaceFeedback="Category change undone."
             if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session.":"Edit saved."
-            if(success && (action==="undo_edit" || action==="undo_action"))workspaceFeedback="Edit undone."
+            if(success && (action==="undo_edit" || action==="undo_action" || action==="undo_connected"))workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
             if(!success){ruleApplyAfterPreview=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
@@ -2748,7 +2783,7 @@ ApplicationWindow {
     }
     Shortcut {
         sequences:[StandardKey.Undo]
-        enabled:!reviewSheet.visible && !actionUndoConfirm.visible && (!!s.canUndoAction) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        enabled:!reviewSheet.visible && !actionUndoConfirm.visible && !connectedUndoConfirm.visible && (!!s.canUndoAction) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
         onActivated:undoEdit()
     }
     property var exclusionEndpoint: ({})
@@ -3309,7 +3344,7 @@ ApplicationWindow {
             onMovementEnded:captureReviewView()
     Shortcut {objectName:"reviewUndoShortcut";
         sequences:[StandardKey.Undo]
-        enabled:reviewSheet.visible && !actionUndoConfirm.visible && !acceptanceDialog.visible && !mappedTransferConfirm.visible && !importUndoPicker.visible && !importUndoConfirm.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoAction && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        enabled:reviewSheet.visible && !actionUndoConfirm.visible && !connectedUndoConfirm.visible && !acceptanceDialog.visible && !mappedTransferConfirm.visible && !importUndoPicker.visible && !importUndoConfirm.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoAction && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
         onActivated:undoEdit()
     }
             ScrollBar.vertical:UsableScrollBar {}
@@ -3863,15 +3898,10 @@ ApplicationWindow {
                                             onClicked:{const row=selectedHistoryMember(modelData);if(!row)return;const batch=row.batch;const ordinal=row.ordinal;navigate("ledger");workflow.command("inspect",{batch:batch,ordinal:ordinal})}
                                         }
                                         Button {
-                                            objectName:open && !!s.canUndoAction && (s.actionUndo||{}).id===historyAction.actionId && !((s.actionUndo||{}).refusal||"")?"historyUndo":""
-                                            visible:open && (s.actionUndo||{}).id===historyAction.actionId && !((s.actionUndo||{}).refusal||"")
-                                            text:s.editUndoLabel||"Undo";onClicked:undoEdit()
+                                            objectName:open?"historyUndo":""
+                                            visible:open
+                                            text:"Undo";onClicked:undoOpenHistory(historyAction)
                                         }
-                                    }
-                                    Label {
-                                        objectName:open && (s.actionUndo||{}).id && (s.actionUndo||{}).id!==historyAction.actionId?"historyBlocked":""
-                                        visible:open && (s.actionUndo||{}).id && (s.actionUndo||{}).id!==historyAction.actionId
-                                        text:historyBlockedText();textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width
                                     }
                                 }
                             }

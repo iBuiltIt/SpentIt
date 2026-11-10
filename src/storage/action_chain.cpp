@@ -214,6 +214,31 @@ void ActionChain::reversed(const app::ActionToken& expected, std::string_view op
     Query r(db_, "UPDATE action_receipts SET status=1 WHERE id=?"); r.text(1, current->id); r.done();
     Query set(db_, "UPDATE action_state SET head=? WHERE singleton=1"); set.text(1, current->parent); set.done(); advance();
 }
+void ActionChain::detached(std::string_view action, std::string_view operation, std::string_view digest) {
+    transaction(); if (retry(operation, digest, 1)) return;
+    require_idle(); identity(action);
+    Query current(db_, "SELECT parent,state FROM action_headers WHERE id=?"); current.text(1, action);
+    if (!current.row() || current.number(1) != 1) reject("This change is no longer available.");
+    const auto parent = current.text(0);
+    receipt(db_, operation, digest, 0, action, 1);
+    Query mark(db_, "UPDATE action_headers SET state=2 WHERE id=? AND state=1"); mark.text(1, action); mark.done();
+    if (sqlite3_changes(db_) != 1) reject("This action could not be undone.");
+    Query own(db_, "UPDATE action_receipts SET status=1 WHERE id=?"); own.text(1, action); own.done();
+    Query head_row(db_, "SELECT head FROM action_state WHERE singleton=1");
+    if (!head_row.row()) reject("Undo head is inconsistent");
+    if (head_row.text(0) == action) {
+        Query set(db_, "UPDATE action_state SET head=? WHERE singleton=1"); set.text(1, parent); set.done();
+    } else {
+        Query child(db_, "SELECT id FROM action_headers WHERE parent=? AND state=1"); child.text(1, action);
+        if (!child.row()) reject("Undo history chain is inconsistent");
+        const auto child_id = child.text(0);
+        if (child.row()) reject("Undo history chain is inconsistent");
+        Query relink(db_, "UPDATE action_headers SET parent=?2 WHERE id=?1 AND state=1");
+        relink.text(1, child_id); relink.text(2, parent); relink.done();
+        if (sqlite3_changes(db_) != 1) reject("Undo history chain is inconsistent");
+    }
+    advance();
+}
 void ActionChain::expire(const app::ActionToken& expected) {
     transaction(); require_current(expected); require_idle();
     if (expected.session == std::numeric_limits<std::int64_t>::max()) reject("Undo session capacity exhausted");

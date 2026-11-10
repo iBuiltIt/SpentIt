@@ -504,11 +504,15 @@ Source: [Change history handoff](change-history-handoff.md).
   another account. The balance line appears only when the money changed.
 - **Show in ledger** is one button on the open action. It opens the
   highlighted transaction. A removed transaction has no ledger button.
-- Say that Undo beside Show in ledger is the same Undo as the button beside
-  search. It undoes that whole action, and only when it is the newest action
-  in the file. A newer action has to be undone first, and the page names it.
-  A selection rename, a category change, and a rule application do not undo
-  one transaction at a time.
+- **Undo** beside Show in ledger is on every open action. The button says
+  **Undo**. When nothing later changed those transactions, the confirmation
+  is **Undo &lt;action&gt;?** and it undoes that action. When later changes share
+  a transaction, the dialog title is **To undo, these changes also need to
+  be undone**. The list is those changes, newest first. **Yes, undo all**
+  undoes the whole list. **Cancel** writes nothing. Changes that do not share
+  those transactions stay. The Undo button beside search, and Ctrl+Z, still
+  undo only the newest action in the file. A selection rename, a category
+  change, and a rule application do not undo one transaction at a time.
 - Say that an import is one row. Transactions added by that import, and rules
   that ran while it was importing, are part of that import. Undoing it undoes
   the import. A rule run the user starts later is its own row, and undoing

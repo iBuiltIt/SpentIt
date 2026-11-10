@@ -12,7 +12,8 @@ void ImportStore::finish(const std::function<void()>& commit,bool compatible) {
             fail(SQLITE_CONSTRAINT,"Import workflow changed before saving");
     } else if(impl_->undo_token) {
         if(!impl_->legacy_undo_domain.empty())session_snapshot::completed(impl_->db,impl_->undo_operation,impl_->legacy_undo_domain,impl_->legacy_undo_digest);
-        ActionChain(impl_->db).reversed(*impl_->undo_token,impl_->undo_operation,impl_->undo_digest);
+        if(!impl_->undo_target.empty())ActionChain(impl_->db).detached(impl_->undo_target,impl_->undo_operation,impl_->undo_digest);
+        else ActionChain(impl_->db).reversed(*impl_->undo_token,impl_->undo_operation,impl_->undo_digest);
     } else if(!impl_->pending_review_action.empty()) {
         publish_review_action(impl_->pending_review_action);
         impl_->pending_review_action.clear();
@@ -33,9 +34,9 @@ void ImportStore::finish(const std::function<void()>& commit,bool compatible) {
         Statement complete(impl_->db,"INSERT INTO import_completions SELECT id FROM batches WHERE id=? AND state=0 AND blocked=0 AND NOT EXISTS(SELECT 1 FROM import_group_accounts m WHERE m.batch=batches.id AND m.created=1)");complete.text(1,id);complete.done();
     }
     impl_->review_changes=sqlite3_total_changes64(impl_->db);
-    if(impl_->observer)impl_->observer(ImportPhase::before_commit);
+    if(impl_->observer && !impl_->undo_joined)impl_->observer(ImportPhase::before_commit);
     commit();
-    if(impl_->observer)impl_->observer(ImportPhase::after_commit);
+    if(impl_->observer && !impl_->undo_joined)impl_->observer(ImportPhase::after_commit);
 }
 void ImportStore::prepare_review() {
     diag::Span span(diag::Code::review_refresh);

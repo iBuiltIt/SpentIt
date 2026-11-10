@@ -388,7 +388,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     return result;
 }
 std::optional<app::ReviewReceipt> ImportStore::review_outcome(std::string_view operation) const {
-    if(!impl_->composing_rule_save && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+    if(!impl_->composing_rule_save && !impl_->undo_joined && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
     Statement s(impl_->db,"SELECT id FROM review_answers WHERE id=?1 UNION ALL SELECT id FROM review_undos WHERE id=?1 UNION ALL SELECT operation FROM link_exclusion_events WHERE operation=?1 UNION ALL SELECT id FROM command_completions WHERE id=?1 AND domain IN('editor','selection','save-apply')");s.text(1,operation);if(!s.row())return {};return app::ReviewReceipt{std::string(operation)};
 }
 imports::DraftRow ImportStore::review_draft(const imports::Occurrence& id,std::int64_t revision) const {
@@ -618,21 +618,31 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     ScopedStatements statements(impl_->db);
     session_snapshot::retry(impl_->db,operation,"review-undo",session_snapshot::digest(operation));
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE);if(const auto prior=review_outcome(operation)){Statement saved(impl_->db,"SELECT 1 FROM review_undos WHERE id=?");saved.text(1,operation);if(!saved.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another Review command");return *prior;}
-    Statement top(impl_->db,"SELECT answer,generation FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1");
-    if(!top.row())fail(SQLITE_CONSTRAINT,"There is no Review decision to undo");
-    const auto answer=top.bytes(0);const auto generation=top.integer(1);if(generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
-    const auto common_head=action_head();
-    if(!common_head || common_head->id!=answer)fail(SQLITE_CONSTRAINT,"Undo the latest action first.");
-    if(!impl_->undo_token) {
-        const auto result=undo_action(operation,preview_undo(answer,action_token()));
-        return {result.operation};
+    std::string answer;std::int64_t generation=0;bool top_undo=false;
+    if(!impl_->undo_target.empty()) {
+        Statement chosen(impl_->db,"SELECT generation FROM review_stack WHERE answer=?");chosen.text(1,impl_->undo_target);
+        if(!chosen.row())fail(SQLITE_CONSTRAINT,"There is no Review decision to undo");
+        answer=impl_->undo_target;generation=chosen.integer(0);
+        Statement top(impl_->db,"SELECT answer FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1");
+        top_undo=top.row() && top.bytes(0)==answer;
+    } else {
+        Statement top(impl_->db,"SELECT answer,generation FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1");
+        if(!top.row())fail(SQLITE_CONSTRAINT,"There is no Review decision to undo");
+        answer=top.bytes(0);generation=top.integer(1);top_undo=true;
+        const auto common_head=action_head();
+        if(!common_head || common_head->id!=answer)fail(SQLITE_CONSTRAINT,"Undo the latest action first.");
+        if(!impl_->undo_token) {
+            const auto result=undo_action(operation,preview_undo(answer,action_token()));
+            return {result.operation};
+        }
     }
+    if(generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
     struct Scope{Impl& state;std::int64_t selected;bool cleaning;~Scope(){state.selected_account=selected;state.cleaning=cleaning;}} scope{*impl_,impl_->selected_account,impl_->cleaning};
     const auto cache_changes=sqlite3_total_changes64(impl_->db);
     std::set<imports::Occurrence> cache_changed;
     Statement cache_rows(impl_->db,"SELECT batch,ordinal FROM review_choices WHERE answer=? AND kind=0");cache_rows.text(1,answer);
     while(cache_rows.row())cache_changed.insert({cache_rows.bytes(0),static_cast<std::size_t>(cache_rows.integer(1))});
-    Atomic transaction(impl_->db);
+    Atomic transaction(impl_->db,impl_->undo_joined?&impl_->undo_depth:nullptr);
     Statement parent(impl_->db,"SELECT question,request,action FROM review_answers WHERE id=?");parent.text(1,answer);if(!parent.row())fail(SQLITE_CORRUPT);
     Statement children(impl_->db,"SELECT id,request FROM review_answers WHERE question=? ORDER BY sequence");children.text(1,"batch-child:"+answer);
     std::vector<std::string> ids;std::string encoded="batch:";
@@ -661,7 +671,7 @@ app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     if(impl_->legacy_undo_finalize)impl_->legacy_undo_finalize();
     Statement pop(impl_->db,"DELETE FROM review_stack WHERE answer=?");pop.text(1,answer);pop.done();
     // Reversing the top decision makes the preceding stack entry current again.
-    Statement prior(impl_->db,"UPDATE review_stack SET generation=? WHERE answer=(SELECT answer FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1) AND generation=(SELECT generation FROM review_answers WHERE id=?2)");prior.integer(1,generation+1);prior.text(2,answer);prior.done();
+    if(top_undo){Statement prior(impl_->db,"UPDATE review_stack SET generation=? WHERE answer=(SELECT answer FROM review_stack ORDER BY (SELECT sequence FROM review_answers WHERE id=answer) DESC LIMIT 1) AND generation=(SELECT generation FROM review_answers WHERE id=?2)");prior.integer(1,generation+1);prior.text(2,answer);prior.done();}
     finish([&]{transaction.commit();});
     if((parent.integer(2)==0 || parent.integer(2)==1) && (parent.bytes(0).starts_with("same:") || parent.bytes(0)=="selected"))retain_review_ledger_entries(*impl_,cache_changes,cache_changed);
     return {std::string(operation)};

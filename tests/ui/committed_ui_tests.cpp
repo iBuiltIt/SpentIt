@@ -97,6 +97,9 @@ public:
     }
     std::string action_display_label(const app::ActionSummary& action) const override {return repo().action_display_label(action);}
     std::vector<app::HistoryFieldChange> action_field_changes(const app::ActionSummary& action) const override {return repo().action_field_changes(action);}
+    app::ConnectedUndoPreview preview_connected_undo(std::string_view id,const app::ActionToken& token) const override {return repo().preview_connected_undo(id,token);}
+    app::ActionReceipt undo_connected(std::string_view operation,const app::ConnectedUndoPreview& preview) override {return repo().undo_connected(operation,preview);}
+    std::optional<app::ActionReceipt> undo_connected_outcome(std::string_view operation,const app::ConnectedUndoPreview& preview) const override {return repo().undo_connected_outcome(operation,preview);}
 };
 class CommittedUiTests : public QObject {
     Q_OBJECT
@@ -352,13 +355,22 @@ private slots:
         QVERIFY(click(root,"historyNavigation"));wait(model);
         QVERIFY(click(root,"historyRow_1"));
         QTRY_VERIFY(object(root,"historyBalance"));
-        QTRY_VERIFY(object(root,"historyBlocked"));
-        QCOMPARE(object(root,"historyBlocked")->property("text").toString(),"Undo Edit transactions first.");
+        QTRY_VERIFY(object(root,"historyUndo"));
+        QCOMPARE(object(root,"historyUndo")->property("text").toString(),"Undo");
+        QVERIFY(click(root,"historyUndo"));
+        QTRY_VERIFY(object(root,"connectedUndoConfirm")->property("visible").toBool());
+        QTRY_VERIFY(object(root,"connectedUndoLine_0"));
+        const auto newestLine=object(root,"connectedUndoLine_0")->property("text").toString();
+        QVERIFY(newestLine.contains("Payee:"));QVERIFY(newestLine.contains("→"));QVERIFY(newestLine.contains("Corrected merchant"));
+        QVERIFY(!object(root,"connectedUndoLine_2"));
+        QVERIFY(click(root,"cancelConnectedUndo"));
+        QTRY_VERIFY(!object(root,"connectedUndoConfirm")->property("visible").toBool());
+        QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
         QVERIFY(click(root,"accountNavigation"));QVERIFY(click(root,"removeCommitted"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
         QCOMPARE(model.state().value("committed").toString(),"110.00");QVERIFY(selected(model).value("removed").toBool());QCOMPARE(model.selectedRowIndex(),-1);
         QVERIFY(click(root,"showEntryHistory"));wait(model);
         QTRY_VERIFY(object(root,"historyUndo"));QVERIFY(click(root,"historyUndo"));
-        QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QTRY_VERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);
         QCOMPARE(model.state().value("committed").toString(),"80.00");QVERIFY(!selected(model).value("removed").toBool());
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
         const auto checking=model.state().value("accountId");

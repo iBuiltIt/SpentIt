@@ -237,7 +237,8 @@ QString phaseFor(const QString& action){
     if(action=="review_undo")return "Undoing Review decision";
     if(action=="create")return "Creating file";
     if(action=="save" || action=="accept_edit")return "Accepting edit";
-    if(action=="undo_action")return "Undoing action";
+    if(action=="undo_action" || action=="undo_connected")return "Undoing action";
+    if(action=="preview_connected_undo")return "Preparing Undo";
     if(action=="undo_edit")return "Undoing edit";
     if(action=="preview_deletion")return "Checking transactions to delete";
     if(action=="delete_selection")return "Deleting selected transactions";
@@ -378,7 +379,7 @@ struct ImportModel::Worker {
     QVariantMap bulkPreview,bulkReceipt,deletionPreview;
     struct PreparedImport {std::string id,bytes,label;statements::Index document;qif::DateOrder profile;};
     std::optional<PreparedImport> preparedImport, dateImport;
-    QVariantMap importUndoPreview;
+    QVariantMap importUndoPreview,connectedUndo;
     QVariantMap importDateQuestion;
     QVariantList importPlan,importMappingArgs;
     QString importTarget,cleanupNoticePath,importFeedback;bool importDestination=false,startupCleanupNotice=false;
@@ -656,7 +657,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {cachedUndo.reset();cachedUndoLabel.clear();cachedUndoChange.clear();newManual.reset();newManualId.clear();revealManual.reset();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyFocus.clear();historyFocusBatch.clear();historyFocusOrdinal=-1;historyNotice.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {connectedUndo.clear();cachedUndo.reset();cachedUndoLabel.clear();cachedUndoChange.clear();newManual.reset();newManualId.clear();revealManual.reset();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyFocus.clear();historyFocusBatch.clear();historyFocusOrdinal=-1;historyNotice.clear();historyMore=false;historyLoaded=false;}
     QString historyMoney(const app::HistoryMoney& value) const {
         if(value.definition.empty())return {};
         return money(Money(value.units,Currency::from_definition(value.definition)),amountFormat);
@@ -674,6 +675,11 @@ struct ImportModel::Worker {
         if(changes.empty())return {};
         if(changes.front().named_only){QStringList names;for(const auto& change:changes)names.push_back(text(change.field));return "Fields: "+names.join(", ")+".";}
         QStringList lines;for(const auto& change:changes)lines.push_back(historyChangeText(change)+".");return lines.join(" ");
+    }
+    QString connectedLineText(const app::ConnectedUndoLine& line) const {
+        if(!line.changes.empty() && !line.changes.front().named_only){QStringList parts;for(const auto& change:line.changes)parts.push_back(historyChangeText(change));return parts.join("; ");}
+        if(line.count>0)return text(line.label)+QString(" · %1 transaction%2").arg(line.count).arg(line.count==1?"":"s");
+        return text(line.label);
     }
     QString historyBalanceText(const app::HistoryBalance& balance) const {
         if(balance.kind==app::HistoryBalanceKind::delta && !balance.change.definition.empty()){
@@ -1131,7 +1137,7 @@ struct ImportModel::Worker {
         state["actionUndo"]=actionUndo;state["canUndoAction"]=!actionUndo.isEmpty() && actionUndo.value("refusal").toString().isEmpty();
         state["canUndoManual"]=false;state["canUndoEdit"]=state["canUndoAction"];state["groupEditUndo"]=false;
         state["editUndoLabel"]=actionUndo.isEmpty()?QString("Undo"):QString("Undo %1…").arg(actionUndo.value("label").toString());state["ledgerEditGeneration"]=QString::number(repo.ledger_edit_generation());
-        state["importUndoPreview"]=importUndoPreview;
+        state["importUndoPreview"]=importUndoPreview;state["connectedUndo"]=connectedUndo;
         state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
         QVariantList aliasList;for(const auto& alias:repo.account_aliases())aliasList.push_back(QVariantMap{{"name",text(alias.name)},{"accountId",QString::number(alias.account)}});
         state["accountAliases"]=aliasList;
@@ -1276,8 +1282,8 @@ struct ImportModel::Worker {
         // Income grouping changes no ledger values, labels, filters or Review facts.
         const bool incomeOnly=action=="apply_category" &&
             (a.contains("income") || (preparedCategory && preparedCategory->request.action==app::CategoryAction::set_income));
-        if(!incomeOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="check_file" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();exchangeMessage.clear();reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(!incomeOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="backup" && action!="check_file" && action!="history" && action!="entry_history" && action!="preview_change" && action!="preview_connected_undo" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();exchangeMessage.clear();reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();connectedUndo.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -1408,7 +1414,36 @@ struct ImportModel::Worker {
             for(const auto& id:priorSelection)if(retained.contains(id))selection.insert(id);
             if(priorFocus && selection.contains(*priorFocus))selectionFocus=priorFocus;
             if(priorAnchor && selection.contains(*priorAnchor))selectionAnchor=priorAnchor;
-            changePreview.clear();preparedChange.reset();bulkPreview.clear();preparedBulk.reset();rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();importUndoPreview.clear();
+            changePreview.clear();preparedChange.reset();bulkPreview.clear();preparedBulk.reset();rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();importUndoPreview.clear();connectedUndo.clear();
+            if(historyLoaded)listHistory();invalidate();return;
+        }
+        if(action=="preview_connected_undo") {
+            connectedUndo.clear();
+            const auto preview=repo.preview_connected_undo(str(a.value("id")),repo.action_token());
+            QVariantList lines;for(const auto& line:preview.lines)lines.push_back(QVariantMap{{"id",text(line.id)},{"text",connectedLineText(line)}});
+            QStringList names;for(const auto& name:preview.accounts)names.push_back(text(name));
+            connectedUndo={{"id",text(preview.target)},{"session",QString::number(preview.token.session)},{"epoch",QString::number(preview.token.epoch)},{"head",text(preview.token.head)},{"label",text(preview.label)},{"change",historyConfirmChange(preview.changes)},{"count",static_cast<qlonglong>(preview.count)},{"accounts",names.join(", ")},{"kind",static_cast<int>(preview.kind)},{"lines",lines},{"refusal",text(preview.refusal)}};
+            return;
+        }
+        if(action=="undo_connected") {
+            if(connectedUndo.value("id").toString()!=a.value("id").toString() || connectedUndo.value("session").toString()!=a.value("session").toString() || connectedUndo.value("epoch").toString()!=a.value("epoch").toString() || connectedUndo.value("head").toString()!=a.value("head").toString())
+                throw std::logic_error("Changes were saved. Refresh the action and try again.");
+            app::ConnectedUndoPreview request;request.target=str(a.value("id"));request.token={a.value("session").toString().toLongLong(),a.value("epoch").toString().toLongLong(),str(a.value("head"))};
+            const auto operation=identity();
+            try {repo.undo_connected(operation,request);}
+            catch(...) {const auto failure=std::current_exception();std::optional<app::ActionReceipt> saved;
+                try{saved=repo.undo_connected_outcome(operation,request);}catch(...){gateway->close();active=false;throw std::runtime_error("Reopen the file and check the transactions before retrying Undo.");}
+                if(!saved)std::rethrow_exception(failure);
+            }
+            observedSaved();
+            const imports::Occurrence inspected{selectedBatch,selectedOrdinal};const auto priorSelection=selection;const auto priorFocus=selectionFocus,priorAnchor=selectionAnchor;
+            selection.clear();selectionFocus.reset();selectionAnchor.reset();selected.clear();selectedBatch.clear();selectedCommittedToken.reset();
+            const auto rows=repo.current_ledger();std::set<imports::Occurrence> retained;for(const auto& row:rows)retained.insert(row.identity);
+            if(!inspected.batch.empty() && retained.contains(inspected))inspect(inspected.batch,inspected.ordinal,context);
+            for(const auto& id:priorSelection)if(retained.contains(id))selection.insert(id);
+            if(priorFocus && selection.contains(*priorFocus))selectionFocus=priorFocus;
+            if(priorAnchor && selection.contains(*priorAnchor))selectionAnchor=priorAnchor;
+            changePreview.clear();preparedChange.reset();bulkPreview.clear();preparedBulk.reset();rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();importUndoPreview.clear();connectedUndo.clear();
             if(historyLoaded)listHistory();invalidate();return;
         }
         if(action=="review_load") {context.checkpoint("Preparing Review");return;}
@@ -2132,7 +2167,7 @@ struct ImportModel::Worker {
             receipt={{"operation",text(result->operation)},{"summary",QString("Accepted %1 new transactions across all accounts. %2 import problems remain.").arg(result->transactions).arg(result->failed_records)}};observedSaved();
             if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="preview_import_undo") {
-            importUndoPreview.clear();
+            importUndoPreview.clear();connectedUndo.clear();
             const auto source=str(a.value("source"));const auto preview=repo.review_import_undo(source);
             QVariantList accounts;for(const auto id:preview.affected_accounts)accounts.push_back(QString::number(id));
             importUndoPreview={{"source",text(source)},{"token",QString::number(preview.token)},{"transactions",static_cast<qlonglong>(preview.transactions)},{"failures",static_cast<qlonglong>(preview.failures)},{"accounts",accounts}};
@@ -2142,7 +2177,7 @@ struct ImportModel::Worker {
             const auto operation="undo-import-"+identity();std::optional<app::RollbackReceipt> result;
             try{result=repo.undo_import(operation,source,a.value("token").toString().toLongLong());}
             catch(...){const auto failure=std::current_exception();try{result=repo.import_undo_outcome(operation,source);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("SpentIt could not confirm whether the import was undone. Reopen the file and check the transactions before trying again.");}if(!result)std::rethrow_exception(failure);}
-            observedSaved();importUndoPreview.clear();selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();
+            observedSaved();importUndoPreview.clear();connectedUndo.clear();selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();
             receipt={{"operation",text(result->operation)},{"summary",QString("Import undone. Removed %1 new transactions and %2 import problems.").arg(result->transactions).arg(result->failures)}};
         } else if(action=="discard") {
             if(!a.contains("token"))throw std::logic_error("Review account rollback first");
@@ -2652,7 +2687,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
             result.error=((action=="save_manual" || action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="set_memo_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
-                :(action=="undo_action" && worker->diagnosticSaved)?"The action was undone, but the screen could not update. Reopen the file before continuing."
+                :((action=="undo_action" || action=="undo_connected") && worker->diagnosticSaved)?"The action was undone, but the screen could not update. Reopen the file before continuing."
                 :(action=="delete_selection" && worker->diagnosticSaved)?"The transactions were deleted, but the screen could not update. Reopen the file before continuing."
                  :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."

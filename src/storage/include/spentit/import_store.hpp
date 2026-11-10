@@ -48,6 +48,9 @@ public:
     app::UndoPreview preview_undo(std::string_view,const app::ActionToken&) const override;
     std::optional<app::ActionReceipt> undo_action_outcome(std::string_view,const app::UndoPreview&) const override;
     app::ActionReceipt undo_action(std::string_view,const app::UndoPreview&) override;
+    app::ConnectedUndoPreview preview_connected_undo(std::string_view,const app::ActionToken&) const override;
+    app::ActionReceipt undo_connected(std::string_view,const app::ConnectedUndoPreview&) override;
+    std::optional<app::ActionReceipt> undo_connected_outcome(std::string_view,const app::ConnectedUndoPreview&) const override;
     reports::Catalog report_catalog() const override;
     bool definition_import_completed(std::string_view,const app::DefinitionImport&) const override;
     void import_definitions(std::string_view,const app::DefinitionImport&,const app::OperationContext&) override;
@@ -201,6 +204,9 @@ private:
     app::HistoryActionView history_view(const app::ActionSummary&, std::int64_t account, bool with_balance, bool named_only) const;
     bool history_touches(const app::ActionSummary&, std::int64_t account) const;
     bool history_includes(const app::ActionSummary&, const imports::Occurrence&) const;
+    std::set<imports::Occurrence> history_occurrences(const app::ActionSummary&) const;
+    std::vector<app::ActionSummary> connected_actions(std::string_view) const;
+    app::ConnectedUndoLine connected_line(const app::ActionSummary&) const;
     std::vector<app::HistoryFieldChange> history_named_fields(const app::ActionSummary&) const;
     void begin_import_action(std::string_view,std::string_view);
     void complete_import_action(std::string_view,bool awaiting_decision=false);

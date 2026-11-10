@@ -38,6 +38,9 @@ public:
     app::ImportStage import_stage(std::string_view id) const;
     void finish_import(std::string_view id, bool cancelled);
     void reversed(const app::ActionToken&, std::string_view operation, std::string_view digest);
+    // Remove one applied action from the chain after its domain restore. The
+    // action need not be the head. The caller checked the session token once.
+    void detached(std::string_view action, std::string_view operation, std::string_view digest);
     void expire(const app::ActionToken&);
     void verify() const;
 

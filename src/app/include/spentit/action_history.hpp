@@ -95,4 +95,26 @@ struct AccountHistoryPage {
     std::string notice;
 };
 
+// One row of the Change history Undo dialog. The text is read from the action
+// already stored with that change. It is not a second journal.
+struct ConnectedUndoLine {
+    std::string id;
+    std::string payload;
+    std::string label;
+    std::int64_t count = 0;
+    ActionKind kind = ActionKind::transaction;
+    std::vector<HistoryFieldChange> changes;
+};
+struct ConnectedUndoPreview {
+    ActionToken token;
+    std::string target;
+    std::vector<ConnectedUndoLine> lines;
+    std::string refusal;
+    std::string label;
+    std::int64_t count = 0;
+    ActionKind kind = ActionKind::transaction;
+    std::vector<std::string> accounts;
+    std::vector<HistoryFieldChange> changes;
+};
+
 } // namespace spentit::app

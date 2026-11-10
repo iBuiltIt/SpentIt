@@ -62,9 +62,10 @@ and it cannot bring back changes from before the file was closed. The page
 does not name the account. An open card can belong to a different moment than
 the list above it.
 
-The ledger Undo button beside search is the live stack. It undoes the newest
-action in the file after a confirmation. This handoff makes Change history
-show that same stack. It must not grow a second Undo policy.
+The ledger Undo button beside search, and Ctrl+Z, are the live stack. They
+undo only the newest action in the file after a confirmation. Change history
+shows that same stack. Undo on this page can restore an older action. It does
+not add a second journal.
 
 ## Layout
 
@@ -117,24 +118,37 @@ import. The user undoes the import as a whole.
 
 ## Undo
 
-The Undo button sits on the open action, and only when that action is the
-newest one in the file. The label matches the ledger button, for example
-**Undo rename payee…**. The confirmation names the action, the count, the
-accounts, and the field change, with **Undo** and **Cancel**. Cancel writes
-nothing. Reuse the existing confirmation.
+**Undo** sits beside **Show in ledger** on every open action. The button says
+**Undo**. The ledger button and Ctrl+Z stay newest-only.
 
-When a newer action is on top, show no Undo button. One line names it:
-“Undo &lt;that action&gt; first.” Name the other account when the newer action
-is there. The page must not undo a different action than the ledger Undo
-button.
+The list of what else must be undone is the later applied actions that wrote
+a transaction this action wrote, then the later actions that wrote a
+transaction those actions wrote, and so on. It includes the action that was
+opened. It is read from the membership already stored with each action. Nothing
+is written to build the list. An opening that wrote no transaction is not on
+a payee list. Its own list is only itself. A currency change that recorded
+those transactions is on the list. Acceptance after a rename includes those
+transactions. An unrelated change stays applied and off the list.
+
+When that list is the one action, reuse the existing confirmation. Its title
+is **Undo &lt;that action&gt;?**. **Undo** restores that action. **Cancel** writes
+nothing. This is the path even when the action is not the newest one in the
+file.
+
+When the list is longer, one modal asks once. The title is **To undo, these
+changes also need to be undone**. The scrollable list is newest first. Each
+line is the change the page already shows, such as **Payee: C3 → C4**. **Yes,
+undo all** restores every action on the list, newest first, or none of them.
+**Cancel** writes nothing. The restore uses the before-values already saved
+with each change. The closure is computed again when Yes is chosen. A stale
+page says to refresh the action and try again.
 
 A member of a selection rename, bulk category change, or rule application
 cannot be undone alone. Remove the always-visible Review Undo button and the
 extra Review group Undo buttons.
 
-An undone action leaves the list. The action underneath then offers Undo when
-it is the newest one. This page is the stack for this visit, not an archive
-of undone work.
+An undone action leaves the list. This page is the stack for this visit, not
+an archive of undone work.
 
 While the application is busy, keep the controls present and unavailable.
 An unsaved ledger edit still asks Save, Discard, or Stay before Undo. Saving
@@ -201,16 +215,19 @@ records.
 1. **Import file · 4 transactions.** Rules that categorized them during the
    import do not appear.
 2. **Rename payee · 4 transactions**, each marked New. The change is Cafe →
-   Cafe North. Undo is offered only while this is the newest action.
+   Cafe North. Undo of this row, while it is the newest action, uses the
+   single confirmation.
 3. **Accept transactions.** The same four are now Accepted. The rename row
-   remains, with the mark updated. Its Undo is hidden while acceptance is newer.
-   The line says to undo Accept transactions first.
+   remains, with the mark updated. Undo of the rename lists Accept
+   transactions and then the rename. Yes, undo all returns the four to New
+   and restores Cafe. Cancel leaves both actions applied.
 4. A later **Apply rules** that the user runs from Rules is a new row. It is
    not folded into the import.
 
 One rename of two New transactions and two Accepted transactions is one row.
 Each transaction keeps its own New or Accepted mark. A newer edit in Savings
-hides Undo here and names Savings.
+that does not share these transactions stays applied. It is not on this
+Undo list.
 
 ## Behaviour that stays
 
@@ -240,10 +257,12 @@ to finish the page.
 Use synthetic data only. Record the commands and the actual results in
 [status](status.md). Do not claim this design session ran them.
 
-- Rename four New transactions: one row, payee before → after, Undo only while
-  it is the newest action.
-- A later single edit hides that Undo and names the later edit. Undoing the
-  edit offers the rename again, and the edit leaves the list.
+- Rename four New transactions: one row, payee before → after. Undo of that
+  row, when nothing later shares those transactions, uses the single
+  confirmation and restores that row even if newer unrelated actions exist.
+- A later edit of the same transactions opens the modal. The list is the later
+  edit, then the rename. Yes, undo all restores both. Cancel writes nothing.
+  Undoing only the later edit, from its own row, leaves the rename.
 - Accept, then rename: both rows remain. The earlier rename stays visible and
   its transactions are marked Accepted.
 - One rename of mixed New and Accepted transactions: one row, each transaction
@@ -254,7 +273,8 @@ Use synthetic data only. Record the commands and the actual results in
   its own row, and undoing it keeps the saved rule.
 - A bulk category change is one row.
 - A payee-only change has no balance line. A change that moves money shows the balance effect.
-- A newer action in another account hides Undo and names that account.
+- A newer action in another account that does not share these transactions
+  stays off the Undo list. One that shares a transaction is on the list.
 - A member of the selection cannot be undone alone.
 - Show in ledger is one button on the open action and selects the highlighted transaction.
 - Switching accounts does not keep the previous account’s open action.

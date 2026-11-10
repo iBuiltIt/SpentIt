@@ -1,6 +1,7 @@
 #include <spentit/import_store.hpp>
 #include <algorithm>
 #include <filesystem>
+#include <initializer_list>
 #include <iostream>
 #include <unistd.h>
 #include "fault_vfs.hpp"
@@ -336,6 +337,101 @@ void change_history(const std::filesystem::path& path) {
     {auto reopened=ImportStore::open(path,"synthetic");check(!reopened.action_head() && history_page(reopened,1).actions.empty(),"Close and reopen clears the list");check(reopened.committed_entry({"four",0}).current.draft.payee==payee,"The payee change remains");}
 }
 
+std::string payee_of(ImportStore& store,const imports::Occurrence& id) {
+    if(store.transaction_accepted(id))return store.committed_entry(id).current.draft.payee;
+    return store.row(id).draft->payee;
+}
+std::string bank_rows(std::initializer_list<const char*> payees) {
+    std::string rows="!Type:Bank\n";
+    for(const auto* payee:payees) rows+=std::string("D01/01/2026\nT-10.00\nP")+payee+"\n^\n";
+    return rows;
+}
+bool refuses_latest(ImportStore& store,std::string_view id) {
+    try{store.preview_undo(id,store.action_token());}catch(const storage::ImportError& error){return std::string(error.what()).find("Undo the latest action first.")!=std::string::npos;}
+    return false;
+}
+void connected_undo(const std::filesystem::path& directory) {
+    {
+        auto store=ImportStore::create(directory/"separate.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.ingest("four",bank_rows({"A","B","C","D"}),qif::DateOrder::dmy);
+        rename_payees(store,"r0",{{"four",0}},"A1");
+        rename_payees(store,"r1",{{"four",1}},"B1");
+        rename_payees(store,"r2",{{"four",2}},"C1");
+        rename_payees(store,"r3",{{"four",3}},"D1");
+        const auto preview=store.preview_connected_undo("r0",store.action_token());
+        check(preview.lines.size()==1 && preview.lines.front().id=="r0","Separate payee groups undo alone");
+        store.observer([&](storage::ImportPhase phase){if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("stop before save");});
+        bool stopped=false;try{store.undo_connected("stopSeparate",preview);}catch(const std::runtime_error&){stopped=true;}
+        store.observer({});
+        check(stopped && payee_of(store,{"four",0})=="A1" && store.action_head()->id=="r3","A refused save leaves every payee applied");
+        store.verify();
+        store.undo_connected("undoSeparate",store.preview_connected_undo("r0",store.action_token()));
+        check(payee_of(store,{"four",0})=="A" && payee_of(store,{"four",1})=="B1" && payee_of(store,{"four",2})=="C1" && payee_of(store,{"four",3})=="D1","Only the chosen payee returns");
+        check(store.action_head()->id=="r3" && refuses_latest(store,"r0"),"Older Undo stays off the newest-action command");
+        const auto page=history_page(store,1);
+        check(find_action(page,"r1") && find_action(page,"r2") && find_action(page,"r3") && !find_action(page,"r0"),"The undone rename leaves the chain");
+        undo(store,"undoNewest","r3");
+        check(payee_of(store,{"four",3})=="D" && store.action_head()->id=="r2","The newest action still undoes by itself");
+        store.verify();
+    }
+    {
+        auto store=ImportStore::create(directory/"chain.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.ingest("src",bank_rows({"A","B","C","D","E"}),qif::DateOrder::dmy);
+        edit(store,"c1",{"src",2},"C1");
+        rename_payees(store,"abc",{{"src",0},{"src",1},{"src",2}},"Group");
+        edit(store,"d1",{"src",3},"D1");
+        rename_payees(store,"bc",{{"src",1},{"src",2}},"Later");
+        edit(store,"b3",{"src",1},"B3");
+        edit(store,"e1",{"src",4},"E1");
+        edit(store,"c4",{"src",2},"C4");
+        store.correct_opening("open1","2026-01-01",Money(500,Currency("CAD")));
+        const auto preview=store.preview_connected_undo("c1",store.action_token());
+        std::vector<std::string> ids;for(const auto& line:preview.lines)ids.push_back(line.id);
+        check(ids==std::vector<std::string>{"c4","b3","bc","abc","c1"},"Connected Undo lists the shared transactions newest first");
+        store.undo_connected("undoChain",preview);
+        check(payee_of(store,{"src",0})=="A" && payee_of(store,{"src",1})=="B" && payee_of(store,{"src",2})=="C","Shared payees return to the imported text");
+        check(payee_of(store,{"src",3})=="D1" && payee_of(store,{"src",4})=="E1","Unrelated payees stay");
+        check(store.action_head()->id=="open1" && store.account().opening.units()==500,"An opening that wrote no transaction stays applied");
+        const auto page=history_page(store,1);
+        check(find_action(page,"open1") && find_action(page,"e1") && find_action(page,"d1") && find_action(page,"src") && !find_action(page,"c1"),"Unrelated actions remain on the page");
+        store.verify();
+    }
+    {
+        auto store=ImportStore::create(directory/"accept.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.ingest("one",source("Pay"),qif::DateOrder::dmy);
+        rename_payees(store,"ren",{{"one",0}},"Renamed");
+        store.accept_all("accept",true);
+        const auto preview=store.preview_connected_undo("ren",store.action_token());
+        check(preview.lines.size()==2 && preview.lines[0].id=="accept" && preview.lines[1].id=="ren","Acceptance after a rename is on the list");
+        store.undo_connected("undoRenamed",preview);
+        check(!store.transaction_accepted({"one",0}) && payee_of(store,{"one",0})=="Pay" && store.action_head()->id=="one","Undo returns the transaction to New and keeps the import");
+        store.verify();
+    }
+    {
+        auto store=ImportStore::create(directory/"stale.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.ingest("two",bank_rows({"Keep","Other"}),qif::DateOrder::dmy);
+        rename_payees(store,"keep",{{"two",0}},"Kept");
+        const auto preview=store.preview_connected_undo("keep",store.action_token());
+        edit(store,"other",{"two",1},"Edited");
+        bool stale=false;try{store.undo_connected("staleUndo",preview);}catch(const storage::ImportError& error){stale=std::string(error.what()).find("Refresh the action and try again.")!=std::string::npos;}
+        check(stale && payee_of(store,{"two",0})=="Kept" && payee_of(store,{"two",1})=="Edited" && store.action_head()->id=="other","A stale Undo writes nothing");
+        store.verify();
+    }
+    {
+        auto store=ImportStore::create(directory/"import.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.ingest("src",bank_rows({"Left","Right"}),qif::DateOrder::dmy);
+        edit(store,"editLeft",{"src",0},"Changed");
+        imports::DraftRow manual{"2026-01-02","Kept manual","",Transaction::manual(Money(-250,Currency("CAD")),{{"","",Money(-250,Currency("CAD"))}})};
+        store.create_manual("kept",manual);
+        const auto preview=store.preview_connected_undo("src",store.action_token());
+        check(preview.lines.size()==2 && preview.lines[0].id=="editLeft" && preview.lines[1].id=="src","An import closure includes its later edit only");
+        store.undo_connected("undoSrc",preview);
+        check(store.action_head() && store.action_head()->id=="kept" && payee_of(store,{"kept",0})=="Kept manual","The unrelated manual remains");
+        bool removed=false;try{const auto row=store.row({"src",0});removed=!row.draft.has_value();}catch(...){removed=true;}
+        check(removed,"Undoing the import removes its rows");
+        store.verify();
+    }
+}
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;
     for(const auto* sql:{"UPDATE review_undo_members SET consumed=0", "UPDATE review_undo_members SET original_child='missing'"}) {
@@ -352,7 +448,7 @@ int main(int argc,char** argv){
     auto path=(std::filesystem::temp_directory_path()/"spentit-action-repository-XXXXXX").string();
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
-    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}corrupt_lineage(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");
+    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}corrupt_lineage(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

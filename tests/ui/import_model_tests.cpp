@@ -86,6 +86,9 @@ public:
     app::AccountHistoryPage account_change_history(std::int64_t account,std::int64_t before,std::size_t limit,const std::optional<imports::Occurrence>& focus) const override {return repo().account_change_history(account,before,limit,focus);}
     std::string action_display_label(const app::ActionSummary& action) const override {return repo().action_display_label(action);}
     std::vector<app::HistoryFieldChange> action_field_changes(const app::ActionSummary& action) const override {return repo().action_field_changes(action);}
+    app::ConnectedUndoPreview preview_connected_undo(std::string_view id,const app::ActionToken& token) const override {return repo().preview_connected_undo(id,token);}
+    app::ActionReceipt undo_connected(std::string_view operation,const app::ConnectedUndoPreview& preview) override {return repo().undo_connected(operation,preview);}
+    std::optional<app::ActionReceipt> undo_connected_outcome(std::string_view operation,const app::ConnectedUndoPreview& preview) const override {return repo().undo_connected_outcome(operation,preview);}
 
     std::int64_t next_account_identity() const override{return repo().next_account_identity();}
     qif::Result parsed_source(std::string_view id,const std::function<void()>& checkpoint={}) const override{return repo().parsed_source(id,checkpoint);}

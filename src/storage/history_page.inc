@@ -87,6 +87,35 @@ bool ImportStore::history_includes(const app::ActionSummary& action,const import
     }
     }
 }
+std::set<imports::Occurrence> ImportStore::history_occurrences(const app::ActionSummary& action) const {
+    std::set<imports::Occurrence> ids;
+    auto add=[&](std::string batch,std::int64_t ordinal){if(batch.empty() || ordinal<0)return;ids.insert({std::move(batch),static_cast<std::size_t>(ordinal)});};
+    auto link_ends=[&](std::string_view answer){
+        Statement rows(impl_->db,"SELECT prior_payload,result_payload FROM review_link_history WHERE answer=?1 OR answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||?1)");rows.text(1,answer);
+        while(rows.row())for(int column:{0,1})if(!rows.null(column)){const auto value=transfer_codec::view(rows.bytes(column));add(value.link.origin.endpoint.entry.batch,integer(value.link.origin.endpoint.entry.ordinal));add(value.link.destination.endpoint.entry.batch,integer(value.link.destination.endpoint.entry.ordinal));}
+    };
+    switch(action.kind) {
+    case app::ActionKind::opening: return {};
+    case app::ActionKind::manual_creation: add(action.payload,0);return ids;
+    case app::ActionKind::import: {
+        Statement query(impl_->db,"SELECT b.id,r.ordinal FROM batches b JOIN records r ON r.batch=b.id WHERE b.source_id=?");query.text(1,action.payload);while(query.row())add(query.bytes(0),query.integer(1));return ids;
+    }
+    case app::ActionKind::acceptance: {
+        Statement query(impl_->db,"SELECT o.batch,m.ordinal FROM acceptance_members m JOIN operations o ON o.id=m.operation WHERE m.decision=1 AND (o.id=?1 OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=?1))");query.text(1,action.payload);while(query.row())add(query.bytes(0),query.integer(1));
+        link_ends(action.id);return ids;
+    }
+    case app::ActionKind::currency: {
+        Statement query(impl_->db,"SELECT batch,ordinal FROM account_amount_revisions WHERE operation=? AND kind IN(0,2) AND position=0");query.text(1,action.payload);while(query.row())add(query.bytes(0),query.integer(1));
+        Statement sides(impl_->db,"SELECT v.payload FROM transfer_versions v JOIN ledger_operations l ON l.sequence=v.sequence WHERE l.kind=5 AND l.undo_of=?");sides.text(1,action.payload);
+        while(sides.row()){const auto value=transfer_codec::view(sides.bytes(0));add(value.link.origin.endpoint.entry.batch,integer(value.link.origin.endpoint.entry.ordinal));add(value.link.destination.endpoint.entry.batch,integer(value.link.destination.endpoint.entry.ordinal));}
+        return ids;
+    }
+    default: {
+        Statement query(impl_->db,(std::string("SELECT m.batch,m.ordinal FROM review_members m WHERE ")+member_where+" UNION SELECT r.batch,r.ordinal FROM review_repairs r WHERE r.answer=?1").c_str());query.text(1,action.id);while(query.row())add(query.bytes(0),query.integer(1));
+        link_ends(action.id);return ids;
+    }
+    }
+}
 app::HistoryActionView ImportStore::history_view(const app::ActionSummary& action,std::int64_t account,bool with_balance,bool named_only) const {
     app::HistoryActionView view;view.id=action.id;view.sequence=action.sequence;view.kind=action.kind;view.label=action_display_label(action);view.count=action.count;
     if(named_only && (action.kind==app::ActionKind::transaction || action.kind==app::ActionKind::rule_application || action.kind==app::ActionKind::review)){view.changes=history_named_fields(action);return view;}
