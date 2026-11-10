@@ -105,6 +105,16 @@ private slots:
             flick->setProperty("contentY",flick->property("contentHeight").toDouble()-flick->property("height").toDouble());
             QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REPORT_UI_CAPTURE")));
         }
+        auto* theme=object(root,"applicationTheme");QVERIFY(theme);
+        auto* rename=object(root,"reportRename");auto* remove=object(root,"reportDelete");
+        QVERIFY(rename && remove);QVERIFY(rename->property("enabled").toBool());
+        auto* renameText=rename->property("contentItem").value<QObject*>();QVERIFY(renameText);
+        auto* removeText=remove->property("contentItem").value<QObject*>();QVERIFY(removeText);
+        QCOMPARE(renameText->property("color"),theme->property("text"));
+        QVERIFY(remove->setProperty("enabled",false));
+        QCOMPARE(removeText->property("color"),theme->property("disabled"));
+        QVERIFY(remove->setProperty("highlighted",true));
+        QCOMPARE(remove->property("background").value<QObject*>()->property("color").value<QColor>().alpha(),0);
         for(const auto& warning:warnings){const auto list=qvariant_cast<QList<QQmlError>>(warning.front());for(const auto& item:list)qWarning().noquote()<<item.toString();}
         QVERIFY(warnings.isEmpty());
     }

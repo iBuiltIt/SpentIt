@@ -223,6 +223,9 @@ private slots:
         QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,accountList->mapToScene(QPointF(40,15)).toPoint());
         QTRY_VERIFY(object(root,"categoryContextMenu")->property("visible").toBool());
         QVERIFY(!object(root,"renameCategory")->property("enabled").toBool());QVERIFY(!object(root,"archiveCategory")->property("enabled").toBool());QVERIFY(!object(root,"deleteCategory")->property("enabled").toBool());
+        auto* theme=object(root,"applicationTheme");QVERIFY(theme);
+        auto* renameText=object(root,"renameCategory")->property("contentItem").value<QObject*>();QVERIFY(renameText);
+        QCOMPARE(renameText->property("color"),theme->property("disabled"));
         QVERIFY(QMetaObject::invokeMethod(object(root,"categoryContextMenu"),"close"));
         const auto group=createCategory(model,root,"Auto");QVERIFY(!group.isEmpty());
         const auto leaf=createCategory(model,root,"Auto: Parking");QVERIFY(!leaf.isEmpty());

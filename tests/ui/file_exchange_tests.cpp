@@ -159,9 +159,18 @@ private slots:
     void menuAndDialogs(){
         QSettings().clear();QTemporaryDir dir;ImportModel model(document_gateway());QQmlApplicationEngine engine;QSignalSpy warnings(&engine,&QQmlEngine::warnings);engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().empty());auto* root=engine.rootObjects().front();
         auto find=[&](const char* name)->QObject*{if(auto* item=root->findChild<QObject*>(name))return item;auto* window=qobject_cast<QQuickWindow*>(root);return window?visual(window->contentItem(),QString::fromLatin1(name)):nullptr;};
-        for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport","fileBackup"}){QVERIFY(find(name));QVERIFY(!find(name)->property("enabled").toBool());}
+        auto* theme=find("applicationTheme");QVERIFY(theme);
+        for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport","fileBackup"}){
+            QVERIFY(find(name));QVERIFY(!find(name)->property("enabled").toBool());
+            auto* text=find(name)->property("contentItem").value<QObject*>();QVERIFY(text);
+            QCOMPARE(text->property("color"),theme->property("disabled"));
+        }
         run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
-        for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport","fileBackup"})QVERIFY(find(name)->property("enabled").toBool());
+        for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport","fileBackup"}){
+            QVERIFY(find(name)->property("enabled").toBool());
+            auto* text=find(name)->property("contentItem").value<QObject*>();QVERIFY(text);
+            QCOMPARE(text->property("color"),theme->property("text"));
+        }
         QFile imported(dir.filePath("input.qif"));QVERIFY(imported.open(QIODevice::WriteOnly));imported.write("!Type:Bank\nD2026-02-01\nT-12.34\nPMerchant\tbranch\nMMemo\rcontinued\n^\n");imported.close();run(model,"import",{{"path",imported.fileName()},{"account","1"},{"profile","MDY"}});QCOMPARE(model.state().value("balance").toString(),"-12.34");
         run(model,"create_account",{{"id","2"},{"name","Other"},{"currency","CAD"},{"date","2026-01-01"}});run(model,"select_account",{{"id","1"}});
 

@@ -2253,6 +2253,15 @@ private slots:
         QCOMPARE(m.state().value("accountId").toString(),QString("1"));
         QVERIFY(!root->findChild<QObject*>("archiveAccount")->property("visible").toBool());
         auto* reactivate=root->findChild<QObject*>("reactivateAccount");QVERIFY(reactivate->property("visible").toBool());
+        auto* theme=root->findChild<QObject*>("applicationTheme");QVERIFY(theme);
+        auto* importItem=root->findChild<QObject*>("accountImport");QVERIFY(importItem);QVERIFY(!importItem->property("enabled").toBool());
+        auto* importText=importItem->property("contentItem").value<QObject*>();QVERIFY(importText);
+        QCOMPARE(importText->property("color"),theme->property("disabled"));
+        QVERIFY(importItem->setProperty("highlighted",true));
+        auto* importBackground=importItem->property("background").value<QObject*>();QVERIFY(importBackground);
+        QCOMPARE(importBackground->property("color").value<QColor>().alpha(),0);
+        auto* reactivateText=reactivate->property("contentItem").value<QObject*>();QVERIFY(reactivateText);
+        QCOMPARE(reactivateText->property("color"),theme->property("text"));
         if(qEnvironmentVariableIsSet("SPENTIT_ACCOUNT_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_ACCOUNT_SCREENSHOT")));}
         QVERIFY(QMetaObject::invokeMethod(reactivate,"triggered"));
         QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));

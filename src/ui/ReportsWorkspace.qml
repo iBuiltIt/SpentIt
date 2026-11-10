@@ -9,6 +9,20 @@ Item {
     property var guardAction: function(action) { action() }
     property alias ledgerHost: detailLedgerHost
     Theme { id: reportTheme }
+    // Same enabled and disabled colours as the ledger menu in ImportMain.qml.
+    component ReportMenuItem: MenuItem {
+        id: menuItem
+        hoverEnabled: enabled
+        palette.windowText: enabled ? reportTheme.text : reportTheme.disabled
+        palette.disabled.windowText: reportTheme.disabled
+        background: Rectangle {
+            implicitWidth: 200; implicitHeight: 40
+            x: 1; y: 1; width: menuItem.width - 2; height: menuItem.height - 2
+            color: menuItem.enabled && (menuItem.highlighted || menuItem.down) ? reportTheme.selection : "transparent"
+            border.color: reportTheme.border
+            border.width: menuItem.enabled && menuItem.highlighted && Qt.styleHints.accessibility.contrastPreference === Qt.HighContrast ? 1 : 0
+        }
+    }
     readonly property var state:workflow.state
     property var drafts:[]
     property var savedDefinitions:[]
@@ -220,7 +234,10 @@ Item {
                         Button {objectName:index===root.selectedIndex?"showReport":"";text:root.changed(index)?"Save and show":"Show report";enabled:!root.state.readOnly || !root.changed(index);onClicked:root.show(index)}
                     }
                 }
-                Menu {id:reportContext;MenuItem {text:"Rename";onTriggered:reportName.forceActiveFocus()} MenuItem {text:"Delete report…";visible:!root.currentNew;enabled:!root.state.readOnly;onTriggered:root.deleteCurrent()}}
+                Menu {id:reportContext
+                    ReportMenuItem {objectName:"reportRename";text:"Rename";onTriggered:reportName.forceActiveFocus()}
+                    ReportMenuItem {objectName:"reportDelete";text:"Delete report…";visible:!root.currentNew;enabled:!root.state.readOnly;onTriggered:root.deleteCurrent()}
+                }
                 Label {textFormat:Text.PlainText;visible:!root.drafts.length;text:"No reports yet.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {objectName:"reportNoMatches";visible:root.drafts.length>0 && root.searchMatches===0;textFormat:Text.PlainText;text:'No reports match “'+reportSearch.text+'”.';wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Button {visible:reportSearch.text.length>0 && root.searchMatches===0;text:"Clear search";onClicked:reportSearch.text=""}

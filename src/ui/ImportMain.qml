@@ -36,6 +36,9 @@ ApplicationWindow {
     palette.disabled.highlightedText: theme.disabled
     // The header Help action never accepts/rejects the dialog or takes pointer
     // focus from an editor. Keyboard users can still Tab to it.
+    // Enabled commands use the normal text colour. Disabled commands use the
+    // disabled colour and do not highlight. The menu bar and the other context
+    // menus share this with the ledger menu.
     component LedgerMenuItem: MenuItem {
         id: menuItem
         objectName:subMenu?"ledgerSubmenu_"+subMenu.objectName:""
@@ -210,13 +213,13 @@ ApplicationWindow {
         Menu {
             id:diagnosticFileMenu
             title: "File"
-            MenuItem {objectName:"fileQifExport";text:"QIF Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){workflow.command("exchange_qif_prepare")})}
-            MenuItem {objectName:"fileSpentItExport";text:"SpentIt Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){definitionExportDialog.open()})}
-            MenuItem {objectName:"fileSpentItImport";text:"SpentIt Import…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){exchangeOpenDialog.open()})}
-            MenuItem {objectName:"fileBackup";text:"Backup…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){backupDialog.open()})}
+            LedgerMenuItem {objectName:"fileQifExport";text:"QIF Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){workflow.command("exchange_qif_prepare")})}
+            LedgerMenuItem {objectName:"fileSpentItExport";text:"SpentIt Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){definitionExportDialog.open()})}
+            LedgerMenuItem {objectName:"fileSpentItImport";text:"SpentIt Import…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){exchangeOpenDialog.open()})}
+            LedgerMenuItem {objectName:"fileBackup";text:"Backup…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){backupDialog.open()})}
             MenuSeparator {}
 
-            MenuItem {
+            LedgerMenuItem {
                 objectName: "fileCloseDataset";text: "Close file"
                 enabled: !!s.active && !workflow.busy
                 onTriggered: guard(function(){workflow.command("close")})
@@ -236,9 +239,9 @@ ApplicationWindow {
                 helpMenuTracking = false
                 helpMenuReturnItem = null
             })
-            MenuItem { objectName: "openAbout"; text: "About SpentIt"; enabled: !rulesLeaving && !reportsWorkspace.leaving; onTriggered: window.openAbout() }
-            MenuItem { objectName: "openHelp"; text: "SpentIt Help"; onTriggered: openHelp() }
-            MenuItem { objectName: "openScreenHelp"; text: "Help for this screen"; onTriggered: openContextHelp(screenHelpTarget()) }
+            LedgerMenuItem { objectName: "openAbout"; text: "About SpentIt"; enabled: !rulesLeaving && !reportsWorkspace.leaving; onTriggered: window.openAbout() }
+            LedgerMenuItem { objectName: "openHelp"; text: "SpentIt Help"; onTriggered: openHelp() }
+            LedgerMenuItem { objectName: "openScreenHelp"; text: "Help for this screen"; onTriggered: openContextHelp(screenHelpTarget()) }
         }
     }
     Shortcut { sequences: [StandardKey.HelpContents]; context: Qt.ApplicationShortcut; enabled: !rulesLeaving && !reportsWorkspace.leaving; onActivated: openContextHelp(screenHelpTarget()) }
@@ -766,17 +769,17 @@ ApplicationWindow {
     }
     Menu {
         id:accountContext;objectName:"accountContextMenu"
-        MenuItem {objectName:"accountImport";text:"Import…";enabled:!s.readOnly && !workflow.busy;onTriggered:{importTarget=s.accountId;importDialog.open()}}
-        MenuItem {objectName:"undoLastImport";text:"Undo last import…";enabled:!s.readOnly && !workflow.busy && accountImports(s.accountId||"").length>0;onTriggered:guard(function(){let items=accountImports(s.accountId||"");if(items.length)requestImportUndo(items[0])})}
-        MenuItem {objectName:"discardImport";text:"Discard new transactions…";enabled:!s.readOnly && !workflow.busy;onTriggered:guard(function(){discardDialog.open()})}
+        LedgerMenuItem {objectName:"accountImport";text:"Import…";enabled:!s.readOnly && !workflow.busy;onTriggered:{importTarget=s.accountId;importDialog.open()}}
+        LedgerMenuItem {objectName:"undoLastImport";text:"Undo last import…";enabled:!s.readOnly && !workflow.busy && accountImports(s.accountId||"").length>0;onTriggered:guard(function(){let items=accountImports(s.accountId||"");if(items.length)requestImportUndo(items[0])})}
+        LedgerMenuItem {objectName:"discardImport";text:"Discard new transactions…";enabled:!s.readOnly && !workflow.busy;onTriggered:guard(function(){discardDialog.open()})}
         parent:window.contentItem
-        MenuItem {height:visible?implicitHeight:0;objectName:"renameAccount";text:"Rename…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){renameField.text=s.name||"";renameDialog.open()})}
-        MenuItem {height:visible?implicitHeight:0;objectName:"archiveAccount";text:"Archive";visible:!!s.accountSelected && !s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("archive_account",{operation:workflow.newIdentity()})})}
-        MenuItem {height:visible?implicitHeight:0;objectName:"reactivateAccount";text:"Reactivate";visible:!!s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("reactivate_account",{operation:workflow.newIdentity()})})}
-        MenuItem {height:visible?implicitHeight:0;objectName:"deleteAccount";text:"Delete…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){deleteAccountDialog.open()})}
-        MenuItem {height:visible?implicitHeight:0;objectName:"correctOpening";text:"Correct opening…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:editOpening()}
-        MenuItem {height:visible?implicitHeight:0;objectName:"reassignCurrency";text:"Reassign currency…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:guard(function(){currencySearch.text="";currencyDialog.open()})}
-        MenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:undoEdit()}
+        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"renameAccount";text:"Rename…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){renameField.text=s.name||"";renameDialog.open()})}
+        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"archiveAccount";text:"Archive";visible:!!s.accountSelected && !s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("archive_account",{operation:workflow.newIdentity()})})}
+        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"reactivateAccount";text:"Reactivate";visible:!!s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("reactivate_account",{operation:workflow.newIdentity()})})}
+        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"deleteAccount";text:"Delete…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){deleteAccountDialog.open()})}
+        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"correctOpening";text:"Correct opening…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:editOpening()}
+        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"reassignCurrency";text:"Reassign currency…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:guard(function(){currencySearch.text="";currencyDialog.open()})}
+        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:undoEdit()}
     }
     function historyAccountChoices() {
         const rows=(s.sidebarAccounts||s.accounts||[]).slice()
@@ -2587,9 +2590,9 @@ ApplicationWindow {
     }
     Menu {
         id:categoryContext;objectName:"categoryContextMenu"
-        MenuItem {objectName:"renameCategory";text:"Rename";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction("rename")}
-        MenuItem {objectName:"archiveCategory";text:categoryMenuEntry.ownArchived?"Unarchive":"Archive";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction(categoryMenuEntry.ownArchived?"unarchive":"archive")}
-        MenuItem {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction("delete")}
+        LedgerMenuItem {objectName:"renameCategory";text:"Rename";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction("rename")}
+        LedgerMenuItem {objectName:"archiveCategory";text:categoryMenuEntry.ownArchived?"Unarchive":"Archive";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction(categoryMenuEntry.ownArchived?"unarchive":"archive")}
+        LedgerMenuItem {objectName:"deleteCategory";text:"Delete unused category";enabled:!categoryMenuEntry.account && !categoryMenuEntry.deleted;onTriggered:categoryMenuAction("delete")}
     }
     HelpDialog {
         helpTarget: "help:organize-categories#choose-a-category-for-a-transaction"
