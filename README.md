@@ -8,6 +8,8 @@ There is no budget to keep, no tax preparation, and no investment tracking. Spen
 
 Your data stays on your own computer. If you would like the file to stay private, give it a password and SpentIt encrypts it for you. 
 
+SpentIt was developed with the aid of AI.  It has been tested on macOS, Windows and Linux.
+
 ![SpentIt](assets/images/SpentIt_light_512.png)
 
 ## What you can do
