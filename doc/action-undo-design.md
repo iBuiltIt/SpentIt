@@ -1,21 +1,10 @@
 # Unified transaction Undo and whole-import rollback
 
 Last updated: 2026-11-09
-State: **replacement implemented; see [verification record](action-undo-implementation.md)**.
 
-Owner Go, 2026-11-08: after reading this replacement and confirming that it
-replaces the rejected implementation approach, the owner authorized implementation
-in the new session. This includes the visible scope choices below. The earlier
-design-session stop remains historical; it does not block this new authorization.
-No storage-budget increase, generic row capture, reviewer loop, final History
-layout or manual publication is authorized by this Go.
-
-Historical design-session instruction: the owner authorized design only and
-requested that work stop on completion.
-Implementation belongs to another agent in a new session under that session's
-instructions. This document does not grant implementation Go or restart the old
-agent/reviewer workflow. Runtime and storage results for the later authorized implementation are recorded
-in the [implementation report](action-undo-implementation.md).
+This replacement is the Undo implementation. Formats are **70 with rules / 69
+without**. Do not resume generic per-row storage capture. An import must not
+create an ordinary edit record for each new row.
 
 ## 1. The model
 
@@ -52,24 +41,15 @@ cannot be recovered from ownership and already-retained versions.
 
 ## 2. Authority and deliberate scope choices
 
-Read the [owner's rethink](action-undo-rethink-handoff.md),
-[current status](status.md), [session contract](session-history-baseline.md),
-[storage acceptance](session-storage-comparison.md) and
-[current import rollback contract](import-undo.md).
-The [rejected design](action-undo-rejected-design.md) and
-[rejected inventory](action-undo-rejected-inventory.md) preserve the investigation;
-their row-capture policies and implementation instructions do not apply.
+Read [session history](session-history-baseline.md) and
+[import Undo](import-undo.md). Generic import row capture is rejected.
 
-Owner-established requirements are the rejection of generic import row capture,
-whole-import atomic reversal, ordinary Undo for user transaction/entry changes,
-permission to retain import-created accounts/categories, design-only work here,
-and the existing financial, security, recovery and successful-close guarantees.
-The earlier file-wide ordering and reversible acceptance requirements are retained.
+The requirements are whole-import atomic reversal, ordinary Undo for user
+transaction changes, permission to retain import-created accounts and
+categories, and the existing financial, recovery, and successful-close
+guarantees. File-wide ordering and reversible acceptance remain.
 
-The owner said to proceed with design after being asked about definition scope,
-without separately specifying each definition family. The following are explicit
-**replacement design choices**, not claims that every detail received separate
-owner approval. They must be visible when the owner reviews this handoff:
+These scope choices are the implementation:
 
 - Standalone rule, report, category and account definitions and display settings
   are outside ordinary Undo. Saving them does not silently clear the chain.
@@ -414,98 +394,9 @@ sidecar, lock bypass or weaker durable commit is permitted.
 Undone activity may keep bounded session labels/counts, with unavailable old details
 reported honestly after payload collection. It is not a permanent history archive.
 
-## 8. Storage acceptance and verification
+## 8. Structural gate
 
-No new numeric growth budget is approved. Keep the existing `cf8f1a5` identical-
-workload acceptance and also compare against unchanged current production at
-`b4b65df`. Report both physical size and retained payload/index bytes, plus peak
-simultaneous file/journal use and latency. Do not mask growth through VACUUM,
-padding, weaker durability, smaller inputs or missing dependencies. If new behavior
-cannot meet an existing gate, present the specific cause and measurements for an
-owner decision; do not recommend a budget increase before checking the model.
-
-The first structural gate is independent of bytes: import-only must produce one
-root, **zero ordinary transaction-Undo members for new imported rows**, and no
-per-inserted-row inverse journal. Report extra existing-object restoration counts
-separately. Initial setup and automatic rules cannot smuggle new-row capture back in.
-No schema-wide immutable-body/membership split is required by this design.
-
-Use synthetic workloads: small reproducible chains, approximately 19,000 accumulated
-transactions with bulk categorization and later small imports/edits, and the separate
-50,000-row import-only stress case. Include transfers, duplicate-only imports, bad
-records, changed existing relationships and repeated successful closes. Compare
-identical forward workload checkpoints as well as complete forward/Undo results.
-
-Required verification before delivery:
-
-1. Every inventory command has a classification and cannot bypass the head. Both
-   rules configurations, legacy API calls and cleanup paths are covered.
-2. Before/forward/Undo equality for affected financial state, originals, ownership,
-   decisions, relationships and exact report allocations. Exclude only documented
-   retained setup, compatible definitions, monotonic metadata and caches.
-3. Mixed file-wide chain, repeated same-row edits, same-value forward changes,
-   branching, restoration-lineage forgery/corruption, stale tokens, exact/conflicting
-   retries, retry after Undo and successful close. Earlier actions stay reachable.
-4. Import into several accounts; shared sources; duplicate-only and failed-row
-   outcomes; old generated/accepted transfer restoration; existing openings unchanged;
-   retained setup and new-account opening explained; no imported-row edit journal.
-5. Initial category choices and automatic rules remain import children; later user
-   repair is an action. Crash/cancel at capture, materialization, decision and final
-   publication; failed cleanup; no unrelated write or false successful close.
-6. Full acceptance sequence above; mixed prior-accepted/New membership; ignored
-   warnings, frozen accounts, local transfers, duplicate-only and no-op cases;
-   reacceptance and backup restoration with revoked acceptance history.
-7. Definitions between user actions, retained archived category assignments, deleted
-   rules/provenance, account rename, guarded account archive/deletion and category
-   deletion. Configuration saves never silently invalidate the chain.
-8. Older-import removal and account Discard: nonempty-chain refusal changes nothing;
-   empty-chain behavior, cross-session dependencies, lost acknowledgement and backup
-   restoration retain today's financial/conflict guarantees. No undo-of-removal archive.
-9. Disk-full/write/sync faults, cancellation and exits on both sides of each new
-   durable boundary; chain and financial state commit together. Successful-close
-   expiry, failed-close preservation, dirty recovery and open-session backups.
-10. Native shortcut/context scope, dirty buffers, unrelated drafts, busy/progress,
-    import decisions and account switching. Tests must assert real outcomes rather
-    than merely checking that an action count changed.
-
-Run appropriate existing financial/storage/UI regressions and ASan/UBSan. Record
-rules-disabled and platform limits; do not infer Linux/Windows coverage from macOS.
-No runtime verification was performed in this design session.
-
-## 9. Workspace disposition and next-session handoff
-
-Production `src/` is unchanged by the rejected investigation. No reset of production
-code or Git history is necessary. Preserve earlier session-baseline/retention work.
-The rejected prototype and its measurements remain untouched in this design session.
-
-When implementation is separately authorized, retire the rejected experiment from
-the normal test source/build surface before developing its replacement. The exact
-files and CMake block are listed in the [operation inventory](action-undo-inventory.md#rejected-prototype-disposition).
-Retain the historical reports/source snapshots in `review/action-undo-prototype/`
-and the rejected documents for traceability. Do not run a blanket `git reset --hard`
-or `git clean`, and do not reset the updated owner stop/replacement documentation.
-
-Recommended implementation order after new-session authorization:
-
-1. Confirm this replacement's visible scope choices with the owner/new-session
-   instructions. Inspect the then-current working tree; retire only the rejected
-   opt-in prototype. Choose a fresh experimental format pair; current production is
-   68/67, with unchanged rejection of older formats and no migration requirement.
-2. Establish the common header/head/epoch and typed adapters for existing user
-   transaction/Review/rule Undo. Prove repeated mixed-action Undo and recovery before
-   converting more commands. No production UI switch with partial coverage.
-3. Integrate one import root, source rollback and preparation lifecycle. Pass the
-   zero-imported-row-journal gate and measurements before broader implementation.
-4. Add typed acceptance reversal, monetary account actions, dependency protections
-   and the composed Save and apply command. Prove the full chain through import.
-5. Route UI Undo to the common head, complete regression/fault/storage verification,
-   update actual status, and expose only the fully covered format/implementation.
-
-This is a handoff sequence, not execution authorization in this session. A storage
-experiment may test these mechanisms but cannot substitute another universal row
-journal. Further review/delegation follows the owner's new-session request; none
-was started here. The Change History layout in
-[the handoff](change-history-handoff.md) is implemented. See
-[status](status.md).
-Track future manual effects in [MAN-017](manual-update-backlog.md#man-017--unified-transaction-undo-and-whole-import-rollback)
-and [MAN-020](manual-update-backlog.md#man-020--change-history-workspace).
+Import-only produces one root and **zero ordinary transaction-Undo members for
+new imported rows**. Initial setup and automatic rules cannot add per-row
+capture. The command map is [action-undo-inventory.md](action-undo-inventory.md).
+Change history is [change-history-handoff.md](change-history-handoff.md).

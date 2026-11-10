@@ -1,7 +1,7 @@
 # Document session locks
 
 Owner Go: 2026-11-04. Implemented scope and executed checks are recorded in
-[status](status.md#private-document-lock-directory--2026-11-04).
+[status](status.md).
 
 ## Accepted behavior
 

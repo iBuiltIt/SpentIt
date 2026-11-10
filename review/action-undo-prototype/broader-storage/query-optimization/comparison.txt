@@ -1,4 +1,0 @@
-Compared optimized edits-1000 prototype to original frozen matrix edits-1000 prototype.
-All workload lines identical after removing elapsed_seconds fields only.
-All DBSTAT lines byte-identical.
-All scoped CTests passed 3/3; exact query equality and EXPLAIN plans are in ctest-detail.txt.

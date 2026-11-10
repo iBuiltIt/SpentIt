@@ -1,17 +1,14 @@
 # Unified Review sheet
 
-The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
-is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
-It includes import routing, Review repair/Commit, account-context Discard and
-atomic cleanup of incomplete preparation. Completed uncommitted imports remain
-durable. See [current verification and limits](status.md); earlier Resume,
-source-retention and toolbar descriptions below are historical.
+Last updated: 2026-11-09
 
-The owner authorized the [workspace and link-learning revision](../features/005-transaction-sheet-navigation.md#accepted-matching-policy-and-implementation-go--2026-10-30)
-on 2026-10-30. The revision is implemented in the working tree; the interaction
-and persistence contract below includes it. The owner settled grouped imports with ambiguous plausible
-counterparts: each unresolved explicit transfer gets its generated entry.
-The broader transaction-sheet feature remains active.
+Database formats are **70/69**. Incomplete preparation is cleaned up on
+cancellation or the next open. Completed uncommitted imports remain. Accept
+transactions accepts the file. Account Discard is account-owned.
+
+Each unresolved explicit transfer gets a generated entry, including when a
+plausible imported posting exists. The interaction below is the current Review
+sheet.
 
 ## Selected-row Merge correction — owner Go, 2026-11-08
 
@@ -64,9 +61,7 @@ Close or Cancel on dialogs. Required import-time missing-category decisions stay
   it is an explanation, not an exact per-posting dry-run preview. No matching,
   generation, acceptance, storage, or format policy changes are introduced.
 
-See [status](status.md) for executed checks and
-[MAN-014](manual-update-backlog.md#man-014--review-workspace-cleanup) for deferred
-manual text and captures.
+The manual already describes this workspace.
 
 ## Ledger duplicate resolution — owner Go, 2026-11-07
 
@@ -107,8 +102,7 @@ direct candidates. An empty selection retains Review's group-wide No behavior.
 Other comparisons remain outstanding, including clean remainders from partial
 Merge. No schema change or widened automatic matching is introduced.
 
-Verification is recorded in [status](status.md). Manual text and screenshots are
-tracked in [MAN-009](manual-update-backlog.md#man-009--ledger-duplicate-review).
+The manual already describes ledger duplicate review.
 
 ## Resolution performance and automatic discovery — owner Go, 2026-11-07
 
@@ -257,7 +251,7 @@ per-account date setting or schema change is introduced.
 
 New datasets use experimental schema **40 with rules / 39 without**. Older
 experimental datasets are rejected unchanged, without migration under the
-[pre-release policy](../AGENTS.md#security-and-recovery-discipline).
+[pre-release policy](../AGENTS.md#current-file-format).
 
 Review decisions, source associations, row changes, link changes and their history
 are saved atomically in encrypted storage. No success is reported until durable

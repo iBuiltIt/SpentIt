@@ -34,7 +34,7 @@ SpentIt/
 
 The root CMake files, `cmake/`, `src/engine/`, and `tests/engine/` now exist alongside the documentation. `third_party/iso4217/` holds the pinned currency reference snapshot and provenance; `tools/` contains its offline generator/checker. `SpentIt::engine` exposes only its own headers and the C++20 requirement, with no UI, storage, or application dependencies. The test executable links this library. See [building and verification](building.md) for the validated toolchain. Introduce remaining directories only with actual work. Root README and license files can be added when their contents/terms are ready; no license is selected by this layout.
 
-The optional `src/storage/` and `tests/storage/` now contain the isolated SQLCipher prototype and failure/recovery tests. Its target depends on the engine and privately links SQLCipher; engine-only builds do not fetch or link storage. `third_party/sqlcipher/` contains the dependency pin and notices, while downloaded/generated sources remain in ignored `build/dependencies/`. The prototype combines its narrow batch command and storage transaction locally for experimentation; it does not establish the future application's persistence interface. See [storage prototype](storage-prototype.md). `src/app/` now holds the plain C++ synthetic sheet session; `src/ui/` holds its Qt adapter, QML and executable wiring. Migrations still have no placeholders.
+`src/storage/` and `tests/storage/` hold the SQLCipher document store and its failure tests. The storage target depends on the engine and privately links SQLCipher. Engine-only builds do not fetch or link storage. `third_party/sqlcipher/` contains the dependency pin and notices. Downloaded sources stay in ignored `build/dependencies/`. `src/app/` holds application commands. `src/ui/` holds the Qt adapter and QML. There is no migration layer. See [building](building.md).
 
 ## Responsibilities
 
@@ -90,11 +90,13 @@ Application documents/backups belong in user-selected or platform-appropriate ru
 
 Exact class names, file splits, private/public header organization, target granularity, asset subfolders, test framework, dependency manager, and platform packaging details can follow demonstrated needs. Establish the safety-relevant dependency direction now; avoid building abstractions solely to fill this tree.
 
-## Synthetic sheet experiment
+## Optional sheet target
 
-With `SPENTIT_SHEET_PROTOTYPE=ON`, `spentit_sheet_session` links only the engine; `spentit_sheet_model` links that session plus Qt Core/Concurrent; `spentit_sheet_prototype` adds Qt Quick/QML presentation and executable wiring. No prototype UI target links concrete storage. Session and Qt interaction tests live in `tests/app/` and `tests/ui/`. These are synthetic use cases, not the eventual document/persistence interfaces. See [scope and verification](sheet-prototype.md).
+`SPENTIT_SHEET_PROTOTYPE=ON` builds a synthetic sheet that links the engine and
+Qt, not storage. It is not the application. The application is
+`SPENTIT_IMPORT_UI`.
 
-## Headless durable import experiment
+## Import store
 
 `SPENTIT_IMPORT_WORKFLOW` adds `spentit_import_store` and `spentit_import_view`, requiring the existing optional SQLCipher dependency setup. Engine parsing/review validation remain in `spentit_engine`. `src/app/include/spentit/import_repository.hpp` defines complete synchronous atomic command contracts without Qt or SQL. Storage implements that boundary; the plain application ledger-view target links only the engine. The existing UI remains storage-independent. See [actual scope and verification](durable-import.md).
 

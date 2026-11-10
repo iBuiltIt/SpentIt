@@ -1,11 +1,11 @@
 # Session-aware startup and verification
 
-Last updated: 2026-11-07
+Last updated: 2026-11-09
 
-The [session-history contract](session-history-baseline.md) replaces the former
-full-file hash/cache approval policy. Formats **64 with rules / 63 without** use
-an encrypted `document_session` row. Earlier experimental formats are rejected
-unchanged; no migration is provided.
+Open and close follow [session history](session-history-baseline.md). Formats
+**70 with rules / 69 without** use an encrypted `document_session` row. Older
+experimental files are rejected unchanged. There is no migration. There is no
+full-file hash cache.
 
 ## Normal open and close
 
@@ -48,6 +48,5 @@ changes. SQLCipher authentication and encountered database/I/O errors still appl
 A clean marker is not proof that an internally consistent edit reflects user
 intent. Full checks remain available for independent diagnosis.
 
-See [executed verification](status.md) and [storage comparisons](session-storage-comparison.md).
-No private dataset was used. Normal startup still prepares ledger/Review views;
-this change does not promise constant-time startup or close on every dataset.
+Normal startup still prepares ledger and Review views. This does not promise
+constant-time startup or close on every file.

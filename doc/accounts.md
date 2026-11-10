@@ -1,51 +1,16 @@
-# Account-scoped durable QIF workflow
+# Accounts
 
-Last updated: 2026-10-31
+Last updated: 2026-11-09
 
-This implements the multi-account prerequisite for [transfer lifecycle work](../features/008-transfer-matching-and-lifecycle.md). Accounts can be created and selected in the durable UI, with independent ordinary QIF imports, opening balances, drafts, committed balances, corrections and history. The subsequent [bounded transfer integration](transfer-engine.md) adds links, generated counterparts, protected drafts and provisional evidence matching. [QIF transfer destinations](qif-transfers.md) now require explicit resolution through those commands. Verification uses synthetic fixtures; SpentIt is the application being used and improved piecemeal.
+Account commands are in [feature 002](../features/002-accounts-money-splits.md).
+Acceptance and Discard are in
+[import-commit-discussion.md](import-commit-discussion.md).
 
-## Current acceptance and rollback model — 2026-10-29
+The display name is the creation name or the latest explicit rename. Import
+naming does not replace it. The alias list is the creation name, rename
+history, and explicitly confirmed named-QIF mappings. Matching is Unicode
+case-insensitive and literal, with no fuzzy matching. A name that conflicts
+with another account alias or an ordinary category is refused.
 
-The [dataset-wide acceptance model](import-commit-discussion.md) supersedes older per-account Commit, projected-balance and permanent-evidence descriptions in this document. New documents use schema 40 with rules / 39 without; previous experimental formats are rejected unchanged. Multiple imports can remain pending in one account. The ordinary balance includes all active transactions, and Commit accepts new transactions across accounts in one durable operation while failed records remain visible. Account-wide Discard removes uncommitted ownership and exclusively owned material, preserving accepted transactions and other retained sources. Account/category creation and opening-review behavior remain. See [verification](status.md#dataset-acceptance-storage-refactor--2026-10-29).
-
-## Display names and aliases — 2026-10-29
-
-Account identity is stable. The display name is the creation name or latest explicit rename; it is never replaced by import naming. The alias list is reconstructed from retained creation names, rename history and explicitly confirmed named-QIF mappings. Matching is Unicode caseless and literal, without fuzzy matching. New names/mappings that conflict with another account alias or an ordinary category are refused. Category-editor account rows are read-only; use account management for account changes. See the [shared category namespace](../features/010-categories-and-selection.md#account-names-and-aliases--accepted-2026-10-29).
-
-Alias reads use bounded caches invalidated by writes; transactional name snapshots are scoped to the operation and keyed by the relevant retained-history counts/catalog revision. Rollbacks cannot publish a transactional alias cache. Original import bytes remain unchanged. Existing schema 30/29 documents need no migration.
-
-## Persistence and command boundary
-
-`ImportRepository` exposes account enumeration, creation, creation-outcome lookup and selection. Commands run on the existing serial worker. Each account has a positive stable integer identity and a retained currency definition; setup creates account 1. Batch identities and operation identities remain document-wide. Every batch has immutable account ownership and each account may have its own pending or retained-evidence import.
-
-The selected account is session state, initially account 1 on reopen. SQL predicates bind to that selection through a connection-local function that only returns its integer identity. It performs no database access or monetary arithmetic. Record commands additionally check batch ownership, rejecting cross-account requests rather than silently interpreting amounts in the selected currency. Selecting an unknown account leaves the previous selection intact. Categories and saved rules remain document-wide; rule Apply affects only the selected account's pending batch.
-
-Duplicate recognition stays within an account, including identical-file recognition. The same file imported into another account is independent evidence, not permission to suppress its transactions. Committed and projected totals contain only the selected account, with its exact currency and opening balance. Ordinary bulk operations cannot span accounts.
-
-Creation atomically records the account and an immutable creation receipt. Reusing an account identity with the same name, currency definition and original date is an idempotent retry, even after its opening balance changes; different creation content is rejected. A durable outcome lookup supports lost acknowledgements. An unreadable outcome closes the UI session for reopen and inspection. Failed post-creation selection or refresh reports that creation was durable and closes the session.
-
-The document-wide financial sequence still orders operations and invalidates stale previews. Verification replays that sequence into separate account balances, using each batch owner's currency. It verifies every account, including accounts not currently selected. Backups contain all accounts, source evidence, history and creation receipts and are verified by restoring and reopening them.
-
-## UI behavior and limits
-
-The sidebar’s **+ New Account** button sits beside the Accounts heading and opens an inline name field; Enter creates the account. New accounts start with zero on today's date, defaulting to the initial setup currency. Opening balance must still be explicitly confirmed before the first import commit; that account's first commit freezes it. Switching accounts uses the existing Save / Discard / Stay guards for unsaved transaction, category and rule edits.
-
-Switching clears previews, receipts and history from the previous account and loads the selected account on the worker. The transfer integration now restores each account’s transaction selection, search, sort and viewport within the session. Back/Forward traverses visited account screens and honors unsaved-edit guards. Counterpart navigation reveals its row and honors the same guard. There is no consolidated cross-currency balance.
-
-Each account name has a separate balance control. It shows Committed or Projected, the currency code, and that account's total. The total uses the same formulas as the selected account's committed and projected balances. The choice is per account for the session. It does not change ledger search, sort, or the Projected ledger checkbox. Creating, opening, unlocking, or leaving the document clears it. It is not stored in the document. If no projection exists, the control shows the committed balance and a click does nothing. Under the account list, a note says reports stay outside this work. Nothing is created there. On 2026-10-28 the owner said the finished eight-point sequence was the work before reports. The note stays until report work has an explicit Go.
-
-Right-clicking an account name opens its context menu for Rename, Archive or Reactivate, Delete, Reassign currency, and applicable opening-correction/Undo actions. The keyboard Menu key or Shift+F10 also opens the menu. A different clicked account is selected through the existing unsaved-edit guard before the menu opens; failed selection never opens a menu for the previous account. Archived accounts are listed in their own section and open read-only. Delete asks for confirmation. A refusal shows the empty-account rule and changes nothing. Opening correction is available once the opening is confirmed or frozen. Currency reassignment lists current-catalog codes, accepts incremental code typing, and warns before OK when the account has an opening, a draft, or a transaction. Cancel leaves the currency unchanged. Eligible Undo of an opening correction or currency reassignment stays available, including while the account is archived. These commands run on the serial import worker. Archive and deletion of the selected account move selection to another active account when one exists, and otherwise leave a readable empty active state that can still open an archived account. Save / Discard / Stay still applies when leaving a dirty editor. Archived accounts are not ordinary targets for new edits, imports, commits, or transfer matches.
-
-## Account commands — 2026-10-27
-
-The settled policies and schema pair are in [feature 002](../features/002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27). Storage owns each transaction. The engine does not depend on Qt or SQL. The UI does not execute SQL or compute authoritative money. Commands are `rename_account`, `archive_account`, `reactivate_account`, `delete_account`, `correct_opening`, `reassign_currency`, and `undo_account_operation`. Creation receipts keep the original name, currency definition, and opening date. A retired identity is not reused. Ordinary SQL still cannot change a frozen opening, date, or currency definition, or any account name or currency definition, outside those commands. The first import commit still freezes a newly confirmed opening. Reported-balance staging for an unfrozen created account stays the existing workflow.
-
-## Experimental formats
-
-Rules-enabled builds create and open schema **24**; rules-off builds create and open schema **23**. Both include independent colon categories and persisted setup preferences; rules and committed reapply are present only in schema 24. Schemas 22/21, schema 20, schemas 18 and 19, and every other unexpected `user_version`, are rejected with `Unsupported experimental format; no migration was attempted`. The application id remains `1397770577`. Earlier sentences in historical status entries that name schemas 12 and 13 describe those checkpoints. This follows the owner's pre-release format policy. No migration was added.
-
-## Verification
-
-See [project status](status.md#account-scoped-durable-workflow--2026-10-26) for the earlier account-workspace results and [point 4](status.md#point-4-account-management--2026-10-27) for the lifecycle commands. The `accounts.basics` checks independent simultaneous drafts, exact CAD/JPY balances, identical imports in separate accounts, stale cross-account commands, scoped rules/bulk changes, correction/Undo, creation retries, restart and restored backups. `accounts.validation` checks malformed authenticated account ownership and creation records. `accounts.io` and `accounts.crashes` sweep account creation and second-account commit writes/syncs, plus both durable-commit boundaries, and verify all-or-none results and identical retries after reopening. `accounts.lifecycle_behavior` and `accounts.lifecycle_boundaries` cover rename, archive, reactivation, empty deletion, opening correction, currency reassignment, interruption, retry, and restored source bytes.
-
-The UI tests cover account switching, unsaved-edit Stay/Discard, independent commits, reopen, lost creation acknowledgements, unknown outcomes and failed selection/refresh after known creation. The existing shared navigation tests exercise Save as well. No personal financial inputs are used. Other-platform, physical-power-loss and full accessibility results are not inferred from these tests.
+Alias reads use bounded caches invalidated by writes. A rollback must not
+publish a transactional alias cache. Original import bytes stay unchanged.

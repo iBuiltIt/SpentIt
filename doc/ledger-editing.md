@@ -1,15 +1,12 @@
 # Ledger editing and session Undo
 
-Current follow-up (owner Go, 2026-11-03): the
-[transaction-origin contract](transaction-origin-handoff.md)
-supersedes origin-specific category/transfer restrictions below for saved ledger
-entries. Manual and imported postings share transfer assignment, explicit Link,
-accepted editing/history and independent-counterpart preservation. Formats are
-50 with rules / 49 without. Rule matching policy is unchanged. See
-[verification](status.md).
+Last updated: 2026-11-09
 
-Status: implemented under owner Go, 2026-11-01; verification is recorded in
-[status](status.md). This supersedes the older inline Save draft / Cancel edit
+Manual and imported postings share transfer assignment, explicit Link, editing,
+and Undo. Rules still match imported fields until current-value matching is
+implemented. Database formats are **70/69**.
+
+This supersedes the older inline Save draft / Cancel edit
 and explicit committed-edit opt-in presentation.
 
 ## Accepted interaction
@@ -45,7 +42,7 @@ multiple selection; the action never silently chooses one row from it. Unsaved-e
 guards run before context inspection, and stale inspector data cannot supply the
 rule target. One target opens a draft directly; several targets use a chooser with
 Cancel. Existing original-field eligibility and the one-new-rule limit remain.
-See the [Rules entry-point contract](../features/004-rules-and-explanations.md#ledger-context-menu-rule-creation--owner-go-2026-11-08).
+See the [Rules entry point](../features/004-rules-and-explanations.md).
 
 Disabled ledger menu text and submenu arrows use a distinct colour in light and
 dark themes and do not highlight on hover. Financial command eligibility is
@@ -237,7 +234,7 @@ Search, selection and the ledger viewport are retained where their identities
 remain available. Storage validates the frozen selection and records the memo and
 overwrite choice for an exact retry. A changed retry is rejected. Help for the
 dialog stays on Add/correct transactions, “Change a selection or delete entries.”
-The manual text is unchanged; MAN-019 records the later pass.
+The manual already describes Set memo.
 
 ## Split-only editor actions — owner Go 2026-11-02
 
@@ -418,18 +415,18 @@ Implementation: deletion extends the existing transfer journal with an explicit,
 replayed unlink transition. Local postings in two accounts use separate monetary
 history entries inside the same transaction. Retained counterparts and earlier
 unlink stages have child receipts, reversed with their parent deletion. Existing
-history encodings are unchanged; the experimental schema remains 58/57. Older
-journal decoders reject the new event tag; the verifier source hash also
-invalidates startup approval across this implementation change.
+history encodings for this deletion stay in the current 70/69 formats. Older
+experimental files are rejected rather than decoded.
 
 Bulk edits/deletion and Undo reuse bounded prepared statements for the operation.
 Committed-row writes maintain exact running balances initialized once per account;
-transfer Undo reuses its current relationship set and account balances. Full audit
-still replays and checks all history. Currency/category history queries start from
+transfer Undo reuses its current relationship set and account balances. A full
+check validates the baseline and the current session. It does not reconstruct
+expired ordinary history. Ordinary open does not run that check. Currency/category history queries start from
 the relevant operation tables, strict Undo uses the complete member key, and draft
 Undo uses an audit-local lookup capped at 65,536 members / 16 MiB, falling back to
 the original query above that budget. No integrity/durability check is disabled.
-A subsequent performance follow-up shares a bounded revision-to-history lookup
-and reuses already-read facts during Undo and committed replay, while retaining
-all validation; see the [implementation and benchmark report](undo-audit-profile.md).
-See [verification and measured limits](status.md).
+Undo and committed replay share a bounded revision-to-history lookup and reuse
+already-read facts, while retaining validation. Database formats are **70/69**.
+The clean-marker open policy is in [fast-startup.md](fast-startup.md). Full
+audit still checks retained history. It does not run on every ordinary open.

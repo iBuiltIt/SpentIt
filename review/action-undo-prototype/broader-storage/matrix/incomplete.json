@@ -1,5 +1,0 @@
-{
-  "status": "intentionally interrupted during prototype edits10000 verification",
-  "reason": "Nested-view query materialized versions repeatedly. Replaced with reviewed read-only equivalent lookup; no audit omitted. Fresh final matrix is separately recorded.",
-  "final_budget_evidence": false
-}

@@ -36,7 +36,7 @@ displayed transaction; Deselect clears the range anchor and selection focus.
 These commands only change selection. They retain the open editor and unsaved
 text, and do not end session Undo. Text fields keep their own shortcuts; modal
 controls retain keyboard ownership. No financial commands or schema changes.
-Manual updates remain deferred; see [MAN-005](manual-update-backlog.md#man-005--selection-keyboard-shortcuts).
+The manual already describes selection shortcuts. Later user-visible changes go in [the backlog](manual-update-backlog.md).
 
 ## Search contract
 

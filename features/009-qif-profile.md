@@ -18,11 +18,11 @@ A parse result does not commit anything. Source bytes remain the caller's immuta
 
 The parser exposes an optional original amount, explicit source currency definition, and source-allocation fields whose amounts may be unavailable. Every syntactically complete split keeps its original position, category, memo and class even when `$` is invalid; no zero amount or shifted ordinal stands in for unknown evidence. Parsed allocations with known amounts are evidence only until exact transaction validation succeeds. A missing/invalid parent total still preserves the unsplit category/transfer destination.
 
-Repairability requires intact record/split structure and only date, missing required date/total, exact-amount, or split-total errors. Unknown/repeated fields, encoding errors, malformed destinations and incomplete or ambiguous split grouping remain blocked. A repair must supply valid effective money and allocations, preserve transfer intent and source associations, and explicitly resolve duplicate disposition. Original unavailable money stays unavailable. The [milestone follow-up](009-durable-import-milestone.md#accepted-ordinary-qif-and-amount-repair-follow-up--2026-10-26) records accepted scope and whole-import UX; [status](../doc/status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26) distinguishes implementation from verification.
+Repairability requires intact record/split structure and only date, missing required date/total, exact-amount, or split-total errors. Unknown/repeated fields, encoding errors, malformed destinations and incomplete or ambiguous split grouping remain blocked. A repair must supply valid effective money and allocations, preserve transfer intent and source associations, and explicitly resolve duplicate disposition. Original unavailable money stays unavailable. Whole-import repair behavior is in [feature 003](003-qif-import-review.md) and [account imports](../doc/qif-account-imports.md).
 
 ## Account-section extension — 2026-10-26
 
-The [whole-source account contract](../doc/qif-account-imports.md#accepted-source-envelope) specifies supported `!Account` lists, repeated ordinary sections, metadata fields, limits and refusal behavior. Each account's records reuse this ordinary grammar with explicit currency and date order. This does not admit investment or class-catalog sections, infer self-account opening records, or alter category/class and unknown-original repair invariants. Point 1 schemas 16/17 retained the source once and associated account drafts with stable source-account indices. The 2026-10-27 statement checkpoint used schemas 18/19, kept this QIF grammar, and added shared source-occurrence facts. Point 4 new documents use schemas 20/21 and reject 18 and 19 without migration. See the [statement profile](003-ofx-profile.md) and [account commands](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).
+The [whole-source account contract](../doc/qif-account-imports.md#accepted-source-envelope) specifies supported `!Account` lists, repeated ordinary sections, metadata fields, limits and refusal behavior. Each account's records reuse this ordinary grammar with explicit currency and date order. This does not admit investment or class-catalog sections, infer self-account opening records, or alter category/class and unknown-original repair invariants. See the [statement profile](003-ofx-profile.md) and [account commands](002-accounts-money-splits.md).
 
 ## Category catalog and literal slash names — accepted 2026-10-28
 
@@ -32,7 +32,7 @@ A literal slash is allowed in editable category names. In QIF references the usu
 
 Catalog-only sources and catalogs followed by unnamed ordinary sections use one explicitly mapped target account. Named definitions and repeated account selections share the existing account workflow. Complete category staging, first-publication semantics, rollback and identity preservation are described in [the account-import contract](../doc/qif-account-imports.md#staged-category-catalog--2026-10-28).
 
-The parser identity is `bank-v6`. Current datasets use experimental schemas 40/39 (rules on/off). Schemas 28/27, 26/25, 24/23 and other earlier formats are rejected unchanged, without migration. The format gate protects changed source interpretation and source-owned category bindings; no compatibility layer is added.
+The parser identity is `bank-v6`. Database formats are **70 with rules / 69 without**. Older experimental files are rejected unchanged, without migration.
 
 ## Embedded carriage returns — accepted 2026-10-28
 
@@ -40,7 +40,7 @@ LF and CRLF remain field-line separators. A lone CR inside ordinary payee (`P`),
 
 Lone CR is still rejected in amounts, dates, names, category/class references, cleared status, headers and terminators. CR-only record delimiters are not supported. A trailing CR is stripped as a line ending only when followed by LF, never merely because it is the final byte. Existing field/record/file limits still include embedded text. Draft and committed review validation permit CR in payees and memos while retaining strict category validation. This does not implement a multiline editor.
 
-Bank-v5 and experimental schemas 28/27 gate this changed interpretation of previously rejected sources, which are reparsed when reopening. Earlier formats are rejected unchanged without migration. See [status](../doc/status.md) for verification.
+Lone CR in those text fields is part of bank-v6. Earlier experimental files are rejected unchanged, without migration.
 
 ## Value-free structural diagnostics — accepted 2026-10-28
 
@@ -50,10 +50,10 @@ The owner approved a local diagnostic and clearer source locations after a large
 
 The owner approved accepting either `S E $` or `E S $` after a value-free diagnostic report showed memo-before-category groups. Each group permits at most one category and one memo; `$` closes it. Both optional fields may still be absent. Repeated category/memo fields, incomplete groups, parent fields after splits, conflicting parent categories and non-balancing totals retain their existing rejection/repair behavior. Original bytes, field values, source allocation ordinals, classes and transfer destinations are preserved.
 
-The changed acceptance of previously rejected records requires bank-v6 and experimental schemas 30/29. Earlier datasets, including 28/27, are refused unchanged; reimport uses a fresh dataset. This is a parser fix, not a storage/status performance fix. Verification is recorded in [status](../doc/status.md).
+Either `S` then `E` or `E` then `S` is accepted in bank-v6. Reimport of an older experimental file uses a new file. Older files are refused unchanged.
 
 ## Conditional date-order prompt — accepted and implemented 2026-10-29
 
 The ledger has no date-order selector. Import statement is available without a date choice, retaining existing busy/read-only/pending-import guards. OFX-family imports never prompt. The ambiguity dialog offers Continue after selecting Day / Month / Year or Month / Day / Year, and Cancel import. It retains the already-read source bytes in memory until confirmation or cancellation; confirmation does not reread a potentially changed file. No source is persisted while awaiting this choice. Dataset close/open/create clears the pending question. This changes import preparation only, not stored parser semantics or schemas.
 
-Verification: Release QIF/import UI/navigation/smoke selection passed 8/8; QIF ASan/UBSan passed 4/4; the extended offscreen automatic-import-date case passed. See [project status](../doc/status.md#automatic-import-date-order--2026-10-29) for commands and coverage limits.
+The date-order dialog is part of the current import UI.

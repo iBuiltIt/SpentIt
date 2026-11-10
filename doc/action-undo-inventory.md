@@ -1,16 +1,10 @@
 # Unified Undo — operation adaptation inventory
 
 Last updated: 2026-11-09
-State: **command adapters integrated; verification recorded separately**.
-The owner authorized the replacement scope in a new session. `ImportStore` and UI
-use `ActionChain` with formats 70/69. The table is the implementation coverage map;
-see [implementation and verification](action-undo-implementation.md) for executed
-checks and platform limits. The baseline pitfalls below describe what the adapters
-had to replace, not outstanding instructions to resume the rejected prototype.
-Read the [replacement design](action-undo-design.md) first. This inventory replaces
-the rejected all-table capture policy, preserved in the
-[historical inventory](action-undo-rejected-inventory.md). Baseline inspected:
-`b4b65df`, production formats 68/67, plus the uncommitted opt-in experiment.
+
+`ImportStore` and the UI use `ActionChain` with formats 70/69. Read the
+[design](action-undo-design.md) first. Do not resume generic per-row capture.
+The table is the command coverage map.
 
 ## Command coverage
 
@@ -97,33 +91,8 @@ related command types; UI consumers are `src/ui/import_model.cpp` and
   original comparator checkpoints; add realistic bulk edits and zero ordinary
   imported-row membership assertions. Rejected-prototype numbers are historical.
 
-## Rejected prototype disposition
+## Rejected approach
 
-**No cleanup was performed during design.** Under the subsequent implementation
-Go, the files and CMake block below were retired from the active build surface;
-exact final copies and hashes are in
-`review/action-undo-prototype/retired-source/`. Production sources were unchanged by
-the rejected experiment. After implementation authorization, inspect the diff and
-remove only this experiment from the active build/source surface:
-
-- The appended `SPENTIT_ACTION_JOURNAL_PROBE` option and its associated conditional
-  targets/tests in `tests/storage/CMakeLists.txt` (currently default OFF).
-- `tests/storage/action_journal_probe.cpp`
-- `tests/storage/action_journal_runtime.hpp`
-- `tests/storage/action_lifecycle_tests.cpp`
-- `tests/storage/action_payload_schema.hpp`
-- `tests/storage/action_payload_store.cpp`
-- `tests/storage/action_storage_workloads.cpp`
-- `tests/storage/measure_vfs.hpp`
-- `tests/storage/measure_vfs_tests.cpp`
-
-Do not delete a file that has since acquired unrelated changes without separating
-them. The VFS measurement helper may be independently salvaged after checking its
-scope, but is not a dependency of the replacement. Do not reuse the row-capture,
-payload-table split or generic restore mechanism.
-
-Keep `review/action-undo-prototype/` as historical investigation material. Preserve
-source snapshots and raw results without relabeling them as replacement evidence.
-Keep the rejected design/inventory and rethink handoff. Update or add only clear
-supersession pointers, not rewritten past test outcomes. No blanket Git reset,
-clean, production revert, commit or large experiment rerun is part of this design.
+Generic per-row capture is not the implementation. Do not restore a probe that
+journals an inverse for every imported row. The active chain is the typed
+`ActionChain` described above.

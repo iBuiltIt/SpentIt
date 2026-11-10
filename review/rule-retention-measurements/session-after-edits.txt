@@ -1,6 +1,0 @@
-initial,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1000,ledger_operations=1,command_completions=0
-edit-close-1,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=8
-edit-close-2,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=16
-edit-close-3,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=24
-edit-close-4,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=32
-reopened,file=1777664,pages=434,free=8,live_page_bytes=1744896,versions=1000,entry_revisions=1001,ledger_operations=1,command_completions=32

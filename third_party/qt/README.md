@@ -32,4 +32,4 @@ Bottle SHA-256: `d698be4c6f245af24a86e6ac51263591d9482dda1e16c8bf39d537ed55e813c
 
 [Verified package artifact](https://ghcr.io/v2/homebrew/core/qtsvg/blobs/sha256:d698be4c6f245af24a86e6ac51263591d9482dda1e16c8bf39d537ed55e813c5) · [Upstream source](https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/qtsvg-everywhere-src-6.12.0.tar.xz).
 
-Qt Core/Gui/Concurrent/Test come from qtbase; Qml/Quick/QuickControls2 come from qtdeclarative. qtsvg is an installed dependency of the Qt Quick package. Other package-manager prerequisites are outside the repository. See [build and verification](../../doc/sheet-prototype.md).
+Qt Core/Gui/Concurrent/Test come from qtbase; Qml/Quick/QuickControls2 come from qtdeclarative. qtsvg is an installed dependency of the Qt Quick package. Other package-manager prerequisites are outside the repository. See [building](../../doc/building.md).

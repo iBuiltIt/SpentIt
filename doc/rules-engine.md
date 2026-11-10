@@ -1,11 +1,10 @@
 # Bounded rules evaluation
 
-Last updated: 2026-11-02
+Last updated: 2026-11-09
 
-State: category-gated evaluation, ordered selected-rule previews and durable import
-category choices are implemented in experimental formats 42/41. See the
-[accepted contract](../features/004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02)
-and [status](status.md) for verification and limits.
+Category-gated evaluation is the implementation. Formats are **70 with rules /
+69 without**. Current-value matching is not implemented: matching still searches
+immutable original fields. See [feature 004](../features/004-rules-and-explanations.md).
 
 ## Matching and derived fields
 

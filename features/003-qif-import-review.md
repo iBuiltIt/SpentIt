@@ -1,180 +1,56 @@
-# 003 — QIF import and review
+# 003 — Import and review
 
-Next work (2026-11-02), not implemented: [category-gated rules and missing imported
-category resolution](004-rules-and-explanations.md#next-implementation-category-gated-rules-and-imported-categories--2026-11-02).
-The owner wants explicit Create / Use Uncategorized handling for unknown ordinary
-category references before automatic categorization; transfer references stay in
-the transfer workflow. Prompt lifecycle and split boundaries remain to be settled.
+Status: **active**
+Last updated: 2026-11-09
 
-The [opening/ledger cleanup and interrupted-import rollback](../doc/ui-import-cleanup.md)
-is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
-It adds import routing, Review repair/Commit, account-context Discard and automatic
-cleanup of incomplete preparation. Completed uncommitted imports remain durable.
-See [current verification and limits](../doc/status.md); older Resume and toolbar
-descriptions below are historical.
+Supported imports are the [QIF bank-v6 profile](009-qif-profile.md) and the
+[OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md). Further dialects
+are not authorized. Named QIF account sections, explicit mapping, and transfer
+destinations are in [doc/qif-account-imports.md](../doc/qif-account-imports.md)
+and [doc/qif-transfers.md](../doc/qif-transfers.md).
 
-Current implementation (2026-10-29): the [accepted import/commit handoff](../doc/import-commit-discussion.md) supersedes earlier per-account commit, separate publication and compulsory permanent import-evidence retention below. Commit accepts all new transactions dataset-wide; accepted transactions remain editable; Forget removes exclusively owned import material. The owner settled the transaction decisions and gave Go on 2026-10-29, preserving existing account/category creation and opening-review behavior. The complete agreed acceptance/rollback model is implemented, including multiple pending imports, strict overlap matching, partial-error acceptance, source-owned cleanup, warning overrides and quit prompting. See the handoff and [verification record](../doc/status.md#dataset-acceptance-storage-refactor--2026-10-29). Older per-account descriptions below are historical; the broader feature remains active for its separately deferred scope.
+## What import does
 
-Status: **active**  
-Last updated: 2026-11-03  
-Implementation: partial. Bank-v6 QIF and the [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md) share source facts and reviewable associations. New documents use schema 40 with rules and schema 39 without rules. Schemas 28/27, 26/25 and 24/23 are rejected unchanged. Schemas 22/21, schema 20, and schemas 18 and 19, are rejected without migration. Schemas 18 and 19 are the rejected point-3 versions that introduced those tables. The inspected ASO export is OFX 1.0.2 SGML credit-card statement syntax, stored as format `aso` and grammar `ofx-sgml`. Remaining QIF product scope stays open. See [point-3 evidence](../doc/status.md#point-3-statement-imports--2026-10-27) and [point-4 account commands](../doc/status.md#point-4-account-management--2026-10-27).
+- Source bytes stay immutable. Rules and manual edits do not change them.
+- A structurally intact record can be repaired for a date or an amount. Unknown
+  fields, bad encoding, malformed destinations, and incomplete splits stay
+  blocked. Unavailable original money stays unavailable. No zero is invented.
+- Every new-account mapping chooses zero or the reported amount literally.
+  Omitting that choice refuses the import before capture. Existing accounts
+  keep their openings. Later changes use Correct opening.
+- The ordinary balance includes new and accepted rows. Accept transactions
+  accepts new rows across the file and leaves visible failures in place.
+  Duplicate-only sources can complete without accepting older work.
+- Account Discard removes that account's exclusively owned uncommitted material
+  and preserves accepted transactions and other sources. It requires an empty
+  Undo chain.
+- Incomplete preparation is cleaned up on cancellation or the next open.
+  Completed uncommitted imports survive restart. Closing is not acceptance.
+- **Undo last import…** and Review **Undo import…** roll back one whole source.
+  Accepted transactions are not deleted. Created accounts, categories, aliases,
+  and openings remain. See [doc/import-undo.md](../doc/import-undo.md).
 
-## Opening setup during account mapping — owner Go, 2026-10-30
+## Matching
 
-Accepted and implemented direction: use the short instruction “Choose an existing
-account or create one for each account found in the import data.” New accounts show
-Currency, editable Opening date, and an Opening balance dropdown. The first option
-is zero; the second uses the reported amount literally as the opening, with no
-closing-balance calculation. Omit the second option when no reported amount is
-supplied or it is zero. A selected malformed or incompatible amount is an error,
-not permission to round or silently use zero.
+Automatic recognition uses saved original facts.
 
-Suggest the earliest valid transaction date for each source account after date-order
-resolution, or 1900-01-01 when none is available. The full file is already available
-at mapping; deriving this suggestion runs on the import worker. Existing accounts
-hide these creation controls and retain their opening settings.
+- When both sides have bank IDs, the strict bank-ID rule is authoritative.
+  A repeated incoming ID stays unresolved. Removed targets and conflicting
+  facts do not auto-match.
+- Without that rule, a unique same-account match on original account, currency,
+  exact amount, calendar date, and exact nonempty payee is recognized.
+  Repeated keys, malformed originals, and removed targets stay reviewable.
+  There is no case folding, whitespace normalization, or adjacent-day widening.
+- An uncertain match is not permission to drop a transaction. Unresolved rows
+  stay in the balance until the user decides.
+- Reimport of a removed transaction stays unresolved for an explicit decision.
 
-The choice is durable and atomic with capture/account creation. It takes effect in
-the inclusive balance immediately and survives repair, retry, restart and Commit;
-there is no later opening prompt. Ordinary invalid-row review remains separate.
-Explicit opening corrections remain available through account commands. The earlier
-staged opening/closing interpretation is retained only for existing internal command
-paths and tests, not the mapping UI. See [the account import contract](../doc/qif-account-imports.md)
-and [current verification](../doc/status.md#opening-setup-during-import-mapping--2026-10-30).
+Review behavior is in [doc/review-sheet.md](../doc/review-sheet.md). Dataset-wide
+acceptance is in [doc/import-commit-discussion.md](../doc/import-commit-discussion.md).
 
-## Priority correction — 2026-10-30
+## Not done
 
-The owner gave Go for same-account re-import recognition on 2026-10-30, separately from cross-account transfer matching. Unique original currency/amount/date/payee matches now use the common parsed representation, with exact nonempty payee text, incoming/target uniqueness and retained bank-ID conflict guards. Existing accepted and uncommitted transactions are eligible; original facts preserve later ledger corrections. Ambiguity, malformed originals and removed targets remain reviewable. See the [accepted bounded correction and remaining interaction design](../doc/import-commit-discussion.md#accepted-same-account-correction--2026-10-30) and [verification](../doc/status.md#first-priority-duplicate-matching-correction--2026-10-30). The proposed ledger indication and completed-match unlink/history interaction remain separate unfinished design work.
-
-## Merge evidence follow-up — accepted direction, 2026-10-30
-
-The owner selected [explicit duplicate Merge and transfer Link](005-transaction-sheet-navigation.md#accepted-merge-and-link-interaction--2026-10-30), with paired Review presentation. Exactly one committed transaction in a merge group is kept automatically without a survivor prompt; with none or more than one committed, the user chooses the survivor. Retained non-survivor source representations must support subsequent re-import recognition against that survivor, without a second posting or repeated duplicate question when the match is sufficiently certain. The [handoff](../doc/import-commit-discussion.md#merge-evidence-and-repeat-import-follow-up--2026-10-30) distinguishes existing association retention from the incomplete ID-less matching across all attached representations. This is documentation only; the proposed memo fallback is not approved, and financial eligibility, occurrence consumption and safe Undo still need design and verification.
-
-## Accepted requirements
-
-- Import QIF into a persistent uncommitted workspace associated with the target account(s).
-- Preserve original QIF evidence immutably. Rules and manual edits operate on an editable interpretation, never overwrite that evidence.
-- Compare imported records with previously committed records and flag recognized/possible duplicates. The user can override false positives.
-- Recognized duplicates are excluded from commit unless the user changes their disposition. Do not silently exclude uncertain candidates.
-- Show the committed balance carried into the draft projection so users can compare the proposed ending balance with their bank.
-- Allow adding, editing, deleting, and categorizing draft transactions. Clearing the workspace asks for confirmation.
-- Commit explicitly publishes the chosen changes; discard leaves committed accounts and balances unchanged, including other accounts affected by proposed transfers.
-- Drafts survive application restart.
-- [Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) applies to both import orders and searches committed and uncommitted counterparts. Preserve new bank evidence when matching a generated movement; do not treat that evidence as an ordinary duplicate to discard.
-- Commits are explicit per account. An origin commit protects its generated destination draft without committing it. Clearing the destination workspace retains such protected drafts; discarding an uncommitted origin removes its purely generated counterpart. Protected drafts affect projected balances only.
-- Flag unmatched generated counterparts for manual matching or acceptance as valid pending entries; neither action implicitly commits them.
-
-## Accepted future import formats
-
-The owner confirmed QIF-first sequencing on 2026-10-25. After the bounded QIF milestone, SpentIt must also support **QFX, ASO, QBO and OFX**. The owner's bank offers these formats but not QIF. This extends the eventual import scope; it does not add these parsers to the current milestone or claim that their dialects are already understood.
-
-The owner has the same real-world account activity exported separately in all four formats. These matching exports may help compare interpretation, record counts, exact amounts, dates, references and preserved evidence across formats. Their equivalence is owner-reported, not independently verified; format-specific omissions, identifiers and semantics must be investigated rather than assumed. In particular, the ASO extension alone does not establish its encoding or grammar. The separate QIF samples are not asserted to contain this same dataset.
-
-Ask the owner for access when needed. Keep private exports out of the repository and routine automated tests; never record their filenames, paths or contents or move/modify the originals. Prefer synthetic equivalents for repeatable cross-format regression tests. Follow the [private-sample handling contract](009-durable-import-milestone.md#private-sample-availability). No samples were opened for this documentation update.
-
-The 2026-10-27 checkpoint specifies and implements OFX, QFX, QBO, and ASO bank and credit-card statement lists in the [statement profile](003-ofx-profile.md). ASO was identified by in-place structural inspection as OFX 1.0.2 SGML credit-card statement syntax. No path or contents were recorded. The paragraphs above record the 2026-10-25 requirement; they are not a claim that the rest of feature 003 is finished.
-
-## Accepted source-evidence direction — 2026-10-25
-
-The owner accepted preserving original imports in their native formats and comparing a shared structured source interpretation. Retain exact QIF/QFX/other source bytes inside the document's encrypted storage; converting to QIF must not replace or erase the original. A parser or conversion defect must remain investigable from retained evidence.
-
-Separate original evidence, parsed source facts and editable ledger interpretations. Matching uses source facts for the target account, with exact money/currency and occurrence identity, rather than the user's edited payee, date or effective amount. Different formats may omit or express fields differently; common fields alone do not establish unique identity.
-
-One transaction can be associated with multiple source occurrences from different imports. Renaming an imported payee changes the editable interpretation without altering either the original facts or the associations. Confirming a later export as evidence of the same transaction adds an association, not another monetary posting. Preserve the match basis and user decision so an incorrect association can be explained and corrected.
-
-Proposed relational realization: an import stores its original bytes; source-occurrence rows identify locations within it and parsed facts; a transaction has a stable identity; an association table links that identity to its source occurrences. These are conceptual responsibilities, not adopted table names or a migration plan. The current QIF experiment preserves bytes and revisions but does not implement the future multi-format association model.
-
-Correction 2026-10-27: the statement checkpoint stored immutable original bytes, `source_occurrences`, and `source_associations` in schemas 18 and 19. QIF and OFX-family imports both use that representation. Point 4 keeps the tables and moves new documents to schemas 20 and 21. Schemas 16, 17, 18, and 19 are rejected rather than migrated. The paragraph above describes the experiment before the statement checkpoint. See the [statement profile](003-ofx-profile.md).
-
-Removing a transaction from the ledger retains imported evidence and persistent history. The owner subsequently accepted ordinary correction/removal/strict Undo and explicit removed-record reimport review in [feature 011](011-committed-editing-and-reversal.md), now implemented per account in the bounded QIF workflow. A removed match is neither automatically restored nor silently suppressed. Cross-format association correction, transfer changes and broader evidence reconciliation remain unresolved.
-
-## Proposed import pipeline
-
-1. Preserve source bytes and record boundaries with import identity and parser diagnostics inside encrypted storage.
-2. Parse into structured fields while retaining unknown/uninterpreted fields as evidence. Ask about ambiguous dates or formats rather than guessing silently.
-3. Compare original source identity/content with committed records and other drafts. Use occurrence-aware matching, not a unique constraint on date/payee/amount.
-4. Apply rules to derived fields and save their explanations separately from source evidence.
-5. Review edits, unresolved records, duplicate decisions, and projected balances.
-6. Revalidate at commit; atomically write the chosen account operation, linked effects/protection, provenance, history, and its draft-state transitions. Do not commit another account implicitly; its generated counterpart remains a protected draft until explicitly committed there.
-
-Use a durable operation identity so retries after interruption cannot apply an import twice. An error after the durable commit boundary must be resolved by inspecting recorded operation state, not blindly retrying insertion.
-
-Two identical purchases can be legitimate. A fingerprint is matching evidence, not necessarily a bank-issued unique transaction ID. Account identity, occurrence counts, raw fields, and import context matter. Matching must remain understandable and reversible.
-
-## Synthetic Wise-shaped fixture
-
-This intentionally sanitized example captures the structure discussed; it is not a copied personal transaction:
-
-```text
-D10/08/2026
-NCARD-SYNTHETIC-001
-T-29.31
-PTfl Travel Ch TFL.GOV.UK/CP
-MExample Person
-EWise Charges for: CARD-SYNTHETIC-001
-$-0.14
-ECARD-SYNTHETIC-001
-$-29.17
-^
-```
-
-`P` is payee, `E` is split memo, `$` is split amount, and `S` would supply split category. This sample lacks `S` fields; support this shape deliberately. Its date is ambiguous without a date-format context. The desired classification is Service Fees for -0.14 and Transport for -29.17 through parent-payee classification.
-
-## Acceptance criteria
-
-- Reimporting the same file or an overlapping date range does not silently double-count or drop legitimate repeated transactions.
-- Identical repeated purchases, edited committed transactions, changed export formatting, and duplicates across pending imports have explicit tested outcomes.
-- Missing split categories, mixed signs, ambiguous dates, malformed records, encoding issues, and split-total discrepancies are visible and reviewable.
-- A rules/manual-edit pass never alters original source evidence.
-- Projected balances exclude rows marked to be ignored and reconcile to the eventual committed result.
-- Clear/discard changes no committed financial state. Discarding an uncommitted origin removes its purely generated draft counterpart; clearing the destination retains counterparts protected by committed origins. Independently supported counterparts are preserved. See feature 008 for lifecycle criteria.
-- Restart restores draft content and dispositions; interruption/retry tests prove atomic commit and no duplicate application.
-- Manually created records clearly indicate that no QIF source exists.
-
-## Open questions
-
-- Supported QIF dialects, date/encoding profiles, file-size limits, and partial-parse handling. The OFX-family bank and credit-card slice, including the inspected ASO label, is specified separately. See [003-ofx-profile.md](003-ofx-profile.md).
-- Exact recognition confidence rules and review UI; handling uncertain candidates must be settled before implementing automatic exclusion.
-- One workspace versus multiple batches per account, commit selection granularity, and multi-account file review.
-- Exact transfer matching heuristics and unresolved correction/commit-order cases are tracked in [feature 008](008-transfer-matching-and-lifecycle.md); per-account commits and protected drafts are accepted.
-- Whether discarding also removes source evidence or retains limited import history; retained audit evidence must not masquerade as an active draft.
-
-## Reference
-
-- [GnuCash QIF format notes](https://github.com/Gnucash/gnucash/blob/stable/gnucash/import-export/qif-imp/file-format.txt)
-
-## Accepted durable-import experiment — 2026-10-25
-
-The owner accepted the bounded policies in [feature 009](009-durable-import-milestone.md), including its explicit deferrals. Those decisions govern that experiment only; broader open questions in this feature remain unless explicitly settled there. The headless subset, bounded writable UI and date/split-total repair are implemented; the full workflow remains incomplete.
-
-## Bounded repair implementation — 2026-10-25
-
-The owner selected date and split-total repair first. New experimental schema-2 datasets now support explicit validated repair, retained original evidence/diagnostics, durable history and separate duplicate review. Missing/invalid amounts and unsupported constructs remain blocked; schema-1 documents remain readable without migration. See [the milestone scope](009-durable-import-milestone.md#accepted-bounded-record-repair--2026-10-25) and [implementation/verification](../doc/durable-import.md#bounded-record-repair).
-
-## Account-scoped follow-up — 2026-10-26
-
-The [multi-account prerequisite](../doc/accounts.md) gives each account an independent pending import, duplicate review and ordinary history. Identical source bytes in another account are not automatically excluded. This does not implement transfer evidence attachment or multi-account QIF files. Earlier experimental formats are now rejected without migration; the earlier dated schema-compatibility notes are historical.
-
-## QIF transfer destinations — 2026-10-26
-
-The [bounded destination extension](../doc/qif-transfers.md) admits whole-record and split `[Account]` notation, requires explicit account/link resolution, and guards commit and rule application against losing transfer intent. See that contract and its verification link. Allocation-level Merge, unlink, and the locked committed link edits are implemented in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-committed-transfer-editing--2026-10-27). Moving a committed row and rewriting source-occurrence links remain open.
-
-
-## Ordinary profile and unavailable original amounts — 2026-10-26
-
-The [v3 profile](009-qif-profile.md) now admits ordinary Bank/Cash/CCard records and separate class metadata. Structurally intact date/amount repairs preserve unknown original money as unavailable and keep every original split position and transfer destination. Explicit repaired interpretations and duplicate decisions remain separate; no guessed original, zero substitution or automatic repaired-record exclusion is permitted. The [current checkpoint](../doc/status.md#ordinary-qif-and-unknown-amount-repair-checkpoint--2026-10-26) records verification and format scope.
-
-The subsequent [whole-source account workflow](../doc/qif-account-imports.md) implements named sections, explicit mapping or creation, repair counts/progress, staged reported-balance interpretation and whole-import Abort under the accepted policies. Selected current-format verification is recorded in [status](../doc/status.md#whole-source-qif-account-review--2026-10-26). General cross-format associations and wider compatibility remain outside this QIF profile; the feature stays active.
-
-## Complete QIF exports — accepted 2026-10-28
-
-The owner gave Go for full category catalogs alongside existing account definitions/switching, ISO dates and validated comma-grouped amounts. Categories stage with the import and publish atomically with its first account commit; Abort removes the entire staged catalog even when drafts use it. See the [profile](009-qif-profile.md) and [publication contract](../doc/qif-account-imports.md#staged-category-catalog--2026-10-28). This is a bounded import extension, not universal QIF support or report implementation.
-
-## Undo a completed import — owner Go 2026-11-03
-
-The accepted [import-undo contract](../doc/import-undo.md) adds account-menu
-**Undo last import…** and Review **Undo import…**. Both operate on one entire
-uncommitted source, preserving earlier/shared/accepted work and reversing the
-selected import's transfer effects. See [status](../doc/status.md) for actual
-verification and limitations. This adds a selected-import command without changing
-account-wide Discard, acceptance, or incomplete-import cleanup.
+- Investment and other non-banking QIF sections.
+- Automatic OFX transfer destinations. Those records stay visible blockers.
+- Fuzzy matching and cross-account date tolerance. Those belong to explicit
+  transfer review, and broader automatic matching is deferred.

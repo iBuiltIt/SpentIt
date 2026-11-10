@@ -1,4 +1,0 @@
-initial,file=1556480,pages=380,free=0,live_page_bytes=1556480,versions=1000,entry_revisions=0,ledger_operations=0
-before-import-undo,file=2146304,pages=524,free=0,live_page_bytes=2146304,versions=2000,entry_revisions=0,ledger_operations=0
-after-import-undo,file=2146304,pages=524,free=140,live_page_bytes=1572864,versions=1000,entry_revisions=0,ledger_operations=0
-reopened,file=2146304,pages=524,free=140,live_page_bytes=1572864,versions=1000,entry_revisions=0,ledger_operations=0

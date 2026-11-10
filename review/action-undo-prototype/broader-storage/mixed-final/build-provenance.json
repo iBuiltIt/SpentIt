@@ -1,5 +1,0 @@
-{
-  "provenance_base": "../continuation/build-provenance.json",
-  "executables": "Byte-identical frozen continuation executables and analyzer; hashes recorded in manifest.json.",
-  "scheduling": "Three independent processes/documents run in parallel and overlap continuation; no comparative timing claims."
-}

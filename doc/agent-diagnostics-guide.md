@@ -141,9 +141,9 @@ python3 tests/diagnostics/compare_workloads.py \
   build/import-ui-rules-release/src/ui/spentit_import_benchmark "$diag_output"
 ```
 
-The comparison runner records binary SHA-256, phase times, exit codes and synthetic logs. Runtime-disabled/enabled comparisons use the same ON-build executable; they do not compare two compiled editions. Run serially with no builds/tests/other benchmarks competing. Report median and range, sample count, workload, backend, build fingerprint, failures, and warm/cold conditions. Offscreen logical readiness is not native rendering. Current pending-reopen comparisons exceeded the provisional 5% observer budget amid substantial noise; do not assume zero overhead or that the budget is met. See [recorded measurements and limitations](application-diagnostics.md#serial-workload-observations).
+The comparison runner records binary SHA-256, phase times, exit codes and synthetic logs. Runtime-disabled/enabled comparisons use the same ON-build executable; they do not compare two compiled editions. Run serially with no builds/tests/other benchmarks competing. Report median and range, sample count, workload, backend, build fingerprint, failures, and warm/cold conditions. Offscreen logical readiness is not native rendering. Current pending-reopen comparisons exceeded the provisional 5% observer budget amid substantial noise; do not assume zero overhead or that the budget is met. See [coverage limits](application-diagnostics.md#known-coverage-limits).
 
-For a native readiness plumbing check only, run `python3 tests/diagnostics/native_smoke.py ./build/SpentIt`. This launches an isolated smoke instance and reads JSON; it is not a workload performance test. [Other verification commands](application-diagnostics.md#verification-record--2026-10-29) cover faults, transport and sanitizers.
+For a native readiness plumbing check only, run `python3 tests/diagnostics/native_smoke.py ./build/SpentIt`. This launches an isolated smoke instance and reads JSON; it is not a workload performance test. Fault, transport, and sanitizer checks are described in [application diagnostics](application-diagnostics.md#workloads-and-verification).
 
 ## Hand back useful evidence
 

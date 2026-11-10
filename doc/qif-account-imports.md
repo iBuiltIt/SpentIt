@@ -1,27 +1,22 @@
 # QIF account sections and whole-source review
 
-## Import category decisions — owner Go 2026-11-02
+## Import category decisions
 
-The [category-gated rules contract](../features/004-rules-and-explanations.md#settled-split-and-import-decisions--owner-go-2026-11-02)
-supersedes automatic publication of the entire category catalog at acceptance.
-After atomic preparation, missing ordinary names across every mapped account and
-the complete catalog appear once in an import-wide checklist. Apply Selected creates
-checked names and clears unchecked effective assignments; Use Uncategorized clears
-all missing assignments. Original text remains in the existing source representation.
-Recognized categories bind to their existing identity; transfer aliases remain separate.
-The decision and assignments, category creation, and automatic rules commit atomically.
-Completed preparation awaiting this choice survives close/restart and blocks acceptance
-and rules on those rows. Closing the dialog defers it; the sidebar reopens it. Aborting
-uses the existing import-owned operation. Repaired rows respect the saved choice.
-Current formats are 42 with rules / 41 without; no migration is provided.
+See [feature 004](../features/004-rules-and-explanations.md). After preparation,
+missing ordinary names across every mapped account and the complete catalog
+appear once in an import-wide checklist. Apply Selected creates checked names
+and clears unchecked effective assignments. Use Uncategorized clears all missing
+assignments. Original text remains in the source representation. Recognized
+categories bind to their existing identity. Transfer aliases stay separate.
+The decision, category creation, and automatic rules commit atomically.
+Completed preparation awaiting this choice survives close and restart and blocks
+acceptance and rules on those rows. Closing the dialog defers it. The sidebar
+reopens it. Abort uses the existing import-owned operation. Repaired rows
+respect the saved choice. Database formats are **70/69**. There is no migration.
 
-
-The [opening/ledger cleanup and interrupted-import rollback](ui-import-cleanup.md)
-is implemented under the owner's 2026-10-31 Go on experimental formats **40/39**.
-It adds import routing, Review repair/Commit, account-context Discard and automatic
-cleanup of incomplete preparation. Completed uncommitted imports remain durable.
-See [current verification and limits](status.md); older Resume and toolbar
-descriptions below are historical.
+Incomplete preparation is cleaned up on cancellation or the next open.
+Completed uncommitted imports remain. Account Discard is account-owned.
+Review repairs import problems and Accept transactions accepts the file.
 
 Last updated: 2026-11-02
 
@@ -39,13 +34,10 @@ Missing/zero reports supply no second option. Existing mapped accounts are uncha
 The explicit zero/reported choice is saved in encrypted immutable balance history
 within account capture. It confirms the account opening immediately and does not
 become stale when transactions are repaired or linked. No later opening setup panel
-is shown for those accounts. Schema 38/37 adds these fixed choices to the existing
-balance decision representation; older experimental datasets are rejected unchanged.
-The legacy staged-review descriptions below apply only to internal calls that omit
-a creation-time choice. Capture, resume, Commit and Abort were verified with injected
-I/O failures, durable-boundary interruptions, retries and backup restores; see
-[the verification record](status.md#opening-setup-during-import-mapping--2026-10-30).
-[Requirements and rationale](../features/003-qif-import-review.md#opening-setup-during-account-mapping--owner-go-2026-10-30).
+is shown for those accounts. Omitting the choice refuses before capture.
+Database formats are **70/69**. Older experimental files are rejected unchanged.
+See [feature 003](../features/003-qif-import-review.md). The legacy staged-balance
+path below is retired.
 
 ## Accepted source envelope
 
@@ -77,13 +69,9 @@ Account commit remains explicit and separate. The first related financial public
 
 ## Reported balances and staged openings
 
-Only accounts explicitly created by this import participate in reported-balance opening review. An existing mapped account's opening is never overwritten.
-
-After repair and duplicate review, calculate the exact reviewed change from zero. Include effective source records once, exclude reviewed duplicates, and include generated/local transfer effects once. A matched bank counterpart replaces its generated contribution rather than adding another movement. Use cancellation-safe exact summation and checked subtraction.
-
-When reported balance equals reviewed change, zero opening is the supported proposal. Otherwise explicitly choose whether the reported value is opening or closing: opening uses that value; closing derives opening as reported balance minus reviewed change. An explicit Ignore choice keeps the new account's zero opening and can bypass invalid reported balance text without changing the evidence. Invalid precision or overflow cannot silently round. The date is explicitly confirmed.
-
-The UI calculates and stages the proposal, displays its exact amount, and leaves committed balances unchanged. The proposal publishes atomically when that account first commits, including transfer-first publication. The reported text, choice, date, source batch revision, exact reviewed change, and financial sequence are retained in immutable decision history. Replay reconstructs included source values and transfer snapshots. A change in the exact reviewed monetary basis requires another review; harmless sequence or protection changes do not repeatedly invalidate the same proposal.
+This path is retired. Do not offer an opening-versus-closing choice, do not
+derive an opening by subtracting imported totals, and do not stage a balance
+for a later commit. The mapping choice above is the only creation-time opening.
 
 ## Abort, recovery and retained identities
 
@@ -154,9 +142,6 @@ Verification requires exactly one fixed-choice record for each created mapping,
 checks it against source/creation facts and the current mapping, and rejects
 staged-choice values. Subsequent transaction revisions are not inputs to opening
 choice validation. No ordinary edit snapshots are retained for balance replay.
-Formats are **66 with rules / 65 without**; previous formats, including 64/63,
-are rejected unchanged. No migration or silent repair is introduced.
-
-The owner authorized step 1 only. Ruleset-save duplication and the other retention
-findings remain deferred; this change adds no general pruning policy or new audit
-on normal open/close. See [status](status.md) for executed verification.
+Database formats are **70/69**. Older experimental files are rejected unchanged.
+No migration or silent repair is introduced. Ruleset retention is already in
+place. Other retention cleanup stays deferred. See [status](status.md).

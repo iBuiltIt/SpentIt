@@ -20,7 +20,7 @@ Match validation checks account, exact money and a valid independent posting dat
 
 The owner accepted provisional matching: a confirmed match from a pending import remains a proposal until that importing account explicitly commits. Discarding that import drops the proposal and retains the original evidence, leaving the existing transfer's financial state and protection unchanged.
 
-The owner clarified that manual and unmatched entries must be committable even when no bank record will ever arrive. Provide explicit acceptance as valid without a bank match, followed by separate account commit. Acceptance must preserve provenance and allow later matching. It does not override exact-money checks: −100 and +95 may each be committed as valid unmatched entries, but linking stays blocked until the difference is explicitly accounted for. See the [accepted decisions](../features/008-transfer-matching-and-lifecycle.md#accepted-matching-and-unmatched-commit-decisions--2026-10-26).
+The owner clarified that manual and unmatched entries must be committable even when no bank record will ever arrive. Provide explicit acceptance as valid without a bank match, followed by separate account commit. Acceptance must preserve provenance and allow later matching. It does not override exact-money checks: −100 and +95 may each be committed as valid unmatched entries, but linking stays blocked until the difference is explicitly accounted for. See [feature 008](../features/008-transfer-matching-and-lifecycle.md).
 
 The engine now supports manual-origin generation, explicit unmatched acceptance, provisional evidence proposals, proposal discard and explicit publication. Unmatched manual/generated sides require acceptance before ordinary commit; acceptance alone changes neither state nor money and creates no bank evidence. Whole-entry acceptance applies consistently across sibling allocations. Creation provenance and the original generated date survive later matching, including when the bank posting date differs. Proposal publication requires the exact expected evidence snapshot. Whole-import helpers act only on the selected account and named import and reject reused bank allocations across links.
 
@@ -28,9 +28,9 @@ These transitions now have persisted commands, acceptance history, evidence rete
 
 ## Verification scope
 
-Engine tests cover both commit orders, unchanged opposite committed state, protected clearing, ordinary origin discard, repeated equal allocations, multiple destinations, reordered allocations, mixed signs, whole-entry protection, independent posting dates, invalid identities/states/dates, mismatched amounts/currencies and signed-minimum overflow. Additional acceptance/proposal/manual cases cover required explicit acceptance, commit without bank evidence, later matching, manual provenance retention, proposal discard in both draft and committed states, whole-import publication/discard, stale expected evidence, and evidence multiplicity. Actual configuration results are recorded in [project status](status.md#transfer-engine-prerequisite--2026-10-26).
+Engine tests cover both commit orders, unchanged opposite committed state, protected clearing, ordinary origin discard, repeated equal allocations, multiple destinations, reordered allocations, mixed signs, whole-entry protection, independent posting dates, invalid identities/states/dates, mismatched amounts/currencies and signed-minimum overflow. Additional acceptance/proposal/manual cases cover required explicit acceptance, commit without bank evidence, later matching, manual provenance retention, proposal discard in both draft and committed states, whole-import publication/discard, stale expected evidence, and evidence multiplicity. Do not treat this description as a passing test run.
 
-Storage and UI verification is recorded separately in [project status](status.md#durable-transfer-integration--2026-10-26). Pure value transitions alone do not establish durability. Linux and Windows remain unverified.
+Pure value transitions alone do not establish durability. Linux and Windows remain unverified until run.
 
 ## Durable storage contract
 
@@ -64,7 +64,7 @@ reuses that stack, restores prior links and retires purely generated drafts for
 new links; independent imported postings remain. Replay applies the same rule.
 The ledger exposes the group Undo even before loading Review suggestions. No new
 schema or migration is involved. Existing matching policies are unchanged.
-See [category behavior](../features/010-categories-and-selection.md#right-click-transfer-assignment--owner-go-2026-10-31)
+See [category behavior](../features/010-categories-and-selection.md)
 and [verification](status.md).
 
 ### Reverse category assignment — 2026-10-31

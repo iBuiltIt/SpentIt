@@ -14,4 +14,4 @@ Selected for the isolated prototype by the owner on 2026-10-25. This does not se
 
 No project license has been added. Third-party terms do not inherit the owner's intended SpentIt resale restriction. See [licensing requirements](../../features/007-licensing-and-distribution.md).
 
-Build and test instructions: [storage prototype](../../doc/storage-prototype.md).
+Build instructions: [building](../../doc/building.md).

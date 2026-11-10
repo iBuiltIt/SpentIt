@@ -1,2 +1,0 @@
-initial,file=1683456,pages=411,free=4,live_page_bytes=1667072,ledger_operations=0,command_completions=0
-reopened,file=1683456,pages=411,free=4,live_page_bytes=1667072,ledger_operations=0,command_completions=0

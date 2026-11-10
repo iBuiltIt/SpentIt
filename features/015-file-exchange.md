@@ -1,36 +1,28 @@
-# 015 — File exchange and backup entry point
+# 015 — File exchange and backup
 
-Status: **active**  
+Status: **active**
 Last updated: 2026-11-09
 
-The owner accepted and authorized four File menu commands: QIF Export, SpentIt
-Export, SpentIt Import and Backup. The [agreed design and versioned file format](../doc/file-exchange.md)
-are authoritative; [status](../doc/status.md) records implementation and actual checks.
+File offers QIF Export, SpentIt Export, SpentIt Import, and Backup while a file
+is open. Unsaved-edit decisions run first. Backup is the Settings backup flow.
+The format and failure rules are in [doc/file-exchange.md](../doc/file-exchange.md).
 
-- QIF exports selected accounts' current ledger transactions within individual
-  inclusive ranges. Include categories is optional; transfer references remain.
-  Include opening balance defaults on and exports the immediately-before-period
-  balance, or the stored opening for the full range.
-- SpentIt Export independently selects Rules, Reports and Categories. SpentIt
-  Import shows only nonempty sections, stacked vertically, with individual choices
-  and All on/off per section. Categories merge by full name with explicit Income
-  conflict choices. Rules and reports append as new definitions, including namesakes.
-- Referenced categories/accounts must match or be explicitly mapped. Missing
-  categories can be created only when selected from the imported category section.
-  Selected definitions save atomically; importing rules never applies transactions.
-- Export accounts and all three definition groups default on. Progress and errors
-  appear inside the exchange dialogs. QIF output normalizes text controls to spaces
-  without changing imported/stored text; see the contract for exact characters and
-  account-name collision protection.
-- Backup is the existing Settings backup operation, exposed from File.
+QIF exports the current ledger for the selected accounts and inclusive dates,
+including new and accepted rows. Categories are optional. Transfer references
+remain. An opening balance is included by default. Text controls in the QIF
+output are normalized to spaces. Stored text, amounts, and Undo are unchanged.
 
-Plaintext exports are an intentional reconstruction path. They do not preserve all
-originals, recognition, history or document settings and do not replace encrypted
-backup. This scope does not authorize database migrations, changing rule matching
-semantics, report-results export, or the deferred manual publication pass (MAN-018).
+SpentIt Export selects Rules, Reports, and Categories independently. Import
+shows the nonempty sections, appends rules and reports with new ids, and merges
+categories by full name. Income conflicts require a choice. Missing
+dependencies must be mapped or created from the imported categories. The save
+is atomic, does not apply rules, and does not clear transaction Undo.
 
-Acceptance includes exact QIF amounts/splits/openings and current-row scope;
-round-trip definitions and dependency mapping; atomic failure/retry/crash recovery;
-malformed/untrusted-file rejection; protected export publication; menu/dialog
-selection and unsaved-work guards. Platform and native-picker limits must remain
-explicit in the verification record.
+Exports are unencrypted text. They are a reconstruction path, not a backup.
+They omit originals, recognition, history, and document settings.
+
+## Not done
+
+Report-results export, a database migration, and native file-picker overwrite
+as a verified interaction. Database formats stay 70/69. This feature does not
+change them.

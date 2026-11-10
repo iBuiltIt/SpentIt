@@ -1,8 +1,8 @@
 # OFX, QFX, QBO, and ASO statement profile
 
-Last updated: 2026-11-07
+Last updated: 2026-11-09
 
-Implementation contract for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). Feature 003 stays **active**. This profile does not finish QIF product scope or transfer repair. New documents use experimental schema 40 with rules and schema 39 without rules. Schemas 22/21, schema 20 and schemas 18 and 19 are rejected with `Unsupported experimental format; no migration was attempted`. No migration was added. `aso` remains a legal file label in those format checks. Account commands are recorded in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).
+Grammar for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). This profile does not add investment records or automatic transfer repair. Database formats are **70 with rules / 69 without**. Older experimental files are rejected unchanged. `aso` remains a legal file label. Account commands are in [feature 002](002-accounts-money-splits.md).
 
 ## Specification used
 
@@ -14,7 +14,7 @@ Public descriptions treat OFX as the statement grammar, QFX as Quicken Web Conne
 
 ## ASO
 
-ASO for this checkpoint was identified by in-place structural inspection of the owner's private export on 2026-10-27. That export is OFX 1.0.2 SGML credit-card statement syntax with a `.aso` label. No path, filename, account identifier, amount, name, FITID, or other content was recorded. The handling rules in [sample handling](009-durable-import-milestone.md#private-sample-availability) still apply.
+ASO for this checkpoint was identified by in-place structural inspection of the owner's private export on 2026-10-27. That export is OFX 1.0.2 SGML credit-card statement syntax with a `.aso` label. No path, filename, account identifier, amount, name, FITID, or other content was recorded. The handling rules in [feature 009](009-durable-import-milestone.md) still apply.
 
 A well-formed file of this shape imports, reviews, and commits through the existing `ofx-sgml-1` parser. The stored format is `aso` and the stored grammar is `ofx-sgml`. An ASO file whose body is OFX XML uses `ofx-xml-2` and grammar `ofx-xml`. A body that is neither OFX SGML nor OFX XML is refused with `File label does not match the statement grammar; no import was saved`. The original file stays unchanged and no partial import is saved. Sniffing an unlabeled body still follows the existing OFX/QIF rules and does not invent an `aso` label.
 
@@ -75,17 +75,17 @@ These stay in evidence and block the record, so the account cannot be committed 
 
 `NAME` wins over `PAYEE` when only one is used. `CHECKNUM` wins over `REFNUM` when only one is used. `SIC`, `PAYEEID`, `SRVRTID`, `DTUSER`, `DTAVAIL`, and `EXTDNAME` are uninterpreted and do not block. A missing `FITID` records `FITID absent` and does not by itself block a structurally intact transaction. Version 2.3 says each posted `STMTTRN` contains a `FITID`; this checkpoint still accepts a missing `FITID` as reviewable evidence.
 
-Statement transfers cannot use the QIF bracket-destination workflow. They remain visible transfer blockers with the original bytes retained. No destination account is created or resolved by name. Allocation-level Merge, unlink, replacement, and the locked committed link edits are implemented for the transfer workflow in [feature 008](008-transfer-matching-and-lifecycle.md#accepted-committed-transfer-editing--2026-10-27). Moving a committed row and rewriting source-occurrence links remain open.
+Statement transfers cannot use the QIF bracket-destination workflow. They remain visible transfer blockers with the original bytes retained. No destination account is created or resolved by name. Allocation-level Merge, unlink, replacement, and the locked committed link edits are implemented for the transfer workflow in [feature 008](008-transfer-matching-and-lifecycle.md). Moving a committed row and rewriting source-occurrence links remain open.
 
 Reported balance is `LEDGERBAL`/`BALAMT` only, and only when that text parses exactly for the statement currency. `DTASOF` is not an opening date. Extra balance aggregates suppress the staged reported balance. Opening publication stays on the existing created-account review.
 
 ## Accounts in one file
 
-Every statement account is mapped explicitly through the existing whole-source account workflow. An OFX-family file opens that mapping even when it contains one account. The evidence label is the institution id, a space, and the account number, or the account number alone when the institution id is empty. A created account name is that label. Currency comes from `CURDEF` and must match the target. The account number is required; a missing `ACCTID` refuses the file. No section is omitted. Account identity and currency are not inferred from a name. Account rename, archive, deletion, opening-balance correction after commit, and currency reassignment are the implemented point-4 commands in [feature 002](002-accounts-money-splits.md#applied-account-management-checkpoint--2026-10-27).
+Every statement account is mapped explicitly through the existing whole-source account workflow. An OFX-family file opens that mapping even when it contains one account. The evidence label is the institution id, a space, and the account number, or the account number alone when the institution id is empty. A created account name is that label. Currency comes from `CURDEF` and must match the target. The account number is required; a missing `ACCTID` refuses the file. No section is omitted. Account identity and currency are not inferred from a name. Account rename, archive, deletion, opening-balance correction after commit, and currency reassignment are the account commands in [feature 002](002-accounts-money-splits.md).
 
 ## Duplicate recognition
 
-Accepted follow-up, 2026-10-29: [strict bank-ID overlap matching](../doc/import-commit-discussion.md#accepted-strict-bank-id-matching--2026-10-29) now automatically marks a unique active accepted or uncommitted target as already present when original bank ID, currency, amount, date and type agree. Multiple retained associations to one target are not ambiguity. Removed targets, conflicting facts, multiple target identities and every occurrence of an incoming repeated ID remain reviewable. User edits are preserved. This supersedes the blanket explicit-disposition requirement below for those strict matches only. Pending-target matching and duplicate-only completion are now implemented; source associations persist during import without accepting older work. Explicit whole-record bank matches to accepted generated transfers add source ownership without another acceptance obligation. The remaining paragraphs describe the legacy candidate/publication mechanics.
+[Acceptance and matching](../doc/import-commit-discussion.md) automatically marks a unique active accepted or uncommitted target as already present when original bank ID, currency, amount, date, and type agree. Multiple retained associations to one target are not ambiguity. Removed targets, conflicting facts, multiple target identities, and every occurrence of an incoming repeated ID stay reviewable. User edits are preserved. Pending-target matching and duplicate-only completion are implemented. Source associations persist during import without accepting older work. An explicit whole-record bank match to an accepted generated transfer adds source ownership without another acceptance.
 
 Dispositions remain unresolved, include, and duplicate. Commit rejects unresolved rows. A duplicate disposition posts no money and adds an association to the chosen committed occurrence. The same candidate occurrence is not reused inside one batch. Matching uses source facts for the target account: original date, original amount, currency, and `FITID` when present. Edited payee, date, and effective amount are not the match key.
 
@@ -101,7 +101,7 @@ After a user confirms an OFX-family row as a duplicate of a QIF row, the associa
 
 ## Source representation
 
-Schemas 18 and 19 store, for every import including QIF:
+Every import, including QIF, stores:
 
 - `sources.bytes`: the original file, byte for byte
 - `source_headers`: file label, grammar, and exact header text (empty for QIF; OFX header bytes plus signon and root-attribute notes). Legal labels are `qif`, `ofx`, `qfx`, `qbo`, and `aso`. Grammar stays `qif`, `ofx-sgml`, or `ofx-xml`. `USERKEY` is not written into this column.
@@ -146,5 +146,5 @@ currency, including empty text, grouping, excessive precision or overflow, refus
 the import with an explicit unreadable-balance message. It must not appear as
 “Not supplied” or proceed to a zero-opening confirmation. Missing ledger balances
 and the existing extra-balance-aggregate suppression policy are unchanged.
-Errors do not echo account identifiers or source amounts. Formats remain 64/63;
-there is no storage or migration change. See [status](../doc/status.md) for checks.
+Errors do not echo account identifiers or source amounts. This validation does
+not change storage. Database formats remain **70/69**.

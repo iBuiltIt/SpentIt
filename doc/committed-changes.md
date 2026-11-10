@@ -1,14 +1,18 @@
 # Ordinary committed changes
 
-Last updated: 2026-10-31
+Last updated: 2026-11-09
 
-State: bounded experimental implementation verified on available macOS configurations. The owner accepted [feature 011](../features/011-committed-editing-and-reversal.md). This implements ordinary per-account corrections, removal and strict Undo. Opening-balance correction and currency reassignment are the point-4 account commands. The [2026-10-27 transfer edits](../features/011-committed-editing-and-reversal.md#accepted-committed-transfer-editing--2026-10-27) add transfer-aware correction, removal, and Undo for the locked cases. Moving a committed row, rewriting source-occurrence links, and migrations are not part of this workflow.
-
-The current follow-up supports committed bulk category changes/removal and strict atomic group Undo, including retained group history after reopening. See [search and ledger](search-ledger.md) for the accepted scope, retry/recovery semantics and verification. The original single-row implementation details and historical verification below remain useful; experimental-format compatibility is not an obligation before the owner announces a release.
+Accepted transactions can be corrected or removed with strict Undo. See
+[feature 011](../features/011-committed-editing-and-reversal.md). Transfer cases
+are in [feature 008](../features/008-transfer-matching-and-lifecycle.md). Moving
+a committed row and rewriting source links are not part of this workflow.
+Database formats are **70/69**. There is no migration. Bulk category changes
+and removal use one group Undo. See [search and ledger](search-ledger.md).
 
 ## Current interpretation and retained history
 
-Schema 4 introduced this workflow. Current [account-scoped formats](accounts.md) retain it in schema 40 with rules/bulk receipts and schema 39 without rules. Earlier experimental layouts are rejected without migration. Version/shape checks run before storage-setting changes. Historical compatibility fixtures now verify rejection and preservation of their contents.
+Current formats are **70/69**. Earlier experimental layouts are rejected without
+migration. Version checks run before storage-setting changes.
 
 Original source evidence, original import versions and import receipts remain immutable. Schema 4 stores complete committed entry revisions and a current head for each included occurrence. Revision zero is its original included publication. A correction appends a current interpretation; removal appends an inactive interpretation; eligible Undo appends the earlier state as a new revision. Removed entries remain available through history and source inspection. Actual bank refunds remain separate imported transactions.
 
