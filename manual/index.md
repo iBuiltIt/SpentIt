@@ -11,13 +11,13 @@ You remember the groceries, a few meals out, and that bill you paid.
 But looking at what’s left at the end of the month, you might still
 wonder: where did it all go?
 
-SpentIt helps you piece that picture together. You bring in your
+SpentIt helps you understand where your money goes. You bring in your
 transactions, organize them into categories that make sense to you,
 and explore where your money went.
 
 Perhaps you want to understand why this month cost more than last
 month. Perhaps you’re simply curious about how much you spend on
-groceries. You can start with one question and work from there.
+groceries. SpentIt can help you make sense of it all.
 
 ## Making sense of everyday spending
 
@@ -57,16 +57,13 @@ those entries fit together helps you make sense of the total.
 thousands and a dot for cents, as in 1,234.56. Your own file follows
 your chosen date and amount settings. This example uses one currency.*
 
-Pictures show different stages of the example. Keep your correct entries;
-you don’t need to change them to match a picture.
-
 ## Start with your own accounts
 
 Your SpentIt **file** keeps your accounts and transactions together.
 An account can represent a bank account, a credit card, or cash.
 
-Create a file, or open one you already have. You can add accounts
-yourself or create them as part of an import.
+Create a file once and add accounts yourself, or create the accounts
+as part of an import.
 
 There are two ways to add transactions:
 
@@ -76,7 +73,9 @@ There are two ways to add transactions:
 
 Once you have some transactions, take a look through them. Do you
 recognize the purchases? Is there anything that needs correcting?
-If the same purchase came in twice, those two entries need reviewing.
+If the same purchase came in twice, maybe from a second import,
+those two entries need reviewing.
+
 A transfer between your accounts is different: it belongs in both
 accounts, as the card payment did in our example.
 
@@ -101,6 +100,6 @@ count in your balances and reports.
 
 When the transactions look right, use **Accept transactions**.
 
-For now, a useful first step is to bring in some transactions and
-get familiar with what’s there. Start with the question that brought
-you here.
+For now, a useful first step is to bring in some transactions and get
+familiar with what’s there. You will be on your way to finding out
+"Where did my money go?"

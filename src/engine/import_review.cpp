@@ -4,6 +4,7 @@
 #include <set>
 #include <chrono>
 #include <charconv>
+#include <cstdio>
 
 namespace spentit::imports {
 namespace {
@@ -22,6 +23,28 @@ int posting_distance(std::string_view left,std::string_view right) {
         return std::chrono::sys_days(date);
     };
     const auto distance=(day(left)-day(right)).count();return static_cast<int>(distance<0?-distance:distance);
+}
+std::optional<std::string> shift_calendar_date(std::string_view text,int days) {
+    if(days==0 || text.size()!=10 || text[4]!='-' || text[7]!='-')return {};
+    const auto number=[](std::string_view part)->std::optional<int>{int n=0;const auto r=std::from_chars(part.data(),part.data()+part.size(),n);if(r.ec!=std::errc{} || r.ptr!=part.data()+part.size())return {};return n;};
+    const auto year=number(text.substr(0,4)),month=number(text.substr(5,2)),day=number(text.substr(8,2));
+    if(!year || !month || !day)return {};
+    const std::chrono::year_month_day date{std::chrono::year(*year),std::chrono::month(static_cast<unsigned>(*month)),std::chrono::day(static_cast<unsigned>(*day))};
+    if(!date.ok() || *year<1)return {};
+    const auto shifted=std::chrono::year_month_day{std::chrono::sys_days(date)+std::chrono::days{days}};
+    if(!shifted.ok() || int(shifted.year())<1 || int(shifted.year())>9999)return {};
+    char buffer[11];
+    std::snprintf(buffer,sizeof buffer,"%04d-%02u-%02u",int(shifted.year()),static_cast<unsigned>(shifted.month()),static_cast<unsigned>(shifted.day()));
+    return buffer;
+}
+std::optional<MatchBasis> adjacent_day_basis(const qif::Record& a,const qif::Record& b) {
+    if(a.format=="manual" || b.format=="manual" || a.date.empty() || b.date.empty() || a.date==b.date)return {};
+    try { if(posting_distance(a.date,b.date)!=1)return {}; }
+    catch(const std::invalid_argument&){return {};}
+    auto aligned=a;aligned.date=b.date;
+    const auto basis=candidate_basis(aligned,b);
+    if(basis==MatchBasis::same_date_amount || basis==MatchBasis::same_source_fields)return MatchBasis::uncertain_date;
+    return {};
 }
 bool link_amount_candidate(const Money& left,const Money& right,bool explicit_destination) {
     if(left.currency()!=right.currency() || left.units()==0 || right.units()==0 || (left.units()<0)==(right.units()<0))return false;

@@ -40,7 +40,8 @@ Automatic recognition uses saved original facts.
 - Without that rule, a unique same-account match on original account, currency,
   exact amount, calendar date, and exact nonempty payee is recognized.
   Repeated keys, malformed originals, and removed targets stay reviewable.
-  There is no case folding, whitespace normalization, or adjacent-day widening.
+  There is no case folding or whitespace normalization. Automatic recognition
+  does not widen to an adjacent day.
 - An uncertain match is not permission to drop a transaction. Unresolved rows
   stay in the balance until the user decides.
 - Reimport of a removed transaction stays unresolved for an explicit decision.
@@ -53,4 +54,6 @@ acceptance is in [doc/import-commit-discussion.md](../doc/import-commit-discussi
 - Investment and other non-banking QIF sections.
 - Automatic OFX transfer destinations. Those records stay visible blockers.
 - Fuzzy matching and cross-account date tolerance. Those belong to explicit
-  transfer review, and broader automatic matching is deferred.
+  transfer review, and broader automatic matching is deferred. Same-account
+  review questions have a separate one-day pass, described in
+  [doc/review-sheet.md](../doc/review-sheet.md).

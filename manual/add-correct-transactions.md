@@ -212,11 +212,10 @@ later is its own action, and undoing it keeps the saved rule. Undoing
 
 ### Change history
 
-Choose **Change history** in the sidebar, or **History** on an accepted
-transaction. The page lists saved changes since you opened the file,
-for the account in the heading, one row for each action. The account
-name is a menu. It starts as the account you came from. Choose another
-account to see its changes.
+Choose **Change history** in the sidebar. The page lists saved changes
+since you opened the file, for the account in the heading, one row for
+each action. The account name is a menu. It starts as the account you
+came from. Choose another account to see its changes.
 
 Closing the file clears the list. The changes stay in the file until
 you undo them. An empty page has no **Back to account** button. Use

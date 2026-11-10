@@ -62,7 +62,8 @@ it does not remove them or change the account balance.
 
 **Merge** keeps one transaction when entries in the same account describe
 the same event. Two purchases with the same date and amount can still be
-separate purchases.
+separate purchases. A date one day off can be the same purchase or a
+different one. Compare the transactions in Review before you merge.
 
 **Link** connects the two postings of a transfer between accounts.
 Both accounts keep their posting; they are not merged into one entry.

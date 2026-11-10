@@ -1528,7 +1528,9 @@ private slots:
         mouse("ledgerRow_2", Qt::ControlModifier);
         QCOMPARE(session.model.state().value("selectionCount").toInt(), 1);
         mouse("ledgerRow_1", Qt::NoModifier, true);
-        QTRY_VERIFY(object(session.root, "showEntryHistory")->property("visible").toBool());
+        QTRY_VERIFY(object(session.root, "durableMemo")->property("visible").toBool());
+        QVERIFY(!object(session.root, "showEntryHistory"));
+        QVERIFY(!object(session.root, "removeCommitted"));
         QVERIFY(object(session.root, "durableMemo")->property("text").toString().contains("Groceries for the week"));
         mouse("ledgerRow_1", Qt::NoModifier, true);
         mouse("splitToggle_2");

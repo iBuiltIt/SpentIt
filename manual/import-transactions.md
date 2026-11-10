@@ -13,10 +13,11 @@ such as one month.
 
 ## Choose an export
 
-Download transactions in **QIF, OFX, QFX, QBO, or ASO** format.
-SpentIt supports ordinary bank, cash, and credit-card QIF accounts,
-and bank and credit-card statements in the other formats. PDF,
-CSV, and investment exports are not supported.
+Download your transactions in QIF, OFX, QFX, QBO, or ASO format.
+These files include the account type (such as bank, cash, or credit
+card). SpentIt can import bank, cash, and credit-card accounts from
+QIF files. From the other formats SpentIt can import bank and
+credit-card accounts. PDF, CSV, and investment exports are not supported.
 
 Choose **Import…** in the sidebar, then select the downloaded file.
 If you know which account it belongs to, you can instead right-click
@@ -25,7 +26,7 @@ that account and choose **Import…**.
 SpentIt uses a recognized account when it can. If the file does not
 identify an account, the sidebar route asks you to choose a destination.
 Select it and choose **OK**. Importing from an account’s right-click
-menu supplies that destination for an unnamed file.
+menu supplies that account as destination for an unnamed file.
 
 ![Choose import destination dialog with Chequing selected.](images/import-destination.png)
 *Choose the account whose transactions you downloaded.*
@@ -89,23 +90,26 @@ SpentIt asks which to create.
   using unchecked missing categories become **Uncategorized**.
 - **Use Uncategorized** creates none of the missing categories and
   leaves their transactions Uncategorized.
-- **Close** leaves this choice for later. Use **Import categories…**
-  in the sidebar to return, even after reopening your file.
+- **Close** leaves this choice for later. When there are categories
+  available to import, **Import categories…** appears in the sidebar
+  (below **Import…**). You can use it then, even after reopening your
+  file.
 
 Existing categories keep their assignments. Acceptance and automatic
 rules for these imported rows wait until you finish the category choice.
 
-### If a name means another account
+### Transfers - a name means another account
 
-An imported transfer names another account, such as Chequing paying
-Credit card. It is not an ordinary spending category.
+When an imported transaction refers to another account, such as
+Chequing making a payment to Credit card, it is a transfer, not an
+ordinary spending category.
 
 For an unresolved transfer, open **Review**, choose **Correct**, and
 select the destination account in the transaction’s category field.
 For a split transaction, choose the field for the affected split.
 The destination must be another active account in the same currency.
 Create or reactivate it first if needed. Selecting an account creates
-the transfer posting in that account; it does not merely change a label.
+the transfer posting in that account.
 
 For mapped imports, **Set up imported transfers?** can use the account
 names you confirmed. **Set up transfers** links matching postings and
@@ -159,11 +163,14 @@ saved, reopen the file and check the transactions before trying again.
 
 ## Import another period
 
-Use **Import…** again for the next export. SpentIt recognizes certain
-repeated transactions in the same account as already present.
-Possible duplicates that need a decision appear in **Review**, and
-on the rose bar in the account’s ledger.
-Two purchases with the same date and amount are not necessarily duplicates.
+Use **Import…** again for the next export. SpentIt recognizes transactions
+that are already in the same account.
+Possible duplicates appear in **Review** and are highlighted in rose in
+the account’s ledger. Two purchases with the same date and amount are not
+necessarily duplicates; they are left for you to review.
+If a download has a purchase one day earlier or later than it appeared
+before, SpentIt still flags it if the payee and amount match a
+transaction already in the account.
 
 ## Undo a mistaken import {#undo-a-mistaken-import}
 

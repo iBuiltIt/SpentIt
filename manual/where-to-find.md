@@ -90,7 +90,7 @@ Undo depends on what you changed. Later changes can make it unavailable.
   Review, and **Undo application** in Rules when the latest action is a
   rule application. [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
 - **See changes since you opened the file:** choose **Change history**
-  in the sidebar, or **History** on an accepted transaction.
+  in the sidebar.
 - **Undo an import:** right-click the account for **Undo last import…**,
   or use **Undo import…** in Review. Accepted transactions can prevent it.
   [Undo a mistaken import](import-transactions.md#undo-a-mistaken-import).

@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <fstream>
 #include <chrono>
+#include <set>
 using namespace spentit;
 using namespace spentit::app;
 using spentit::storage::ImportStore;
@@ -964,6 +965,66 @@ void selection_memo_tests(const std::filesystem::path& dir){
     s.verify();
     std::cout<<"Selected Set memo, overwrite, clear, Undo, retry and rejection passed\n";
 }
+void adjacent_day_tests(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const auto row=[](const char* date,const char* amount,const char* payee){return std::string("D")+date+"\nT"+amount+"\nP"+payee+"\n^\n";};
+    const auto same_questions=[](ImportStore& store){std::vector<ReviewQuestion> out;for(const auto& question:store.review_sheet().questions)if(question.kind==ReviewKind::same)out.push_back(question);return out;};
+    {
+        auto store=ImportStore::create(dir/"cluster","test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
+        store.ingest("accepted","!Type:Bank\n"+row("12/10/2026","-12.00","Alpha")+row("11/10/2026","-12.00","Beta"),qif::DateOrder::dmy);store.accept_all("accept-cluster");
+        store.ingest("later","!Type:Bank\n"+row("11/10/2026","-12.00","Beta later")+row("10/10/2026","-12.00","Alpha later"),qif::DateOrder::dmy);
+        const auto questions=same_questions(store);check(questions.size()==1 && questions[0].rows.size()==4,"Shifted row joins the neighboring same-day pair and its far partner");
+        check(questions[0].reason.find("Dates differ")!=std::string::npos,"The widened question says the dates differ");
+        ReviewAnswer merge;merge.generation=store.review_sheet().generation;merge.question=questions[0].key;merge.action=ReviewAction::merge;
+        for(const auto& entry:questions[0].rows)if(entry.draft.date=="2026-10-11"){merge.selected.push_back(entry.identity);if(entry.committed)merge.survivor=entry.identity;}
+        check(merge.selected.size()==2 && merge.survivor,"The same-day pair can be merged on its own");
+        store.answer_review("merge-bridge",merge);
+        const auto remainder=same_questions(store);check(remainder.size()==1 && remainder[0].rows.size()==2,"The two-day pair stays one question");
+        std::set<std::string> dates;for(const auto& entry:remainder[0].rows)dates.insert(entry.draft.date);
+        check(dates.count("2026-10-12")==1 && dates.count("2026-10-10")==1,"The leftover rows are the outer pair");
+        check(store.balance().units()==-3600,"Merging the bridge removes one posting");store.verify();
+    }
+    {
+        auto store=ImportStore::create(dir/"sealed","test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
+        store.ingest("accepted","!Type:Bank\n"+row("12/10/2026","-8.00","Cafe")+row("11/10/2026","-8.00","Cafe"),qif::DateOrder::dmy);store.accept_all("accept-sealed");
+        store.ingest("later","!Type:Bank\n"+row("12/10/2026","-8.00","Cafe later")+row("11/10/2026","-8.00","Cafe later"),qif::DateOrder::dmy);
+        const auto questions=same_questions(store);check(questions.size()==2 && questions[0].rows.size()==2 && questions[1].rows.size()==2,"Same-day pairs stay separate");
+        for(const auto& question:questions)check(question.rows[0].draft.date==question.rows[1].draft.date,"A sealed pair shares a date");store.verify();
+    }
+    {
+        auto store=ImportStore::create(dir/"gap","test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
+        store.ingest("accepted","!Type:Bank\n"+row("12/10/2026","-4.00","Gap"),qif::DateOrder::dmy);store.accept_all("accept-gap");
+        store.ingest("later","!Type:Bank\n"+row("10/10/2026","-4.00","Gap later"),qif::DateOrder::dmy);
+        check(same_questions(store).empty(),"Two days apart is not a question without a bridge");store.verify();
+    }
+    {
+        auto store=ImportStore::create(dir/"newer","test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
+        store.ingest("accepted","!Type:Bank\n"+row("11/10/2026","-6.00","Frontier"),qif::DateOrder::dmy);store.accept_all("accept-newer");
+        store.ingest("later","!Type:Bank\n"+row("12/10/2026","-6.00","Frontier later"),qif::DateOrder::dmy);
+        check(same_questions(store).empty(),"A row newer than every accepted row is not widened");
+        check(store.row({"later",0}).decision.disposition==imports::Disposition::include,"The newer row is not held for duplicate review");store.verify();
+    }
+    {
+        auto store=ImportStore::create(dir/"chain","test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
+        std::string accepted="!Type:Bank\n";for(const auto* date:{"08/10/2026","09/10/2026","10/10/2026","11/10/2026","12/10/2026"})accepted+=row(date,"-5.00","Daily");
+        store.ingest("accepted",accepted,qif::DateOrder::dmy);store.accept_all("accept-chain");
+        store.ingest("later","!Type:Bank\n"+row("07/10/2026","-5.00","Daily later"),qif::DateOrder::dmy);
+        const auto questions=same_questions(store);check(questions.size()==1 && questions[0].rows.size()==2,"One hop does not swallow consecutive days");store.verify();
+    }
+    {
+        auto store=ImportStore::create(dir/"pair","test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
+        store.ingest("accepted","!Type:Bank\n"+row("12/10/2026","-3.00","Anchor"),qif::DateOrder::dmy);store.accept_all("accept-pair");
+        store.ingest("later","!Type:Bank\n"+row("09/10/2026","-3.00","Left")+row("08/10/2026","-3.00","Right"),qif::DateOrder::dmy);
+        const auto questions=same_questions(store);check(questions.size()==1 && questions[0].rows.size()==2,"Two new rows one day apart form one question");store.verify();
+    }
+    {
+        auto store=ImportStore::create(dir/"automatic","test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
+        store.ingest("accepted","!Type:Bank\n"+row("12/10/2026","-2.00","Same"),qif::DateOrder::dmy);store.accept_all("accept-automatic");
+        store.ingest("later","!Type:Bank\n"+row("12/10/2026","-2.00","Same"),qif::DateOrder::dmy);
+        check(same_questions(store).empty() && store.current_ledger().size()==1,"A unique same-day payee match is still recognized automatically");store.verify();
+    }
+    std::cout<<"Adjacent-day duplicate review passed\n";
+}
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
@@ -991,6 +1052,7 @@ int main(int argc,char** argv){
         if(argc>1 && std::string(argv[1])=="policy_faults"){policy_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="benchmark"){review_benchmark(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="policy"){policy_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="adjacent"){adjacent_day_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1){fault_tests(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):0);std::filesystem::remove_all(dir);return 0;}
         const auto cad=Currency("CAD");
         {

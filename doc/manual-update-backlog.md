@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-09
+Last updated: 2026-11-10
 
 The bundled manual includes the user-visible behavior through the 2026-11-09
 pass (MAN-001 through MAN-020). This log is empty.
@@ -47,4 +47,53 @@ write captures straight into `manual/images`. Do not point
 
 ## Open items
 
-None.
+### MAN-021 — Review pair merge
+
+Date: 2026-11-10. Contract: [review sheet](review-sheet.md), Merge pairs.
+
+Chapter: [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
+sections "Is it the same purchase?" and "Merge several matches". Check
+[outline](../manual/outline.md) where it describes merging several groups.
+
+Text updated 2026-11-10 in Review duplicates and link transfers. Pictures
+still outstanding:
+
+- A question with more than two rows does not show **Include match**.
+- Its Merge button reads **Merge N selected rows** when one selected row is
+  kept automatically. It reads **Merge N selected rows…** only when the keep
+  dialog follows. Until two rows are checked it still reads **Select rows to
+  merge**.
+- **Merge pairs** saves every two-row question marked **Include match** and
+  every larger question with exactly two checked rows when the single
+  accepted, manual, or linked row is the one to keep. Three or more checked
+  rows are left as they are. One row left afterwards leaves Review and stays
+  in the ledger. Two rows left become a two-row question with **Include
+  match**. **Select all merges** still applies to ready two-row questions.
+
+Pictures: `review-keep.png` is unchanged. Check `transactions-review.png` and
+any other Review picture that shows **Include match** on a group of more than
+two, or the old **Merge N groups** button. Recapture those in the manual pass.
+Do not edit `manual/` for this entry until that pass.
+
+### MAN-022 — One-day duplicate questions
+
+Date: 2026-11-10. Contract: [review sheet](review-sheet.md), one-day review pass.
+
+Chapter: [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
+section "Is it the same purchase?".
+
+Text updated 2026-11-10 in Review duplicates and link transfers, Import
+transactions, and Words. Pictures still outstanding:
+
+- A new transaction older than the newest accepted transaction in that account
+  can be asked about when the same amount is one day away and it did not match
+  on the same day.
+- The question can include the neighboring same-day pair and the transaction
+  one day beyond that pair. It does not keep walking through every consecutive
+  day.
+- **Select all merges** does not include a question whose dates differ. Read
+  the dates, then use **Merge 2 rows** or **Merge pairs**.
+- A unique same-day match on the payee is still recognized without a question.
+
+Pictures: none until a Review picture shows dates that differ. Do not edit
+`manual/` for this entry until the manual pass.

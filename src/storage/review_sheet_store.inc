@@ -237,6 +237,94 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
             if(imports::candidate_basis(row.source,comparison_sources.at(other)) && !review_pair(impl_->db,0,id,other)){graph[id].insert(other);graph[other].insert(id);}
         }
     }
+    // One-day review pass. Same-day groups stay sealed unless a new row missed
+    // them, is older than the newest accepted original date in the account, and
+    // sits one day from that group. The group then takes other ungrouped
+    // same-amount rows within one day of its members, once. A chain of
+    // consecutive days does not become one question. Automatic recognition is
+    // unchanged.
+    auto source_for=[&](const imports::Occurrence& id){
+        auto found=comparison_sources.find(id);
+        if(found==comparison_sources.end()){impl_->selected_account=rows.at(id).account;found=comparison_sources.emplace(id,load_row(id,false).source).first;}
+        return found->second;
+    };
+    std::map<std::int64_t,std::string> newest_accepted;
+    {Statement frontier(impl_->db,R"SQL(SELECT b.account_id,max(o.original_date) FROM accepted_transactions a
+        JOIN batches b ON b.id=a.batch JOIN source_occurrences o ON o.batch=a.batch AND o.ordinal=a.ordinal
+        WHERE o.original_date<>'' GROUP BY b.account_id)SQL");
+    while(frontier.row())newest_accepted.emplace(frontier.integer(0),frontier.bytes(1));}
+    auto neighboring=[&](const qif::Record& source,std::int64_t account,const imports::Occurrence& self){
+        std::vector<imports::Occurrence> hits;
+        if(!source.original_amount || source.date.empty() || source.format=="manual")return hits;
+        const std::optional<std::string> days[]={imports::shift_calendar_date(source.date,-1),imports::shift_calendar_date(source.date,1)};
+        for(const auto& day:days){
+            if(!day)continue;
+            Statement query(impl_->db,R"SQL(SELECT r.batch,r.ordinal FROM batches b
+              JOIN records r ON r.batch=b.id JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal
+              JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal
+              WHERE b.account_id=? AND b.state IN(0,1,4)
+                AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)
+                AND v.decision IN(0,1) AND o.diagnostic IS NULL AND o.original_units=? AND o.original_date=?)SQL");
+            query.integer(1,account);query.integer(2,source.original_amount->units());query.text(3,*day);
+            while(query.row()){
+                imports::Occurrence other{query.bytes(0),static_cast<std::size_t>(query.integer(1))};
+                if(other==self || !rows.contains(other) || review_pair(impl_->db,0,self,other))continue;
+                const auto candidate=source_for(other);
+                if(imports::adjacent_day_basis(source,candidate))hits.push_back(other);
+            }
+        }
+        return hits;
+    };
+    auto link=[&](const imports::Occurrence& left,const imports::Occurrence& right){if(left!=right && rows.contains(left) && rows.contains(right) && !review_pair(impl_->db,0,left,right)){graph[left].insert(right);graph[right].insert(left);}};
+    std::map<imports::Occurrence,std::size_t> same_day_component;
+    std::vector<std::vector<imports::Occurrence>> same_day_groups;
+    for(const auto& [id,neighbors]:graph){
+        if(neighbors.empty() || same_day_component.contains(id))continue;
+        const auto index=same_day_groups.size();
+        std::vector<imports::Occurrence> pending{id},members;same_day_component.emplace(id,index);
+        while(!pending.empty()){const auto next=pending.back();pending.pop_back();members.push_back(next);for(const auto& other:graph[next])if(!same_day_component.contains(other)){same_day_component.emplace(other,index);pending.push_back(other);}}
+        same_day_groups.push_back(std::move(members));
+    }
+    std::map<imports::Occurrence,std::size_t> attached;
+    std::vector<imports::Occurrence> free_orphans;
+    for(const auto& id:unresolved){
+        if(!rows.contains(id) || same_day_component.contains(id))continue;
+        const auto source=source_for(id);
+        const auto frontier=newest_accepted.find(rows.at(id).account);
+        if(frontier==newest_accepted.end() || source.date.empty() || source.date>=frontier->second)continue;
+        const auto hits=neighboring(source,rows.at(id).account,id);
+        std::set<std::size_t> groups;
+        for(const auto& hit:hits){const auto found=same_day_component.find(hit);if(found!=same_day_component.end())groups.insert(found->second);}
+        if(groups.empty()){free_orphans.push_back(id);continue;}
+        const auto keep=*groups.begin();
+        for(const auto group:groups)if(group!=keep){
+            for(const auto& member:same_day_groups[group])same_day_component[member]=keep;
+            same_day_groups[keep].insert(same_day_groups[keep].end(),same_day_groups[group].begin(),same_day_groups[group].end());
+            same_day_groups[group].clear();
+            for(auto& [orphan,assigned]:attached)if(assigned==group)assigned=keep;
+        }
+        attached[id]=keep;
+    }
+    std::set<imports::Occurrence> free_orphans_only(free_orphans.begin(),free_orphans.end());
+    for(const auto& id:free_orphans)for(const auto& hit:neighboring(source_for(id),rows.at(id).account,id))if(free_orphans_only.contains(hit) || (!same_day_component.contains(hit) && !attached.contains(hit)))link(id,hit);
+    std::set<std::size_t> widened;for(const auto& [id,group]:attached)widened.insert(group);
+    for(const auto group:widened){
+        if(same_day_groups[group].empty())continue;
+        std::vector<imports::Occurrence> centers=same_day_groups[group];
+        for(const auto& [id,assigned]:attached)if(assigned==group)centers.push_back(id);
+        std::set<imports::Occurrence> extras;
+        for(const auto& center:centers)for(const auto& hit:neighboring(source_for(center),rows.at(center).account,center))if(!same_day_component.contains(hit) && !attached.contains(hit))extras.insert(hit);
+        for(const auto& hit:extras)for(const auto& center:centers)if(imports::adjacent_day_basis(source_for(center),source_for(hit))){link(center,hit);break;}
+        for(const auto& [id,assigned]:attached)if(assigned==group)link(id,same_day_groups[group].front());
+    }
+    for(const auto& [answer,remaining]:remainders){
+        (void)answer;
+        for(std::size_t i=0;i<remaining.size();++i)for(std::size_t j=i+1;j<remaining.size();++j){
+            if(!rows.contains(remaining[i]) || !rows.contains(remaining[j]) || review_pair(impl_->db,0,remaining[i],remaining[j]))continue;
+            const auto basis=imports::candidate_basis(source_for(remaining[i]),source_for(remaining[j]),imports::MatchContext::confirmed_decision);
+            if(basis==imports::MatchBasis::uncertain_date || basis==imports::MatchBasis::same_date_amount || basis==imports::MatchBasis::same_source_fields || basis==imports::MatchBasis::same_fitid)link(remaining[i],remaining[j]);
+        }
+    }
     std::map<std::string,std::int64_t> import_orders;Statement orders(impl_->db,"SELECT batch,min(sequence) FROM records GROUP BY batch");while(orders.row())import_orders.emplace(orders.bytes(0),orders.integer(1));
     std::set<imports::Occurrence> protected_rows;
     for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
@@ -254,12 +342,20 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     std::set<imports::Occurrence> visited,duplicate_rows;
     for(const auto& id:unresolved){
         if(!rows.contains(id) || visited.contains(id))continue;
-        if(graph[id].empty() && load_row(id,false).decision.disposition==imports::Disposition::include)continue;
+        if(graph[id].empty()){
+            const auto loaded=load_row(id,false);
+            if(loaded.decision.disposition==imports::Disposition::include)continue;
+            // A one-day row that this pass deliberately left outside a question
+            // stays an ordinary transaction. A same-day decision with no live
+            // partner still needs correction.
+            if(!loaded.decision.duplicate_of && loaded.source.fitid.empty() && !neighboring(loaded.source,rows.at(id).account,id).empty())continue;
+        }
         std::vector<imports::Occurrence> pending{id};visited.insert(id);std::vector<app::ReviewTransaction> members;
         while(!pending.empty()) {const auto next=pending.back();pending.pop_back();members.push_back(rows.at(next));duplicate_rows.insert(next);for(const auto& neighbor:graph[next])if(visited.insert(neighbor).second)pending.push_back(neighbor);}
         std::sort(members.begin(),members.end(),[](const auto& a,const auto& b){return a.identity<b.identity;});
         const auto& first=members.front();
-        result.questions.push_back({"same:"+review_key(first.identity),members.size()>1?app::ReviewKind::same:app::ReviewKind::correction,first.account,first.account_name,members.size()>1?"Are these the same?":"Needs correction: review this transaction's duplicate decision",first.identity.batch,first.identity.ordinal,std::move(members)});
+        const bool dates_differ=members.size()>1 && std::any_of(members.begin(),members.end(),[&](const auto& row){return row.draft.date!=first.draft.date;});
+        result.questions.push_back({"same:"+review_key(first.identity),members.size()>1?app::ReviewKind::same:app::ReviewKind::correction,first.account,first.account_name,members.size()>1?(dates_differ?"Are these the same? Dates differ.":"Are these the same?"):"Needs correction: review this transaction's duplicate decision",first.identity.batch,first.identity.ordinal,std::move(members)});
     }
     std::set<imports::Occurrence> suppressed;
     std::size_t exclusion_comparisons=0,compiled_bytes=0,exclusion_steps=0;

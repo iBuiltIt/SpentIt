@@ -1854,6 +1854,42 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
         }
     }
     std::set<imports::Occurrence> automatic_targets;
+    std::set<std::size_t> adjacent_ordinals;
+    {
+        Statement frontier(impl_->db,R"SQL(SELECT max(o.original_date) FROM accepted_transactions a
+          JOIN batches b ON b.id=a.batch JOIN source_occurrences o ON o.batch=a.batch AND o.ordinal=a.ordinal
+          WHERE b.account_id=spentit_account() AND o.original_date<>'')SQL");
+        const auto newest=frontier.row()?frontier.bytes(0):std::string{};
+        if(!newest.empty())for(std::size_t i=0;i<parsed.records.size();++i){
+            const auto& record=parsed.records[i];
+            if(record.format=="manual" || record.date.empty() || record.date>=newest || !record.original_amount)continue;
+            bool adjacent=false;
+            for(std::size_t j=0;j<parsed.records.size() && !adjacent;++j)if(j!=i && imports::adjacent_day_basis(record,parsed.records[j]))adjacent=true;
+            const std::optional<std::string> days[]={imports::shift_calendar_date(record.date,-1),imports::shift_calendar_date(record.date,1)};
+            for(const auto& day:days){
+                if(!day || adjacent)continue;
+                Statement hits(impl_->db,R"SQL(SELECT r.batch,r.ordinal FROM batches b
+                  JOIN records r ON r.batch=b.id JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal
+                  JOIN source_occurrences o ON o.batch=r.batch AND o.ordinal=r.ordinal
+                  WHERE b.account_id=spentit_account() AND b.state IN(0,1,4)
+                    AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)
+                    AND v.decision IN(0,1) AND o.diagnostic IS NULL AND o.original_units=? AND o.original_date=?)SQL");
+                hits.integer(1,record.original_amount->units());hits.text(2,*day);
+                while(hits.row() && !adjacent){
+                    const imports::Occurrence other{hits.bytes(0),static_cast<std::size_t>(hits.integer(1))};
+                    Statement separated(impl_->db,R"SQL(SELECT 1 FROM review_choices p JOIN review_choices q ON q.answer=p.answer AND q.kind=p.kind
+                      WHERE p.kind=0 AND p.batch=? AND p.ordinal=? AND q.batch=? AND q.ordinal=? AND (p.resolved=1 OR q.resolved=1)
+                      AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=p.answer))SQL");
+                    separated.text(1,id);separated.integer(2,integer(i));separated.text(3,other.batch);separated.integer(4,integer(other.ordinal));
+                    if(separated.row())continue;
+                    const auto loaded=load_row(other,false);
+                    if(loaded.excluded_by_clear || !loaded.draft)continue;
+                    if(imports::adjacent_day_basis(record,loaded.source))adjacent=true;
+                }
+            }
+            if(adjacent)adjacent_ordinals.insert(i);
+        }
+    }
     struct ExactMatch {
         std::size_t incoming=0;
         std::optional<imports::Occurrence> target;
@@ -1954,6 +1990,7 @@ void ImportStore::populate(std::string_view id,std::string_view bytes,const qif:
         if(decision.duplicate_of && !review_target_active(impl_->db,*decision.duplicate_of))decision={imports::Disposition::unresolved,{}};
         if(decision.duplicate_of && !automatic_targets.insert(*decision.duplicate_of).second)
             decision={imports::Disposition::unresolved,{}};
+        if(decision.disposition==imports::Disposition::include && adjacent_ordinals.contains(i))decision.disposition=imports::Disposition::unresolved;
         auto transaction=*r.transaction;
         const auto account_currency=account_for_batch(id).currency;
         if(transaction.effective_total().currency()!=account_currency) transaction=rescale_draft(imports::DraftRow{r.date,r.payee,r.memo,transaction},account_currency).transaction;

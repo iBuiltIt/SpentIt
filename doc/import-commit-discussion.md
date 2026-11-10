@@ -23,7 +23,9 @@ Match saved original facts, not later display edits.
   not bypassed. A repeated incoming ID stays unresolved.
 - Otherwise a unique same-account match on original account, currency, exact
   amount, calendar date, and exact nonempty payee is recognized. Repeated keys
-  stay reviewable. There is no case folding and no adjacent-day widening.
+  stay reviewable. There is no case folding. Automatic recognition does not
+  widen to an adjacent day. Review questions have a separate one-day pass in
+  [review-sheet.md](review-sheet.md).
 - Removed targets and malformed originals do not auto-match.
 - A recognized row posts no second amount. An unresolved candidate stays in
   the balance until the user decides.

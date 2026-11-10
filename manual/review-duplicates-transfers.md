@@ -25,12 +25,20 @@ with your statement. Each row is marked **New** or **Accepted**.
 Expand the category’s split count to see its parts and memos. Two
 purchases with the same date and amount can still be separate purchases.
 
+A later download can date the same purchase one day earlier or later.
+If that date is earlier than the newest accepted transaction in the
+account, Review may ask **Are these the same? Dates differ.** You may
+see both dates in one group, with the day between them. Compare the
+dates. Two purchases on neighboring days can still be separate.
+**Select all merges** skips a group whose dates differ.
+
 - **Merge 2 rows** keeps one transaction for a pair that describes
   the same event.
 - **Keep separate** remembers that they are different.
-- For more than two entries, check the rows that belong together.
-  The button then says **Merge N selected rows…**. Until two rows
-  are checked, it says **Select rows to merge**.
+- For more than two entries, check the two rows that belong together.
+  **Merge pairs** merges every checked pair. Three or more checks in
+  one group are left unchanged. Until two rows are checked, the
+  group’s button says **Select rows to merge**.
 - **Show in ledger** opens one of the entries in its account.
 - **Inspect** opens a row so you can read it. It does not answer the question.
 
@@ -56,21 +64,21 @@ these pictures show only the Market example.
 
 ### Merge several matches
 
-**Select all merges** includes every duplicate group that is ready.
-You can also check **Include match** beside the groups you have
-compared. For a group larger than two, check at least two transaction
-rows first. Choose the entry to keep if asked.
+**Select all merges** marks every ready pair that shares a date.
+Check **Include match** beside a pair you have compared. Choose the
+entry to keep if asked. The label changes to **Selected match** with
+a number. A group of more than two has no **Include match**; check
+its rows instead, as described above.
 
-The group’s label changes to **Selected match** with a number.
-Choose **Merge N groups** to merge those groups together. One **Undo**
-reverses that whole batch. **Clear merge selection** drops the pending
-groups without merging them.
+**Merge pairs** merges them. One **Undo** reverses
+that whole batch. **Clear merge selection** drops the **Include
+match** marks without merging.
 
-Checking transaction rows chooses the entries within a group.
-**Include match** chooses the group for the batch. Leaving Review or
-changing the file’s transactions clears the pending group choices.
-Reading a row does not clear them. If any selected match is no longer
-valid, the batch is refused and nothing in it is merged.
+Two rows left after a merge come back as an ordinary pair. One row
+left stays in the account. Leaving Review, or a change to the file’s
+transactions, clears these choices. Reading a row does not. If a
+selected match is no longer valid, the batch is refused and nothing
+in it is merged.
 
 ## Is it a payment between accounts? {#is-it-a-payment-between-accounts}
 

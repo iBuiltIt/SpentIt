@@ -17,7 +17,8 @@ the transaction list, also called the **ledger**.
 
 The columns show **Date**, **Payee**, **Category**, **Withdrawal**,
 **Deposit**, and **Balance**. A withdrawal takes money out; a deposit
-puts money in. To read a transaction’s memo, double-click its row.
+puts money in. To show or hide a transaction’s details, double-click
+its row.
 
 On Credit card, our Market purchase appears as a **42.18 withdrawal**.
 The **6.00 deposit** is the refund. Starting from zero, the balance
@@ -47,10 +48,7 @@ the arrow for the part you want.
 ### Is it accepted?
 
 Row shading distinguishes new transactions, but selection can cover
-that shading. Double-click an accepted row and **History** opens
-[Change history](add-correct-transactions.md#undo-a-saved-change).
-A saved transaction without that button has not yet been accepted.
-Double-click again to close the editor.
+that shading. Double-click a row to show or hide its details.
 
 Both kinds already count in the account balance. You do not need to
 accept a transaction just to keep it when you close the file.

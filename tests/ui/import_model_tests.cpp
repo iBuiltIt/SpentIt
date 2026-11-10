@@ -372,14 +372,62 @@ private slots:
         create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         for(int pass=0;pass<2;++pass){const QByteArray record="D2026-02-01\nT-10\nP"+QByteArray::number(pass)+" synthetic\n^\n";run(m,"import",{{"path",fixture(dir.path(),record+record)}});}
         QCOMPARE(m.state().value("reviewCount").toInt(),1);QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTest::qWait(100);
-        auto* group=visualItem(window->contentItem(),"reviewGroupSelect_0");QVERIFY(group);QVERIFY(!group->isEnabled());
+        auto* group=visualItem(window->contentItem(),"reviewGroupSelect_0");QVERIFY(group);QVERIFY(!group->isVisible());
         QVERIFY(!visualItem(window->contentItem(),"selectAllMerges")->property("visible").toBool());
         for(int i=0;i<2;++i){auto* row=visualItem(window->contentItem(),"reviewRowSelect_"+QString::number(i));QVERIFY(row);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene(QPointF(row->width()/2,row->height()/2)).toPoint());}
-        QTRY_VERIFY(group->isEnabled());const auto clickGroup=[&]{QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,group->mapToScene(QPointF(group->width()/2,group->height()/2)).toPoint());};
-        clickGroup();auto* survivor=window->findChild<QObject*>("reviewSurvivor");QVERIFY(survivor);QTRY_VERIFY(survivor->property("visible").toBool());QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
-        QVERIFY(QMetaObject::invokeMethod(survivor,"reject"));QTRY_VERIFY(!survivor->property("visible").toBool());QTRY_VERIFY(!group->property("checked").toBool());
-        clickGroup();QTRY_VERIFY(survivor->property("visible").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewKeep_0"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewKeep_0"),"clicked"));QTRY_VERIFY(group->property("checked").toBool());QCOMPARE(m.state().value("balance").toString(),"-40.00");
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"mergeSelectedMatches"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),"-30.00");QCOMPARE(m.state().value("reviewCount").toInt(),1);run(m,"review_undo");QCOMPARE(m.state().value("balance").toString(),"-40.00");run(m,"close");
+        auto* merge=visualItem(window->contentItem(),"reviewYes");QVERIFY(merge);QTRY_VERIFY(merge->isEnabled());QCOMPARE(merge->property("text").toString(),QString("Merge 2 selected rows…"));
+        QVERIFY(!visualItem(window->contentItem(),"mergeSelectedMatches")->property("visible").toBool());
+        const auto clickMerge=[&]{QVERIFY(QMetaObject::invokeMethod(merge,"clicked"));};
+        clickMerge();auto* survivor=window->findChild<QObject*>("reviewSurvivor");QVERIFY(survivor);QTRY_VERIFY(survivor->property("visible").toBool());QCOMPARE(m.state().value("balance").toString(),"-40.00");
+        QVERIFY(QMetaObject::invokeMethod(survivor,"reject"));QTRY_VERIFY(!survivor->property("visible").toBool());QCOMPARE(m.state().value("balance").toString(),"-40.00");
+        clickMerge();QTRY_VERIFY(survivor->property("visible").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewKeep_0"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewKeep_0"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("balance").toString(),"-30.00");QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewGroupSelect_0")->isVisible());
+        run(m,"review_undo");QCOMPARE(m.state().value("balance").toString(),"-40.00");run(m,"close");
+    }
+    void mergeCheckedPairs() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-04-22\nT-15\nPSynthetic\n^\nD2026-04-22\nT-15\nPSynthetic\n^\n")}});run(m,"commit");
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-04-22\nT-15\nPSynthetic\n^\n")}});
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTest::qWait(100);
+        const auto trio=m.state().value("reviewQuestions").toList();QCOMPARE(trio.size(),1);const auto trioRows=trio.first().toMap().value("rows").toList();QCOMPARE(trioRows.size(),3);
+        QVERIFY(!visualItem(window->contentItem(),"reviewGroupSelect_0")->isVisible());
+        QList<int> accepted,fresh;for(int i=0;i<trioRows.size();++i){if(trioRows.at(i).toMap().value("committed").toBool())accepted.push_back(i);else fresh.push_back(i);}
+        QCOMPARE(accepted.size(),2);QCOMPARE(fresh.size(),1);
+        const auto clickRow=[&](int index){auto* row=visualItem(window->contentItem(),"reviewRowSelect_"+QString::number(index));QVERIFY(row);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene(QPointF(row->width()/2,row->height()/2)).toPoint());};
+        clickRow(accepted.first());clickRow(accepted.last());clickRow(fresh.first());
+        QTRY_COMPARE(visualItem(window->contentItem(),"reviewYes")->property("text").toString(),QString("Merge 3 selected rows…"));
+        QVERIFY(!visualItem(window->contentItem(),"mergeSelectedMatches")->property("visible").toBool());
+        clickRow(accepted.last());
+        auto* pairs=visualItem(window->contentItem(),"mergeSelectedMatches");QTRY_VERIFY(pairs->isVisible());QCOMPARE(pairs->property("text").toString(),QString("Merge pairs"));
+        QCOMPARE(visualItem(window->contentItem(),"reviewYes")->property("text").toString(),QString("Merge 2 selected rows"));
+        QVERIFY(QMetaObject::invokeMethod(pairs,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"-30.00");run(m,"close");
+        QTemporaryDir pairsDir;ImportModel pairsModel(storage::document_gateway());QQmlApplicationEngine pairsEngine;pairsEngine.rootContext()->setContextProperty("workflow",&pairsModel);pairsEngine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!pairsEngine.rootObjects().isEmpty());auto* pairsWindow=qobject_cast<QQuickWindow*>(pairsEngine.rootObjects().first());QVERIFY(pairsWindow);
+        create(pairsModel,pairsDir.path()+"/doc");run(pairsModel,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        const QByteArray repeated="D2026-04-22\nT35000\nPSynthetic deposit\n^\nD2026-04-22\nT35000\nPSynthetic deposit\n^\nD2026-05-15\nT6000\nPSynthetic deposit\n^\nD2026-05-15\nT6000\nPSynthetic deposit\n^\n";
+        run(pairsModel,"import",{{"path",fixture(pairsDir.path(),repeated)}});run(pairsModel,"commit");
+        run(pairsModel,"import",{{"path",fixture(pairsDir.path(),QByteArray(repeated).replace("PSynthetic deposit\n","PSynthetic deposit\nMLater export\n"))}});
+        QVERIFY(QMetaObject::invokeMethod(visualItem(pairsWindow->contentItem(),"reviewNavigation"),"clicked"));QTest::qWait(100);
+        const auto questions=pairsModel.state().value("reviewQuestions").toList();QCOMPARE(questions.size(),2);QVariantMap choices;
+        for(int i=0;i<questions.size();++i){
+            const auto question=questions.at(i).toMap();const auto rows=question.value("rows").toList();QCOMPARE(rows.size(),4);
+            auto* include=visualItem(pairsWindow->contentItem(),"reviewGroupSelect_"+QString::number(i));QVERIFY(include);QVERIFY(!include->isVisible());
+            QVariant kept,added;for(const auto& value:rows){const auto row=value.toMap();if(row.value("committed").toBool() && !kept.isValid())kept=row;else if(!row.value("committed").toBool() && !added.isValid())added=row;}
+            QVERIFY(kept.isValid() && added.isValid());choices.insert(question.value("key").toString(),QVariantList{kept,added});
+        }
+        pairsWindow->setProperty("reviewRowChoices",choices);
+        auto* mergePairs=visualItem(pairsWindow->contentItem(),"mergeSelectedMatches");QTRY_VERIFY(mergePairs && mergePairs->isVisible());
+        QCOMPARE(mergePairs->property("text").toString(),QString("Merge pairs"));
+        QTRY_COMPARE(visualItem(pairsWindow->contentItem(),"reviewYes")->property("text").toString(),QString("Merge 2 selected rows"));
+        QVERIFY(QMetaObject::invokeMethod(mergePairs,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!pairsModel.busy(),30000);QVERIFY2(pairsModel.error().isEmpty(),qPrintable(pairsModel.error()));
+        const auto remainders=pairsModel.state().value("reviewQuestions").toList();QCOMPARE(remainders.size(),2);
+        for(const auto& value:remainders)QCOMPARE(value.toMap().value("rows").toList().size(),2);
+        QCOMPARE(pairsModel.state().value("balance").toString(),QString("123,000.00"));
+        QTRY_VERIFY(visualItem(pairsWindow->contentItem(),"reviewGroupSelect_0")->isVisible());
+        QTRY_VERIFY(visualItem(pairsWindow->contentItem(),"selectAllMerges")->isVisible());
+        run(pairsModel,"close");
     }
     void batchReviewWorkspace() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);

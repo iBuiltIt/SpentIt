@@ -269,6 +269,21 @@ void parser() {
         b.associated_fitids.push_back("BANK-1");check(imports::candidate_basis(a,b)==imports::MatchBasis::same_fitid);
         check(!imports::same_bank_transaction(a,b));
     }
+    {
+        auto a=basis_row("2026-02-01",amount,"","qif");
+        auto b=basis_row("2026-02-02",amount,"","qif");
+        check(imports::shift_calendar_date("2026-03-01",-1)==std::string("2026-02-28"));
+        check(imports::shift_calendar_date("2024-03-01",-1)==std::string("2024-02-29"));
+        check(!imports::shift_calendar_date("0001-01-01",-1));
+        check(imports::adjacent_day_basis(a,b)==imports::MatchBasis::uncertain_date);
+        b.date="2026-01-31";check(imports::adjacent_day_basis(a,b)==imports::MatchBasis::uncertain_date);
+        b.date="2026-02-03";check(!imports::adjacent_day_basis(a,b));
+        b.date=a.date;check(!imports::adjacent_day_basis(a,b));
+        b.date="2026-02-02";b.original_amount=Money(-1299,cad);check(!imports::adjacent_day_basis(a,b));
+        b.original_amount=amount;a.fitid="BANK-1";b.fitid="BANK-2";check(!imports::adjacent_day_basis(a,b));
+        b.fitid="BANK-1";check(!imports::adjacent_day_basis(a,b));
+        a.fitid.clear();b.fitid.clear();a.format="manual";check(!imports::adjacent_day_basis(a,b));
+    }
     // Synthetic decision table: format and text do not change bank identity;
     // contradictory financial facts and unavailable identities never auto-match.
     for(const auto label:{"ofx","qfx","qbo","aso"}) {

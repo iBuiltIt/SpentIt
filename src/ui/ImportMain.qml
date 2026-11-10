@@ -2934,14 +2934,44 @@ ApplicationWindow {
         return (s.reviewQuestions||[]).map((question,index)=>({question:question,index:index})).sort((a,b)=>order[a.question.kind]-order[b.question.kind] || a.index-b.index).map(item=>item.question)
     }
     function orderedReviewQuestions() {return orderedReviewRows}
+    function samePostedDate(rows) {
+        return !!rows && rows.length>0 && rows.every(function(row){return row.date===rows[0].date})
+    }
     function selectableMerges() {
         let result=[]
         for(let q of s.reviewQuestions||[]) {
-            if(q.kind!=="same" || reviewBatch[q.key])continue
-            let rows=q.rows.length===2?q.rows:(reviewRowChoices[q.key]||[])
-            if(rows.length>=2 && automaticSurvivor(rows))result.push({question:q,rows:rows})
+            if(q.kind!=="same" || q.rows.length!==2 || reviewBatch[q.key] || !samePostedDate(q.rows))continue
+            if(automaticSurvivor(q.rows))result.push({question:q,rows:q.rows})
         }
         return result
+    }
+    // A larger question contributes a pair only when exactly two rows are checked
+    // and one of them is the single accepted, manual, or linked row. Two new rows,
+    // two accepted rows, and any other count stay with that question.
+    function obviousPairSurvivor(rows) {
+        if(!rows || rows.length!==2)return null
+        let kept=rows.filter(row=>row.transferLinked || row.manual || row.committed)
+        return kept.length===1?kept[0]:null
+    }
+    function checkedObviousPairs() {
+        let result=[]
+        for(let q of s.reviewQuestions||[]) {
+            if(q.kind!=="same" || q.rows.length<3 || reviewBatch[q.key])continue
+            let chosen=reviewRowChoices[q.key]||[]
+            let survivor=obviousPairSurvivor(chosen)
+            if(!survivor)continue
+            result.push({question:q.key,generation:s.reviewGeneration,answer:"merge",selected:chosen,groupSize:q.rows.length,survivor:survivor,batchIntent:true})
+        }
+        return result
+    }
+    function mergePairGroups() {
+        return Object.keys(reviewBatch).map(function(key){return reviewBatch[key]}).concat(checkedObviousPairs())
+    }
+    function reviewMergeLabel(kind, rows, chosen) {
+        if(kind!=="same")return "Link"
+        if(rows.length===2)return "Merge 2 rows"
+        if(!chosen || chosen.length<2)return "Select rows to merge"
+        return "Merge "+chosen.length+" selected rows"+(automaticSurvivor(chosen)?"":"…")
     }
     function setReviewBatch(args) {
         let values=Object.assign({},reviewBatch);values[args.question]=args;reviewBatch=values
@@ -3315,8 +3345,8 @@ ApplicationWindow {
             Label {text:"Possible duplicates";font.bold:true;Layout.fillWidth:true}
             Button {objectName:"selectAllMerges";text:"Select all merges";visible:selectableMerges().length>0;enabled:!workflow.busy;onClicked:{for(let item of selectableMerges())selectReviewGroup(item.question,item.rows)}}
             Button {objectName:"clearMergeSelection";text:"Clear merge selection";visible:Object.keys(reviewBatch).length>0;enabled:!workflow.busy;onClicked:reviewBatch=({})}
-            Button {objectName:"mergeSelectedMatches";text:"Merge "+Object.keys(reviewBatch).length+" groups";visible:Object.keys(reviewBatch).length>0;enabled:!workflow.busy
-                onClicked:{captureReviewView();workflow.command("review_batch",{groups:Object.keys(reviewBatch).map(key=>reviewBatch[key])})}}
+            Button {objectName:"mergeSelectedMatches";text:"Merge pairs";visible:mergePairGroups().length>0;enabled:!workflow.busy
+                onClicked:{captureReviewView();workflow.command("review_batch",{groups:mergePairGroups()})}}
         }
         Item {Layout.fillWidth:true;Layout.preferredHeight:visible?30:0;visible:reviewQuestions.count>0;clip:true
             RowLayout {x:-reviewQuestions.contentX;
@@ -3387,7 +3417,7 @@ ApplicationWindow {
                 Label {text:questionCard.modelData.accountName||"Import problems";font.bold:true;Layout.fillWidth:true}
                 RowLayout {
                     Layout.fillWidth:true
-                    CheckBox {objectName:"reviewGroupSelect_"+questionCard.index;text:reviewBatch[questionCard.modelData.key]?"Selected match "+(Object.keys(reviewBatch).indexOf(questionCard.modelData.key)+1):"Include match";visible:questionCard.modelData.kind==="same"
+                    CheckBox {objectName:"reviewGroupSelect_"+questionCard.index;text:reviewBatch[questionCard.modelData.key]?"Selected match "+(Object.keys(reviewBatch).indexOf(questionCard.modelData.key)+1):"Include match";visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length===2
                         checked:!!reviewBatch[questionCard.modelData.key]
                         enabled:!workflow.busy && (questionCard.modelData.rows.length===2 || questionCard.chosen.length>=2)
                         onClicked:{
@@ -3398,7 +3428,7 @@ ApplicationWindow {
                         ToolTip.visible:hovered;ToolTip.text:"Choose at least two transaction rows in an ambiguous group before including the match."
                     }
                     Label {text:questionCard.modelData.reason;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                    Button {text:questionCard.modelData.kind!=="same"?"Link":questionCard.modelData.rows.length===2?"Merge 2 rows":questionCard.chosen.length>=2?"Merge "+questionCard.chosen.length+" selected rows…":"Select rows to merge";objectName:"reviewYes";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy && (questionCard.modelData.kind==="same"?questionCard.mergeRows.length>=2:questionCard.counterpart>=1);onClicked:{
+                    Button {text:reviewMergeLabel(questionCard.modelData.kind,questionCard.modelData.rows,questionCard.chosen);objectName:"reviewYes";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy && (questionCard.modelData.kind==="same"?questionCard.mergeRows.length>=2:questionCard.counterpart>=1);onClicked:{
                         if(questionCard.modelData.kind==="same")answerReview(questionCard.modelData,"merge",questionCard.mergeRows)
                         else {reviewScrollPosition=reviewQuestions.contentY;workflow.command("review_link_preview",{question:questionCard.modelData.key,generation:s.reviewGeneration,answer:"link",selected:[questionCard.modelData.rows[0],questionCard.modelData.rows[questionCard.counterpart]],leftAllocation:questionCard.leftAllocation,rightAllocation:questionCard.rightAllocation})}
                     }}
@@ -4151,11 +4181,6 @@ ApplicationWindow {
                 Label {textFormat:Text.PlainText;text:selected.diagnostic||"";color:theme.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.sourceClasses ? "Details from file — "+selected.sourceClasses : "";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.committed && !s.committedChangesSupported?"This file does not support editing accepted transactions.":"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                RowLayout {
-                    visible:!!selected.committed
-                    Button {objectName:"removeCommitted";text:"Remove transaction…";visible:!!selected.canCorrect;onClicked:guard(function(){workflow.command("preview_change",{kind:"remove"})})}
-                    Button {objectName:"showEntryHistory";text:"History";visible:!!s.committedChangesSupported;onClicked:guard(function(){navigate("history");workflow.command("entry_history",{batch:selected.batch,ordinal:selected.ordinal})})}
-                }
                 RowLayout {
                     visible:!!selected.draft
                     NavigableTextField {id:editDate;KeyNavigation.tab:editPayee;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}

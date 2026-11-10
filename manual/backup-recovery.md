@@ -93,9 +93,10 @@ recovery for the file or its backups.
 
 ## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}
 
-A backup is an encrypted copy of the whole file. These File menu commands
-write ordinary text. They are not backups. If you have an unfinished edit,
-SpentIt asks you to save or discard it first.
+A backup is an encrypted copy of the whole file. The File menu Export
+commands write ordinary text. They are not backups. If you have an
+unfinished edit, SpentIt asks you to save or discard it first before
+using these commands.
 
 **QIF Export…** copies transactions. The accounts start checked, including
 archived ones. Set **From** and **To** for each account you want. Both

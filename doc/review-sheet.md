@@ -13,10 +13,12 @@ sheet.
 ## Selected-row Merge correction — owner Go, 2026-11-08
 
 A duplicate group has one Merge action. For groups larger than two rows it is
-unavailable until at least two rows are checked, reads **Merge N selected rows…**,
-and submits exactly those identities. The competing whole-group Merge and
-Merge selected rows actions are replaced by this one action. A two-row group
-continues to offer Merge 2 rows without requiring checkboxes.
+unavailable until at least two rows are checked and submits exactly those
+identities. It reads **Merge N selected rows** when one selected row is kept
+automatically, and **Merge N selected rows…** when keeping a row opens a dialog.
+The competing whole-group Merge and Merge selected rows actions are replaced by
+this one action. A two-row group continues to offer **Merge 2 rows** without
+requiring checkboxes.
 
 When a survivor choice is required, show only eligible rows from that selected
 set, with full wrapped categories for every split, split amounts/memos, transaction
@@ -180,14 +182,25 @@ Every right-pane workspace has a permanent bottom status line. Progress, success
 and errors occupy that reserved space; long messages expose Details. Review keeps
 its visible group anchor (or the next surviving group) when resolved groups leave.
 
-**Include match** selects a duplicate group as pending UI intent. Groups larger
-than two require transaction-row selection first. Changing those rows clears that
-group's inclusion. Zero/multiple committed selections require choosing a survivor;
-one committed selection keeps that row automatically. The fixed **Merge N selected
-matches** action submits only those groups. Numbered selected-group labels correspond
-to validation errors. Leaving Review or a changed dataset generation clears selections;
-read-only inspection retains them. No selections persist across restarts. Link is
-not batched and matching eligibility is unchanged.
+**Include match** is shown only on a two-row duplicate question. It selects that
+question as pending UI intent. A question with more than two rows has no Include
+match control; check the transaction rows that pair. **Merge pairs** saves, in
+one step, every two-row question marked Include match and every larger question
+with exactly two checked rows whose obvious kept row is the single accepted,
+manual, or linked row. Any other checked count in a larger question is left
+unchanged. **Merge pairs** does not choose between two new rows or two
+accepted rows. That question's Merge button merges the checked rows, and asks
+which row to keep when none is chosen automatically. Changing the
+checked rows clears that question's Include match staging. Zero or multiple
+committed selections on a two-row question require choosing a survivor; one
+committed selection keeps that row automatically. Numbered selected-group labels
+correspond to validation errors. Leaving Review or a changed dataset generation
+clears selections; read-only inspection retains them. No selections persist
+across restarts. Link is not batched and matching eligibility is unchanged.
+
+Two rows left after **Merge pairs** come back as a two-row question, with
+Include match. One row left leaves the question and stays in the ledger. That
+is not **Keep separate**.
 
 A partial Merge keeps an unanswered remainder of at least two rows visible even
 when those rows were clean in their original import. Existing encrypted unresolved
@@ -224,7 +237,21 @@ amount-based duplicate suggestions require equal original currency, exact signed
 original amount and the same known calendar date, independent of QIF/OFX/QFX/QBO/ASO
 labels. Payee/category differences do not disqualify a review candidate. Unknown
 original amounts/dates retain their explicit uncertainty paths; no date or amount
-is fabricated. Different known dates alone never qualify ordinary candidates.
+is fabricated. Different known dates do not qualify an ordinary same-day candidate.
+
+A new row that missed the same-day comparison can still join a review question
+when its original date is older than the newest accepted original date in that
+account. The other row must share the account, currency, and exact signed
+original amount, and the known dates must be one calendar day apart. If that
+new row touches a same-day group, the question also takes other ungrouped
+same-amount rows within one day of the group's members. That step runs once.
+Consecutive days do not collapse into one question. A same-day pair that
+nothing touches stays its own question. **Select all merges** skips a question
+whose dates differ. After a partial merge, leftover rows of that question stay
+together when they still share the amount, including when those dates are two
+days apart. Shared bank IDs still match across any dates. Disjoint bank IDs
+do not. Manual rows stay on the same day. Automatic recognition does not use
+this window.
 
 Shared original or retained bank IDs remain a separate evidence-based reason to
 review conflicting facts. Disjoint nonempty bank-ID sets disqualify candidates.
@@ -238,9 +265,9 @@ one-to-one occurrence guards remain authoritative.
 The engine owns these decisions. Storage candidate queries retrieve a conservative
 superset from eligible account rows; both import classification and row candidate
 lists filter through the engine matcher. Review uses the same matcher for additional
-same-import/unresolved peers. SQL contains no format-based matching exception.
-The common policy does not widen discovery within an otherwise clean base import.
-The separate transfer Link and grouped reciprocal-transfer policies are unchanged.
+same-import/unresolved peers, and the one-day pass above for the rows that miss
+it. SQL contains no format-based matching exception. The separate transfer Link
+and grouped reciprocal-transfer policies are unchanged.
 A recorded explicit duplicate decision retains its date override during history
 validation; it is not reclassified as corruption just because suggestions tighten.
 New import/review candidates never receive that override. Existing stale-target,
