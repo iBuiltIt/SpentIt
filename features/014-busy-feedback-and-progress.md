@@ -34,4 +34,4 @@ See [open/close checks](../doc/fast-startup.md).
 
 The broader readiness audit: feedback lasts until the resulting screen is
 usable, and conflicting actions stay unavailable. That audit is first-release
-work and needs its own Go. It is separate from the usage-driven UI list.
+work and needs its own Go. The owner's usage-driven UI pass is complete.

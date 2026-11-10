@@ -1,14 +1,13 @@
-# First release decisions and next UI work
+# First release decisions
 
 Last updated: 2026-11-09
 Status: **accepted direction**. Implementation of a change still needs its own Go.
 This document does not authorize license installation, packaging publication,
 or release.
 
-Usage-driven UI work comes before the release sequence. About, Review cleanup,
-Rules and Reports usability, file exchange, Set memo, and Change history are
-implemented. The rest of the owner's list has not been supplied. Do not invent
-it. Discuss each requested change before implementation Go.
+The owner's usage-driven UI pass is complete. Those changes were made piecemeal
+and are in the application. Discuss any further requested change before
+implementation Go.
 
 Current-value rule matching, below, is accepted behavior and is not implemented.
 
@@ -25,7 +24,7 @@ scope, not every possible extension.
 | Rule inputs | Match current transaction and split values for manual and imported entries. Preserve Uncategorized gating, explicit categories, split-first order, selected-rule ordering, manual text protection, and the prohibition on creating transfers. Defer explicit imported-original conditions. Implement before release with clear previews. Use an experimental-format boundary if needed so existing files are not reinterpreted silently. |
 | Account moves and source repair | Defer moving transactions between accounts and repairing source associations. A later design must cover imports, recognition, relationships, and Undo atomically. |
 | Transfers and currencies | Defer cross-currency and fee matching, and broader fuzzy automatic matching. Keep existing explicit linking and bounded recognition. Reports stay separated by currency. |
-| Essential UI work | After the usage-driven UI phase, complete the busy/readiness audit: feedback lasts until the resulting screen is usable, and conflicting actions are unavailable. Fix clipping, focus, and keyboard defects that obstruct existing workflows. |
+| Essential UI work | The usage-driven UI pass is complete. Complete the busy/readiness audit: feedback lasts until the resulting screen is usable, and conflicting actions are unavailable. Fix clipping, focus, and keyboard defects that obstruct existing workflows. |
 | UI extensions | Defer multiline-note editing and additional layout customization. Current workflows still have to be usable. |
 | Password changes | Defer for the first release and say so. Later changes need a recoverable rekey workflow. Forgotten-password recovery remains unavailable. |
 | File compatibility | The announced first release starts the compatibility commitment. Until then, experimental formats stay disposable and older files stay rejected. After release, require a supported upgrade and recovery policy. Never silently invalidate a released file. |
@@ -60,13 +59,11 @@ independent. See [feature 007](../features/007-licensing-and-distribution.md).
 
 ## Sequence
 
-1. Discuss and implement the owner's remaining usage-driven UI items under their
-   own Go.
-2. Implement current-value rule matching and the essential busy/readiness work
+1. Implement current-value rule matching and the essential busy/readiness work
    under separate authorization.
-3. Complete release verification and fix discovered blockers.
-4. Refresh the manual against frozen release behavior.
-5. Finalize licensing and packages. Obtain explicit approval before publication.
+2. Complete release verification and fix discovered blockers.
+3. Refresh the manual against frozen release behavior.
+4. Finalize licensing and packages. Obtain explicit approval before publication.
 
-Remaining inputs are the rest of the owner's UI list, designs and Go for each
-change, a tested OS range, reviewed license text, and release approval.
+Remaining inputs are designs and Go for each change, a tested OS range,
+reviewed license text, and release approval.

@@ -38,6 +38,8 @@ passed unless you ran it.
   expires ordinary Undo.
 - Bundled Help for the current manual, with contextual links. The manual pass
   through MAN-020 is done.
+- The owner's usage-driven UI pass is complete. Those changes were made
+  piecemeal and are in the application.
 
 The feature documents and the contracts they name are the behavior. This page
 does not repeat them.
@@ -47,9 +49,6 @@ does not repeat them.
 These items are not done. They need their own discussion and Go before
 implementation, except where a document already says the owner deferred them.
 
-- The rest of the owner's usage-driven UI list has not been supplied. Do not
-  invent it. About, Review cleanup, Rules and Reports usability, file exchange,
-  Set memo, and Change history are already in the application.
 - Current-value rule matching is accepted for the first release and is not
   implemented. Rules still match immutable imported fields.
 - The broader busy/readiness audit is not done. The rotating indicator, import
@@ -61,14 +60,19 @@ implementation, except where a document already says the owner deferred them.
 - Cross-currency matching, fee matching, and broader fuzzy automatic matching
   are deferred. Reports do not convert currencies.
 - Multiline notes and saved layout customization are deferred.
-- Password change is deferred.
+- Document lifecycle and recovery is not complete. Password changes are
+  deferred. Explicit schema migrations wait until the first release is
+  announced; until then older experimental files stay rejected. Backup and
+  restore exist. A further polished recovery workflow is still open. There is
+  no forgotten-password recovery.
+- Distribution is not complete. Linux and Windows are development builds and
+  are not release validation. Packaging for publication, signing, and the
+  license text are open. The application UI is Qt. See the
+  [release plan](first-release-plan.md).
 - Category history, undone Review-link history, link-exclusion history, and
   account, opening, and currency command history still survive successful close.
   The owner deferred that retention cleanup. It is not the next task. Revisit
   it only after a separate discussion.
-- Exact license text, supported OS versions, release-wide regression on every
-  shipped platform, signing, and publication are not done. See the
-  [release plan](first-release-plan.md).
 
 ## Limits that still bind a claim
 
