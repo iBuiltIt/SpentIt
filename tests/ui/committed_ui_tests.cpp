@@ -9,7 +9,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QFont>
 #include <QJSValue>
 using namespace spentit;
@@ -481,5 +481,5 @@ private slots:
         QCOMPARE(model.state().value("projected").toString(),expected);run(model,"commit");QCOMPARE(model.state().value("committed").toString(),expected);
     }
 };
-int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");CommittedUiTests tests;return QTest::qExec(&tests,argc,argv);}
+int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));applySpentItControlsStyle();CommittedUiTests tests;return QTest::qExec(&tests,argc,argv);}
 #include "committed_ui_tests.moc"

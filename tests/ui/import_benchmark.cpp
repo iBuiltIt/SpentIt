@@ -7,7 +7,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QFile>
@@ -66,7 +66,7 @@ static double residentMiB() {
 }
 int main(int argc,char** argv) {
     const auto startup=Clock::now();
-    QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");
+    QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));applySpentItControlsStyle();
     if(qEnvironmentVariableIsSet("SPENTIT_BENCHMARK_DIAGNOSTICS"))require(diagnostics::Collector::instance().enable(),"Diagnostics unsupported");
     try {
         const int count=argc>1?std::stoi(argv[1]):100000;

@@ -10,7 +10,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QGuiApplication>
 using namespace spentit;
 class ReportUiTests:public QObject {
@@ -353,5 +353,5 @@ private slots:
         QCOMPARE(warnings.size(),qsizetype(0));
     }
 };
-int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");ReportUiTests tests;return QTest::qExec(&tests,argc,argv);}
+int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));applySpentItControlsStyle();ReportUiTests tests;return QTest::qExec(&tests,argc,argv);}
 #include "report_ui_tests.moc"

@@ -7,7 +7,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QFont>
 using namespace spentit;
 
@@ -65,7 +65,7 @@ private slots:
 
 };
 int main(int argc,char** argv) {
-    QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");
+    QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));applySpentItControlsStyle();
     RecoveryUiTests tests;return QTest::qExec(&tests,argc,argv);
 }
 #include "import_recovery_tests.moc"

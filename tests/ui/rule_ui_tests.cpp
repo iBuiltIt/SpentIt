@@ -18,7 +18,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QFont>
 #include <QGuiApplication>
 #include <sqlite3.h>
@@ -1036,5 +1036,5 @@ private slots:
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Echoed");
     }
 };
-int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");RuleUiTests tests;return QTest::qExec(&tests,argc,argv);}
+int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));applySpentItControlsStyle();RuleUiTests tests;return QTest::qExec(&tests,argc,argv);}
 #include "rule_ui_tests.moc"

@@ -3,7 +3,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QTimer>
 #include <QThreadPool>
 #include <cstdio>
@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
     QCoreApplication::setApplicationName("SpentIt synthetic prototype");
     app.setFont(QFont("Helvetica Neue", 13));
-    QQuickStyle::setStyle("Basic");
+    applySpentItControlsStyle();
     int count = 100000;
     const auto args = app.arguments();
     if (args.contains("--rows")) {

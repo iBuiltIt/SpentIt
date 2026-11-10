@@ -14,7 +14,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QFont>
 #include <QRegularExpression>
 #include <QAccessible>
@@ -2725,7 +2725,7 @@ private slots:
     }
 };
 int main(int argc,char** argv) {
-    QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");
+    QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));applySpentItControlsStyle();
     ImportUiTests tests;return QTest::qExec(&tests,argc,argv);
 }
 #include "import_model_tests.moc"

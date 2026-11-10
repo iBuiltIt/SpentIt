@@ -3,7 +3,7 @@
 Last updated: 2026-11-10
 
 The bundled manual includes the user-visible behavior through the 2026-11-09
-pass (MAN-001 through MAN-020). This log is empty.
+pass (MAN-001 through MAN-020). Later changes are the open items below.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -97,3 +97,14 @@ transactions, and Words. Pictures still outstanding:
 
 Pictures: none until a Review picture shows dates that differ. Do not edit
 `manual/` for this entry until the manual pass.
+
+### MAN-023 — Unavailable buttons
+
+Date: 2026-11-10. A Button or ToolButton that cannot be used fades to 40%
+opacity. It stays in place. No chapter text describes that appearance.
+
+Pictures: recapture a picture that shows a button which cannot be used.
+`import-mapping.png` shows Import after both accounts are chosen, so that
+Import button stays available. Back and Forward in the window behind a dialog
+may be unavailable. Check those during the manual pass. Do not edit `manual/`
+for this entry until that pass.

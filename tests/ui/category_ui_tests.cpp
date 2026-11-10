@@ -10,7 +10,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QFont>
 #include <QJSValue>
 using namespace spentit;
@@ -368,5 +368,5 @@ private:
     }
 
 };
-int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));QQuickStyle::setStyle("Basic");CategoryUiTests tests;return QTest::qExec(&tests,argc,argv);}
+int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));applySpentItControlsStyle();CategoryUiTests tests;return QTest::qExec(&tests,argc,argv);}
 #include "category_ui_tests.moc"

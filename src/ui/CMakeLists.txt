@@ -3,6 +3,9 @@ if(BUILD_TESTING)
     find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
 endif()
 qt_standard_project_setup()
+
+# Button and ToolButton fade when they cannot be used. Other controls stay Basic.
+add_subdirectory(controls)
 if(SPENTIT_SHEET_PROTOTYPE)
 qt_add_library(spentit_sheet_model STATIC sheet_model.cpp sheet_model.hpp)
 target_include_directories(spentit_sheet_model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -202,6 +205,12 @@ if(SPENTIT_IMPORT_UI)
       "SPENTIT_HELP_MANUAL_MANIFEST=\"${SPENTIT_HELP_BUNDLE}/manifest.json\"")
     spentit_compiler_options(spentit_help_tests)
     add_test(NAME help.catalog COMMAND spentit_help_tests)
+    qt_add_executable(spentit_controls_style_tests ../../tests/ui/controls_style_tests.cpp)
+    target_link_libraries(spentit_controls_style_tests PRIVATE spentit_controls_style Qt6::Quick Qt6::QuickControls2 Qt6::Test)
+    target_include_directories(spentit_controls_style_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    spentit_compiler_options(spentit_controls_style_tests)
+    add_test(NAME import.controls_style COMMAND spentit_controls_style_tests)
+    set_tests_properties(import.controls_style PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
     add_test(NAME import.qml COMMAND spentit_import_experiment --smoke)
     set_tests_properties(import.qml PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
     add_test(NAME import.group_benchmark_smoke COMMAND spentit_import_benchmark 120 --groups)
@@ -228,6 +237,28 @@ if(SPENTIT_IMPORT_UI)
   endforeach()
   include("${PROJECT_SOURCE_DIR}/cmake/LocalPackaging.cmake")
 endif()
+
+# Every window that shows controls uses the same unavailable-button style.
+foreach(target IN ITEMS
+    spentit_sheet_prototype
+    spentit_sheet_interaction_tests
+    spentit_import_experiment
+    spentit_import_benchmark
+    spentit_file_exchange_tests
+    spentit_report_ui_tests
+    spentit_import_ui_tests
+    spentit_import_navigation_tests
+    spentit_import_recovery_tests
+    spentit_committed_ui_tests
+    spentit_category_ui_tests
+    spentit_rule_ui_tests
+    spentit_help_ui_tests
+    spentit_macos_bundle
+    spentit_controls_style_tests)
+  if(TARGET ${target})
+    target_link_libraries(${target} PRIVATE spentit_controls_style)
+  endif()
+endforeach()
 
 if(TARGET spentit_import_model)
  target_link_libraries(spentit_import_model PUBLIC spentit_diagnostics)

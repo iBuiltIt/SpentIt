@@ -14,7 +14,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -224,5 +224,5 @@ private slots:
         QCOMPARE(model.state().value("reports").toList().size(),1);run(model,"close");QCOMPARE(warnings.size(),0);
     }
 };
-int main(int argc,char** argv){QQuickStyle::setStyle("Basic");QGuiApplication app(argc,argv);FileExchangeTests tests;return QTest::qExec(&tests,argc,argv);}
+int main(int argc,char** argv){applySpentItControlsStyle();QGuiApplication app(argc,argv);FileExchangeTests tests;return QTest::qExec(&tests,argc,argv);}
 #include "file_exchange_tests.moc"

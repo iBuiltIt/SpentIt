@@ -77,7 +77,8 @@ ToolButton {
                                     Layout.fillWidth:true;Layout.fillHeight:true;Layout.preferredWidth:40
                                     text:modelData.day;enabled:!!modelData.iso
                                     highlighted:modelData.iso===root.original
-                                    opacity:modelData.month===root.page.month?1:0.55
+                                    // This opacity replaces the style fade. 0.4 is the unavailable factor in controls/Button.qml.
+                                    opacity:(modelData.month===root.page.month?1:0.55)*(enabled?1:0.4)
                                     Accessible.name:modelData.display
                                     Rectangle {anchors.fill:parent;anchors.margins:3;color:"transparent";radius:4;border.width:parent.modelData.today?2:parent.modelData.iso===root.cursor?1:0;border.color:palette.highlight}
                                     onClicked:root.choose(modelData.iso)

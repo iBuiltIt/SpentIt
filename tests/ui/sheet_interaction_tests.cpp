@@ -4,7 +4,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QTest>
 #include <QThreadPool>
 #include <QSignalSpy>
@@ -55,7 +55,7 @@ private slots:
     void cleanupTestCase() { QThreadPool::globalInstance()->waitForDone(); }
 };
 int main(int argc,char** argv) {
-    QGuiApplication app(argc,argv); app.setFont(QFont("Helvetica Neue",13)); QQuickStyle::setStyle("Basic");
+    QGuiApplication app(argc,argv); app.setFont(QFont("Helvetica Neue",13)); applySpentItControlsStyle();
     InteractionTests tests; return QTest::qExec(&tests,argc,argv);
 }
 #include "sheet_interaction_tests.moc"

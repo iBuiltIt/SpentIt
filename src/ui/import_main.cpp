@@ -10,7 +10,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QTimer>
 #include <QFont>
 #include <QSettings>
@@ -42,7 +42,7 @@ int main(int argc,char** argv) {
     updateIcon();
     QObject::connect(app.styleHints(), &QStyleHints::colorSchemeChanged, &app, updateIcon);
     app.setFont(QFont("Helvetica Neue",13));
-    QQuickStyle::setStyle("Basic");
+    applySpentItControlsStyle();
     std::unique_ptr<QTemporaryDir> smokeSettings;
     if(app.arguments().contains("--smoke")) {
         smokeSettings=std::make_unique<QTemporaryDir>();

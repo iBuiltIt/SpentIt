@@ -16,7 +16,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
-#include <QQuickStyle>
+#include "controls_style.hpp"
 #include <QQuickTextDocument>
 #include <QQuickWindow>
 #include <QSettings>
@@ -145,7 +145,7 @@ class HelpUiTests : public QObject {
     }
 private slots:
     void initTestCase() {
-        QQuickStyle::setStyle("Basic");
+        applySpentItControlsStyle();
         QCoreApplication::setOrganizationName("SpentItTests");
         QCoreApplication::setApplicationName("HelpUi");
         QSettings::setDefaultFormat(QSettings::IniFormat);
