@@ -100,7 +100,9 @@ app::ActionReceipt ImportStore::undo_connected(std::string_view operation,const 
         const auto& line=checked.lines[i];
         const auto header=connected_header(impl_->db,line.id);
         if(!header || header->state!=app::ActionState::applied || header->kind!=line.kind || header->payload!=line.payload)fail(SQLITE_CONSTRAINT,"Changes were saved. Refresh the action and try again.");
-        impl_->undo_operation=i==0?std::string(operation):std::string(operation)+"-"+std::to_string(i);
+        // Restoring an accepted change records each transaction as {operation}-N
+        // and registers that id. A later action in this same Undo cannot reuse it.
+        impl_->undo_operation=i==0?std::string(operation):std::string(operation)+"-u"+std::to_string(i);
         impl_->undo_target=line.id;
         const auto selected=impl_->selected_account;
         struct Selection {std::int64_t& value;std::int64_t old;~Selection(){value=old;}} selection{impl_->selected_account,selected};

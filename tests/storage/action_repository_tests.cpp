@@ -431,6 +431,40 @@ void connected_undo(const std::filesystem::path& directory) {
         check(removed,"Undoing the import removes its rows");
         store.verify();
     }
+    {
+        auto store=ImportStore::create(directory/"layers.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.ingest("src",bank_rows({"A","B","C","D","E","F","G"}),qif::DateOrder::dmy);
+        store.accept_all("accept",true);
+        std::vector<imports::Occurrence> all;
+        for(std::size_t i=0;i<7;++i) all.push_back({"src",i});
+        rename_payees(store,"base",all,"First");
+        edit(store,"layer1",{"src",0},"Second");
+        edit(store,"layer2",{"src",0},"Third");
+        const auto preview=store.preview_connected_undo("base",store.action_token());
+        std::vector<std::string> ids;for(const auto& line:preview.lines)ids.push_back(line.id);
+        check(ids==std::vector<std::string>{"layer2","layer1","base"},"Two later edits of an accepted selection stay on its Undo list");
+        store.undo_connected("undoLayers",preview);
+        const char* restored[]={"A","B","C","D","E","F","G"};
+        for(std::size_t i=0;i<7;++i) check(payee_of(store,{"src",i})==restored[i],"Accepted selection and its later edits return together");
+        check(store.action_head() && store.action_head()->id=="accept","Acceptance stays after the selection Undo");
+        store.verify();
+    }
+    {
+        auto store=ImportStore::create(directory/"layers-top.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.ingest("src",bank_rows({"A","B","C","D","E","F","G"}),qif::DateOrder::dmy);
+        store.accept_all("accept",true);
+        edit(store,"older",{"src",0},"Older");
+        std::vector<imports::Occurrence> all;
+        for(std::size_t i=0;i<7;++i) all.push_back({"src",i});
+        rename_payees(store,"newer",all,"Newer");
+        const auto preview=store.preview_connected_undo("older",store.action_token());
+        check(preview.lines.size()==2 && preview.lines[0].id=="newer" && preview.lines[1].id=="older","A later accepted selection is on the earlier edit's list");
+        store.undo_connected("undoOlder",preview);
+        const char* restored[]={"A","B","C","D","E","F","G"};
+        for(std::size_t i=0;i<7;++i) check(payee_of(store,{"src",i})==restored[i],"Undoing the earlier edit also restores the later selection");
+        check(store.action_head() && store.action_head()->id=="accept","Acceptance stays after the layered Undo");
+        store.verify();
+    }
 }
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;
