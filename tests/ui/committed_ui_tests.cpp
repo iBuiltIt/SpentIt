@@ -378,6 +378,7 @@ private slots:
         run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
         QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(!object(root,"historyOpen"));
         QVERIFY(click(root,"historyNavigation"));wait(model);QVERIFY(object(root,"historyEmpty")->property("visible").toBool());
+        QVERIFY(!object(root,"historyBack"));
         run(model,"select_account",{{"id",checking}});
         run(model,"backup",{{"path",dir.path()+"/backup"}});run(model,"close");run(model,"open",{{"path",dir.path()+"/backup"}});run(model,"inspect",id);
         QCOMPARE(model.state().value("committed").toString(),"80.00");QCOMPARE(selected(model).value("original").toString(),"-29.31");

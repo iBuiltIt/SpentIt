@@ -519,6 +519,8 @@ Source: [Change history handoff](change-history-handoff.md).
   that row keeps the saved rule.
 - Accept transactions is its own row. Undoing it returns those transactions
   to New.
+- The empty page has no **Back to &lt;account&gt;** button. The window **Back**
+  button leaves the page. Owner follow-up, 2026-11-09.
 - Capture the page during the later batch pass only if a walkthrough is added.
   No manual prose, captions, or screenshots were changed with this design or
   its implementation.

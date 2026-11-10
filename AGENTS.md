@@ -7,7 +7,8 @@ One saved action is one row. The page reads the live file-wide Undo chain.
 It lists New and Accepted transaction changes, the import that brought them
 in, and the acceptance that accepted them. Rules and other work that run
 during an import stay inside that one Import row. A later rule application
-the user starts is its own row. Formats stay **70 with rules / 69 without**.
+the user starts is its own row. The empty page has no Back to account
+button; the window Back button leaves the page. Formats stay **70 with rules / 69 without**.
 Read the [handoff](doc/change-history-handoff.md) and [status](doc/status.md).
 Do not edit the manual; MAN-020 records that later pass.
 

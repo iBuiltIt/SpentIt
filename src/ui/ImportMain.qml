@@ -3834,7 +3834,6 @@ ApplicationWindow {
                         }
                         Label {objectName:"historyIntro";visible:(s.history||[]).length>0;text:"Changes in this account before you close this file.";wrapMode:Text.Wrap;width:parent.width}
                         Label {objectName:"historyEmpty";visible:(s.history||[]).length===0;text:"No changes in "+(s.name||"")+" before you close this file.";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
-                        Button {objectName:"historyBack";visible:(s.history||[]).length===0;text:"Back to "+(s.name||"");onClicked:navigate("ledger")}
                         Label {objectName:"historyNotice";visible:(s.historyNotice||"").length>0;text:s.historyNotice||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
                         Repeater {
                             model:s.history||[]

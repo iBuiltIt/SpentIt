@@ -76,8 +76,10 @@ account. One line under the dropdown:
 “Changes in this account before you close this file.” No instructional
 paragraph. No Refresh.
 
-Empty account: “No changes in &lt;Account&gt; before you close this file.” One
-button: **Back to &lt;Account&gt;**, which returns to that ledger.
+Empty account: “No changes in &lt;Account&gt; before you close this file.”
+There is no **Back to &lt;Account&gt;** button. The window **Back** button is
+the way off this page. Owner follow-up, 2026-11-09: that second button
+competed with window Back and was removed.
 
 The list is newest first. Choosing a row opens it under the list. The open
 row stays highlighted. There is no separate Inspect button. Switching accounts
