@@ -417,14 +417,6 @@ Window {
                     contentHeight: article.contentHeight
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                    Rectangle {
-                        parent: articleFlick
-                        anchors.fill: parent
-                        z: 1
-                        color: "transparent"
-                        border.color: article.activeFocus ? theme.focus : "transparent"
-                        border.width: 2
-                    }
                     TextEdit {
                         id: article
                         objectName: "helpArticle"
