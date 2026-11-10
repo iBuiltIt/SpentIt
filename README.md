@@ -2,7 +2,7 @@
 
 I developed SpentIt so I could get an answer to this one simple question: "Where did my money go?"
 
-It is a desktop program for one person. You bring your transactions together, sort them into categories that mean something to you, and look at where the money actually went.
+SpentIt is a single-user desktop program. It brings your transactions together, sorts them into categories that mean something to you, and shows where the money actually went.
 
 There is no budget to keep, no tax preparation, and no investment tracking. SpentIt does not connect to your bank. When you want new transactions, you save a statement from your bank or card and bring that file in, or you simply type the transaction yourself.
 
@@ -56,3 +56,7 @@ The build steps are in [Building](doc/building.md).
 Use SpentIt if you want to. I do not promise that it is correct, complete, or safe to rely on. Keep your own copies of your records. If you trust SpentIt and it lets you down, that rests with you. If you are not comfortable with that, do not use it.
 
 SpentIt is released under the Unlicense. See [LICENSE](LICENSE). Third-party components have their own licenses, which are shown in the [LICENSE](LICENSE) file and in the application's About dialog.
+
+Stefan Wessels  
+swessels@email.com  
+First Release: November 2026  
