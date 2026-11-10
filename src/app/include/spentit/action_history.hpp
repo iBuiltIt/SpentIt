@@ -44,4 +44,55 @@ struct ActionReceipt {
     std::string action;
 };
 
+// Presentation of one saved action. Dates are ISO. Money keeps its definition
+// so the screen can apply the file's amount format. This is not a new journal.
+enum class HistoryFieldKind { text, date, money };
+enum class HistoryBalanceKind { none, delta, absolute, rescale };
+struct HistoryMoney {
+    std::int64_t units = 0;
+    std::string definition;
+};
+struct HistoryFieldChange {
+    std::string field;
+    HistoryFieldKind kind = HistoryFieldKind::text;
+    bool named_only = false;
+    std::string before_text, after_text;
+    HistoryMoney before_money, after_money;
+};
+struct HistorySplitView {
+    std::string category, memo;
+    HistoryMoney amount;
+};
+struct HistoryMemberView {
+    std::string batch;
+    std::size_t ordinal = 0;
+    std::string date, payee, memo, state;
+    HistoryMoney amount;
+    bool in_ledger = false;
+    std::vector<HistorySplitView> splits;
+    std::vector<HistoryFieldChange> changes;
+};
+struct HistoryBalance {
+    HistoryBalanceKind kind = HistoryBalanceKind::none;
+    HistoryMoney before, change, after;
+};
+struct HistoryActionView {
+    std::string id;
+    std::int64_t sequence = 0;
+    std::string label;
+    std::int64_t count = 0;
+    std::vector<std::string> accounts;
+    HistoryBalance balance;
+    std::vector<HistoryFieldChange> changes;
+    std::vector<HistoryMemberView> members;
+    bool lists_transactions = false;
+    ActionKind kind = ActionKind::transaction;
+};
+struct AccountHistoryPage {
+    std::vector<HistoryActionView> actions;
+    bool more = false;
+    std::string focus;
+    std::string notice;
+};
+
 } // namespace spentit::app

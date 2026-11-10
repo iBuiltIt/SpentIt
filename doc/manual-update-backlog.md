@@ -430,7 +430,9 @@ not evidence of replacement behavior. See the current
   The replacement uses empty-chain removal without Undo of the removal itself.
 - Cover recovery of the chain, successful-close expiry, failed/cancelled close,
   import preparation/initial decisions, unsaved-buffer guards and no Redo. Describe
-  undone-action details according to the later History UI design.
+  undone-action details from the
+  [Change history handoff](change-history-handoff.md). Rules that run during an
+  import stay inside that one Import row.
 - Replace affected Undo/History, acceptance, import removal, Rules and account
   pictures during the later batch pass, after native verification. All listed
   manual text, captions and screenshots remain unchanged by this design session.
@@ -482,3 +484,37 @@ Source: [Selected Set memo](ledger-editing.md#selected-set-memo--owner-go-2026-1
   left alone because overwrite is off is not changed.
 - Capture the dialog during the later batch pass. No manual prose, captions or
   screenshots were changed in this implementation.
+
+### MAN-020 — Change history workspace
+
+Recorded: 2026-11-09. Status: **implemented; the later owner-authorized manual
+pass remains**.
+Source: [Change history handoff](change-history-handoff.md).
+
+- Replace the History sentence in Add/correct transactions. The page lists
+  saved changes in the named account for this visit, one row for the whole
+  action, whether the transactions are New or Accepted. The account under the
+  heading is a dropdown. It starts as the account you came from, and choosing
+  another account shows that account’s changes. Closing the file clears the
+  list. The changes themselves remain.
+- Describe an open action as one line per change. A transaction is one line:
+  date, payee, category when it has one split, amount, and New, Accepted, or
+  Removed. A memo and any further splits are extra lines under that
+  transaction. The account name is repeated only when the action also touched
+  another account. The balance line appears only when the money changed.
+- **Show in ledger** is one button on the open action. It opens the
+  highlighted transaction. A removed transaction has no ledger button.
+- Say that Undo beside Show in ledger is the same Undo as the button beside
+  search. It undoes that whole action, and only when it is the newest action
+  in the file. A newer action has to be undone first, and the page names it.
+  A selection rename, a category change, and a rule application do not undo
+  one transaction at a time.
+- Say that an import is one row. Transactions added by that import, and rules
+  that ran while it was importing, are part of that import. Undoing it undoes
+  the import. A rule run the user starts later is its own row, and undoing
+  that row keeps the saved rule.
+- Accept transactions is its own row. Undoing it returns those transactions
+  to New.
+- Capture the page during the later batch pass only if a walkthrough is added.
+  No manual prose, captions, or screenshots were changed with this design or
+  its implementation.

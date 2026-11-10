@@ -1,5 +1,16 @@
 # SpentIt — Where did my money go?
 
+## Change history workspace — implemented 2026-11-09
+
+The owner accepted the Change history layout and then gave implementation Go.
+One saved action is one row. The page reads the live file-wide Undo chain.
+It lists New and Accepted transaction changes, the import that brought them
+in, and the acceptance that accepted them. Rules and other work that run
+during an import stay inside that one Import row. A later rule application
+the user starts is its own row. Formats stay **70 with rules / 69 without**.
+Read the [handoff](doc/change-history-handoff.md) and [status](doc/status.md).
+Do not edit the manual; MAN-020 records that later pass.
+
 ## Selected Set memo — owner Go 2026-11-09
 
 The ledger right-click menu offers **Set memo…** beside **Rename payee…**. One
@@ -45,8 +56,9 @@ The [rethink handoff](doc/action-undo-rethink-handoff.md) and archived rejected
 experiment explain why generic storage-row capture was rejected. Do not resume that
 architecture, its agent/reviewer loop or proposed storage multipliers. Prototype
 sources are archived under `review/action-undo-prototype/retired-source/`.
-Preserve financial/recovery/session-expiry and measured storage gates. Final Change
-History layout and MAN-017 manual publication remain separate work.
+Preserve financial/recovery/session-expiry and measured storage gates. The Change
+History layout in the [handoff](doc/change-history-handoff.md) is implemented;
+see status. MAN-017 manual publication remains a later pass.
 
 ## First release and next UI phase — accepted 2026-11-08
 

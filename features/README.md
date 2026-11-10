@@ -1,5 +1,10 @@
 # Feature discovery
 
+**Change history (2026-11-09):** The
+[Change history handoff](../doc/change-history-handoff.md) is implemented. The
+page lists one row per saved action, New and Accepted changes, and one Import
+row that includes rules run during that import. See [status](../doc/status.md).
+
 **Replacement Undo (2026-11-09):** The authorized replacement is integrated in
 storage and UI. Read the [design](../doc/action-undo-design.md),
 [operation inventory](../doc/action-undo-inventory.md) and
@@ -8,8 +13,8 @@ User operations use typed restoration in one file-wide session chain; import use
 one atomic source-owned rollback with zero ordinary edit members for new rows.
 Acceptance is reversible. Definitions/settings preserve the chain, and Save and
 apply reverses transaction changes while retaining the saved definition. Accounts,
-categories and permitted import setup remain after whole-import Undo. Final History
-layout/manual publication and the rejected generic row-capture experiment are separate.
+categories and permitted import setup remain after whole-import Undo. Manual
+publication and the rejected generic row-capture experiment are separate.
 
 **Current planning baseline (2026-11-08):** [Accepted first-release decisions](../doc/first-release-plan.md).
 Usage-driven UI improvements come next, including [About and third-party notices](007-licensing-and-distribution.md#about-and-third-party-notices--accepted-2026-11-08);

@@ -1,5 +1,56 @@
 # Project status
 
+## Change history workspace — implemented, 2026-11-09
+
+The owner gave implementation Go for the [Change history handoff](change-history-handoff.md).
+The page reads the live file-wide newest-first Undo action chain. One saved
+action is one row. It lists New and Accepted transaction changes, the import
+that brought them in, and the acceptance that accepted them. Rules and other
+work that run during an import stay inside that one Import file row. A later
+rule application the user starts is its own Apply rules row. Undo of an import
+is the existing whole-import rollback. Undoing Apply rules restores the
+transactions and keeps the saved rule.
+
+A bulk category change is one Change category row. The stored label stays
+“Edit transactions”. The page and the shared ledger Undo button both say
+Change category. The account under the heading is a dropdown. It opens on the
+account you came from, and choosing another account stays on this page.
+Opening a row shows the label, the count, and one line per field that changed.
+The account line appears only when the action also touched another account.
+The balance line appears only when the money changed. Each transaction is one
+line, with its category when it has one split. A memo and extra splits are
+further lines under that transaction. The selected transaction is highlighted.
+**Show in ledger** and **Undo** sit once on the open action. Undo is offered
+only when that action is the newest one in the file, through the same
+confirmation as the ledger button. A newer action is named, and the other
+account is named when the newest action is elsewhere. The page has no
+Refresh, Inspect, Show full transaction, Hide transaction, Redo, skip, or
+undo-to-here. The Review Undo button is gone from this page. The
+review-workspace Undo button and the ledger Undo button stay. Help still
+opens `help:add-correct-transactions#undo-a-saved-change`. Formats stay
+**70 with rules / 69 without**. No second history table was added.
+
+A first amount repair, stored with count 0 and one `review_repairs` row, is
+listed as that one transaction. The page and the confirmation field line use
+the stored action count. Successful close expires the list. Opening a file
+does not. A failed close or a crash keeps it. The creation-time opening is
+not an Undo action.
+
+Verification on macOS arm64, Qt 6.12.0, rules-enabled Release
+(`build/import-ui-rules-release`):
+
+- `cmake --build build/import-ui-rules-release --target spentit_action_repository_tests spentit_committed_ui_tests spentit_import_ui_tests -j 4`, then `ctest --test-dir build/import-ui-rules-release -j 3 -R '^(storage\.action_repository|import\.committed_ui|import\.ui)$'`, exit 0. `storage.action_repository` passed in 6.68 s. `import.committed_ui` passed in 16.99 s. `import.ui` passed in 117.61 s. Total real time 117.62 s.
+- The storage scenario covers a dirty reopen, a four-row rename, a later edit hiding that rename, Undo restoring it, acceptance marking Accepted, a bulk Change category whose stored label remains Edit transactions, a mixed New and Accepted rename, a two-account import, focus on one transaction, the selection-member refusal, no separate rule action during a grouped import, a later Save and apply that publishes Apply rules and keeps the rule on Undo, an invalid page, a missing account, a backup that keeps the list, and close/reopen that clears the list while the payee remains.
+- The committed UI suite checks the action-chain page. Fault paths leave saved edits on the chain because open does not expire it and gateway close does not certify. Two-edit fault histories are length 4 (Import, Accept, Edit, Edit). The failed-refresh history is length 3 (Import, Accept, Edit). After a second import, acceptance, and a failed stale apply, the list is two imports and two acceptances, the payee “Stale proposal” is absent, and the accepted amount stays 85.69.
+- `import.ui` includes the bulk history labels and the first-repair save path. Its 117.61 s has no same-machine before measurement for this change, so this record makes no performance claim.
+- `cmake --build build/import-ui-rules-release --target spentit_import_experiment spentit_import_navigation_tests -j 4`, then `ctest --test-dir build/import-ui-rules-release --output-on-failure -R '^import\.navigation$'`, exit 0. `import.navigation` passed in 20.98 s. That suite’s history command remains the superseded diagnostics operation. The application was relinked at `build/SpentIt`.
+- Follow-up the same day, after the compact-row Go: `cmake --build build/import-ui-rules-release --target spentit_committed_ui_tests spentit_import_experiment -j 4`, then `ctest --test-dir build/import-ui-rules-release --output-on-failure -R '^import\.committed_ui$'`, exit 0. `import.committed_ui` passed in 17.66 s. The open payee edit has **Show in ledger** and no balance line. The older amount edit shows the balance line and names the newer edit. The application was relinked at `build/SpentIt` again. The running application was not restarted.
+
+Limits: Linux, Windows, ASan/UBSan, rules-off, and the Help UI suite were not
+run for this page. `import.committed_ui` already opens History. No private
+financial data was used. The running application was not restarted. Manual
+text and screenshots remain unchanged; MAN-020 records that later pass.
+
 ## Manual picture capture — 2026-11-09
 
 `tools/capture_manual_images.py` reruns the eleven chapter walkthroughs in
@@ -178,8 +229,10 @@ groups now pass with rules enabled and disabled. The shared combined I/O regress
 also passes with rules enabled. Only fixtures and verification documentation changed;
 production guards are unchanged. See the verification record for commands and
 results. This is not an all-green repository test claim.
-No private financial data or manual prose/screenshots were changed. MAN-017 and
-final Change History layout remain separate work; Linux/Windows are unverified.
+No private financial data or manual prose/screenshots were changed. The Change
+History layout in the [handoff](change-history-handoff.md) is implemented; see
+the section above. MAN-017 remains the later manual pass.
+Linux/Windows are unverified.
 
 ## Unified Undo replacement design — design only, 2026-11-08
 

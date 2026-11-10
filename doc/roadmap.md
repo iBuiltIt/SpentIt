@@ -1,5 +1,12 @@
 # Coordinated implementation roadmap
 
+## Change history workspace — implemented 2026-11-09
+
+The [Change history handoff](change-history-handoff.md) is implemented. One
+saved action is one row. The page covers New and Accepted transaction changes
+and one Import row that includes rules run during that import. Formats stay
+70/69. See [status](status.md). Manual work stays in MAN-020.
+
 ## Unified Undo replacement — implementation, 2026-11-09
 
 The owner subsequently authorized the replacement, including its visible scope
@@ -7,7 +14,8 @@ choices. It is integrated in storage and UI; see the
 [implementation/verification record](action-undo-implementation.md),
 [design](action-undo-design.md) and [inventory](action-undo-inventory.md).
 The rejected generic row-capture experiment and design-only stop are historical.
-Remaining History layout and MAN-017 publication belong to their separate work.
+The History layout in the [handoff](change-history-handoff.md) is implemented.
+MAN-017 publication remains a later manual pass.
 No numeric storage-budget increase, Compact feature or reviewer loop is authorized.
 
 ## First release and next UI work — accepted 2026-11-08

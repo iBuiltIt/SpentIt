@@ -4,8 +4,10 @@ Date: 2026-11-09. State: **implemented; verification complete with the limits be
 
 The owner's implementation Go includes the replacement design's explicit scope
 choices. The design-session stop is historical. No additional Go is required for
-this work. The rejected generic row-capture architecture, storage-budget increases,
-final Change History layout and manual publication remain outside this work.
+this work. The rejected generic row-capture architecture and its storage-budget
+increases stay retired. The Change History layout in
+[the handoff](change-history-handoff.md) is implemented; see
+[status](status.md). Manual publication remains outside this work.
 
 ## Implemented behavior
 

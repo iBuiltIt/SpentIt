@@ -278,11 +278,6 @@ QString snapshotText(const app::EntrySnapshot& entry,std::string_view format, co
 QVariantMap snapshotMap(const app::EntrySnapshot& entry,const QString& label,std::string_view format, const AmountFormat& amountFormat) {
     return {{"label",label},{"summary",snapshotText(entry,format,amountFormat)},{"splits",allocations(entry.draft.transaction,{},amountFormat)}};
 }
-QString snapshotDetails(const app::EntrySnapshot& entry,std::string_view format, const AmountFormat& amountFormat) {
-    auto result=snapshotText(entry,format,amountFormat);
-    for(const auto& a:entry.draft.transaction.allocations())result+="\nSplit: "+text(a.category)+" · "+text(a.memo)+" · "+money(a.amount,amountFormat);
-    return result;
-}
 QString balanceImpact(const Money& before,const Money& change,const Money& after, const AmountFormat& amountFormat) {
     return text(before.currency().code())+" account balance: "+money(before,amountFormat)+" · change "+money(change,amountFormat)+" · resulting balance "+money(after,amountFormat);
 }
@@ -374,6 +369,7 @@ struct ImportModel::Worker {
     QString exchangeMessage;
 
     std::optional<app::UndoPreview> cachedUndo;
+    QString cachedUndoLabel,cachedUndoChange;
     std::optional<app::LinkExclusion> preparedLinkExclusion;
     std::int64_t linkExclusionGeneration=0;
     std::optional<app::TransferRequest> preparedMerge;
@@ -653,37 +649,79 @@ struct ImportModel::Worker {
         }
     }
     QVariantList history,entryHistory;
-    QString historyTitle,historyCursor;
+    QString historyTitle,historyCursor,historyFocus,historyFocusBatch,historyNotice;
+    int historyFocusOrdinal=-1;
     bool historyMore=false,historyLoaded=false;
     std::optional<app::EntryToken> selectedCommittedToken;
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {cachedUndo.reset();newManual.reset();newManualId.clear();revealManual.reset();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyMore=false;historyLoaded=false;}
-    void listHistory(std::int64_t before=0,bool append=false) {
+    void clearChanges() {cachedUndo.reset();cachedUndoLabel.clear();cachedUndoChange.clear();newManual.reset();newManualId.clear();revealManual.reset();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyFocus.clear();historyFocusBatch.clear();historyFocusOrdinal=-1;historyNotice.clear();historyMore=false;historyLoaded=false;}
+    QString historyMoney(const app::HistoryMoney& value) const {
+        if(value.definition.empty())return {};
+        return money(Money(value.units,Currency::from_definition(value.definition)),amountFormat);
+    }
+    QString historyChangeText(const app::HistoryFieldChange& change) const {
+        if(change.named_only)return text(change.field);
+        const auto side=[&](bool after){
+            if(change.kind==app::HistoryFieldKind::date)return dateText(after?change.after_text:change.before_text);
+            if(change.kind==app::HistoryFieldKind::money)return historyMoney(after?change.after_money:change.before_money);
+            return text(after?change.after_text:change.before_text);
+        };
+        return text(change.field)+": "+side(false)+" → "+side(true);
+    }
+    QString historyConfirmChange(const std::vector<app::HistoryFieldChange>& changes) const {
+        if(changes.empty())return {};
+        if(changes.front().named_only){QStringList names;for(const auto& change:changes)names.push_back(text(change.field));return "Fields: "+names.join(", ")+".";}
+        QStringList lines;for(const auto& change:changes)lines.push_back(historyChangeText(change)+".");return lines.join(" ");
+    }
+    QString historyBalanceText(const app::HistoryBalance& balance) const {
+        if(balance.kind==app::HistoryBalanceKind::delta && !balance.change.definition.empty()){
+            if(balance.change.units==0)return {};
+            return text(Currency::from_definition(balance.change.definition).code())+" balance change: "+historyMoney(balance.change);
+        }
+        if(balance.kind==app::HistoryBalanceKind::absolute && !balance.before.definition.empty() && !balance.change.definition.empty() && !balance.after.definition.empty()){
+            if(balance.change.units==0 && balance.before.units==balance.after.units && balance.before.definition==balance.after.definition)return {};
+            return balanceImpact(Money(balance.before.units,Currency::from_definition(balance.before.definition)),Money(balance.change.units,Currency::from_definition(balance.change.definition)),Money(balance.after.units,Currency::from_definition(balance.after.definition)),amountFormat);
+        }
+        if(balance.kind==app::HistoryBalanceKind::rescale)return "Account balance: "+historyMoney(balance.before)+" → "+historyMoney(balance.after);
+        return {};
+    }
+    QVariantMap historyActionMap(const app::HistoryActionView& action) const {
+        QStringList accounts;for(const auto& name:action.accounts)accounts.push_back(text(name));
+        QVariantList accountList;for(const auto& name:accounts)accountList.push_back(name);
+        QVariantList changes;for(const auto& change:action.changes)changes.push_back(QVariantMap{{"field",text(change.field)},{"text",historyChangeText(change)}});
+        QVariantList members;
+        for(const auto& member:action.members){
+            const auto amount=historyMoney(member.amount);
+            QString category;QVariantList splitLines;
+            if(member.splits.size()==1)category=text(member.splits.front().category);
+            else for(const auto& split:member.splits){
+                QStringList bits;bits.push_back(split.category.empty()?QString("Uncategorized"):text(split.category));
+                if(!split.memo.empty())bits.push_back(text(split.memo));
+                const auto splitAmount=historyMoney(split.amount);if(!splitAmount.isEmpty())bits.push_back(splitAmount);
+                splitLines.push_back(bits.join(" · "));
+            }
+            QStringList parts{dateText(member.date),text(member.payee)};if(!category.isEmpty())parts.push_back(category);parts.push_back(amount);parts.push_back(text(member.state));
+            const auto memo=text(member.memo);
+            QVariantList memberChanges;for(const auto& change:member.changes)memberChanges.push_back(QVariantMap{{"field",text(change.field)},{"text",historyChangeText(change)}});
+            members.push_back(QVariantMap{{"batch",text(member.batch)},{"ordinal",static_cast<int>(member.ordinal)},{"date",dateText(member.date)},{"payee",text(member.payee)},{"memo",memo},{"memoLine",memo.isEmpty()?QString():QString("Memo: ")+memo},{"amount",amount},{"state",text(member.state)},{"inLedger",member.in_ledger},{"line",parts.join(" · ")},{"splits",splitLines},{"changes",memberChanges}});
+        }
+        const auto summary=text(action.label)+(action.count>0?QString(" · %1 transaction%2").arg(action.count).arg(action.count==1?"":"s"):QString{});
+        return {{"id",text(action.id)},{"sequence",QString::number(action.sequence)},{"label",text(action.label)},{"count",static_cast<qlonglong>(action.count)},{"accounts",accounts.join(", ")},{"accountList",accountList},{"summary",summary},{"balance",historyBalanceText(action.balance)},{"changes",changes},{"members",members},{"listsTransactions",action.lists_transactions},{"kind",static_cast<int>(action.kind)}};
+    }
+    void listHistory(std::int64_t before=0,bool append=false,const std::optional<imports::Occurrence>& focus=std::nullopt) {
         PresentationRead observation{diagnosticPresentationFailed};
         auto& repo=gateway->repository();
-        const auto changes=repo.committed_changes(before,50);if(!append)history.clear();
-        for(const auto& item:changes) {
-            history.push_back(QVariantMap{{"operation",text(item.operation)},{"batch",text(item.identity.batch)},{"ordinal",static_cast<int>(item.identity.ordinal)},
-                {"summary",changeName(item.kind)+" · current record: "+text(item.payee)+" · "+dateText(item.date)+" · "+money(item.total,amountFormat)+" · "+(item.active?"Active":"Removed")}});
-        }
-        historyMore=changes.size()==50;historyCursor=changes.empty()?QString{}:QString::number(changes.back().sequence);historyLoaded=true;
-    }
-    void entryDetails(const imports::Occurrence& id) {
-        PresentationRead observation{diagnosticPresentationFailed};
-        auto& repo=gateway->repository();const auto entry=repo.committed_entry(id);
-        historyTitle="History · "+text(entry.current.draft.payee)+" · "+(entry.current.active?"Active":"Removed");entryHistory.clear();
-        const auto entries=repo.committed_history(id);
-        for(auto it=entries.rbegin();it!=entries.rend();++it) {
-            const auto& item=*it;
-            QString details=item.before_entry?"Before\n"+snapshotDetails(*item.before_entry,dateFormat,amountFormat)+"\n":"";
-            details+="After\n"+snapshotDetails(item.after_entry,dateFormat,amountFormat);
-            const auto reapplyGroup=text(repo.rule_reapply_group(item.operation));
-            const bool reapply=!reapplyGroup.isEmpty();
-            entryHistory.push_back(QVariantMap{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"operation",text(item.operation)},{"summary",changeName(item.kind)+" · "+text(item.operation)+"\n"+balanceImpact(item.before,item.change,item.after,amountFormat)},
-                {"details",details},{"bulkGroup",text(repo.bulk_group(item.operation))},{"reapplyGroup",reapplyGroup},{"undoEligible",reapply?false:item.undo_eligible},{"undoReason",reapply?QString("Undo the whole rule reapply."):text(item.blocked_reason)}});
-        }
+        const auto page=repo.account_change_history(repo.account().identity,before,50,focus);
+        if(!append){history.clear();historyNotice.clear();historyFocus.clear();historyFocusBatch.clear();historyFocusOrdinal=-1;}
+        for(const auto& action:page.actions)history.push_back(historyActionMap(action));
+        historyMore=page.more;historyLoaded=true;
+        if(!page.actions.empty())historyCursor=QString::number(page.actions.back().sequence);else if(!append)historyCursor.clear();
+        if(!focus)return;
+        historyFocus=text(page.focus);historyFocusBatch=text(focus->batch);historyFocusOrdinal=static_cast<int>(focus->ordinal);
+        if(page.focus.empty() && !append)historyNotice="This transaction has no changes before you close this file.";
+        else if(!page.focus.empty())historyNotice.clear();
     }
     // Session-local verified reads. Every mutation (including a failed command)
     // invalidates these before execution. The exclusive gateway owns all writes.
@@ -708,7 +746,7 @@ struct ImportModel::Worker {
         }
         observedSaved();
         selection={id};selectionFocus=id;selectionAnchor=id;
-        try {inspect(id.batch,id.ordinal,context);if(selectedCommittedToken){entryDetails(id);if(historyLoaded)listHistory();}}
+        try {inspect(id.batch,id.ordinal,context);if(historyLoaded)listHistory();}
         catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying.");}
     }
     void invalidate() {if(!reportResult.isEmpty())reportResult["stale"]=true;if(!reportLedgerActive)reportDetails.clear();diag::cache(diag::Code::ledger,diag::EventKind::invalidated);catalogLoaded=false;rulesLoaded=false;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();}
@@ -1085,10 +1123,10 @@ struct ImportModel::Worker {
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         QVariantMap actionUndo;
         if(const auto head=repo.action_head();head && !repo.action_preparing()) {
-                const auto token=repo.action_token();if(!cachedUndo || cachedUndo->token!=token)cachedUndo=repo.preview_undo(head->id,token);
-                const auto& preview=*cachedUndo;QStringList names;
-                const auto accounts=repo.accounts();for(const auto id:preview.accounts){const auto found=std::find_if(accounts.begin(),accounts.end(),[&](const auto& value){return value.identity==id;});if(found!=accounts.end())names.push_back(text(found->name));}
-                actionUndo={{"id",text(head->id)},{"session",QString::number(preview.token.session)},{"epoch",QString::number(preview.token.epoch)},{"label",text(preview.action.label)},{"count",static_cast<qlonglong>(preview.action.count)},{"accounts",names.join(", ")},{"kind",static_cast<int>(head->kind)},{"refusal",text(preview.refusal)}};
+                const auto token=repo.action_token();if(!cachedUndo || cachedUndo->token!=token){cachedUndo=repo.preview_undo(head->id,token);cachedUndoLabel=text(repo.action_display_label(*head));cachedUndoChange=historyConfirmChange(repo.action_field_changes(*head));}
+                const auto& preview=*cachedUndo;QStringList names;QVariantList accountList;
+                const auto accounts=repo.accounts();for(const auto id:preview.accounts){const auto found=std::find_if(accounts.begin(),accounts.end(),[&](const auto& value){return value.identity==id;});if(found!=accounts.end()){names.push_back(text(found->name));accountList.push_back(text(found->name));}}
+                actionUndo={{"id",text(head->id)},{"session",QString::number(preview.token.session)},{"epoch",QString::number(preview.token.epoch)},{"label",cachedUndoLabel},{"change",cachedUndoChange},{"count",static_cast<qlonglong>(preview.action.count)},{"accounts",names.join(", ")},{"accountList",accountList},{"kind",static_cast<int>(head->kind)},{"refusal",text(preview.refusal)}};
         }
         state["actionUndo"]=actionUndo;state["canUndoAction"]=!actionUndo.isEmpty() && actionUndo.value("refusal").toString().isEmpty();
         state["canUndoManual"]=false;state["canUndoEdit"]=state["canUndoAction"];state["groupEditUndo"]=false;
@@ -1106,7 +1144,7 @@ struct ImportModel::Worker {
         state["selected"]=selected;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
         state["deletionPreview"]=deletionPreview;state["bulkSupported"]=repo.bulk_supported();state["bulkPreview"]=bulkPreview;state["bulkReceipt"]=bulkReceipt;
         state["reapplyPreview"]=reapplyPreview;state["reapplyReceipt"]=reapplyReceipt;
-        state["history"]=history;state["entryHistory"]=entryHistory;state["historyTitle"]=historyTitle;state["historyMore"]=historyMore;state["historyCursor"]=historyCursor;
+        state["history"]=history;state["entryHistory"]=entryHistory;state["historyTitle"]=historyTitle;state["historyMore"]=historyMore;state["historyCursor"]=historyCursor;state["historyFocus"]=historyFocus;state["historyFocusBatch"]=historyFocusBatch;state["historyFocusOrdinal"]=historyFocusOrdinal;state["historyNotice"]=historyNotice;
         state["mode"]=projected?"Projected":"Committed";state["sort"]=sort;state["descending"]=descending;
         state["selectedIndex"]=-1;
         // Failed records stay in import review; valid saved rows remain visible.
@@ -1345,7 +1383,7 @@ struct ImportModel::Worker {
                 invalidate();if(amountFormat!=requested)std::rethrow_exception(failure);
             }
             observedSaved();amountFormat=requested;invalidate();
-            selected.clear();selectedBatch.clear();history.clear();entryHistory.clear();historyLoaded=false;
+            selected.clear();selectedBatch.clear();history.clear();entryHistory.clear();historyLoaded=false;historyFocus.clear();historyFocusBatch.clear();historyFocusOrdinal=-1;historyNotice.clear();historyCursor.clear();historyMore=false;cachedUndo.reset();cachedUndoLabel.clear();cachedUndoChange.clear();
             rulePreview.clear();reapplyPreview.clear();bulkPreview.clear();changePreview.clear();
             receipt.clear();changeReceipt.clear();bulkReceipt.clear();transferReceipt.clear();reapplyReceipt.clear();
             transferCandidates.clear();transferMergePreview.clear();reviewLinkPreview.clear();
@@ -1706,8 +1744,8 @@ struct ImportModel::Worker {
             catch(...) {const auto saved=categoryReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();categoryReceipt=saved;throw std::runtime_error("Category change was saved, but its refreshed view could not be loaded. Reopen and inspect category history; do not apply it again.");}
         } else if(action=="history") {listHistory(a.value("before").toString().toLongLong(),a.value("append").toBool());}
         else if(action=="entry_history") {
-            const imports::Occurrence id{str(a.value("batch")),a.value("ordinal").toUInt()};inspect(id.batch,id.ordinal,context);entryDetails(id);
-            if(!historyLoaded)listHistory();
+            const imports::Occurrence id{str(a.value("batch")),a.value("ordinal").toUInt()};inspect(id.batch,id.ordinal,context);listHistory(0,false,id);
+            for(int pages=1;pages<40 && historyMore && !historyFocus.isEmpty();++pages){bool listed=false;for(const auto& row:history)if(row.toMap().value("id").toString()==historyFocus){listed=true;break;}if(listed)break;listHistory(historyCursor.toLongLong(),true,id);}
         } else if(action=="cancel_change") {preparedChange.reset();preparedOperation.clear();changePreview.clear();}
         else if(action=="preview_change") {
             preparedChange.reset();preparedOperation.clear();changePreview.clear();
@@ -1744,7 +1782,7 @@ struct ImportModel::Worker {
             }
             changeReceipt={{"operation",text(result->operation)},{"summary",changeName(result->kind)+" applied · "+balanceImpact(result->before,result->change,result->after,amountFormat)}};observedSaved();
             preparedChange.reset();preparedOperation.clear();changePreview.clear();
-            try {inspect(result->identity.batch,result->identity.ordinal,context);entryDetails(result->identity);if(historyLoaded)listHistory();}
+            try {inspect(result->identity.batch,result->identity.ordinal,context);if(historyLoaded)listHistory();}
             catch(...) {
                 const auto saved=changeReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();changeReceipt=saved;
                 throw std::runtime_error("Your change was saved, but the screen could not update. Reopen the file and check the transaction before making more changes.");
@@ -2035,7 +2073,7 @@ struct ImportModel::Worker {
             const auto inspected=selectedBatch.empty()?request.selected.front():imports::Occurrence{selectedBatch,selectedOrdinal};
             selection=std::set<imports::Occurrence>(request.selected.begin(),request.selected.end());
             if(action=="delete_selection") {selection.clear();selectionFocus.reset();selectionAnchor.reset();selected.clear();selectedBatch.clear();selectedCommittedToken.reset();}
-            else try {inspect(inspected.batch,inspected.ordinal,context);if(selectedCommittedToken){entryDetails(inspected);if(historyLoaded)listHistory();}}
+            else try {inspect(inspected.batch,inspected.ordinal,context);if(historyLoaded)listHistory();}
             catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Changes were saved, but the view could not update. Reopen the file and check the transactions before trying again.");}
         }
         else if(action=="accept_edit") {

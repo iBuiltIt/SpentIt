@@ -92,6 +92,11 @@ public:
     std::optional<app::ChangeReceipt> committed_change_outcome(std::string_view op) const override {
         if(unknownOutcome)throw std::runtime_error("Injected unavailable outcome");return repo().committed_change_outcome(op);
     }
+    app::AccountHistoryPage account_change_history(std::int64_t account,std::int64_t before,std::size_t limit,const std::optional<imports::Occurrence>& focus) const override {
+        return repo().account_change_history(account,before,limit,focus);
+    }
+    std::string action_display_label(const app::ActionSummary& action) const override {return repo().action_display_label(action);}
+    std::vector<app::HistoryFieldChange> action_field_changes(const app::ActionSummary& action) const override {return repo().action_field_changes(action);}
 };
 class CommittedUiTests : public QObject {
     Q_OBJECT
@@ -319,30 +324,60 @@ private slots:
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
         prepare(model,dir.path());const auto id=model.rowIdentity(model.selectedRowIndex());
         QVERIFY(model.state().value("committedChangesSupported").toBool());QCOMPARE(model.state().value("committed").toString(),"80.69");
+        run(model,"history");
+        const auto prepared=model.state().value("history").toList();QCOMPARE(prepared.size(),2);
+        QCOMPARE(prepared.at(0).toMap().value("label").toString(),"Accept transactions");
+        QCOMPARE(prepared.at(1).toMap().value("label").toString(),"Import file");
         QVERIFY(selected(model).value("committed").toBool());QVERIFY(!selected(model).value("editable").toBool());
         QVERIFY(!root->findChild<QObject*>("durableTotal")->property("readOnly").toBool());
         QVERIFY(edit(root,"durableTotal","-30.00"));QVERIFY(edit(root,"editSplitAmount_1","-29.86"));
         QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model);
         QCOMPARE(model.state().value("committed").toString(),"80.00");
-        run(model,"history");const auto correction=model.state().value("history").toList().front().toMap().value("operation").toString();QVERIFY(!correction.isEmpty());
+        run(model,"history");const auto amountEdit=model.state().value("history").toList().front().toMap();
+        QCOMPARE(amountEdit.value("label").toString(),"Edit transactions");QVERIFY(!amountEdit.value("id").toString().isEmpty());
         QCOMPARE(selected(model).value("original").toString(),"-29.31");QVERIFY(!root->property("dirty").toBool());
         QVERIFY(edit(root,"durablePayee","Corrected merchant"));
         QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardStay"));QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(root->property("dirty").toBool());
         QVERIFY(click(root,"sidebarSettings"));QVERIFY(click(root,"guardSave"));wait(model);
         QCOMPARE(root->property("currentPage").toString(),"settings");QVERIFY(!root->property("dirty").toBool());
         QVERIFY(click(root,"navigationBack"));QVERIFY(click(root,"showEntryHistory"));wait(model);
-        bool blocked=false;for(const auto& value:model.state().value("entryHistory").toList()) {const auto h=value.toMap();if(h.value("operation").toString()==correction)blocked=!h.value("undoEligible").toBool() && !h.value("undoReason").toString().isEmpty();}QVERIFY(blocked);
+        QCOMPARE(root->property("currentPage").toString(),"history");
+        QTRY_VERIFY(object(root,"historyUndo"));
+        QVERIFY(object(root,"historyShowLedger"));
+        QVERIFY(!object(root,"historyShowFull_0"));
+        QVERIFY(!object(root,"historyBalance"));
+        QVERIFY(click(root,"historyShowLedger"));wait(model);
+        QCOMPARE(root->property("currentPage").toString(),"ledger");
+        QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
+        QVERIFY(click(root,"historyNavigation"));wait(model);
+        QVERIFY(click(root,"historyRow_1"));
+        QTRY_VERIFY(object(root,"historyBalance"));
+        QTRY_VERIFY(object(root,"historyBlocked"));
+        QCOMPARE(object(root,"historyBlocked")->property("text").toString(),"Undo Edit transactions first.");
         QVERIFY(click(root,"accountNavigation"));QVERIFY(click(root,"removeCommitted"));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
         QCOMPARE(model.state().value("committed").toString(),"110.00");QVERIFY(selected(model).value("removed").toBool());QCOMPARE(model.selectedRowIndex(),-1);
-        const auto removal=model.state().value("changeReceipt").toMap().value("operation").toString();
-        QVERIFY(click(root,"showEntryHistory"));wait(model);QVERIFY(!model.state().value("history").toList().isEmpty());
-        QVERIFY(QMetaObject::invokeMethod(root,"revealHistoryOperation",Q_ARG(QVariant,removal)));QTest::qWait(100);
-        QTRY_VERIFY(object(root,"undo_"+removal));QVERIFY(click(root,"undo_"+removal));wait(model);QVERIFY(click(root,"applyCommittedChange"));wait(model);
+        QVERIFY(click(root,"showEntryHistory"));wait(model);
+        QTRY_VERIFY(object(root,"historyUndo"));QVERIFY(click(root,"historyUndo"));
+        QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);
         QCOMPARE(model.state().value("committed").toString(),"80.00");QVERIFY(!selected(model).value("removed").toBool());
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
+        const auto checking=model.state().value("accountId");
+        QVERIFY(click(root,"historyNavigation"));wait(model);QVERIFY(click(root,"historyRow_0"));QTRY_VERIFY(object(root,"historyOpen"));
+        run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+        QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(!object(root,"historyOpen"));
+        QVERIFY(click(root,"historyNavigation"));wait(model);QVERIFY(object(root,"historyEmpty")->property("visible").toBool());
+        run(model,"select_account",{{"id",checking}});
         run(model,"backup",{{"path",dir.path()+"/backup"}});run(model,"close");run(model,"open",{{"path",dir.path()+"/backup"}});run(model,"inspect",id);
         QCOMPARE(model.state().value("committed").toString(),"80.00");QCOMPARE(selected(model).value("original").toString(),"-29.31");
-        run(model,"entry_history",id);QVERIFY(model.state().value("entryHistory").toList().size()>=5);
+        run(model,"history");const auto retained=model.state().value("history").toList();QCOMPARE(retained.size(),4);
+        QCOMPARE(retained.at(0).toMap().value("label").toString(),"Edit transactions");
+        QCOMPARE(retained.at(1).toMap().value("label").toString(),"Edit transactions");
+        QCOMPARE(retained.at(2).toMap().value("label").toString(),"Accept transactions");
+        QCOMPARE(retained.at(3).toMap().value("label").toString(),"Import file");
+        QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
+        run(model,"close");run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);
+        run(model,"history");QVERIFY(model.state().value("history").toList().isEmpty());
+        QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
     }
     void staleBalancePreviewDoesNotOverwrite() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());prepare(model,dir.path());
@@ -356,7 +391,12 @@ private slots:
         run(model,"apply_change",{{"preview",preview}},false);
         QCOMPARE(model.state().value("committed").toString(),"85.69");
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Synthetic purchase");
-        run(model,"history");QVERIFY(model.state().value("history").toList().isEmpty());
+        run(model,"history");const auto retained=model.state().value("history").toList();QCOMPARE(retained.size(),4);
+        QCOMPARE(retained.at(0).toMap().value("label").toString(),"Accept transactions");
+        QCOMPARE(retained.at(1).toMap().value("label").toString(),"Import file");
+        QCOMPARE(retained.at(2).toMap().value("label").toString(),"Accept transactions");
+        QCOMPARE(retained.at(3).toMap().value("label").toString(),"Import file");
+        for(const auto& value:retained){const auto row=value.toMap();QVERIFY(!row.value("summary").toString().contains("Stale proposal"));for(const auto& member:row.value("members").toList())QVERIFY(!member.toMap().value("payee").toString().contains("Stale proposal"));}
     }
     void lostAcknowledgementAndQuarantine() {
         QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));prepare(model,dir.path());
@@ -370,14 +410,14 @@ private slots:
         QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("could not confirm"));
         fault->unknownOutcome=false;fault->loseAcknowledgement=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Saved despite unknown outcome");
-        run(model,"history");QCOMPARE(model.state().value("history").toList().size(),2);QCOMPARE(model.state().value("committed").toString(),"80.69");
+        run(model,"history");QCOMPARE(model.state().value("history").toList().size(),4);QCOMPARE(model.state().value("committed").toString(),"80.69");
     }
     void editAcknowledgementAndQuarantine() {
         QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));prepare(model,dir.path());
         const auto id=model.rowIdentity(model.selectedRowIndex());auto change=selected(model).value("draft").toMap();change["payee"]="Recovered edit";
         fault->loseAcknowledgement=true;run(model,"accept_edit",change);QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Recovered edit");
         change["payee"]="Unknown acknowledgement";fault->unknownOutcome=true;run(model,"accept_edit",change,false);QVERIFY(!model.state().value("active").toBool());
-        fault->unknownOutcome=false;fault->loseAcknowledgement=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Unknown acknowledgement");QVERIFY(!model.state().value("canUndoEdit").toBool());run(model,"history");QCOMPARE(model.state().value("history").toList().size(),2);
+        fault->unknownOutcome=false;fault->loseAcknowledgement=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Unknown acknowledgement");QVERIFY(!model.state().value("canUndoEdit").toBool());run(model,"history");QCOMPARE(model.state().value("history").toList().size(),4);
     }
     void failedApplyRetainsBufferAndKnownSaveIsReported() {
         QTemporaryDir dir;auto gateway=std::make_unique<ChangeFaultGateway>();auto* fault=gateway.get();ImportModel model(std::move(gateway));
@@ -391,7 +431,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));wait(model,false);
         QVERIFY(!model.state().value("active").toBool());QVERIFY(model.error().contains("saved"));
         fault->failRefresh=false;run(model,"open",{{"path",dir.path()+"/document"}});run(model,"inspect",id);
-        QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Preserved proposal");run(model,"history");QCOMPARE(model.state().value("history").toList().size(),1);
+        QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Preserved proposal");run(model,"history");QCOMPARE(model.state().value("history").toList().size(),3);
     }
     void removedReimportRequiresReview_data() {
         QTest::addColumn<bool>("keepRemoved");

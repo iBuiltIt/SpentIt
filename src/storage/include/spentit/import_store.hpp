@@ -42,6 +42,9 @@ public:
     app::ActionToken action_token() const override;
     std::optional<app::ActionSummary> action_head() const override;
     std::vector<app::ActionSummary> action_history(std::int64_t, std::size_t) const override;
+    app::AccountHistoryPage account_change_history(std::int64_t, std::int64_t, std::size_t, const std::optional<imports::Occurrence>&) const override;
+    std::string action_display_label(const app::ActionSummary&) const override;
+    std::vector<app::HistoryFieldChange> action_field_changes(const app::ActionSummary&) const override;
     app::UndoPreview preview_undo(std::string_view,const app::ActionToken&) const override;
     std::optional<app::ActionReceipt> undo_action_outcome(std::string_view,const app::UndoPreview&) const override;
     app::ActionReceipt undo_action(std::string_view,const app::UndoPreview&) override;
@@ -195,6 +198,10 @@ private:
     void undo_acceptance(std::string_view,std::string_view);
     void record_acceptance_action(std::string_view,std::string_view,const std::vector<app::TransferView>&,std::string_view,std::size_t);
     void record_transaction_action(std::string_view,std::string_view,std::string_view,const std::vector<std::string>&);
+    app::HistoryActionView history_view(const app::ActionSummary&, std::int64_t account, bool with_balance, bool named_only) const;
+    bool history_touches(const app::ActionSummary&, std::int64_t account) const;
+    bool history_includes(const app::ActionSummary&, const imports::Occurrence&) const;
+    std::vector<app::HistoryFieldChange> history_named_fields(const app::ActionSummary&) const;
     void begin_import_action(std::string_view,std::string_view);
     void complete_import_action(std::string_view,bool awaiting_decision=false);
     std::vector<std::string> import_link_undos(std::string_view) const;

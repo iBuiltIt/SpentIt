@@ -630,6 +630,10 @@ ApplicationWindow {
     readonly property bool reportLedger: currentPage==="reports" && reportsWorkspace.mode==="detail"
     property var pendingReportNavigation:null
     property string currentPage: "ledger"
+    property string historyOpenId: ""
+    property string historySelectedKey: ""
+    property string historyAccountSeen: ""
+    property bool switchingHistoryAccount: false
     property var navigation: ["ledger"]
     property int navigationIndex: 0
     property var navigationAccounts: [""]
@@ -774,11 +778,71 @@ ApplicationWindow {
         MenuItem {height:visible?implicitHeight:0;objectName:"reassignCurrency";text:"Reassign currency…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:guard(function(){currencySearch.text="";currencyDialog.open()})}
         MenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:undoEdit()}
     }
-    function revealHistoryOperation(operation) {
-        let entries=s.entryHistory||[]
-        for(let i=0;i<entries.length;i++) if(entries[i].operation===operation) {
-            entryHistoryList.positionViewAtIndex(i,ListView.Contain);return
+    function historyBlockedText() {
+        const head=s.actionUndo||{}
+        const label=head.label||"the latest action"
+        const names=head.accountList||[]
+        let here=false
+        for(let i=0;i<names.length;++i) if(names[i]===s.name) here=true
+        if(!here && (head.accounts||"").length) return "Undo "+label+" in "+head.accounts+" first."
+        return "Undo "+label+" first."
+    }
+    function historyAccountChoices() {
+        const rows=(s.sidebarAccounts||s.accounts||[]).slice()
+        if(s.accountId && !rows.some(function(account){return account.id===s.accountId}))
+            rows.unshift({id:s.accountId,name:s.name||"Account"})
+        return rows
+    }
+    function historyAccountsText(action) {
+        const names=action && action.accountList || []
+        return names.length>1?names.join(", "):""
+    }
+    function selectedHistoryMember(action) {
+        if(!action)return null
+        const key=historySelectedKey
+        const mark=key.lastIndexOf(":")
+        if(mark<0 || key.slice(0,mark)!==(action.id||""))return null
+        const row=(action.members||[])[Number(key.slice(mark+1))]
+        return row && row.inLedger?row:null
+    }
+    function chooseHistoryMember(action) {
+        if(!action){historySelectedKey="";return}
+        const members=action.members||[]
+        if(action.id===(s.historyFocus||"") && (s.historyFocusBatch||"")!==""){
+            for(let i=0;i<members.length;++i){
+                const row=members[i]
+                if(row.batch===s.historyFocusBatch && Number(row.ordinal)===Number(s.historyFocusOrdinal)){
+                    historySelectedKey=row.inLedger?action.id+":"+i:""
+                    return
+                }
+            }
         }
+        for(let i=0;i<members.length;++i) if(members[i].inLedger){historySelectedKey=action.id+":"+i;return}
+        historySelectedKey=""
+    }
+    function syncHistoryOpen() {
+        const account=s.accountId||""
+        const accountChanged=account!==historyAccountSeen
+        if(accountChanged){historyOpenId="";historySelectedKey="";historyAccountSeen=account}
+        const focus=s.historyFocus||""
+        const rows=s.history||[]
+        const keep=function(row){
+            historyOpenId=row.id
+            if(!selectedHistoryMember(row))chooseHistoryMember(row)
+        }
+        if(focus){
+            for(let i=0;i<rows.length;++i) if(rows[i].id===focus){keep(rows[i]);return}
+            return
+        }
+        if(!historyOpenId){historySelectedKey="";return}
+        for(let i=0;i<rows.length;++i) if(rows[i].id===historyOpenId){keep(rows[i]);return}
+        historyOpenId="";historySelectedKey=""
+    }
+    function revealHistoryOperation(operation) {
+        historyOpenId=String(operation||"")
+        const rows=s.history||[]
+        for(let i=0;i<rows.length;++i) if(rows[i].id===historyOpenId){chooseHistoryMember(rows[i]);return}
+        historySelectedKey=""
     }
     function traverseNavigation(delta) {
         if(currentPage==="reports" && reportsWorkspace.mode!=="workspace" && delta<0){reportsWorkspace.back();return}
@@ -1654,7 +1718,7 @@ ApplicationWindow {
     HelpDialog {
         id:actionUndoConfirm;objectName:"actionUndoConfirm";helpTarget:"help:add-correct-transactions#undo-a-saved-change";modal:true;anchors.centerIn:parent;width:540
         title:"Undo "+(pendingUndo.label||"action")+"?"
-        Label {width:500;wrapMode:Text.Wrap;text:(pendingUndo.count?pendingUndo.count+" transaction"+(pendingUndo.count===1?"":"s")+".\n":"")+(pendingUndo.accounts?"Accounts: "+pendingUndo.accounts+".\n":"")+(pendingUndo.kind===7?"Remove the whole import. Accounts and categories created during import remain.":pendingUndo.kind===2?"Reverse the transaction changes. Saved rules remain.":pendingUndo.kind===6?"Return these transactions to New without changing their amounts.":"Restore the state before this action.")}
+        Label {width:500;wrapMode:Text.Wrap;text:(pendingUndo.count?pendingUndo.count+" transaction"+(pendingUndo.count===1?"":"s")+".\n":"")+(pendingUndo.accounts?"Accounts: "+pendingUndo.accounts+".\n":"")+(pendingUndo.change?pendingUndo.change+"\n":"")+(pendingUndo.kind===7?"Remove the whole import. Accounts and categories created during import remain.":pendingUndo.kind===2?"Reverse the transaction changes. Saved rules remain.":pendingUndo.kind===6?"Return these transactions to New without changing their amounts.":"Restore the state before this action.")}
         footer:DialogButtonBox {
             Button {objectName:"confirmActionUndo";text:"Undo";onClicked:{actionUndoConfirm.close();workflow.command("undo_action",pendingUndo)}}
             Button {text:"Cancel";onClicked:actionUndoConfirm.close()}
@@ -1813,6 +1877,7 @@ ApplicationWindow {
                 searchReturn.chosen=true
             if(success && action==="select" && searchReturn)searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
+                historyOpenId="";historySelectedKey="";historyAccountSeen=""
                 duplicateOriginKey="";duplicateCandidateKey="";pendingDuplicateReveal=null;searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
                 loadCategoryForm();categoryVisitAdditions=[];categorySort="ascending";categorySelection="";categoryReveal="";categoryMenuEntry=({});categoryContext.close()
                 transferDate.text=workflow.todayDisplay();ledgerViewRestore=null;ledgerViewKind=""
@@ -1821,7 +1886,7 @@ ApplicationWindow {
                 categorySaving=false
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
-            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false}
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false;switchingHistoryAccount=false}
             if(success) {
                 if(action==="transfer_manual"){resolveAmount(transferAmount);transferDialog.addingTransfer=false}
                 if(action==="correct_opening")correctAmount.text=s.opening
@@ -1830,10 +1895,11 @@ ApplicationWindow {
                     if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
                     else if(accountViewports[s.accountId])restoreAccountViewport()
                     if(switchingRulesAccount) {currentPage="rules";let accounts=navigationAccounts.slice();accounts[navigationIndex]=s.accountId;navigationAccounts=accounts}
+                    else if(switchingHistoryAccount) {currentPage="history";let accounts=navigationAccounts.slice();accounts[navigationIndex]=s.accountId;navigationAccounts=accounts}
                     else if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
                     if(pendingReviewInspection){currentPage="review";pendingReviewInspection=false}
-                    loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false
+                    loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false;switchingHistoryAccount=false
                     if(pendingDuplicateReveal){
                         const request=pendingDuplicateReveal;pendingDuplicateReveal=null
                         duplicateOriginKey=request.origin.key;duplicateCandidateKey=request.row.key===request.origin.key?"":request.row.key
@@ -1876,6 +1942,7 @@ ApplicationWindow {
                 if(action==="create" || action==="unlock") {password.text="";confirmation.text="";unlockPassword.text=""}
                 if(action==="close") {settingUp=false;probeTimer.restart();if(closingRequested){allowClose=true;Qt.callLater(function(){window.close();Qt.quit()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
+            if(success && ["history","entry_history","select_account","create_account","undo_action","undo_edit"].indexOf(action)>=0) syncHistoryOpen()
             settleLedgerView(action,success)
             if(action==="save" || action==="save_manual" || action==="accept_edit" || (action==="undo_edit" || action==="undo_action"))restoreEditView()
             if(success && action==="begin_manual"){editorClosed=false;Qt.callLater(function(){ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain);editPayee.forceActiveFocus()})}
@@ -3714,46 +3781,102 @@ ApplicationWindow {
                 }
                 UsableScrollView {
                     id:historyPage;objectName:"committedHistoryPage";anchors.fill:parent;visible:currentPage==="history";contentWidth:availableWidth;enabled:!workflow.busy
-                    ColumnLayout {
-                        width:historyPage.availableWidth;spacing:10
-                        Label {text:"Change history";font.pixelSize:20}
-                        Label {text:"Corrections, removals and Undo operations. Balances below describe each operation when it was applied.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        Button {text:"Refresh history";onClicked:workflow.command("history")}
-                        Label {text:"No changes to accepted transactions yet.";visible:(s.history||[]).length===0}
-                        ListView {
-                            id:historyIndex;objectName:"committedHistoryIndex";model:s.history||[];clip:true;reuseItems:true
-                            Layout.fillWidth:true;Layout.preferredHeight:Math.min(200,contentHeight)
-                            ScrollBar.vertical:UsableScrollBar {}
-                            delegate:RowLayout {
-                                required property var modelData
-                                width:historyIndex.width
-                                Label {textFormat:Text.PlainText;text:modelData.summary;Layout.fillWidth:true;Layout.minimumWidth:0;wrapMode:Text.Wrap}
-                                Button {text:"Inspect history";onClicked:workflow.command("entry_history",{batch:modelData.batch,ordinal:modelData.ordinal})}
-                            }
+                    Column {
+                        id:historyColumn;width:historyPage.availableWidth;spacing:10
+                        Label {objectName:"historyHeading";text:"Change history";font.pixelSize:20}
+                        UsableComboBox {
+                            objectName:"historyAccount"
+                            width:Math.min(parent.width,Math.max(220,implicitWidth))
+                            model:historyAccountChoices()
+                            textRole:"name"
+                            currentIndex:historyAccountChoices().findIndex(function(account){return account.id===s.accountId})
+                            onActivated:guard(function(){
+                                const account=historyAccountChoices()[currentIndex]
+                                if(!account || account.id===s.accountId)return
+                                switchingHistoryAccount=true
+                                workflow.command("select_account",{id:account.id})
+                            })
                         }
-                        Button {objectName:"moreCommittedHistory";text:"Older changes";visible:!!s.historyMore;onClicked:workflow.command("history",{before:s.historyCursor,append:true})}
-                        Label {textFormat:Text.PlainText;text:s.historyTitle||"";font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        Button {text:"Inspect current record and source";visible:!!selected.committed;onClicked:navigate("ledger")}
-                        ListView {
-                            id:entryHistoryList;objectName:"entryHistoryList";model:s.entryHistory||[];clip:true;reuseItems:true;spacing:8
-                            Layout.fillWidth:true;Layout.preferredHeight:Math.min(480,contentHeight)
-                            ScrollBar.vertical:UsableScrollBar {}
-                            delegate:Frame {
+                        Label {objectName:"historyIntro";visible:(s.history||[]).length>0;text:"Changes in this account before you close this file.";wrapMode:Text.Wrap;width:parent.width}
+                        Label {objectName:"historyEmpty";visible:(s.history||[]).length===0;text:"No changes in "+(s.name||"")+" before you close this file.";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
+                        Button {objectName:"historyBack";visible:(s.history||[]).length===0;text:"Back to "+(s.name||"");onClicked:navigate("ledger")}
+                        Label {objectName:"historyNotice";visible:(s.historyNotice||"").length>0;text:s.historyNotice||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
+                        Repeater {
+                            model:s.history||[]
+                            delegate:Column {
+                                id:historyAction
                                 required property var modelData
-                                width:entryHistoryList.width
-                                contentItem:ColumnLayout {
-                                    Label {textFormat:Text.PlainText;text:modelData.summary;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                                    UsableScrollView {
-                                        Layout.fillWidth:true;Layout.preferredHeight:150;contentWidth:availableWidth
-                                        TextArea {text:modelData.details;readOnly:true;selectByMouse:true;textFormat:TextEdit.PlainText;wrapMode:TextEdit.Wrap}
+                                required property int index
+                                property string actionId: modelData.id||""
+                                property bool open: historyOpenId===actionId
+                                width:historyColumn.width;spacing:6
+                                Button {objectName:"historyRow_"+index;width:parent.width;text:modelData.summary||"";highlighted:open;onClicked:{if(open){historyOpenId="";historySelectedKey="";return}historyOpenId=actionId;chooseHistoryMember(modelData)}}
+                                Column {
+                                    visible:open;objectName:open?"historyOpen":"";width:parent.width;spacing:4
+                                    Label {objectName:open && historyAccountsText(modelData)?"historyAccounts":"";visible:historyAccountsText(modelData).length>0;text:"Accounts: "+historyAccountsText(modelData);textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
+                                    Label {objectName:open && (modelData.balance||"").length?"historyBalance":"";visible:(modelData.balance||"").length>0;text:modelData.balance||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
+                                    Repeater {
+                                        model:modelData.changes||[]
+                                        delegate:Label {
+                                            required property var modelData
+                                            required property int index
+                                            objectName:historyAction.open?"historyChange_"+index:""
+                                            text:modelData.text||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:historyAction.width
+                                        }
                                     }
-                                    Label {textFormat:Text.PlainText;text:modelData.undoReason;visible:!modelData.undoEligible;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                                    Button {objectName:"undo_"+modelData.operation;text:"Review Undo…";enabled:modelData.undoEligible;onClicked:guardedPreview("preview_change",{kind:"undo",operation:modelData.operation,batch:modelData.batch,ordinal:modelData.ordinal})}
-                                    Button {text:"Review group Undo…";visible:!!modelData.bulkGroup;onClicked:guardedPreview("preview_bulk",{kind:"undo",operation:modelData.bulkGroup})}
-                                    Button {text:"Review group Undo…";visible:!!modelData.reapplyGroup;onClicked:guardedPreview("rules_reapply_preview",{undoOf:modelData.reapplyGroup})}
+                                    Repeater {
+                                        model:modelData.members||[]
+                                        delegate:Rectangle {
+                                            id:historyMember
+                                            required property var modelData
+                                            required property int index
+                                            property bool chosen: historySelectedKey===historyAction.actionId+":"+index
+                                            width:historyAction.width;height:memberText.height;color:chosen?theme.selection:"transparent"
+                                            Column {
+                                                id:memberText;width:parent.width;spacing:2
+                                                Label {objectName:historyAction.open?"historyMember_"+index:"";text:historyMember.modelData.line||"";color:theme.text;textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
+                                                Repeater {
+                                                    model:historyMember.modelData.changes||[]
+                                                    delegate:Label {
+                                                        required property var modelData
+                                                        text:modelData.text||"";color:theme.text;textFormat:Text.PlainText;wrapMode:Text.Wrap;width:memberText.width;leftPadding:16
+                                                    }
+                                                }
+                                                Label {visible:(historyMember.modelData.memoLine||"").length>0;text:historyMember.modelData.memoLine||"";color:theme.text;textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width;leftPadding:16}
+                                                Repeater {
+                                                    model:historyMember.modelData.splits||[]
+                                                    delegate:Label {
+                                                        required property var modelData
+                                                        text:modelData||"";color:theme.text;textFormat:Text.PlainText;wrapMode:Text.Wrap;width:memberText.width;leftPadding:16
+                                                    }
+                                                }
+                                            }
+                                            MouseArea {anchors.fill:parent;enabled:!!historyMember.modelData.inLedger && !workflow.busy;onClicked:historySelectedKey=historyAction.actionId+":"+index}
+                                        }
+                                    }
+                                    Row {
+                                        spacing:8
+                                        Button {
+                                            objectName:open && selectedHistoryMember(modelData)?"historyShowLedger":""
+                                            visible:!!selectedHistoryMember(modelData)
+                                            text:"Show in ledger"
+                                            onClicked:{const row=selectedHistoryMember(modelData);if(!row)return;const batch=row.batch;const ordinal=row.ordinal;navigate("ledger");workflow.command("inspect",{batch:batch,ordinal:ordinal})}
+                                        }
+                                        Button {
+                                            objectName:open && !!s.canUndoAction && (s.actionUndo||{}).id===historyAction.actionId && !((s.actionUndo||{}).refusal||"")?"historyUndo":""
+                                            visible:open && (s.actionUndo||{}).id===historyAction.actionId && !((s.actionUndo||{}).refusal||"")
+                                            text:s.editUndoLabel||"Undo";onClicked:undoEdit()
+                                        }
+                                    }
+                                    Label {
+                                        objectName:open && (s.actionUndo||{}).id && (s.actionUndo||{}).id!==historyAction.actionId?"historyBlocked":""
+                                        visible:open && (s.actionUndo||{}).id && (s.actionUndo||{}).id!==historyAction.actionId
+                                        text:historyBlockedText();textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width
+                                    }
                                 }
                             }
                         }
+                        Button {objectName:"moreCommittedHistory";text:"Older changes";visible:!!s.historyMore;onClicked:workflow.command("history",{before:s.historyCursor,append:true})}
                     }
                 }
                 UsableScrollView {

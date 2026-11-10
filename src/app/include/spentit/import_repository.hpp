@@ -199,6 +199,9 @@ public:
     virtual ActionToken action_token() const { return {}; }
     virtual std::optional<ActionSummary> action_head() const { return {}; }
     virtual std::vector<ActionSummary> action_history(std::int64_t, std::size_t) const { return {}; }
+    virtual AccountHistoryPage account_change_history(std::int64_t, std::int64_t, std::size_t, const std::optional<imports::Occurrence>& = std::nullopt) const { return {}; }
+    virtual std::string action_display_label(const ActionSummary& action) const { return action.label; }
+    virtual std::vector<HistoryFieldChange> action_field_changes(const ActionSummary&) const { return {}; }
     virtual UndoPreview preview_undo(std::string_view,const ActionToken&) const {throw std::logic_error("Undo unavailable");}
     virtual std::optional<ActionReceipt> undo_action_outcome(std::string_view,const UndoPreview&) const { return {}; }
     virtual ActionReceipt undo_action(std::string_view,const UndoPreview&) {throw std::logic_error("Undo unavailable");}

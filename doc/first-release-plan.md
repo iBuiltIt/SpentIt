@@ -19,8 +19,9 @@ acceptance, permits retained import-created accounts/categories, and explicitly
 narrows the definition/removal scope. The owner initially authorized design only,
 then authorized implementation in a new session. The replacement is implemented;
 see its [verification record](action-undo-implementation.md) for measured storage,
-passing checks and remaining limits. The final Change History layout remains
-separate. Earlier design approval is not authority to resume the rejected architecture.
+passing checks and remaining limits. The Change History layout in the
+[handoff](change-history-handoff.md) is implemented; see [status](status.md).
+Earlier design approval is not authority to resume the rejected architecture.
 
 Address the owner's items discovered through use first. This is a separate phase
 from the essential busy/readiness audit below, and is not limited to About.

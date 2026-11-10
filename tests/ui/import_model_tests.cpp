@@ -83,6 +83,9 @@ public:
     app::UndoPreview preview_undo(std::string_view id,const app::ActionToken& token) const override{return repo().preview_undo(id,token);}
     app::ActionReceipt undo_action(std::string_view id,const app::UndoPreview& preview) override{return repo().undo_action(id,preview);}
     std::optional<app::ActionReceipt> undo_action_outcome(std::string_view id,const app::UndoPreview& preview) const override{return repo().undo_action_outcome(id,preview);}
+    app::AccountHistoryPage account_change_history(std::int64_t account,std::int64_t before,std::size_t limit,const std::optional<imports::Occurrence>& focus) const override {return repo().account_change_history(account,before,limit,focus);}
+    std::string action_display_label(const app::ActionSummary& action) const override {return repo().action_display_label(action);}
+    std::vector<app::HistoryFieldChange> action_field_changes(const app::ActionSummary& action) const override {return repo().action_field_changes(action);}
 
     std::int64_t next_account_identity() const override{return repo().next_account_identity();}
     qif::Result parsed_source(std::string_view id,const std::function<void()>& checkpoint={}) const override{return repo().parsed_source(id,checkpoint);}
@@ -1136,12 +1139,15 @@ private slots:
         run(m,"apply_bulk",{{"preview",m.state().value("bulkPreview").toMap().value("id")}});const auto operation=m.state().value("bulkReceipt").toMap().value("operation");
         QCOMPARE(m.state().value("committed").toString(),"0.00");QCOMPARE(m.state().value("selectionCount").toInt(),0);
         run(m,"entry_history",{{"batch",batch},{"ordinal",0}});
-        QCOMPARE(m.state().value("entryHistory").toList().front().toMap().value("bulkGroup"),operation);
+        const auto history=m.state().value("history").toList();QVERIFY(!history.isEmpty());
+        QCOMPARE(history.front().toMap().value("label").toString(),"Delete transactions");
+        QCOMPARE(history.front().toMap().value("id"),operation);
+        bool sawCategory=false;for(const auto& value:history)if(value.toMap().value("label").toString()=="Change category")sawCategory=true;QVERIFY(sawCategory);
         run(m,"preview_bulk",{{"kind","undo"},{"operation",operation}});run(m,"apply_bulk",{{"preview",m.state().value("bulkPreview").toMap().value("id")}});
         QCOMPARE(m.state().value("committed").toString(),"10.00");
         run(m,"inspect",{{"batch",batch},{"ordinal",0}});auto allocations=selected(m).value("draft").toMap().value("splits").toList();QCOMPARE(allocations.size(),2);QCOMPARE(allocations[0].toMap().value("amount").toString(),"2.00");QCOMPARE(allocations[1].toMap().value("memo").toString(),"Fare");
         run(m,"close");run(m,"open",{{"path",path}});run(m,"entry_history",{{"batch",batch},{"ordinal",0}});
-        QVERIFY(m.state().value("entryHistory").toList().isEmpty());QCOMPARE(m.state().value("committed").toString(),"10.00");
+        QVERIFY(m.state().value("history").toList().isEmpty());QCOMPARE(m.state().value("committed").toString(),"10.00");
     }
     void combinedSearchAndSelection() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/doc");

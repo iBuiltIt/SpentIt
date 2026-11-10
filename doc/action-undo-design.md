@@ -380,7 +380,10 @@ All financial Undo buttons/shortcuts ask the common repository head. Contextual
 buttons cannot secretly undo a different action or bypass a newer account's work.
 Show the actual action and its complete scope, including affected accounts/counts.
 Import remains clearly named as whole-import rollback. Do not list inserted rows
-as individual changes. Full Change History layout/search remains separate work.
+as individual changes. Rules that run during that import stay inside the same
+Import action. The Change History layout in
+[the handoff](change-history-handoff.md) is implemented. See
+[status](status.md). That layout does not add a history search box.
 
 Use durable action data after reopen/crash; remove `sessionEdits` as an independent
 source of eligibility. Unsaved buffers keep existing Save/Discard/Cancel protections.
@@ -501,5 +504,8 @@ Recommended implementation order after new-session authorization:
 This is a handoff sequence, not execution authorization in this session. A storage
 experiment may test these mechanisms but cannot substitute another universal row
 journal. Further review/delegation follows the owner's new-session request; none
-was started here. Final History presentation and the deferred manual pass remain
-separate. Track future manual effects in [MAN-017](manual-update-backlog.md#man-017--unified-transaction-undo-and-whole-import-rollback-design-only).
+was started here. The Change History layout in
+[the handoff](change-history-handoff.md) is implemented. See
+[status](status.md).
+Track future manual effects in [MAN-017](manual-update-backlog.md#man-017--unified-transaction-undo-and-whole-import-rollback)
+and [MAN-020](manual-update-backlog.md#man-020--change-history-workspace).

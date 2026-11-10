@@ -218,6 +218,124 @@ void composed_faults(const std::filesystem::path& directory) {
     }
 }
 
+app::AccountHistoryPage history_page(ImportStore& store,std::int64_t account,std::optional<imports::Occurrence> focus={}) {
+    return store.account_change_history(account,0,50,focus);
+}
+const app::HistoryActionView* find_action(const app::AccountHistoryPage& page,std::string_view id) {
+    for(const auto& action:page.actions) if(action.id==id) return &action;
+    return nullptr;
+}
+void rename_payees(ImportStore& store,std::string_view operation,const std::vector<imports::Occurrence>& selected,std::string_view payee) {
+    OperationContext context;
+    store.edit_transactions(operation,{LedgerSelectionAction::rename_payee,store.account().identity,store.ledger_edit_generation(),selected,std::string(payee),false,{},false},context);
+}
+void change_history(const std::filesystem::path& path) {
+    {
+        auto store=ImportStore::create(path.string()+"-dirty","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.ingest("keep",source("Keep"),qif::DateOrder::dmy);
+    }
+    {auto store=ImportStore::open(path.string()+"-dirty","synthetic");
+     check(store.action_head() && store.action_head()->label=="Import file","Uncertified reopen keeps the chain");
+     const auto page=history_page(store,store.account().identity);
+     check(page.actions.size()==1 && page.actions.front().count==1,"History remains after an uncertified close");
+     store.certify({});}
+    std::string payee;
+    {
+    auto store=ImportStore::create(path,"synthetic","Checking",Currency("CAD"),"2026-01-01");
+    std::string rows="!Type:Bank\n";
+    for(int i=0;i<4;++i) rows+="D01/01/2026\nT-10.00\nPOriginal\n^\n";
+    store.ingest("four",rows,qif::DateOrder::dmy);
+    auto imported=history_page(store,1);
+    check(imported.actions.size()==1 && imported.actions.front().label=="Import file" && imported.actions.front().count==4,"Four imported rows are one Import file action");
+    for(const auto& action:imported.actions) check(action.label!="Correct opening","Creation opening is not an Undo action");
+    std::vector<imports::Occurrence> four;
+    for(int i=0;i<4;++i) four.push_back({"four",static_cast<std::size_t>(i)});
+    rename_payees(store,"rename4",four,"Renamed");
+    auto renamed=history_page(store,1);
+    check(renamed.actions.front().id=="rename4" && renamed.actions.front().label=="Rename payee" && renamed.actions.front().count==4,"One rename is one row");
+    check(renamed.actions.front().changes.size()==1 && renamed.actions.front().changes.front().field=="Payee" && renamed.actions.front().changes.front().before_text=="Original" && renamed.actions.front().changes.front().after_text=="Renamed","Payee before and after");
+    check(renamed.actions.front().balance.change.units==0 && !renamed.actions.front().balance.change.definition.empty(),"Payee-only balance change is zero");
+    check(renamed.actions.front().members.size()==4,"The rename lists its transactions");
+    for(const auto& member:renamed.actions.front().members) check(member.state=="New","New transactions stay marked New");
+    bool import_listed=false;
+    for(const auto& action:renamed.actions) if(action.label=="Import file"){import_listed=true;check(!action.lists_transactions && action.members.empty(),"Import does not list each transaction");}
+    check(import_listed && store.action_head()->id=="rename4","Undo is available only while the rename is newest");
+    edit(store,"one",{"four",0},"One");
+    auto later=history_page(store,1);
+    check(later.actions.front().id=="one" && store.action_head()->id=="one" && find_action(later,"rename4"),"A later edit hides Undo of the rename");
+    undo(store,"undoOne","one");
+    auto restored=history_page(store,1);
+    check(store.action_head()->id=="rename4" && !find_action(restored,"one"),"Undoing the edit restores the rename and drops the edit");
+    store.accept_all("accept4",true);
+    auto accepted=history_page(store,1);
+    check(accepted.actions.front().label=="Accept transactions" && !accepted.actions.front().lists_transactions,"Acceptance is its own row");
+    const auto* earlier=find_action(accepted,"rename4");
+    check(earlier && earlier->members.size()==4,"The earlier rename remains");
+    for(const auto& member:earlier->members) check(member.state=="Accepted","Accepted mark follows the transaction");
+    if(store.bulk_supported()) {
+        store.apply_category_change("food",{CategoryAction::create,"food","Food",{},CategoryKind::leaf},store.category_catalog().revision);
+        const auto preview=store.preview_bulk({ChangeKind::correct,four,"food",{}});
+        store.apply_bulk("bulk-food",preview);
+        const auto bulk=history_page(store,1);
+        check(bulk.actions.front().label=="Change category" && bulk.actions.front().id=="bulk-food","A bulk category change is one row");
+        check(store.action_head()->label=="Edit transactions" && store.action_display_label(*store.action_head())=="Change category","Display label replaces the stored bulk label");
+        bool category=false;for(const auto& change:bulk.actions.front().changes) if(change.field=="Category" && change.after_text=="Food") category=true;
+        check(category,"Category before and after");
+    }
+    store.ingest("extra",source("Fresh"),qif::DateOrder::dmy);
+    rename_payees(store,"mixed",{{"extra",0},{"four",0}},"Mixed");
+    auto mixed=history_page(store,1);
+    check(mixed.actions.front().id=="mixed" && mixed.actions.front().count==2,"Mixed New and Accepted rename is one row");
+    bool saw_new=false,saw_accepted=false;
+    for(const auto& member:mixed.actions.front().members){if(member.state=="New")saw_new=true;if(member.state=="Accepted")saw_accepted=true;}
+    check(saw_new && saw_accepted,"Each transaction keeps its own mark");
+    store.create_account(2,"Savings",Currency("CAD"),"2026-01-01");
+    const std::string both="!Account\nNChecking\nTBank\n^\n!Type:Bank\nD01/01/2026\nT-10.00\nPLeft\n^\n!Account\nNSavings\nTBank\n^\n!Type:Bank\nD01/01/2026\nT-5.00\nPRight\n^\n";
+    OperationContext capture,materialize;store.prepare_import_group("both",both,qif::DateOrder::dmy,{{0,1,{}},{1,2,{}}},capture);store.resume_import_group("both",materialize);
+    auto checking=history_page(store,1);const auto* import_both=find_action(checking,"both");
+    check(import_both && import_both->label=="Import file" && import_both->count==2 && !import_both->lists_transactions,"One import names every account and lists no transactions");
+    check(import_both->accounts.size()==2 && import_both->accounts[0]=="Checking" && import_both->accounts[1]=="Savings","Both accounts are named");
+    check(find_action(history_page(store,2),"both"),"The import appears in the other account");
+    store.select_account(2);edit(store,"other",{"both-account-1",0},"Other side");store.select_account(1);
+    auto hidden=history_page(store,1);
+    check(store.action_head()->id=="other" && !find_action(hidden,"other"),"A newer action in another account is not a row here");
+    check(history_page(store,1,imports::Occurrence{"four",0}).focus=="mixed","History focus selects the newest action that includes the transaction");
+    bool refused=false;
+    for(const auto& change:store.committed_changes()) {
+        if(change.identity!=imports::Occurrence{"four",0}) continue;
+        try {store.preview_committed_change({ChangeKind::undo,change.identity,{},change.operation});}
+        catch(const storage::ImportError& error) {if(std::string(error.what()).find("cannot be undone individually")!=std::string::npos){refused=true;break;}}
+    }
+    check(refused,"A member of a selection cannot be undone alone");
+    if(store.rules_supported()) {
+        if(!store.bulk_supported()) store.apply_category_change("food",{CategoryAction::create,"food","Food",{},CategoryKind::leaf},store.category_catalog().revision);
+        store.ingest("cafeearly",source("Cafe"),qif::DateOrder::dmy);
+        RuleDefinitionImage rule;rule.identity="cafe-rule";rule.label="Cafe";rule.enabled=true;rule.expression="Cafe";rule.actions.category="food";
+        OperationContext saved;store.save_rules("save-cafe-rule",{{rule}},store.rule_image().revision,saved);
+        OperationContext cafe_capture,cafe_resume;
+        store.prepare_import_group("cafegroup","!Type:Bank\nD02/01/2026\nT-3.00\nPCafe\n^\n",qif::DateOrder::dmy,{{0,1,{}}},cafe_capture);
+        store.resume_import_group("cafegroup",cafe_resume);
+        const auto during=history_page(store,1);
+        for(const auto& action:during.actions) check(action.kind!=ActionKind::rule_application,"Rules that run during an import are not their own row");
+        check(store.action_head()->id=="cafegroup","The import remains the newest action");
+        check(store.row({"cafegroup-account-0",0}).draft->transaction.allocations().front().category=="Food","The saved rule still runs during the import");
+        AccountRuleRequest request{store.account().identity,store.ledger_edit_generation(),store.rule_image().revision,store.category_catalog().revision,false,false,rule.identity};
+        OperationContext apply;store.save_and_apply_rules("apply-cafe",{{rule}},request.ruleset_revision,request,apply);
+        const auto applied=history_page(store,1);
+        check(applied.actions.front().id=="apply-cafe" && applied.actions.front().label=="Apply rules","A later Apply rules action is its own row");
+        undo(store,"undoCafe","apply-cafe");
+        check(store.rule_image().ordered.size()==1 && store.row({"cafeearly",0}).draft->transaction.allocations().front().category.empty(),"Undo keeps the saved rule and restores the transaction");
+    }
+    bool invalid=false;try{store.account_change_history(1,-1,50,{});}catch(const storage::ImportError&){invalid=true;}check(invalid,"Invalid Undo history page");
+    bool missing=false;try{store.account_change_history(99,0,50,{});}catch(const storage::ImportError& error){missing=std::string(error.what()).find("not in the file")!=std::string::npos;}check(missing,"Missing account is refused");
+    payee=store.committed_entry({"four",0}).current.draft.payee;
+    const auto backup=path.string()+"-backup";store.backup_to(backup,"synthetic");
+    {auto restored_file=ImportStore::open(backup,"synthetic");check(restored_file.action_head() && !history_page(restored_file,1).actions.empty(),"Opening a backup keeps the list");}
+    store.certify({});
+    }
+    {auto reopened=ImportStore::open(path,"synthetic");check(!reopened.action_head() && history_page(reopened,1).actions.empty(),"Close and reopen clears the list");check(reopened.committed_entry({"four",0}).current.draft.payee==payee,"The payee change remains");}
+}
+
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;
     for(const auto* sql:{"UPDATE review_undo_members SET consumed=0", "UPDATE review_undo_members SET original_child='missing'"}) {
@@ -234,7 +352,7 @@ int main(int argc,char** argv){
     auto path=(std::filesystem::temp_directory_path()/"spentit-action-repository-XXXXXX").string();
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
-    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}corrupt_lineage(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");
+    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}corrupt_lineage(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

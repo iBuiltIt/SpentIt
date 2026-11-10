@@ -2448,5 +2448,6 @@ namespace { std::int64_t review_generation(sqlite3*); }
 #include "ledger_selection_store.inc"
 #include "rule_account_store.inc"
 #include "action_store.inc"
+#include "history_page.inc"
 #include "definition_import.inc"
 } // namespace spentit::storage
