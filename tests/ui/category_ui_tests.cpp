@@ -164,6 +164,10 @@ private slots:
         QTest::keyClick(window,Qt::Key_Tab);QVERIFY(field("durableTotal")->hasActiveFocus());
         QTest::keyClick(window,Qt::Key_Tab);QVERIFY(category()->hasActiveFocus());
         QVERIFY(category()->findChild<QObject*>("categoryDropdown_0"));QTRY_VERIFY(category()->findChild<QObject*>("categoryDropdown_0")->property("visible").toBool());
+        auto* uncategorizedChoice=object(root,"inlineCategoryChoice_uncategorized");QVERIFY(uncategorizedChoice);
+        QCOMPARE(uncategorizedChoice->property("height").toReal(),category()->property("choiceRowHeight").toReal());
+        QVERIFY(uncategorizedChoice->property("height").toReal()<28);
+        QVERIFY(category()->findChild<QObject*>("categoryDropdown_0")->property("height").toReal()<=280);
         QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),16);
         QVERIFY(object(root,"categoryDropdownScrollBar")->property("interactive").toBool());
         QTest::qWait(50);auto* bar=qobject_cast<QQuickItem*>(object(root,"categoryDropdownScrollBar"));QVERIFY(bar);

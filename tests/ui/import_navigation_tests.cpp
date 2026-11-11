@@ -515,6 +515,9 @@ private slots:
         QQuickItem* entry=nullptr;for(auto* item:content->childItems())for(auto* child:item->childItems())if(child->property("text").toString()=="Change category")entry=child;
         QVERIFY(entry);QTest::qWait(100);QTest::mouseMove(window,entry->mapToScene(QPointF(entry->width()/2,entry->height()/2)).toPoint());
         QTRY_VERIFY(menu->property("visible").toBool());QVERIFY(menu->property("height").toReal()<=420);
+        auto* firstChoice=object(root,"ledgerCategoryChoice_0");QVERIFY(firstChoice);
+        QCOMPARE(firstChoice->property("height").toReal(),root->property("categoryChoiceRowHeight").toReal());
+        QVERIFY(firstChoice->property("height").toReal()<28);
         auto* bar=object(root,"ledgerCategoryScrollBar");QVERIFY(bar);QVERIFY(bar->property("size").toReal()<1);QVERIFY(bar->property("interactive").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_MENU_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_MENU_SCREENSHOT")));
     }

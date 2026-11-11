@@ -350,6 +350,7 @@ ApplicationWindow {
         })
     }
     FontMetrics {id:categoryFontMetrics;font:window.font}
+    readonly property real categoryChoiceRowHeight: Math.ceil(categoryFontMetrics.height) + 2
     readonly property real categorySelectorWidth: {
         let width=240
         for(let c of (s.categories||[]).concat(s.accountCategories||[]))
@@ -506,18 +507,28 @@ ApplicationWindow {
             enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0
             width:Math.min(categorySelectorWidth,window.width-40);height:Math.min(420,contentItem.contentHeight+topPadding+bottomPadding)
             contentItem:ListView {
-                implicitHeight:contentHeight;model:ledgerCategoryMenu.contentModel;clip:true
+                implicitHeight:contentHeight;model:ledgerCategoryMenu.contentModel;clip:true;spacing:0
                 currentIndex:ledgerCategoryMenu.currentIndex;boundsBehavior:Flickable.StopAtBounds
                 ScrollBar.vertical:UsableScrollBar {objectName:"ledgerCategoryScrollBar"}
             }
             Instantiator {
                 model:ledgerCategoryChoices
                 delegate:LedgerMenuItem {
+                    id:categoryChoice
                     required property var modelData
                     required property int index
                     objectName:"ledgerCategoryChoice_"+index
                     text:modelData.path.replace(/&/g,"&&")
                     enabled:!modelData.account || modelData.accountId!==s.accountId
+                    padding:0;topPadding:0;bottomPadding:0;leftPadding:8;rightPadding:8;spacing:0
+                    icon.width:0;icon.height:0
+                    implicitHeight:categoryChoiceRowHeight;height:categoryChoiceRowHeight
+                    background:Rectangle {
+                        implicitWidth:200;implicitHeight:categoryChoice.height
+                        color:categoryChoice.enabled && (categoryChoice.highlighted || categoryChoice.down)?theme.selection:"transparent"
+                        border.color:theme.border
+                        border.width:categoryChoice.enabled && categoryChoice.highlighted && Qt.styleHints.accessibility.contrastPreference===Qt.HighContrast?1:0
+                    }
                     onTriggered:chooseLedgerCategory(modelData)
                 }
                 onObjectAdded:(index,object)=>ledgerCategoryMenu.insertItem(index,object)

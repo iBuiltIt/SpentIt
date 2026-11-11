@@ -19,6 +19,8 @@ NavigableTextField {
     signal escapeRequested()
     property bool canUndoAssignment: false
     signal undoAssignmentRequested()
+    FontMetrics { id: choiceMetrics; font: field.font }
+    readonly property real choiceRowHeight: Math.ceil(choiceMetrics.height) + 2
     text: savedText
     selectByMouse: true
     maximumLength: 256
@@ -84,11 +86,11 @@ NavigableTextField {
         readonly property real windowWidth: field.Window.window ? field.Window.window.width : field.width
         width:Math.min(windowWidth-40,Math.max(field.width,field.popupPreferredWidth))
         x:field.Window.window?Math.min(0,windowWidth-20-field.mapToItem(field.Window.window.contentItem,0,0).x-width):0
-        height:Math.min(280,Math.max(44,matches.contentHeight)+8)
+        height:Math.min(280,Math.max(field.choiceRowHeight,matches.contentHeight)+8)
         padding:4;focus:false;closePolicy:Popup.CloseOnPressOutside
         contentItem:ListView {
             id:matches;objectName:field.matchesObjectName
-            clip:true;model:field.choices;currentIndex:-1
+            clip:true;model:field.choices;currentIndex:-1;spacing:0
             boundsBehavior:Flickable.StopAtBounds
             ScrollBar.vertical:ScrollBar {
                 id:bar;objectName:field.scrollBarObjectName
@@ -101,19 +103,32 @@ NavigableTextField {
                 }
                 background:Rectangle {color:theme.scrollTrack;radius:8;visible:bar.size>0 && bar.size<0.999}
             }
-            delegate:ItemDelegate {
+            delegate:Item {
+                id:choiceRow
                 required property var modelData
                 required property int index
                 objectName:"inlineCategoryChoice_"+(modelData.account?modelData.accountId:modelData.id||"uncategorized")
                 width:matches.width-16
-                text:modelData.uncategorized?"Uncategorized":modelData.path+(modelData.account?" [Account]":"")
-                contentItem:Label {
-                    text:parent.text;textFormat:Text.PlainText
-                    verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight
+                height:field.choiceRowHeight
+                property string text: modelData.uncategorized?"Uncategorized":modelData.path+(modelData.account?" [Account]":"")
+                Accessible.role:Accessible.ListItem
+                Accessible.name:text
+                Rectangle {
+                    anchors.fill:parent
+                    color:index===matches.currentIndex?theme.selection:"transparent"
+                    border.color:theme.border
+                    border.width:index===matches.currentIndex && Qt.styleHints.accessibility.contrastPreference===Qt.HighContrast?1:0
                 }
-                highlighted:index===matches.currentIndex
-                focusPolicy:Qt.NoFocus
-                onClicked:{matches.currentIndex=index;field.acceptChoice()}
+                Label {
+                    anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:4
+                    text:choiceRow.text;textFormat:Text.PlainText
+                    verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight
+                    color:theme.text
+                }
+                MouseArea {
+                    anchors.fill:parent
+                    onClicked:{matches.currentIndex=index;field.acceptChoice()}
+                }
             }
             Label {anchors.centerIn:parent;text:"No matches";visible:field.choices.length===0}
         }

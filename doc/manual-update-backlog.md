@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 
 The bundled manual includes the user-visible behavior through the 2026-11-09
 pass (MAN-001 through MAN-020). Later changes are the open items below.
@@ -205,3 +205,13 @@ exists.
 
 Pictures: none unless a later pass shows the Link command on two currencies.
 Do not edit `manual/` for this entry until the manual pass.
+
+### MAN-029 — Compact category choice rows
+
+Date: 2026-11-11. The ledger category suggestions and the **Change category**
+submenu pack each name onto one text line. The popups keep their current
+maximum size and show more names.
+
+Text: unchanged. Pictures: recapture `categories-completion.png` and
+`categories-menu.png` in the manual pass. Do not edit `manual/` for this
+entry until that pass.
