@@ -24,6 +24,17 @@ SpentIt was developed with the aid of AI.  It has been tested on macOS, Windows 
 - Search for something you half remember.
 - Undo a recent change.
 
+## But the bank does this already
+
+Banks can already sort spending, and they do a lot of it for you. SpentIt is still worth having for these reasons.
+
+- **Your history stays.** What did the new roof cost 10 years ago? If you brought it in, you can still look it up.
+- **Your categories.** You decide how to sort the spending. Want Amazon as its own category? You can.
+- **Compare periods.** Want to see how this year compares with last year? Add another period to a report.
+- **The file is yours.** Not happy with your bank? Leave, but keep your imported transactions.
+
+This may not be for everyone. It is for me, and I hope it is for you. I started keeping these records in Microsoft Money in the '90s, and I still do - now in an application that works for me, and is free forever.
+
 ## The manual
 
 These pages contain extra markup so they can be compiled into the application's Help, but reading them here gives a good overview of what SpentIt looks like and how it works.
