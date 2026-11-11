@@ -19,22 +19,18 @@ relinking obligations when distributing. Avoid GPL-only Qt modules.
 
 About shows the application identity and version, **© 2026 Stefan Wessels**,
 and offline third-party notices. The Unlicense text lives in the repository
-LICENSE file. About does not yet display that text. Notices must work
-without a network.
+LICENSE file. About does not display that text. Notices must work without a
+network.
 
 ## Packaging
 
 Local development packages remain. The distribution command is
 `python3 tools/package.py`. On macOS, `--sign` writes a Developer ID DMG and
-notarizes it when `APPLE_NOTARY_PROFILE` is set. The 2026-11-11 run is in
-[status](../doc/status.md). Icons follow system appearance, with light as the
-fallback. Installed icons use the light variant. See
+notarizes it when `APPLE_NOTARY_PROFILE` is set. Icons follow system appearance,
+with light as the fallback. Installed icons use the light variant. See
 [packaging/README.md](../packaging/README.md).
 
 Windows uses the same command and writes a zip. Linux uses it and writes a
-`.tar.gz`. Those steps are not implemented.
-
-## Not done
-
-Publication approval. Linux and Windows library lists are not in LICENSE yet.
-The macOS package minimum is 14.4. It has not been launched on a 14.4 Mac.
+`.tar.gz`. Those steps are not implemented. Linux and Windows library lists
+are not in LICENSE yet. The macOS package minimum is 14.4. It has not been
+launched on a 14.4 Mac. Publication still needs explicit approval.

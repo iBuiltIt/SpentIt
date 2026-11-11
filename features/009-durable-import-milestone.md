@@ -13,9 +13,3 @@ of one real-world dataset. Ask for access when a structural question needs
 them. Do not record their paths, filenames, or contents, do not move the
 originals, and do not commit them. Prefer synthetic fixtures. Private samples
 are not routine test inputs.
-
-## Not done
-
-Dialects outside the implemented QIF and statement profiles. New financial
-import capabilities need their own discussion and Go. The first-release plan
-defers new financial capabilities.

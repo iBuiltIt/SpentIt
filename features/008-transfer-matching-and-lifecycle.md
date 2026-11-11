@@ -58,11 +58,3 @@ distinct.
   one at a time.
 - A later edit, a newer transfer relationship, or a newer source association
   blocks Undo. The entry's own publication association does not.
-
-## Not done
-
-- Moving a committed row to another account.
-- Rewriting source-occurrence links, wrong-account posting repair, and
-  cross-format evidence-link repair.
-- Automatic cross-currency matching and fee matching.
-- Generated counterpart field defaults other than the provisional origin date.

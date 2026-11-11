@@ -65,9 +65,3 @@ consistent copy. Do not add an in-application backup command.
 
 Private local files lock under the platform
 application-data directory. See [document locking](../doc/document-locking.md).
-
-## Not done
-
-- A dedicated startup loading screen was left undecided. Do not invent one.
-- Release packaging of SQLCipher and the crypto provider. The application build
-  is in [building](../doc/building.md).

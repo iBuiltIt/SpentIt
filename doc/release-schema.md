@@ -89,11 +89,15 @@ As of 2026-11-10 those expectations live in `tests/storage/`, including
 `account_lifecycle_tests.cpp`, `committed_tests.cpp`, `category_tests.cpp`,
 and `import_tests.cpp`, plus the schema fixtures those tests include.
 
-## Docs in the same change
+## Docs and the application version in the same change
 
 State the working database format as version 1. Search `AGENTS.md`, `doc/`,
 and `features/` for the experimental pair and for "no migration." This file's
 status becomes done.
+
+Set the application version in the same change. It is the `VERSION` in
+`project(SpentIt VERSION 0.1.0 LANGUAGES CXX)` in `CMakeLists.txt`. The owner
+names the release version. Do not change it before this stamp.
 
 Do not edit `manual/` unless the owner asks. This change has no user-visible
 string. If one appears, log it in

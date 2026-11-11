@@ -22,11 +22,5 @@ dependencies must be mapped or created from the imported categories. The save
 is atomic, does not apply rules, and does not clear transaction Undo.
 
 Exports are unencrypted text. They are a reconstruction path, not a copy of
-the SpentIt file.
-They omit originals, recognition, history, and document settings.
-
-## Not done
-
-Report-results export, a database migration, and native file-picker overwrite
-as a verified interaction. Database formats stay 70/69. This feature does not
-change them.
+the SpentIt file. They omit originals, recognition, history, and document
+settings. This feature does not change the database format.

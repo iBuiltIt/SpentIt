@@ -20,11 +20,9 @@ Ordinary corrections and removals of a live transfer link are refused. The
 locked transfer cases are in [feature 008](008-transfer-matching-and-lifecycle.md).
 After the link has ended, the unresolved imported counterpart is an ordinary row.
 
+Moving a committed row to another account, and rewriting source-occurrence
+links, must fail in domain and storage validation. Hiding the command is not
+enough.
+
 The storage revision model is in [doc/committed-changes.md](../doc/committed-changes.md).
 Ledger commands are in [doc/ledger-editing.md](../doc/ledger-editing.md).
-
-## Not done
-
-Moving a committed row to another account, and rewriting source-occurrence
-links. Those must fail in domain and storage validation, not only by hiding a
-button.

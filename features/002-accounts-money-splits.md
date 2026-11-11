@@ -38,7 +38,9 @@ completion.
 - **Currency reassignment** keeps the numeric decimal and rescales to the new
   currency. A non-zero fractional digit that would disappear refuses the whole
   operation. Source bytes and original imported amounts stay in the old
-  currency. No rate is stored. A linked transfer changes only this account; the
+  currency. No rate is stored. Do not add an exchange rate, a combined
+  multi-currency total, a home-currency change, or a currency definition
+  outside the retained set. A linked transfer changes only this account; the
   other side stays, and the two amounts are not forced equal. New transfer
   matches still require the same currency. The dialog warns that this is not a
   conversion.
@@ -47,10 +49,3 @@ Account display names and confirmed aliases share the category namespace.
 Matching is Unicode case-insensitive and literal. Conflicts with another alias
 or an ordinary category are refused. Alias details are in
 [doc/accounts.md](../doc/accounts.md).
-
-## Not done
-
-- Exchange rates, consolidated multi-currency reporting, and changing a file's
-  home currency after creation. Do not invent them. Reports stay one table per
-  currency.
-- Further historical currency definitions beyond the retained verified set.

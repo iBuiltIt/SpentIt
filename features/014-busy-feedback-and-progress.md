@@ -29,9 +29,3 @@ visible during work. It has no extra caption from the indicator itself.
 
 Financial, cancellation, and close policies are unchanged by these dialogs.
 See [open/close checks](../doc/fast-startup.md).
-
-## Not done
-
-The broader readiness audit: feedback lasts until the resulting screen is
-usable, and conflicting actions stay unavailable. That audit is first-release
-work and needs its own Go. The owner's usage-driven UI pass is complete.

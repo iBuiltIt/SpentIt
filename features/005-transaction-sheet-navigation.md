@@ -51,11 +51,3 @@ Search covers the displayed fields and original imported text, including the
 an empty result. Clearing search restores the previous view unless the user
 opened a result; that result then stays selected and visible. Clear and Escape
 honor Save, Discard, and Stay.
-
-## Not done
-
-- Multiline notes and a persisted column or sidebar layout.
-- Spoken VoiceOver output. Named accessibility is present. Spoken output was
-  not verified.
-- The exact additional keyboard shortcut left open by the early sheet layout.
-  Do not invent one.

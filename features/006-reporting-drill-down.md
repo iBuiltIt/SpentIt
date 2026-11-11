@@ -59,9 +59,3 @@ Uncategorized or the other group.
 Date fields use overwrite editing. Formatting does not replace the text on
 every keystroke. The calendar writes the unsaved definition. Leaving the field
 normalizes it.
-
-## Not done
-
-Hide zero rows, chart-hover cross-highlighting, payee or memo or amount
-filters, fiscal years, currency conversion, inclusive group subtotals,
-printing, and time-series charts. Each needs its own Go.

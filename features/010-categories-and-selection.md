@@ -102,7 +102,5 @@ Income: Pension
 Income: Investment Income
 ```
 
-## Not done
-
-Physical deletion of category history after successful close. That retention
-cleanup is deferred. See [status](../doc/status.md).
+Successful close keeps category history. Do not delete that history as a
+cleanup.

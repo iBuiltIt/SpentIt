@@ -5,7 +5,12 @@ Last updated: 2026-11-09
 
 Supported imports are the [QIF bank-v6 profile](009-qif-profile.md) and the
 [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md). Further dialects
-are not authorized. Named QIF account sections, explicit mapping, and transfer
+are not authorized. Investment and other non-banking QIF sections are not
+imported. An OFX transfer destination stays a visible blocker. There is no
+fuzzy match and no cross-account date tolerance. Same-account review can still
+ask about a date one day off. That question is in
+[doc/review-sheet.md](../doc/review-sheet.md). It is not automatic recognition.
+Named QIF account sections, explicit mapping, and transfer
 destinations are in [doc/qif-account-imports.md](../doc/qif-account-imports.md)
 and [doc/qif-transfers.md](../doc/qif-transfers.md).
 
@@ -48,12 +53,3 @@ Automatic recognition uses saved original facts.
 
 Review behavior is in [doc/review-sheet.md](../doc/review-sheet.md). Dataset-wide
 acceptance is in [doc/import-commit-discussion.md](../doc/import-commit-discussion.md).
-
-## Not done
-
-- Investment and other non-banking QIF sections.
-- Automatic OFX transfer destinations. Those records stay visible blockers.
-- Fuzzy matching and cross-account date tolerance. Those belong to explicit
-  transfer review, and broader automatic matching is deferred. Same-account
-  review questions have a separate one-day pass, described in
-  [doc/review-sheet.md](../doc/review-sheet.md).

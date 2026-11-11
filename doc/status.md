@@ -38,56 +38,27 @@ passed unless you ran it.
   categories.
 - One file-wide Undo chain and a Change history page. A successful close
   expires ordinary Undo.
-- Bundled Help for the current manual, with contextual links. The manual pass
-  through MAN-029 is done.
-- The owner's usage-driven UI pass is complete. Those changes were made
-  piecemeal and are in the application.
+- Bundled Help for the current manual, with contextual links.
 
 The feature documents and the contracts they name are the behavior. This page
-does not repeat them.
+does not repeat them. The [release plan](first-release-plan.md) says what
+release 1 does not add.
 
-## Open work
+## Still to do
 
-These items are not done. They need their own discussion and Go before
-implementation, except where a document already says the owner deferred them.
-
-- The broader busy/readiness audit is not done. The rotating indicator, import
-  and shutdown progress, and the shared calendar are in place. Feedback should
-  eventually last until the resulting screen is usable and conflicting actions
-  are unavailable.
-- Moving a committed transaction to another account, and rewriting
-  source-occurrence links, are not done.
-- Automatic cross-currency matching, fee matching, and broader fuzzy automatic
-  matching are deferred. An explicit Link of two allocations may join different
-  currencies and keeps each posted amount. Reports do not convert currencies.
-- Multiline notes and saved layout customization are deferred.
-- Current-value rule matching is deferred. Rules match immutable imported
-  fields.
-- Document lifecycle and recovery is not complete. Explicit schema migrations
-  wait until the first release is
-  announced; until then older experimental files stay rejected. When the owner
-  says to make the release schema, follow [release schema](release-schema.md).
-  That stamps the rules database as version 1 and is not a migrator. There is no
-  in-application backup command. There is no forgotten-password recovery.
-- Distribution is not complete. SpentIt is under the Unlicense in
-  [LICENSE](../LICENSE). The macOS command is `python3 tools/package.py`.
-  On 2026-11-11, `--sign --smoke` with the `machines-notary` keychain profile
-  produced a notarized, stapled `dist/SpentIt-0.1.0-macos-arm64.dmg`.
-  Gatekeeper accepts the app and the DMG as Notarized Developer ID. The
-  packaged app, launched with Homebrew hidden, created a file and exited 0.
-  A later same-day rebuild stamped all 118 Mach-O files at macOS 14.4 or
-  older. None of them link Homebrew. Gatekeeper accepted that DMG as
-  Notarized Developer ID, and the clean launch created a file. A Mac running
-  14.4 was not used. Publication is not
-  approved. Linux and Windows still use the same command for a `.tar.gz` and
-  a zip; those archive steps are not implemented and are not release
-  validation. `./build/SpentIt` is unchanged. See
-  [packaging](../packaging/README.md) and the
-  [release plan](first-release-plan.md).
-- Category history, undone Review-link history, link-exclusion history, and
-  account, opening, and currency command history still survive successful close.
-  The owner deferred that retention cleanup. It is not the next task. Revisit
-  it only after a separate discussion.
+- Build, test, and package on Windows and Linux. The command is
+  `python3 tools/package.py`. The Windows zip and the Linux `.tar.gz` steps
+  are not implemented. See [packaging](../packaging/README.md),
+  [Windows setup](windows-development-setup.md), and
+  [Linux setup](linux-development-setup.md).
+- macOS uses the same command. `--sign` with a notary keychain profile
+  produces a Developer ID DMG aimed at macOS 14.4. A Mac running 14.4 was not
+  used. Publication is not approved. `./build/SpentIt` stays the development
+  build.
+- When the owner says to make the release schema, follow
+  [release schema](release-schema.md). That stamps the rules database as
+  version 1, with no migrator, and sets the application version. Do not do
+  either earlier.
 
 ## Limits that still bind a claim
 

@@ -22,8 +22,3 @@ original process. Do not launch a second instance by resolving the app name.
 The runtime contract is [doc/application-diagnostics.md](../doc/application-diagnostics.md).
 Diagnostics do not change financial semantics, the file format, matching, or
 durability.
-
-## Not done
-
-An MCP adapter, screenshots as a product feature, and stripping inert
-diagnostics code from a distributed build.

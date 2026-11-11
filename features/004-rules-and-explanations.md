@@ -67,11 +67,5 @@ Compact request fingerprints still reject an exact retry and a conflicting
 operation id. A failed close keeps the session. Verification checks the
 baseline and later saves. It does not replay expired requests.
 
-## Not done
-
-Current-value matching is deferred. Rules match immutable imported fields.
-Explicit conditions on the imported original, as a separate match mode, stay
-deferred.
-
 The owner-reported Rules accessibility crash is not proven fixed. See
 [status](../doc/status.md).
