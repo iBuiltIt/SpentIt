@@ -46,9 +46,13 @@ release 1 does not add.
 
 ## Still to do
 
-- Build, test, and package on Linux. The command is `python3 tools/package.py`.
-  The Linux `.tar.gz` step is not implemented. See
-  [packaging](../packaging/README.md) and [Linux setup](linux-development-setup.md).
+- Linux `python3 tools/package.py` produced
+  `dist/SpentIt-0.1.0-linux-x64-setup.run` (60566028 bytes) on 2026-11-11 in WSL Ubuntu 24.04.5
+  x86_64, with the Qt 6.8.3 `gcc_64` prefix. The staged app and the installed
+  copy each created a 942080-byte file with development libraries hidden. The
+  installer was then uninstalled from an empty home and left a saved file in
+  place. It was not launched from an application menu, and aarch64 was not
+  packaged. See [packaging](../packaging/README.md).
 - Windows `python tools/package.py` produced
   `dist/SpentIt-0.1.0-windows-x64-setup.exe` (44881059 bytes) on 2026-11-11
   with MSVC 19.44.35229.0. The staged app created a 942080-byte file with

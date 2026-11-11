@@ -47,18 +47,17 @@ write captures straight into `manual/images`. Do not point
 
 ## Open items
 
-### MAN-030 — Open a SpentIt file from Windows
+### MAN-030 — Open a SpentIt file from the desktop
 
 Logged: 2026-11-11. Contract:
 [feature 007](../features/007-licensing-and-distribution.md) and
 [packaging](../packaging/README.md).
 
-The Windows installer registers `.spentit`. Opening that file from File
-Explorer starts SpentIt and opens it. A password-protected file still asks
+The Windows installer and the Linux installer register `.spentit`. Opening
+that file starts SpentIt and opens it. A password-protected file still asks
 for the password. The previously remembered file is left closed. Install,
 upgrade, and uninstall do not change a file saved in Documents.
 
-Chapter: [create or open a file](../manual/create-open-file.md). Add that on
-Windows, opening the file itself opens it in SpentIt. Keep the Browse steps.
-No new picture. The installer is outside the app and does not need a Help
-picture.
+Chapter: [create or open a file](../manual/create-open-file.md). Add that
+opening the file itself opens it in SpentIt. Keep the Browse steps. No new
+picture. The installers are outside the app and do not need a Help picture.

@@ -36,7 +36,10 @@ local Programs folder, adds Start menu and desktop icons, and registers
 `.spentit`. Opening that file starts SpentIt and opens it. `--sign` applies
 Authenticode when a certificate is available in the environment. The installer
 refuses Windows older than Windows 10 version 1809, Qt 6.8's published floor.
-That floor has not been launch-tested. Linux uses the same command and writes
-a `.tar.gz`. That step is not implemented. Linux and Windows library lists
-are not in LICENSE yet. The macOS package minimum is 14.4. It has not been
-launched on a 14.4 Mac. Publication still needs explicit approval.
+That floor has not been launch-tested. On Linux the same command writes a
+per-user installer, `dist/SpentIt-<version>-linux-<arch>-setup.run`. It
+installs under `~/.local/opt/SpentIt`, adds an application menu entry, and
+registers `.spentit`. Opening that file starts SpentIt and opens it. The
+installer does not sign the program. Linux and Windows library lists are not
+in LICENSE yet. The macOS package minimum is 14.4. It has not been launched
+on a 14.4 Mac. Publication still needs explicit approval.

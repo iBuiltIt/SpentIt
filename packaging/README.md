@@ -33,7 +33,17 @@ Qt, OpenSSL, and PCRE2 are found from `CMAKE_PREFIX_PATH`, `OPENSSL_ROOT_DIR`, a
 
 `--sign` Authenticode-signs `SpentIt.exe`, the setup program, and the uninstaller. Set one of `SPENTIT_SIGN_THUMBPRINT`, `SPENTIT_SIGN_SUBJECT`, or `SPENTIT_SIGN_PFX`. A PFX password stays in `SPENTIT_SIGN_PASSWORD`. The signature is timestamped with `SPENTIT_SIGN_TIMESTAMP_URL`, or `http://timestamp.digicert.com` when that is unset. The script does not store the password. A new signed file can still show SmartScreen until Windows has seen that file widely. After More info, the verified publisher name is the certificate subject.
 
-Linux uses the same command and writes a `.tar.gz`. That step is added on the Linux machine.
+## Linux installer
+
+On Linux the same command writes `dist/SpentIt-<version>-linux-<arch>-setup.run`. It configures `build-package/` unless that directory is already a build for another system. Pass `--build-dir` for a second directory. It leaves `./build/SpentIt` alone. The download is the setup program. `dist/linux-app/` is the staged app the installer packs.
+
+Run it with `sh SpentIt-<version>-linux-<arch>-setup.run`. A downloaded file is not marked executable, so `sh` is the command that works without changing that. The setup program installs for the current user, under `~/.local/opt/SpentIt`, without an administrator password. It adds an application menu entry named SpentIt and registers `.spentit`, so opening a file starts SpentIt and opens that file. A password-protected file still asks for the password. Install, upgrade, and uninstall do not change files saved in Documents or the remembered-file setting. Lock files stay in `~/.local/share/SpentIt`, so the program files are not installed there.
+
+The staged program contains the Qt libraries, plugins, and QML, and every library the program imports that is not part of the system C library or the machine's graphics libraries. Third-party notices are in the `Licenses` folder. The script refuses to finish unless the program imports release Qt, the archive can be installed into an empty home, that copy can create a temporary file with development libraries hidden, and uninstall leaves a saved file in place. The graphics libraries and glibc stay on the machine that runs the package command. Another distribution is not promised until it has been launched there.
+
+Qt and PCRE2 are found from `CMAKE_PREFIX_PATH` and `SPENTIT_PCRE2_ROOT`. When those are unset, the script uses the prefixes in the Linux setup document. OpenSSL is the copy the program links. Pass extra CMake arguments with repeated `--cmake-args`. `--sign` is refused. Linux packages are not signed by this command.
+
+`patchelf` has to be on `PATH`. The local `package_local.py` tree is still not a self-contained download.
 
 ## macOS local packages
 
@@ -49,7 +59,7 @@ open build/packages/macos-next/SpentIt.app
 
 `--qt-deploy` is optional when the matching Qt tool is on PATH; the path shown is only an example. For split Qt installations, add `--libpath /path/to/extra/frameworks` as needed; the deployment tool’s adjacent `lib` directory is searched automatically. Deployment output is saved to `deployment.log`, and reported errors fail packaging even if Qt returns success. The script builds the bundle, copies it to a new directory, runs Qt's deployment tool with the QML source directory, and applies ad-hoc signing. Local packages retain binary symbols (`-no-strip`); the bundle explicitly links QtSvg so split Qt installations expose its framework during deployment. It also creates a `.tar.gz` archive. Ad-hoc signing is not notarization or a distribution signature. A build-tree bundle still uses development dependencies; use the deployed copy for local package testing.
 
-## Linux (not yet executed)
+## Linux local packages
 
 First configure a native Release application build using the [application dependency instructions](../doc/import-ui.md), with storage/import/UI/rules enabled and matching native dependencies. Then:
 
@@ -58,7 +68,7 @@ python3 tools/package_local.py --build build/linux-release --output build/packag
 build/packages/linux-local/bin/SpentIt
 ```
 
-This stages `bin/SpentIt`, a `.desktop` entry and hicolor PNG icons at all supplied sizes, then creates a `.tar.gz`. It requires installed compatible Qt/QML/platform plugins, OpenSSL and PCRE2; it is a host-local install tree, **not a self-contained portable Linux binary**. For desktop integration, install into a prefix whose `bin` is on PATH and whose `share` is in the desktop's data search path, for example:
+This stages `bin/SpentIt`, a `.desktop` entry and hicolor PNG icons at all supplied sizes, then creates a `.tar.gz`. It requires installed compatible Qt/QML/platform plugins, OpenSSL and PCRE2. It is a host-local install tree, not the downloadable installer. Use `python3 tools/package.py` for that. For desktop integration of this local tree, install into a prefix whose `bin` is on PATH and whose `share` is in the desktop's data search path, for example:
 
 ```sh
 cmake --install build/linux-release --component SpentIt --prefix "$HOME/.local"

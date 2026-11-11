@@ -2,6 +2,9 @@
 
 Developer prerequisites and build commands for the tested Ubuntu machine below.
 This is not an installation guide for running a packaged SpentIt download.
+The downloadable installer is `python3 tools/package.py`, described in
+[packaging](../packaging/README.md). The 2026-11-11 package run is recorded
+in [status](status.md).
 Set `REPO` in the examples to the path of your own checkout.
 
 Status: the rules-enabled Release application launched on two machines.

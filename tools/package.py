@@ -15,8 +15,9 @@ C++ runtime DLLs. --sign Authenticode-signs SpentIt.exe and the installer
 when SPENTIT_SIGN_THUMBPRINT, SPENTIT_SIGN_SUBJECT, or SPENTIT_SIGN_PFX is
 set. The certificate password stays in the environment.
 
-Linux uses this command and writes a .tar.gz. That archive step is added
-on the Linux machine.
+Linux writes dist/SpentIt-<version>-linux-<arch>-setup.run, a per-user
+installer. It bundles Qt, the libraries the program imports, and registers
+.spentit. Run it with sh. It does not need an administrator password.
 
 The notary password stays in the login keychain. This script does not read
 or store it, and it does not upload the archive anywhere but Apple's
@@ -26,6 +27,7 @@ notary service.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import plistlib
@@ -1404,6 +1406,547 @@ def package_windows(args: argparse.Namespace) -> None:
     log(f"staged app: {stage}")
 
 
+# Host libraries that must match the machine's display and C library.
+LINUX_SYSTEM_SONAMES = (
+    "libc.so", "libm.so", "libdl.so", "libpthread.so", "librt.so", "libresolv.so",
+    "libutil.so", "libnsl.so", "libanl.so", "libstdc++.so", "libgcc_s.so",
+    "ld-linux", "libGL.so", "libGLX.so", "libGLdispatch.so", "libOpenGL.so", "libEGL.so",
+    "libdrm.so", "libgbm.so", "libX11.so", "libX11-xcb.so", "libXext.so", "libXi.so",
+    "libXrender.so", "libXfixes.so", "libXrandr.so", "libXcursor.so", "libXdamage.so",
+    "libXcomposite.so", "libXtst.so", "libXau.so", "libXdmcp.so", "libxcb.so", "libxcb-",
+    "libxkbcommon.so", "libxkbcommon-x11.so", "libfontconfig.so", "libfreetype.so",
+    "libexpat.so", "libpng16.so", "libz.so", "libbz2.so", "libbrotlidec.so",
+    "libbrotlicommon.so", "libdbus-1.so", "libudev.so", "libsystemd.so", "libcap.so",
+    "libwayland-client.so", "libwayland-cursor.so", "libwayland-egl.so", "libffi.so",
+    "libglib-2.0.so", "libgobject-2.0.so", "libgio-2.0.so", "libgthread-2.0.so",
+    "libgtk-3.so", "libgdk-3.so", "libgdk_pixbuf", "libpango", "libcairo.so",
+    "libatk-1.0.so", "libatk-bridge", "libatspi.so", "libharfbuzz.so",
+    "libselinux.so", "libmount.so", "libblkid.so", "libpcre.so",
+)
+LINUX_PLUGIN_DIRS = (
+    "imageformats", "tls", "xcbglintegrations", "wayland-decoration-client",
+    "wayland-graphics-integration-client", "wayland-shell-integration",
+    "platforminputcontexts", "platformthemes", "iconengines", "networkinformation",
+)
+LINUX_PLUGIN_FILES = (
+    "platforms/libqxcb.so",
+    "platforms/libqwayland-egl.so",
+    "platforms/libqwayland-generic.so",
+    "platforms/libqoffscreen.so",
+    "platforms/libqminimal.so",
+)
+
+
+def linux_qt() -> Path:
+    candidates: list[Path] = []
+    for variable in ("CMAKE_PREFIX_PATH", "Qt6_DIR"):
+        raw = os.environ.get(variable)
+        if not raw:
+            continue
+        candidates.extend(Path(part) for part in raw.split(os.pathsep) if part)
+    arch = "gcc_arm64" if platform.machine().lower() in {"aarch64", "arm64"} else "gcc_64"
+    candidates.append(Path.home() / ".local" / "spentit-deps" / "qt" / "6.8.3" / arch)
+    seen: list[Path] = []
+    for path in candidates:
+        if (path / "libexec" / "qmlimportscanner").is_file() or (path / "bin" / "qmlimportscanner").is_file():
+            return path
+        if path.name == "Qt6" and len(path.parents) > 2:
+            prefix = path.parents[2]
+            if (prefix / "libexec" / "qmlimportscanner").is_file():
+                return prefix
+        seen.append(path)
+    raise SystemExit(
+        "Qt 6.8 for Linux was not found. Set CMAKE_PREFIX_PATH to the Qt prefix.\n"
+        + "\n".join(str(path) for path in seen)
+    )
+
+
+def linux_pcre2() -> Path:
+    candidates: list[Path] = []
+    if os.environ.get("SPENTIT_PCRE2_ROOT"):
+        candidates.append(Path(os.environ["SPENTIT_PCRE2_ROOT"]))
+    candidates.append(Path.home() / ".local" / "spentit-deps" / "pcre2-10.49")
+    for path in candidates:
+        if (path / "lib" / "pkgconfig" / "libpcre2-8.pc").is_file() or (path / "include" / "pcre2.h").is_file():
+            return path
+    raise SystemExit(
+        "PCRE2 10.49 was not found. Set SPENTIT_PCRE2_ROOT to the prefix that contains lib/pkgconfig/libpcre2-8.pc."
+    )
+
+
+def find_patchelf() -> Path:
+    found = shutil.which("patchelf")
+    if found:
+        return Path(found)
+    local = Path.home() / ".local" / "bin" / "patchelf"
+    if local.is_file():
+        return local
+    raise SystemExit("patchelf is required to package on Linux. Install it and rerun.")
+
+
+def require_linux_cache(build: Path) -> None:
+    cache = build / "CMakeCache.txt"
+    if not cache.is_file():
+        return
+    text = cache.read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"^CMAKE_SYSTEM_NAME:INTERNAL=(.*)$", text, re.MULTILINE)
+    if match and match.group(1) != "Linux":
+        raise SystemExit(
+            f"{build} is a {match.group(1)} build. "
+            "Pass --build-dir with a new directory for the Linux package."
+        )
+
+
+def configure_and_build_linux(build: Path, qt: Path, pcre2: Path, extra: list[str]) -> None:
+    if not (SQLCIPHER_SOURCE / "sqlite3.c").is_file():
+        raise SystemExit("SQLCipher source is missing. From the repository root, run the prepare step in doc/building.md.")
+    for tool in ("cmake", "ninja", "pkg-config"):
+        if shutil.which(tool) is None:
+            raise SystemExit(f"{tool} is required to package on Linux.")
+    require_linux_cache(build)
+    output = build / "app"
+    pkg_config = str(pcre2 / "lib" / "pkgconfig")
+    env = dict(os.environ)
+    env["PKG_CONFIG_PATH"] = pkg_config + (os.pathsep + env["PKG_CONFIG_PATH"] if env.get("PKG_CONFIG_PATH") else "")
+    env["LD_LIBRARY_PATH"] = os.pathsep.join([
+        str(qt / "lib"),
+        str(pcre2 / "lib"),
+        env.get("LD_LIBRARY_PATH", ""),
+    ]).strip(os.pathsep)
+    cmake = [
+        "cmake", "-S", str(REPO), "-B", str(build), "-G", "Ninja",
+        "-DCMAKE_BUILD_TYPE=Release",
+        f"-DCMAKE_PREFIX_PATH={qt}",
+        "-DCMAKE_SKIP_RPATH=ON",
+        "-DSPENTIT_STORAGE_PROTOTYPE=ON",
+        "-DSPENTIT_IMPORT_WORKFLOW=ON",
+        "-DSPENTIT_IMPORT_UI=ON",
+        "-DSPENTIT_RULES=ON",
+        "-DSPENTIT_DIAGNOSTICS=OFF",
+        f"-DSPENTIT_SQLCIPHER_SOURCE={SQLCIPHER_SOURCE}",
+        f"-DSPENTIT_APPLICATION_OUTPUT_DIRECTORY={output}",
+        *extra,
+    ]
+    run(cmake, env=env)
+    cache = (build / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace")
+    if "SPENTIT_DIAGNOSTICS:BOOL=ON" in cache:
+        raise SystemExit("refusing to package a diagnostics build")
+    if "SPENTIT_RULES:BOOL=ON" not in cache:
+        raise SystemExit("refusing to package without rules")
+    jobs = str(max(1, min(os.cpu_count() or 2, 8)))
+    run(["cmake", "--build", str(build), "--target", "spentit_import_experiment", "--target", "spentit_controls_styleplugin", "--parallel", jobs], env=env)
+
+
+def built_linux_exe(build: Path) -> Path:
+    output = build / "app"
+    for candidate in (output / "SpentIt", output / "Release" / "SpentIt"):
+        if candidate.is_file():
+            return candidate
+    raise SystemExit("the package build did not produce app/SpentIt")
+
+
+def is_elf(path: Path) -> bool:
+    try:
+        return path.is_file() and not path.is_symlink() and path.read_bytes()[:4] == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def linux_system_path(path: Path) -> bool:
+    text = str(path.resolve())
+    return text.startswith(("/lib/", "/lib64/", "/usr/lib/", "/usr/lib64/"))
+
+
+def linux_system_soname(name: str) -> bool:
+    return name.startswith(LINUX_SYSTEM_SONAMES)
+
+
+def ldd_entries(path: Path, env: dict[str, str]) -> list[tuple[str, Path | None]]:
+    result = subprocess.run(
+        ["ldd", str(path)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        env=env, errors="replace", check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"ldd failed for {path}\n{result.stdout}")
+    found: list[tuple[str, Path | None]] = []
+    for raw in result.stdout.splitlines():
+        line = raw.strip()
+        if "=>" not in line:
+            continue
+        name, rest = line.split("=>", 1)
+        name = name.strip()
+        rest = rest.strip()
+        if rest.startswith("not found"):
+            found.append((name, None))
+            continue
+        resolved = rest.split(" (", 1)[0].strip()
+        if resolved:
+            found.append((name, Path(resolved)))
+    return found
+
+
+def should_bundle_linux(name: str, resolved: Path) -> bool:
+    if linux_system_soname(name) and linux_system_path(resolved):
+        return False
+    if name.startswith(("libQt6", "libicu", "libpcre2", "libcrypto", "libssl")):
+        return True
+    return not linux_system_path(resolved)
+
+
+def bundle_linux_dependencies(stage: Path, binary: Path, search_env: dict[str, str]) -> None:
+    lib_dir = stage / "lib"
+    lib_dir.mkdir(parents=True, exist_ok=True)
+    pending = [binary]
+    seen: set[Path] = set()
+    copied: list[str] = []
+    missing: list[str] = []
+    while pending:
+        current = pending.pop()
+        resolved_current = current.resolve()
+        if resolved_current in seen or not is_elf(current):
+            continue
+        seen.add(resolved_current)
+        for name, resolved in ldd_entries(current, search_env):
+            if resolved is None:
+                missing.append(f"{current.name} -> {name}")
+                continue
+            if not should_bundle_linux(name, resolved):
+                continue
+            dest = lib_dir / resolved.name
+            if not dest.exists():
+                shutil.copy2(resolved, dest)
+                copied.append(dest.name)
+            pending.append(dest)
+    if missing:
+        raise SystemExit("missing Linux libraries:\n" + "\n".join(sorted(set(missing))))
+    if copied:
+        log("bundled " + ", ".join(sorted(set(copied))))
+
+
+def origin_rpath(path: Path, lib_dir: Path) -> str:
+    relative = os.path.relpath(lib_dir, path.parent)
+    if relative == ".":
+        return "$ORIGIN"
+    return "$ORIGIN/" + relative.replace(os.sep, "/")
+
+
+def patch_linux_rpath(stage: Path) -> None:
+    patchelf = find_patchelf()
+    lib_dir = stage / "lib"
+    for path in [stage / "SpentIt.bin", *stage.rglob("*")]:
+        if not is_elf(path):
+            continue
+        run([str(patchelf), "--set-rpath", origin_rpath(path, lib_dir), str(path)])
+
+
+def assert_linux_closure(stage: Path) -> None:
+    binary = stage / "SpentIt.bin"
+    text = subprocess.check_output(["readelf", "-h", str(binary)], text=True, errors="replace")
+    machine = platform.machine().lower()
+    if machine in {"x86_64", "amd64"} and "X86-64" not in text:
+        raise SystemExit("SpentIt.bin is not an x64 build. This installer matches the build machine.")
+    if machine in {"aarch64", "arm64"} and "AArch64" not in text:
+        raise SystemExit("SpentIt.bin is not an arm64 build. This installer matches the build machine.")
+    needed = subprocess.check_output(["readelf", "-d", str(binary)], text=True, errors="replace")
+    if "Qt6Cored" in needed or "Qt6Guid" in needed:
+        raise SystemExit("refusing to package a debug build")
+    if "libQt6Core.so" not in needed:
+        raise SystemExit("SpentIt.bin does not import Qt. Deployment did not see the release program.")
+    env = dict(os.environ)
+    env["LD_LIBRARY_PATH"] = str(stage / "lib")
+    outside: list[str] = []
+    for path in [binary, *stage.rglob("*.so")]:
+        if not is_elf(path):
+            continue
+        for name, resolved in ldd_entries(path, env):
+            if resolved is None:
+                outside.append(f"{path.name} -> {name} not found")
+                continue
+            if should_bundle_linux(name, resolved) and stage not in resolved.resolve().parents and resolved.resolve() != (stage / "lib" / resolved.name).resolve():
+                if not str(resolved.resolve()).startswith(str((stage / "lib").resolve())):
+                    outside.append(f"{path.name} -> {name} at {resolved}")
+    if outside:
+        raise SystemExit("libraries still point outside the package:\n" + "\n".join(sorted(set(outside))))
+
+
+def copy_qml_tree(source: Path, dest: Path) -> None:
+    def ignored(_directory: str, names: list[str]) -> list[str]:
+        skip = set()
+        for name in names:
+            if name.endswith((".prl", ".debug", ".a", ".o")) or name.startswith("objects-"):
+                skip.add(name)
+        return sorted(skip)
+    shutil.copytree(source, dest, dirs_exist_ok=True, symlinks=False, ignore=ignored)
+
+
+def deploy_linux_qt(stage: Path, qt: Path, build: Path) -> None:
+    plugins = qt / "plugins"
+    for relative in LINUX_PLUGIN_FILES:
+        source = plugins / relative
+        if not source.is_file():
+            continue
+        dest = stage / "plugins" / relative
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+    for relative in LINUX_PLUGIN_DIRS:
+        source = plugins / relative
+        if source.is_dir():
+            copy_qml_tree(source, stage / "plugins" / relative)
+    if not (stage / "plugins" / "platforms" / "libqxcb.so").is_file():
+        raise SystemExit("the X11 platform plugin was not copied into the app")
+    if not (stage / "plugins" / "platforms" / "libqoffscreen.so").is_file():
+        raise SystemExit("the offscreen platform plugin was not copied into the app")
+    scanner = qt / "libexec" / "qmlimportscanner"
+    if not scanner.is_file():
+        scanner = qt / "bin" / "qmlimportscanner"
+    if not scanner.is_file():
+        raise SystemExit("qmlimportscanner was not found in the Qt prefix")
+    result = subprocess.run(
+        [str(scanner), "-rootPath", str(REPO / "src" / "ui"), "-importPath", str(qt / "qml")],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, errors="replace", check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"qmlimportscanner failed\n{(result.stdout or '')[-2000:]}")
+    try:
+        modules = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit("qmlimportscanner did not return JSON") from exc
+    qml_root = (qt / "qml").resolve()
+    for module in modules:
+        if not isinstance(module, dict):
+            continue
+        raw = module.get("path")
+        if not isinstance(raw, str) or not raw:
+            continue
+        source = Path(raw)
+        if not source.is_dir():
+            continue
+        try:
+            relative = source.resolve().relative_to(qml_root)
+        except ValueError:
+            continue
+        copy_qml_tree(source, stage / "qml" / relative)
+    module = build / "src" / "ui" / "controls" / "SpentItControls"
+    if not module.is_dir():
+        raise SystemExit("the SpentItControls module was not built")
+    copy_qml_tree(module, stage / "qml" / "SpentItControls")
+    if not (stage / "qml" / "SpentItControls" / "qmldir").is_file():
+        raise SystemExit("SpentItControls qmldir was not staged")
+    (stage / "qt.conf").write_text(
+        "[Paths]\nPrefix=.\nPlugins=plugins\nImports=qml\nQml2Imports=qml\n",
+        encoding="utf-8",
+    )
+
+
+def install_linux_launcher(stage: Path) -> None:
+    for size in (16, 32, 64, 128, 256, 512, 1024):
+        source = REPO / "assets" / "images" / f"SpentIt_light_{size}.png"
+        if not source.is_file():
+            raise SystemExit(f"missing icon {source.name}")
+        dest = stage / "share" / "icons" / "hicolor" / f"{size}x{size}" / "apps"
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest / "SpentIt.png")
+    launcher = stage / "SpentIt"
+    launcher.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "HERE=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\n"
+        "unset QT_PLUGIN_PATH QML_IMPORT_PATH QML2_IMPORT_PATH QT_QPA_PLATFORM_PLUGIN_PATH\n"
+        "export LD_LIBRARY_PATH=\"$HERE/lib\"\n"
+        "export QT_PLUGIN_PATH=\"$HERE/plugins\"\n"
+        "export QML2_IMPORT_PATH=\"$HERE/qml\"\n"
+        "export QT_QPA_PLATFORM_PLUGIN_PATH=\"$HERE/plugins/platforms\"\n"
+        "exec \"$HERE/SpentIt.bin\" \"$@\"\n",
+        encoding="utf-8",
+    )
+    launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def linux_runtime_env(home: Path, display: bool) -> dict[str, str]:
+    runtime = home / "runtime"
+    runtime.mkdir(mode=0o700, exist_ok=True)
+    env = {
+        "HOME": str(home),
+        "PATH": "/usr/bin:/bin",
+        "USER": os.environ.get("USER", "spentit"),
+        "LOGNAME": os.environ.get("USER", "spentit"),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "TMPDIR": str(home / "tmp"),
+        "XDG_RUNTIME_DIR": str(runtime),
+        "XDG_DATA_HOME": str(home / ".local" / "share"),
+        "XDG_CONFIG_HOME": str(home / ".config"),
+        "XDG_CACHE_HOME": str(home / ".cache"),
+    }
+    if display and os.environ.get("DISPLAY"):
+        env["DISPLAY"] = os.environ["DISPLAY"]
+        if os.environ.get("XAUTHORITY"):
+            env["XAUTHORITY"] = os.environ["XAUTHORITY"]
+    if display and os.environ.get("WAYLAND_DISPLAY"):
+        env["WAYLAND_DISPLAY"] = os.environ["WAYLAND_DISPLAY"]
+        if os.environ.get("XDG_RUNTIME_DIR"):
+            env["XDG_RUNTIME_DIR"] = os.environ["XDG_RUNTIME_DIR"]
+    if not display:
+        env["QT_QPA_PLATFORM"] = "offscreen"
+    return env
+
+
+def linux_smoke(executable: Path, home: Path) -> None:
+    display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "tmp").mkdir(parents=True, exist_ok=True)
+    env = linux_runtime_env(home, display)
+    log(f"launching {executable} with development libraries hidden")
+    created_dir: Path | None = None
+    try:
+        try:
+            result = subprocess.run(
+                [str(executable), "--smoke-create"],
+                env=env, cwd=str(home), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=120, check=False, errors="replace",
+            )
+        except subprocess.TimeoutExpired as exc:
+            output = exc.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", "replace")
+            raise SystemExit("clean launch timed out\n" + "\n".join(str(output).splitlines()[-40:])) from exc
+        text = result.stdout or ""
+        created = [line[8:] for line in text.splitlines() if line.startswith("Created ")]
+        if result.returncode != 0 or not created:
+            tail = "\n".join(text.splitlines()[-40:])
+            raise SystemExit(f"clean launch failed ({result.returncode})\n{tail}")
+        path = Path(created[-1].strip())
+        created_dir = path.parent
+        if not path.is_file() or path.stat().st_size <= 0:
+            raise SystemExit(f"create reported success but {path} is missing")
+        log(f"clean launch created a file ({path.stat().st_size} bytes)")
+    finally:
+        if created_dir is not None and created_dir.is_dir():
+            shutil.rmtree(created_dir, ignore_errors=True)
+
+
+def write_linux_installer(stage: Path, dest: Path) -> None:
+    template = (REPO / "packaging" / "linux" / "install.sh").read_text(encoding="utf-8")
+    placeholder = "@PAYLOAD_OFFSET@"
+    if template.count(placeholder) != 1:
+        raise SystemExit("packaging/linux/install.sh must contain @PAYLOAD_OFFSET@ once")
+    prefix, suffix = template.split(placeholder, 1)
+    if not suffix.startswith("\n") and "\r" in template:
+        raise SystemExit("packaging/linux/install.sh must use LF line endings")
+    offset = len(prefix.encode("utf-8")) + 12 + len(suffix.encode("utf-8"))
+    header = prefix + f"{offset:012d}" + suffix
+    if not header.endswith("\n"):
+        header += "\n"
+        offset += 1
+        header = prefix + f"{offset:012d}" + suffix
+        if not header.endswith("\n"):
+            header += "\n"
+    encoded = header.encode("utf-8")
+    if len(encoded) != offset:
+        raise SystemExit(f"installer header is {len(encoded)} bytes, payload offset is {offset}")
+    with tempfile.TemporaryDirectory() as raw:
+        payload_dir = Path(raw)
+        archive_root = payload_dir / "SpentIt"
+        shutil.copytree(stage, archive_root, symlinks=False)
+        archive = payload_dir / "payload.tar.gz"
+        subprocess.check_call(["tar", "-C", str(payload_dir), "-czf", str(archive), "SpentIt"])
+        dest.write_bytes(encoded + archive.read_bytes())
+    dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def verify_linux_installer(installer: Path) -> None:
+    home = Path(tempfile.mkdtemp(prefix="spentit-install-"))
+    try:
+        (home / "Documents").mkdir(parents=True)
+        kept = home / "Documents" / "Household.spentit"
+        kept.write_bytes(b"keep")
+        env = {
+            "HOME": str(home),
+            "PATH": "/usr/bin:/bin",
+            "USER": os.environ.get("USER", "spentit"),
+            "TMPDIR": str(home),
+            "LANG": "C.UTF-8",
+        }
+        result = subprocess.run(
+            ["sh", str(installer), "--no-launch"],
+            env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            check=False, errors="replace",
+        )
+        if result.returncode != 0 or "SpentIt is installed." not in (result.stdout or ""):
+            raise SystemExit(f"installer failed ({result.returncode})\n{result.stdout}")
+        prefix = home / ".local" / "opt" / "SpentIt"
+        desktop = (home / ".local" / "share" / "applications" / "SpentIt.desktop").read_text(encoding="utf-8")
+        mime = (home / ".local" / "share" / "mime" / "packages" / "spentit.xml").read_text(encoding="utf-8")
+        if f"Exec={prefix}/SpentIt %f" not in desktop or "*.spentit" not in mime:
+            raise SystemExit("the installer did not register .spentit")
+        if not (prefix / "SpentIt").is_file() or not os.access(prefix / "SpentIt", os.X_OK):
+            raise SystemExit("the installed launcher is not executable")
+        linux_smoke(prefix / "SpentIt", home / "smoke-home")
+        remove = subprocess.run(
+            ["sh", str(prefix / "uninstall")],
+            env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            check=False, errors="replace",
+        )
+        if remove.returncode != 0 or prefix.exists() or not kept.is_file() or kept.read_bytes() != b"keep":
+            raise SystemExit(f"uninstall failed ({remove.returncode})\n{remove.stdout}")
+        log("installer installed, opened a file, and uninstalled without removing a saved file")
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+def package_linux(args: argparse.Namespace) -> None:
+    if args.sign:
+        raise SystemExit("Linux packaging does not sign. Run without --sign.")
+    version = read_version()
+    qt = linux_qt()
+    pcre2 = linux_pcre2()
+    build = args.build_dir if args.build_dir.is_absolute() else (Path.cwd() / args.build_dir).resolve()
+    dist = args.dist if args.dist.is_absolute() else (Path.cwd() / args.dist).resolve()
+    dist.mkdir(parents=True, exist_ok=True)
+    marker = dist / "INCOMPLETE"
+    marker.write_text("Packaging has not completed. Do not distribute this directory.\n", encoding="utf-8")
+    if not args.skip_build:
+        configure_and_build_linux(build, qt, pcre2, args.cmake_args)
+    source = built_linux_exe(build)
+    stage = dist / "linux-app"
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir()
+    binary = stage / "SpentIt.bin"
+    shutil.copy2(source, binary)
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    search_env = dict(os.environ)
+    search_env["LD_LIBRARY_PATH"] = os.pathsep.join([
+        str(qt / "lib"),
+        str(pcre2 / "lib"),
+        str(stage / "lib"),
+    ])
+    bundle_linux_dependencies(stage, binary, search_env)
+    deploy_linux_qt(stage, qt, build)
+    style = build / "src" / "ui" / "controls" / "libspentit_controls_style.so"
+    if not style.is_file():
+        raise SystemExit("libspentit_controls_style.so was not built")
+    shutil.copy2(style, stage / "lib" / style.name)
+    # Plugins and QML modules import more libraries than the program itself.
+    extra = [path for path in stage.rglob("*") if is_elf(path)]
+    for path in extra:
+        bundle_linux_dependencies(stage, path, search_env)
+    copy_license_files(stage / "Licenses")
+    install_linux_launcher(stage)
+    patch_linux_rpath(stage)
+    assert_linux_closure(stage)
+    home = Path(tempfile.mkdtemp(prefix="spentit-smoke-"))
+    try:
+        linux_smoke(stage / "SpentIt", home)
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+    installer = dist / f"SpentIt-{version}-{os_tag()}-setup.run"
+    write_linux_installer(stage, installer)
+    verify_linux_installer(installer)
+    marker.unlink()
+    log(f"installer ready: {installer}")
+    log(f"staged app: {stage}")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Package SpentIt for distribution.")
     parser.add_argument("--build-dir", type=Path, default=REPO / "build-package")
@@ -1411,7 +1954,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--sign", action="store_true", help="macOS: Developer ID, DMG, and notarize when credentials are set. Windows: Authenticode-sign the app and the installer.")
     parser.add_argument("--identity", help="macOS codesign identity")
-    parser.add_argument("--smoke", action="store_true", help="macOS: launch the packaged app with Homebrew hidden and create a file. Windows always does this check.")
+    parser.add_argument("--smoke", action="store_true", help="macOS: launch the packaged app with Homebrew hidden and create a file. Windows and Linux always do this check.")
     parser.add_argument("--cmake-args", action="append", default=[], help="extra cmake configure argument. Repeat for each one")
     return parser.parse_args(argv)
 
@@ -1419,10 +1962,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     system = platform.system()
     if system == "Linux":
-        raise SystemExit(
-            "Linux packaging uses this command and writes a .tar.gz. "
-            "The Linux archive step is added on the Linux machine."
-        )
+        package_linux(parse_args(argv))
+        return 0
     if system == "Windows":
         package_windows(parse_args(argv))
         return 0
