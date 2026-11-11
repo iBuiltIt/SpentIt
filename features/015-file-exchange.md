@@ -1,11 +1,14 @@
-# 015 — File exchange and backup
+# 015 — File exchange
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-10
 
-File offers QIF Export, SpentIt Export, SpentIt Import, and Backup while a file
-is open. Unsaved-edit decisions run first. Backup is the Settings backup flow.
-The format and failure rules are in [doc/file-exchange.md](../doc/file-exchange.md).
+File offers QIF Export, SpentIt Export, and SpentIt Import while a file is
+open. Unsaved-edit decisions run first. The format and failure rules are in
+[doc/file-exchange.md](../doc/file-exchange.md). There is no in-application
+backup command. A copy of the file is made after a successful close, while
+SpentIt is not running. See
+[documents, storage, and security](001-documents-storage-security.md).
 
 QIF exports the current ledger for the selected accounts and inclusive dates,
 including new and accepted rows. Categories are optional. Transfer references
@@ -18,7 +21,8 @@ categories by full name. Income conflicts require a choice. Missing
 dependencies must be mapped or created from the imported categories. The save
 is atomic, does not apply rules, and does not clear transaction Undo.
 
-Exports are unencrypted text. They are a reconstruction path, not a backup.
+Exports are unencrypted text. They are a reconstruction path, not a copy of
+the SpentIt file.
 They omit originals, recognition, history, and document settings.
 
 ## Not done

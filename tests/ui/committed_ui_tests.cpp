@@ -384,7 +384,7 @@ private slots:
         QVERIFY(click(root,"historyNavigation"));wait(model);QVERIFY(object(root,"historyEmpty")->property("visible").toBool());
         QVERIFY(!object(root,"historyBack"));
         run(model,"select_account",{{"id",checking}});
-        run(model,"backup",{{"path",dir.path()+"/backup"}});run(model,"close");run(model,"open",{{"path",dir.path()+"/backup"}});run(model,"inspect",id);
+        run(model,"inspect",id);
         QCOMPARE(model.state().value("committed").toString(),"80.00");QCOMPARE(selected(model).value("original").toString(),"-29.31");
         run(model,"history");const auto retained=model.state().value("history").toList();QCOMPARE(retained.size(),4);
         QCOMPARE(retained.at(0).toMap().value("label").toString(),"Edit transactions");

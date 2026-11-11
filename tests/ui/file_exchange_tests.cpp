@@ -160,13 +160,13 @@ private slots:
         QSettings().clear();QTemporaryDir dir;ImportModel model(document_gateway());QQmlApplicationEngine engine;QSignalSpy warnings(&engine,&QQmlEngine::warnings);engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().empty());auto* root=engine.rootObjects().front();
         auto find=[&](const char* name)->QObject*{if(auto* item=root->findChild<QObject*>(name))return item;auto* window=qobject_cast<QQuickWindow*>(root);return window?visual(window->contentItem(),QString::fromLatin1(name)):nullptr;};
         auto* theme=find("applicationTheme");QVERIFY(theme);
-        for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport","fileBackup"}){
+        for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport"}){
             QVERIFY(find(name));QVERIFY(!find(name)->property("enabled").toBool());
             auto* text=find(name)->property("contentItem").value<QObject*>();QVERIFY(text);
             QCOMPARE(text->property("color"),theme->property("disabled"));
         }
         run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
-        for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport","fileBackup"}){
+        for(const auto* name:{"fileQifExport","fileSpentItExport","fileSpentItImport"}){
             QVERIFY(find(name)->property("enabled").toBool());
             auto* text=find(name)->property("contentItem").value<QObject*>();QVERIFY(text);
             QCOMPARE(text->property("color"),theme->property("text"));

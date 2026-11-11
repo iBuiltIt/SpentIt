@@ -1,13 +1,14 @@
-# File menu exchange and backup
+# File menu exchange
 
-Last updated: 2026-11-09. Owner accepted the design and authorized implementation.
+Last updated: 2026-11-10. Owner accepted the design and authorized implementation.
 Implementation/verification status is recorded in [status](status.md).
 
 ## Accepted behavior
 
-File offers QIF Export…, SpentIt Export…, SpentIt Import… and Backup… while a
-file is open. Existing unsaved-edit decisions apply before these commands.
-Backup uses exactly the Settings Save backup flow.
+File offers QIF Export…, SpentIt Export… and SpentIt Import… while a file is
+open. Existing unsaved-edit decisions apply before these commands. There is
+no Backup command. A copy of the file is made after a successful close, while
+SpentIt is not running.
 
 QIF Export lists live and archived accounts with checkboxes and independent inclusive date ranges,
 initially their oldest/newest active ledger dates. All accounts initially checked. It exports the current unfiltered
@@ -44,7 +45,7 @@ invalidate stale previews; they are not financial Undo actions.
 ## Implementation choices
 
 Exports are intentionally plaintext, stated in the export dialogs. They are a
-reconstruction path, not a complete backup or a new database migration guarantee.
+reconstruction path, not a copy of the SpentIt file or a new database migration guarantee.
 QIF uses named Bank account sections and exact ungrouped decimal amounts. Its account
 B field carries the optional opening, which SpentIt's existing import mapping can
 use literally. Dates use unambiguous four-digit years. Currency remains per-account;

@@ -113,7 +113,7 @@ private slots:
         const auto reports = catalog.search(QStringLiteral("grouped periods"));
         QVERIFY(!reports.isEmpty());
         QCOMPARE(reports.front().toMap().value("topicId").toString(), QStringLiteral("answer-with-reports"));
-        const auto recovery = catalog.search(QStringLiteral("disk full"));
+        const auto recovery = catalog.search(QStringLiteral("household-backup-2026-02-28.spentit"));
         QVERIFY(!recovery.isEmpty());
         QCOMPARE(recovery.front().toMap().value("topicId").toString(), QStringLiteral("look-after-your-work"));
         const auto problem = catalog.search(QStringLiteral("Unclosed search quote"));

@@ -97,8 +97,9 @@ format. See [file exchange](doc/file-exchange.md).
   use. Distinguish invalid input and execution failure from a valid empty result.
 - Do not disable integrity or durability to make a benchmark faster or a file
   layout simpler.
-- Test backups by restoring them. A live copy of the main database file is not
-  a backup.
+- Do not add an in-application backup command. After a successful close, a
+  separate copy of the file is the backup. A copy of the open database file
+  is not a consistent copy.
 - Password changes, schema changes, and document switching need explicit
   failure behavior. Never destroy the last known-good copy on failure.
 - Private local datasets use persistent empty locks under the platform

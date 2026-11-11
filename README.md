@@ -23,7 +23,6 @@ SpentIt was developed with the aid of AI.  It has been tested on macOS, Windows 
 - Use a report to compare one period of spending with others.
 - Search for something you half remember.
 - Undo a recent change.
-- Keep a backup of your file.
 
 ## The manual
 

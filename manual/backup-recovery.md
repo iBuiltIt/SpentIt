@@ -2,70 +2,38 @@
 id: look-after-your-work
 title: Look after your work and resolve remaining problems
 order: 12
-keywords: backup, restore, recovery, settings, password, disk full, interrupted, failed write, older file, troubleshooting
+keywords: backup, copy, restore, recovery, settings, password, interrupted, failed write, older file, troubleshooting
 ---
 
 # Look after your work and resolve remaining problems
 
-Once you’ve brought your accounts together, keep a backup you can return to.
-It holds your saved work at that point, including transactions you haven’t
-accepted yet. Finish any edit with **Save** or **Enter** first.
+Once you’ve brought your accounts together, keep a backup copy of the file you
+can return to.
 
-## Save a backup
+## Keep a copy of the file {#keep-a-copy}
 
-1. Open **Settings** in the left sidebar. Check the path under **Current file**
-   so you know which file you’re copying.
-2. Choose **Save backup…**, or **File → Backup…**. They are the same
-   command. Choose a folder and a new filename, such as
-   `Household-backup-2026-02-28.spentit`. Use a different name for each backup.
-3. Wait for the operation to finish. The bottom status line returns to
-   **Ready** on success; there is no separate completion dialog.
+Quit SpentIt after the file has closed successfully. Then copy the file
+while SpentIt is not running. A copy made after a crash, or while SpentIt
+is still open, can leave out the last saved work.
 
-![Settings for the Household file, with Check file, Save backup and the current file path.](images/recovery-backup.png)
-*Save backup makes a separate copy. The Current file path still names the file you are working in.*
+1. Finish any edit with **Save** or **Enter**.
+2. Choose **File → Close file**. Wait until SpentIt has closed the file,
+   then quit.
+3. Copy the file in its folder. Give the copy its own name, such as
+   `Household-backup-2026-02-28.spentit`.
 
-Keep a copy on another drive if you want protection against losing the drive
-that holds your working file. A backup only contains work saved before it was
-made; later changes need another backup.
+The copy uses the same password as the file you copied. A copy of a file
+made without password protection can be read by anyone who has it.
 
-A password-protected backup needs the same password as its source file.
-A backup made without password protection can be read by anyone who has it.
+Keep a copy on another drive if you want protection against losing the
+drive that holds the working file. Make these backup copies regularly to
+avoid losing work.
 
-### If the backup does not finish
+To look at a copy, start SpentIt and use **Browse…** on the welcome
+screen. Select the copy and enter its password if asked. Check the
+accounts, balances and recent transactions.
 
-- **The filename already exists:** choose a new name. Save backup does not
-  replace an existing file, even if the file picker offers to replace it.
-  The message may only say “Backup publication failed; encrypted candidate retained”.
-- **The location is unavailable or full:** check the drive, free space and
-  permission to save there, then choose a new filename.
-- **You cancelled:** wait for cancellation to finish. An unfinished `.partial`
-  file may remain; it is not a completed backup. Use a new name when retrying.
-
-![Settings showing Backup publication failed, with Check file and a Details button.](images/recovery-existing.png)
-*Here, an existing destination is refused. Choose another name. Use Details to read a long message.*
-
-## Check a backup or recover your work
-
-Open a backup to check that it contains what you expect. If you need to recover,
-make a new working copy from it so you can keep the backup for another attempt.
-
-1. Choose **File → Close file**. Resolve any unfinished edits first.
-   Settings has no Close file button. Use **Back**, or an account in the
-   sidebar, to leave Settings.
-2. On the welcome screen, use **Browse…** to select the backup, enter its
-   password if asked, and choose **Open file**.
-3. Check the accounts, balances and recent transactions. Open a saved report
-   if it helps you check the period you need.
-4. To recover, open Settings and use **Save backup…** again, this time with
-   a new working name such as `Household-recovered.spentit`.
-5. After it finishes, close the backup and open that new working copy.
-   Check **Current file** before entering more transactions.
-
-Saving the copy does not switch to it. If you were only checking a backup,
-close it and reopen your usual working file instead.
-
-Work added after the backup was made will not be in the recovered copy.
-Check what is missing before importing or entering it again.
+Work added after the copy was made will not be in it.
 
 ## Adjust how you read and enter amounts {#adjust-how-you-read-and-enter-amounts}
 
@@ -89,12 +57,11 @@ it again.
 
 Settings has no control to change a password or turn password
 protection on or off for an existing file. There is no forgotten-password
-recovery for the file or its backups.
+recovery for the file or for a copy of it.
 
 ## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}
 
-A backup is an encrypted copy of the whole file. The File menu Export
-commands write ordinary text. They are not backups. If you have an
+The File menu Export commands write ordinary text. If you have an
 unfinished edit, SpentIt asks you to save or discard it first before
 using these commands.
 
@@ -134,12 +101,12 @@ selected file, password, drive and whether another SpentIt window has it open.
 Do not delete lock files to get around an “already open” message.
 
 Older experimental files may be refused as an unsupported format. This version
-has no upgrade or conversion command. Keep the old file; do not overwrite it
-with a new empty one. A backup in the same old format will have the same limit.
+of SpentIt has no upgrade or conversion command.
 
 If the message says the file failed verification or is damaged, do not keep
-trying to change it. Try opening a separate backup and checking it as described
-above. SpentIt has no general repair button.
+trying to change it. Open a separate copy made after a successful close, as
+described in [Keep a copy of the file](#keep-a-copy). SpentIt has no general
+repair button.
 
 ### A change failed, or its result is unclear
 
@@ -182,7 +149,8 @@ Linux, choose **Help → About SpentIt**. **Copy version information** copies
 the version and build. **License and terms…** and **Third-party software…**
 open in that window, without a network connection. **Back** returns from
 those pages. **Close** leaves About. **Provided as is, without warranty**
-is not a promise that a file cannot be damaged. Keep a backup.
+is not a promise that a file cannot be damaged. Make and keep a backup copy
+of the file after a successful close.
 
 A small made-up example can help explain
 the problem. Remove names, account details and amounts from screenshots you

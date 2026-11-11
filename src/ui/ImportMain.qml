@@ -134,7 +134,6 @@ ApplicationWindow {
     Connections {target:createDialog;function onVisibleChanged(){window.diagnosticModalChanged(9,createDialog.visible)}}
     Connections {target:importMapping;function onVisibleChanged(){window.diagnosticModalChanged(10,importMapping.visible)}}
     Connections {target:importDialog;function onVisibleChanged(){window.diagnosticModalChanged(11,importDialog.visible)}}
-    Connections {target:backupDialog;function onVisibleChanged(){window.diagnosticModalChanged(12,backupDialog.visible)}}
     Connections {target:unsaved;function onVisibleChanged(){window.diagnosticModalChanged(13,unsaved.visible)}}
     Connections {target:changePreview;function onVisibleChanged(){window.diagnosticModalChanged(14,changePreview.visible)}}
     Connections {target:mergePreview;function onVisibleChanged(){window.diagnosticModalChanged(15,mergePreview.visible)}}
@@ -170,7 +169,7 @@ ApplicationWindow {
         if(createDialog.visible) modals+=Math.pow(2,9)
         if(importMapping.visible) modals+=Math.pow(2,10)
         if(importDialog.visible) modals+=Math.pow(2,11)
-        if(backupDialog.visible) modals+=Math.pow(2,12)
+        // Bit 12 is unused. It belonged to the removed backup dialog.
         if(unsaved.visible) modals+=Math.pow(2,13)
         if(changePreview.visible) modals+=Math.pow(2,14)
         if(mergePreview.visible) modals+=Math.pow(2,15)
@@ -216,7 +215,6 @@ ApplicationWindow {
             LedgerMenuItem {objectName:"fileQifExport";text:"QIF Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){workflow.command("exchange_qif_prepare")})}
             LedgerMenuItem {objectName:"fileSpentItExport";text:"SpentIt Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){definitionExportDialog.open()})}
             LedgerMenuItem {objectName:"fileSpentItImport";text:"SpentIt Import…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){exchangeOpenDialog.open()})}
-            LedgerMenuItem {objectName:"fileBackup";text:"Backup…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){backupDialog.open()})}
             MenuSeparator {}
 
             LedgerMenuItem {
@@ -2435,7 +2433,6 @@ ApplicationWindow {
         Label {text:s.exchangeMessage||"";textFormat:Text.PlainText}
     }
 
-    FileDialog { id:backupDialog; fileMode:FileDialog.SaveFile; title:"Save a backup to a new file"; onAccepted:workflow.command("backup",{path:workflow.localPath(selectedFile)}) }
     HelpDialog {
         helpTarget: "help:add-correct-transactions#divide-a-purchase-into-splits"
         id:splitMismatch;objectName:"splitMismatchDialog";title:"Change transaction amount?";modal:true;anchors.centerIn:parent
@@ -3115,7 +3112,7 @@ ApplicationWindow {
                     Button {objectName:"openProtectedDataset";text:"Open file";onClicked:openDataset()}
                 }
                 Label {objectName:"welcomeError";text:errorDialog?"":workflow.error;visible:text.length>0;textFormat:Text.PlainText;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
-                Button {objectName:"welcomeErrorHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!errorDialog && !!workflow.error;onClicked:openContextHelp("help:messages-problems#opening-a-file-and-making-backups")}
+                Button {objectName:"welcomeErrorHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!errorDialog && !!workflow.error;onClicked:openContextHelp("help:messages-problems#opening-a-file")}
                 GroupBox {
                     title:"Create a new dataset";visible:settingUp;Layout.fillWidth:true;enabled:!workflow.busy
                     ColumnLayout {
@@ -3969,10 +3966,8 @@ ApplicationWindow {
                         Label {text:"Use this style when entering amounts and calculations. Thousands separators are optional.";Layout.fillWidth:true;wrapMode:Text.Wrap}
 
                         Item {Layout.fillWidth:true;Layout.preferredHeight:16}
-                        Label {text:"Backup and recovery";font.bold:true}
-                        Label {text:"Save a backup to a new file. To restore a backup, open it and save a copy to a new location.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        Label {text:"Check the file";font.bold:true}
                         Button {objectName:"settingsCheckFile";text:"Check file";onClicked:guard(function(){workflow.command("check_file",{})})}
-                        Button {objectName:"settingsBackup";text:"Save backup…";onClicked:guard(function(){backupDialog.open()})}
                     }
                 }
                 UsableScrollView {

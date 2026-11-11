@@ -270,7 +270,7 @@ private slots:
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         QCOMPARE(window->title(),"SpentIt — "+m.state().value("displayPath").toString());
         QVERIFY(!window->findChild<QObject*>("resumeImport"));QVERIFY(!window->findChild<QObject*>("viewSourceFile"));QVERIFY(!window->findChild<QObject*>("reviewRecord"));QVERIFY(!window->findChild<QObject*>("bulkRemove"));
-        QVERIFY(window->findChild<QObject*>("importStatement"));QVERIFY(window->findChild<QObject*>("commitImport"));QVERIFY(window->findChild<QObject*>("discardImport"));QVERIFY(window->findChild<QObject*>("settingsBackup"));
+        QVERIFY(window->findChild<QObject*>("importStatement"));QVERIFY(window->findChild<QObject*>("commitImport"));QVERIFY(window->findChild<QObject*>("discardImport"));QVERIFY(window->findChild<QObject*>("settingsCheckFile"));
         run(m,"close");run(m,"probe",{{"path",QDir::homePath()+"/spentit-missing-title-fixture.spentit"}},false);QCOMPARE(m.state().value("displayPath").toString(),"~/spentit-missing-title-fixture.spentit");
     }
     void ledgerDuplicateReview() {
@@ -1530,18 +1530,6 @@ private slots:
         auto late=connect(&m,&ImportModel::changed,&m,[&]{if(m.busy()){sealed=true;QVERIFY(!m.canCancel());m.requestCancel();QVERIFY(!m.cancellationRequested());}});
         run(m,"commit");disconnect(late);QVERIFY(sealed);QCOMPARE(m.state().value("committed").toString(),"2.00");
     }
-    void backupCancellation() {
-        QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/one");
-        run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
-        bool requested=false;
-        const auto cancel=connect(&m,&ImportModel::changed,&m,[&]{if(m.canCancel() && !requested){requested=true;m.requestCancel();}});
-        run(m,"backup",{{"path",dir.path()+"/cancelled"}},false);disconnect(cancel);
-        QVERIFY(requested);QVERIFY(m.error().contains("Backup cancelled"));QVERIFY(m.error().contains(".partial"));
-        QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("committed").toString(),"100.00");
-        QVERIFY(!QFileInfo::exists(dir.path()+"/cancelled"));
-        run(m,"backup",{{"path",dir.path()+"/retry"}});run(m,"close");run(m,"open",{{"path",dir.path()+"/retry"}});
-        QCOMPARE(m.state().value("committed").toString(),"100.00");
-    }
     void cancelledOpenActivation() {
         QTemporaryDir dir;const auto path=dir.path()+"/doc";
         auto gateway=std::make_unique<OutcomeGateway>();auto* injected=gateway.get();
@@ -1743,8 +1731,8 @@ private slots:
         auto splits=edit.value("splits").toList();auto second=splits[1].toMap();second["amount"]="-29.86";splits[1]=second;edit["splits"]=splits;
         run(m,"save",edit);QCOMPARE(m.state().value("projected").toString(),"120.00");
         const auto batch=selected(m).value("batch");
-        run(m,"backup",{{"path",dir.path()+"/backup"}});
         run(m,"close");QCOMPARE(m.rowCount(),0);QVERIFY(selected(m).isEmpty());
+        QVERIFY(QFile::copy(path,dir.path()+"/backup"));
         run(m,"open",{{"path",path}});QCOMPARE(m.state().value("projected").toString(),"120.00");
         run(m,"inspect",{{"batch",batch},{"ordinal",0}});QCOMPARE(selected(m).value("original").toString(),"-29.31");
         run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"120.00");QCOMPARE(m.state().value("newTransactions").toInt(),0);
@@ -1764,8 +1752,8 @@ private slots:
         QCOMPARE(m.state().value("deposits").toString(),"0.00");
         QCOMPARE(m.data(m.index(0),Qt::UserRole).toMap().value("balance").toString(),"70.00");
         run(m,"close");run(m,"open",{{"path",dir.path()+"/backup"}});QCOMPARE(m.state().value("committed").toString(),"100.00");QCOMPARE(m.state().value("projected").toString(),"120.00");
-        run(m,"backup",{{"path",dir.path()+"/restored"}});
-        run(m,"close");run(m,"open",{{"path",dir.path()+"/restored"}});
+        run(m,"close");QVERIFY(QFile::copy(dir.path()+"/backup",dir.path()+"/restored"));
+        run(m,"open",{{"path",dir.path()+"/restored"}});
         QCOMPARE(m.state().value("projected").toString(),"120.00");
         run(m,"commit");QCOMPARE(m.state().value("committed").toString(),"120.00");
     }

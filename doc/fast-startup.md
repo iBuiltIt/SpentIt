@@ -39,8 +39,7 @@ source/acceptance/duplicate dependencies, currencies and provenance. It does not
 reconstruct expired ordinary history or rely on permanent per-revision hashes.
 
 - An unclean marker or an existing recovery journal requires a full check.
-- Backup creation checks its copied candidate and reopens it for a restore check.
-- Settings → Backup and recovery → **Check file** explicitly runs verification.
+- Settings → **Check file** explicitly runs verification.
   It reports errors, does not repair data and does not end session Undo.
 
 The encrypted clean marker deliberately accepts reduced detection of offline

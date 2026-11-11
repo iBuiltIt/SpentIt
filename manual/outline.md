@@ -271,9 +271,9 @@ definition. It does not print the chart or copy the transactions.
 
 **Reader's question:** How do I protect my work and recover when something goes wrong?
 
-- Save a backup, choose its location and recognize completion.
-- Open/check a backup and follow the recovery actions the application actually offers.
-- Find the right file and distinguish it from a backup before continuing work.
+- Copy the file after a successful close, while SpentIt is not running.
+- Open that copy with Browse and check the accounts before continuing work.
+- Find the right file and distinguish it from a copy before continuing work.
 - Explain relevant Settings, including date/amount presentation and protection
   controls that are actually available; link back to their first-use topics.
 - Troubleshoot opening failures, unsupported older files, unavailable locations,
@@ -286,7 +286,7 @@ definition. It does not print the chart or copy the transactions.
   without sharing passwords or private financial records. Name a support route
   only when one actually exists.
 
-**Screenshots:** Backup controls, completion and selected recovery/error dialogs
+**Screenshots:** Settings, including Check file, and selected recovery/error dialogs
 whose choices need explanation.
 
 Finish with a symptom/message index linking to the task-specific explanations.

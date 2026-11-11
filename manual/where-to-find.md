@@ -18,12 +18,13 @@ Most controls appear after you open a file.
   the welcome screen. [Close or switch files](create-open-file.md#close-or-switch-files).
 - **Check which file is open:** choose **Settings** in the left sidebar
   and read **Current file**.
-- **Save a backup:** choose **Settings → Save backup…** or **File → Backup…**.
-  [Save a backup](backup-recovery.md#save-a-backup).
+- **Keep a copy of your file:** quit SpentIt after a successful close, then
+  copy the file while SpentIt is not running.
+  [Keep a copy of the file](backup-recovery.md#keep-a-copy).
 - **Copy transactions to a QIF file:** choose **File → QIF Export…**.
 - **Copy or bring in saved rules, reports and categories:** choose
-  **File → SpentIt Export…** or **File → SpentIt Import…**. These are not
-  backups. [Copy transactions or saved definitions](backup-recovery.md#copy-transactions-or-saved-definitions).
+  **File → SpentIt Export…** or **File → SpentIt Import…**.
+  [Copy transactions or saved definitions](backup-recovery.md#copy-transactions-or-saved-definitions).
 - **See the version:** on a Mac, choose **About SpentIt** in the application
   menu. On Windows and Linux, choose **Help → About SpentIt**.
   [If you still need help](backup-recovery.md#if-you-still-need-help).

@@ -18,7 +18,7 @@ When **Help with this problem** appears beside a message, it opens this
 reference without retrying the action. A dialog’s **Help** button opens the
 instructions for that task.
 
-## Opening a file and making backups {#opening-a-file-and-making-backups}
+## Opening a file {#opening-a-file}
 
 **“Passwords do not match”**
 
@@ -39,15 +39,8 @@ check the drive and access to the location. Do not delete lock files.
 
 **“This dataset format is not supported by this version of SpentIt; the file has not been changed”**
 
-Keep the original. This version has no upgrade or conversion command;
-a backup in the same format has the same limit.
+Keep the original. This version of SpentIt has no upgrade or conversion command.
 [Unsupported files](backup-recovery.md#the-file-will-not-open).
-
-**“Backup publication failed; encrypted candidate retained”**
-
-The backup did not finish. An existing destination is one possible cause.
-Choose a new filename; check the drive, free space and permission to save there.
-[Backup problems](backup-recovery.md#if-the-backup-does-not-finish).
 
 ## Importing transactions
 

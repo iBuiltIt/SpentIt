@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-09
+Last updated: 2026-11-10
 
 SpentIt is the local rules-enabled application. Working experimental formats
 are **70 with rules / 69 without**. Older experimental files are rejected
@@ -13,8 +13,9 @@ passed unless you ran it.
 
 ## What the application does
 
-- Encrypted local files, optional explicit no-password mode, backup and restore,
-  and private document locks. Normal open and close use an encrypted clean
+- Encrypted local files, optional explicit no-password mode, and private
+  document locks. A backup is a copy of the file made after a successful close,
+  while SpentIt is not running. Normal open and close use an encrypted clean
   marker. A crash or unclean file gets a full check. Check file does not repair
   data. There is no forgotten-password recovery and no password change.
 - QIF bank/cash/credit-card files under the [bank-v6 profile](../features/009-qif-profile.md),
@@ -32,8 +33,8 @@ passed unless you ran it.
 - Categories with an Income flag, rules that assign an explicit category to
   Uncategorized items only, and reports with exact allocation totals and
   drill-down.
-- File menu QIF export, SpentIt export/import of rules, reports, and categories,
-  and Backup.
+- File menu QIF export and SpentIt export/import of rules, reports, and
+  categories.
 - One file-wide Undo chain and a Change history page. A successful close
   expires ordinary Undo.
 - Bundled Help for the current manual, with contextual links. The manual pass
@@ -62,9 +63,8 @@ implementation, except where a document already says the owner deferred them.
 - Multiline notes and saved layout customization are deferred.
 - Document lifecycle and recovery is not complete. Password changes are
   deferred. Explicit schema migrations wait until the first release is
-  announced; until then older experimental files stay rejected. Backup and
-  restore exist. A further polished recovery workflow is still open. There is
-  no forgotten-password recovery.
+  announced; until then older experimental files stay rejected. There is no
+  in-application backup command. There is no forgotten-password recovery.
 - Distribution is not complete. SpentIt is under the Unlicense in
   [LICENSE](../LICENSE). Linux and Windows are development builds and are not
   release validation. Packaging for publication and signing are open. The

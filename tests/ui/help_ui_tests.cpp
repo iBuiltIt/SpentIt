@@ -687,8 +687,8 @@ private slots:
             << QStringList{"reports-editor.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png"}
             << QString("open-the-transactions-behind-an-amount") << QString("Open the transactions behind an amount");
         QTest::newRow("recovery") << QString("look-after-your-work")
-            << QStringList{"recovery-backup.png", "recovery-existing.png"}
-            << QString("check-a-backup-or-recover-your-work") << QString("Check a backup or recover your work");
+            << QStringList{}
+            << QString("keep-a-copy") << QString("Keep a copy of the file");
         QTest::newRow("where-to-find") << QString("where-to-find")
             << QStringList{}
             << QString("undo-and-problems") << QString("Undo and problems");
@@ -816,7 +816,7 @@ private slots:
         QTest::addColumn<QString>("section");
         QTest::addColumn<QString>("heading");
         QTest::newRow("where-to-find") << QString("where-to-find") << QString("quick reference")
-            << QString("look-after-your-work") << QString("save-a-backup") << QString("Save a backup");
+            << QString("look-after-your-work") << QString("keep-a-copy") << QString("Keep a copy of the file");
         QTest::newRow("keyboard-mouse") << QString("keyboard-mouse") << QString("keyboard")
             << QString("find-transactions") << QString("select-without-editing") << QString("Select without editing");
         QTest::newRow("search-examples") << QString("search-examples") << QString("search examples")
@@ -828,8 +828,8 @@ private slots:
             << QString("set-up-accounts") << QString("set-the-starting-balance") << QString("Set the starting balance");
         QTest::newRow("messages-problems") << QString("messages-problems") << QString("Unclosed search quote")
             << QString("search-examples") << QString("clear-a-search-or-fix-it") << QString("Clear a search or fix it");
-        QTest::newRow("problem-backup") << QString("messages-problems") << QString("Backup publication failed")
-            << QString("look-after-your-work") << QString("if-the-backup-does-not-finish") << QString("If the backup does not finish");
+        QTest::newRow("problem-open") << QString("messages-problems") << QString("already open")
+            << QString("look-after-your-work") << QString("the-file-will-not-open") << QString("The file will not open");
         QTest::newRow("problem-splits") << QString("messages-problems") << QString("Splits add up")
             << QString("add-correct-transactions") << QString("divide-a-purchase-into-splits") << QString("Divide a purchase into splits");
         QTest::newRow("problem-report") << QString("messages-problems") << QString("Transactions changed")
@@ -1332,13 +1332,10 @@ private slots:
         mouse("undoEdit"); mouse("confirmActionUndo");
         QCOMPARE(totals(), (QVariantList{amount("56.18"), amount("70.00")}));
         textClick("Back to report");
-        mouse("sidebarSettings");
         const auto backup = session.path("Household-backup.spentit");
-        run(session.model, "backup", {{"path", backup}});
-        QVERIFY2(session.model.error().isEmpty(), qPrintable(session.model.error()));
-        QCOMPARE(session.model.state().value("path").toString(), path);
         QVERIFY(QMetaObject::invokeMethod(object(session.root, "fileCloseDataset"), "triggered"));
         wait(session.model);
+        QVERIFY(QFile::copy(path, backup));
         QVERIFY(object(session.root, "datasetPath")->setProperty("text", backup));
         run(session.model, "open", {{"path", backup}}, false);
         QVERIFY(session.model.state().value("unlockRequired").toBool());
@@ -1744,12 +1741,6 @@ private slots:
             QTest::mouseClick(session.window, Qt::LeftButton, Qt::NoModifier, point);
             QTRY_VERIFY_WITH_TIMEOUT(!session.model.busy(), 30000);
         };
-        auto capture = [&](const QString& name) {
-            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
-            if (output.isEmpty()) return;
-            QTest::qWait(180);
-            QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
-        };
         mouse("categoryNavigation");
         createCategory(session.model, session.root, "Groceries");
         mouse("accountNavigation");
@@ -1781,34 +1772,10 @@ private slots:
         mouse("amountFormatting");
         QVERIFY(session.model.state().value("amountFormatting").toBool());
         mouse("rememberWindowPosition");
-        // Open and cancel the real picker before submitting a synthetic path below.
-        QObject* picker = nullptr;
-        for (auto* child : session.root->findChildren<QObject*>())
-            if (child->property("title").toString() == "Save a backup to a new file") picker = child;
-        QVERIFY(picker);
-        mouse("settingsBackup");
-        QTRY_VERIFY(picker->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(picker, "reject"));
-        QTRY_VERIFY(!picker->property("visible").toBool());
-        // Destination submission is a model command: no OS file-picker typing is claimed.
-        run(session.model, "backup", {{"path", backup}});
-        QVERIFY(QFile::exists(backup));
-        QCOMPARE(session.model.state().value("path").toString(), original);
-        QTRY_COMPARE(object(session.root, "operationPhase")->property("text").toString(), QString("Ready"));
-        capture("recovery-backup");
-        run(session.model, "backup", {{"path", backup}}, false);
-        QVERIFY(session.model.error().contains("Backup publication failed"));
-        capture("recovery-existing");
-        mouse("statusDetailsButton");
-        // Inspect and dismiss the actual status popup before closing the file.
-        auto* details = object(session.root, "statusDetails"); QVERIFY(details);
-        QTRY_VERIFY(details->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(details, "close"));
-        QTRY_VERIFY(!details->property("visible").toBool());
-        QTest::qWait(200);
         QVERIFY(QMetaObject::invokeMethod(object(session.root, "fileCloseDataset"), "triggered"));
         wait(session.model);
         QVERIFY(!session.model.state().value("active").toBool());
+        QVERIFY(QFile::copy(original, backup));
         run(session.model, "open", {{"path", backup}}, false);
         QVERIFY(session.model.state().value("unlockRequired").toBool());
         run(session.model, "unlock", {{"path", backup}, {"password", "synthetic-guide-password"}});
@@ -1817,11 +1784,9 @@ private slots:
         QCOMPARE(session.model.state().value("balance").toString(), QString("963.82"));
         run(session.model, "select_account", {{"id", "1"}});
         QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
-        mouse("sidebarSettings");
-        run(session.model, "backup", {{"path", recovered}});
-        QCOMPARE(session.model.state().value("path").toString(), backup);
         QVERIFY(QMetaObject::invokeMethod(object(session.root, "fileCloseDataset"), "triggered"));
         wait(session.model);
+        QVERIFY(QFile::copy(backup, recovered));
         run(session.model, "unlock", {{"path", recovered}, {"password", "synthetic-guide-password"}});
         QCOMPARE(session.model.state().value("path").toString(), recovered);
         QCOMPARE(session.model.state().value("newTransactions").toInt(), newCount);
@@ -1830,7 +1795,7 @@ private slots:
         QCOMPARE(session.model.state().value("reportResult").toMap().value("currencies").toList(), totals);
         // Lookup entry from a problem, followed by a linked task-specific explanation.
         auto* help = openHelp(session.root); QVERIFY(help);
-        QVERIFY(edit(help, "helpSearch", "disk full"));
+        QVERIFY(edit(help, "helpSearch", "successful close"));
         QTRY_VERIFY(object(help, "helpResult_look-after-your-work"));
         QTest::qWait(150);
         auto* result = qobject_cast<QQuickItem*>(object(help, "helpResult_look-after-your-work")); QVERIFY(result);
@@ -2716,7 +2681,7 @@ private slots:
         before = session.model.state();
         const auto openError = session.model.error();
         mouse("welcomeErrorHelp");
-        QTRY_COMPARE(help->property("currentSection").toString(), QString("Opening a file and making backups"));
+        QTRY_COMPARE(help->property("currentSection").toString(), QString("Opening a file"));
         QCOMPARE(session.model.state(), before); QCOMPARE(session.model.error(), openError);
     }
     void helpBesideRulesDialog() {

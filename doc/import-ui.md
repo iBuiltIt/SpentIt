@@ -8,7 +8,5 @@ Ledger editing is [ledger-editing.md](ledger-editing.md). Import, Review,
 rules, reports, categories, and Help are the feature documents. Settings is in
 the lower-left sidebar only.
 
-Backup shows its phases on the worker. Cancel is available before exclusive
-publication. A cancelled candidate is not a valid backup. Success follows
-directory synchronization and candidate cleanup. Individual SQLite calls and
-filesystem synchronization are not interruptible.
+Individual SQLite calls and filesystem synchronization are not interruptible.
+There is no in-application backup command.

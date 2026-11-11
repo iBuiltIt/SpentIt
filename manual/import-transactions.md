@@ -210,7 +210,6 @@ the removal itself.
 To copy transactions out of SpentIt, or to copy rules, reports and
 categories without the transactions, see
 [Copy transactions or saved definitions](backup-recovery.md#copy-transactions-or-saved-definitions).
-That is separate from a backup.
 
 Next, get familiar with the transaction list and find the entries
 you want to check.

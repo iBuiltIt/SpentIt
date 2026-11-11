@@ -122,7 +122,7 @@ Pending bits: 0 startup, 1 guard decision, 2 search, 3 account navigation, 4 cou
 9: createDialog
 10: importMapping
 11: importDialog
-12: backupDialog
+12: unused (removed backup dialog; do not renumber later bits)
 13: unsaved
 14: changePreview
 15: mergePreview
@@ -166,7 +166,7 @@ Observation is attached to the existing dispatch branches; it never issues a new
 | `create`, `create_account`, `rename_account`, `archive_account`, `reactivate_account`, `delete_account`, `correct_opening`, `reassign_currency`, `undo_account` | Existing gateway/complete repository return or validated existing outcome; marked before presentation work where available |
 | `apply_change`, `apply_bulk`, `apply_category` | Existing command receipt, including strict/group Undo through the same action |
 | `rules_save`, `rules_apply`, `rules_reapply_apply` | Existing receipt; explicit unchanged/no-row-change result maps to confirmed unchanged |
-| `save`, `decide`, `opening`, `commit`, `discard`, `backup` | Complete command return or existing commit receipt; unknown if the existing failure path cannot establish durability |
+| `save`, `decide`, `opening`, `commit`, `discard` | Complete command return or existing commit receipt; unknown if the existing failure path cannot establish durability |
 | `import` | Known capture/preparation from the controlled store; a mapping-only preview has no new saved outcome |
 | `map_import`, `resume`, `group_balance`, `group_abort`, `group_resolve_transfers` | Existing capture/preparation outcome or completed group command; capture and later stages remain distinct |
 | `transfer_accept`, `transfer_clear`, `transfer_clear_row`, `transfer_commit`, `transfer_from_draft`, `transfer_manual`, `transfer_match`, `transfer_merge`, `transfer_merge_apply`, `transfer_retarget`, `transfer_unmatch` | Existing transfer receipt; Merge can return a preview before any save and then remains unknown rather than claiming persistence |

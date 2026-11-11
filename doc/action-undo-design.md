@@ -85,8 +85,8 @@ later wants either capability, design it explicitly; do not silently restore the
 | User repair, category/transfer resolution or edits after the import workflow has completed | New actions for the user changes actually made. Never reopen a completed Import root to absorb later edits. |
 | Standalone definition/settings saves, Save all definitions, report Save and show | Not Undo steps. Preserve active Undo dependencies as described below. Showing/calculating a report is a read. |
 | Older-import removal; account-wide Discard | Separate confirmed operations, allowed only with no active action and no preparing import. Not Undo steps. |
-| Selection, navigation, filters, previews, Help, Check file, backup creation | No step; preserve the chain. |
-| Document creation, close/switch, restore from backup, passwords and filesystem locks | Existing lifecycle boundaries; never reversed by transaction Undo. |
+| Selection, navigation, filters, previews, Help, Check file | No step; preserve the chain. |
+| Document creation, close/switch, passwords and filesystem locks | Existing lifecycle boundaries; never reversed by transaction Undo. |
 
 A semantic no-op adds no step, but retains retry protection where appropriate.
 Children cannot commit independently or expose independent Undo entry points.
@@ -386,9 +386,8 @@ current values, originals, recognition, rule provenance and eligible import roll
 inputs afterward. Failed/cancelled close and crashes retain the session chain.
 
 Normal open/close adds no full audit/hash or routine full-file copy. Full abnormal
-recovery, backup/restore and explicit checks validate the baseline, current session
-chain, restoration lineage and retained import dependencies. Backup of an open
-session includes a consistent recoverable chain. No automatic repair, plaintext
+recovery and explicit checks validate the baseline, current session
+chain, restoration lineage and retained import dependencies. No automatic repair, plaintext
 sidecar, lock bypass or weaker durable commit is permitted.
 
 Undone activity may keep bounded session labels/counts, with unavailable old details

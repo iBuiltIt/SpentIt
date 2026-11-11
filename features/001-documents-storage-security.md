@@ -1,7 +1,7 @@
 # 001 — Documents, storage, and security
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-10
 
 Encrypted local files are the application. One running process has one active
 file. There is no application-wide instance limit. Settings remembers the file
@@ -56,11 +56,13 @@ back and keeps the session. Check file reports errors and does not repair data.
 See [session history](../doc/session-history-baseline.md) and
 [open/close checks](../doc/fast-startup.md).
 
-Backup copies through the encrypted backup API, verifies the copy, and publishes
-it only after that check. Test a backup by restoring it. Cancel is available
-before exclusive publication. A cancelled candidate is not a valid backup.
+The application does not write a backup. After a successful close, and while
+SpentIt is not running, a copy of the file is another file of the same format.
+It opens with Browse under its own name and the same password. A copy taken
+while the file is open, or after a crash before a successful close, is not a
+consistent copy. Do not add an in-application backup command.
 
-Private local files and backup candidates lock under the platform
+Private local files lock under the platform
 application-data directory. See [document locking](../doc/document-locking.md).
 
 ## Not done

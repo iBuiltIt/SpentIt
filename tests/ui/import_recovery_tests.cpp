@@ -52,7 +52,7 @@ private slots:
         QFile source(dir.path()+"/synthetic.qif");QVERIFY(source.open(QIODevice::WriteOnly));QCOMPARE(source.write(bytes),bytes.size());source.close();
         run(model,"import",{{"path",source.fileName()},{"profile","DMY"}});QCOMPARE(model.state().value("balance").toString(),"-7.00");
         QVERIFY(source.open(QIODevice::ReadOnly));QCOMPARE(source.readAll(),bytes);source.close();
-        const auto copy=dir.path()+"/backup";run(model,"backup",{{"path",copy}});run(model,"close");run(model,"open",{{"path",copy}});
+        run(model,"close");const auto copy=dir.path()+"/backup";QVERIFY(QFile::copy(path,copy));run(model,"open",{{"path",copy}});
         QVERIFY(!model.state().value("startupImportCleanup").toBool());QCOMPARE(model.state().value("newTransactions").toInt(),2);QCOMPARE(model.state().value("balance").toString(),"-7.00");
     }
     void zeroRecordCaptureIsRemoved() {

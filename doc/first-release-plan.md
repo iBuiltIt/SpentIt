@@ -18,7 +18,7 @@ scope, not every possible extension.
 
 | Decision | Accepted answer |
 | --- | --- |
-| Core workflow | Finish the existing local accounts, supported imports, manual entries, Review, rules, editing, reports, backup/recovery, and Help. Defer new financial capabilities. |
+| Core workflow | Finish the existing local accounts, supported imports, manual entries, Review, rules, editing, reports, recovery, and Help. A backup is a copy of the closed file. Defer new financial capabilities. |
 | Platforms | macOS first. Windows and Linux remain development builds until current tests, recovery, and packages pass. Select supported OS versions from actual testing. No version range is promised. |
 | Remaining retention cleanup | Category, undone Review-link, exclusion, and account/opening/currency histories stay deferred unless verification finds a correctness problem or unacceptable growth. Each remediation needs discussion and Go. Ruleset retention and the legacy staged-opening path are already done. |
 | Rule inputs | Match current transaction and split values for manual and imported entries. Preserve Uncategorized gating, explicit categories, split-first order, selected-rule ordering, manual text protection, and the prohibition on creating transfers. Defer explicit imported-original conditions. Implement before release with clear previews. Use an experimental-format boundary if needed so existing files are not reinterpreted silently. |
@@ -28,7 +28,7 @@ scope, not every possible extension.
 | UI extensions | Defer multiline-note editing and additional layout customization. Current workflows still have to be usable. |
 | Password changes | Defer for the first release and say so. Later changes need a recoverable rekey workflow. Forgotten-password recovery remains unavailable. |
 | File compatibility | The announced first release starts the compatibility commitment. Until then, experimental formats stay disposable and older files stay rejected. After release, require a supported upgrade and recovery policy. Never silently invalidate a released file. |
-| Verification | Establish a release-wide regression baseline for every shipped platform, resolve failures, check financial faults and recovery, restore backups, and walk through key native workflows. Fix stale fixtures without weakening assertions. |
+| Verification | Establish a release-wide regression baseline for every shipped platform, resolve failures, check financial faults and recovery, open a copy of a closed file, and walk through key native workflows. Fix stale fixtures without weakening assertions. |
 | Manual | The 2026-11-09 pass covered MAN-001 through MAN-020. Freeze release behavior, then update the manual for changes after that pass. Verify screenshots, examples, links, and contextual Help against the release candidate. |
 | Distribution | SpentIt is under the Unlicense. Assemble dependency notices for each shipped build, finish tested packages and signing or notarization, then obtain explicit publication approval. |
 
