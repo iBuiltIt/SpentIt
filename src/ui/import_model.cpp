@@ -2396,6 +2396,29 @@ ImportModel::ImportModel(std::unique_ptr<app::DocumentGateway> gateway,QObject* 
     pool_.setStackSize(4 * 1024 * 1024);
     pool_.setMaxThreadCount(1); state_={{"active",false},{"path",QSettings().value("datasetPath",suggestedPath())},{"startup",QSettings().contains("datasetPath")}};
 }
+QString ImportModel::launchDocumentPath(const QStringList& arguments, QString* error) {
+    if(error) error->clear();
+    QString found;
+    for(int i=1;i<arguments.size();++i) {
+        const auto arg=arguments.at(i);
+        if(arg=="--diagnostics" || arg=="--smoke" || arg=="--smoke-create") continue;
+        if(arg.startsWith('-')) {
+            if(error) *error=QStringLiteral("SpentIt does not recognize that command.");
+            return {};
+        }
+        if(arg.isEmpty()) continue;
+        if(!found.isEmpty()) {
+            if(error) *error=QStringLiteral("Open one SpentIt file at a time.");
+            return {};
+        }
+        found=QFileInfo(arg).absoluteFilePath();
+    }
+    return found;
+}
+void ImportModel::setLaunchDocument(const QString& path) {
+    state_["path"]=QFileInfo(path).absoluteFilePath();
+    state_["startup"]=true;
+}
 ImportModel::~ImportModel() {pool_.waitForDone();worker_->gateway->close();}
 void ImportModel::setRememberWindowPosition(bool enabled) {
     if(rememberWindowPosition_==enabled)return;

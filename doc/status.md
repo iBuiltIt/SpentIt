@@ -46,11 +46,19 @@ release 1 does not add.
 
 ## Still to do
 
-- Build, test, and package on Windows and Linux. The command is
-  `python3 tools/package.py`. The Windows zip and the Linux `.tar.gz` steps
-  are not implemented. See [packaging](../packaging/README.md),
-  [Windows setup](windows-development-setup.md), and
-  [Linux setup](linux-development-setup.md).
+- Build, test, and package on Linux. The command is `python3 tools/package.py`.
+  The Linux `.tar.gz` step is not implemented. See
+  [packaging](../packaging/README.md) and [Linux setup](linux-development-setup.md).
+- Windows `python tools/package.py` produced
+  `dist/SpentIt-0.1.0-windows-x64-setup.exe` (44881059 bytes) on 2026-11-11
+  with MSVC 19.44.35229.0. The staged app created a 942080-byte file with
+  development tools hidden from `PATH`. The installer was not run, so the
+  Start menu entry, desktop icon, and `.spentit` association were not
+  exercised. `--sign` was not used. `launchDocumentArgument` and
+  `launchDocument` passed: 6 tests, 0 failed, offscreen Qt 6.8.3. A
+  password-protected launch stayed on the welcome screen and asked for the
+  password. The remembered file was left unchanged. SQLCipher logged an HMAC
+  failure while that open was refused.
 - macOS uses the same command. `--sign` with a notary keychain profile
   produces a Developer ID DMG aimed at macOS 14.4. A Mac running 14.4 was not
   used. Publication is not approved. `./build/SpentIt` stays the development

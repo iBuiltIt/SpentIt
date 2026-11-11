@@ -13,7 +13,11 @@ and opened its window on the host below. `ctest` registered 40 tests; 39 passed
 and `import.ui` failed. The same checkout was also built in this machine's WSL
 Ubuntu, in a separate build directory. That `ctest` finished **141 passed,
 18 failed, out of 159**, real time 8628.74 sec. The 18 failures are listed
-below. macOS was not rebuilt from this machine. Packaging was not run.
+below. macOS was not rebuilt from this machine. The downloadable installer is
+built with `python tools/package.py`, described in
+[packaging](../packaging/README.md). The 2026-11-11 package run is recorded
+in [status](status.md). This guide remains the development setup, not the
+install steps for that download.
 
 ## Host
 

@@ -3,6 +3,7 @@
 #include "about/about_info.hpp"
 #include <spentit/import_view.hpp>
 #include <QAbstractListModel>
+#include <QStringList>
 #include <QThreadPool>
 #include <QVariantMap>
 #include <QUrl>
@@ -36,6 +37,10 @@ public:
     qulonglong diagnosticGeneration() const { return spentit::diagnostics::Collector::instance().generation(); }
     Q_INVOKABLE void observeUi(const QVariantMap&);
     explicit ImportModel(std::unique_ptr<spentit::app::DocumentGateway>,QObject* parent=nullptr);
+    // A file passed on the command line, including a double-clicked .spentit file.
+    // Empty error means no document argument. A message means SpentIt must not start.
+    static QString launchDocumentPath(const QStringList& arguments, QString* error);
+    void setLaunchDocument(const QString& path);
     ~ImportModel() override;
     QVariantMap state() const { return state_; }
     bool busy() const { return busy_; }

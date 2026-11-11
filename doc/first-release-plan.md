@@ -23,7 +23,7 @@ scope, not every possible extension.
 | File compatibility | The announced first release starts the compatibility commitment. Until then, experimental formats stay disposable and older files stay rejected. When the owner says to make the release schema, follow [release schema](release-schema.md): the rules database becomes version 1, with no migrator in that change. After release, require a supported upgrade and recovery policy. Never silently invalidate a released file. |
 | Verification | Establish a release-wide regression baseline for every shipped platform, resolve failures, check financial faults and recovery, open a copy of a closed file, and walk through key native workflows. Fix stale fixtures without weakening assertions. |
 | Manual | The bundled manual is current. A later user-visible change goes in the manual backlog and waits for an owner-authorized pass. |
-| Distribution | SpentIt is under the Unlicense. The macOS package command has produced one notarized DMG. Publication still needs explicit approval. Windows and Linux archives are not implemented. |
+| Distribution | SpentIt is under the Unlicense. The macOS package command has produced one notarized DMG. Windows `python tools/package.py` has produced one per-user installer. A clean Windows account has not installed it, and it was not signed. Linux packaging is not implemented. Publication still needs explicit approval. |
 
 Windows has a development build with a failing UI check and excluded storage
 tests. WSL has failures. That is not a claim that Windows cannot build, and it

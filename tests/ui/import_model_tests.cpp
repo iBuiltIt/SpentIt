@@ -1409,6 +1409,64 @@ private slots:
         QTRY_VERIFY(m.state().value("active").toBool());
     }
 
+    void launchDocumentArgument() {
+        QString error;
+        QCOMPARE(ImportModel::launchDocumentPath({"SpentIt.exe","--smoke-create"},&error),QString());
+        QVERIFY(error.isEmpty());
+        QCOMPARE(ImportModel::launchDocumentPath({"SpentIt.exe","--diagnostics","Household.spentit"},&error),QFileInfo("Household.spentit").absoluteFilePath());
+        QVERIFY(error.isEmpty());
+        QVERIFY(ImportModel::launchDocumentPath({"SpentIt.exe","a.spentit","b.spentit"},&error).isEmpty());
+        QCOMPARE(error,QString("Open one SpentIt file at a time."));
+        error.clear();
+        QVERIFY(ImportModel::launchDocumentPath({"SpentIt.exe","--not-a-command"},&error).isEmpty());
+        QCOMPARE(error,QString("SpentIt does not recognize that command."));
+    }
+    void launchDocument_data() {
+        QTest::addColumn<QString>("kind");
+        for(const auto* kind:{"public","protected","missing"})QTest::newRow(kind)<<QString(kind);
+    }
+    void launchDocument() {
+        QFETCH(QString,kind);
+        QTemporaryDir dir;
+        const auto remembered=dir.path()+"/remembered.spentit";
+        const auto launched=dir.path()+"/launched.spentit";
+        ImportModel owner(storage::document_gateway());
+        run(owner,"create",{{"path",remembered},{"name","Remembered"},{"currency","CAD"},{"protected",false}});
+        run(owner,"close");
+        if(kind!="missing") {
+            run(owner,"create",{{"path",launched},{"name","Launched"},{"currency","CAD"},{"protected",kind=="protected"},{"password","synthetic"},{"confirmation","synthetic"}});
+            run(owner,"close");
+        }
+        QSettings().setValue("datasetPath",remembered);
+        ImportModel m(storage::document_gateway());
+        QString error;
+        const auto requested=ImportModel::launchDocumentPath({"SpentIt.exe",launched},&error);
+        QVERIFY(error.isEmpty());
+        m.setLaunchDocument(requested);
+        QCOMPARE(m.state().value("path").toString(),QFileInfo(launched).absoluteFilePath());
+        QVERIFY(m.state().value("startup").toBool());
+        QSignalSpy startupCommands(&m,&ImportModel::completed);
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        QTRY_VERIFY(!root->property("startupPending").toBool());QTRY_VERIFY(!m.busy());
+        QCOMPARE(startupCommands.size(),1);
+        QCOMPARE(startupCommands.front()[0].toString(),QString("open"));
+        QCOMPARE(m.state().value("path").toString(),QFileInfo(launched).absoluteFilePath());
+        if(kind=="public") {
+            QVERIFY2(m.state().value("active").toBool(),qPrintable(m.error()));
+            const auto accounts=m.state().value("accounts").toList();
+            QVERIFY(!accounts.isEmpty());
+            QCOMPARE(accounts.front().toMap().value("name").toString(),QString("Launched"));
+            QCOMPARE(QSettings().value("datasetPath").toString(),QFileInfo(launched).absoluteFilePath());
+            return;
+        }
+        QVERIFY(!m.state().value("active").toBool());
+        QCOMPARE(QSettings().value("datasetPath").toString(),remembered);
+        QVERIFY(root->findChild<QObject*>("welcomeScreen")->property("visible").toBool());
+        if(kind=="protected") {QVERIFY(m.state().value("unlockRequired").toBool());QVERIFY(m.error().isEmpty());}
+        else QVERIFY(!m.error().isEmpty());
+    }
+
     void configuredDatesAndCategories() {
         QTemporaryDir dir;const auto path=dir.path()+"/dates.spentit";
         ImportModel m(storage::document_gateway());

@@ -21,7 +21,19 @@ APPLE_NOTARY_PROFILE=machines-notary python3 tools/package.py --sign --smoke
 
 The bundle id is `com.stefanwessels.SpentIt`. Saved settings keep the existing organization and application name. The script copies Qt, its plugins, QML, and every non-system library those binaries link, then refuses to finish if any of them still points outside the app or requires a newer system than macOS 14.4. Qt 6.12's own floor is 14.4, and it is built with the current SDK by `python3 tools/build_macos_14_4.py`. That build does not replace the Homebrew Qt used by `./build/SpentIt`.
 
-Windows uses the same command and writes a zip. Linux uses the same command and writes a `.tar.gz`. Those steps are added on those machines.
+## Windows installer
+
+On Windows the same command writes `dist/SpentIt-<version>-windows-x64-setup.exe`. Run it from the Visual Studio developer environment in [Windows development setup](../doc/windows-development-setup.md), or from any prompt: the script loads the x64 MSVC environment itself and prefers toolset 14.44 when that toolset is installed. It configures `build-package/` and leaves `./build/SpentIt` alone. The download is the setup program. `dist/SpentIt/` is the staged app the installer packs.
+
+The setup program installs for the current user, under `%LOCALAPPDATA%\Programs\SpentIt`, without an administrator password. It adds a Start menu entry and a desktop icon, both named SpentIt. It registers `.spentit` so opening a file from File Explorer starts SpentIt and opens that file. A password-protected file still asks for the password. Install, upgrade, and uninstall do not change files in Documents or the remembered-file setting. The installer refuses Windows older than Windows 10 version 1809, which is Qt 6.8's published floor. That is not a promise that 1809 has been tested.
+
+The staged program contains the Qt libraries, plugins, and QML, every non-Windows library the program imports, and the Visual C++ runtime DLLs beside `SpentIt.exe`. The Visual C++ redistributable installer is not shipped. Third-party notices are in the `Licenses` folder. The script refuses to finish unless `SpentIt.exe` is x64, imports release Qt, contains `qwindows.dll`, and can create a temporary file when `PATH` contains only `System32`. That launch uses the real Windows profile for the empty session-lock directory. The temporary file is removed afterward.
+
+Qt, OpenSSL, and PCRE2 are found from `CMAKE_PREFIX_PATH`, `OPENSSL_ROOT_DIR`, and `SPENTIT_PCRE2_ROOT`. When those are unset, the script uses the prefixes in the Windows setup document. Pass extra CMake arguments with repeated `--cmake-args`.
+
+`--sign` Authenticode-signs `SpentIt.exe`, the setup program, and the uninstaller. Set one of `SPENTIT_SIGN_THUMBPRINT`, `SPENTIT_SIGN_SUBJECT`, or `SPENTIT_SIGN_PFX`. A PFX password stays in `SPENTIT_SIGN_PASSWORD`. The signature is timestamped with `SPENTIT_SIGN_TIMESTAMP_URL`, or `http://timestamp.digicert.com` when that is unset. The script does not store the password. A new signed file can still show SmartScreen until Windows has seen that file widely. After More info, the verified publisher name is the certificate subject.
+
+Linux uses the same command and writes a `.tar.gz`. That step is added on the Linux machine.
 
 ## macOS local packages
 
@@ -66,7 +78,7 @@ When a package is requested:
 python tools/package_local.py --build build/windows-release --output build/packages/windows-local --exe build/windows-release/Release/SpentIt.exe --qt-deploy C:/Qt/6.8.3/msvc2022_64/bin/windeployqt.exe --dll C:/dependencies/bin/libcrypto-3-x64.dll --dll C:/dependencies/bin/pcre2-8.dll
 ```
 
-Paths and DLL names are examples; use the matching compiler/Qt/dependency installation and actual executable location. Repeat `--dll` for every required non-Qt runtime DLL. The script builds the application, stages the executable and supplied DLLs, runs `windeployqt` including QML dependencies, and creates a ZIP. Dependency completeness and execution of that ZIP remain unverified. The development executable is covered in the Windows setup document. No installer is produced.
+Paths and DLL names are examples; use the matching compiler/Qt/dependency installation and actual executable location. Repeat `--dll` for every required non-Qt runtime DLL. The script builds the application, stages the executable and supplied DLLs, runs `windeployqt` including QML dependencies, and creates a ZIP. Dependency completeness and execution of that ZIP remain unverified. The development executable is covered in the Windows setup document. This local command does not produce the downloadable installer. Use `python tools/package.py` for that.
 
 ## Failure behavior and verification
 

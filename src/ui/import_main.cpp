@@ -20,8 +20,25 @@
 #include <QTemporaryDir>
 #include <QIcon>
 #include <QStyleHints>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+namespace {
+void reportLaunchError(const QString& message) {
+    std::cerr<<message.toStdString()<<'\n';
+#ifdef Q_OS_WIN
+    MessageBoxW(nullptr,reinterpret_cast<const wchar_t*>(message.utf16()),L"SpentIt",MB_OK|MB_ICONWARNING);
+#endif
+}
+}
 int main(int argc,char** argv) {
     QGuiApplication app(argc,argv);
+    QString launchError;
+    const auto launchPath=ImportModel::launchDocumentPath(app.arguments(),&launchError);
+    if(!launchError.isEmpty()) {reportLaunchError(launchError);return 2;}
     const bool diagnosticsRequested=app.arguments().contains("--diagnostics");
     if(diagnosticsRequested && !spentit::diagnostics::Collector::instance().enable()){std::cerr<<"Diagnostics unsupported in this build.\n";return 2;}
 #ifdef SPENTIT_DIAGNOSTICS
@@ -49,6 +66,7 @@ int main(int argc,char** argv) {
     const bool smoke=app.arguments().contains("--smoke");
     // Package verification. Same create command as the Create file button.
     const bool smokeCreate=app.arguments().contains("--smoke-create");
+    if(!launchPath.isEmpty() && (smoke || smokeCreate)) {reportLaunchError(QStringLiteral("SpentIt cannot open a file during a package check."));return 2;}
     if(smoke || smokeCreate) {
         smokeSettings=std::make_unique<QTemporaryDir>();
         if(!smokeSettings->isValid()) return 2;
@@ -59,6 +77,7 @@ int main(int argc,char** argv) {
         if(!smokeCreate) QSettings().setValue("datasetPath",smokeSettings->path()+"/missing.spentit");
     }
     ImportModel model(spentit::storage::document_gateway((QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/verification").toStdString()));
+    if(!launchPath.isEmpty()) model.setLaunchDocument(launchPath);
     app.setApplicationVersion(model.aboutInformation()->version());
     HelpCatalog helpCatalog;
     helpCatalog.load(QStringLiteral(":/spentit/help/manifest.json"));
@@ -91,7 +110,7 @@ int main(int argc,char** argv) {
                 app.exit(1);
                 return;
             }
-            std::cout<<"Created "<<path.toStdString()<<'\n';
+            std::cout<<"Created "<<path.toStdString()<<'\n'<<std::flush;
             engine.rootObjects().first()->setProperty("allowClose",true);
             app.quit();
         });

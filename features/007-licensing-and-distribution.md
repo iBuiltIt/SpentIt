@@ -30,7 +30,13 @@ notarizes it when `APPLE_NOTARY_PROFILE` is set. Icons follow system appearance,
 with light as the fallback. Installed icons use the light variant. See
 [packaging/README.md](../packaging/README.md).
 
-Windows uses the same command and writes a zip. Linux uses it and writes a
-`.tar.gz`. Those steps are not implemented. Linux and Windows library lists
+On Windows the same command writes a per-user installer,
+`dist/SpentIt-<version>-windows-x64-setup.exe`. It installs under the user's
+local Programs folder, adds Start menu and desktop icons, and registers
+`.spentit`. Opening that file starts SpentIt and opens it. `--sign` applies
+Authenticode when a certificate is available in the environment. The installer
+refuses Windows older than Windows 10 version 1809, Qt 6.8's published floor.
+That floor has not been launch-tested. Linux uses the same command and writes
+a `.tar.gz`. That step is not implemented. Linux and Windows library lists
 are not in LICENSE yet. The macOS package minimum is 14.4. It has not been
 launched on a 14.4 Mac. Publication still needs explicit approval.

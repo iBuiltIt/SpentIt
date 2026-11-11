@@ -9,8 +9,14 @@ macOS writes dist/SpentIt.app. Without --sign it also writes a zip. With
 --sign it signs with the Developer ID in the keychain, writes a DMG, and
 notarizes when a notary profile or key is already in the environment.
 
-Windows uses this command and writes a zip. Linux uses this command and
-writes a .tar.gz. Those archive steps are added on those machines.
+Windows writes dist/SpentIt-<version>-windows-x64-setup.exe, a per-user
+installer. It bundles Qt, the libraries the program imports, and the Visual
+C++ runtime DLLs. --sign Authenticode-signs SpentIt.exe and the installer
+when SPENTIT_SIGN_THUMBPRINT, SPENTIT_SIGN_SUBJECT, or SPENTIT_SIGN_PFX is
+set. The certificate password stays in the environment.
+
+Linux uses this command and writes a .tar.gz. That archive step is added
+on the Linux machine.
 
 The notary password stays in the login keychain. This script does not read
 or store it, and it does not upload the archive anywhere but Apple's
@@ -58,9 +64,13 @@ def shown_command(cmd: list[str]) -> str:
             redacted.append("***")
             hide_next = False
             continue
-        if arg in {"--password", "--key"}:
+        if arg in {"--password", "--key"} or arg.lower() == "/p":
             redacted.append(arg)
             hide_next = True
+            continue
+        secret = os.environ.get("SPENTIT_SIGN_PASSWORD")
+        if secret and secret in arg:
+            redacted.append(arg.replace(secret, "***"))
             continue
         redacted.append(arg)
     return " ".join(redacted)
@@ -460,8 +470,7 @@ def patch_info_plist(app: Path, version: str, minimum: tuple[int, ...]) -> None:
         )
 
 
-def install_notices(app: Path) -> None:
-    dest = app / "Contents" / "Resources" / "Licenses"
+def copy_license_files(dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     shutil.copy2(REPO / "LICENSE", dest / "LICENSE.txt")
     shutil.copytree(REPO / "third_party" / "notices", dest / "notices", dirs_exist_ok=True)
@@ -475,6 +484,10 @@ def install_notices(app: Path) -> None:
         target = dest / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO / relative, target)
+
+
+def install_notices(app: Path) -> None:
+    copy_license_files(app / "Contents" / "Resources" / "Licenses")
 
 
 def developer_id(explicit: str | None) -> str:
@@ -836,14 +849,569 @@ def package_macos(args: argparse.Namespace) -> None:
     log(f"package ready in {dist}")
 
 
+# Fallback recorded in doc/windows-development-setup.md. OPENSSL_ROOT_DIR overrides it.
+DOCUMENTED_OPENSSL = Path(r"C:\Users\swessels\develop\github\external\vcpkg\installed\x64-windows")
+DLL_NAME = re.compile(r"[A-Za-z0-9_.+-]+\.dll\Z", re.IGNORECASE)
+SYSTEM_DLL_PREFIXES = ("api-ms-win-", "ext-ms-")
+# App-local copies. These names also exist in System32 after the redistributable is installed.
+CRT_DLLS = {
+    "vcruntime140.dll",
+    "vcruntime140_1.dll",
+    "msvcp140.dll",
+    "msvcp140_1.dll",
+    "msvcp140_2.dll",
+    "msvcp140_atomic_wait.dll",
+    "msvcp140_codecvt_ids.dll",
+    "concrt140.dll",
+    "vccorlib140.dll",
+}
+
+
+def which_in(name: str, env: dict[str, str]) -> str | None:
+    return shutil.which(name, path=env.get("PATH"))
+
+
+def find_vcvars() -> Path:
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    vswhere = Path(program_files_x86) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if vswhere.is_file():
+        text = subprocess.check_output(
+            [str(vswhere), "-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+             "-find", r"VC\Auxiliary\Build\vcvars64.bat"],
+            text=True, errors="replace",
+        )
+        for line in text.splitlines():
+            path = Path(line.strip())
+            if path.is_file():
+                return path
+    fallback = Path(r"C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat")
+    if fallback.is_file():
+        return fallback
+    raise SystemExit(
+        "Visual Studio x64 build tools were not found. Use the Developer PowerShell in "
+        "doc/windows-development-setup.md, then rerun."
+    )
+
+
+def environment_from_batch(command: str) -> dict[str, str] | None:
+    result = subprocess.run(
+        ["cmd", "/d", "/c", command],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, errors="replace", check=False,
+    )
+    if result.returncode != 0:
+        return None
+    env: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if not key or key.startswith("="):
+            continue
+        env[key] = value
+    if which_in("cl", env) is None:
+        return None
+    return env
+
+
+def load_msvc_env() -> dict[str, str]:
+    if which_in("cl", dict(os.environ)) is not None:
+        log("using the MSVC compiler already on PATH")
+        return dict(os.environ)
+    vcvars = find_vcvars()
+    pinned = environment_from_batch(f'"{vcvars}" -vcvars_ver=14.44 >nul && set')
+    if pinned is not None:
+        log("using the MSVC 14.44 toolset")
+        return pinned
+    default = environment_from_batch(f'"{vcvars}" >nul && set')
+    if default is None:
+        raise SystemExit(f"could not initialize the MSVC environment from {vcvars}")
+    log("MSVC 14.44 was not available. Using the default Visual Studio toolset.")
+    return default
+
+
+def windows_qt() -> Path:
+    candidates: list[Path] = []
+    for variable in ("CMAKE_PREFIX_PATH", "Qt6_DIR"):
+        raw = os.environ.get(variable)
+        if not raw:
+            continue
+        candidates.extend(Path(part) for part in raw.split(os.pathsep) if part)
+    candidates.append(Path.home() / ".local" / "spentit-deps" / "qt" / "6.8.3" / "msvc2022_64")
+    seen: list[Path] = []
+    for path in candidates:
+        if (path / "bin" / "windeployqt.exe").is_file():
+            return path
+        if path.name == "Qt6":
+            prefix = path.parents[2] if len(path.parents) > 2 else None
+            if prefix is not None and (prefix / "bin" / "windeployqt.exe").is_file():
+                return prefix
+        seen.append(path)
+    raise SystemExit(
+        "Qt 6.8 for MSVC was not found. Set CMAKE_PREFIX_PATH to the Qt prefix "
+        "(the directory that contains bin\\windeployqt.exe).\n"
+        + "\n".join(str(path) for path in seen)
+    )
+
+
+def windows_openssl() -> Path:
+    candidates: list[Path] = []
+    if os.environ.get("OPENSSL_ROOT_DIR"):
+        candidates.append(Path(os.environ["OPENSSL_ROOT_DIR"]))
+    candidates.append(DOCUMENTED_OPENSSL)
+    for path in candidates:
+        if (path / "bin" / "libcrypto-3-x64.dll").is_file() or (path / "lib" / "libcrypto.lib").is_file():
+            return path
+    raise SystemExit(
+        "OpenSSL 3 was not found. Set OPENSSL_ROOT_DIR to the prefix that contains bin\\libcrypto-3-x64.dll."
+    )
+
+
+def windows_pcre2() -> Path:
+    candidates: list[Path] = []
+    if os.environ.get("SPENTIT_PCRE2_ROOT"):
+        candidates.append(Path(os.environ["SPENTIT_PCRE2_ROOT"]))
+    candidates.append(Path.home() / ".local" / "spentit-deps" / "pcre2-10.49")
+    for path in candidates:
+        if (path / "include" / "pcre2.h").is_file():
+            return path
+    raise SystemExit(
+        "PCRE2 10.49 was not found. Set SPENTIT_PCRE2_ROOT to the prefix that contains include\\pcre2.h."
+    )
+
+
+def crt_directories(env: dict[str, str]) -> list[Path]:
+    roots: list[Path] = []
+    raw = env.get("VCToolsRedistDir")
+    if raw:
+        roots.append(Path(raw))
+    compiler = which_in("cl", env)
+    if compiler:
+        for parent in Path(compiler).resolve().parents:
+            if parent.name.lower() == "vc":
+                roots.append(parent / "Redist" / "MSVC")
+                break
+    found: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        if not root.exists():
+            continue
+        candidates = [root] if (root / "vcruntime140.dll").is_file() else []
+        candidates.extend(path for path in root.glob("**/Microsoft.VC*.CRT") if path.is_dir())
+        for path in candidates:
+            resolved = path.resolve()
+            parts = {part.lower() for part in path.parts}
+            if resolved in seen or "x64" not in parts or "onecore" in parts:
+                continue
+            if not any(child.is_file() and child.name.lower() == "vcruntime140.dll" for child in path.iterdir()):
+                continue
+            seen.add(resolved)
+            found.append(path)
+    return found
+
+
+def configure_and_build_windows(build: Path, qt: Path, openssl: Path, pcre2: Path, env: dict[str, str], extra: list[str]) -> None:
+    if not (SQLCIPHER_SOURCE / "sqlite3.c").is_file():
+        raise SystemExit("SQLCipher source is missing. From the repository root, run the prepare step in doc/building.md.")
+    for tool in ("cmake", "ninja"):
+        if which_in(tool, env) is None:
+            raise SystemExit(f"{tool} is required to package on Windows.")
+    output = build / "app"
+    cmake = [
+        "cmake", "-S", str(REPO), "-B", str(build), "-G", "Ninja",
+        "-DCMAKE_BUILD_TYPE=Release",
+        f"-DCMAKE_PREFIX_PATH={qt}",
+        f"-DOPENSSL_ROOT_DIR={openssl}",
+        f"-DSPENTIT_PCRE2_ROOT={pcre2}",
+        "-DSPENTIT_STORAGE_PROTOTYPE=ON",
+        "-DSPENTIT_IMPORT_WORKFLOW=ON",
+        "-DSPENTIT_IMPORT_UI=ON",
+        "-DSPENTIT_RULES=ON",
+        "-DSPENTIT_DIAGNOSTICS=OFF",
+        f"-DSPENTIT_SQLCIPHER_SOURCE={SQLCIPHER_SOURCE}",
+        f"-DSPENTIT_APPLICATION_OUTPUT_DIRECTORY={output}",
+        *extra,
+    ]
+    run(cmake, env=env)
+    cache = (build / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace")
+    if "SPENTIT_DIAGNOSTICS:BOOL=ON" in cache:
+        raise SystemExit("refusing to package a diagnostics build")
+    if "SPENTIT_RULES:BOOL=ON" not in cache:
+        raise SystemExit("refusing to package without rules")
+    run(["cmake", "--build", str(build), "--target", "spentit_import_experiment", "--target", "spentit_controls_styleplugin", "--parallel", "2"], env=env)
+
+
+def built_windows_exe(build: Path) -> Path:
+    output = build / "app"
+    for candidate in (output / "SpentIt.exe", output / "Release" / "SpentIt.exe"):
+        if candidate.is_file():
+            return candidate
+    raise SystemExit("the package build did not produce app/SpentIt.exe")
+
+
+def deploy_controls_style(stage: Path, build: Path) -> None:
+    """The button style is selected from C++ and is not a QML import windeployqt scans."""
+    module = build / "src" / "ui" / "controls" / "SpentItControls"
+    plugin = module / "spentit_controls_styleplugin.dll"
+    if not plugin.is_file():
+        found = [path for path in build.rglob("spentit_controls_styleplugin.dll") if path.is_file()]
+        if not found:
+            raise SystemExit("the SpentItControls plugin was not built")
+        plugin = found[0]
+    dest = stage / "qml" / "SpentItControls"
+    dest.mkdir(parents=True, exist_ok=True)
+    if module.is_dir():
+        for path in module.iterdir():
+            if not path.is_file():
+                continue
+            if path.suffix.lower() in {".qml", ".dll"} or path.name in {"qmldir", "spentit_controls_style.qmltypes"}:
+                shutil.copy2(path, dest / path.name)
+    if not (dest / plugin.name).is_file():
+        shutil.copy2(plugin, dest / plugin.name)
+    style = build / "src" / "ui" / "spentit_controls_style.dll"
+    if not style.is_file():
+        raise SystemExit("spentit_controls_style.dll was not built")
+    shutil.copy2(style, stage / style.name)
+    shutil.copy2(style, dest / style.name)
+    if not (dest / "qmldir").is_file():
+        raise SystemExit("SpentItControls qmldir was not staged")
+
+
+def deploy_qt_windows(stage: Path, qt: Path, env: dict[str, str]) -> None:
+    deploy = qt / "bin" / "windeployqt.exe"
+    command = [
+        str(deploy), "--release", "--compiler-runtime", "--no-translations",
+        f"--qmldir={REPO / 'src' / 'ui'}",
+        f"--qmldir={REPO / 'src' / 'ui' / 'controls'}",
+        str(stage / "SpentIt.exe"),
+    ]
+    deploy_env = dict(env)
+    deploy_env["PATH"] = str(qt / "bin") + os.pathsep + deploy_env.get("PATH", "")
+    log("+ " + shown_command(command))
+    result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=deploy_env, errors="replace")
+    log_path = stage.parent / "deployment.log"
+    log_path.write_text(result.stdout or "", encoding="utf-8")
+    output = result.stdout or ""
+    if result.returncode != 0 or "ERROR:" in output:
+        tail = "\n".join(output.splitlines()[-40:])
+        raise SystemExit(f"Qt deployment failed. See {log_path}\n{tail}")
+    for extra in stage.glob("vc_redist*.exe"):
+        extra.unlink()
+    for tooling in list(stage.rglob("qmldbg_*.dll")):
+        tooling.unlink()
+    for tooling_dir in list(stage.rglob("qmltooling")):
+        if tooling_dir.is_dir():
+            shutil.rmtree(tooling_dir)
+    if not any(stage.rglob("qwindows.dll")):
+        raise SystemExit("the Windows platform plugin was not copied into the app")
+
+
+def pe_imports(path: Path, env: dict[str, str]) -> list[str]:
+    try:
+        text = subprocess.check_output(
+            ["dumpbin", "/dependents", "/nologo", str(path)],
+            text=True, errors="replace", env=env,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(f"dumpbin failed for {path.name}") from exc
+    return [line.strip() for line in text.splitlines() if DLL_NAME.fullmatch(line.strip())]
+
+
+def find_named_dll(name: str, directories: list[Path]) -> Path | None:
+    wanted = name.lower()
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        direct = directory / name
+        if direct.is_file():
+            return direct
+        for candidate in directory.iterdir():
+            if candidate.is_file() and candidate.name.lower() == wanted:
+                return candidate
+    return None
+
+
+def bundle_windows_dependencies(stage: Path, search: list[Path], env: dict[str, str]) -> None:
+    if which_in("dumpbin", env) is None:
+        raise SystemExit("dumpbin is required to check the Windows package. Use the Visual Studio developer environment.")
+    system32 = Path(os.environ["SystemRoot"]) / "System32"
+    pending = [path for path in [stage / "SpentIt.exe", *stage.rglob("*")] if path.is_file() and path.suffix.lower() in {".exe", ".dll"}]
+    seen: set[Path] = set()
+    copied: list[str] = []
+    missing: list[str] = []
+    while pending:
+        binary = pending.pop()
+        resolved = binary.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        for name in pe_imports(binary, env):
+            key = name.lower()
+            if key.startswith(SYSTEM_DLL_PREFIXES):
+                continue
+            if (stage / name).is_file() or any(path.name.lower() == key for path in stage.iterdir() if path.is_file()):
+                continue
+            if key not in CRT_DLLS and (system32 / name).is_file():
+                continue
+            source = find_named_dll(name, search)
+            if source is None:
+                missing.append(f"{binary.name} -> {name}")
+                continue
+            dest = stage / source.name
+            shutil.copy2(source, dest)
+            copied.append(dest.name)
+            pending.append(dest)
+    if missing:
+        raise SystemExit("missing Windows libraries:\n" + "\n".join(sorted(set(missing))))
+    if copied:
+        log("bundled " + ", ".join(sorted(set(copied))))
+
+
+def assert_release_x64(stage: Path, env: dict[str, str]) -> None:
+    exe = stage / "SpentIt.exe"
+    headers = subprocess.check_output(["dumpbin", "/headers", "/nologo", str(exe)], text=True, errors="replace", env=env)
+    if "8664 machine (x64)" not in headers:
+        raise SystemExit("SpentIt.exe is not an x64 build. This installer is x64.")
+    imports = pe_imports(exe, env)
+    if any(re.fullmatch(r"qt6\w+d\.dll", name, re.IGNORECASE) for name in imports):
+        raise SystemExit("refusing to package a debug build")
+    if not any(name.lower().startswith("qt6") for name in imports):
+        raise SystemExit("SpentIt.exe does not import Qt. Deployment did not see the release program.")
+
+
+def sign_arguments(env: dict[str, str]) -> list[str]:
+    signtool = which_in("signtool", env)
+    if signtool is None:
+        raise SystemExit("signtool was not found. Install the Windows SDK signing tools and rerun with --sign.")
+    timestamp = os.environ.get("SPENTIT_SIGN_TIMESTAMP_URL", "http://timestamp.digicert.com")
+    command = [signtool, "sign", "/fd", "SHA256", "/tr", timestamp, "/td", "SHA256"]
+    thumb = os.environ.get("SPENTIT_SIGN_THUMBPRINT", "").strip()
+    subject = os.environ.get("SPENTIT_SIGN_SUBJECT", "").strip()
+    pfx = os.environ.get("SPENTIT_SIGN_PFX", "").strip()
+    if thumb:
+        return command + ["/sha1", thumb]
+    if subject:
+        return command + ["/n", subject]
+    if pfx:
+        command += ["/f", pfx]
+        password = os.environ.get("SPENTIT_SIGN_PASSWORD", "")
+        if password:
+            command += ["/p", password]
+        return command
+    raise SystemExit(
+        "Windows --sign needs SPENTIT_SIGN_THUMBPRINT, SPENTIT_SIGN_SUBJECT, or SPENTIT_SIGN_PFX. "
+        "The password stays in SPENTIT_SIGN_PASSWORD and is not written to the repository."
+    )
+
+
+def sign_file(path: Path, env: dict[str, str]) -> None:
+    run([*sign_arguments(env), str(path)], env=env)
+    run(["signtool", "verify", "/pa", str(path)], env=env)
+
+
+def iss_path(path: Path) -> str:
+    text = str(path.resolve())
+    if '"' in text:
+        raise SystemExit(f"the installer script cannot quote this path: {text}")
+    return text.replace("\\", "\\\\")
+
+
+def version_info(version: str) -> str:
+    parts = [part for part in version.split(".") if part != ""]
+    if not parts or not all(part.isdigit() for part in parts):
+        raise SystemExit(f"version {version} cannot be a Windows file version")
+    while len(parts) < 4:
+        parts.append("0")
+    return ".".join(parts[:4])
+
+
+def find_iscc() -> Path:
+    found = shutil.which("ISCC")
+    if found:
+        return Path(found)
+    roots = [
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")),
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")),
+        Path.home() / "AppData" / "Local" / "Programs",
+    ]
+    for root in roots:
+        candidate = root / "Inno Setup 6" / "ISCC.exe"
+        if candidate.is_file():
+            return candidate
+    raise SystemExit("Inno Setup 6 is required. Install it from https://jrsoftware.org/isdl.php and rerun.")
+
+
+def compile_installer(stage: Path, dist: Path, version: str, env: dict[str, str], sign: bool) -> Path:
+    stem = f"SpentIt-{version}-windows-x64-setup"
+    partial = f"{stem}.partial"
+    final = dist / f"{stem}.exe"
+    produced = dist / f"{partial}.exe"
+    if produced.exists():
+        produced.unlink()
+    defines = dist / "setup-defines.iss"
+    defines.write_text(
+        "\n".join([
+            f'#define SourceDir "{iss_path(stage)}"',
+            f'#define OutputDir "{iss_path(dist)}"',
+            f'#define SetupBaseName "{partial}"',
+            f'#define AppVersion "{version}"',
+            f'#define VersionInfo "{version_info(version)}"',
+            f'#define SetupIcon "{iss_path(REPO / "assets" / "images" / "SpentIt.ico")}"',
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    wrapper = dist / "compile-setup.iss"
+    script = REPO / "packaging" / "windows" / "SpentIt.iss"
+    wrapper.write_text(f'#include "{iss_path(defines)}"\n#include "{iss_path(script)}"\n', encoding="utf-8")
+    command = [str(find_iscc()), str(wrapper)]
+    if sign:
+        def quote_arg(arg: str) -> str:
+            if any(ch in arg for ch in ' \t"'):
+                return '"' + arg.replace('"', r'\"') + '"'
+            return arg
+        signature = " ".join(quote_arg(part) for part in sign_arguments(env)) + " $f"
+        command.extend(["/DSignSetup=1", "/Sspentit=" + signature])
+    try:
+        run(command, env=env)
+        if not produced.is_file():
+            raise SystemExit(f"Inno Setup did not write {produced.name}")
+        if sign:
+            run(["signtool", "verify", "/pa", str(produced)], env=env)
+        produced.replace(final)
+    finally:
+        defines.unlink(missing_ok=True)
+        wrapper.unlink(missing_ok=True)
+        if produced.exists():
+            produced.unlink()
+    return final
+
+
+def windows_smoke(stage: Path) -> None:
+    system = os.environ.get("SystemRoot")
+    if not system or not os.environ.get("LOCALAPPDATA") or not os.environ.get("USERPROFILE"):
+        raise SystemExit("the Windows package check needs SystemRoot, LOCALAPPDATA, and USERPROFILE")
+    env = {
+        "SystemRoot": system,
+        "WINDIR": system,
+        "PATH": str(Path(system) / "System32"),
+        "TEMP": os.environ.get("TEMP", str(Path(system) / "Temp")),
+        "TMP": os.environ.get("TMP", str(Path(system) / "Temp")),
+        "USERPROFILE": os.environ["USERPROFILE"],
+        "HOMEDRIVE": os.environ.get("HOMEDRIVE", "C:"),
+        "HOMEPATH": os.environ.get("HOMEPATH", "\\"),
+        "APPDATA": os.environ.get("APPDATA", ""),
+        "LOCALAPPDATA": os.environ["LOCALAPPDATA"],
+        "USERNAME": os.environ.get("USERNAME", "SpentIt"),
+        "USERDOMAIN": os.environ.get("USERDOMAIN", ""),
+        "COMPUTERNAME": os.environ.get("COMPUTERNAME", ""),
+        "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+        "NUMBER_OF_PROCESSORS": os.environ.get("NUMBER_OF_PROCESSORS", "1"),
+        "PROCESSOR_ARCHITECTURE": "AMD64",
+        "SystemDrive": os.environ.get("SystemDrive", "C:"),
+        "QT_QPA_PLATFORM": "windows",
+    }
+    log("launching the staged app with development tools hidden")
+    created_dir: Path | None = None
+    try:
+        try:
+            result = subprocess.run(
+                [str(stage / "SpentIt.exe"), "--smoke-create"],
+                env=env,
+                cwd=str(stage),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=120,
+                check=False,
+                errors="replace",
+            )
+        except subprocess.TimeoutExpired as exc:
+            output = exc.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", "replace")
+            raise SystemExit("clean launch timed out\n" + "\n".join(str(output).splitlines()[-40:])) from exc
+        text = result.stdout or ""
+        (stage.parent / "smoke-create.log").write_text(text, encoding="utf-8")
+        created = [line[8:] for line in text.splitlines() if line.startswith("Created ")]
+        if result.returncode != 0 or not created:
+            tail = "\n".join(text.splitlines()[-40:])
+            raise SystemExit(f"clean launch failed ({result.returncode})\n{tail}")
+        path = Path(created[-1].strip())
+        created_dir = path.parent
+        if not path.is_file() or path.stat().st_size <= 0:
+            raise SystemExit(f"create reported success but {path} is missing")
+        log(f"clean launch created a file ({path.stat().st_size} bytes)")
+    finally:
+        if created_dir is not None and created_dir.is_dir():
+            shutil.rmtree(created_dir, ignore_errors=True)
+
+
+def package_windows(args: argparse.Namespace) -> None:
+    version = read_version()
+    env = load_msvc_env()
+    qt = windows_qt()
+    openssl = windows_openssl()
+    pcre2 = windows_pcre2()
+    if args.sign:
+        sign_arguments(env)
+    build = args.build_dir if args.build_dir.is_absolute() else (Path.cwd() / args.build_dir).resolve()
+    dist = args.dist if args.dist.is_absolute() else (Path.cwd() / args.dist).resolve()
+    dist.mkdir(parents=True, exist_ok=True)
+    marker = dist / "INCOMPLETE"
+    marker.write_text("Packaging has not completed. Do not distribute this directory.\n", encoding="utf-8")
+    if not args.skip_build:
+        configure_and_build_windows(build, qt, openssl, pcre2, env, args.cmake_args)
+    source = built_windows_exe(build)
+    stage = dist / "SpentIt"
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir()
+    shutil.copy2(source, stage / "SpentIt.exe")
+    deploy_qt_windows(stage, qt, env)
+    deploy_controls_style(stage, build)
+    copy_license_files(stage / "Licenses")
+    for redist in crt_directories(env):
+        license_dir = redist.parent.parent / "License"
+        if license_dir.is_dir():
+            shutil.copytree(license_dir, stage / "Licenses" / "vc-redist", dirs_exist_ok=True)
+    qt_conf = stage / "qt.conf"
+    if not qt_conf.is_file():
+        qt_conf.write_text("[Paths]\nPrefix=.\n", encoding="utf-8")
+    for pattern in ("*.pdb", "*.ilk", "*.exp", "*.lib"):
+        for path in stage.rglob(pattern):
+            if path.is_file():
+                path.unlink()
+    runtime = crt_directories(env)
+    if runtime:
+        log("Visual C++ runtime: " + "; ".join(str(path) for path in runtime))
+    else:
+        log("Visual C++ redistributable directory was not found. VCToolsRedistDir=" + repr(env.get("VCToolsRedistDir")))
+    search = [
+        *runtime,
+        qt / "bin",
+        openssl / "bin",
+        openssl / "lib",
+        source.parent,
+    ]
+    bundle_windows_dependencies(stage, search, env)
+    assert_release_x64(stage, env)
+    if args.sign:
+        sign_file(stage / "SpentIt.exe", env)
+    windows_smoke(stage)
+    installer = compile_installer(stage, dist, version, env, args.sign)
+    marker.unlink()
+    log(f"installer ready: {installer}")
+    log(f"staged app: {stage}")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Package SpentIt for distribution.")
     parser.add_argument("--build-dir", type=Path, default=REPO / "build-package")
     parser.add_argument("--dist", type=Path, default=REPO / "dist")
     parser.add_argument("--skip-build", action="store_true")
-    parser.add_argument("--sign", action="store_true", help="macOS: Developer ID, DMG, and notarize when credentials are set")
+    parser.add_argument("--sign", action="store_true", help="macOS: Developer ID, DMG, and notarize when credentials are set. Windows: Authenticode-sign the app and the installer.")
     parser.add_argument("--identity", help="macOS codesign identity")
-    parser.add_argument("--smoke", action="store_true", help="launch the packaged app with Homebrew hidden and create a file")
+    parser.add_argument("--smoke", action="store_true", help="macOS: launch the packaged app with Homebrew hidden and create a file. Windows always does this check.")
     parser.add_argument("--cmake-args", action="append", default=[], help="extra cmake configure argument. Repeat for each one")
     return parser.parse_args(argv)
 
@@ -856,14 +1424,10 @@ def main(argv: list[str]) -> int:
             "The Linux archive step is added on the Linux machine."
         )
     if system == "Windows":
-        raise SystemExit(
-            "Windows packaging uses this command and writes a .zip. "
-            "The Windows archive step is added on the Windows machine."
-        )
+        package_windows(parse_args(argv))
+        return 0
     if system != "Darwin":
         raise SystemExit(f"unsupported operating system {system}")
-    if "--sign" in argv and system != "Darwin":
-        raise SystemExit("--sign is the macOS Developer ID / DMG / notarize path")
     package_macos(parse_args(argv))
     return 0
 
