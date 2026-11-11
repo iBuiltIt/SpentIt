@@ -63,7 +63,9 @@ implementation, except where a document already says the owner deferred them.
 - Multiline notes and saved layout customization are deferred.
 - Document lifecycle and recovery is not complete. Password changes are
   deferred. Explicit schema migrations wait until the first release is
-  announced; until then older experimental files stay rejected. There is no
+  announced; until then older experimental files stay rejected. When the owner
+  says to make the release schema, follow [release schema](release-schema.md).
+  That stamps the rules database as version 1 and is not a migrator. There is no
   in-application backup command. There is no forgotten-password recovery.
 - Distribution is not complete. SpentIt is under the Unlicense in
   [LICENSE](../LICENSE). Linux and Windows are development builds and are not

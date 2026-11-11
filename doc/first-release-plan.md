@@ -27,7 +27,7 @@ scope, not every possible extension.
 | Essential UI work | The usage-driven UI pass is complete. Complete the busy/readiness audit: feedback lasts until the resulting screen is usable, and conflicting actions are unavailable. Fix clipping, focus, and keyboard defects that obstruct existing workflows. |
 | UI extensions | Defer multiline-note editing and additional layout customization. Current workflows still have to be usable. |
 | Password changes | Defer for the first release and say so. Later changes need a recoverable rekey workflow. Forgotten-password recovery remains unavailable. |
-| File compatibility | The announced first release starts the compatibility commitment. Until then, experimental formats stay disposable and older files stay rejected. After release, require a supported upgrade and recovery policy. Never silently invalidate a released file. |
+| File compatibility | The announced first release starts the compatibility commitment. Until then, experimental formats stay disposable and older files stay rejected. When the owner says to make the release schema, follow [release schema](release-schema.md): the rules database becomes version 1, with no migrator in that change. After release, require a supported upgrade and recovery policy. Never silently invalidate a released file. |
 | Verification | Establish a release-wide regression baseline for every shipped platform, resolve failures, check financial faults and recovery, open a copy of a closed file, and walk through key native workflows. Fix stale fixtures without weakening assertions. |
 | Manual | The 2026-11-09 pass covered MAN-001 through MAN-020. Freeze release behavior, then update the manual for changes after that pass. Verify screenshots, examples, links, and contextual Help against the release candidate. |
 | Distribution | SpentIt is under the Unlicense. Assemble dependency notices for each shipped build, finish tested packages and signing or notarization, then obtain explicit publication approval. |
@@ -48,7 +48,9 @@ explicit approval. See [feature 007](../features/007-licensing-and-distribution.
    under separate authorization.
 2. Complete release verification and fix discovered blockers.
 3. Refresh the manual against frozen release behavior.
-4. Finish packages and obtain explicit approval before publication.
+4. When the owner says to make the release schema, carry out
+   [release schema](release-schema.md).
+5. Finish packages and obtain explicit approval before publication.
 
 Remaining inputs are designs and Go for each change, a tested OS range, and
 release approval.

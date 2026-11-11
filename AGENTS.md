@@ -47,7 +47,10 @@ Working experimental database formats are **70 with rules / 69 without**. Older
 experimental files are rejected unchanged. There is no migration. The first
 public release, when the owner announces it, is the gate for compatibility and
 upgrade obligations. Until then, do not add compatibility work merely to keep
-earlier experimental schemas readable.
+earlier experimental schemas readable. When the owner says to make the release
+schema, follow [release schema](doc/release-schema.md). That stamps the rules
+database as version 1. Do not do it earlier, and do not build a migrator as
+part of that change.
 
 The independent SpentIt exchange file is JSON version 1. It is not the database
 format. See [file exchange](doc/file-exchange.md).
