@@ -64,7 +64,9 @@ Window {
         // the dialog hides so closing the dialog does not close Help.
         const next = owner() || null
         transientParent = next
-        imageWindow.transientParent = next
+        // Keep the picture above this Help window. A sibling of the main
+        // window can open behind Help, where a click looks like it did nothing.
+        imageWindow.transientParent = root
     }
     onModalOwnerChanged: syncOwner()
 
@@ -171,8 +173,11 @@ Window {
         matchStatus = ""
         catalog.forgetMarks()
         article.keyboardLink = -1
+        // Drop the previous chapter's scroll before the new text arrives, so a
+        // short chapter cannot stay parked below its own text.
+        placeArticle(0)
         article.text = topic.markdown
-        // Run after setText: Qt chooses its viewport optimization there.
+        // setText turns partial drawing back on for a long chapter.
         catalog.prepareArticleRendering(article, article.textDocument)
         // setText can overwrite the height emitted during synchronous block
         // formatting. Refresh after it finishes so links below a table remain
@@ -181,11 +186,18 @@ Window {
     }
     function finishArticleLayout() {
         catalog.relaxReading(article.textDocument, article.width)
+        // setText may have turned partial drawing back on. Clear it after the
+        // margin edit without rebuilding the document, so picture links stay.
+        catalog.prepareArticleRendering(article, article.textDocument)
         restoreScroll()
+    }
+    function placeArticle(y) {
+        const limit = Math.max(0, articleFlick.contentHeight - articleFlick.height)
+        articleFlick.contentY = Math.max(0, Math.min(limit, y))
     }
     function restoreScroll() {
         const saved = scrollPositions[topicId]
-        articleFlick.contentY = saved === undefined ? 0 : saved
+        placeArticle(saved === undefined ? 0 : saved)
     }
     function back() { if (historyIndex > 0) { historyIndex -= 1; showTopic(history[historyIndex], false) } }
     function forward() { if (historyIndex >= 0 && historyIndex < history.length - 1) { historyIndex += 1; showTopic(history[historyIndex], false) } }
@@ -220,8 +232,9 @@ Window {
         imageZoom = 1
         image.source = result.source
         imageWindow.title = imageAlt
-        imageWindow.transientParent = owner()
+        imageWindow.transientParent = root
         imageWindow.show()
+        imageWindow.raise()
         imageWindow.requestActivate()
         imageFlick.forceActiveFocus(Qt.TabFocusReason)
         Qt.callLater(fitImage)
@@ -394,13 +407,13 @@ Window {
                             contentItem: Column {
                                 spacing: 2
                                 Label { text: modelData.title; color: theme.text; font.bold: true; width: parent.width; wrapMode: Text.Wrap }
-                                TextEdit {
+                                // Text, not TextEdit: a selectable excerpt keeps the click,
+                                // so only the title line opened the topic.
+                                Text {
                                     width: parent.width
-                                    readOnly: true
-                                    selectByMouse: true
-                                    wrapMode: TextEdit.Wrap
+                                    wrapMode: Text.Wrap
                                     color: theme.text
-                                    textFormat: TextEdit.RichText
+                                    textFormat: Text.RichText
                                     text: root.escapeText(modelData.before) + "<b>" + root.escapeText(modelData.match) + "</b>" + root.escapeText(modelData.after)
                                 }
                             }
@@ -552,7 +565,7 @@ Window {
         Shortcut { sequences: ["Escape"]; context: Qt.WindowShortcut; onActivated: imageWindow.dismiss() }
         onClosing: function(close) { close.accepted = true; imageWindow.dismiss() }
         onVisibleChanged: if (!visible) {
-            articleFlick.contentY = root.savedContentY
+            root.placeArticle(root.savedContentY)
             article.forceActiveFocus()
         }
         ColumnLayout {

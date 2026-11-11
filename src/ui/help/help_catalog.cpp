@@ -354,13 +354,17 @@ qreal HelpCatalog::headingGap(QObject* documentObject, const QString& title) con
 }
 
 void HelpCatalog::prepareArticleRendering(QObject* article, QObject* documentObject) {
-    // Qt 6.12's large-TextEdit viewport bookkeeping loses surrounding text
-    // when scrolling backwards across table frames. Keep the complete scene
-    // graph for these bounded bundled articles; the Flickable still clips it.
-    // setText sets this flag, so call after assigning each topic, not from the
-    // synchronous textChanged handler. Leave Qt's choice alone for plain topics.
-    if (auto* item = qobject_cast<QQuickItem*>(article); item && tableCount(documentObject) > 0)
-        item->setFlag(QQuickItem::ItemObservesViewport, false);
+    // Qt 6.12 draws only the on-screen slice once TextEdit text passes 10,000
+    // characters, and setText turns that on. The next chapter is then painted
+    // from that slice. A picture scrolled into view, or the end of a long
+    // chapter, leaves the next chapter with a blank top or no text at all.
+    // These articles are bounded; the Flickable clips them. Draw every chapter
+    // in full. setText turns the slice back on after textChanged returns, so
+    // clear the flag after assigning the chapter and again after relaxReading.
+    // Leave the document itself alone. Rebuilding it here removed picture links.
+    auto* item = qobject_cast<QQuickItem*>(article);
+    if (!item || !textDocument(documentObject)) return;
+    item->setFlag(QQuickItem::ItemObservesViewport, false);
 }
 
 void HelpCatalog::relaxReading(QObject* documentObject, qreal availableWidth) {

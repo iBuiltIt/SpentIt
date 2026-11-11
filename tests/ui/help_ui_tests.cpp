@@ -865,7 +865,8 @@ private slots:
             QTest::qWait(60);
             result=qobject_cast<QQuickItem*>(object(help,"helpResult_"+reference));
             if (result) {
-                resultPoint=QPointF(result->width()/2,12);
+                // The excerpt under the title must open the topic too, not only the title line.
+                resultPoint=QPointF(result->width()/2, qMax(28.0, result->height()*0.72));
                 if (results->contains(result->mapToItem(results,resultPoint))) break;
             }
             result=nullptr;
@@ -919,6 +920,122 @@ private slots:
         QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,topic->mapToScene(topicPoint).toPoint());
         QTRY_COMPARE(help->property("topicId").toString(), reference);
         QVERIFY(!session.model.state().value("active").toBool());
+    }
+    void articleVisibleAfterEnlargedPicture() {
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+        HelpCatalog catalog;
+        QVERIFY(catalog.load(QStringLiteral(":/spentit/help-manual/manifest.json")));
+        Session session(&catalog);
+        QVERIFY(session.window);
+        QVERIFY(QTest::qWaitForWindowExposed(session.window));
+        auto* help = openHelp(session.root);
+        QVERIFY(help);
+        help->resize(880, 480);
+        QVERIFY(QTest::qWaitForWindowExposed(help));
+        auto* article = qobject_cast<QQuickItem*>(object(help, "helpArticle"));
+        QVERIFY(article);
+        auto* flick = qobject_cast<QQuickItem*>(object(help, "helpArticleFlick"));
+        QVERIFY(flick);
+        auto choose = [&](const QString& id) {
+            auto* contents = object(help, "helpContents");
+            QVERIFY(contents);
+            int topicIndex = -1;
+            const auto topics = catalog.topics();
+            for (int i = 0; i < topics.size(); ++i)
+                if (topics[i].toMap().value("id").toString() == id) topicIndex = i;
+            QVERIFY(topicIndex >= 0);
+            QVERIFY(QMetaObject::invokeMethod(contents, "positionViewAtIndex", Q_ARG(int, topicIndex), Q_ARG(int, 1)));
+            QTest::qWait(50);
+            auto* button = qobject_cast<QQuickItem*>(object(help, "helpTopic_" + id));
+            QVERIFY(button);
+            QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier,
+                             button->mapToScene(QPointF(button->width()/2, button->height()/2)).toPoint());
+            QTRY_COMPARE(help->property("topicId").toString(), id);
+            QTest::qWait(100);
+        };
+        auto document = [&]() {
+            auto* quick = qobject_cast<QQuickTextDocument*>(textDocument(article));
+            return quick ? quick->textDocument() : nullptr;
+        };
+        auto assertTitleDrawn = [&](const QString& title) {
+            auto* text = document();
+            QVERIFY(text);
+            QTextBlock block;
+            for (auto it = text->begin(); it != text->end(); it = it.next())
+                if (it.text().trimmed() == title) { block = it; break; }
+            QVERIFY2(block.isValid(), qPrintable(title));
+            const QRectF rect = text->documentLayout()->blockBoundingRect(block);
+            const qreal contentY = flick->property("contentY").toDouble();
+            QVERIFY2(rect.top() >= contentY - 1 && rect.bottom() <= contentY + flick->height() + 1,
+                     qPrintable(QString("%1 at %2 is outside scroll %3 height %4")
+                         .arg(title).arg(rect.top()).arg(contentY).arg(flick->height())));
+            QVERIFY(!article->flags().testFlag(QQuickItem::ItemObservesViewport));
+            const QImage screen = help->grabWindow();
+            const qreal scale = screen.devicePixelRatio();
+            const QPointF origin = article->mapToScene(rect.topLeft());
+            const QRect pixels(qRound(origin.x()*scale), qRound(origin.y()*scale),
+                qRound(qMin(rect.width(), 280.0)*scale), qRound(qMax(rect.height(), 12.0)*scale));
+            const QImage band = screen.copy(pixels.intersected(screen.rect()));
+            QVERIFY2(!band.isNull() && band.width() > 0 && band.height() > 0, qPrintable(title));
+            qsizetype ink = 0;
+            for (int y = 0; y < band.height(); ++y)
+                for (int x = 0; x < band.width(); ++x)
+                    if (qGray(band.pixel(x, y)) < 128) ++ink;
+            if (ink <= 40) band.save("/tmp/spentit-help-missing-title.png");
+            QVERIFY2(ink > 40, qPrintable(QString("%1 is not drawn (%2 dark pixels)").arg(title).arg(ink)));
+        };
+        auto openPicture = [&](const QString& fileName) {
+            auto* text = document();
+            QVERIFY(text);
+            QTextBlock imageBlock;
+            for (auto block = text->begin(); block != text->end(); block = block.next())
+                for (auto it = block.begin(); !it.atEnd(); ++it) {
+                    const auto format = it.fragment().charFormat();
+                    if (format.isImageFormat() && format.toImageFormat().name().endsWith(fileName))
+                        imageBlock = block;
+                }
+            QVERIFY2(imageBlock.isValid(), qPrintable(fileName));
+            const auto imageRect = text->documentLayout()->blockBoundingRect(imageBlock);
+            flick->setProperty("contentY", qMax(0.0, imageRect.top() - 24));
+            QTest::qWait(30);
+            const QPointF clickPoint(qBound(8.0, imageRect.center().x(), article->width() - 8), imageRect.top() + 40);
+            QString link;
+            QVERIFY(QMetaObject::invokeMethod(article, "linkAt", Q_RETURN_ARG(QString, link),
+                                              Q_ARG(qreal, clickPoint.x()), Q_ARG(qreal, clickPoint.y())));
+            QVERIFY2(link == "help-image:" + fileName, qPrintable(link));
+            const QPoint scenePoint = article->mapToScene(clickPoint).toPoint();
+            QVERIFY(QRectF(0, 0, help->width(), help->height()).contains(scenePoint));
+            QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier, scenePoint);
+            auto* picture = namedWindow("helpImageWindow");
+            QTRY_VERIFY(picture && picture->isVisible());
+            QTRY_VERIFY(picture->isActive());
+            QVERIFY(click(picture, "helpImageClose"));
+            QTRY_VERIFY(!picture->isVisible());
+        };
+        choose("add-correct-transactions");
+        if (QTest::currentTestFailed()) return;
+        openPicture("editing-new.png");
+        if (QTest::currentTestFailed()) return;
+        choose("organize-categories");
+        if (QTest::currentTestFailed()) return;
+        openPicture("categories-workspace.png");
+        if (QTest::currentTestFailed()) return;
+        choose("review-duplicates-transfers");
+        if (QTest::currentTestFailed()) return;
+        QVERIFY(flick->property("contentY").toDouble() < 1);
+        assertTitleDrawn("Review duplicates and link transfers");
+        if (QTest::currentTestFailed()) return;
+        choose("add-correct-transactions");
+        if (QTest::currentTestFailed()) return;
+        const qreal bottom = qMax(0.0, flick->property("contentHeight").toDouble() - flick->height());
+        QVERIFY(bottom > flick->height());
+        flick->setProperty("contentY", bottom);
+        QTest::qWait(20);
+        (void)help->grabWindow();
+        choose("understand-spending");
+        if (QTest::currentTestFailed()) return;
+        QVERIFY(flick->property("contentY").toDouble() < 1);
+        assertTitleDrawn("Understand your spending");
     }
     void longChapterScrollRendering() {
         QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
