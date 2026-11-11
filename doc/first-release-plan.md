@@ -1,6 +1,6 @@
 # First release decisions
 
-Last updated: 2026-11-09
+Last updated: 2026-11-11
 Status: **accepted direction**. Implementation of a change still needs its own Go.
 This document does not authorize license installation, packaging publication,
 or release.
@@ -30,7 +30,7 @@ scope, not every possible extension.
 | File compatibility | The announced first release starts the compatibility commitment. Until then, experimental formats stay disposable and older files stay rejected. When the owner says to make the release schema, follow [release schema](release-schema.md): the rules database becomes version 1, with no migrator in that change. After release, require a supported upgrade and recovery policy. Never silently invalidate a released file. |
 | Verification | Establish a release-wide regression baseline for every shipped platform, resolve failures, check financial faults and recovery, open a copy of a closed file, and walk through key native workflows. Fix stale fixtures without weakening assertions. |
 | Manual | The 2026-11-11 pass brought MAN-021 through MAN-029 into the bundled manual. Later user-visible changes go in the manual backlog until the owner asks for another pass. |
-| Distribution | SpentIt is under the Unlicense. Assemble dependency notices for each shipped build, finish tested packages and signing or notarization, then obtain explicit publication approval. |
+| Distribution | SpentIt is under the Unlicense. The macOS package command has produced one notarized DMG. Publication still needs explicit approval. Windows and Linux archives are not implemented. |
 
 Windows has a development build with a failing UI check and excluded storage
 tests. WSL has failures. That is not a claim that Windows cannot build, and it

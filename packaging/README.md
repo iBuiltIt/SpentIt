@@ -2,9 +2,28 @@
 
 Owner-approved scope, 2026-10-28: use the supplied light/dark artwork, adapt welcome/running icons to system appearance, and prepare local packages. The light artwork is the fixed installed icon. All supplied PNG sizes and both platform containers now preserve transparent outer corners; see [asset maintenance](../assets/images/README.md). Unknown system appearance falls back to light. Desktop environments decide whether they display runtime icon updates; installed Finder/Explorer/launcher icons do not switch. This does not restyle the rest of the existing UI.
 
-These packages are for local development and use. Signing with a distribution identity, notarization, installers, and public release remain deferred. SpentIt is under the Unlicense. Dependency notices still have to travel with a published package. See [LICENSE](../LICENSE).
+These local packages are for development on the build machine. A downloadable macOS app is a separate command, below. SpentIt is under the Unlicense. Dependency notices travel inside the app. See [LICENSE](../LICENSE). Publication still needs an explicit approval.
 
-## macOS
+## Distribution
+
+From the repository root:
+
+```sh
+python3 tools/package.py
+APPLE_NOTARY_PROFILE=machines-notary python3 tools/package.py --sign --smoke
+```
+
+`python3 tools/package.py` builds a rules-enabled Release app in `build-package/` and writes `dist/SpentIt.app` plus a zip. It does not replace `./build/SpentIt`. Diagnostics stay off.
+
+`--sign` signs with the Developer ID Application certificate in the keychain, using the hardened runtime. It writes a DMG with an `/Applications` shortcut. `machines-notary` is the keychain label from `notarytool store-credentials`. It is not the password. The password stays in the login keychain. When that profile, or the other notary variables accepted by `tools/package.py`, is set, the script notarizes the app and the DMG and staples both. It does not upload the DMG anywhere else.
+
+`--smoke` launches that packaged app with Homebrew hidden and creates a file through the same command as Create file. The file is temporary and is removed at the end of the check.
+
+The bundle id is `com.stefanwessels.SpentIt`. Saved settings keep the existing organization and application name. The script copies Qt, its plugins, QML, and every non-system library those binaries link, then refuses to finish if any of them still points outside the app or requires a newer system than macOS 14.4. Qt 6.12's own floor is 14.4, and it is built with the current SDK by `python3 tools/build_macos_14_4.py`. That build does not replace the Homebrew Qt used by `./build/SpentIt`. The 2026-11-11 package is stamped 14.4.
+
+Windows uses the same command and writes a zip. Linux uses the same command and writes a `.tar.gz`. Those steps are added on those machines.
+
+## macOS local packages
 
 Keep using `./build/SpentIt` for the normal development executable. The separate `spentit_macos_bundle` target produces `local-app/SpentIt.app` inside the configured build directory, with the supplied light ICNS and a local bundle identifier. Saved settings retain their existing organization/application identity.
 

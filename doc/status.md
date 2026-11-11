@@ -70,9 +70,20 @@ implementation, except where a document already says the owner deferred them.
   That stamps the rules database as version 1 and is not a migrator. There is no
   in-application backup command. There is no forgotten-password recovery.
 - Distribution is not complete. SpentIt is under the Unlicense in
-  [LICENSE](../LICENSE). Linux and Windows are development builds and are not
-  release validation. Packaging for publication and signing are open. The
-  application UI is Qt. See the [release plan](first-release-plan.md).
+  [LICENSE](../LICENSE). The macOS command is `python3 tools/package.py`.
+  On 2026-11-11, `--sign --smoke` with the `machines-notary` keychain profile
+  produced a notarized, stapled `dist/SpentIt-0.1.0-macos-arm64.dmg`.
+  Gatekeeper accepts the app and the DMG as Notarized Developer ID. The
+  packaged app, launched with Homebrew hidden, created a file and exited 0.
+  A later same-day rebuild stamped all 118 Mach-O files at macOS 14.4 or
+  older. None of them link Homebrew. Gatekeeper accepted that DMG as
+  Notarized Developer ID, and the clean launch created a file. A Mac running
+  14.4 was not used. Publication is not
+  approved. Linux and Windows still use the same command for a `.tar.gz` and
+  a zip; those archive steps are not implemented and are not release
+  validation. `./build/SpentIt` is unchanged. See
+  [packaging](../packaging/README.md) and the
+  [release plan](first-release-plan.md).
 - Category history, undone Review-link history, link-exclusion history, and
   account, opening, and currency command history still survive successful close.
   The owner deferred that retention cleanup. It is not the next task. Revisit

@@ -13,7 +13,9 @@
 #include "controls_style.hpp"
 #include <QTimer>
 #include <QFont>
+#include <QFileInfo>
 #include <QSettings>
+#include <QVariantMap>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QIcon>
@@ -44,13 +46,17 @@ int main(int argc,char** argv) {
     app.setFont(QFont("Helvetica Neue",13));
     applySpentItControlsStyle();
     std::unique_ptr<QTemporaryDir> smokeSettings;
-    if(app.arguments().contains("--smoke")) {
+    const bool smoke=app.arguments().contains("--smoke");
+    // Package verification. Same create command as the Create file button.
+    const bool smokeCreate=app.arguments().contains("--smoke-create");
+    if(smoke || smokeCreate) {
         smokeSettings=std::make_unique<QTemporaryDir>();
         if(!smokeSettings->isValid()) return 2;
+        if(smokeCreate) smokeSettings->setAutoRemove(false);
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,smokeSettings->path());
         QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,smokeSettings->path());
-        QSettings().setValue("datasetPath",smokeSettings->path()+"/missing.spentit");
+        if(!smokeCreate) QSettings().setValue("datasetPath",smokeSettings->path()+"/missing.spentit");
     }
     ImportModel model(spentit::storage::document_gateway((QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/verification").toStdString()));
     app.setApplicationVersion(model.aboutInformation()->version());
@@ -76,7 +82,39 @@ int main(int argc,char** argv) {
             },Qt::DirectConnection);
         }
     }
-    if(app.arguments().contains("--smoke"))QTimer::singleShot(diagnosticsRequested?1500:500,&app,[&]{engine.rootObjects().first()->setProperty("allowClose",true);app.quit();});
+    if(smokeCreate) {
+        const QString path=smokeSettings->path()+"/smoke.spentit";
+        QObject::connect(&model,&ImportModel::completed,&app,[&](const QString& action,bool success){
+            if(action!="create") return;
+            if(!success || !QFileInfo::exists(path) || QFileInfo(path).size()<=0) {
+                std::cerr<<"Create failed: "<<model.error().toStdString()<<'\n';
+                app.exit(1);
+                return;
+            }
+            std::cout<<"Created "<<path.toStdString()<<'\n';
+            engine.rootObjects().first()->setProperty("allowClose",true);
+            app.quit();
+        });
+        auto* wait=new QTimer(&app);
+        wait->setInterval(50);
+        QObject::connect(wait,&QTimer::timeout,&app,[wait,&model,path]{
+            if(model.busy()) return;
+            wait->stop();
+            QVariantMap args;
+            args.insert("path",path);
+            args.insert("name","SpentIt");
+            args.insert("currency","CAD");
+            args.insert("protected",false);
+            args.insert("password","");
+            args.insert("confirmation","");
+            args.insert("overwrite",false);
+            args.insert("dateFormat","YYYY-MM-DD");
+            args.insert("defaultCategories",true);
+            model.command("create",args);
+        });
+        wait->start();
+        QTimer::singleShot(30000,&app,[&]{std::cerr<<"Create did not finish.\n";app.exit(1);});
+    } else if(smoke) QTimer::singleShot(diagnosticsRequested?1500:500,&app,[&]{engine.rootObjects().first()->setProperty("allowClose",true);app.quit();});
     spentit::diagnostics::Collector::instance().metric(spentit::diagnostics::Code::startup,spentit::diagnostics::now()-diagnosticStartup,0,false);
     return app.exec();
 }

@@ -1,7 +1,7 @@
 # 007 — Licensing and distribution
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-11
 
 The owner selected the Unlicense for SpentIt. The text is [LICENSE](../LICENSE).
 It permits any use, including selling copies. That choice replaces the earlier
@@ -24,13 +24,17 @@ without a network.
 
 ## Packaging
 
-Local macOS bundles, Linux install trees, and Windows packaging preparation
-exist. Installers and public distribution do not. Icons follow system
-appearance, with light as the fallback. Installed icons use the light variant.
-See [packaging/README.md](../packaging/README.md). Windows packaging is not
-release-ready.
+Local development packages remain. The distribution command is
+`python3 tools/package.py`. On macOS, `--sign` writes a Developer ID DMG and
+notarizes it when `APPLE_NOTARY_PROFILE` is set. The 2026-11-11 run is in
+[status](../doc/status.md). Icons follow system appearance, with light as the
+fallback. Installed icons use the light variant. See
+[packaging/README.md](../packaging/README.md).
+
+Windows uses the same command and writes a zip. Linux uses it and writes a
+`.tar.gz`. Those steps are not implemented.
 
 ## Not done
 
-A dependency inventory of each shipped build, signing or notarization, and
-publication approval. Linux and Windows library lists are not in LICENSE yet.
+Publication approval. Linux and Windows library lists are not in LICENSE yet.
+The macOS package minimum is 14.4. It has not been launched on a 14.4 Mac.
