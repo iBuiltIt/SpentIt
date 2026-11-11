@@ -165,6 +165,9 @@ public:
     void verify(const app::OperationContext* = nullptr) const;
     void backup_to(const std::filesystem::path&,std::string_view password,
                    const BackupObserver& observer = {}, const app::OperationContext* context = nullptr) const;
+    // Rewrites every page under a new key. Failure leaves the previous key in place.
+    enum class RekeyResult { committed, committed_unconfirmed };
+    RekeyResult rekey(std::string_view key);
     void observer(ImportObserver);
     bool transaction_accepted(const imports::Occurrence&) const override;
     app::ImportResult import_result(std::string_view) const override;

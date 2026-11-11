@@ -122,3 +122,22 @@ first. On an enlarged picture, **Escape** or **Close** returns to the article.
 On Windows, **Ctrl+F4** is the same Close shortcut.
 
 Pictures: none. Do not edit `manual/` for this entry until the manual pass.
+
+### MAN-025 — Change or remove a password
+
+Date: 2026-11-10. Settings can change a file’s password, add one, or remove
+password protection after a confirmation. A closed copy made beforehand keeps
+the password it was made with. There is still no forgotten-password recovery.
+
+Text still outstanding. Chapters: [Look after your work](../manual/backup-recovery.md)
+(Settings currently says a password cannot be changed),
+[Create or open a file](../manual/create-open-file.md),
+[Messages and problems](../manual/messages-problems.md),
+[Where do I find…](../manual/where-to-find.md), and
+[outline](../manual/outline.md). Feature 001 and the status page still say
+password changes are deferred; update those with the manual pass.
+
+Pictures: `recovery-backup.png` and `recovery-existing.png` show an older
+Settings page and are not used by the current chapters. Recapture Settings,
+including the password fields, in the manual pass. Do not edit `manual/` for
+this entry until that pass.

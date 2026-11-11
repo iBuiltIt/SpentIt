@@ -1418,6 +1418,24 @@ std::string ImportStore::date_format() const {
     auto format=row.bytes(0);validate_date_format(format);return format;
 }
 ImportStore ImportStore::open(const std::filesystem::path& path,std::string_view password,const app::OperationContext* context) { return connect(path,password,false,context); }
+ImportStore::RekeyResult ImportStore::rekey(std::string_view key) {
+    if(key.empty() || key.size()>1024) fail(SQLITE_MISUSE,"Password length is invalid");
+    auto* db=impl_->db;
+    if(!sqlite3_get_autocommit(db)) fail(SQLITE_BUSY,"The password cannot be changed while another save is in progress.");
+    const int rc=sqlite3_rekey(db,key.data(),static_cast<int>(key.size()));
+    if(rc!=SQLITE_OK) {
+        bool readable=false;
+        try {(void)scalar(db,"SELECT count(*) FROM sqlite_master");readable=true;}
+        catch(...) {}
+        if(!readable) fail(rc,"The password was not changed, but the file needs to be reopened. Close it and open it with the current password.");
+        const int kind=rc&255;
+        if(kind==SQLITE_FULL || kind==SQLITE_IOERR) fail(rc,"The password was not changed. Free some space on the drive and try again.");
+        fail(rc,"The password was not changed. The file still uses its current password.");
+    }
+    try {(void)scalar(db,"SELECT count(*) FROM sqlite_master");}
+    catch(...) {return RekeyResult::committed_unconfirmed;}
+    return RekeyResult::committed;
+}
 app::Account ImportStore::account_by_id(std::int64_t id) const {
     Statement s(impl_->db,"SELECT name,definition,opening_date,opening,frozen,revision,confirmed FROM account WHERE singleton=?");
     s.integer(1,id);if (!s.row()) fail(SQLITE_NOTFOUND,"Account does not exist");

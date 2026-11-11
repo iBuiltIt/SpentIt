@@ -56,6 +56,7 @@ public:
     QVariant data(const QModelIndex&,int role) const override;
     QHash<int,QByteArray> roleNames() const override;
     Q_INVOKABLE void command(const QString& action,const QVariantMap& args={});
+    Q_INVOKABLE bool passwordMatches(const QString&) const;
     Q_INVOKABLE QString suggestedDateFormat(const QString&) const;
     Q_INVOKABLE QString todayDisplay() const;
     Q_INVOKABLE QVariantMap calendarPage(const QString& display) const;

@@ -472,6 +472,15 @@ ApplicationWindow {
             Button {objectName:"confirmSelectedEdit";text:settingMemo?(overwriteMemos.checked && !memoHasText(selectedMemo.text)?(selectedMemoCount===1?"Clear memo":"Clear memos"):"Set memo"):restoringSelection?"Restore":"Rename";enabled:selectedMemoCanConfirm();DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole;onClicked:applySelectedEdit()}
         }
     }
+    Dialog {
+        id:removePasswordDialog;objectName:"removePasswordDialog";modal:true;anchors.centerIn:parent;width:Math.min(480,window.width-40)
+        title:"Remove password protection?"
+        contentItem:Label {text:"Anyone who has this file will be able to open it without a password.";wrapMode:Text.Wrap;textFormat:Text.PlainText}
+        footer:DialogButtonBox {
+            Button {objectName:"cancelRemovePassword";text:"Cancel";DialogButtonBox.buttonRole:DialogButtonBox.RejectRole;onClicked:removePasswordDialog.close()}
+            Button {objectName:"confirmRemovePassword";text:"Remove password protection";DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole;onClicked:{removePasswordDialog.close();workflow.command("change_password",{current:currentPassword.text,password:"",confirmation:"",remove:true})}}
+        }
+    }
     Menu {
         id:ledgerContext;objectName:"ledgerContext";popupType:Popup.Item;cascade:true
         delegate:LedgerMenuItem {}
@@ -1860,6 +1869,13 @@ ApplicationWindow {
 
             if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action" || action==="undo_connected") || action==="import"))editorClosed=false
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
+            if(success && action==="change_password"){
+                currentPassword.text=""
+                newPassword.text=""
+                confirmPassword.text=""
+                workspaceFeedback=s.passwordNotice||"Password changed."
+            }
+            if(action==="close"){currentPassword.text="";newPassword.text="";confirmPassword.text=""}
 
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
@@ -3965,6 +3981,31 @@ ApplicationWindow {
                         }
                         Label {text:"Use this style when entering amounts and calculations. Thousands separators are optional.";Layout.fillWidth:true;wrapMode:Text.Wrap}
 
+                        Item {Layout.fillWidth:true;Layout.preferredHeight:16}
+                        Label {text:"Password";font.bold:true;visible:!!s.active}
+                        Label {objectName:"passwordBackupReminder";visible:!!s.active;text:"Making a backup before changing the password is a good idea.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {objectName:"passwordMissingNote";visible:!!s.active && !s.passwordProtected;text:"This file has no password.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {visible:!!s.active && !!s.passwordProtected;text:"Current password"}
+                        NavigableTextField {id:currentPassword;objectName:"currentPassword";visible:!!s.active;enabled:!!s.passwordProtected;echoMode:TextInput.Password;Layout.fillWidth:true;Accessible.name:"Current password"}
+                        Label {visible:!!s.active;text:"New password"}
+                        NavigableTextField {id:newPassword;objectName:"newPassword";visible:!!s.active;echoMode:TextInput.Password;Layout.fillWidth:true;Accessible.name:"New password"}
+                        Label {visible:!!s.active;text:"Confirm new password"}
+                        NavigableTextField {id:confirmPassword;objectName:"confirmPassword";visible:!!s.active;echoMode:TextInput.Password;Layout.fillWidth:true;Accessible.name:"Confirm new password";onAccepted:if(changePasswordButton.enabled)changePasswordButton.clicked()}
+                        Button {
+                            id:changePasswordButton;objectName:"changePassword";visible:!!s.active;text:"Change password"
+                            enabled:{
+                                if(!s.active)return false
+                                const protectedFile=!!s.passwordProtected
+                                if(protectedFile && !workflow.passwordMatches(currentPassword.text))return false
+                                if(newPassword.text!==confirmPassword.text)return false
+                                if(!protectedFile && newPassword.text.length===0)return false
+                                return true
+                            }
+                            onClicked:{
+                                if(newPassword.text.length===0 && confirmPassword.text.length===0)removePasswordDialog.open()
+                                else workflow.command("change_password",{current:currentPassword.text,password:newPassword.text,confirmation:confirmPassword.text,remove:false})
+                            }
+                        }
                         Item {Layout.fillWidth:true;Layout.preferredHeight:16}
                         Label {text:"Check the file";font.bold:true}
                         Button {objectName:"settingsCheckFile";text:"Check file";onClicked:guard(function(){workflow.command("check_file",{})})}

@@ -7,7 +7,10 @@ namespace spentit::app {
 class UnlockRequired : public std::runtime_error {
 public: UnlockRequired():std::runtime_error("Unable to unlock. Enter a password or choose another dataset; damaged encrypted input can produce the same result."){}
 };
+enum class PasswordUpdate { changed, unchanged, removed };
 // Owned and used exclusively by a serial worker. Closing releases all dataset state.
+// password_matches and password_protected only read the in-memory key, so the
+// interface thread may call them while the worker is busy.
 class DocumentGateway {
 public:
     virtual ~DocumentGateway() = default;
@@ -39,6 +42,11 @@ public:
     virtual void close_verified(const OperationContext&) { close(); }
     virtual void check_file(const OperationContext&) { throw std::logic_error("File checking is not supported by this gateway"); }
     virtual bool lazy_review() const { return false; }
+    virtual bool password_protected() const { return false; }
+    virtual bool password_matches(std::string_view) const { return false; }
+    virtual PasswordUpdate change_password(std::string_view, std::string_view, bool) {
+        throw std::logic_error("Password changes are not supported by this gateway");
+    }
     virtual ImportRepository& repository() = 0;
     // Backup/restore publishes a new document with the current protection mode.
     virtual void backup(const std::filesystem::path&) = 0;

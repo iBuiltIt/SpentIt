@@ -224,6 +224,7 @@ QString phaseFor(const QString& action){
     if(action=="resume")return "Importing transactions";
     if(action=="commit")return "Accepting transactions";
     if(action=="check_file")return "Checking file";
+    if(action=="change_password")return "Changing password";
     if(action=="exchange_import")return "Importing definitions";
     if(action=="exchange_qif_export")return "Exporting QIF…";
     if(action=="exchange_export")return "Exporting SpentIt definitions…";
@@ -357,7 +358,7 @@ struct ImportModel::Worker {
     QString dateText(std::string_view iso) const {return text(display_date(iso,dateFormat));}
     std::unique_ptr<app::DocumentGateway> gateway;
     bool active=false,projected=true;
-    QString path,filter;
+    QString path,filter,passwordNotice;
     bool canOpen=false, welcomePassword=false, overwriteRequired=false;
     int sort=0; bool descending=true;
     QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt,transferMergePreview;
@@ -960,7 +961,7 @@ struct ImportModel::Worker {
     std::pair<QVariantMap,std::shared_ptr<const app::LedgerView>> snapshot(app::OperationContext* context=nullptr) {
         diag::Span span(diag::Code::snapshot);
         const auto home=QDir::homePath()+"/";const auto full=QFileInfo(path).absoluteFilePath();
-        QVariantMap state{{"displayPath",full.startsWith(home)?"~/"+full.mid(home.size()):full},{"active",active},{"path",path},{"canOpen",canOpen},{"unlockRequired",welcomePassword},{"overwriteRequired",overwriteRequired}};
+        QVariantMap state{{"displayPath",full.startsWith(home)?"~/"+full.mid(home.size()):full},{"active",active},{"path",path},{"canOpen",canOpen},{"unlockRequired",welcomePassword},{"overwriteRequired",overwriteRequired},{"passwordProtected",gateway->password_protected()},{"passwordNotice",passwordNotice}};
         if(!active) {state["bulkReceipt"]=bulkReceipt;state["changeReceipt"]=changeReceipt;state["categoryReceipt"]=categoryReceipt;state["ruleReceipt"]=ruleReceipt;return {state,{}};}
         auto& repo=gateway->repository();restoreAccountSort();catalog();state["dateFormat"]=text(dateFormat);state["amountFormatting"]=amountFormat.enabled;state["amountStyle"]=text(amountFormat.style);state["startupImportCleanup"]=startupCleanupNotice;
         if(metadataSelection!=selected.value("batch").toString()){metadata.clear();metadataSelection=selected.value("batch").toString();}
@@ -1256,7 +1257,7 @@ struct ImportModel::Worker {
             {"summaryText",QString("%1 transactions match. %2 already categorized. %3 handled by earlier rules. %4 eligible; %5 will change.").arg(result.raw_matches).arg(result.categorized_matches).arg(result.earlier_matches).arg(result.eligible_matches).arg(result.changed)}};
     }
     void execute(const QString& action,const QVariantMap& input, app::OperationContext& context) {
-        diagnosticSaved=false;diagnosticUnchanged=false;diagnosticPresentationFailed=false;
+        diagnosticSaved=false;diagnosticUnchanged=false;diagnosticPresentationFailed=false;passwordNotice.clear();
         auto a=input;
         if(active && a.contains("date"))a["date"]=text(parse_display_date(str(a.value("date")),dateFormat));
         if(active && action=="map_import") {
@@ -1313,6 +1314,26 @@ struct ImportModel::Worker {
             return;
         }
         if(action=="close") {if(a.value("skipAudit").toBool())gateway->close();else gateway->close_verified(context);clearChanges();active=false;selected.clear();receipt.clear();selectedBatch.clear();filter.clear();projected=true;sort=0;descending=true;return;}
+        if(action=="change_password") {
+            const auto current=str(a.value("current"));
+            const auto password=str(a.value("password"));
+            const auto confirmation=str(a.value("confirmation"));
+            const bool remove=a.value("remove").toBool();
+            if(remove) {
+                if(!password.empty() || !confirmation.empty()) throw std::invalid_argument("Enter a password, or leave both new passwords empty to remove protection.");
+            } else if(password!=confirmation) {
+                throw std::invalid_argument("Passwords do not match");
+            } else if(password.empty()) {
+                throw std::invalid_argument("Enter a password.");
+            }
+            const auto update=gateway->change_password(current,password,remove);
+            if(update==app::PasswordUpdate::unchanged) diagnosticUnchanged=true;
+            else observedSaved();
+            passwordNotice=update==app::PasswordUpdate::removed?"Password protection removed. Anyone with this file can open it."
+                :update==app::PasswordUpdate::unchanged?"That is already the password for this file."
+                :"Password changed. This file asks for the new password the next time it is opened.";
+            return;
+        }
         if(action=="cancel_merge") {preparedMerge.reset();mergeOperation.clear();transferMergePreview.clear();return;}
         if(action=="cancel_reapply") {preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();return;}
         if(!active) throw std::logic_error("Open a dataset first");
@@ -2629,6 +2650,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             case diag::Action::apply_bulk:
             case diag::Action::apply_category:
             case diag::Action::backup:
+            case diag::Action::change_password:
                 persistence=diag::Persistence::confirmed_saved;break;
             case diag::Action::probe:
             case diag::Action::open:
@@ -2709,6 +2731,11 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     }));
 }
 
+bool ImportModel::passwordMatches(const QString& password) const {
+    if(!worker_ || !worker_->gateway) return false;
+    try {return worker_->gateway->password_matches(password.toUtf8().toStdString());}
+    catch(const std::exception&) {return false;}
+}
 bool ImportModel::accountNameMatches(const QString& name,const QString& selected) { return app::account_name_matches(str(name),str(selected)); }
 bool ImportModel::categoryNameMatches(const QString& name,const QString& selected,bool includeChildren) {
     try {return spentit::app::category_name_matches(name.toStdString(),selected.toStdString(),includeChildren);}
