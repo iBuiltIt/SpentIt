@@ -2,10 +2,10 @@
 
 Last updated: 2026-11-10
 
-Open and close follow [session history](session-history-baseline.md). Formats
-**70 with rules / 69 without** use an encrypted `document_session` row. Older
-experimental files are rejected unchanged. There is no migration. There is no
-full-file hash cache.
+Open and close follow [session history](session-history-baseline.md). The
+release rules database is version 1 and uses an encrypted `document_session`
+row. A file whose number is not 1 is refused, and its bytes stay the same.
+There is no migrator. There is no full-file hash cache.
 
 ## Normal open and close
 

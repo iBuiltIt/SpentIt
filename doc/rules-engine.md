@@ -2,8 +2,8 @@
 
 Last updated: 2026-11-11
 
-Category-gated evaluation is the implementation. Formats are **70 with rules /
-69 without**. Matching searches immutable original fields. Current-value
+Category-gated evaluation is the implementation. The release rules database is
+version 1. Matching searches immutable original fields. Current-value
 matching is deferred. See [feature 004](../features/004-rules-and-explanations.md).
 
 ## Matching and derived fields

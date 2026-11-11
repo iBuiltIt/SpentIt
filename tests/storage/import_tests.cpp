@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <spentit/import_store.hpp>
 #include "fault_vfs.hpp"
-#include "import_legacy_schema.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -32,16 +31,7 @@ std::string bytes(const fs::path& p){std::ifstream f(p,std::ios::binary);return 
 void no_leaks(const fs::path& dir){for(const auto& p:fs::directory_iterator(dir))if(p.is_regular_file()){auto s=bytes(p);check(s.find(password)==s.npos && s.find(marker)==s.npos && !s.starts_with("SQLite format 3"));}}
 ImportStore create(const fs::path& p){return ImportStore::create(p,password,"Synthetic account",cad,"2026-08-01");}
 void prepare(const fs::path& p){auto s=create(p);s.opening(0,"2026-08-01",Money(10000,cad));s.ingest("first",source,qif::DateOrder::dmy);}
-void legacy_create(const fs::path& path,int schema_version) {
-    sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);
-    check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
-    check(sqlite3_exec(db,legacy_import_schema,nullptr,nullptr,nullptr)==SQLITE_OK);
-    if(schema_version==1)check(sqlite3_exec(db,"PRAGMA user_version=1",nullptr,nullptr,nullptr)==SQLITE_OK);
-    sqlite3_stmt* statement=nullptr;
-    check(sqlite3_prepare_v2(db,"INSERT INTO account VALUES(1,'Synthetic account',?,'2026-08-01',0,0,0,0)",-1,&statement,nullptr)==SQLITE_OK);
-    const auto definition=cad.definition_id();check(sqlite3_bind_text(statement,1,definition.data(),static_cast<int>(definition.size()),SQLITE_TRANSIENT)==SQLITE_OK);
-    check(sqlite3_step(statement)==SQLITE_DONE);check(sqlite3_finalize(statement)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
-}
+
 void embedded_returns(){
     Directory d;const auto path=d.path/"embedded-text";
     const std::string raw="D2026-09-27\nT-10.38\nPSYNTHETIC SHOP\rTEXT AGAIN\rT999.00\nMFirst\rSecond\nEPart one\rPart two\nSFood\n$-10.38\n^\n";
@@ -239,9 +229,9 @@ void repairs(){
         s.ingest("new","D1/4/2026\nT-10\n^\n",qif::DateOrder::dmy);
         check(s.row({"new",0}).decision.disposition==imports::Disposition::unresolved);
         check(s.row({"new",0}).candidates.size()==1);s.verify();}
-    // Disposable pre-release formats are rejected without modifying evidence.
-    legacy_create(d.path/"legacy",1);const auto legacy=bytes(d.path/"legacy");
-    fails([&]{ImportStore::open(d.path/"legacy",password);});check(bytes(d.path/"legacy")==legacy);
+    {auto created=create(d.path/"foreign");(void)created;}
+    sqlite3* foreign=nullptr;check(sqlite3_open((d.path/"foreign").c_str(),&foreign)==SQLITE_OK);check(sqlite3_key(foreign,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(foreign,"PRAGMA user_version=2",nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(foreign)==SQLITE_OK);
+    const auto foreign_bytes=bytes(d.path/"foreign");fails([&]{ImportStore::open(d.path/"foreign",password);});check(bytes(d.path/"foreign")==foreign_bytes);
     no_leaks(d.path);
 }
 void cancellation(){
@@ -331,7 +321,7 @@ void cancellation(){
         app::OperationContext retry;const auto resumed=s.ingest_controlled("invalid-retry",invalid,qif::DateOrder::dmy,retry);check(resumed.blocked && resumed.count==0);
         fails([&]{s.commit("invalid-retry",1,"invalid-op");});s.undo_import("undo-invalid","invalid-retry",s.ledger_edit_generation());s.verify();
     }
-    for(int version:{1,2}) {Directory old;legacy_create(old.path/"doc",version);const auto before=bytes(old.path/"doc");fails([&]{ImportStore::open(old.path/"doc",password);});check(bytes(old.path/"doc")==before);}
+
     no_leaks(d.path);
 }
 void operation(ImportStore& s,int kind){
@@ -522,7 +512,9 @@ void validation(){
     Directory d;prepare(d.path/"doc");
     // Deliberately corrupt authenticated synthetic state; no user data involved.
     auto alter=[&](const char* sql){sqlite3* db=nullptr;check(sqlite3_open((d.path/"doc").c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);};
-    alter("PRAGMA user_version=99");fails([&]{ImportStore::open(d.path/"doc",password);});alter("PRAGMA user_version=4");
+    bool rules=false;{auto open=ImportStore::open(d.path/"doc",password);rules=open.rules_supported();}
+    alter("PRAGMA user_version=99");fails([&]{ImportStore::open(d.path/"doc",password);});
+    alter(rules?"PRAGMA user_version=1":"PRAGMA user_version=69");
     alter("DROP TRIGGER allocation_immutable; UPDATE allocations SET units=units+1 WHERE batch='first' AND ordinal=0 AND position=0");
     fails([&]{ImportStore::open(d.path/"doc",password);});
 }

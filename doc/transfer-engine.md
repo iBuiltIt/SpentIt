@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-31
 
-The bounded same-currency [transfer lifecycle](../features/008-transfer-matching-and-lifecycle.md) connects the pure engine to encrypted storage and the durable import UI. New documents use experimental schema 40 with rules and schema 39 without rules. Schema 20 and schemas 18 and 19 are rejected without migration. Application id remains `1397770577`. Merge, retarget, and committed link edits use the existing transfer event and version blobs; point 6 did not change that shape or add a ledger kind. Point 7 added committed rule reapplication on schema 22. [QIF account destinations](qif-transfers.md) and account choices in the category selector use the same transfer commands. Moving a committed row and rewriting source-occurrence links remain open. Feature 008 remains active.
+The bounded same-currency [transfer lifecycle](../features/008-transfer-matching-and-lifecycle.md) connects the pure engine to encrypted storage and the durable import UI. New documents use release schema version 1. A different number is refused, and the file bytes stay the same. There is no migrator. Application id remains `1397770577`. Merge, retarget, and committed link edits use the existing transfer event and version blobs; point 6 did not change that shape or add a ledger kind. Point 7 added committed rule reapplication on schema 22. [QIF account destinations](qif-transfers.md) and account choices in the category selector use the same transfer commands. Moving a committed row and rewriting source-occurrence links remain open. Feature 008 remains active.
 
 ## Implemented contract
 

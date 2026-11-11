@@ -2,8 +2,8 @@
 
 Last updated: 2026-11-10
 
-This replacement is the Undo implementation. Formats are **70 with rules / 69
-without**. Do not resume generic per-row storage capture. An import must not
+This replacement is the Undo implementation. The release rules database is
+version 1. Do not resume generic per-row storage capture. An import must not
 create an ordinary edit record for each new row.
 
 ## 1. The model

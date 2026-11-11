@@ -2,8 +2,10 @@
 
 Last updated: 2026-11-09
 
-Working experimental formats are **70 with rules / 69 without**. Older
-experimental files are rejected unchanged. There is no migration.
+The release rules database is version 1. A file whose number is not 1 is
+refused, and its bytes stay the same. There is no migrator. The rules-off
+build still writes version 69 and is not the release format. The application
+version is 1.0.0.
 
 ## Prerequisites
 

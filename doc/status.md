@@ -2,9 +2,11 @@
 
 Last updated: 2026-11-11
 
-SpentIt is the local rules-enabled application. Working experimental formats
-are **70 with rules / 69 without**. Older experimental files are rejected
-unchanged, with no migration. The SpentIt exchange file is JSON version 1.
+SpentIt is the local rules-enabled application. The release rules database is
+version 1, and the application version is 1.0.0. A file whose number is not 1
+is refused, and its bytes stay the same. There is no migrator. The rules-off
+build still writes version 69 and is not the release format. The SpentIt
+exchange file is JSON version 1.
 
 Build and launch are in the [README](../README.md) and [building](building.md).
 macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
@@ -67,10 +69,9 @@ release 1 does not add.
   produces a Developer ID DMG aimed at macOS 14.4. A Mac running 14.4 was not
   used. Publication is not approved. `./build/SpentIt` stays the development
   build.
-- When the owner says to make the release schema, follow
-  [release schema](release-schema.md). That stamps the rules database as
-  version 1, with no migrator, and sets the application version. Do not do
-  either earlier.
+- The release schema and application version 1.0.0 are stamped. The installers
+  recorded above were built as 0.1.0 before that stamp. Rebuild them before
+  publication. See [release schema](release-schema.md).
 
 ## Limits that still bind a claim
 

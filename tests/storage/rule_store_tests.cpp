@@ -1,10 +1,6 @@
 #include <spentit/import_store.hpp>
 #include <spentit/diagnostics.hpp>
 #include "fault_vfs.hpp"
-#include "import_legacy_schema.hpp"
-#include "import_schema3_fixture.hpp"
-#include "import_schema4_fixture.hpp"
-#include "import_schema5_fixture.hpp"
 #include <array>
 #include <chrono>
 #include <filesystem>
@@ -53,8 +49,6 @@ app::RuleApplyRequest request_from(const app::RulePreviewResult& result){return 
 void bind(ImportStore& s,imports::DraftRow& d,std::size_t position,std::string id){auto a=d.transaction.allocations();a.at(position).category_binding=CategoryBinding{id,s.category_catalog().revision};a.at(position).category=s.resolve_category(id).path;a.at(position).category_owner=FieldOwnership::manual;a.at(position).category_rule.reset();d.transaction=d.transaction.corrected(d.transaction.effective_total(),std::move(a));}
 app::ChangeReceipt correct(ImportStore& s,std::string_view op,const imports::Occurrence& id,const imports::DraftRow& d){app::ChangeRequest r{app::ChangeKind::correct,id,d,{}};auto p=s.preview_committed_change(r);return s.apply_committed_change_with_catalog(op,p.request,p.expected,p.preview_sequence,p.catalog_revision);}
 bool same_fields(const imports::DraftRow& a,const imports::DraftRow& b){if(a.date!=b.date||a.payee!=b.payee||a.memo!=b.memo||a.payee_owner!=b.payee_owner||a.memo_owner!=b.memo_owner||a.payee_rule!=b.payee_rule||a.memo_rule!=b.memo_rule||a.transaction.effective_total()!=b.transaction.effective_total())return false;const auto& aa=a.transaction.allocations();const auto& bb=b.transaction.allocations();if(aa.size()!=bb.size())return false;for(std::size_t i=0;i<aa.size();++i)if(aa[i].category!=bb[i].category||aa[i].memo!=bb[i].memo||aa[i].amount!=bb[i].amount||aa[i].category_binding!=bb[i].category_binding||aa[i].identity!=bb[i].identity||aa[i].source_ordinal!=bb[i].source_ordinal||aa[i].category_owner!=bb[i].category_owner||aa[i].memo_owner!=bb[i].memo_owner||aa[i].category_rule!=bb[i].category_rule||aa[i].memo_rule!=bb[i].memo_rule)return false;return true;}
-void open_legacy(const fs::path& path,int version){sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);const char* schema=version==5?schema5_import_fixture:version==4?schema4_import_fixture:version==3?schema3_import_schema:legacy_import_schema;check(sqlite3_exec(db,schema,nullptr,nullptr,nullptr)==SQLITE_OK);if(version==1)check(sqlite3_exec(db,"PRAGMA user_version=1",nullptr,nullptr,nullptr)==SQLITE_OK);sqlite3_stmt* insert=nullptr;check(sqlite3_prepare_v2(db,"INSERT INTO account VALUES(1,'Synthetic',?,'2026-08-01',0,0,0,0)",-1,&insert,nullptr)==SQLITE_OK);const auto definition=cad.definition_id();check(sqlite3_bind_text(insert,1,definition.data(),static_cast<int>(definition.size()),SQLITE_TRANSIENT)==SQLITE_OK);check(sqlite3_step(insert)==SQLITE_DONE);check(sqlite3_finalize(insert)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);}
-
 void definitions(){
     fault_vfs::install();Directory dir("spentit-rulestore-def-XXXXXX");const auto path=dir.path/"doc";
     {auto s=create(path);check(s.rules_supported()&&s.categories_supported()&&s.rule_image().revision==0&&s.rule_image().ordered.empty());
@@ -75,7 +69,7 @@ void definitions(){
     const auto kept=s.rule_image();s.ingest("temporary",plain_source,qif::DateOrder::dmy);s.undo_import("undo-temporary","temporary",s.ledger_edit_generation());check(s.rule_image().revision==kept.revision&&s.rule_image().ordered.size()==kept.ordered.size()&&s.rule_image().ordered[0].label==kept.ordered[0].label);
     rejects_text([&]{apply_category(s,"erase-fees",change(app::CategoryAction::erase,"fees"));},"Transactions use this category. Archive it instead.");apply_category(s,"archive-fees",change(app::CategoryAction::archive,"fees"));check(s.resolve_category("fees").archived);
     const imports::Occurrence row{"assigned",0};s.ingest(row.batch,split_source,qif::DateOrder::dmy);auto draft=*s.row(row).draft;bind(s,draft,1,"parking");s.save(row,0,draft);s.commit(row.batch,1,"publish-assigned");check(s.committed_balance().units()==-2931&&s.committed_entry(row).current.draft.transaction.allocations()[1].category_binding->identity=="parking");s.verify();}
-    check(query(path,"PRAGMA user_version")=="70");no_leaks(dir.path);
+    check(query(path,"PRAGMA user_version")=="1");no_leaks(dir.path);
 }
 
 void application(){
@@ -113,19 +107,14 @@ void application(){
 
 void schema(){
     fault_vfs::install();
-    for(int version:{1,2,3,4,5}){Directory dir("spentit-rulestore-legacy-XXXXXX");const auto path=dir.path/"doc";open_legacy(path,version);const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==before);no_leaks(dir.path);}
-    Directory mismatch("spentit-rulestore-shape-XXXXXX");const auto path=mismatch.path/"doc";open_legacy(path,5);
+    Directory dir("spentit-rulestore-schema-XXXXXX");const auto path=dir.path/"doc";
+    {auto s=create(path);s.verify();}
+    check(query(path,"PRAGMA user_version")=="1");
     auto alter=[&](const char* sql){sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);};
-    alter("PRAGMA user_version=99");const auto unknown=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==unknown&&!fs::exists(fs::path(path.string()+"-journal")));
-    alter("PRAGMA user_version=16");const auto rejected16=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected16);
-    alter("PRAGMA user_version=17");const auto rejected17=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected17);
-    alter("PRAGMA user_version=18");const auto rejected18=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected18);
-    alter("PRAGMA user_version=19");const auto rejected19=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected19);
-    alter("PRAGMA user_version=20");const auto bumped=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==bumped);
-    for(const auto version:{27,28,29,30,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69}){alter(("PRAGMA user_version="+std::to_string(version)).c_str());const auto before=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported");check(bytes(path)==before);}
-    alter("PRAGMA user_version=70");const auto current=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==current);
-    alter("CREATE TABLE rule_state(singleton INTEGER PRIMARY KEY)");const auto extra=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==extra);
-    const auto sibling=bytes(path);fault_vfs::arm(1,SQLITE_FULL);rejects_text([&]{ImportStore::create(mismatch.path/"other",password,"Synthetic account",cad,"2026-08-01");},"");fault_vfs::disarm();check(bytes(path)==sibling);
+    alter("PRAGMA user_version=2");const auto rejected=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected&&!fs::exists(fs::path(path.string()+"-journal")));check(query(path,"PRAGMA user_version")=="2");
+    alter("PRAGMA user_version=1");{auto s=ImportStore::open(path,password);s.verify();}
+    alter("DROP TABLE account_creations");const auto mismatched=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==mismatched);
+    const auto sibling=bytes(path);fault_vfs::arm(1,SQLITE_FULL);rejects_text([&]{ImportStore::create(dir.path/"other",password,"Synthetic account",cad,"2026-08-01");},"");fault_vfs::disarm();check(bytes(path)==sibling);
 }
 
 void validation(){

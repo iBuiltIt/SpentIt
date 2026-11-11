@@ -1,8 +1,6 @@
 #include "session_test_helpers.hpp"
 #include <spentit/import_store.hpp>
 #include "fault_vfs.hpp"
-#include "import_legacy_schema.hpp"
-#include "import_schema3_fixture.hpp"
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -487,18 +485,12 @@ void backup() {
     check(working.committed_balance().units()==12000 && working.projected_balance()->units()==12000);
     working.verify();no_leaks(dir.path);
 }
-void legacy_create(const fs::path& path,int version) {
-    sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);
-    check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
-    check(sqlite3_exec(db,version==3?schema3_import_schema:legacy_import_schema,nullptr,nullptr,nullptr)==SQLITE_OK);
-    if(version==1)check(sqlite3_exec(db,"PRAGMA user_version=1",nullptr,nullptr,nullptr)==SQLITE_OK);
-    sqlite3_stmt* insert=nullptr;
-    check(sqlite3_prepare_v2(db,"INSERT INTO account VALUES(1,'Synthetic',?,'2026-08-01',0,0,0,0)",-1,&insert,nullptr)==SQLITE_OK);
-    const auto definition=cad.definition_id();check(sqlite3_bind_text(insert,1,definition.data(),static_cast<int>(definition.size()),SQLITE_TRANSIENT)==SQLITE_OK);
-    check(sqlite3_step(insert)==SQLITE_DONE);check(sqlite3_finalize(insert)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
-}
 void legacy() {
-    for(int version:{1,2,3}) {Directory dir;legacy_create(dir.path/"doc",version);const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);}
+    Directory dir;prepare(dir.path/"doc");
+    sqlite3* db=nullptr;check(sqlite3_open((dir.path/"doc").c_str(),&db)==SQLITE_OK);
+    check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
+    check(sqlite3_exec(db,"PRAGMA user_version=2",nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
+    const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);
 }
 
 void validation() {
@@ -528,9 +520,7 @@ void validation() {
         "DROP TRIGGER ledger_operations_immutable;UPDATE ledger_operations SET result_revision=7 WHERE id='corrupt-correction'",
         ("INSERT INTO ledger_operations(id,kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence,catalog_revision) "
         "SELECT 'duplicate-revision',kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence,catalog_revision FROM ledger_operations WHERE id='corrupt-correction'"),
-        "PRAGMA user_version=1",
-        "PRAGMA user_version=2",
-        "PRAGMA user_version=3"
+        "PRAGMA user_version=2"
     };
     for(std::size_t index=0;index<std::size(damage);++index) {
         const auto* sql=damage[index];

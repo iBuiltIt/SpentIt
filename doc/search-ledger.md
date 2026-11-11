@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-09
 
-This is the bounded durable QIF experiment; search and bulk actions operate within the selected [account workspace](accounts.md). Requirements and owner decisions are in [feature 005](../features/005-transaction-sheet-navigation.md). The owner confirmed that experimental formats are disposable until an explicitly announced release; migration and backward-compatibility work are not required during this phase. This work introduces no migration.
+This is the bounded durable QIF experiment; search and bulk actions operate within the selected [account workspace](accounts.md). Requirements and owner decisions are in [feature 005](../features/005-transaction-sheet-navigation.md). The release rules database is version 1. This work introduces no migrator.
 
 ## Selection size — owner Go, 2026-11-06
 

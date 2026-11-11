@@ -96,11 +96,11 @@ void store_publication(sqlite3* db,const imports::Occurrence& id,const imports::
     Statement head(db,"INSERT INTO entry_heads VALUES(?,?,?)");head.text(1,id.batch);head.integer(2,integer(id.ordinal));head.integer(3,revision);head.done();
 }
 void append_financial(sqlite3* db,std::string_view operation,app::ChangeKind kind,const imports::Occurrence& id,std::int64_t prior,std::int64_t result,const Money& before,const Money& change,const Money& after,std::string_view undo,std::int64_t preview,std::int64_t catalog) {
-    Statement row(db,categories_format(db)?"INSERT INTO ledger_operations(id,kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence,catalog_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)":"INSERT INTO ledger_operations(id,kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence) VALUES(?,?,?,?,?,?,?,?,?,?,?)");row.text(1,operation);row.integer(2,static_cast<int>(kind));row.text(3,id.batch);row.integer(4,kind==app::ChangeKind::publication?-1:integer(id.ordinal));row.integer(5,prior);row.integer(6,result);row.integer(7,before.units());row.integer(8,change.units());row.integer(9,after.units());row.text(10,undo);row.integer(11,preview);if(categories_format(db))row.integer(12,kind==app::ChangeKind::publication?catalog_sequence(db):catalog);row.done();
+    Statement row(db,"INSERT INTO ledger_operations(id,kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence,catalog_revision) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");row.text(1,operation);row.integer(2,static_cast<int>(kind));row.text(3,id.batch);row.integer(4,kind==app::ChangeKind::publication?-1:integer(id.ordinal));row.integer(5,prior);row.integer(6,result);row.integer(7,before.units());row.integer(8,change.units());row.integer(9,after.units());row.text(10,undo);row.integer(11,preview);row.integer(12,kind==app::ChangeKind::publication?catalog_sequence(db):catalog);row.done();
 }
 std::int64_t financial_sequence(sqlite3* db){Statement s(db,"SELECT max(coalesce(max(sequence),0),(SELECT financial_cut FROM document_session),(SELECT coalesce(max(seq),0) FROM sqlite_sequence WHERE name='ledger_operations')) FROM ledger_operations");if(!s.row())fail(SQLITE_CORRUPT);return s.integer(0);}
 }
-bool ImportStore::committed_changes_supported() const {return scalar(impl_->db,"PRAGMA user_version")=="4" || categories_supported();}
+bool ImportStore::committed_changes_supported() const {return true;}
 app::EntrySnapshot ImportStore::entry_snapshot(const imports::Occurrence& id,std::int64_t revision,const qif::Record* known_source) const {
     // Only a single read-only verification owns this bounded cache. History
     // reconciliation still checks every reference, ordering and balance below.
@@ -179,7 +179,7 @@ app::ChangePreview ImportStore::preview_change(const app::ChangeRequest& request
         }catch(const transfers::TransferError& error){fail(SQLITE_CONSTRAINT,error.what());}
     }
     const auto currency=account().currency;const Money zero(0,currency);const auto delta=(after.active?after.draft.transaction.effective_total():zero)-(current.current.active?current.current.draft.transaction.effective_total():zero);
-    const auto before=known_balance?*known_balance:committed_balance();auto canonical=request;if(canonical.correction)canonical.correction=after.draft;return {canonical,current.current,std::move(after),before,delta,before+delta,current.token,financial_sequence(impl_->db),categories_supported()?catalog_sequence(impl_->db):0,std::move(relationship),std::move(link_stamp)};
+    const auto before=known_balance?*known_balance:committed_balance();auto canonical=request;if(canonical.correction)canonical.correction=after.draft;return {canonical,current.current,std::move(after),before,delta,before+delta,current.token,financial_sequence(impl_->db),catalog_sequence(impl_->db),std::move(relationship),std::move(link_stamp)};
 }
 app::ChangePreview ImportStore::preview_committed_change(const app::ChangeRequest& request) const {
     return preview_change(request,true);
@@ -194,16 +194,14 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
     {Statement owned(impl_->db,"SELECT 1 FROM ledger_operations l WHERE l.id=? AND NOT EXISTS(SELECT 1 FROM command_completions c WHERE c.id=l.id AND c.domain='committed')");owned.text(1,operation);if(owned.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");}
     if(bulk_supported()){Statement member(impl_->db,"SELECT 1 FROM bulk_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a bulk command");}
 #ifdef SPENTIT_RULES_STORAGE
-    if(scalar(impl_->db,"PRAGMA user_version")=="70"){
-        Statement member(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");
-        if(request.kind==app::ChangeKind::undo){Statement target(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");target.text(1,request.undo_of);if(target.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");}
-    }
+    Statement member(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");member.text(1,operation);if(member.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");
+    if(request.kind==app::ChangeKind::undo){Statement target(impl_->db,"SELECT 1 FROM rule_reapplication_members WHERE entry_operation=?");target.text(1,request.undo_of);if(target.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to a rule reapply");}
 #endif
     if(const auto prior=committed_change_outcome(operation)){
         // The common inverse may restore links before its entry transition. Its
         // durable request digest above validates the original preview exactly.
         if(request.kind==app::ChangeKind::undo)return *prior;
-        Statement stored(impl_->db,categories_supported()?"SELECT preview_sequence,catalog_revision FROM ledger_operations WHERE id=?":"SELECT preview_sequence,0 FROM ledger_operations WHERE id=?");stored.text(1,operation);if(!stored.row())fail(SQLITE_CORRUPT);
+        Statement stored(impl_->db,"SELECT preview_sequence,catalog_revision FROM ledger_operations WHERE id=?");stored.text(1,operation);if(!stored.row())fail(SQLITE_CORRUPT);
         auto prior_token=prior->result_token;prior_token.revision=prior->before_entry.revision;
         if(prior->kind!=request.kind || prior->identity!=request.identity || prior->undo_of!=request.undo_of || prior_token!=expected || stored.integer(0)!=preview_sequence || stored.integer(1)!=catalog_revision ||
            (request.kind==app::ChangeKind::correct?(!request.correction || !same_draft(canonical_draft(request.identity,*request.correction,prior->before_entry.draft,prior->after_entry.revision,true,false),prior->after_entry.draft)):request.correction.has_value()))fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");
@@ -229,7 +227,7 @@ app::ChangeReceipt ImportStore::apply_committed_change_with_catalog(std::string_
     }
 #endif
     Atomic transaction(impl_->db);
-    if(committed_entry(request.identity).token!=expected || financial_sequence(impl_->db)!=preview_sequence || (categories_supported()?catalog_sequence(impl_->db):0)!=catalog_revision)fail(SQLITE_CONSTRAINT,"Preview changed; refresh before applying");
+    if(committed_entry(request.identity).token!=expected || financial_sequence(impl_->db)!=preview_sequence || catalog_sequence(impl_->db)!=catalog_revision)fail(SQLITE_CONSTRAINT,"Preview changed; refresh before applying");
     EntryLinkPlan fresh;
     try{
         if(request.kind==app::ChangeKind::undo){
@@ -426,11 +424,9 @@ AND (a.operation=?3 OR EXISTS(
 #ifdef SPENTIT_RULES_STORAGE
                 if(rules_format(impl_->db)){
                     bool reapply=false,replace_manual=false;
-                    if(scalar(impl_->db,"PRAGMA user_version")=="70"){
-                        Statement member(impl_->db,"SELECT g.replace_manual,g.undo_of IS NULL FROM rule_reapplication_members m JOIN rule_reapplications g ON g.id=m.operation WHERE m.entry_operation=?");
-                        member.text(1,operation);
-                        if(member.row()){if(member.integer(1)==0)fail(SQLITE_CORRUPT,"Rule reapply Undo used a correction");reapply=true;replace_manual=member.integer(0)!=0;}
-                    }
+                    Statement member(impl_->db,"SELECT g.replace_manual,g.undo_of IS NULL FROM rule_reapplication_members m JOIN rule_reapplications g ON g.id=m.operation WHERE m.entry_operation=?");
+                    member.text(1,operation);
+                    if(member.row()){if(member.integer(1)==0)fail(SQLITE_CORRUPT,"Rule reapply Undo used a correction");reapply=true;replace_manual=member.integer(0)!=0;}
                     Statement account_apply(impl_->db,"SELECT substr(a.request,1,1) FROM review_answers a CROSS JOIN review_members m ON m.answer=a.id WHERE m.child=? AND m.committed=1 AND a.question='rules-account'");account_apply.text(1,operation);
                     if(account_apply.row()){reapply=true;replace_manual=account_apply.bytes(0)=="1";}
                     check_rule_transition(before.draft,after.draft,reapply,replace_manual);

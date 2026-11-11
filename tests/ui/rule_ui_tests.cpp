@@ -1,7 +1,7 @@
 #include "import_model.hpp"
 #include <spentit/money.hpp>
 #include <spentit/storage_document_gateway.hpp>
-#include "../storage/import_schema5_fixture.hpp"
+#include <sqlite3.h>
 #include <QTest>
 #include <QAccessible>
 #include <QStyleHints>
@@ -83,17 +83,12 @@ class RuleUiTests : public QObject {
     static void writeQif(const QString& path,const QByteArray& bytes){QFile file(path);if(!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size())qFatal("QIF fixture unavailable");}
     static QByteArray wise(){return "!Type:Bank\nD01/01/2026\nT-29.31\nPTfl Travel UK\nEWise Charges for: card\n$-0.14\nECARD-123\n$-29.17\n^\n";}
     void createDocument(Session& s,const QString& name){run(s.model,"create",{{"path",s.path()},{"protected",false},{"name",name},{"currency","CAD"}});QVERIFY(s.window);QVERIFY(QTest::qWaitForWindowExposed(s.window));QVERIFY(click(s.root,"categoryNavigation"));wait(s.model);createCategory(s.model,s.root,"Test category");QVERIFY(click(s.root,"accountNavigation"));wait(s.model);}
-    void writeSchema5(const QString& path){
-        QFile created(path);QVERIFY(created.open(QIODevice::WriteOnly));created.close();
+    void setUserVersion(const QString& path,const char* version){
         sqlite3* db=nullptr;QCOMPARE(sqlite3_open(path.toUtf8().constData(),&db),SQLITE_OK);
         const auto key=storage::public_document_key;
         QCOMPARE(sqlite3_key(db,key.data(),static_cast<int>(key.size())),SQLITE_OK);
-        QCOMPARE(sqlite3_exec(db,"PRAGMA cipher_compatibility=4; PRAGMA cipher_memory_security=ON",nullptr,nullptr,nullptr),SQLITE_OK);
-        QCOMPARE(sqlite3_exec(db,schema5_import_fixture,nullptr,nullptr,nullptr),SQLITE_OK);
-        sqlite3_stmt* insert=nullptr;QCOMPARE(sqlite3_prepare_v2(db,"INSERT INTO account VALUES(1,'Synthetic',?,'2026-08-01',0,0,0,0)",-1,&insert,nullptr),SQLITE_OK);
-        const auto definition=Currency("CAD").definition_id();
-        QCOMPARE(sqlite3_bind_text(insert,1,definition.data(),static_cast<int>(definition.size()),SQLITE_TRANSIENT),SQLITE_OK);
-        QCOMPARE(sqlite3_step(insert),SQLITE_DONE);QCOMPARE(sqlite3_finalize(insert),SQLITE_OK);QCOMPARE(sqlite3_close(db),SQLITE_OK);
+        QCOMPARE(sqlite3_exec(db,version,nullptr,nullptr,nullptr),SQLITE_OK);
+        QCOMPARE(sqlite3_close(db),SQLITE_OK);
     }
 private slots:
     void initTestCase(){if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS"))QVERIFY(spentit::diagnostics::Collector::instance().enable());QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("RuleUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
@@ -301,7 +296,10 @@ private slots:
         QVERIFY(current.model.state().value("rulesSupported").toBool());
         QVERIFY(object(current.root,"rulesNavigation")->property("visible").toBool());
         run(current.model,"close");QSettings().clear();
-        Session legacy;writeSchema5(legacy.path());
+        Session legacy;createDocument(legacy,"Foreign version");
+        run(legacy.model,"close");
+        setUserVersion(legacy.path(),"PRAGMA user_version=2");
+        QSettings().clear();
         run(legacy.model,"open",{{"path",legacy.path()}},false);
         QVERIFY(!legacy.model.state().value("active").toBool());
         QVERIFY(legacy.model.error().contains("This dataset format is not supported"));

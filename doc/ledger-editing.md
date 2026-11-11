@@ -3,7 +3,7 @@
 Last updated: 2026-11-11
 
 Manual and imported postings share transfer assignment, explicit Link, editing,
-and Undo. Rules match imported fields. Database formats are **70/69**.
+and Undo. Rules match imported fields. The release rules database is version 1.
 
 This supersedes the older inline Save draft / Cancel edit
 and explicit committed-edit opt-in presentation.
@@ -295,10 +295,10 @@ A crash can lose the unaccepted buffer; the saved transaction remains balanced.
 No crash recovery draft or automatic editor restoration is added. Escape in the
 editor retains the existing explicit discard behavior.
 
-Experimental formats are now **46 with rules / 45 without**. The encrypted draft
+The release rules database is version 1. The encrypted draft
 and entry revision metadata stores the balancing identity and manual-mode flag
-alongside every complete transaction snapshot, including Undo history. Earlier experimental files are
-rejected unchanged, without migration. See [status](status.md) for verification.
+alongside every complete transaction snapshot, including Undo history. A different number is
+refused, and the file bytes stay the same. There is no migrator. See [status](status.md) for verification.
 
 
 ## Amount expressions — owner Go 2026-11-03
@@ -361,8 +361,8 @@ parsers; only the resulting Money value is stored.
 The encrypted singleton preference is updated atomically without changing financial
 rows, account revisions or ledger mutation generation. Failed saves are read back
 before UI success; unknown outcomes require reopening. Preference changes invalidate
-cached presentation. Experimental formats are **52 with rules / 51 without**;
-older formats are rejected unchanged, with no migration. See [status](status.md)
+cached presentation. The release rules database is version 1. A different
+number is refused, and the file bytes stay the same. There is no migrator. See [status](status.md)
 for actual verification and platform limits.
 
 ## Text-field Home and End — owner Go 2026-11-03
@@ -414,8 +414,8 @@ Implementation: deletion extends the existing transfer journal with an explicit,
 replayed unlink transition. Local postings in two accounts use separate monetary
 history entries inside the same transaction. Retained counterparts and earlier
 unlink stages have child receipts, reversed with their parent deletion. Existing
-history encodings for this deletion stay in the current 70/69 formats. Older
-experimental files are rejected rather than decoded.
+history encodings for this deletion stay in release schema version 1. A
+different number is refused rather than decoded.
 
 Bulk edits/deletion and Undo reuse bounded prepared statements for the operation.
 Committed-row writes maintain exact running balances initialized once per account;
@@ -426,6 +426,6 @@ the relevant operation tables, strict Undo uses the complete member key, and dra
 Undo uses an audit-local lookup capped at 65,536 members / 16 MiB, falling back to
 the original query above that budget. No integrity/durability check is disabled.
 Undo and committed replay share a bounded revision-to-history lookup and reuse
-already-read facts, while retaining validation. Database formats are **70/69**.
+already-read facts, while retaining validation. The release rules database is version 1.
 The clean-marker open policy is in [fast-startup.md](fast-startup.md). Full
 audit still checks retained history. It does not run on every ordinary open.

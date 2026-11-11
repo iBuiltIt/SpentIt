@@ -133,7 +133,7 @@ that would produce duplicate filters refuse instead of silently rewriting filter
 New categories and explicit Income updates, appended rules and appended reports save
 in one database transaction. Exact retries use a compact completion digest; failures
 before commit restore all catalogs, and uncertain acknowledgements are checked before
-success. No database schema bump is needed (formats remain 70/69).
+success. No database schema bump is needed. The release rules database remains version 1.
 
 QIF is limited to 64 MiB per export; select smaller periods when necessary. The export
 uses `MM/DD/YYYY`, independent of dataset display settings, and includes category

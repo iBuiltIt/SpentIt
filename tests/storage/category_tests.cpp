@@ -1,8 +1,5 @@
 #include <spentit/import_store.hpp>
 #include "fault_vfs.hpp"
-#include "import_legacy_schema.hpp"
-#include "import_schema3_fixture.hpp"
-#include "import_schema4_fixture.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -175,11 +172,7 @@ void history(){Directory dir;auto s=create(dir.path/"doc");seed(s);s.ingest("fir
 
 void backup(){Directory dir;{auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);auto d=*s.row(first).draft;bind(s,d,0,"parking");s.save(first,0,d);apply(s,"archive",change(app::CategoryAction::archive,"auto"));s.backup_to(dir.path/"backup",password);}
  {auto s=ImportStore::open(dir.path/"backup",password);check(s.category_history("auto").size()==2&&!s.resolve_category("parking").archived);check(s.row(first).draft->transaction.allocations()[0].category_binding->identity=="parking");check(s.committed_balance().units()==0&&s.projected_balance()->units()==-2931);s.commit("first",batch_revision(s),"publish");s.verify();}no_leaks(dir.path);}
-void legacy(){for(int version:{1,2,3,4}){Directory dir;sqlite3* db=nullptr;check(sqlite3_open((dir.path/"doc").c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
- const char* schema=version==4?schema4_import_fixture:version==3?schema3_import_schema:legacy_import_schema;check(sqlite3_exec(db,schema,nullptr,nullptr,nullptr)==SQLITE_OK);if(version==1)check(sqlite3_exec(db,"PRAGMA user_version=1",nullptr,nullptr,nullptr)==SQLITE_OK);
- sqlite3_stmt* insert=nullptr;check(sqlite3_prepare_v2(db,"INSERT INTO account VALUES(1,'Synthetic',?,'2026-08-01',0,0,0,0)",-1,&insert,nullptr)==SQLITE_OK);const auto definition=cad.definition_id();check(sqlite3_bind_text(insert,1,definition.data(),static_cast<int>(definition.size()),SQLITE_TRANSIENT)==SQLITE_OK);check(sqlite3_step(insert)==SQLITE_DONE);check(sqlite3_finalize(insert)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
- const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);
-}}
+void legacy(){Directory dir;{auto s=create(dir.path/"doc");s.verify();}sqlite3* db=nullptr;check(sqlite3_open((dir.path/"doc").c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,"PRAGMA user_version=2",nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);}
 app::CategoryRequest fault_request(int kind){return kind==0?make("new","New"):kind==1?change(app::CategoryAction::rename,"parking","Travel: Parking"):kind==2?change(app::CategoryAction::erase,"parking"):app::CategoryRequest{app::CategoryAction::set_income,"parking",{},{},CategoryKind::leaf,true};}
 void fault_setup(const fs::path& path){auto s=create(path);seed(s);}
 void recovered(const fs::path& path,const app::CategoryRequest& request,std::int64_t expected){auto s=ImportStore::open(path,password);s.verify();auto outcome=s.category_change_outcome("fault");check(s.category_catalog().revision==expected+(outcome?1:0));auto r=s.apply_category_change("fault",request,expected);check(r.catalog_after==expected+1&&s.category_catalog().revision==expected+1);check(s.apply_category_change("fault",request,expected).catalog_after==r.catalog_after);check(s.committed_balance().units()==0);s.verify();}
@@ -224,8 +217,7 @@ void validation(){const char* damage[]={
  "DROP TRIGGER entry_fields_immutable;UPDATE entry_fields SET payee_owner=1 WHERE batch='first' AND ordinal=0 AND revision=2",
  "DROP TRIGGER category_versions_immutable;UPDATE category_versions SET income=1 WHERE id='parking' AND revision=0",
  "DROP TRIGGER category_operations_immutable;UPDATE category_operations SET income=1 WHERE id='rename'",
- "PRAGMA user_version=55","PRAGMA user_version=56",
- "PRAGMA user_version=1","PRAGMA user_version=2","PRAGMA user_version=3","PRAGMA user_version=4","PRAGMA user_version=21","PRAGMA user_version=22"
+ "PRAGMA user_version=2"
 };for(const auto* sql:damage){Directory dir;{auto s=create(dir.path/"doc");seed(s);s.ingest("first",source,qif::DateOrder::dmy);auto d=*s.row(first).draft;bind(s,d,0,"parking");s.save(first,0,d);s.commit("first",1,"publish");d=s.committed_entry(first).current.draft;d.payee="Manual";d.payee_owner=FieldOwnership::manual;d.memo="";d.memo_owner=FieldOwnership::manual;correct(s,"correct",d);d=s.committed_entry(first).current.draft;d.payee="Manual again";correct(s,"correct-again",d);apply(s,"rename",change(app::CategoryAction::rename,"parking","Auto: Parking"));s.verify();}
  sqlite3* db=nullptr;check(sqlite3_open((dir.path/"doc").c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);
 }}

@@ -4,7 +4,7 @@ Last updated: 2026-11-11
 
 Manual and imported postings share transfer assignment, explicit Link, editing,
 and Undo. A manual entry has no imported original until Review Merge attaches
-one. Rules match imported fields. Database formats are **70/69**.
+one. Rules match imported fields. The release rules database is version 1.
 
 ## Accepted interaction
 
@@ -87,10 +87,10 @@ An explicit selected-row Merge may reconcile different dates; amounts must agree
 
 ## Storage and verification
 
-Formats 48 with rules / 47 without add an explicit manual creation encoding to
-the existing encrypted transaction storage. Manual creation has no original
+Manual creation has an explicit encoding in the encrypted transaction storage.
+Manual creation has no original
 imported amount and no bank-file bytes. Its internal journal payload retains the
 initial values for verification and exact retry; it is never displayed as an
-import. Older experimental formats are rejected unchanged, without migration.
+import. A file whose number is not 1 is refused, and its bytes stay the same. There is no migrator.
 
 Verification results and remaining limits belong in [status](status.md).

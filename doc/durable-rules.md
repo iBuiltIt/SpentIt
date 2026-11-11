@@ -5,9 +5,10 @@ Last updated: 2026-11-09
 Current rule behavior is [feature 004](../features/004-rules-and-explanations.md).
 The evaluator is [rules-engine.md](rules-engine.md).
 
-Working formats are **70 with rules / 69 without**. A rules-off file rejects
-rule commands. Older experimental files are rejected unchanged. There is no
-migration.
+The release rules database is version 1. A rules-off file is version 69, is
+not the release format, and rejects rule commands. A file whose number is not
+the number that build accepts is refused, and its bytes stay the same. There
+is no migrator.
 
 Save versions document-wide definitions independently of import state.
 Discarding an import does not discard saved rules. Preview and Apply are

@@ -32,7 +32,7 @@ A literal slash is allowed in editable category names. In QIF references the usu
 
 Catalog-only sources and catalogs followed by unnamed ordinary sections use one explicitly mapped target account. Named definitions and repeated account selections share the existing account workflow. Complete category staging, first-publication semantics, rollback and identity preservation are described in [the account-import contract](../doc/qif-account-imports.md#staged-category-catalog--2026-10-28).
 
-The parser identity is `bank-v6`. Database formats are **70 with rules / 69 without**. Older experimental files are rejected unchanged, without migration.
+The parser identity is `bank-v6`. The release rules database is version 1. A different number is refused, and the file bytes stay the same. There is no migrator.
 
 ## Embedded carriage returns — accepted 2026-10-28
 
@@ -40,7 +40,7 @@ LF and CRLF remain field-line separators. A lone CR inside ordinary payee (`P`),
 
 Lone CR is still rejected in amounts, dates, names, category/class references, cleared status, headers and terminators. CR-only record delimiters are not supported. A trailing CR is stripped as a line ending only when followed by LF, never merely because it is the final byte. Existing field/record/file limits still include embedded text. Draft and committed review validation permit CR in payees and memos while retaining strict category validation. This does not implement a multiline editor.
 
-Lone CR in those text fields is part of bank-v6. Earlier experimental files are rejected unchanged, without migration.
+Lone CR in those text fields is part of bank-v6. A file whose number is not 1 is refused, and its bytes stay the same. There is no migrator.
 
 ## Value-free structural diagnostics — accepted 2026-10-28
 

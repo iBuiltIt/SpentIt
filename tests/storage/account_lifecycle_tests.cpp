@@ -104,7 +104,7 @@ void behavior(){
     }
     Directory dir("spentit-lifecycle-XXXXXX");const auto path=dir.path/"doc";
     {
-        auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"70":"69"));
+        auto store=create(path);check(query(path,"PRAGMA application_id")=="1397770577");check(query(path,"PRAGMA user_version")==(store.rules_supported()?"1":"69"));
         store.create_account(2,"Savings",cad,date);publish(store);const auto balance=store.committed_balance();const auto revision=store.account().revision;const auto evidence=store.evidence("checking");
         rejects([&]{store.rename_account("rename"," ");},"Account name is required");
         rejects([&]{store.rename_account("rename","");},"Account name is required");

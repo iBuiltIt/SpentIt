@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-09
 
-`ImportStore` and the UI use `ActionChain` with formats 70/69. Read the
+`ImportStore` and the UI use `ActionChain` with release schema version 1. Read the
 [design](action-undo-design.md) first. Do not resume generic per-row capture.
 The table is the command coverage map.
 

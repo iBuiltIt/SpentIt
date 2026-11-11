@@ -12,7 +12,7 @@ The decision, category creation, and automatic rules commit atomically.
 Completed preparation awaiting this choice survives close and restart and blocks
 acceptance and rules on those rows. Closing the dialog defers it. The sidebar
 reopens it. Abort uses the existing import-owned operation. Repaired rows
-respect the saved choice. Database formats are **70/69**. There is no migration.
+respect the saved choice. The release rules database is version 1. There is no migrator.
 
 Incomplete preparation is cleaned up on cancellation or the next open.
 Completed uncommitted imports remain. Account Discard is account-owned.
@@ -38,7 +38,7 @@ The explicit zero/reported choice is saved in encrypted immutable balance histor
 within account capture. It confirms the account opening immediately and does not
 become stale when transactions are repaired or linked. No later opening setup panel
 is shown for those accounts. Omitting the choice refuses before capture.
-Database formats are **70/69**. Older experimental files are rejected unchanged.
+The release rules database is version 1. A different number is refused, and the file bytes stay the same.
 See [feature 003](../features/003-qif-import-review.md). The legacy staged-balance
 path below is retired.
 
@@ -108,7 +108,7 @@ The 2026-10-29 alias extension recognizes unbracketed account names as well as b
 
 A match writes the existing independently evidenced Merge relationship and history. It preserves both records, their allocations, dates, memo/category text and source evidence; it generates no counterpart or extra posting. All matches and draft materialization share one transaction. Cancellation or failure rolls them all back; retry uses the retained capture. Later per-account commit and protection remain explicit. Whole-import Abort releases both uncommitted independent sides and discards the entire group atomically, including unused newly created accounts. It records the releases using the existing transfer history and replay machinery.
 
-Existing drafts can use **Resolve mapped transfers**. This scans only current account-named allocations (bracketed or unbracketed), uses the same mapping and matching criteria, and atomically records any new matches. Repeating it is idempotent; linking alone does not change the reviewed opening amounts. It creates no migration and needs no schema bump: existing schema-30/29 drafts and existing transfer/history representations are reused. Resolution failures never permit partial commit.
+Existing drafts can use **Resolve mapped transfers**. This scans only current account-named allocations (bracketed or unbracketed), uses the same mapping and matching criteria, and atomically records any new matches. Repeating it is idempotent; linking alone does not change the reviewed opening amounts. It creates no migrator and needs no schema bump. It reuses the current transfer and history tables. Resolution failures never permit partial commit.
 
 The whole-import readiness counter now includes unresolved transfer allocations. **What’s blocking commit?** lists up to 200 account/record-specific blockers and navigates to the relevant account or record. Opening decisions, repairs, transaction inclusion/duplicate decisions and unresolved transfers are distinct reasons. All blockers still contribute to the count even when the list is capped. Unmatched transfers can be reviewed from their now-locatable record; the list does not invent missing counterparts. The earlier general storage/status latency remains outside this fix.
 
@@ -145,6 +145,6 @@ Verification requires exactly one fixed-choice record for each created mapping,
 checks it against source/creation facts and the current mapping, and rejects
 staged-choice values. Subsequent transaction revisions are not inputs to opening
 choice validation. No ordinary edit snapshots are retained for balance replay.
-Database formats are **70/69**. Older experimental files are rejected unchanged.
+The release rules database is version 1. A different number is refused, and the file bytes stay the same.
 No migration or silent repair is introduced. Ruleset retention is already in
 place. Other retention cleanup stays deferred. See [status](status.md).

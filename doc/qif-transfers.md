@@ -2,9 +2,9 @@
 
 Last updated: 2026-10-31
 
-Database formats are **70/69**. The parser is bank-v6. Older experimental files are rejected without migration. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
+The release rules database is version 1. The parser is bank-v6. A different number is refused, and the file bytes stay the same. There is no migrator. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
 
-The bounded banking parser now admits `L[Account]` and `S[Account]` destinations and connects their allocations to the [durable transfer workflow](transfer-engine.md). Reports are outside this package. The parser contract for this destination package was `bank-v2`; the current statement parsers are recorded in [status](status.md). Older experimental layouts are rejected without migration.
+The bounded banking parser now admits `L[Account]` and `S[Account]` destinations and connects their allocations to the [durable transfer workflow](transfer-engine.md). Reports are outside this package. The parser contract for this destination package was `bank-v2`; the current statement parsers are recorded in [status](status.md). A file whose number is not 1 is refused, and its bytes stay the same. There is no migrator.
 
 Current extension (2026-10-29): [account names and confirmed aliases](../features/010-categories-and-selection.md) identify transfers even without QIF brackets. Grouped matching uses allocation amounts, so an ordinary fee split does not prevent matching the transfer split. This supersedes the earlier bracket-only admission and same-named ordinary-category policy. Original source bytes are retained unchanged.
 
@@ -28,4 +28,4 @@ Synthetic tests cover parsing, malformed notation, rules protection, both import
 
 ## Complete named-account export exception — 2026-10-28
 
-The owner superseded repeated manual destination selection for a complete export whose source accounts have already been explicitly mapped. The [confirmed-mapping resolution](qif-account-imports.md#reusing-confirmed-mappings-for-transfer-pairs--accepted-2026-10-28) automatically links mutual unique, same-date, same-currency reciprocal allocations without creating money or duplicate records. Remaining cases stay visible as navigable blockers. This is narrower than general automatic statement matching. Standalone imports, different-date candidates, ambiguous pairs, and cross-currency conversion are not silently resolved. Existing files use the command without a reimport. Database formats are **70/69**.
+The owner superseded repeated manual destination selection for a complete export whose source accounts have already been explicitly mapped. The [confirmed-mapping resolution](qif-account-imports.md#reusing-confirmed-mappings-for-transfer-pairs--accepted-2026-10-28) automatically links mutual unique, same-date, same-currency reciprocal allocations without creating money or duplicate records. Remaining cases stay visible as navigable blockers. This is narrower than general automatic statement matching. Standalone imports, different-date candidates, ambiguous pairs, and cross-currency conversion are not silently resolved. Existing files use the command without a reimport. The release rules database is version 1.

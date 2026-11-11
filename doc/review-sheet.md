@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-09
 
-Database formats are **70/69**. Incomplete preparation is cleaned up on
+The release rules database is version 1. Incomplete preparation is cleaned up on
 cancellation or the next open. Completed uncommitted imports remain. Accept
 transactions accepts the file. Account Discard is account-owned.
 
@@ -276,9 +276,9 @@ per-account date setting or schema change is introduced.
 
 ## Persistence and Undo
 
-New datasets use experimental schema **40 with rules / 39 without**. Older
-experimental datasets are rejected unchanged, without migration under the
-[pre-release policy](../AGENTS.md#current-file-format).
+New datasets use release schema version 1. A different number is refused, and
+the file bytes stay the same. There is no migrator. See the
+[file format](../AGENTS.md#current-file-format).
 
 Review decisions, source associations, row changes, link changes and their history
 are saved atomically in encrypted storage. No success is reported until durable

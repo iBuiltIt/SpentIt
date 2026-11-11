@@ -6,13 +6,13 @@ Accepted transactions can be corrected or removed with strict Undo. See
 [feature 011](../features/011-committed-editing-and-reversal.md). Transfer cases
 are in [feature 008](../features/008-transfer-matching-and-lifecycle.md). Moving
 a committed row and rewriting source links are not part of this workflow.
-Database formats are **70/69**. There is no migration. Bulk category changes
+The release rules database is version 1. There is no migrator. Bulk category changes
 and removal use one group Undo. See [search and ledger](search-ledger.md).
 
 ## Current interpretation and retained history
 
-Current formats are **70/69**. Earlier experimental layouts are rejected without
-migration. Version checks run before storage-setting changes.
+The release rules database is version 1. A different number is refused, and the
+file bytes stay the same. There is no migrator. Version checks run before storage-setting changes.
 
 Original source evidence, original import versions and import receipts remain immutable. Schema 4 stores complete committed entry revisions and a current head for each included occurrence. Revision zero is its original included publication. A correction appends a current interpretation; removal appends an inactive interpretation; eligible Undo appends the earlier state as a new revision. Removed entries remain available through history and source inspection. Actual bank refunds remain separate imported transactions.
 

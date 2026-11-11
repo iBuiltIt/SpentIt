@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(SpentIt VERSION 0.1.0 LANGUAGES CXX)
+project(SpentIt VERSION 1.0.0 LANGUAGES CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
   message(FATAL_ERROR "Use an out-of-source build (see doc/building.md)")

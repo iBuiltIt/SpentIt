@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-10
 
-Grammar for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). This profile does not add investment records or automatic transfer repair. Database formats are **70 with rules / 69 without**. Older experimental files are rejected unchanged. `aso` remains a legal file label. Account commands are in [feature 002](002-accounts-money-splits.md).
+Grammar for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). This profile does not add investment records or automatic transfer repair. The release rules database is version 1. A different number is refused, and the file bytes stay the same. `aso` remains a legal file label. Account commands are in [feature 002](002-accounts-money-splits.md).
 
 ## Specification used
 
@@ -147,4 +147,4 @@ the import with an explicit unreadable-balance message. It must not appear as
 “Not supplied” or proceed to a zero-opening confirmation. Missing ledger balances
 and the existing extra-balance-aggregate suppression policy are unchanged.
 Errors do not echo account identifiers or source amounts. This validation does
-not change storage. Database formats remain **70/69**.
+not change storage. The release rules database remains version 1.
