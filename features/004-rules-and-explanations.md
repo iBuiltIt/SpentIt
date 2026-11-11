@@ -1,7 +1,7 @@
 # 004 — Rules and explanations
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-11
 
 Rules assign an explicit ordinary category. They do not create transfers,
 change amounts, dates, or split structure, or force a category that is already
@@ -69,12 +69,9 @@ baseline and later saves. It does not replay expired requests.
 
 ## Not done
 
-**Current-value matching** is accepted for the first release and is not
-implemented. Until that change is authorized and verified, rules match imported
-fields, not the current payee, memo, or category text. Explicit conditions on
-the imported original, as a separate match mode, stay deferred. Implement
-current-value matching with clear previews and a format boundary if existing
-files would otherwise be reinterpreted.
+Current-value matching is deferred. Rules match immutable imported fields.
+Explicit conditions on the imported original, as a separate match mode, stay
+deferred.
 
 The owner-reported Rules accessibility crash is not proven fixed. See
 [status](../doc/status.md).

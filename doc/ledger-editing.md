@@ -1,10 +1,9 @@
 # Ledger editing and session Undo
 
-Last updated: 2026-11-09
+Last updated: 2026-11-11
 
 Manual and imported postings share transfer assignment, explicit Link, editing,
-and Undo. Rules still match imported fields until current-value matching is
-implemented. Database formats are **70/69**.
+and Undo. Rules match imported fields. Database formats are **70/69**.
 
 This supersedes the older inline Save draft / Cancel edit
 and explicit committed-edit opt-in presentation.

@@ -9,7 +9,7 @@ The owner's usage-driven UI pass is complete. Those changes were made piecemeal
 and are in the application. Discuss any further requested change before
 implementation Go.
 
-Current-value rule matching, below, is accepted behavior and is not implemented.
+Rules match immutable imported fields. Current-value matching is deferred.
 
 ## Accepted first-release scope
 
@@ -21,7 +21,7 @@ scope, not every possible extension.
 | Core workflow | Finish the existing local accounts, supported imports, manual entries, Review, rules, editing, reports, recovery, and Help. A backup is a copy of the closed file. Defer new financial capabilities. |
 | Platforms | macOS first. Windows and Linux remain development builds until current tests, recovery, and packages pass. Select supported OS versions from actual testing. No version range is promised. |
 | Remaining retention cleanup | Category, undone Review-link, exclusion, and account/opening/currency histories stay deferred unless verification finds a correctness problem or unacceptable growth. Each remediation needs discussion and Go. Ruleset retention and the legacy staged-opening path are already done. |
-| Rule inputs | Match current transaction and split values for manual and imported entries. Preserve Uncategorized gating, explicit categories, split-first order, selected-rule ordering, manual text protection, and the prohibition on creating transfers. Defer explicit imported-original conditions. Implement before release with clear previews. Use an experimental-format boundary if needed so existing files are not reinterpreted silently. |
+| Rule inputs | Match immutable imported fields. Preserve Uncategorized gating, explicit categories, split-first order, selected-rule ordering, manual text protection, and the prohibition on creating transfers. Defer current-value matching and explicit imported-original conditions. |
 | Account moves and source repair | Defer moving transactions between accounts and repairing source associations. A later design must cover imports, recognition, relationships, and Undo atomically. |
 | Transfers and currencies | Defer automatic cross-currency matching, fee matching, and broader fuzzy automatic matching. An explicit Link of two allocations may join different currencies and keeps each posted amount. No rate is stored. Reports stay separated by currency. |
 | Essential UI work | The usage-driven UI pass is complete. Complete the busy/readiness audit: feedback lasts until the resulting screen is usable, and conflicting actions are unavailable. Fix clipping, focus, and keyboard defects that obstruct existing workflows. |
@@ -44,8 +44,7 @@ explicit approval. See [feature 007](../features/007-licensing-and-distribution.
 
 ## Sequence
 
-1. Implement current-value rule matching and the essential busy/readiness work
-   under separate authorization.
+1. Complete the essential busy/readiness work under separate authorization.
 2. Complete release verification and fix discovered blockers.
 3. Refresh the manual against frozen release behavior.
 4. When the owner says to make the release schema, carry out

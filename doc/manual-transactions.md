@@ -1,11 +1,10 @@
 # Manual transactions
 
-Last updated: 2026-11-09
+Last updated: 2026-11-11
 
 Manual and imported postings share transfer assignment, explicit Link, editing,
 and Undo. A manual entry has no imported original until Review Merge attaches
-one. Rules still match imported fields until current-value matching is
-implemented. Database formats are **70/69**.
+one. Rules match imported fields. Database formats are **70/69**.
 
 ## Accepted interaction
 

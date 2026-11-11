@@ -13,7 +13,7 @@ Acceptance criteria are obligations, not reports that tests passed.
 | [001 — Documents, storage, and security](001-documents-storage-security.md) | active | Encrypted local files, locks, clean-marker open/close. A file copy after a successful close is the backup. Settings can change, add, or remove a password. There is no forgotten-password recovery. |
 | [002 — Accounts, money, and splits](002-accounts-money-splits.md) | active | Exact money, account lifecycle, openings, currency reassignment without a rate. |
 | [003 — QIF import and review](003-qif-import-review.md) | active | Bank-v6 QIF and OFX-family statements, dataset-wide acceptance, source-owned import Undo. |
-| [004 — Rules and explanations](004-rules-and-explanations.md) | active | Category-gated rules on imported fields. Current-value matching is accepted and not implemented. |
+| [004 — Rules and explanations](004-rules-and-explanations.md) | active | Category-gated rules on imported fields. Current-value matching is deferred. |
 | [005 — Transaction sheet and navigation](005-transaction-sheet-navigation.md) | active | Ledger, search, selection, return position. Multiline notes and saved layout are deferred. |
 | [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Saved reports, exact allocation totals, charts, calendar, editable drill-down. |
 | [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | SpentIt is under the Unlicense. Third-party components keep their own licenses. Publication is not done. |

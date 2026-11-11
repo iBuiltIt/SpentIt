@@ -51,8 +51,6 @@ does not repeat them.
 These items are not done. They need their own discussion and Go before
 implementation, except where a document already says the owner deferred them.
 
-- Current-value rule matching is accepted for the first release and is not
-  implemented. Rules still match immutable imported fields.
 - The broader busy/readiness audit is not done. The rotating indicator, import
   and shutdown progress, and the shared calendar are in place. Feedback should
   eventually last until the resulting screen is usable and conflicting actions
@@ -63,6 +61,8 @@ implementation, except where a document already says the owner deferred them.
   matching are deferred. An explicit Link of two allocations may join different
   currencies and keeps each posted amount. Reports do not convert currencies.
 - Multiline notes and saved layout customization are deferred.
+- Current-value rule matching is deferred. Rules match immutable imported
+  fields.
 - Document lifecycle and recovery is not complete. Explicit schema migrations
   wait until the first release is
   announced; until then older experimental files stay rejected. When the owner

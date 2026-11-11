@@ -165,8 +165,8 @@ These are the current rules. The linked documents are the full contracts.
   [Search and selection](doc/search-ledger.md).
   [Manual transactions](doc/manual-transactions.md).
 - **Rules.** Category-gated, Uncategorized only, no rule-created transfers.
-  Matching still uses immutable imported fields. Current-value matching is
-  accepted for the first release and is not implemented. [Feature 004](features/004-rules-and-explanations.md),
+  Matching uses immutable imported fields. Current-value matching is deferred.
+  [Feature 004](features/004-rules-and-explanations.md),
   [evaluator](doc/rules-engine.md).
 - **Categories, transfers, reports, file exchange.** Features
   [010](features/010-categories-and-selection.md),

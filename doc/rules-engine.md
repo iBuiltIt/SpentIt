@@ -1,10 +1,10 @@
 # Bounded rules evaluation
 
-Last updated: 2026-11-09
+Last updated: 2026-11-11
 
 Category-gated evaluation is the implementation. Formats are **70 with rules /
-69 without**. Current-value matching is not implemented: matching still searches
-immutable original fields. See [feature 004](../features/004-rules-and-explanations.md).
+69 without**. Matching searches immutable original fields. Current-value
+matching is deferred. See [feature 004](../features/004-rules-and-explanations.md).
 
 ## Matching and derived fields
 
