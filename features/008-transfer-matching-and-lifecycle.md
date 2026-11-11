@@ -3,7 +3,9 @@
 Status: **active**
 Last updated: 2026-11-09
 
-Transfers are explicit same-currency links between two allocations. The engine
+Transfers are explicit links between two allocations. A generated counterpart
+stays in one currency. An explicit Link may join two existing allocations in
+different currencies and keeps each posted amount. The engine
 contract is [doc/transfer-engine.md](../doc/transfer-engine.md). QIF bracket
 destinations resolve through [doc/qif-transfers.md](../doc/qif-transfers.md).
 Rules cannot create transfers. The ledger category menu can assign an account,
@@ -30,9 +32,13 @@ distinct.
   differences stay reviewable. No fuzzy name match and no date tolerance.
 - Every unresolved explicit transfer gets a generated counterpart, even when a
   plausible imported posting exists. Review Link retires a generated duplicate.
-- Link of unequal amounts is refused unless the user uses the amount-difference
-  action, which splits the larger allocation, categorizes the remainder, and
-  links the common amount. No fee and no rate are invented.
+- Link of unequal amounts in one currency is refused unless the user uses the
+  amount-difference action, which splits the larger allocation, categorizes
+  the remainder, and links the common amount. No fee and no rate are invented.
+- Link of two existing allocations in different currencies keeps both posted
+  amounts. One amount must be outgoing and the other incoming. No rate is
+  stored or applied. Choosing another account as the category still creates a
+  same-currency counterpart and refuses a different currency.
 - Candidate ranking and automatic transfer matching beyond those confirmed
   mapping pairs are not done. Links otherwise require an explicit choice.
 
@@ -58,5 +64,5 @@ distinct.
 - Moving a committed row to another account.
 - Rewriting source-occurrence links, wrong-account posting repair, and
   cross-format evidence-link repair.
-- Cross-currency and fee matching.
+- Automatic cross-currency matching and fee matching.
 - Generated counterpart field defaults other than the provisional origin date.

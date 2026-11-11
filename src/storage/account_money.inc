@@ -165,7 +165,10 @@ void rescale_side(transfers::Side& side,const Currency& target) {
 void rescale_link_account(transfers::Link& link,std::int64_t account,const Currency& target) {
     if(link.origin.endpoint.account==account) rescale_side(link.origin,target);
     if(link.destination.endpoint.account==account) rescale_side(link.destination,target);
-    link.preserved_amounts=link.origin.amount.currency()!=link.destination.amount.currency();
+    if(link.manual_cross_currency){
+        link.preserved_amounts=false;
+        if(link.origin.amount.currency()==link.destination.amount.currency()) link.manual_cross_currency=false;
+    }else link.preserved_amounts=link.origin.amount.currency()!=link.destination.amount.currency();
     transfers::validate(link);
 }
 imports::DraftRow rescale_draft(const imports::DraftRow& row,const Currency& target) {

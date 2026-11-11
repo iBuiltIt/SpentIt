@@ -9,7 +9,12 @@ namespace {
 [[noreturn]] void invalid() { throw TransferError(Error::invalid_relationship,"Invalid transfer relationship"); }
 void identity(std::string_view text);
 [[noreturn]] void mismatch() { throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required"); }
+[[noreturn]] void signs() { throw TransferError(Error::amount_mismatch,"Choose an outgoing amount and an incoming amount."); }
 [[noreturn]] void currencies() { throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported"); }
+[[noreturn]] void other_currency() { throw TransferError(Error::cross_currency,"This account uses another currency. Select both transactions and choose Link."); }
+bool opposite_signs(const Money& left,const Money& right) {
+    return left.units()!=0 && right.units()!=0 && (left.units()<0)!=(right.units()<0);
+}
 void preserved(const Link& link) {
     if(link.preserved_amounts) throw TransferError(Error::invalid_relationship,"This link preserves amounts in two currencies. It is not a match and this command does not repair it.");
 }
@@ -71,8 +76,13 @@ Link leftover(const Link& link,std::string identity) {
 LinkEdit replace_destination(Link link,const AllocationFact& next,std::string kept_identity) {
     preserved(link);
     if(link.unresolved || next.generated || (next.manually_entered && !next.ledger_entry) || next.endpoint.account==link.origin.endpoint.account || next.endpoint==link.destination.endpoint) invalid();
-    if(next.amount.currency()!=link.origin.amount.currency() || next.amount.currency()!=link.destination.amount.currency()) currencies();
-    if(-link.origin.amount!=next.amount || link.destination.amount!=next.amount) mismatch();
+    const bool cross=next.amount.currency()!=link.origin.amount.currency();
+    if(cross) {
+        if(!opposite_signs(link.origin.amount,next.amount)) signs();
+    } else {
+        if(-link.origin.amount!=next.amount) mismatch();
+        if(!link.manual_cross_currency && link.destination.amount!=next.amount) mismatch();
+    }
     if(link.destination.proposed_evidence)
         throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match explicitly");
     LinkEdit edit{link,std::nullopt,std::nullopt};
@@ -81,7 +91,7 @@ LinkEdit replace_destination(Link link,const AllocationFact& next,std::string ke
     link.destination.endpoint=next.endpoint;link.destination.date=next.date;link.destination.state=next.state;
     link.destination.independent_evidence=next.imported;link.destination.provisional_date=false;link.destination.manually_entered=next.manually_entered;link.destination.ledger_entry=next.ledger_entry;
     link.destination.accepted_unmatched=false;link.destination.attached_evidence.reset();link.destination.proposed_evidence.reset();
-    link.destination.amount=next.amount;validate(link);edit.link=std::move(link);return edit;
+    link.destination.amount=next.amount;link.manual_cross_currency=cross;if(cross)link.preserved_amounts=false;validate(link);edit.link=std::move(link);return edit;
 }
 void evidenced_generated(const Link* host,const AllocationFact& fact) {
     if(!host || !fact.generated) return;
@@ -152,9 +162,13 @@ void validate(const Link& link) {
        link.origin.endpoint.entry==link.destination.endpoint.entry) invalid();
     const bool same_currency=link.origin.amount.currency()==link.destination.amount.currency();
     const bool opposite=same_currency?-link.origin.amount==link.destination.amount:(-link.origin.amount).same_decimal(link.destination.amount);
-    if(!opposite) throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required");
-    if(!same_currency && !link.preserved_amounts)
-        throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
+    if(link.manual_cross_currency) {
+        if(link.preserved_amounts || same_currency || !opposite_signs(link.origin.amount,link.destination.amount)) invalid();
+    } else {
+        if(!opposite) throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required");
+        if(!same_currency && !link.preserved_amounts)
+            throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
+    }
     if((!link.origin.independent_evidence && !link.origin.manually_entered) || link.origin.provisional_date) invalid();
     if(!link.origin.manually_entered && (link.origin.attached_evidence || link.origin.proposed_evidence))invalid();
     if(link.origin.attached_evidence) { if(link.origin_date_corrected) invalid(); }
@@ -178,8 +192,7 @@ void validate(const Link& link) {
 Link generate(std::string id,const Endpoint& origin,const imports::DraftRow& draft,
               const Endpoint& destination,const Currency& currency,bool imported) {
     endpoint(origin);endpoint(destination);date(draft.date);
-    if(draft.transaction.effective_total().currency()!=currency)
-        throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
+    if(draft.transaction.effective_total().currency()!=currency) other_currency();
     const auto& allocations=draft.transaction.allocations();
     if(allocations.size()>qif::max_allocations)invalid();
     std::set<std::string> identities;
@@ -248,8 +261,7 @@ Link propose_match(const Link& link,std::int64_t account,const BankEvidence& evi
     endpoint(evidence.endpoint);date(evidence.posting_date);
     if(current.state==State::removed || evidence.endpoint.account!=account ||
        evidence.endpoint.entry==link.origin.endpoint.entry || evidence.endpoint.entry==link.destination.endpoint.entry)invalid();
-    if(evidence.amount.currency()!=current.amount.currency())
-        throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
+    if(evidence.amount.currency()!=current.amount.currency()) other_currency();
     if(evidence.amount!=current.amount)
         throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required");
     if(current.independent_evidence || current.ledger_entry)
@@ -292,8 +304,7 @@ void validate_match(const Link& link,const Endpoint& candidate,const Money& amou
     validate(link);endpoint(candidate);date(posting_date);
     if(link.origin.state==State::removed || candidate.account!=link.destination.endpoint.account ||
        candidate.entry==link.origin.endpoint.entry || candidate.entry==link.destination.endpoint.entry)invalid();
-    if(amount.currency()!=link.destination.amount.currency())
-        throw TransferError(Error::cross_currency,"Cross-currency transfers are unsupported");
+    if(amount.currency()!=link.destination.amount.currency()) other_currency();
     if(amount!=link.destination.amount)
         throw TransferError(Error::amount_mismatch,"Transfer amounts disagree; explicit resolution is required");
     if(link.destination.independent_evidence)
@@ -409,7 +420,7 @@ LinkEdit merge(std::span<const Link> links,const AllocationFact& left,const Allo
     if(links.size()>qif::max_records) invalid();
     validate_set(links);fact_ok(left);fact_ok(right);
     if(left.endpoint==right.endpoint || identity.empty()) invalid();
-    if(left.amount.currency()!=right.amount.currency()) currencies();
+    const bool cross=left.amount.currency()!=right.amount.currency();
     const auto* left_link=owner_of(links,left.endpoint);const auto* right_link=owner_of(links,right.endpoint);
     if(left_link && right_link && left_link!=right_link) throw TransferError(Error::ambiguous_endpoint,"These splits belong to different transfers. Choose splits from the same transfer.");
     if(left_link && right_link) invalid();
@@ -417,6 +428,7 @@ LinkEdit merge(std::span<const Link> links,const AllocationFact& left,const Allo
     if(left_link) agree(left_link->origin.endpoint==left.endpoint?left_link->origin:left_link->destination,left);
     if(right_link) agree(right_link->origin.endpoint==right.endpoint?right_link->origin:right_link->destination,right);
     if(left.endpoint.account==right.endpoint.account) {
+        if(cross) currencies();
         const AllocationFact* generated=nullptr;const AllocationFact* imported=nullptr;const Link* host=nullptr;
         if(left.generated && right.imported) {generated=&left;imported=&right;host=left_link;}
         else if(right.generated && left.imported) {generated=&right;imported=&left;host=right_link;}
@@ -439,13 +451,13 @@ LinkEdit merge(std::span<const Link> links,const AllocationFact& left,const Allo
         edit.link.destination.independent_evidence=true;edit.link.destination.provisional_date=false;edit.link.destination.manually_entered=false;edit.link.destination.accepted_unmatched=false;
         edit.link.destination.attached_evidence.reset();edit.link.destination.proposed_evidence.reset();validate(edit.link);edited(links,edit);return edit;
     }
-    if(left.generated || right.generated || -left.amount!=right.amount) {
-        if(left.generated || right.generated) invalid();
-        mismatch();
-    }
+    if(left.generated || right.generated) invalid();
+    if(cross) { if(!opposite_signs(left.amount,right.amount)) signs(); }
+    else if(-left.amount!=right.amount) mismatch();
     if(!left_link && !right_link) {
         const auto origin=ordered_origin(left,right);const auto destination=origin.endpoint==left.endpoint?right:left;
         LinkEdit edit{Link{std::move(identity),direct_side(origin,true),direct_side(destination,false),origin.date,false,false,false,false,{}},std::nullopt,std::nullopt};
+        edit.link.manual_cross_currency=cross;
         validate(edit.link);edited(links,edit);return edit;
     }
     const auto* existing=left_link?left_link:right_link;const auto& other=left_link?right:left;const auto& on=left_link?left:right;
@@ -480,7 +492,7 @@ LinkEdit retarget(std::span<const Link> links,const AllocationFact& origin,std::
     if(!generated_currency) currencies();
     endpoint(*generated);
     if(generated->account==origin.endpoint.account) invalid();
-    if(origin.amount.currency()!=*generated_currency) currencies();
+    if(origin.amount.currency()!=*generated_currency) other_currency();
     if(!host) {
         const Allocation only{"","",origin.amount,{},origin.endpoint.allocation};
         const auto draft=origin.manually_entered

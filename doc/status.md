@@ -58,8 +58,9 @@ implementation, except where a document already says the owner deferred them.
   are unavailable.
 - Moving a committed transaction to another account, and rewriting
   source-occurrence links, are not done.
-- Cross-currency matching, fee matching, and broader fuzzy automatic matching
-  are deferred. Reports do not convert currencies.
+- Automatic cross-currency matching, fee matching, and broader fuzzy automatic
+  matching are deferred. An explicit Link of two allocations may join different
+  currencies and keeps each posted amount. Reports do not convert currencies.
 - Multiline notes and saved layout customization are deferred.
 - Document lifecycle and recovery is not complete. Password changes are
   deferred. Explicit schema migrations wait until the first release is

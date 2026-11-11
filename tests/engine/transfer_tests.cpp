@@ -259,7 +259,9 @@ void management() {
     check(!both.kept && both.link.origin.state==State::committed && both.link.destination.state==State::committed);
     check(both.link.origin.amount==origin.amount && both.link.destination.amount==other.amount && both.link.origin.date==origin.date && both.link.destination.date==other.date);
     rejected(Error::amount_mismatch,[&]{merge({},origin,fact({2,{"visa",0},"source-1"},Money(599,cad),"2026-10-27",State::committed,true),"bad","kept");});
-    rejected(Error::cross_currency,[&]{merge({},origin,fact({2,{"visa",0},"source-2"},Money(600,usd),"2026-10-27",State::committed,true),"fx","kept");});
+    const auto fx=merge({},origin,fact({2,{"visa",0},"wire"},Money(550,usd),"2026-10-27",State::committed,true),"fx","kept");
+    check(fx.link.manual_cross_currency && !fx.link.preserved_amounts && fx.link.origin.amount==origin.amount && fx.link.destination.amount==Money(550,usd) && fx.link.destination.endpoint.allocation=="wire");
+    rejected(Error::amount_mismatch,[&]{merge({},origin,fact({2,{"visa",0},"source-3"},Money(-550,usd),"2026-10-27",State::committed,true),"fx-sign","kept");});
     auto nameless=origin;nameless.endpoint.allocation.clear();
     rejected(Error::ambiguous_endpoint,[&]{merge({},nameless,other,"x","kept");});
     rejected(Error::origin_controls_draft,[&]{clear_workspace(draft,2);});

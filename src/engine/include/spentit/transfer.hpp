@@ -47,6 +47,9 @@ struct Link {
     bool destination_released=false;
     // A committed manual origin released to an ordinary category. Its amount stays.
     std::string origin_category;
+    // The user linked two existing allocations in different currencies.
+    // Each posted amount stays. No rate is stored. Generation stays same-currency.
+    bool manual_cross_currency=false;
 };
 // One named allocation. Identity is the endpoint, never its position in a row.
 struct AllocationFact {

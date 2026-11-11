@@ -65,6 +65,18 @@ void split_flow(){Directory d;const auto path=d.path/"doc";
  s.select_account(1);test_session::close_reopen(s,path,password);s.discard("split",0);check(s.transfers().size()==2);check(s.projected_balance()==Money(10000,cad));s.commit("split",1,"origin");
  s.select_account(3);check(s.projected_balance()==Money(5000,cad));check(s.committed_balance()==Money(0,cad));s.verify();s.backup_to(d.path/"backup",password);}
  {auto s=ImportStore::open(d.path/"backup",password);check(s.committed_balance()==Money(10000,cad));s.select_account(3);check(transfers::protected_draft(s.transfers()[0].link,3));}
+ {
+ Directory d;const auto path=d.path/"doc";
+ {auto s=ImportStore::create(path,password,"Checking",cad,"2026-10-26");const auto foreign=Currency("USD");s.create_account(4,"Foreign",foreign,"2026-10-26");s.opening(0,"2026-10-26",Money(0,cad));s.select_account(4);s.opening(0,"2026-10-26",Money(0,foreign));s.select_account(1);
+  s.ingest("split","D26/10/2026\nT-100\nPWire\nSFee\n$-20\nSTransfer\n$-80\n^\n",qif::DateOrder::dmy);s.select_account(4);s.ingest("usd-wire","D27/10/2026\nT55.50\nPWire\n^\n",qif::DateOrder::dmy);s.select_account(1);
+  const auto wire=s.apply_transfer("link-split",merge_of(s,"wire",allocation_fact(1,"split","source-1",Money(-8000,cad),"2026-10-26",transfers::State::draft,true),allocation_fact(4,"usd-wire","source-0",Money(5550,foreign),"2026-10-27",transfers::State::draft,true),0,0));
+  check(wire.change.units()==0);const auto link=view_of(s,"wire");check(link.link.manual_cross_currency && link.link.origin.endpoint.allocation=="source-1" && link.link.origin.amount==Money(-8000,cad) && link.link.destination.amount==Money(5550,foreign));
+  const auto split_row=s.row({"split",0});const auto& parts=split_row.draft->transaction.allocations();check(parts.size()==2 && parts[0].identity=="source-0" && parts[0].amount==Money(-2000,cad) && parts[1].amount==Money(-8000,cad));
+  s.ingest("cad-out","D28/10/2026\nT-10\nPOut\n^\n",qif::DateOrder::dmy);s.select_account(4);s.ingest("usd-out","D28/10/2026\nT-10\nPOut\n^\n",qif::DateOrder::dmy);s.select_account(1);
+  message_has("outgoing",[&]{s.apply_transfer("same-sign",merge_of(s,"same-sign",allocation_fact(1,"cad-out","source-0",Money(-1000,cad),"2026-10-28",transfers::State::draft,true),allocation_fact(4,"usd-out","source-0",Money(-1000,foreign),"2026-10-28",transfers::State::draft,true),0,0));});
+  s.verify();}
+ {auto s=ImportStore::open(path,password);const auto link=view_of(s,"wire");check(link.link.manual_cross_currency && link.link.destination.amount==Money(5550,Currency("USD")));s.verify();}
+}
 }
 void manual_evidence(){Directory d;const auto path=d.path/"doc";
  {auto s=ImportStore::create(path,password,"Checking",cad,"2026-10-26");s.create_account(2,"Visa",cad,"2026-10-26");s.opening(0,"2026-10-26",Money(20000,cad));s.apply_transfer("create",create(s));
@@ -176,8 +188,6 @@ void management(){
             check(retired_view.link.origin.amount==Money(-10000,cad) && retired_view.link.origin.date=="2026-11-02" && !shows(s,"~transfer-generated-d-destination") && s.record_evidence({"visa-d",0})==visa_evidence);
             s.select_account(1);s.commit("origin-d",0,"commit-origin-d");s.ingest("unequal","D26/10/2026\nT-50\nPUnequal\n^\n",qif::DateOrder::dmy);
             message_has("disagree",[&]{s.apply_transfer("merge-unequal",merge_of(s,"bad",allocation_fact(1,"unequal","source-0",Money(-5000,cad),"2026-10-26",transfers::State::draft,true),allocation_fact(2,"visa-d","source-0",Money(10000,cad),"2026-11-03",transfers::State::draft,true),0,0));});
-            s.create_account(4,"Foreign",usd,"2026-10-26");s.select_account(4);s.opening(0,"2026-10-26",Money(0,usd));s.ingest("fx-row","D28/10/2026\nT-100\nPForeign\n^\n",qif::DateOrder::dmy);
-            message_has("Cross-currency",[&]{s.apply_transfer("merge-fx",merge_of(s,"fx",allocation_fact(2,"visa-d","source-0",Money(10000,cad),"2026-11-03",transfers::State::draft,true),allocation_fact(4,"fx-row","source-0",Money(-10000,usd),"2026-10-28",transfers::State::draft,true),0,0));});
             s.verify();s.backup_to(d.path/"backup",password);}
         {auto s=ImportStore::open(d.path/"backup",password);s.select_account(2);check(view_of(s,"generated-b").link.destination.date=="2026-10-28" && s.committed_balance().units()>0);s.verify();}
     }

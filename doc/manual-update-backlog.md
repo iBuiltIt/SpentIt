@@ -185,3 +185,23 @@ is 2026-01-15 and Cash's is 2026-01-18, so the suggested dates become
 2026-01-14 and 2026-01-17. Check `import-results.png` if the credit-card
 opening row is visible; that date is 2026-01-14. Do not edit `manual/` for
 this entry until the manual pass.
+
+### MAN-028 — Link a transfer across currencies by hand
+
+Date: 2026-11-10. Contract: [transfer matching](../features/008-transfer-matching-and-lifecycle.md).
+
+Chapters: [Categories](../manual/categories.md), section "An account destination
+makes a transfer", and [Review duplicates and link transfers](../manual/review-duplicates-transfers.md).
+The categories chapter currently says the accounts must use the same currency.
+
+Text still outstanding. A transfer between two currencies is linked by hand.
+Select the transaction, or one of its splits, choose **Link**, then select the
+other transaction or split and choose **Link** again. One amount is outgoing
+and the other is incoming. SpentIt keeps both amounts and does not look up a
+rate. A fee that should stay visible has to be its own split before the link.
+Choosing the other account from the category list still requires the same
+currency, because that creates a new posting instead of using one that already
+exists.
+
+Pictures: none unless a later pass shows the Link command on two currencies.
+Do not edit `manual/` for this entry until the manual pass.

@@ -279,7 +279,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
         if(!request.generated_currency.empty()){try{generated_currency=Currency::from_definition(request.generated_currency);}catch(const std::exception&){fail(SQLITE_CONSTRAINT,"Invalid transfer command");}}
         if(request.generated){
             const auto destination=account_by_id(request.generated->account);require_writable_account(impl_->db,destination.identity);
-            if(request.mode==1 && (!generated_currency || destination.currency!=*generated_currency))fail(SQLITE_CONSTRAINT,"Cross-currency transfers are unsupported");
+            if(request.mode==1 && (!generated_currency || destination.currency!=*generated_currency))fail(SQLITE_CONSTRAINT,"This account uses another currency. Select both transactions and choose Link.");
         }
         struct ReadScope{bool& slot;bool prior;explicit ReadScope(bool& value):slot(value),prior(value){slot=true;}~ReadScope(){slot=prior;}} reading(impl_->verifying);
         auto confirm_fact=[&](const transfers::AllocationFact& fact,std::int64_t revision){
@@ -905,7 +905,7 @@ app::TransferPreview ImportStore::preview_transfer(const app::TransferRequest& r
     if(!request.generated_currency.empty()){try{generated_currency=Currency::from_definition(request.generated_currency);}catch(const std::exception&){fail(SQLITE_CONSTRAINT,"Invalid transfer command");}}
     if(request.generated){
         const auto destination=account_by_id(request.generated->account);require_writable_account(impl_->db,destination.identity);
-        if(request.mode==1 && (!generated_currency || destination.currency!=*generated_currency))fail(SQLITE_CONSTRAINT,"Cross-currency transfers are unsupported");
+        if(request.mode==1 && (!generated_currency || destination.currency!=*generated_currency))fail(SQLITE_CONSTRAINT,"This account uses another currency. Select both transactions and choose Link.");
     }
     auto confirm_fact=[&](const transfers::AllocationFact& fact,std::int64_t revision){
         require_writable_account(impl_->db,fact.endpoint.account);(void)account_by_id(fact.endpoint.account);
