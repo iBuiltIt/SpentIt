@@ -99,9 +99,14 @@ destination account’s balance. It does
 not search for an existing imported payment to use instead. If both
 postings are already present, use [Review Link](review-duplicates-transfers.md#is-it-a-payment-between-accounts).
 
-The accounts must use the same currency, and you cannot transfer an
-entry to the account it is already in. Save a newly typed transaction
-before choosing an account destination.
+Choosing an account here creates the other posting, so the two accounts
+need the same currency. You cannot send the entry to the account it is
+already in. Save a newly typed transaction before you choose an account.
+
+If the other posting is already there, and especially if that account
+uses a different currency, do not pick the account from this list. Link
+the two postings by hand. See
+[If there is no suitable question](review-duplicates-transfers.md#if-there-is-no-suitable-question).
 
 Changing a transfer back to an ordinary category ends its link. An
 independently entered or imported posting in the other account stays;

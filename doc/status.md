@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 
 SpentIt is the local rules-enabled application. Working experimental formats
 are **70 with rules / 69 without**. Older experimental files are rejected
@@ -17,7 +17,8 @@ passed unless you ran it.
   document locks. A backup is a copy of the file made after a successful close,
   while SpentIt is not running. Normal open and close use an encrypted clean
   marker. A crash or unclean file gets a full check, which does not repair
-  data. There is no forgotten-password recovery and no password change.
+  data. There is no forgotten-password recovery. Settings can change, add, or
+  remove a password. A copy keeps the password it was made with.
 - QIF bank/cash/credit-card files under the [bank-v6 profile](../features/009-qif-profile.md),
   and OFX, QFX, QBO, and ASO bank and credit-card statements under the
   [statement profile](../features/003-ofx-profile.md). New-account mappings must
@@ -38,7 +39,7 @@ passed unless you ran it.
 - One file-wide Undo chain and a Change history page. A successful close
   expires ordinary Undo.
 - Bundled Help for the current manual, with contextual links. The manual pass
-  through MAN-020 is done.
+  through MAN-029 is done.
 - The owner's usage-driven UI pass is complete. Those changes were made
   piecemeal and are in the application.
 
@@ -62,8 +63,8 @@ implementation, except where a document already says the owner deferred them.
   matching are deferred. An explicit Link of two allocations may join different
   currencies and keeps each posted amount. Reports do not convert currencies.
 - Multiline notes and saved layout customization are deferred.
-- Document lifecycle and recovery is not complete. Password changes are
-  deferred. Explicit schema migrations wait until the first release is
+- Document lifecycle and recovery is not complete. Explicit schema migrations
+  wait until the first release is
   announced; until then older experimental files stay rejected. When the owner
   says to make the release schema, follow [release schema](release-schema.md).
   That stamps the rules database as version 1 and is not a migrator. There is no
@@ -92,7 +93,7 @@ implementation, except where a document already says the owner deferred them.
 
 ## Manual
 
-MAN-001 through MAN-020 are in the bundled manual. The backlog is empty. A
+MAN-001 through MAN-029 are in the bundled manual. The backlog is empty. A
 later user-visible change is logged in
 [manual-update-backlog.md](manual-update-backlog.md) and waits for an
 owner-authorized manual pass. Do not edit `manual/` as part of feature work.

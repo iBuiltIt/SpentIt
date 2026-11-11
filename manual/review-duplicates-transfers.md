@@ -35,10 +35,12 @@ dates. Two purchases on neighboring days can still be separate.
 - **Merge 2 rows** keeps one transaction for a pair that describes
   the same event.
 - **Keep separate** remembers that they are different.
-- For more than two entries, check the two rows that belong together.
-  **Merge pairs** merges every checked pair. Three or more checks in
-  one group are left unchanged. Until two rows are checked, the
-  group’s button says **Select rows to merge**.
+- For more than two entries, there is no **Include match**. Check the
+  two rows that belong together. Until two are checked, the button says
+  **Select rows to merge**. With two checked, it says **Merge 2 selected
+  rows** when one of them is kept for you, or **Merge 2 selected rows…**
+  when you still need to choose which one to keep. Three or more checks
+  in that group are left as they are.
 - **Show in ledger** opens one of the entries in its account.
 - **Inspect** opens a row so you can read it. It does not answer the question.
 
@@ -70,15 +72,17 @@ entry to keep if asked. The label changes to **Selected match** with
 a number. A group of more than two has no **Include match**; check
 its rows instead, as described above.
 
-**Merge pairs** merges them. One **Undo** reverses
-that whole batch. **Clear merge selection** drops the **Include
-match** marks without merging.
+**Merge pairs** merges every two-row question you marked, and any larger
+question where you checked exactly two rows and one of them is already
+the one to keep. A group that still needs a choice waits for its own
+button. One **Undo** reverses that whole batch. **Clear merge selection**
+drops the **Include match** marks without merging.
 
-Two rows left after a merge come back as an ordinary pair. One row
-left stays in the account. Leaving Review, or a change to the file’s
-transactions, clears these choices. Reading a row does not. If a
-selected match is no longer valid, the batch is refused and nothing
-in it is merged.
+Two rows left afterwards come back as an ordinary pair, with **Include
+match**. One row left leaves Review and stays in the account. Leaving
+Review, or a change to the file’s transactions, clears these choices.
+Reading a row does not. If a selected match is no longer valid, the
+batch is refused and nothing in it is merged.
 
 ## Is it a payment between accounts? {#is-it-a-payment-between-accounts}
 
@@ -160,8 +164,16 @@ Check which entry will be kept, just as in Review.
 For a transfer whose two entries each have just one split, select
 the first entry, right-click and choose **Link**. Switch accounts,
 select the other entry, then right-click and choose **Link** again.
-Read the confirmation before applying it. The command still checks
-whether the two postings can be linked.
+The same steps work when the accounts use different currencies. One
+amount should be money going out and the other money coming in.
+SpentIt keeps both amounts. It does not look up a rate or change
+either posting. If a fee should stay visible on its own, give it a
+split before you link, then link the transfer amount rather than the
+whole purchase. If you see **Choose which split to transfer**, the
+entry has more than one part and Link could not tell which one you
+meant. In a Review question, use **Split to link** when it is offered.
+Read the confirmation before you apply the link. The command still
+checks whether the two postings can be linked.
 
 For suggestions you do not want to see again, choose **Hide suggestions…**
 on a transfer row. **Don’t suggest links** asks for payee or memo text.

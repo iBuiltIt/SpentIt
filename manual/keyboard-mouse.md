@@ -76,8 +76,10 @@ Choosing a date fills the field. Save the surrounding edit when ready.
 - Click a sortable column heading to sort; click it again to reverse
   the order. **Date** returns to date order.
 - Click the arrow beside a transfer category to visit its other posting.
-- Use **Back** and **Forward** to return to places you’ve visited. They
-  are dimmed when there is nowhere to go.
+- Use **Back** and **Forward** to return to places you’ve visited. A
+  button you cannot use yet stays where it is and looks faded. Finish
+  the choice it is waiting for, or visit somewhere first, and it is
+  ready again.
 - Double-click a category or Total amount in a report to see the
   transactions behind it.
 
@@ -111,6 +113,13 @@ and search.
   arrow keys pan it. **Close** or **Escape** returns to your reading position.
 
 Use **Close Help** to return to your work, including when a Save / Discard /
-Stay dialog is waiting behind Help. Escape in that dialog means Stay.
-In the Rules or Reports leave dialog, Escape means **Cancel**.
-Closing Help does not choose a button for you.
+Stay dialog is waiting behind Help. **Command+W** on a Mac, or **Ctrl+W**
+on other computers, closes Help as well. On Windows, **Ctrl+F4** is the
+same close shortcut. In a narrow window that shortcut closes Help even
+when Contents is open. **Escape** closes Contents first, and closes Help
+once Contents is already closed. On an enlarged picture, **Escape** or
+**Close** returns you to the article.
+
+Escape in a Save / Discard / Stay dialog means Stay. In the Rules or
+Reports leave dialog, Escape means **Cancel**. Closing Help does not
+choose a button for you.

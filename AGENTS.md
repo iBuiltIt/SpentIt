@@ -88,7 +88,8 @@ format. See [file exchange](doc/file-exchange.md).
 - Optional no-password mode is an explicit waiver of confidentiality. It uses a
   documented public format key. Do not describe it as confidential, and do not
   apply it to a password-protected file. There is no forgotten-password recovery.
-  Password changes are deferred.
+  Settings can change a file’s password, add one, or remove protection after
+  confirmation. A copy made beforehand keeps the password it was made with.
 - Keep documents, drafts, source records, and change history encrypted at rest.
   Never log passwords, keys, full financial records, or sensitive query
   parameters. Do not commit real statements, account identifiers, databases,

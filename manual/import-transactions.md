@@ -52,9 +52,10 @@ For a new account, check:
 
 - **Currency:** the currency of its transactions. Importing does not
   convert money, and a statement’s currency must match its destination.
-- **Opening date:** the suggested date is the earliest valid transaction
-  date in that account. Check it; an account with no valid dates may
-  show 1900-01-01.
+- **Opening date:** the suggestion is the day before the earliest
+  transaction SpentIt could read in that account, so the opening comes
+  before that day’s purchases. You can change the date. An account with
+  no readable dates may show 1900-01-01.
 - **Opening balance:** leave **0.00**, or choose **Use reported balance
   as opening** when offered and appropriate. This uses the reported
   amount exactly. It does not work backward from a closing balance.
@@ -64,8 +65,8 @@ keep their openings. To change an opening later, use
 [Correct opening](accounts.md#set-the-starting-balance).
 The calendar beside **Opening date** fills that date.
 
-![Account mapping for Credit card and Cash, creating both in CAD with their opening choices.](images/import-mapping.png)
-*Our Cash example uses a known opening of 50.00. Credit card starts at zero.*
+![Account mapping for Credit card and Cash, creating both in CAD. The suggested opening dates are the day before each account’s first transaction.](images/import-mapping.png)
+*Our Cash example uses a known opening of 50.00. Credit card starts at zero. You can change either date.*
 
 Choose **Import** after every account has a destination. **Cancel**
 leaves the mapping without importing.
@@ -125,8 +126,8 @@ The bottom status line reports how many records were **added**,
 check its transactions and balance. A category choice may replace
 the completion message with “Imported categories applied.”
 
-![Credit card ledger with the 42.18 Market purchase and 6.00 refund in Groceries, leaving a balance of -36.18.](images/import-results.png)
-*The purchase and refund are saved. They do not need accepting before you leave.*
+![Credit card ledger with the 42.18 Market purchase, the 6.00 refund, and an opening dated the day before the purchase. The balance is -36.18.](images/import-results.png)
+*The purchase and refund are saved. The opening sorts ahead of that day’s transactions. They do not need accepting before you leave.*
 
 Saved new transactions stay when you close the file and already
 count in balances and reports. You can review them at your own pace.

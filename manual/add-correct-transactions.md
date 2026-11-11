@@ -246,8 +246,7 @@ Undo. Transactions you left new are still there. **Undo last import…**
 can still be available.
 
 If closing fails or you cancel it, or SpentIt stops unexpectedly, Undo
-is still there when you return. **Check file** in Settings does not
-clear Undo.
+is still there when you return.
 
 **Discard new transactions…**, and undoing an import that is not the
 latest action, wait until Undo is empty. The message is **Undo the

@@ -1,7 +1,7 @@
 # 001 — Documents, storage, and security
 
 Status: **active**
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 
 Encrypted local files are the application. One running process has one active
 file. There is no application-wide instance limit. Settings remembers the file
@@ -19,8 +19,9 @@ password-protected file. A wrong password and damaged ciphertext can look the
 same: say the file could not be unlocked. Do not claim the password is
 definitely wrong.
 
-There is no forgotten-password recovery. Changing a file's password is deferred
-for the first release. Old backups keep the password they were created with.
+There is no forgotten-password recovery. Settings can change a file's password,
+add one, or remove protection after confirmation. A copy made beforehand keeps
+the password it was made with. A wrong current password leaves the file unchanged.
 
 ## Creation and welcome
 
@@ -67,7 +68,6 @@ application-data directory. See [document locking](../doc/document-locking.md).
 
 ## Not done
 
-- Password change and any in-place switch between password and no-password mode.
 - A dedicated startup loading screen was left undecided. Do not invent one.
 - Release packaging of SQLCipher and the crypto provider. The application build
   is in [building](../doc/building.md).

@@ -47,7 +47,8 @@ architecture diagram or screenshot is needed for this introduction.
 - Choose a name and location; explain the consequence before replacing an
   existing file.
 - Choose password protection, including what choosing no password means and the
-  absence of forgotten-password recovery. Keep the explanation practical.
+  absence of forgotten-password recovery. A later change, addition, or removal
+  is in Settings. A copy keeps the password it was made with.
 - Initial account and currency choices; date display and starter categories.
   Explain each choice when setup actually presents it.
 - Open and unlock a file later; close it or switch to another file.
@@ -281,13 +282,15 @@ definition. It does not print the chart or copy the transactions.
 - Distinguish “the change was saved but the screen could not update” from
   “SpentIt could not confirm whether the change was saved”. Explain checking
   the file before retrying an operation that might already have completed.
-- Explain the limits of password recovery and supported recovery actions plainly.
+- Explain how to change, add, or remove a password in Settings, and that a
+  forgotten password still cannot be recovered. A copy keeps the password it
+  was made with.
 - If a problem remains, describe what information is useful when seeking help
   without sharing passwords or private financial records. Name a support route
   only when one actually exists.
 
-**Screenshots:** Settings, including Check file, and selected recovery/error dialogs
-whose choices need explanation.
+**Screenshots:** Settings, including the password fields, and selected recovery/error dialogs
+whose choices need explanation. Settings no longer has Check file.
 
 Finish with a symptom/message index linking to the task-specific explanations.
 Do not repeat those instructions here or collect every common error at the end.

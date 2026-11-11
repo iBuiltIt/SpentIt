@@ -10,14 +10,14 @@ Acceptance criteria are obligations, not reports that tests passed.
 
 | Document | Status | Current scope |
 | --- | --- | --- |
-| [001 — Documents, storage, and security](001-documents-storage-security.md) | active | Encrypted local files, locks, clean-marker open/close. A file copy after a successful close is the backup. Password change is deferred. |
+| [001 — Documents, storage, and security](001-documents-storage-security.md) | active | Encrypted local files, locks, clean-marker open/close. A file copy after a successful close is the backup. Settings can change, add, or remove a password. There is no forgotten-password recovery. |
 | [002 — Accounts, money, and splits](002-accounts-money-splits.md) | active | Exact money, account lifecycle, openings, currency reassignment without a rate. |
 | [003 — QIF import and review](003-qif-import-review.md) | active | Bank-v6 QIF and OFX-family statements, dataset-wide acceptance, source-owned import Undo. |
 | [004 — Rules and explanations](004-rules-and-explanations.md) | active | Category-gated rules on imported fields. Current-value matching is accepted and not implemented. |
 | [005 — Transaction sheet and navigation](005-transaction-sheet-navigation.md) | active | Ledger, search, selection, return position. Multiline notes and saved layout are deferred. |
 | [006 — Reporting and drill-down](006-reporting-drill-down.md) | active | Saved reports, exact allocation totals, charts, calendar, editable drill-down. |
 | [007 — Licensing and distribution](007-licensing-and-distribution.md) | active | SpentIt is under the Unlicense. Third-party components keep their own licenses. Publication is not done. |
-| [008 — Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) | active | Explicit same-currency links. Account moves and source-link rewrite are not done. |
+| [008 — Transfer matching and lifecycle](008-transfer-matching-and-lifecycle.md) | active | Explicit links, including a hand link across currencies that keeps both amounts. Account moves and source-link rewrite are not done. |
 | [009 — Durable import](009-durable-import-milestone.md) | active | The import workflow in the application. Further dialects are not authorized. |
 | [010 — Categories and selection](010-categories-and-selection.md) | active | Independent categories, Income flag, starter list, ledger category menu. |
 | [011 — Committed editing and reversal](011-committed-editing-and-reversal.md) | active | Corrections, removal, and strict Undo. Account moves stay open. |

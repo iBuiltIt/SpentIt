@@ -67,6 +67,8 @@ different one. Compare the transactions in Review before you merge.
 
 **Link** connects the two postings of a transfer between accounts.
 Both accounts keep their posting; they are not merged into one entry.
+You can also link two accounts that use different currencies. SpentIt
+keeps each amount and does not convert the money.
 [Review duplicates and link transfers](review-duplicates-transfers.md).
 
 ## New and accepted

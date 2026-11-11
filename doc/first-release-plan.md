@@ -26,10 +26,10 @@ scope, not every possible extension.
 | Transfers and currencies | Defer automatic cross-currency matching, fee matching, and broader fuzzy automatic matching. An explicit Link of two allocations may join different currencies and keeps each posted amount. No rate is stored. Reports stay separated by currency. |
 | Essential UI work | The usage-driven UI pass is complete. Complete the busy/readiness audit: feedback lasts until the resulting screen is usable, and conflicting actions are unavailable. Fix clipping, focus, and keyboard defects that obstruct existing workflows. |
 | UI extensions | Defer multiline-note editing and additional layout customization. Current workflows still have to be usable. |
-| Password changes | Defer for the first release and say so. Later changes need a recoverable rekey workflow. Forgotten-password recovery remains unavailable. |
+| Password changes | Settings can change, add, or remove a password. A copy keeps the password it was made with. There is no forgotten-password recovery. |
 | File compatibility | The announced first release starts the compatibility commitment. Until then, experimental formats stay disposable and older files stay rejected. When the owner says to make the release schema, follow [release schema](release-schema.md): the rules database becomes version 1, with no migrator in that change. After release, require a supported upgrade and recovery policy. Never silently invalidate a released file. |
 | Verification | Establish a release-wide regression baseline for every shipped platform, resolve failures, check financial faults and recovery, open a copy of a closed file, and walk through key native workflows. Fix stale fixtures without weakening assertions. |
-| Manual | The 2026-11-09 pass covered MAN-001 through MAN-020. Freeze release behavior, then update the manual for changes after that pass. Verify screenshots, examples, links, and contextual Help against the release candidate. |
+| Manual | The 2026-11-11 pass brought MAN-021 through MAN-029 into the bundled manual. Later user-visible changes go in the manual backlog until the owner asks for another pass. |
 | Distribution | SpentIt is under the Unlicense. Assemble dependency notices for each shipped build, finish tested packages and signing or notarization, then obtain explicit publication approval. |
 
 Windows has a development build with a failing UI check and excluded storage

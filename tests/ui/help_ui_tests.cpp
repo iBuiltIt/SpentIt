@@ -1768,6 +1768,26 @@ private slots:
         QCOMPARE(totals.size(), 1);
         QCOMPARE(totals.front().toMap().value("totals").toList(), (QVariantList{"36.18"}));
         mouse("sidebarSettings");
+        {
+            auto* settingsView = qobject_cast<QQuickItem*>(object(session.root, "activeSettings"));
+            QVERIFY(settingsView);
+            auto* flick = settingsView->property("contentItem").value<QQuickItem*>();
+            QVERIFY(flick);
+            auto* passwordField = qobject_cast<QQuickItem*>(object(session.root, "currentPassword"));
+            QVERIFY(passwordField);
+            QVERIFY(passwordField->isVisible());
+            auto* changePassword = qobject_cast<QQuickItem*>(object(session.root, "changePassword"));
+            QVERIFY(changePassword);
+            QVERIFY(changePassword->isVisible());
+            QVERIFY(!changePassword->isEnabled());
+            const double extra = flick->property("contentHeight").toDouble() - flick->height();
+            if (extra > 0) flick->setProperty("contentY", extra);
+            QTest::qWait(200);
+            const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
+            if (!output.isEmpty())
+                QVERIFY(session.window->grabWindow().save(QDir(output).filePath("settings.png")));
+            flick->setProperty("contentY", 0);
+        }
         mouse("amountFormatting");
         QVERIFY(!session.model.state().value("amountFormatting").toBool());
         mouse("amountFormatting");
@@ -2221,10 +2241,22 @@ private slots:
         QVERIFY(!savedSplits.isEmpty());
         QCOMPARE(savedSplits.front().toMap().value("category").toString(),QString("Groceries"));
         mouse("ledgerRow_1",Qt::LeftButton,true);
-        mouse("ledgerRow_1",Qt::RightButton);
+        {
+            // Open the menu toward the right, so Change category has room to cascade.
+            auto* row = qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_1"));
+            QVERIFY(row);
+            const auto menuPoint = row->mapToScene(QPointF(qMax(100.0, row->width() - 80), 15)).toPoint();
+            QTest::mouseClick(session.window, Qt::RightButton, Qt::NoModifier, menuPoint);
+            wait(session.model);
+        }
         QTRY_VERIFY(object(session.root,"ledgerContext")->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(object(session.root,"ledgerCategoryMenu"),"open"));
         QTRY_VERIFY(object(session.root,"ledgerCategoryMenu")->property("visible").toBool());
+        // The cursor can rest on Resolve duplicate and open that cascade over Change category.
+        auto* duplicateMenu = object(session.root, "ledgerDuplicateMenu");
+        if (duplicateMenu && duplicateMenu->property("visible").toBool())
+            QVERIFY(QMetaObject::invokeMethod(duplicateMenu, "close"));
+        QTest::qWait(200);
         capture("categories-menu");
         mouse("ledgerCategoryChoice_0");
         QVERIFY(session.model.state().value("canUndoTransferAssignment").toBool());

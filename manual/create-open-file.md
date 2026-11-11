@@ -40,11 +40,13 @@ and use another name if you want to keep it.
 ### Choose password protection
 
 With **Password protection** checked, enter your password twice.
-Keep it somewhere safe: there is no password reset, and your backups
-need the same password.
+Keep it somewhere safe. There is no way to open the file if you forget
+the password. A copy of the file opens with the password it had when
+you copied it. You can change the password, add one, or remove it later
+in [Settings](backup-recovery.md#change-or-remove-the-password).
 
-If you uncheck it, anyone who has the file or a backup can read your
-financial information.
+If you uncheck password protection, anyone who has the file or a copy
+can read your financial information.
 
 ![New-file setup with Chequing, CAD, date format, default categories, and password protection.](images/create-file-setup.png)
 *The setup choices for our example. Select any picture to enlarge it.*

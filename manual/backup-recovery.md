@@ -51,13 +51,38 @@ See [Enter an amount or a calculation](add-correct-transactions.md#enter-an-amou
 for examples.
 
 **Remember window size and position** controls how the application window
-opens next time. **Check file** checks the open file. It does not clear
-Undo. After SpentIt stops unexpectedly, it checks the file when you open
-it again.
+opens next time. If SpentIt stops unexpectedly, it checks the file when
+you open it again. That check tells you what it found. It does not repair
+the file.
 
-Settings has no control to change a password or turn password
-protection on or off for an existing file. There is no forgotten-password
-recovery for the file or for a copy of it.
+### Change or remove the password {#change-or-remove-the-password}
+
+If you want a copy of your file that still opens with the password you
+use today, copy the file before you change the password, while SpentIt
+is **not** running. A copy keeps the password it had when you made it.
+There is no way to open a file whose password you have forgotten.
+
+Open **Settings** while the file is open. To change the password, enter
+the current password, then type the new password twice, and choose
+**Change password**. The next time you open this file, use the new
+password.
+
+A file with no password says **This file has no password.** Type the new
+password twice and choose **Change password** to start protecting it.
+
+To remove password protection, leave both new-password fields empty and
+choose **Change password**. Confirm **Remove password protection**.
+After that, anyone who has the file can open it.
+
+The status line tells you what happened. **Password changed** means the
+next time you open this file, use the new password. **Password protection
+removed** means the file no longer asks for one. If SpentIt could not
+confirm the change, close the file and open it with the new password
+before you do anything else. If it says the password was not changed,
+the file still uses the password it had.
+
+![Settings for the Household file, including the password fields. Change password is faded until those fields are ready.](images/settings.png)
+*Copy the file first if you want that copy to keep the password it has now.*
 
 ## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}
 

@@ -31,6 +31,10 @@ Most controls appear after you open a file.
 - **Change amount formatting or remember the window position:** open
   **Settings**. It also shows the file’s date format, but cannot change it.
   [Settings choices](backup-recovery.md#adjust-how-you-read-and-enter-amounts).
+- **Change, add, or remove a password:** open **Settings** and use the
+  password fields. Copy the file first if you want that copy to keep
+  the password it has now.
+  [Change or remove the password](backup-recovery.md#change-or-remove-the-password).
 
 ## Accounts and balances
 

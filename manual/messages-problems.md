@@ -29,7 +29,44 @@ When creating a file, enter the same password in both fields.
 
 Check the selected file and retype its password. Damage can produce the same
 message; it does not prove the password is wrong. There is no password reset.
+A copy opens with the password it had when you made it, which may differ from
+the password the working file uses now.
 [If the file won’t open](create-open-file.md#if-it-won-t-open).
+
+**“Password changed. This file asks for the new password the next time it is opened.”**
+
+The change is saved. Use the new password the next time you open this file.
+[Change or remove the password](backup-recovery.md#change-or-remove-the-password).
+
+**“Password protection removed. Anyone with this file can open it.”**
+
+The file no longer asks for a password. Anyone who has it can open it.
+
+**“That is already the password for this file.”**
+
+The new password matches the one the file already uses. Nothing was changed.
+
+**“The password was changed, but SpentIt could not confirm the file. Close it and open it with the new password before continuing.”**
+
+Close the file and open it with the new password. Check that it opens before
+you change anything else.
+
+**“The password was not changed. The file still uses its current password.”**
+
+The file still opens with the password it had. You can try the change again.
+
+**“The password was not changed, but the file needs to be reopened. Close it and open it with the current password.”**
+
+Close the file and open it with the password it already uses. Do not assume
+the new password was saved.
+
+**“Current password does not match.”**
+
+Retype the password this file uses now. The file is unchanged.
+
+**“The password cannot be changed while another save is in progress.”**
+
+Wait until that save finishes, then try the password change again.
 
 **“File is already open or unavailable.”**
 
