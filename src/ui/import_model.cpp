@@ -9,6 +9,7 @@
 #include <spentit/import_view.hpp>
 #include <spentit/split_editor.hpp>
 #include <spentit/statements.hpp>
+#include <spentit/import_review.hpp>
 #include <QtConcurrent>
 #include <QFutureWatcher>
 #include <QDate>
@@ -2001,9 +2002,11 @@ struct ImportModel::Worker {
                     const auto& source=document.accounts[i];const Currency currency(document.format=="qif"?home:source.currency_code);
                     const auto parsed=statements::parse_mapped(owned,document,i,order,currency,[&]{context.checkpoint();});std::string oldest;
                     for(const auto& record:parsed.records)if(!record.date.empty()){try{const auto date=qif::date(record.date,order);if(oldest.empty() || date<oldest)oldest=date;}catch(const std::invalid_argument&) {}}
+                    // Day before the earliest transaction, so the opening sorts before that day's rows. No valid date stays 1900-01-01. Year 0001 cannot move earlier.
+                    const auto suggested=oldest.empty()?std::string("1900-01-01"):imports::shift_calendar_date(oldest,-1).value_or(oldest);
                     QString reported=source.reported_balance?text(*source.reported_balance):QString("Not supplied");bool offer_reported=source.reported_balance.has_value();
                     if(source.reported_balance){try{const auto amount=qif::amount(*source.reported_balance,currency);reported=money(amount,amountFormat);offer_reported=amount.units()!=0;}catch(const FinancialError&) {}catch(const std::invalid_argument&) {}}
-                    nextPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",reported},{"offerReportedOpening",offer_reported},{"openingDate",dateText(oldest.empty()?"1900-01-01":oldest)},{"currency",text(currency.code())}});
+                    nextPlan.push_back(QVariantMap{{"source",static_cast<int>(i)},{"name",text(source.name)},{"type",text(source.type)},{"reported",reported},{"offerReportedOpening",offer_reported},{"openingDate",dateText(suggested)},{"currency",text(currency.code())}});
                 }
                 preparedImport=PreparedImport{identity(),owned,document.format,document,order};preparedMappings.reset();importMappingArgs.clear();importPlan=std::move(nextPlan);
                 if(destination)execute("map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"account",QString::number(*destination)},{"create",false}}}}},context);

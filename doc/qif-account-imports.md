@@ -25,8 +25,11 @@ Implemented and verified within the accepted roadmap point-1 scope; exact select
 ## Current mapping opening setup — 2026-10-30
 
 The mapping screen now completes new-account opening setup. Currency and editable
-opening date appear only for creation. The date defaults to the earliest valid
-transaction date in that source account, falling back to 1900-01-01. The opening
+opening date appear only for creation. Updated 2026-11-10: the date defaults to
+the calendar day before the earliest valid transaction date in that source
+account, so the opening sorts before that day's transactions. An account with
+no valid transaction date still defaults to 1900-01-01. A day before year 0001
+stays on the earliest transaction date. The opening
 balance selector defaults to zero and optionally offers the reported balance as a
 literal opening amount. It never treats that amount as closing or subtracts imports.
 Missing/zero reports supply no second option. Existing mapped accounts are unchanged.

@@ -164,3 +164,24 @@ Text still outstanding:
 Pictures: use the Settings recapture already listed in MAN-025. Do not
 schedule a second capture. Do not edit `manual/` for this entry until the
 manual pass.
+
+### MAN-027 — Opening date is the day before the first transaction
+
+Date: 2026-11-10. Contract: [QIF account imports](qif-account-imports.md),
+current mapping opening setup. The same suggestion is used for every format
+that opens that mapping screen.
+
+Chapter: [Import transactions](../manual/import-transactions.md), section
+"Match the accounts".
+
+Text still outstanding. The suggested opening date is the calendar day before
+the earliest valid transaction date in that source account, so the opening
+sorts before that day's transactions. An account with no valid dates may still
+show 1900-01-01. The field stays editable. Existing accounts keep their
+openings.
+
+Pictures: recapture `import-mapping.png`. Credit card's earliest transaction
+is 2026-01-15 and Cash's is 2026-01-18, so the suggested dates become
+2026-01-14 and 2026-01-17. Check `import-results.png` if the credit-card
+opening row is visible; that date is 2026-01-14. Do not edit `manual/` for
+this entry until the manual pass.

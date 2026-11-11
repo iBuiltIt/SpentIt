@@ -1560,7 +1560,8 @@ private slots:
         run(session.model, "select_account", {{"id", "2"}});
         QCOMPARE(session.model.state().value("name").toString(), QString("Credit card"));
         QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
-        auto* purchase = qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_2"));
+        // Opening is the day before 2026-01-15, so newest-first order is refund, purchase, opening.
+        auto* purchase = qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_1"));
         QVERIFY(purchase);
         QTest::mouseDClick(session.window, Qt::LeftButton, Qt::NoModifier,
             purchase->mapToScene(QPointF(160, 12)).toPoint());
