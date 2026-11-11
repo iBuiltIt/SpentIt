@@ -53,6 +53,7 @@ QIF import requires the existing explicit currency selection (no conversion).
 Owner follow-up: normalize text only in the QIF output. Replace each consecutive
 run of C0/C1 controls (including tabs, CR/LF and DEL) or Unicode line/paragraph
 separators with one space; preserve other Unicode and all stored/imported values.
+An ampersand is written as `&`.
 Invalid UTF-8 still refuses. Account-name normalization must not make distinct
 accounts match, because QIF transfer references use names. The importer preserves
 permitted tabs and embedded CR in source text and strips CRLF record endings;

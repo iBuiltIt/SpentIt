@@ -331,7 +331,7 @@ bool parse_sgml(std::string_view bytes, std::size_t& pos, Builder& builder, cons
         } else {
             const auto value_at = pos;
             while(pos < bytes.size() && bytes[pos] != '<' && bytes[pos] != '\n') ++pos;
-            auto value = std::string(trim(bytes.substr(value_at, pos - value_at)));
+            auto value = qif::decode_ampersand_entity(trim(bytes.substr(value_at, pos - value_at)));
             if(pos < bytes.size() && bytes[pos] == '\n') ++pos;
             builder.leaf(std::move(name), std::move(value), begin);
         }

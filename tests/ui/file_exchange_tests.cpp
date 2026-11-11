@@ -105,6 +105,7 @@ private slots:
     }
     void qifTextRoundTrip(){
         QCOMPARE(app::qif_export_text("Café\tshop\r\nnext\nline"),std::string("Café shop next line"));
+        QCOMPARE(app::qif_export_text("Cafe & Books"),std::string("Cafe & Books"));
         const std::string allControls="one\x01\x7f\xc2\x85\xe2\x80\xa8\xe2\x80\xa9two";
         QCOMPARE(app::qif_export_text(allControls),std::string("one two"));
         QCOMPARE(app::qif_export_text(std::string("a\0b",3)),std::string("a b"));

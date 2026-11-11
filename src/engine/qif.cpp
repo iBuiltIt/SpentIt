@@ -92,6 +92,15 @@ std::optional<std::string_view> transfer_destination(std::string_view text) noex
     return name;
 }
 bool supported_category(std::string_view text) noexcept { return text.find_first_of("[]|") == text.npos; }
+std::string decode_ampersand_entity(std::string_view text) {
+    if(text.find("&amp;")==text.npos)return std::string(text);
+    std::string out;out.reserve(text.size());
+    for(std::size_t i=0;i<text.size();) {
+        if(i+5<=text.size() && text.substr(i,5)=="&amp;"){out.push_back('&');i+=5;}
+        else out.push_back(text[i++]);
+    }
+    return out;
+}
 Money amount(std::string_view text, const Currency& currency) {
     if(text.find(',')==text.npos)return Money::parse(text,currency);
     auto digits=text;
@@ -254,8 +263,8 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         const auto key=static_cast<unsigned char>(line.front()); const auto value=line.substr(1);
         if (key=='S' || key=='E' || key=='$') {
             split_started=true;
-            if (key=='S') { if (has_s) error(Issue::split_structure,start,SplitProblem::repeated_category); has_s=true; category_parts(value,start,split_category,split_class); }
-            if (key=='E') { if (has_e) error(Issue::split_structure,start,SplitProblem::repeated_memo); has_e=true; split_memo=value; }
+            if (key=='S') { if (has_s) error(Issue::split_structure,start,SplitProblem::repeated_category); has_s=true; category_parts(decode_ampersand_entity(value),start,split_category,split_class); }
+            if (key=='E') { if (has_e) error(Issue::split_structure,start,SplitProblem::repeated_memo); has_e=true; split_memo=decode_ampersand_entity(value); }
             if (key=='$') {
                 if (++split_count > max_allocations) { file_error(Issue::resource_limit,start); return out; }
                 std::optional<Money> split_amount;
@@ -273,10 +282,10 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         switch (key) {
         case 'D': try { r.date=date(value,order); } catch (const std::invalid_argument&) { error(Issue::date,start); } break;
         case 'T': try { total=amount(value,currency); } catch (const FinancialError&) { error(Issue::amount,start); } break;
-        case 'P': r.payee=value; break;
-        case 'M': r.memo=value; break;
-        case 'N': r.reference=value; break;
-        case 'L': category_parts(value,start,category,source_class); break;
+        case 'P': r.payee=decode_ampersand_entity(value); break;
+        case 'M': r.memo=decode_ampersand_entity(value); break;
+        case 'N': r.reference=decode_ampersand_entity(value); break;
+        case 'L': category_parts(decode_ampersand_entity(value),start,category,source_class); break;
         case 'C': r.cleared=value; if (value!="" && value!="*" && value!="c" && value!="X" && value!="R") error(Issue::cleared_status,start); break;
         default: error(Issue::unknown_field,start); break;
         }
@@ -347,9 +356,9 @@ Document index_document(std::string_view bytes,const std::function<void()>& chec
             if(seen[key]){fail(Issue::repeated_field,start);return out;}seen[key]=true;
             const auto value=line.substr(1);
             switch(key) {
-            case 'N':category.name=value;break;
-            case 'D':category.description=value;break;
-            case 'R':category.tax_schedule=value;break;
+            case 'N':category.name=decode_ampersand_entity(value);break;
+            case 'D':category.description=decode_ampersand_entity(value);break;
+            case 'R':category.tax_schedule=decode_ampersand_entity(value);break;
             case 'B':category.budget=value;break;
             case 'I':case 'E':case 'T':
                 if(!value.empty()){fail(Issue::category_class,start);return out;}
@@ -382,10 +391,10 @@ Document index_document(std::string_view bytes,const std::function<void()>& chec
             const auto key=static_cast<unsigned char>(line.front());
             if(seen[key]){fail(Issue::repeated_field,start);return out;}seen[key]=true;
             switch(key) {
-            case 'N':definition.name=line.substr(1);break;
+            case 'N':definition.name=decode_ampersand_entity(line.substr(1));break;
             case 'T':definition.type=line.substr(1);break;
             case 'B':definition.reported_balance=line.substr(1);break;
-            case 'D':definition.description=line.substr(1);break;
+            case 'D':definition.description=decode_ampersand_entity(line.substr(1));break;
             case 'L':definition.credit_limit=line.substr(1);break;
             case '/':definition.statement_date=line.substr(1);break;
             case '$':definition.statement_balance=line.substr(1);break;

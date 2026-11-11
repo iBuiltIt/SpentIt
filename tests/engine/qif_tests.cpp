@@ -81,6 +81,11 @@ void split_field_order() {
 void basics() {
     auto ampersands=parse_dmy("D1/1/2026\nT-10\nLFood: Coffee & Fast Food\n^\nD2/1/2026\nT-10\nSUtilities: TV & Streaming\n$-10\n^\n");
     check(ampersands.valid() && ampersands.records[0].transaction->allocations()[0].category=="Food: Coffee & Fast Food" && ampersands.records[1].transaction->allocations()[0].category=="Utilities: TV & Streaming");
+    auto encoded=parse_dmy("D1/1/2026\nT-10\nPTom &amp; Jerry\nMFish &amp; chips\nNRef &amp; 1\nLFood &amp; Drink\n^\nD2/1/2026\nT-10\nSUtilities &amp; Power\nELine &amp; rental\n$-10\n^\nD3/1/2026\nT-1\nPKeep &amp;amp; literal\n^\n");
+    check(encoded.valid() && encoded.records[0].payee=="Tom & Jerry" && encoded.records[0].memo=="Fish & chips" && encoded.records[0].reference=="Ref & 1");
+    check(encoded.records[0].transaction->allocations()[0].category=="Food & Drink");
+    check(encoded.records[1].transaction->allocations()[0].category=="Utilities & Power" && encoded.records[1].transaction->allocations()[0].memo=="Line & rental");
+    check(encoded.records[2].payee=="Keep &amp; literal");
     auto badDate=parse_dmy("D31/02/2026\nT-10\n^\n");
     check(badDate.records[0].repairable && !badDate.records[0].transaction && badDate.records[0].original_amount->units()==-1000);
     check(parse_dmy("D31/02/2026\nT-10\nL[Visa]\n^\n").records[0].repairable);
@@ -122,6 +127,11 @@ void account_sections() {
     check(raw.substr(bank.records[1].begin,bank.records[1].end-bank.records[1].begin)=="D3/1/2026\nT5\n^\n");
     check(bank.records[0].diagnostic->offset==raw.find("Tbad"));
     check(parse_account(raw,document,1,DateOrder::dmy,cad).valid());
+    const std::string namedBytes="!Account\nNSavings &amp; Chequing\nTBank\nDJoint &amp; household\n^\n!Type:Bank\nD1/1/2026\nT-1\nL[Savings &amp; Chequing]\n^\n";
+    const auto named=index_document(namedBytes);
+    check(!named.diagnostic && named.accounts[0].name=="Savings & Chequing" && named.accounts[0].description=="Joint & household");
+    const auto moved=parse_account(namedBytes,named,0,DateOrder::dmy,cad);
+    check(moved.valid() && moved.records[0].source_category=="[Savings & Chequing]");
     const auto list=index_document("!Account\nNEmpty account\nTCash\n^\n");
     check(!list.diagnostic && list.sections.empty() && list.accounts.size()==1);
     check(parse_account("!Account\nNEmpty account\nTCash\n^\n",list,0,DateOrder::dmy,cad).records.empty());
@@ -142,6 +152,8 @@ void catalogs() {
     const std::string raw="!Option:AutoSwitch\n!Account\nNFirst\nTBank\nB1,234.56\n^\nNSecond\nTCCard\n^\n!Clear:AutoSwitch\n!Type:Cat\nNTelephone/Cellular\nE\nDSource description\n^\nNAuto:Fuel\nE\n^\nNUnused\nI\nT\nRSource tax schedule\nB10.00\n^\n!Account\nNFirst\nTBank\n^\n!Type:Bank\nD2024-02-29\nT1,234.56\nPSTARTING BALANCE\n^\nD2024-03-01\nT-1,000.00\nSTelephone/Cellular\n$-1,200.00\nSAuto:Fuel/Work\n$200.00\n^\n!Account\nNSecond\n^\n!Type:CCard\nD2024-03-02\nT-10.00\nLTelephone/Cellular\n^\n";
     const auto doc=index_document(raw);check(!doc.diagnostic && doc.categories.size()==3 && doc.accounts.size()==2);
     check(doc.categories[2].tax_related && doc.categories[2].type=='I' && doc.categories[2].budget=="10.00");
+    const auto escaped=index_document("!Type:Cat\nNFood &amp; Drink\nDCafe &amp; meals\nRTax &amp; duty\n^\n");
+    check(!escaped.diagnostic && escaped.categories[0].name=="Food & Drink" && escaped.categories[0].description=="Cafe & meals" && escaped.categories[0].tax_schedule=="Tax & duty");
     for(std::size_t account=0;account<2;++account) {
         const auto parsed=parse_account(raw,doc,account,DateOrder::mdy,cad);check(parsed.valid());
         for(const auto& r:parsed.records)check(parse(raw.substr(r.begin,r.end-r.begin),DateOrder::dmy,cad,{},doc.categories).valid());

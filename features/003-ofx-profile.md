@@ -1,6 +1,6 @@
 # OFX, QFX, QBO, and ASO statement profile
 
-Last updated: 2026-11-09
+Last updated: 2026-11-10
 
 Grammar for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). This profile does not add investment records or automatic transfer repair. Database formats are **70 with rules / 69 without**. Older experimental files are rejected unchanged. `aso` remains a legal file label. Account commands are in [feature 002](002-accounts-money-splits.md).
 
@@ -44,7 +44,7 @@ A statement `STATUS` `CODE` other than `0` refuses the file with `Statement stat
 
 OFX 1.x SGML requires `OFXHEADER:100`, `DATA:OFXSGML`, and a non-empty `VERSION`. OFX 2.x XML requires `<?OFX OFXHEADER="200" VERSION="..." ...?>`, optionally after `<?xml ...?>`. The header and the body grammar must agree. A bare `<OFX>` without that header is malformed. An unrecognized `VERSION` stays in the stored header and does not drop transactions when the admitted structure parses. `SECURITY` may be absent, `NONE`, or `TYPE1`. `COMPRESSION` must be absent or `NONE`. Any other value refuses with `Encrypted or compressed OFX is not supported; no import was saved`. `TYPE1` does not select a decryption step. The header is capped at 64 KiB. The exact header bytes, including Intuit fields such as an institution id, are source evidence. No live bank-id license check is performed. An unrecognized institution id is not a reason to drop transactions.
 
-The body must be valid UTF-8. An ASCII-only body is accepted even when a header names another charset. A body that is not valid UTF-8 refuses the file before capture. Windows-1252 is not guessed. SGML values are literal. XML decodes the five predefined entities and numeric character references. `<!` declarations, including `DOCTYPE` and `CDATA`, and processing instructions in the body are malformed. Comments are ignored. Mixed content is refused. Self-closing empty elements are allowed.
+The body must be valid UTF-8. An ASCII-only body is accepted even when a header names another charset. A body that is not valid UTF-8 refuses the file before capture. Windows-1252 is not guessed. SGML values are literal except that each `&amp;` is read as `&`. A following `amp;` stays, so `&amp;amp;` is read as `&amp;`. XML decodes the five predefined entities and numeric character references. `<!` declarations, including `DOCTYPE` and `CDATA`, and processing instructions in the body are malformed. Comments are ignored. Mixed content is refused. Self-closing empty elements are allowed.
 
 SGML uses a bounded aggregate list: known statement aggregates, plus names ending in `MSGSRSV1` or `MSGSRQV1`, parse until their closing tag. Any other tag is a leaf whose value runs to the end of the line or the next `<`, so compact SGML and line-oriented SGML both parse. An empty leaf is an empty value. Depth is capped at 32. Each finished `STMTTRN` or `CCSTMTTRN` becomes one record; the parser does not keep a full document tree. A leaf close tag such as `</BAL>` inside SGML is malformed. `BALLIST` in SGML therefore uses leaf syntax inside the aggregate.
 

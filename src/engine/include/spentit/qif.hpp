@@ -29,6 +29,8 @@ std::string_view message(const Diagnostic&) noexcept;
 // Throws invalid_argument without input values for an invalid date or profile.
 std::string date(std::string_view text, DateOrder order);
 Money amount(std::string_view text, const Currency& currency);
+// Each "&amp;" is read as "&". One pass, so "&amp;amp;" is read as "&amp;".
+std::string decode_ampersand_entity(std::string_view text);
 bool valid_utf8(std::string_view text) noexcept;
 std::optional<std::string_view> transfer_destination(std::string_view text) noexcept;
 bool supported_category(std::string_view text) noexcept;

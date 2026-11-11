@@ -90,8 +90,14 @@ void statement_headers() {
 void parser() {
     const auto amp_sgml=statements::parse_occurrence(txn("AMP","20261028","-1.00","Coffee & Food"),statements::parser_sgml,cad);
     check(amp_sgml.records.size()==1 && amp_sgml.records[0].payee=="Coffee & Food");
+    const auto amp_sgml_entity=statements::parse_occurrence(txn("AMP2","20261028","-1.00","Coffee &amp; Food","DEBIT","<MEMO>Note &amp; tax\n"),statements::parser_sgml,cad);
+    check(amp_sgml_entity.records.size()==1 && amp_sgml_entity.records[0].payee=="Coffee & Food" && amp_sgml_entity.records[0].memo=="Note & tax");
+    const auto amp_sgml_once=statements::parse_occurrence(txn("AMP3","20261028","-1.00","Keep &amp;amp; literal"),statements::parser_sgml,cad);
+    check(amp_sgml_once.records.size()==1 && amp_sgml_once.records[0].payee=="Keep &amp; literal");
     const auto amp_xml=statements::parse_occurrence("<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20261028</DTPOSTED><TRNAMT>-1.00</TRNAMT><FITID>AMP</FITID><NAME>Coffee &amp; Food</NAME></STMTTRN>",statements::parser_xml,cad);
     check(amp_xml.records.size()==1 && amp_xml.records[0].payee=="Coffee & Food");
+    const auto amp_xml_once=statements::parse_occurrence("<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20261028</DTPOSTED><TRNAMT>-1.00</TRNAMT><FITID>AMP4</FITID><NAME>Keep &amp;amp; literal</NAME></STMTTRN>",statements::parser_xml,cad);
+    check(amp_xml_once.records.size()==1 && amp_xml_once.records[0].payee=="Keep &amp; literal");
     const auto coffee = txn("FIT-1", "20260201120000.000[-5:EST]", "-12.34", "Coffee");
     const auto text = sgml(bank(coffee, "CAD", "1001", "10.00"));
     const auto original = text;
