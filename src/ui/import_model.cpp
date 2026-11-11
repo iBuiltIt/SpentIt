@@ -223,7 +223,6 @@ QString phaseFor(const QString& action){
     if(action=="import")return "Reading statement file";
     if(action=="resume")return "Importing transactions";
     if(action=="commit")return "Accepting transactions";
-    if(action=="check_file")return "Checking file";
     if(action=="change_password")return "Changing password";
     if(action=="exchange_import")return "Importing definitions";
     if(action=="exchange_qif_export")return "Exporting QIF…";
@@ -1282,7 +1281,7 @@ struct ImportModel::Worker {
         // Income grouping changes no ledger values, labels, filters or Review facts.
         const bool incomeOnly=action=="apply_category" &&
             (a.contains("income") || (preparedCategory && preparedCategory->request.action==app::CategoryAction::set_income));
-        if(!incomeOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="check_file" && action!="history" && action!="entry_history" && action!="preview_change" && action!="preview_connected_undo" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
+        if(!incomeOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="history" && action!="entry_history" && action!="preview_change" && action!="preview_connected_undo" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
         if(action=="close" || action=="open" || action=="unlock" || action=="create"){exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();exchangeMessage.clear();reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();connectedUndo.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
@@ -2206,8 +2205,7 @@ struct ImportModel::Worker {
             catch(...){const auto failure=std::current_exception();try{result=repo.rollback_outcome(operation);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Rollback outcome is uncertain. Reopen the file before retrying.");}if(!result)std::rethrow_exception(failure);}
             observedSaved();selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();
             receipt={{"operation",text(result->operation)},{"summary",QString("Discarded %1 new transactions and %2 import problems.").arg(result->transactions).arg(result->failures)}};
-        } else if(action=="check_file") {gateway->check_file(context);receipt={{"summary","File check completed. No problems found."}};}
-        else if(action=="query") {
+        } else if(action=="query") {
             // Validate and evaluate before publishing the new query state. A bad
             // query must not enter the generic document-refresh failure path.
             app::LedgerSearch validate(str(a.value("filter")),QDate::currentDate().year(),dateFormat);
@@ -2584,7 +2582,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(!action.startsWith("exchange_") && action!="report_show" && action!="probe" && action!="check_file" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="set_memo_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
+    if(!action.startsWith("exchange_") && action!="report_show" && action!="probe" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="set_memo_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();

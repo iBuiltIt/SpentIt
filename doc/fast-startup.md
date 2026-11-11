@@ -1,6 +1,6 @@
 # Session-aware startup and verification
 
-Last updated: 2026-11-09
+Last updated: 2026-11-10
 
 Open and close follow [session history](session-history-baseline.md). Formats
 **70 with rules / 69 without** use an encrypted `document_session` row. Older
@@ -39,13 +39,12 @@ source/acceptance/duplicate dependencies, currencies and provenance. It does not
 reconstruct expired ordinary history or rely on permanent per-revision hashes.
 
 - An unclean marker or an existing recovery journal requires a full check.
-- Settings → **Check file** explicitly runs verification.
-  It reports errors, does not repair data and does not end session Undo.
+  That check reports errors and does not repair data.
 
 The encrypted clean marker deliberately accepts reduced detection of offline
 changes. SQLCipher authentication and encountered database/I/O errors still apply.
 A clean marker is not proof that an internally consistent edit reflects user
-intent. Full checks remain available for independent diagnosis.
+intent.
 
 Normal startup still prepares ledger and Review views. This does not promise
 constant-time startup or close on every file.

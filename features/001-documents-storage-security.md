@@ -52,7 +52,7 @@ marker. It does not run a full audit or hash the file. An unclean marker or a
 recovery journal requires a full check before writable use. Successful close
 expires ordinary Undo and marks the file clean in one transaction. It does not
 accept transactions, hash the file, or copy the database. A failed close rolls
-back and keeps the session. Check file reports errors and does not repair data.
+back and keeps the session. The full check reports errors and does not repair data.
 See [session history](../doc/session-history-baseline.md) and
 [open/close checks](../doc/fast-startup.md).
 

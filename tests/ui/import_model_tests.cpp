@@ -270,7 +270,7 @@ private slots:
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         QCOMPARE(window->title(),"SpentIt — "+m.state().value("displayPath").toString());
         QVERIFY(!window->findChild<QObject*>("resumeImport"));QVERIFY(!window->findChild<QObject*>("viewSourceFile"));QVERIFY(!window->findChild<QObject*>("reviewRecord"));QVERIFY(!window->findChild<QObject*>("bulkRemove"));
-        QVERIFY(window->findChild<QObject*>("importStatement"));QVERIFY(window->findChild<QObject*>("commitImport"));QVERIFY(window->findChild<QObject*>("discardImport"));QVERIFY(window->findChild<QObject*>("settingsCheckFile"));
+        QVERIFY(window->findChild<QObject*>("importStatement"));QVERIFY(window->findChild<QObject*>("commitImport"));QVERIFY(window->findChild<QObject*>("discardImport"));QVERIFY(!window->findChild<QObject*>("settingsCheckFile"));
         run(m,"close");run(m,"probe",{{"path",QDir::homePath()+"/spentit-missing-title-fixture.spentit"}},false);QCOMPARE(m.state().value("displayPath").toString(),"~/spentit-missing-title-fixture.spentit");
     }
     void ledgerDuplicateReview() {
@@ -2586,7 +2586,7 @@ private slots:
         payee->setProperty("text","Row 40 Stefan");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));payee->forceActiveFocus();payee->setProperty("cursorPosition",13);
         const auto y=editor->mapToScene(QPointF(0,0)).y();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());
         QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QTRY_COMPARE(selected(m).value("draft").toMap().value("payee").toString(),QString("Row 40 Stefan"));
-        QVERIFY(m.state().value("canUndoEdit").toBool());run(m,"check_file");QVERIFY(m.state().value("canUndoEdit").toBool());
+        QVERIFY(m.state().value("canUndoEdit").toBool());
         QTRY_VERIFY(payee->hasActiveFocus());QTRY_VERIFY(qAbs(editor->mapToScene(QPointF(0,0)).y()-y)<2);QCOMPARE(payee->property("cursorPosition").toInt(),13);
         QCOMPARE(m.state().value("selectionIndex").toInt(),m.occurrenceIndex(batch,40));QVERIFY(m.state().value("canUndoEdit").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_EDITOR_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_EDITOR_SCREENSHOT")));

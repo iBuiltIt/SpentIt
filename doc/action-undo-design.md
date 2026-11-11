@@ -1,6 +1,6 @@
 # Unified transaction Undo and whole-import rollback
 
-Last updated: 2026-11-09
+Last updated: 2026-11-10
 
 This replacement is the Undo implementation. Formats are **70 with rules / 69
 without**. Do not resume generic per-row storage capture. An import must not
@@ -85,7 +85,7 @@ later wants either capability, design it explicitly; do not silently restore the
 | User repair, category/transfer resolution or edits after the import workflow has completed | New actions for the user changes actually made. Never reopen a completed Import root to absorb later edits. |
 | Standalone definition/settings saves, Save all definitions, report Save and show | Not Undo steps. Preserve active Undo dependencies as described below. Showing/calculating a report is a read. |
 | Older-import removal; account-wide Discard | Separate confirmed operations, allowed only with no active action and no preparing import. Not Undo steps. |
-| Selection, navigation, filters, previews, Help, Check file | No step; preserve the chain. |
+| Selection, navigation, filters, previews, Help | No step; preserve the chain. |
 | Document creation, close/switch, passwords and filesystem locks | Existing lifecycle boundaries; never reversed by transaction Undo. |
 
 A semantic no-op adds no step, but retains retry protection where appropriate.

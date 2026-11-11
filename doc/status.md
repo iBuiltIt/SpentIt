@@ -16,7 +16,7 @@ passed unless you ran it.
 - Encrypted local files, optional explicit no-password mode, and private
   document locks. A backup is a copy of the file made after a successful close,
   while SpentIt is not running. Normal open and close use an encrypted clean
-  marker. A crash or unclean file gets a full check. Check file does not repair
+  marker. A crash or unclean file gets a full check, which does not repair
   data. There is no forgotten-password recovery and no password change.
 - QIF bank/cash/credit-card files under the [bank-v6 profile](../features/009-qif-profile.md),
   and OFX, QFX, QBO, and ASO bank and credit-card statements under the

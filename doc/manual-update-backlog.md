@@ -139,5 +139,28 @@ password changes are deferred; update those with the manual pass.
 
 Pictures: `recovery-backup.png` and `recovery-existing.png` show an older
 Settings page and are not used by the current chapters. Recapture Settings,
-including the password fields, in the manual pass. Do not edit `manual/` for
+including the password fields, in the manual pass. That recapture is shared
+with MAN-026 and must not show **Check file**. Do not edit `manual/` for
 this entry until that pass.
+
+### MAN-026 — Remove Check file
+
+Date: 2026-11-10. Settings no longer has **Check file**. A full check still
+runs when a file opens unclean, after a crash or a close that did not finish.
+That check reports errors and does not repair data.
+
+Text still outstanding:
+
+- [Look after your work](../manual/backup-recovery.md), section "Adjust how
+  you read and enter amounts": remove the sentence that **Check file** checks
+  the open file and does not clear Undo. Keep the sentence that an unexpected
+  stop is checked when the file opens again.
+- [Add or correct transactions](../manual/add-correct-transactions.md), section
+  "When Undo is no longer offered": remove the sentence that **Check file**
+  in Settings does not clear Undo.
+- [Outline](../manual/outline.md): the Look after your work screenshot note
+  names Settings, including Check file. Drop Check file from that note.
+
+Pictures: use the Settings recapture already listed in MAN-025. Do not
+schedule a second capture. Do not edit `manual/` for this entry until the
+manual pass.

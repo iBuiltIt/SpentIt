@@ -4006,9 +4006,6 @@ ApplicationWindow {
                                 else workflow.command("change_password",{current:currentPassword.text,password:newPassword.text,confirmation:confirmPassword.text,remove:false})
                             }
                         }
-                        Item {Layout.fillWidth:true;Layout.preferredHeight:16}
-                        Label {text:"Check the file";font.bold:true}
-                        Button {objectName:"settingsCheckFile";text:"Check file";onClicked:guard(function(){workflow.command("check_file",{})})}
                     }
                 }
                 UsableScrollView {

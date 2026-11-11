@@ -173,7 +173,7 @@ int main(int argc,char** argv) {
                 require(model.state().value("balance")==baseline && model.state().value("reviewCount").toInt()==8,"Separate must preserve the balance");
                 command("duplicate_separate_undo","review_undo");require(model.state().value("reviewCount").toInt()==9 && model.state().value("balance")==baseline,"Undo Separate must restore questions");
             }
-            command("duplicate_check","check_file");command("duplicate_close","close");std::cout<<"Duplicate workload passed: "<<count+9<<" transactions, 100 transfers, 9 questions"<<std::endl;return 0;
+            command("duplicate_close","close");std::cout<<"Duplicate workload passed: "<<count+9<<" transactions, 100 transfers, 9 questions"<<std::endl;return 0;
         }
         if(groups) {
             require(count>=120,"Group workload needs at least 120 rows");
