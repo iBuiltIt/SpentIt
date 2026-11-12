@@ -178,3 +178,17 @@ Chapters: [Use rules](../manual/rules.md), the Market rule steps and
 pieces". Recapture [rules-editor](../manual/images/rules-editor.png) and
 [rules-preview](../manual/images/rules-preview.png). Both show the old
 label and the stacked fields. The editor picture also shows the old list row.
+
+### MAN-038 — Newest-first date order
+
+Logged: 2026-11-12. Contract: [search and ledger](search-ledger.md).
+
+When **Date** is newest first, the ledger is the exact reverse of oldest
+first, including two postings on the same day. Each row keeps the balance
+after that posting.
+
+Chapters: [Find transactions](../manual/find-transactions.md), section
+"Sort, scroll and come back", and [Keyboard and mouse](../manual/keyboard-mouse.md),
+section "Find and move around". Those sentences already say a second click
+reverses the order and that balance values stay with their dates. No new
+picture. The ledger pictures use different dates, or oldest first.

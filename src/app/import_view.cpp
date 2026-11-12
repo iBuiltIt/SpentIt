@@ -47,7 +47,9 @@ LedgerView ledger_view(const Account& account,std::vector<LedgerRow> rows,std::s
             auto value=[&](std::size_t i){const auto units=out.rows[i].draft.transaction.effective_total().units();return column==3?std::min<std::int64_t>(0,units):column==4?std::max<std::int64_t>(0,units):out.balances[i].units();};
             const auto l=value(a),r=value(b);cmp=l<r?-1:l>r?1:0;if(column==3)cmp=-cmp;
         }
-        return cmp==0?x.sequence<y.sequence:descending?cmp>0:cmp<0;
+        // Newest-first Date reverses the whole chronological order, including one day.
+        // Other columns keep the earlier row first when their values match.
+        return cmp==0?(column==0 && descending?x.sequence>y.sequence:x.sequence<y.sequence):descending?cmp>0:cmp<0;
     });return out;
 }
 LedgerView search_ledger(const Account& account,std::vector<LedgerRow> rows,LedgerSearch& query,int column,bool descending,
