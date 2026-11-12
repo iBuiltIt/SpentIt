@@ -835,6 +835,53 @@ private slots:
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("transfers").toList().size(),1);
         run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("projected").toString(),QString("100.00"));QCOMPARE(m.state().value("committed").toString(),QString("100.00"));
     }
+    void unmatchedTransferAcceptanceSummary() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});
+        const auto add=[&](const char* link,const char* day,const char* amount){
+            run(m,"transfer_manual",{{"link",link},{"operation",m.newIdentity()},{"sequence",m.state().value("transferSequence")},{"destination","2"},{"date",day},{"amount",amount},{"payee","Payment"}});
+        };
+        const auto unmatchedWarnings=[&]{
+            int count=0;
+            for(const auto& value:m.state().value("acceptanceWarnings").toList())
+                if(value.toMap().value("reason").toString()=="This transfer has not been matched to an imported transaction.")++count;
+            return count;
+        };
+        const auto problemRows=[&]{
+            const auto value=root->property("reviewProblemRows");
+            return value.metaType()==QMetaType::fromType<QJSValue>()?value.value<QJSValue>().toVariant().toList():value.toList();
+        };
+        const auto unmatchedProblems=[&]{
+            int count=0;
+            for(const auto& value:problemRows())
+                if(value.toMap().value("reason").toString()=="This transfer has not been matched to an imported transaction.")++count;
+            return count;
+        };
+        add("one","2026-01-02","-10.00");
+        QCOMPARE(unmatchedWarnings(),2);QCOMPARE(unmatchedProblems(),0);QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        QVERIFY(m.state().value("canIgnoreWarnings").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window,"requestCommit"));
+        QTRY_VERIFY(root->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());
+        QTRY_VERIFY(visualItem(window->contentItem(),"acceptanceWarning_1"));
+        QCOMPARE(visualItem(window->contentItem(),"acceptanceWarning_0")->property("text").toString(),QString("Synthetic test. There is 1 unmatched transfer transaction."));
+        QCOMPARE(visualItem(window->contentItem(),"acceptanceWarning_1")->property("text").toString(),QString("Visa. There is 1 unmatched transfer transaction."));
+        QVERIFY(!visualItem(window->contentItem(),"acceptanceWarning_2"));
+        QVERIFY(visualItem(window->contentItem(),"acceptAnyway")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("acceptanceDialog"),"reject"));
+        add("two","2026-01-03","-20.00");
+        QCOMPARE(unmatchedWarnings(),4);QCOMPARE(unmatchedProblems(),0);
+        QVERIFY(QMetaObject::invokeMethod(window,"requestCommit"));
+        QTRY_VERIFY(root->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());
+        QTRY_VERIFY(visualItem(window->contentItem(),"acceptanceWarning_1"));
+        QCOMPARE(visualItem(window->contentItem(),"acceptanceWarning_0")->property("text").toString(),QString("Synthetic test. There are 2 unmatched transfer transactions."));
+        QCOMPARE(visualItem(window->contentItem(),"acceptanceWarning_1")->property("text").toString(),QString("Visa. There are 2 unmatched transfer transactions."));
+        QVERIFY(!visualItem(window->contentItem(),"acceptanceWarning_2"));
+        run(m,"close");
+    }
     void transferWorkflow() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

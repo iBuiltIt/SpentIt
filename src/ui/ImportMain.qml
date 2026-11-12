@@ -2707,10 +2707,10 @@ ApplicationWindow {
         ColumnLayout {anchors.fill:parent
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:"Accept new transactions across all accounts."}
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.reviewCount||0)>0;text:(s.reviewCount||0)+" review questions remain. Accepting does not resolve possible duplicates or link suggested transfers."}
-            ListView {Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:s.acceptanceWarnings||[]
+            ListView {Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:acceptanceDialogRows
                 ScrollBar.vertical:UsableScrollBar {}
                 delegate:Label {required property var modelData;required property int index;objectName:"acceptanceWarning_"+index;width:ListView.view.width-20;wrapMode:Text.Wrap;padding:8;textFormat:Text.PlainText
-                    text:(modelData.missingDestination?modelData.reason:window.reviewAccountName(modelData.account)+" · "+modelData.reason)+(modelData.overridable?"":" — Must be fixed before accepting")}
+                    text:modelData.text}
             }
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.importFailures||0)>0;text:(s.importFailures||0)+" import problems will remain after accepting."}
             RowLayout {
@@ -2952,13 +2952,37 @@ ApplicationWindow {
         else reviewQuestions.contentY=0
         reviewQuestions.contentY=Math.max(reviewQuestions.originY,Math.min(reviewQuestions.contentY,reviewQuestions.originY+Math.max(0,reviewQuestions.contentHeight-reviewQuestions.height)))
     }
+    function unmatchedTransferWarning(warning) {
+        return !!warning && warning.reason==="This transfer has not been matched to an imported transaction."
+    }
+    function unmatchedTransferLine(account, count) {
+        const name=reviewAccountName(account)
+        return count===1?name+". There is 1 unmatched transfer transaction.":name+". There are "+count+" unmatched transfer transactions."
+    }
     readonly property var reviewProblemRows: {
         let represented={}
         for(let q of s.reviewQuestions||[]) {
             if(q.batch && q.ordinal>=0)represented[q.batch+":"+q.ordinal]=true
             for(let row of q.rows)represented[row.batch+":"+row.ordinal]=true
         }
-        return (s.acceptanceWarnings||[]).filter(w=>!w.missingDestination && !represented[w.batch+":"+w.ordinal])
+        return (s.acceptanceWarnings||[]).filter(w=>!w.missingDestination && !unmatchedTransferWarning(w) && !represented[w.batch+":"+w.ordinal])
+    }
+    readonly property var acceptanceDialogRows: {
+        const warnings=s.acceptanceWarnings||[]
+        const counts={}
+        for(const warning of warnings) if(unmatchedTransferWarning(warning)) counts[warning.account]=(counts[warning.account]||0)+1
+        const seen={}
+        const rows=[]
+        for(const warning of warnings) {
+            if(unmatchedTransferWarning(warning)) {
+                if(seen[warning.account]) continue
+                seen[warning.account]=true
+                rows.push({text:unmatchedTransferLine(warning.account, counts[warning.account])})
+                continue
+            }
+            rows.push({text:(warning.missingDestination?warning.reason:reviewAccountName(warning.account)+" · "+warning.reason)+(warning.overridable?"":" — Must be fixed before accepting")})
+        }
+        return rows
     }
     readonly property var missingDestinationWarningRows: (s.acceptanceWarnings||[]).filter(function(w){return !!w.missingDestination})
     function reviewCountText() {

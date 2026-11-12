@@ -93,3 +93,18 @@ Chapter: [Review duplicates and link transfers](../manual/review-duplicates-tran
 section "Is it a payment between accounts?". Add that one payment is one
 question, shown from the withdrawal. No new picture. The existing link
 picture already shows one question.
+
+### MAN-033 — Unmatched transfer count
+
+Logged: 2026-11-12. Contract: [review sheet](review-sheet.md).
+
+Review no longer lists “This transfer has not been matched to an imported
+transaction. — Can accept anyway” above the questions. **Accept transactions?**
+instead shows one line per account, “Account. There is 1 unmatched transfer
+transaction.” or “Account. There are N unmatched transfer transactions.”
+**Accept anyway** and **Return to review** stay. A problem that must be fixed
+stays on its own line.
+
+Chapter: [Accept transactions](../manual/accept-transactions.md), section
+"When Review still has questions". Add the per-account count. No new picture.
+The current Accept dialog picture shows a record that must be repaired.

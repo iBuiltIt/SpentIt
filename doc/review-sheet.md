@@ -48,6 +48,8 @@ Close or Cancel on dialogs. Required import-time missing-category decisions stay
   overridable. Failed imports remain visible and may remain after acceptance.
   The old selected-import “blocking commit” dialog is removed. Dataset-wide
   acceptance concerns not already represented by questions appear inline.
+  Unmatched transfer entries are the exception in the section below: Review
+  omits them from that list and counts them in the Accept dialog.
   A transfer whose destination account is not in the file is the warning list
   beside **Accept transactions**, described below.
 - Undo import lists descriptions with separate **Undo…** buttons, retaining the
@@ -101,6 +103,22 @@ line is outgoing, the earlier occurrence is the one that stays.
 direction does not return. **Link** is unchanged. The Review count is the
 number of questions after this collapse. Duplicate groups and import-problem
 cards still count. Missing-destination warnings stay in their own count.
+
+## Unmatched transfer count — owner Go, 2026-11-12
+
+Review does not list a transfer that has not been matched to an imported
+transaction above the questions. That line does not open the transaction.
+
+**Accept transactions?** replaces those lines with one line for each account
+that has at least one. One entry reads **Account. There is 1 unmatched
+transfer transaction.** More than one reads **Account. There are N unmatched
+transfer transactions.** N is the number of transfer entries in that account
+that still have no bank match. It is not the Review question count.
+
+**Accept anyway** remains the action when every warning can be overridden.
+**Return to review** closes the dialog. A warning that must be fixed stays on
+its own line, and **Accept anyway** stays hidden while one remains. Question
+cards, missing-destination warnings, and **Set up imported transfers…** stay.
 
 ## Ledger duplicate resolution — owner Go, 2026-11-07
 
