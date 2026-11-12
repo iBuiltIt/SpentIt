@@ -664,8 +664,14 @@ private slots:
         QVERIFY(!root->findChild<QObject*>("transferDialog"));
         QVERIFY(!visualItem(window->contentItem(),"showAddTransfer"));
         QVERIFY(!visualItem(window->contentItem(),"createManualTransfer"));
-        QVERIFY(root->setProperty("currentPage","settings"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"hiddenTransferSuggestions"),"clicked"));
-        auto* dialog=root->findChild<QObject*>("transferSuggestionSettings");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());capture("hidden-transfer-suggestions");QVERIFY(dialog->property("standardButtons").toInt()!=0);QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
+        QVERIFY(root->setProperty("currentPage","settings"));
+        auto* hidden=visualItem(window->contentItem(),"hiddenTransferSuggestions");
+        QCOMPARE(hidden->property("text").toString(),QString("Hidden transfer matches…"));
+        QVERIFY(QMetaObject::invokeMethod(hidden,"clicked"));
+        auto* dialog=root->findChild<QObject*>("transferSuggestionSettings");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
+        QCOMPARE(dialog->property("title").toString(),QString("Hidden transfer matches"));
+        bool hideMatches=false;for(auto* child:dialog->findChildren<QObject*>())if(child->property("text").toString()=="Hide matches…")hideMatches=true;QVERIFY(hideMatches);
+        capture("hidden-transfer-suggestions");QVERIFY(dialog->property("standardButtons").toInt()!=0);QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
         run(m,"close");
     }
     void mappedTransferConfirmation() {

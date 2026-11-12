@@ -2578,11 +2578,11 @@ ApplicationWindow {
     }
     HelpDialog {
         helpTarget: "help:review-duplicates-transfers#is-it-a-payment-between-accounts"
-        id:transferSuggestionSettings;objectName:"transferSuggestionSettings";title:"Hidden transfer suggestions";standardButtons:Dialog.Close;modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700)
+        id:transferSuggestionSettings;objectName:"transferSuggestionSettings";title:"Hidden transfer matches";standardButtons:Dialog.Close;modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,700)
         contentItem:ColumnLayout {
                         Label {text:"Hide recurring suggestions that are not transfers. Transactions stay in your accounts. Remove a setting to allow those suggestions again.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         Label {text:"Choose which transfer suggestions to hide.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        Button {text:"Hide suggestions…";onClicked:openLinkExclusion({payee:"",account:s.accountId},null)}
+                        Button {text:"Hide matches…";onClicked:openLinkExclusion({payee:"",account:s.accountId},null)}
                         Repeater {model:s.linkExclusions||[];delegate:RowLayout {
                             required property var modelData;Layout.fillWidth:true
                             Label {text:(modelData.account==="0"?"All accounts":"Account "+modelData.account)+" · "+modelData.field+" · "+(modelData.regex?"Regex: ":"Exact: ")+modelData.expression;textFormat:Text.PlainText;elide:Text.ElideRight;Layout.fillWidth:true}
@@ -3975,9 +3975,7 @@ ApplicationWindow {
                         Label {text:"Window";font.bold:true}
                         CheckBox {objectName:"rememberWindowPosition";text:"Remember window size and position";checked:workflow.rememberWindowPosition;onToggled:workflow.rememberWindowPosition=checked}
                         Item {Layout.fillWidth:true;Layout.preferredHeight:16}
-                        Label {text:"File settings";font.bold:true}
-                        Button {objectName:"hiddenTransferSuggestions";text:"Hidden transfer suggestions…";onClicked:transferSuggestionSettings.open()}
-                        Label {text:"Current file";font.bold:true}
+                        Label {text:"Current file settings";font.bold:true}
                         Label {textFormat:Text.PlainText;text:s.path||"";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere}
                         Item {Layout.fillWidth:true;Layout.preferredHeight:4}
                         Label {text:"Date format: "+(s.dateFormat||"YYYY-MM-DD")}
@@ -3990,6 +3988,7 @@ ApplicationWindow {
                                 onActivated:guard(function(){workflow.command("amount_format",{enabled:true,style:["comma-dot","dot-comma","space-comma"][currentIndex]})})}
                         }
                         Label {text:"Use this style when entering amounts and calculations. Thousands separators are optional.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        Button {objectName:"hiddenTransferSuggestions";text:"Hidden transfer matches…";onClicked:transferSuggestionSettings.open()}
 
                         Item {Layout.fillWidth:true;Layout.preferredHeight:16}
                         Label {text:"Password";font.bold:true;visible:!!s.active}

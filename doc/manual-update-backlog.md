@@ -223,3 +223,23 @@ duplicates in this account." after a link, while Review is at zero.
 Recapture [transactions-review](../manual/images/transactions-review.png).
 Its header shows **Undo Import file…**. That picture also still shows
 **Transfers…**, which MAN-035 already asks to remove. Recapture it once.
+
+### MAN-040 — Current file settings
+
+Logged: 2026-11-12. Contract: [ledger editing](ledger-editing.md) and
+[review sheet](review-sheet.md).
+
+Settings shows one heading, **Current file settings**, then the file path,
+the date format, amount formatting, and **Hidden transfer matches…**.
+**Password** stays its own section. The list dialog is titled **Hidden
+transfer matches**, and the button inside it is **Hide matches…**. The two
+sentences in that dialog still say "suggestions." Review still offers **Hide
+suggestions…** on a transfer row, and **Don't suggest links** is unchanged.
+
+Chapters: [Where to find it](../manual/where-to-find.md), "read **Current
+file**", and [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
+"**Settings → Hidden transfer suggestions…**". The **Hide suggestions…**
+sentence on a transfer row stays. Recapture
+[settings](../manual/images/settings.png). It shows **File settings**,
+**Hidden transfer suggestions…**, and **Current file**. The password fields
+in that picture stay.

@@ -331,7 +331,7 @@ and platform limits.
 
 ## Amount formatting — owner Go 2026-11-03
 
-Accepted and implemented: Settings → File settings offers **Use amount formatting**
+Accepted and implemented: Settings → Current file settings offers **Use amount formatting**
 and a format selector. New files enable it and derive the initial style from the
 creation-time currency. The saved selection applies to every account in that file;
 changing an account's currency does not reset it. Amounts retain their own currency's

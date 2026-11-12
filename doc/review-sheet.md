@@ -55,8 +55,8 @@ Close or Cancel on dialogs. Required import-time missing-category decisions stay
 - Undo import lists descriptions with separate **Undo…** buttons, retaining the
   existing preview/confirmation. The account picker filters imports; undo affects
   the entire selected source, potentially including other accounts.
-- Hidden transfer suggestions moves to Settings with Close; contextual Hide
-  suggestions remains beside transfer candidates. Exclusions do not delete rows.
+- **Hidden transfer matches…** in Settings closes with Close; contextual **Hide
+  suggestions…** remains beside transfer candidates. Exclusions do not delete rows.
 - Transfers has an explicit account picker that stays in Review. Add transfer
   reveals the creation form; switching accounts clears its visibility. Transaction
   matching controls require Review inspection rather than a hidden ledger choice.
