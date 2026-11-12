@@ -308,8 +308,76 @@ void parser() {
         check(!imports::same_bank_transaction(a,qif_row));
     }
 }
+void sgml_header_terminator() {
+    const auto coffee = txn("FIT-1", "20260201120000", "-12.34", "Coffee");
+    const auto body = bank(coffee, "CAD", "1001", "10.00");
+    const auto separated = sgml(body);
+    auto joined = separated;
+    const auto gap = joined.find("\n\n<OFX>\n");
+    check(gap != std::string::npos);
+    joined.erase(gap, 1);
+    const auto original = joined;
+    const auto index = statements::inspect(joined, "ofx");
+    check(joined == original && index.refusal.empty() && !index.diagnostic && index.admissible && index.notes.empty());
+    const auto ofx = joined.find("<OFX>");
+    check(ofx != std::string::npos && index.header == joined.substr(0, ofx) && index.header.find("<OFX>") == std::string::npos);
+    check(index.header.find("NEWFILEUID:NONE\n") != std::string::npos && index.grammar == "ofx-sgml" && index.accounts.size() == 1);
+    check(index.accounts[0].reported_balance && *index.accounts[0].reported_balance == "10.00");
+    const auto separated_index = statements::inspect(separated, "ofx");
+    const auto separated_rows = statements::parse_mapped(separated, separated_index, 0, qif::DateOrder::dmy, cad);
+    const auto joined_rows = statements::parse_mapped(joined, index, 0, qif::DateOrder::dmy, cad);
+    check(separated_rows.records.size() == 1 && joined_rows.records.size() == 1 && !joined_rows.diagnostic);
+    check(joined_rows.records[0].date == separated_rows.records[0].date && joined_rows.records[0].date == "2026-02-01");
+    check(joined_rows.records[0].fitid == "FIT-1" && joined_rows.records[0].payee == "Coffee");
+    check(joined_rows.records[0].original_amount && joined_rows.records[0].original_amount->units() == separated_rows.records[0].original_amount->units());
+    std::string crlf;
+    for(char ch : joined) { if(ch == '\n') crlf.push_back('\r'); crlf.push_back(ch); }
+    const auto crlf_index = statements::inspect(crlf, "qfx");
+    check(crlf_index.refusal.empty() && !crlf_index.diagnostic && crlf_index.notes.empty() && crlf_index.format == "qfx");
+    check(crlf_index.header == crlf.substr(0, crlf.find("<OFX>")) && crlf_index.accounts.size() == 1);
+    const auto crlf_rows = statements::parse_mapped(crlf, crlf_index, 0, qif::DateOrder::dmy, cad);
+    check(crlf_rows.records.size() == 1 && crlf_rows.records[0].fitid == "FIT-1" && crlf_rows.records[0].original_amount->units() == -1234);
+    auto compact = joined;
+    const auto tag_nl = compact.find("<OFX>\n");
+    check(tag_nl != std::string::npos);
+    compact.erase(tag_nl + 5, 1);
+    const auto compact_index = statements::inspect(compact, "qbo");
+    check(compact_index.refusal.empty() && compact_index.format == "qbo" && compact_index.header.find("<OFX>") == std::string::npos);
+    const auto compact_rows = statements::parse_mapped(compact, compact_index, 0, qif::DateOrder::dmy, cad);
+    check(compact_rows.records.size() == 1 && compact_rows.records[0].payee == "Coffee" && compact_rows.records[0].original_amount->units() == -1234);
+    auto indented = joined;
+    const auto tag = indented.find("<OFX>");
+    indented.insert(tag, " \t");
+    const auto indented_index = statements::inspect(indented, "aso");
+    check(indented_index.refusal.empty() && indented_index.format == "aso" && indented_index.header == indented.substr(0, indented.find("<OFX>")));
+    check(statements::parse_mapped(indented, indented_index, 0, qif::DateOrder::dmy, cad).records.size() == 1);
+    const auto early = statements::inspect("OFXHEADER:100\nDATA:OFXSGML\n<OFX>\n" + body + "</OFX>\n", "ofx");
+    check(early.refusal.find("OFX header") != std::string::npos && early.accounts.empty());
+    const auto garbage = statements::inspect("OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nNOTATAG\n<OFX>\n" + body + "</OFX>\n", "ofx");
+    check(garbage.refusal.find("OFX header") != std::string::npos && garbage.accounts.empty());
+    auto spaces = separated;
+    const auto blank = spaces.find("\n\n<OFX>\n");
+    check(blank != std::string::npos);
+    spaces.insert(blank + 1, "   ");
+    const auto spaced = statements::inspect(spaces, "ofx");
+    check(spaced.refusal.find("OFX header") != std::string::npos && spaced.accounts.empty());
+    auto secret = joined;
+    const auto none = secret.find("SECURITY:NONE");
+    check(none != std::string::npos);
+    secret.replace(none, std::string("SECURITY:NONE").size(), "SECURITY:SECRET");
+    const auto secret_index = statements::inspect(secret, "ofx");
+    check(secret_index.refusal.find("Encrypted or compressed") != std::string::npos && secret_index.accounts.empty());
+    auto compressed = joined;
+    const auto compression = compressed.find("COMPRESSION:NONE");
+    check(compression != std::string::npos);
+    compressed.replace(compression, std::string("COMPRESSION:NONE").size(), "COMPRESSION:GZIP");
+    const auto gzip = statements::inspect(compressed, "ofx");
+    check(gzip.refusal.find("Encrypted or compressed") != std::string::npos && gzip.accounts.empty());
+    const auto bare = statements::inspect("OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\n<OFX></OFX>\n", "ofx");
+    check(bare.refusal.find("No bank") != std::string::npos && bare.accounts.empty());
+}
 }
 int main() {
-    try { statement_headers(); parser(); std::cout << "Statement parser passed\n"; }
+    try { statement_headers(); parser(); sgml_header_terminator(); std::cout << "Statement parser passed\n"; }
     catch(const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

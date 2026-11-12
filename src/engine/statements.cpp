@@ -225,12 +225,22 @@ std::optional<Header> read_header(std::string_view bytes, bool xml, std::string&
         bool done = false;
         while(i < bytes.size()) {
             if(i - start > max_header) return reject("Import resource limit exceeded", i, true);
+            const auto line_start = i;
             const auto nl = bytes.find('\n', i);
             const auto line_end = nl == bytes.npos ? bytes.size() : nl;
             auto line = bytes.substr(i, line_end - i);
             if(line.ends_with('\r')) line.remove_suffix(1);
             i = nl == bytes.npos ? bytes.size() : nl + 1;
             if(line.empty()) { head.raw = std::string(bytes.substr(0, i)); head.body = i; done = true; break; }
+            // The specified terminator is a blank line. Some bank files put <OFX> on the next line instead.
+            std::size_t lead = 0;
+            while(lead < line.size() && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
+            if(line.substr(lead).starts_with("<OFX>")) {
+                if(ofxheader != "100" || data != "OFXSGML" || version.empty())
+                    return reject("OFX header is missing or does not match the body; no import was saved", line_start);
+                const auto ofx_at = line_start + lead;
+                head.raw = std::string(bytes.substr(0, ofx_at)); head.body = ofx_at; done = true; break;
+            }
             const auto colon = line.find(':');
             if(colon == line.npos || colon == 0) return reject("OFX header is missing or does not match the body; no import was saved", start);
             const auto key = std::string(line.substr(0, colon)); const auto value = std::string(trim(line.substr(colon + 1)));
