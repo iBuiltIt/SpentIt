@@ -3662,7 +3662,14 @@ ApplicationWindow {
                 UsableScrollView {
                     id:rulesPage;objectName:"rulesPage";anchors.fill:parent;visible:currentPage==="rules";contentWidth:availableWidth;enabled:!workflow.busy && !deleteRuleDialog.visible
                     ColumnLayout {
-                        width:rulesPage.availableWidth;spacing:8
+                        id:rulesColumn;width:rulesPage.availableWidth;spacing:8
+                        readonly property int ruleListSpacing: 6
+                        readonly property int ruleNameColumnWidth: 240
+                        readonly property int ruleTypeColumnWidth: 180
+                        readonly property int ruleCategoryColumnWidth: 200
+                        readonly property int ruleOrderColumnWidth: ruleUpMeasure.implicitWidth+ruleListSpacing+ruleDownMeasure.implicitWidth
+                        Button {id:ruleUpMeasure;text:"Up";visible:false}
+                        Button {id:ruleDownMeasure;text:"Down";visible:false}
                         Label {text:"Rules";font.pixelSize:20}
                         ColumnLayout {Layout.fillWidth:true;visible:!!s.rulesSupported
                         Label {objectName:"rulesEmpty";visible:ruleModel.count===0;text:(s.ruleTombstones||[]).length?"No active rules.":"No rules yet."}
@@ -3670,6 +3677,15 @@ ApplicationWindow {
                         RowLayout {
                             Button {objectName:"newRule";text:"New rule";visible:enabled;enabled:{let generation=ruleEditGeneration;return newRuleIndex()<0 && ruleModel.count<128} onClicked:newRule()}
                             CheckBox {id:showRemovedRules;objectName:"showRemovedRules";visible:(s.ruleTombstones||[]).length>0;text:"Removed rules ("+(s.ruleTombstones||[]).length+")"}
+                        }
+                        RowLayout {
+                            id:ruleListHeader;objectName:"ruleListHeader";visible:ruleModel.count>0
+                            Layout.fillWidth:true;Layout.leftMargin:8;Layout.rightMargin:8;spacing:rulesColumn.ruleListSpacing
+                            Label {id:ruleColumnEnabled;objectName:"ruleColumnEnabled";text:"Enabled";font.bold:true;Layout.preferredWidth:implicitWidth;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth}
+                            Label {objectName:"ruleColumnName";text:"Name";font.bold:true;leftPadding:8;Layout.preferredWidth:rulesColumn.ruleNameColumnWidth;Layout.minimumWidth:rulesColumn.ruleNameColumnWidth;Layout.maximumWidth:rulesColumn.ruleNameColumnWidth}
+                            Label {objectName:"ruleColumnType";text:"Type";font.bold:true;elide:Text.ElideRight;Layout.preferredWidth:rulesColumn.ruleTypeColumnWidth;Layout.minimumWidth:rulesColumn.ruleTypeColumnWidth;Layout.maximumWidth:rulesColumn.ruleTypeColumnWidth}
+                            Label {objectName:"ruleColumnCategory";text:"Category";font.bold:true;elide:Text.ElideRight;Layout.preferredWidth:rulesColumn.ruleCategoryColumnWidth;Layout.minimumWidth:rulesColumn.ruleCategoryColumnWidth;Layout.maximumWidth:rulesColumn.ruleCategoryColumnWidth}
+                            Label {objectName:"ruleColumnOrder";text:"Order";font.bold:true;Layout.preferredWidth:rulesColumn.ruleOrderColumnWidth;Layout.minimumWidth:rulesColumn.ruleOrderColumnWidth;Layout.maximumWidth:rulesColumn.ruleOrderColumnWidth}
                         }
                         Column {
                             Layout.fillWidth:true
@@ -3697,18 +3713,36 @@ ApplicationWindow {
                                     height:visible?ruleRowLayout.implicitHeight:0
                                     enabled:true
                                     RowLayout {
-                                    id:ruleRowLayout;anchors.fill:parent
-                                    Label {objectName:"ruleNumber_"+index;text:String(index+1);leftPadding:8;Layout.preferredWidth:36}
-                                    CheckBox {objectName:"ruleEnabled_"+index;text:"Enabled";enabled:!ruleEntry.deletedDraft;checked:ruleEntry.ruleOn;onClicked:toggleRule(index)}
+                                    id:ruleRowLayout;anchors.left:parent.left;anchors.top:parent.top;anchors.leftMargin:8;spacing:rulesColumn.ruleListSpacing
+                                    Item {
+                                        implicitWidth:ruleColumnEnabled.implicitWidth;implicitHeight:ruleEnabledBox.implicitHeight
+                                        Layout.preferredWidth:ruleColumnEnabled.implicitWidth;Layout.minimumWidth:ruleColumnEnabled.implicitWidth;Layout.maximumWidth:ruleColumnEnabled.implicitWidth
+                                        CheckBox {id:ruleEnabledBox;objectName:"ruleEnabled_"+index;anchors.left:parent.left;anchors.verticalCenter:parent.verticalCenter;text:"";Accessible.name:"Enabled";enabled:!ruleEntry.deletedDraft;checked:ruleEntry.ruleOn;onClicked:toggleRule(index)}
+                                    }
                                     // Keep the action name independent of transient draft/removal badges.
                                     // Qt otherwise posts a native accessibility NameChanged notification
                                     // for every status change (the path in the reported macOS EXC_GUARD).
-                                    Button {objectName:"openRule_"+index;Accessible.name:label||"Unnamed rule";Accessible.description:ruleEntry.deletedDraft?"Removal pending; save to remove this rule.":ruleEntry.isNew?"New unsaved rule":ruleEntry.changed?"Unsaved changes":"Saved rule";text:(label||("Rule "+(index+1)))+(ruleEntry.isNew?" · New":ruleEntry.deletedDraft?" · Removal pending":ruleEntry.changed?" · Unsaved":"");highlighted:ruleIndex===index;onClicked:openRule(index);Layout.fillWidth:true}
-                                    Label {text:(scope==="split"?"Split":"Transaction")+" · "+(scope==="split" && input==="payee"?"Parent payee":input);visible:rulesPage.availableWidth>=900;Layout.preferredWidth:150}
-                                    Label {text:expression;visible:rulesPage.availableWidth>=1100;elide:Text.ElideRight;Layout.preferredWidth:140;textFormat:Text.PlainText}
-                                    Label {text:actionSummary(ruleEntry);visible:rulesPage.availableWidth>=1100;elide:Text.ElideRight;Layout.preferredWidth:140;textFormat:Text.PlainText}
-                                    Button {objectName:"moveRuleUp_"+index;text:"Up";visible:enabled;enabled:index>0 && !ruleEntry.deletedDraft;onClicked:moveRule(index,-1)}
-                                    Button {objectName:"moveRuleDown_"+index;text:"Down";visible:enabled;enabled:index<ruleModel.count-1 && !ruleEntry.deletedDraft;onClicked:moveRule(index,1)}
+                                    Button {
+                                        id:openRuleButton;objectName:"openRule_"+index
+                                        Accessible.name:label||"Unnamed rule"
+                                        Accessible.description:ruleEntry.deletedDraft?"Removal pending; save to remove this rule.":ruleEntry.isNew?"New unsaved rule":ruleEntry.changed?"Unsaved changes":"Saved rule"
+                                        text:(label||("Rule "+(index+1)))+(ruleEntry.isNew?" · New":ruleEntry.deletedDraft?" · Removal pending":ruleEntry.changed?" · Unsaved":"")
+                                        highlighted:ruleIndex===index;onClicked:openRule(index);clip:true
+                                        Layout.preferredWidth:rulesColumn.ruleNameColumnWidth;Layout.minimumWidth:rulesColumn.ruleNameColumnWidth;Layout.maximumWidth:rulesColumn.ruleNameColumnWidth
+                                        contentItem: Label {
+                                            text:openRuleButton.text;font:openRuleButton.font;textFormat:Text.PlainText
+                                            color:openRuleButton.highlighted?openRuleButton.palette.brightText:openRuleButton.palette.buttonText
+                                            horizontalAlignment:Text.AlignLeft;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight
+                                            Accessible.ignored:true
+                                        }
+                                    }
+                                    Label {objectName:"ruleType_"+index;text:(scope==="split"?"Split":"Transaction")+" · "+(scope==="split" && input==="payee"?"Parent payee":input);textFormat:Text.PlainText;elide:Text.ElideRight;clip:true;Layout.preferredWidth:rulesColumn.ruleTypeColumnWidth;Layout.minimumWidth:rulesColumn.ruleTypeColumnWidth;Layout.maximumWidth:rulesColumn.ruleTypeColumnWidth}
+                                    Label {objectName:"ruleCategory_"+index;text:actionSummary(ruleEntry);textFormat:Text.PlainText;elide:Text.ElideRight;clip:true;Layout.preferredWidth:rulesColumn.ruleCategoryColumnWidth;Layout.minimumWidth:rulesColumn.ruleCategoryColumnWidth;Layout.maximumWidth:rulesColumn.ruleCategoryColumnWidth}
+                                    Button {id:moveUp;objectName:"moveRuleUp_"+index;text:"Up";visible:index>0 && !ruleEntry.deletedDraft;enabled:visible;onClicked:moveRule(index,-1);Layout.preferredWidth:implicitWidth;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth}
+                                    // A missing Up or Down keeps its width so the columns stay on the same edge.
+                                    Item {objectName:"moveRuleUpSpacer_"+index;visible:!moveUp.visible;Layout.preferredWidth:moveUp.implicitWidth;Layout.minimumWidth:moveUp.implicitWidth;Layout.maximumWidth:moveUp.implicitWidth}
+                                    Button {id:moveDown;objectName:"moveRuleDown_"+index;text:"Down";visible:index<ruleModel.count-1 && !ruleEntry.deletedDraft;enabled:visible;onClicked:moveRule(index,1);Layout.preferredWidth:implicitWidth;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth}
+                                    Item {objectName:"moveRuleDownSpacer_"+index;visible:!moveDown.visible;Layout.preferredWidth:moveDown.implicitWidth;Layout.minimumWidth:moveDown.implicitWidth;Layout.maximumWidth:moveDown.implicitWidth}
 
                                     }
                                 }
@@ -3731,20 +3765,22 @@ ApplicationWindow {
                         ColumnLayout {
                             id:ruleEditor;objectName:"ruleEditor"
                             visible:ruleIndex>=0
-                            Layout.fillWidth:true
-                            Label {textFormat:Text.PlainText;text:rulePendingRemoval?'Remove “'+(ruleLabel.text||"Unnamed rule")+'”?':"Selected rule";font.bold:true}
+                            Layout.fillWidth:true;Layout.topMargin:16
+                            Label {objectName:"selectedRuleHeading";textFormat:Text.PlainText;text:rulePendingRemoval?'Remove “'+(ruleLabel.text||"Unnamed rule")+'”?':"Selected rule";font.bold:true}
                             Label {textFormat:Text.PlainText;visible:rulePendingRemoval;text:ruleExpression.text+"\n"+(ruleIndex>=0?actionSummary(ruleModel.get(ruleIndex)):"");wrapMode:Text.Wrap;Layout.fillWidth:true}
-                            ColumnLayout {
-                            visible:!rulePendingRemoval;Layout.fillWidth:true
-                            Label {text:"Rule name"}
+                            GridLayout {
+                            visible:!rulePendingRemoval;Layout.fillWidth:true;columns:2;columnSpacing:12;rowSpacing:8
+                            Label {text:"Rule name";Layout.alignment:Qt.AlignVCenter}
                             NavigableTextField {id:ruleLabel;objectName:"ruleLabel";placeholderText:"Rule name";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Rule label"}
-                            Label {text:"Match";font.bold:true}
+                            Label {text:"Match";Layout.alignment:Qt.AlignVCenter}
                             RowLayout {
+                                Layout.fillWidth:true
                                 UsableComboBox {id:ruleScope;objectName:"ruleScope";Accessible.name:"Rule scope";model:["Transaction","Split"];onActivated:if(!ruleSync){writeRule()}}
                                 UsableComboBox {id:ruleInput;objectName:"ruleInput";Accessible.name:"Rule source field";model:ruleScope.currentIndex===1?["Parent payee","Memo","Category"]:["Payee","Memo","Category"];onActivated:if(!ruleSync)writeRule()}
                             }
-                            Label {text:"Pattern (regular expression)"}
+                            Label {objectName:"rulePatternLabel";text:"Pattern";Layout.alignment:Qt.AlignVCenter}
                             NavigableTextField {id:ruleExpression;objectName:"ruleExpression";placeholderText:"Expression";Layout.fillWidth:true;onTextEdited:{ruleAssistNote.text="";syncAssist();writeRule()} Accessible.name:"Rule expression"}
+                            Item {implicitWidth:0;implicitHeight:0;Layout.preferredWidth:0;Layout.preferredHeight:0;Layout.fillWidth:false;Layout.alignment:Qt.AlignLeft}
                             Label {
                                 objectName:"rulePatternKey";Layout.fillWidth:true;textFormat:Text.PlainText
                                 font.pixelSize:12;fontSizeMode:Text.HorizontalFit;minimumPixelSize:10
@@ -3753,33 +3789,29 @@ ApplicationWindow {
                                 text:firstLine+(width>=850?" · ":"\n")+secondLine
                                 Accessible.name:text
                             }
+                            Item {implicitWidth:0;implicitHeight:0;Layout.preferredWidth:0;Layout.preferredHeight:0;Layout.fillWidth:false;Layout.alignment:Qt.AlignLeft}
                             RowLayout {
                                 CheckBox {id:ruleCaseSensitive;objectName:"ruleCaseSensitive";text:"Case sensitive";onClicked:if(!ruleSync)setCase(checked)}
                                 CheckBox {id:ruleWholeField;objectName:"ruleWholeField";text:"Whole field";onClicked:if(!ruleSync)setWhole(checked)}
                             }
+                            Item {visible:ruleAssistNote.text.length>0;implicitWidth:0;implicitHeight:0;Layout.preferredWidth:0;Layout.preferredHeight:0;Layout.fillWidth:false}
                             Label {id:ruleAssistNote;objectName:"ruleAssistNote";text:"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
-                            Label {text:"Changes";font.bold:true}
-                            GridLayout {
-                            Layout.fillWidth:true;columns:2
-                            Label {visible:ruleScope.currentIndex===0;text:"Payee (optional)"}
+                            Label {text:"Changes";font.bold:true;Layout.columnSpan:2;Layout.topMargin:8}
+                            Label {visible:ruleScope.currentIndex===0;text:"Payee (optional)";Layout.alignment:Qt.AlignVCenter}
                             NavigableTextField {id:rulePayeeTemplate;objectName:"rulePayeeTemplate";visible:ruleScope.currentIndex===0;placeholderText:"Payee template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Payee template"}
-                            Label {text:"Memo (optional)"}
+                            Label {text:"Memo (optional)";Layout.alignment:Qt.AlignVCenter}
                             NavigableTextField {id:ruleMemoTemplate;objectName:"ruleMemoTemplate";placeholderText:"Memo template. ${0} through ${n}, and $$";Layout.fillWidth:true;onTextEdited:writeRule();Accessible.name:"Memo template"}
-                            }
-                            RowLayout {
-                                Label {text:"Category"}
-                                CategoryCompletion {
-                                    id:ruleCategoryField;objectName:"ruleCategory"
-                                    Layout.fillWidth:true;Layout.minimumWidth:120;Layout.preferredWidth:categorySelectorWidth
-                                    Layout.maximumWidth:Math.max(600,categorySelectorWidth);popupPreferredWidth:categorySelectorWidth
-                                    placeholderText:"Choose a category";restoreOnFocusLoss:false
-                                    model:sortedCategories((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
-                                    savedText:{let row=model.find(c=>c.id===ruleCategoryId);return row?row.path:""}
-                                    onChoiceAccepted:function(choice){ruleCategoryId=choice.id;writeRule();ruleTransactionScope.forceActiveFocus()}
-                                    onBackwardRequested:ruleMemoTemplate.forceActiveFocus()
-                                    onEscapeRequested:resetText()
-                                    Accessible.name:"Rule category"
-                                }
+                            Label {text:"Category";Layout.alignment:Qt.AlignVCenter}
+                            CategoryCompletion {
+                                id:ruleCategoryField;objectName:"ruleCategory"
+                                Layout.fillWidth:true;Layout.minimumWidth:120;popupPreferredWidth:categorySelectorWidth
+                                placeholderText:"Choose a category";restoreOnFocusLoss:false
+                                model:sortedCategories((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
+                                savedText:{let row=model.find(c=>c.id===ruleCategoryId);return row?row.path:""}
+                                onChoiceAccepted:function(choice){ruleCategoryId=choice.id;writeRule();ruleTransactionScope.forceActiveFocus()}
+                                onBackwardRequested:ruleMemoTemplate.forceActiveFocus()
+                                onEscapeRequested:resetText()
+                                Accessible.name:"Rule category"
                             }
                         }
                         RowLayout {

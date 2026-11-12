@@ -160,3 +160,21 @@ keeps the checks it already has.
 Chapter: [Categories](../manual/categories.md), section "Keep your category
 list useful". The sentence that a new category starts unchecked still describes
 a category the person adds. Add the five starter names. No new picture.
+
+### MAN-037 — Rules list and editor layout
+
+Logged: 2026-11-12. Contract:
+[rules and explanations](../features/004-rules-and-explanations.md).
+
+The Rules list keeps stable columns: **Enabled**, **Name**, **Type**,
+**Category**, and **Order**. The pattern is not on the row. **Up** and
+**Down** keep their places when a button is absent. In the editor, each
+label is on the same line as its field. The pattern label is **Pattern**.
+Payee, memo, and category share one field edge.
+
+Chapters: [Use rules](../manual/rules.md), the Market rule steps and
+"Common pattern pieces", which name **Pattern (regular expression)**. Also
+[Search examples](../manual/search-examples.md), section "Common pattern
+pieces". Recapture [rules-editor](../manual/images/rules-editor.png) and
+[rules-preview](../manual/images/rules-preview.png). Both show the old
+label and the stacked fields. The editor picture also shows the old list row.

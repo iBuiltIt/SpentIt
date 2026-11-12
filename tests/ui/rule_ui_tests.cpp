@@ -80,6 +80,13 @@ class RuleUiTests : public QObject {
         else if(!category.isEmpty())QVERIFY(pickRuleCategory(root,category));
     }
     static QString summary(const ImportModel& m){return m.state().value("rulePreview").toMap().value("summaryText").toString();}
+    static bool showsText(QQuickItem* item,const QString& text){
+        if(!item || !item->isVisible())return false;
+        if(item->property("text").toString().contains(text))return true;
+        for(auto* child:item->childItems())if(showsText(child,text))return true;
+        return false;
+    }
+    static bool sameEdge(QQuickItem* a,QQuickItem* b){return a && b && a->isVisible() && b->isVisible() && qAbs(a->mapToScene(QPointF()).x()-b->mapToScene(QPointF()).x())<1.0;}
     static void writeQif(const QString& path,const QByteArray& bytes){QFile file(path);if(!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size())qFatal("QIF fixture unavailable");}
     static QByteArray wise(){return "!Type:Bank\nD01/01/2026\nT-29.31\nPTfl Travel UK\nEWise Charges for: card\n$-0.14\nECARD-123\n$-29.17\n^\n";}
     void createDocument(Session& s,const QString& name){run(s.model,"create",{{"path",s.path()},{"protected",false},{"name",name},{"currency","CAD"}});QVERIFY(s.window);QVERIFY(QTest::qWaitForWindowExposed(s.window));QVERIFY(click(s.root,"categoryNavigation"));wait(s.model);createCategory(s.model,s.root,"Test category");QVERIFY(click(s.root,"accountNavigation"));wait(s.model);}
@@ -174,7 +181,10 @@ private slots:
         QCOMPARE(object(s.root,"operationPhase")->property("text").toString(),"Choose an existing category.");
         QVERIFY(s.model.state().value("rules").toList().isEmpty());
         QCOMPARE(object(s.root,"operationPhase")->property("color"),object(s.root,"welcomeError")->property("color"));
-        QVERIFY(object(s.root,"ruleNumber_0")->property("leftPadding").toReal()>=8);
+        auto* ruleRow=qobject_cast<QQuickItem*>(object(s.root,"ruleRow_0"));
+        auto* ruleEnabled=qobject_cast<QQuickItem*>(object(s.root,"ruleEnabled_0"));
+        QVERIFY(ruleRow && ruleEnabled);
+        QVERIFY(ruleEnabled->mapToItem(ruleRow,QPointF()).x()>=8);
         auto* divider=qobject_cast<QQuickItem*>(object(s.root,"ruleApplyDivider"));QVERIFY(divider && divider->isVisible());
         auto* save=qobject_cast<QQuickItem*>(object(s.root,"saveRules"));QVERIFY(save);
         auto* apply=qobject_cast<QQuickItem*>(object(s.root,"applyRules"));QVERIFY(apply);
@@ -1032,6 +1042,67 @@ private slots:
         run(s.model,"open",{{"path",s.path()}});
         run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Echoed");
+    }
+    void rulesListColumnsStayAligned(){
+        Session s;createDocument(s,"Rule columns");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"First rule","^First$","First payee");
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        transactionRule(s.root,"Second rule with a long name that should be cut off","^Second$","Second payee");
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        transactionRule(s.root,"Third","^Third$","Third payee");
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QVERIFY(click(s.root,"openRule_2"));
+        auto item=[&](const QString& name){return qobject_cast<QQuickItem*>(object(s.root,name));};
+        QVERIFY(!object(s.root,"ruleNumber_0"));
+        auto* header=item("ruleListHeader");QVERIFY(header && header->isVisible());
+        QCOMPARE(item("ruleColumnEnabled")->property("text").toString(),QString("Enabled"));
+        QCOMPARE(item("ruleColumnName")->property("text").toString(),QString("Name"));
+        QCOMPARE(item("ruleColumnType")->property("text").toString(),QString("Type"));
+        QCOMPARE(item("ruleColumnCategory")->property("text").toString(),QString("Category"));
+        QCOMPARE(item("ruleColumnOrder")->property("text").toString(),QString("Order"));
+        QCOMPARE(item("rulePatternLabel")->property("text").toString(),QString("Pattern"));
+        QCOMPARE(item("ruleEnabled_0")->property("text").toString(),QString());
+        auto* enabledAccess=QAccessible::queryAccessibleInterface(item("ruleEnabled_0"));
+        QVERIFY(enabledAccess);QCOMPARE(enabledAccess->text(QAccessible::Name),QString("Enabled"));
+        QVERIFY(sameEdge(item("ruleColumnEnabled"),item("ruleEnabled_0")));
+        QVERIFY(sameEdge(item("ruleColumnEnabled"),item("ruleEnabled_2")));
+        QVERIFY(sameEdge(item("ruleColumnName"),item("openRule_0")));
+        QVERIFY(sameEdge(item("openRule_0"),item("openRule_1")));
+        QVERIFY(sameEdge(item("openRule_1"),item("openRule_2")));
+        QVERIFY(qAbs(item("openRule_1")->width()-240)<1);
+        auto* nameText=item("openRule_1")->property("contentItem").value<QQuickItem*>();
+        QVERIFY(nameText && nameText->property("truncated").toBool());
+        QVERIFY(sameEdge(item("ruleColumnType"),item("ruleType_0")));
+        QVERIFY(sameEdge(item("ruleType_0"),item("ruleType_2")));
+        QVERIFY(sameEdge(item("ruleColumnCategory"),item("ruleCategory_0")));
+        QVERIFY(sameEdge(item("ruleCategory_0"),item("ruleCategory_2")));
+        QCOMPARE(item("ruleType_0")->property("text").toString(),QString("Transaction · payee"));
+        QVERIFY(!showsText(item("ruleRow_1"),"^Second$"));
+        QVERIFY(!item("moveRuleUp_0")->isVisible());
+        QVERIFY(item("moveRuleUpSpacer_0")->isVisible());
+        QVERIFY(item("moveRuleUp_1")->isVisible());
+        QVERIFY(!item("moveRuleUpSpacer_1")->isVisible());
+        QVERIFY(qAbs(item("moveRuleUpSpacer_0")->width()-item("moveRuleUp_1")->width())<1);
+        QVERIFY(!item("moveRuleDown_2")->isVisible());
+        QVERIFY(item("moveRuleDownSpacer_2")->isVisible());
+        QVERIFY(item("moveRuleDown_1")->isVisible());
+        QVERIFY(qAbs(item("moveRuleDownSpacer_2")->width()-item("moveRuleDown_1")->width())<1);
+        QVERIFY(sameEdge(item("ruleColumnOrder"),item("moveRuleUpSpacer_0")));
+        QVERIFY(sameEdge(item("ruleColumnOrder"),item("moveRuleUp_1")));
+        auto* row=item("ruleRow_2");auto* heading=item("selectedRuleHeading");
+        QVERIFY(row && heading && heading->isVisible());
+        const auto gap=heading->mapToScene(QPointF()).y()-(row->mapToScene(QPointF()).y()+row->height());
+        QVERIFY2(gap>20 && gap<32,qPrintable(QString("gap=%1").arg(gap)));
+        auto* payee=item("rulePayeeTemplate");auto* memo=item("ruleMemoTemplate");
+        auto* category=item("ruleCategory");auto* expression=item("ruleExpression");auto* label=item("ruleLabel");
+        QVERIFY(sameEdge(payee,memo));QVERIFY(sameEdge(payee,category));
+        QVERIFY(sameEdge(payee,expression));QVERIFY(sameEdge(payee,label));
+        QVERIFY(choose(s.root,"ruleScope",1));QCoreApplication::processEvents();
+        QTRY_VERIFY(!item("rulePayeeTemplate")->isVisible());
+        QVERIFY(sameEdge(item("ruleMemoTemplate"),item("ruleCategory")));
+        QVERIFY(sameEdge(item("ruleMemoTemplate"),item("ruleExpression")));
+        QVERIFY(sameEdge(item("ruleMemoTemplate"),item("ruleLabel")));
     }
 };
 int main(int argc,char** argv){QGuiApplication app(argc,argv);app.setFont(QFont("Helvetica Neue",13));applySpentItControlsStyle();RuleUiTests tests;return QTest::qExec(&tests,argc,argv);}
