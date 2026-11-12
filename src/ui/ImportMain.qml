@@ -2905,7 +2905,6 @@ ApplicationWindow {
         const index=rows.findIndex(row=>row.key===duplicateOriginKey)
         if(rows.length)showDuplicateInLedger(rows[(index+1)%rows.length])
     }
-    function undoLedgerReview() {undoEdit()}
     property bool reviewInspecting: false
     property bool pendingReviewInspection: false
     function inspectReviewTransaction(row) {
@@ -3391,7 +3390,6 @@ ApplicationWindow {
             GridLayout {Layout.fillWidth:true;Layout.margins:12;columns:width>800?2:1
                 Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true;Accessible.name:reviewCountAccessibleName()}
                 Flow {Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredHeight:childrenRect.height;spacing:6;layoutDirection:Qt.RightToLeft
-                    Button {text:s.editUndoLabel||"Undo";objectName:"reviewUndo";visible:!!s.canUndoAction;enabled:!workflow.busy;onClicked:undoEdit()}
                     Button {objectName:"chooseImportUndo";text:"Undo import…";visible:(s.undoableImports||[]).length>0;enabled:!workflow.busy;onClicked:guard(openImportUndoPicker)}
                 }
             }
@@ -4032,17 +4030,14 @@ ApplicationWindow {
                 Button {objectName:"searchHelp";text:"Search help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp("help:search-examples")}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
                 Button {objectName:"addTransaction";visible:!window.reportLedger;text:"+ New transaction";enabled:!s.readOnly && !workflow.busy;onClicked:addTransaction();ToolTip.visible:hovered;ToolTip.text:"Add transaction";Accessible.name:"Add transaction"}
-                Button {objectName:"undoEdit";text:s.editUndoLabel||"Undo edit";visible:!!s.canUndoEdit;enabled:!workflow.busy;onClicked:undoEdit();ToolTip.text:"Undo the latest saved action in this file.";ToolTip.visible:hovered}
-                Button {objectName:"undoTransferAssignment";text:"Undo category change";visible:!!s.canUndoTransferAssignment;enabled:!workflow.busy;onClicked:undoEdit()}
             }
             ColumnLayout {
-                objectName:"ledgerDuplicateBar";Layout.fillWidth:true;visible:!window.reportLedger && (!!duplicateOrigin || !!s.canUndoReview || s.reviewReady===false || Object.values(duplicateRows).some(row=>row.account===s.accountId))
+                objectName:"ledgerDuplicateBar";Layout.fillWidth:true;visible:!window.reportLedger && (!!duplicateOrigin || s.reviewReady===false || Object.values(duplicateRows).some(row=>row.account===s.accountId))
                 RowLayout {
                     Layout.fillWidth:true
                     Label {objectName:"ledgerDuplicateSummary";Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap
                         text:duplicateOrigin?"Possible duplicate · "+duplicateCandidates.length+" possible "+(duplicateCandidates.length===1?"match":"matches")+" · "+(duplicateOrigin.committed?"Accepted":"New")+" — "+duplicateOrigin.payee+(duplicateCandidate?" ↔ "+(duplicateCandidate.committed?"Accepted":"New")+" — "+duplicateCandidate.payee: " · Select a marked transaction to compare"):(s.reviewReady===false?"Checking for possible duplicates…":"Review possible duplicates in this account.")}
                     Button {objectName:"ledgerDuplicateNext";text:"Next possible duplicate";visible:Object.values(duplicateRows).some(row=>row.account===s.accountId);onClicked:nextLedgerDuplicate()}
-                    Button {objectName:"ledgerReviewUndo";text:"Undo review";visible:!!s.canUndoReview;enabled:!s.readOnly;onClicked:undoLedgerReview()}
                 }
                 RowLayout {
                     visible:!!duplicateOrigin;Layout.fillWidth:true

@@ -115,6 +115,11 @@ class CommittedUiTests : public QObject {
         return nullptr;
     }
     static bool click(QObject* root,const QString& name) {auto* item=object(root,name);return item && item->property("enabled").toBool() && item->property("visible").toBool() && QMetaObject::invokeMethod(item,"clicked");}
+    static bool undoLatest(QObject* root,QQuickWindow* window,const char* focusName="durableLedger") {
+        auto* focus=qobject_cast<QQuickItem*>(object(root,QString::fromLatin1(focusName)));if(!focus)return false;
+        focus->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);
+        auto* confirm=object(root,"confirmActionUndo");return confirm && confirm->property("visible").toBool() && click(root,"confirmActionUndo");
+    }
     static bool pointerClick(QQuickWindow* window,QObject* root,const QString& name) {
         auto* item=qobject_cast<QQuickItem*>(object(root,name));if(!item || !item->isEnabled() || !item->isVisible())return false;
         const auto position=item->mapToScene(QPointF(item->width()/2,item->height()/2)).toPoint();
@@ -165,7 +170,7 @@ private slots:
         qobject_cast<QQuickItem*>(object(root,"durableLedger"))->forceActiveFocus();
         QTest::keySequence(window,QKeySequence::Undo);QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);QTRY_COMPARE(model.rowCount(),3);
         QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo Rename payee…");
-        QVERIFY(click(root,"undoEdit"));QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);QCOMPARE(model.rowCount(),0);
+        QVERIFY(undoLatest(root,window));wait(model);QCOMPARE(model.rowCount(),0);
         run(model,"query",{{"filter",""}});
         run(model,"inspect",{{"batch",oldBatch},{"ordinal",0}});QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Synthetic purchase");
         run(model,"inspect",{{"batch",newBatch},{"ordinal",0}});QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Synthetic new");
@@ -216,7 +221,7 @@ private slots:
         QCOMPARE(splitMemo(0,0),QString("Split note"));QCOMPARE(splitMemo(0,1),QString("Second note"));
         QCOMPARE(record(1).value("memoOwner").toString(),"manual");QCOMPARE(record(0).value("memoOwner").toString(),"source");
         QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo Set memo…");
-        QVERIFY(click(root,"undoEdit"));QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QVERIFY(undoLatest(root,window));wait(model);
         QCOMPARE(memo(1),QString());QCOMPARE(memo(3),QString("   "));
         QVERIFY(QMetaObject::invokeMethod(object(root,"setMemoSelection"),"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());
         QVERIFY(object(root,"overwriteExistingMemos")->setProperty("checked",true));
@@ -224,7 +229,7 @@ private slots:
         QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
         for(int ordinal:{0,1,2,3}) QCOMPARE(memo(ordinal),QString("Shared"));
         QCOMPARE(splitMemo(0,0),QString("Split note"));QCOMPARE(record(2).value("splits").toList().front().toMap().value("memo").toString(),"Keep me");
-        QVERIFY(click(root,"undoEdit"));QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QVERIFY(undoLatest(root,window));wait(model);
         QVERIFY(QMetaObject::invokeMethod(object(root,"setMemoSelection"),"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());
         QVERIFY(object(root,"overwriteExistingMemos")->setProperty("checked",true));
         QVERIFY(object(root,"selectedMemo")->setProperty("text",""));
@@ -233,7 +238,7 @@ private slots:
         QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
         QCOMPARE(memo(0),QString());QCOMPARE(memo(2),QString());QCOMPARE(memo(1),QString());QCOMPARE(memo(3),QString("   "));
         QCOMPARE(record(0).value("memoOwner").toString(),"manual");QCOMPARE(record(3).value("memoOwner").toString(),"source");
-        QVERIFY(click(root,"undoEdit"));QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QVERIFY(undoLatest(root,window));wait(model);
         QCOMPARE(memo(0),QString("Bank note"));QCOMPARE(memo(2),QString("Keep me"));
         run(model,"select",{{"row",model.occurrenceIndex(batch,0)}});
         QVERIFY(QMetaObject::invokeMethod(object(root,"setMemoSelection"),"triggered"));QTRY_VERIFY(object(root,"selectedEditDialog")->property("visible").toBool());
@@ -260,7 +265,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(object(root,"renamePayeeSelection"),"triggered"));QVERIFY(object(root,"selectedPayee")->setProperty("text","Renamed"));QVERIFY(click(root,"confirmSelectedEdit"));wait(model);
         QTRY_COMPARE(snapshot().value("anchor"),saved.value("anchor"));QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
         QCOMPARE(model.state().value("selectionCount").toInt(),3);
-        QVERIFY(click(root,"undoEdit"));QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QVERIFY(undoLatest(root,window));wait(model);
         QTRY_COMPARE(snapshot().value("anchor"),saved.value("anchor"));QTRY_VERIFY(qAbs(snapshot().value("offset").toReal()-saved.value("offset").toReal())<2);
         QCOMPARE(model.state().value("selectionCount").toInt(),3);
     }

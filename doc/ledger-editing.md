@@ -1,6 +1,6 @@
 # Ledger editing and session Undo
 
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 Manual and imported postings share transfer assignment, explicit Link, editing,
 and Undo. Rules match imported fields. The release rules database is version 1.
@@ -29,9 +29,9 @@ and explicit committed-edit opt-in presentation.
   Save / Discard / Stay. These choices concern that buffer, not previous saves.
 - A split edit is accepted as a complete transaction. Intermediate split amounts
   may be inconsistent while typing, but acceptance requires exact reconciliation.
-- Cmd+Z / Ctrl+Z in a clean editor or the Undo edit button reverses accepted
-  edits. While typing unaccepted text, the text field retains native text Undo.
-  Enter does not advance to another transaction.
+- Cmd+Z / Ctrl+Z in a clean editor reverses accepted edits. The ledger has no
+  Undo button beside search. While typing unaccepted text, the text field
+  retains native text Undo. Enter does not advance to another transaction.
 
 ## Ledger rule creation and menu availability — owner Go, 2026-11-08
 

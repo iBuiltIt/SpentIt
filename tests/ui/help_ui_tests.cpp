@@ -1182,6 +1182,16 @@ private slots:
             QVERIFY2(item, qPrintable(name));
             mouseItem(item);
         };
+        auto undoLatest = [&] {
+            auto* ledger = qobject_cast<QQuickItem*>(object(session.root, "durableLedger"));
+            if (!ledger) return false;
+            ledger->forceActiveFocus();
+            QTest::keySequence(session.window, QKeySequence::Undo);
+            auto* confirm = object(session.root, "confirmActionUndo");
+            if (!confirm || !confirm->property("visible").toBool()) return false;
+            mouse("confirmActionUndo");
+            return true;
+        };
         std::function<QQuickItem*(QQuickItem*, const QString&)> byText = [&](QQuickItem* parent, const QString& text) -> QQuickItem* {
             if (parent->isVisible() && parent->property("text").toString() == text && parent->metaObject()->indexOfSignal("clicked()") >= 0) return parent;
             for (auto* child : parent->childItems()) if (auto* found = byText(child, text)) return found;
@@ -1329,7 +1339,7 @@ private slots:
         mouseItem(qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_"+QString::number(cornerIndex))), true);
         QVERIFY(edit(session.root, "durableDate", date("2026-02-22"))); enter("durableDate");
         QCOMPARE(totals(), (QVariantList{amount("36.18"), amount("90.00")}));
-        mouse("undoEdit"); mouse("confirmActionUndo");
+        QVERIFY(undoLatest());
         QCOMPARE(totals(), (QVariantList{amount("56.18"), amount("70.00")}));
         textClick("Back to report");
         const auto backup = session.path("Household-backup.spentit");
@@ -2198,6 +2208,16 @@ private slots:
             auto* field=qobject_cast<QQuickItem*>(object(session.root,name)); QVERIFY(field);
             field->forceActiveFocus(); QTest::keyClick(session.window,Qt::Key_Return);wait(session.model);
         };
+        auto undoLatest = [&] {
+            auto* ledger = qobject_cast<QQuickItem*>(object(session.root, "durableLedger"));
+            if (!ledger) return false;
+            ledger->forceActiveFocus();
+            QTest::keySequence(session.window, QKeySequence::Undo);
+            auto* confirm = object(session.root, "confirmActionUndo");
+            if (!confirm || !confirm->property("visible").toBool()) return false;
+            mouse("confirmActionUndo");
+            return true;
+        };
         mouse("categoryNavigation");
         createCategory(session.model,session.root,"Groceries");
         createCategory(session.model,session.root,"Household");
@@ -2260,14 +2280,14 @@ private slots:
         capture("categories-menu");
         mouse("ledgerCategoryChoice_0");
         QVERIFY(session.model.state().value("canUndoTransferAssignment").toBool());
-        mouse("undoTransferAssignment"); mouse("confirmActionUndo");
+        QVERIFY(undoLatest());
         mouse("ledgerRow_3",Qt::RightButton);
         QTRY_VERIFY(object(session.root,"ledgerContext")->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(object(session.root,"ledgerCategoryMenu"),"open"));
         mouse("ledgerCategoryChoice_0");
         QTRY_VERIFY(object(session.root,"bulkCategoryDialog")->property("visible").toBool());
         capture("categories-split");mouse("ledgerCategorySplit_1");
-        mouse("undoTransferAssignment"); mouse("confirmActionUndo");
+        QVERIFY(undoLatest());
         QCOMPARE(session.model.state().value("balance").toString(),QString("-56.18"));
     }
     void editingChapterWalkthrough() {
@@ -2385,6 +2405,16 @@ private slots:
             QTest::qWait(150);
             QVERIFY(session.window->grabWindow().save(QDir(output).filePath(name + ".png")));
         };
+        auto undoLatest = [&] {
+            auto* questions = qobject_cast<QQuickItem*>(object(session.root, "reviewQuestions"));
+            if (!questions) return false;
+            questions->forceActiveFocus();
+            QTest::keySequence(session.window, QKeySequence::Undo);
+            auto* confirm = object(session.root, "confirmActionUndo");
+            if (!confirm || !confirm->property("visible").toBool()) return false;
+            mouse("confirmActionUndo");
+            return true;
+        };
         int sequence = 0;
         auto import = [&](const QByteArray& bytes, const QString& account) {
             QFile file(session.path("review-" + QString::number(++sequence) + ".qif"));
@@ -2447,12 +2477,12 @@ private slots:
             // The unique earliest import is the automatic survivor.
             QVERIFY(!object(session.root, "reviewSurvivor")->property("visible").toBool());
             QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
-            mouse("reviewUndo"); mouse("confirmActionUndo");
+            QVERIFY(undoLatest());
             QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
             QTRY_VERIFY(object(session.root, "reviewNo")); mouse("reviewNo");
             QCOMPARE(session.model.state().value("reviewCount").toInt(), 0);
             QCOMPARE(session.model.state().value("balance").toString(), QString("-78.36"));
-            mouse("reviewUndo"); mouse("confirmActionUndo");
+            QVERIFY(undoLatest());
             QTRY_VERIFY(object(session.root, "reviewYes")); mouse("reviewYes");
             QVERIFY(!object(session.root, "reviewSurvivor")->property("visible").toBool());
             run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
@@ -2492,7 +2522,7 @@ private slots:
             mouse("reviewDifferenceYes");
             QCOMPARE(session.model.state().value("balance").toString(), QString("36.18"));
             QCOMPARE(session.model.state().value("reviewCount").toInt(), 0);
-            mouse("reviewUndo"); mouse("confirmActionUndo");
+            QVERIFY(undoLatest());
             QCOMPARE(session.model.state().value("reviewCount").toInt(), 1);
         }
         QGuiApplication::styleHints()->unsetColorScheme();

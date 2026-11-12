@@ -1,6 +1,6 @@
 # Change history
 
-Last updated: 2026-11-09
+Last updated: 2026-11-12
 
 The page reads the live file-wide Undo chain, newest first. One saved action
 is one row. A successful close clears the list. Opening a file does not. A
@@ -17,7 +17,7 @@ whole-import rollback. Undoing Apply rules restores the transactions and keeps
 the saved rule.
 
 A bulk category change is one Change category row. The stored label may remain
-“Edit transactions”. The page and the ledger Undo button say Change category.
+“Edit transactions”. The page says Change category.
 
 The account under the heading is a dropdown. It opens on the account you came
 from. Choosing another account stays on this page. The empty page has no Back
@@ -38,9 +38,9 @@ a transaction, one dialog lists that closure, newest first, including the
 action that was opened. **Yes, undo all** restores the whole list, newest
 first, or none of it. **Cancel** writes nothing.
 
-Ctrl+Z and the ledger Undo button beside search undo only the newest action in
-the file. The page has no Refresh, Inspect, Show full transaction, Hide
-transaction, Redo, skip, or undo-to-here. Help opens
+Cmd+Z / Ctrl+Z undoes only the newest action in the file. The ledger has no
+Undo button beside search. The page has no Refresh, Inspect, Show full
+transaction, Hide transaction, Redo, skip, or undo-to-here. Help opens
 `help:add-correct-transactions#undo-a-saved-change`.
 
 There is no second history table. A first amount repair, stored with one

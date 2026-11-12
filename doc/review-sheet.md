@@ -143,8 +143,8 @@ transactions: select one, switch accounts, select the other, then **Link**
 again. A transaction with one split can be linked that way. A transaction with
 more than one split still needs the split chosen; Review uses **Split to link**
 on a link question. Cmd+Z undoes a Link while that Link is the newest saved
-action. The Undo on an open Change history row stays. The Review Undo button
-stays.
+action. The Undo on an open Change history row stays. Review has no
+newest-action Undo button.
 
 **Accept without bank match** stays on a Review card that shows only the
 transfer. An Import problems line that names a transaction still opens that
@@ -152,6 +152,21 @@ transaction. A line that does not name a transaction opens that account’s ledg
 
 This replaces the Transfers panel described in the 2026-11-08 workspace cleanup
 and the Link card note that the panel was unchanged.
+
+## Newest-action Undo buttons removed — owner Go, 2026-11-12
+
+The ledger has no Undo button beside search, no **Undo category change**, and
+no **Undo review**. Review has no copy of that newest-action button. **Undo
+import…** stays.
+
+Cmd+Z, and Ctrl+Z on Windows and Linux, undoes only the newest saved action,
+after the existing confirmation. The Undo on an open Change history row stays.
+**Undo opening or currency…** in the account menu and **Undo application** on
+Rules stay.
+
+The ledger duplicate bar opens for a possible duplicate in the current account,
+or while that check is still running. A category change can still be the newest
+review-stack action. That alone does not open the bar.
 
 ## Ledger duplicate resolution — owner Go, 2026-11-07
 
@@ -174,8 +189,9 @@ scrolls to an available row; revealing a hidden match explicitly clears the filt
 Review retains its overview and batch controls, adds New/Accepted styling and
 Show in ledger. Navigation and inspection do not answer questions. Existing unsaved
 edit guards apply. Merge and Separate retain the viewport; Merge selects the survivor.
-Undo review and the standard Undo shortcut reverse the decision through existing
-session Undo. Navigation to another question is explicit, not an automatic jump.
+Cmd+Z / Ctrl+Z reverses the decision through existing session Undo. The ledger
+duplicate bar does not offer a separate Undo button. Navigation to another
+question is explicit, not an automatic jump.
 
 The survivor rules below supersede the earlier committed-only default.
 A unique protected row (linked, manually entered or accepted) is retained
@@ -391,7 +407,7 @@ from suggestions. Category edits refresh candidates. Manual Link and known-trans
 waiting tasks remain available. More than 4096 candidate
 counterparts produces a correction task requesting manual selection.
 
-Cmd+Z / Ctrl+Z and one Review Undo button reverse decisions in order. Text editors
+Cmd+Z / Ctrl+Z reverses decisions in order. Text editors
 retain their own Undo. Each reversal restores financial rows, associations,
 relationships and question state atomically; it retains persistent history.
 Individual financial children cannot be undone outside the grouped decision.

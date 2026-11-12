@@ -192,3 +192,34 @@ Chapters: [Find transactions](../manual/find-transactions.md), section
 section "Find and move around". Those sentences already say a second click
 reverses the order and that balance values stay with their dates. No new
 picture. The ledger pictures use different dates, or oldest first.
+
+### MAN-039 — Newest-action Undo buttons removed
+
+Logged: 2026-11-12. Contract: [review sheet](review-sheet.md),
+[ledger editing](ledger-editing.md), and [change history](change-history-handoff.md).
+
+The ledger no longer shows an Undo button beside search, **Undo category
+change**, or **Undo review**. Review no longer shows that same newest-action
+button. Cmd+Z, and Ctrl+Z on Windows and Linux, still undoes the newest saved
+action. Undo on an open Change history row stays. The duplicate line above
+the ledger no longer appears only because a category change can be undone.
+
+Chapters: [Keyboard and mouse](../manual/keyboard-mouse.md), section "Find and
+move around"; [Where to find it](../manual/where-to-find.md), section "Undo
+and problems"; [Categories](../manual/categories.md), the paragraph under the
+split picture; [Find transactions](../manual/find-transactions.md), section
+"See what needs attention"; [Add and correct transactions](../manual/add-correct-transactions.md),
+section "Undo a saved change"; [Import transactions](../manual/import-transactions.md),
+section "Undo a mistaken import"; [Messages and problems](../manual/messages-problems.md),
+the "Undo the current actions" message; and [Review duplicates and link
+transfers](../manual/review-duplicates-transfers.md), section "Undo a mistaken
+answer". Say that Cmd+Z or Ctrl+Z undoes the newest saved action. Keep **Undo
+import…**, **Undo last import…**, **Undo opening or currency…**, and **Undo
+application**.
+
+Recapture [review-linked](../manual/images/review-linked.png). It shows
+**Undo Review transactions…**, **Undo review**, and "Review possible
+duplicates in this account." after a link, while Review is at zero.
+Recapture [transactions-review](../manual/images/transactions-review.png).
+Its header shows **Undo Import file…**. That picture also still shows
+**Transfers…**, which MAN-035 already asks to remove. Recapture it once.
