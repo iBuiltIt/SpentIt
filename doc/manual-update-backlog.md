@@ -61,3 +61,21 @@ upgrade, and uninstall do not change a file saved in Documents.
 Chapter: [create or open a file](../manual/create-open-file.md). Add that
 opening the file itself opens it in SpentIt. Keep the Browse steps. No new
 picture. The installers are outside the app and do not need a Help picture.
+
+### MAN-031 — Missing transfer destination
+
+Logged: 2026-11-12. Contract: [review sheet](review-sheet.md).
+
+A transfer that names an account which is not in the file is listed beside
+**Accept transactions** as **Warnings [n]**, with one line for the account,
+date, payee, and destination. Choosing the line opens that ledger row. The
+sidebar and the Review heading read **Review (n)** and add **[w]** when
+warnings remain. Accepting still waits until that account exists and the
+transfer is linked. There is no Acknowledge action.
+
+Chapters: [import transactions](../manual/import-transactions.md) (the
+unresolved-transfer steps that say to choose **Correct**), and
+[accept transactions](../manual/accept-transactions.md) (the Review heading
+and the warning that must be fixed). Recapture
+[accept-ready](../manual/images/accept-ready.png): the heading now reads
+**Review (0)** when nothing is open. No new picture for the warning list.

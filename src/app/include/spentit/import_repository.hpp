@@ -128,6 +128,8 @@ struct ImportBlocker {
     std::vector<ImportCounterpart> candidates={};
     std::size_t candidate_count=0;
     bool overridable=false;
+    // A destination name that identifies no account. Shown beside Accept, not as a question.
+    bool missing_destination=false;
 };
 struct ImportGroup {
     std::string id;

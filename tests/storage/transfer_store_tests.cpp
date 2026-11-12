@@ -110,7 +110,12 @@ void qif_destinations(){
    s.select_account(first);
    const std::string source=reverse?"D26/10/2026\nT100\nL[Old Checking export]\n^\n":"D26/10/2026\nT-100\nL[Old Visa export]\n^\n";
    s.ingest("first",source,qif::DateOrder::dmy);check(s.evidence("first")==source);
-   rejected([&]{s.commit("first",0,"unresolved");});check(s.transfers().empty());
+   const auto acceptance=s.acceptance_review();int missing=0;
+   for(const auto& warning:acceptance.warnings)if(warning.missing_destination){++missing;check(!warning.overridable && warning.account==first);check(warning.reason==(reverse?"Visa · 2026-10-26 · Old Checking export is not an account":"Checking · 2026-10-26 · Old Visa export is not an account"));}
+   check(missing==1);
+   for(const auto& question:s.review_sheet().questions)check(question.kind!=app::ReviewKind::correction);
+   rejected([&]{s.commit("first",0,"unresolved");});
+   message_has("is not an account",[&]{s.accept_all("unresolved-all");});check(s.transfers().empty());
    auto request=command(s,app::TransferAction::from_draft,"qif");request.origin=imports::Occurrence{"first",0};request.allocation="source-0";
    for(int destination:{0,first,4,999}){request.destination=destination;rejected([&]{s.apply_transfer("invalid",request);});}
    request.destination=second;const auto receipt=s.apply_transfer("resolve",request);check(s.apply_transfer("resolve",request).sequence==receipt.sequence);

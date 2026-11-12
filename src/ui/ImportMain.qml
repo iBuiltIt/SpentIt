@@ -749,7 +749,7 @@ ApplicationWindow {
         ShaderEffectSource {anchors.fill:parent;sourceItem:accountDragRow;live:true}
     }
     function resetNavigation() {
-        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMerge=null;mergeHint="";currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
+        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMissingDestination=null;pendingMerge=null;mergeHint="";currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
     }
     function navigate(page) {
         if(workflow.busy || !s.active || page===currentPage) return
@@ -1952,7 +1952,7 @@ ApplicationWindow {
                 categorySaving=false
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
-            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false;switchingHistoryAccount=false}
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false;switchingHistoryAccount=false}
             if(success) {
                 if(action==="transfer_manual"){resolveAmount(transferAmount);transferDialog.addingTransfer=false}
                 if(action==="correct_opening")correctAmount.text=s.opening
@@ -1971,6 +1971,11 @@ ApplicationWindow {
                         duplicateOriginKey=request.origin.key;duplicateCandidateKey=request.row.key===request.origin.key?"":request.row.key
                         currentPage="ledger";editorClosed=true
                         Qt.callLater(function(){const index=workflow.occurrenceIndex(request.row.batch,request.row.ordinal);if(index>=0)ledger.positionViewAtIndex(index,ListView.Contain)})
+                    }
+                    if(pendingMissingDestination){
+                        const request=pendingMissingDestination;pendingMissingDestination=null
+                        currentPage="ledger"
+                        Qt.callLater(function(){const index=workflow.occurrenceIndex(request.batch,request.ordinal);if(index>=0){ledger.currentIndex=index;ledger.positionViewAtIndex(index,ListView.Contain)}})
                     }
                     if(currentPage==="history")Qt.callLater(function(){workflow.command("history")})
                 }
@@ -2704,8 +2709,8 @@ ApplicationWindow {
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.reviewCount||0)>0;text:(s.reviewCount||0)+" review questions remain. Accepting does not resolve possible duplicates or link suggested transfers."}
             ListView {Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:s.acceptanceWarnings||[]
                 ScrollBar.vertical:UsableScrollBar {}
-                delegate:Label {required property var modelData;width:ListView.view.width-20;wrapMode:Text.Wrap;padding:8;textFormat:Text.PlainText
-                    text:window.reviewAccountName(modelData.account)+" · "+modelData.reason+(modelData.overridable?"":" — Must be fixed before accepting")}
+                delegate:Label {required property var modelData;required property int index;objectName:"acceptanceWarning_"+index;width:ListView.view.width-20;wrapMode:Text.Wrap;padding:8;textFormat:Text.PlainText
+                    text:(modelData.missingDestination?modelData.reason:window.reviewAccountName(modelData.account)+" · "+modelData.reason)+(modelData.overridable?"":" — Must be fixed before accepting")}
             }
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.importFailures||0)>0;text:(s.importFailures||0)+" import problems will remain after accepting."}
             RowLayout {
@@ -2863,6 +2868,7 @@ ApplicationWindow {
     property string duplicateOriginKey: ""
     property string duplicateCandidateKey: ""
     property var pendingDuplicateReveal: null
+    property var pendingMissingDestination: null
     readonly property string duplicateFocusKey: s.selectionFocusKey||""
     readonly property var duplicateOrigin: duplicateRows[duplicateOriginKey] && duplicateRows[duplicateOriginKey].account===s.accountId?duplicateRows[duplicateOriginKey]:null
     readonly property var duplicateCandidates: duplicateOrigin?(duplicateOrigin.duplicateCandidates||[]).map(key=>duplicateRows[key]).filter(row=>!!row):[]
@@ -2952,7 +2958,34 @@ ApplicationWindow {
             if(q.batch && q.ordinal>=0)represented[q.batch+":"+q.ordinal]=true
             for(let row of q.rows)represented[row.batch+":"+row.ordinal]=true
         }
-        return (s.acceptanceWarnings||[]).filter(w=>!represented[w.batch+":"+w.ordinal])
+        return (s.acceptanceWarnings||[]).filter(w=>!w.missingDestination && !represented[w.batch+":"+w.ordinal])
+    }
+    readonly property var missingDestinationWarningRows: (s.acceptanceWarnings||[]).filter(function(w){return !!w.missingDestination})
+    function reviewCountText() {
+        if(s.reviewReady===false)return "Review"
+        const questions=s.reviewCount||0
+        const warnings=missingDestinationWarningRows.length
+        return "Review ("+questions+")"+(warnings>0?" ["+warnings+"]":"")
+    }
+    function reviewCountAccessibleName() {
+        if(s.reviewReady===false)return "Review"
+        const questions=s.reviewCount||0
+        const warnings=missingDestinationWarningRows.length
+        let name="Review, "+questions+(questions===1?" question":" questions")
+        if(warnings>0)name+=", "+warnings+(warnings===1?" warning":" warnings")
+        return name
+    }
+    function openMissingDestination(item) {
+        guard(function(){
+            const index=item.account===s.accountId?workflow.occurrenceIndex(item.batch,item.ordinal):-1
+            if(index>=0 && currentPage==="ledger"){
+                workflow.command("select",{row:index})
+                ledger.positionViewAtIndex(index,ListView.Contain)
+                return
+            }
+            pendingMissingDestination={batch:item.batch,ordinal:item.ordinal}
+            workflow.command("select_account",{id:item.account,reveal:true,batch:item.batch,ordinal:item.ordinal})
+        })
     }
     function reviewProblems() {return reviewProblemRows}
     readonly property var orderedReviewRows: {
@@ -3298,7 +3331,7 @@ ApplicationWindow {
                     }
                     Button {objectName:"importStatement";text:"Import…";Layout.fillWidth:true;enabled:!workflow.busy;onClicked:guard(function(){importTarget="";importDialog.open()})}
                     Button {text:"Import categories…";Layout.fillWidth:true;visible:(s.importCategoryDecisions||[]).length>0;enabled:!workflow.busy;onClicked:showImportCategories()}
-                    Button {objectName:"reviewNavigation";text:s.reviewReady===false?"Review":"Review ("+(s.reviewCount||0)+")";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
+                    Button {objectName:"reviewNavigation";text:reviewCountText();Accessible.name:reviewCountAccessibleName();Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="review";onClicked:reviewSheet.open()}
                     Button {objectName:"categoryNavigation";text:"Categories";Layout.fillWidth:true;visible:!!s.categoriesSupported;enabled:!workflow.busy;onClicked:guard(function(){navigate("categories");workflow.command("category_list")})}
                     Button {objectName:"rulesNavigation";text:"Rules";Layout.fillWidth:true;visible:!!s.active;enabled:!workflow.busy;highlighted:currentPage==="rules";onClicked:guard(function(){navigate("rules");if(s.rulesSupported && !rulesDirty)workflow.command("rules_load")})}
                     Button {objectName:"reportsNavigation";text:"Reports";Layout.fillWidth:true;enabled:!workflow.busy;highlighted:currentPage==="reports";onClicked:guard(function(){navigate("reports");if(!reportsWorkspace.dirty)workflow.command("report_load")})}
@@ -3332,14 +3365,14 @@ ApplicationWindow {
                     anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.bottom:workspaceStatus.top;anchors.bottomMargin:4
                 Item {
         id:reviewSheet;objectName:"reviewSheet";anchors.fill:parent;visible:currentPage==="review"
-        property string title:s.reviewReady===false?"Review":"Review · "+(s.reviewCount||0)+" questions"
+        property string title:reviewCountText()
         function open(){navigate("review");if(currentPage==="review" && s.reviewReady===false && !workflow.busy)workflow.command("review_load");reviewQuestions.forceActiveFocus()}
         function close(){reviewBatch=({});reviewRowChoices=({});navigate("ledger")}
         ColumnLayout {anchors.fill:parent;spacing:4
         ColumnLayout {
             Layout.fillWidth:true
             GridLayout {Layout.fillWidth:true;Layout.margins:12;columns:width>800?2:1
-                Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true}
+                Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true;Accessible.name:reviewCountAccessibleName()}
                 Flow {Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredHeight:childrenRect.height;spacing:6;layoutDirection:Qt.RightToLeft
                     Button {text:s.editUndoLabel||"Undo";objectName:"reviewUndo";visible:!!s.canUndoAction;enabled:!workflow.busy;onClicked:undoEdit()}
                     Button {objectName:"openReviewTransfers";text:"Transfers…";visible:!!s.transfersSupported;enabled:!workflow.busy;onClicked:guard(function(){transferDialog.open()})}
@@ -3409,7 +3442,7 @@ ApplicationWindow {
     }
             ScrollBar.vertical:UsableScrollBar {}
             ScrollBar.horizontal:UsableScrollBar {}
-            Label {anchors.centerIn:parent;visible:reviewQuestions.count===0;text:s.reviewReady===false?"Checking for possible duplicates…":reviewProblems().length>0 || (s.importFailures||0)>0 || (!!s.importGroup && s.importGroup.unresolvedTransfers>0)?"Review the import problems above.":"Nothing needs review."}
+            Label {anchors.centerIn:parent;visible:reviewQuestions.count===0 && (s.reviewReady===false || reviewProblems().length>0 || (s.importFailures||0)>0 || (!!s.importGroup && s.importGroup.unresolvedTransfers>0 && missingDestinationWarningRows.length===0) || missingDestinationWarningRows.length===0);text:s.reviewReady===false?"Checking for possible duplicates…":reviewProblems().length>0 || (s.importFailures||0)>0 || (!!s.importGroup && s.importGroup.unresolvedTransfers>0 && missingDestinationWarningRows.length===0)?"Review the import problems above.":"Nothing needs review."}
             delegate:Item {
                 id:questionCard;required property var modelData;required property int index;width:reviewQuestions.contentWidth-24;height:questionContent.implicitHeight
                 property var chosen: reviewRowChoices[modelData.key]||[]
@@ -3607,9 +3640,25 @@ ApplicationWindow {
     }
         Item {id:reviewInspector;Layout.fillWidth:true;Layout.preferredHeight:reviewInspecting && !!selected.batch?330:0;visible:reviewInspecting && !!selected.batch;clip:true}
         Button {text:"Close inspection";visible:reviewInspecting;onClicked:guard(function(){reviewInspecting=false})}
+        UsableScrollView {id:missingDestinationScroll;Layout.fillWidth:true;visible:missingDestinationWarningRows.length>0;Layout.preferredHeight:Math.min(140,missingDestinationList.implicitHeight);contentWidth:availableWidth
+            ColumnLayout {id:missingDestinationList;width:missingDestinationScroll.availableWidth
+                Repeater {model:missingDestinationWarningRows
+                    delegate:Button {
+                        required property var modelData
+                        required property int index
+                        objectName:"missingDestinationLine_"+index
+                        Layout.fillWidth:true
+                        text:modelData.reason
+                        Accessible.name:modelData.reason+". Open this transaction in the ledger."
+                        onClicked:openMissingDestination(modelData)
+                    }
+                }
+            }
+        }
         RowLayout {
-            Layout.fillWidth:true;visible:(s.newTransactions||0)>0
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:(s.newTransactions||0)+((s.newTransactions||0)===1?" new transaction across all accounts":" new transactions across all accounts")+((s.importFailures||0)>0?" · "+s.importFailures+" import problems will remain":"")}
+            Layout.fillWidth:true;visible:(s.newTransactions||0)>0 || missingDestinationWarningRows.length>0
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.newTransactions||0)>0;text:(s.newTransactions||0)+((s.newTransactions||0)===1?" new transaction across all accounts":" new transactions across all accounts")+((s.importFailures||0)>0?" · "+s.importFailures+" import problems will remain":"")}
+            Label {objectName:"missingDestinationWarnings";visible:missingDestinationWarningRows.length>0;text:"Warnings ["+missingDestinationWarningRows.length+"]";Accessible.name:missingDestinationWarningRows.length===1?"1 warning":missingDestinationWarningRows.length+" warnings"}
             Button {objectName:"commitImport";text:"Accept transactions";enabled:!workflow.busy && !s.readOnly;onClicked:guard(requestCommit)}
         }
     }

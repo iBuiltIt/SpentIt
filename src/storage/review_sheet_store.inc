@@ -472,6 +472,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     }
     const auto acceptance=acceptance_review();
     for(const auto& warning:acceptance.warnings){
+        if(warning.missing_destination)continue;
         if(warning.reason=="This transfer has not been matched to an imported transaction.")continue;
         if(warning.ordinal && (duplicate_rows.contains({warning.batch,*warning.ordinal}) || link_sources.contains({warning.batch,*warning.ordinal})))continue;
         if(warning.reason=="Review possible duplicates before committing")continue;

@@ -19,6 +19,7 @@ app::AcceptanceReview ImportStore::acceptance_review() const {
         result.warnings.push_back({member.integer(0),member.bytes(1),{},"","Choose the imported categories before accepting transactions"});
     }
     Statement incomplete(impl_->db,"SELECT count(*) FROM batches WHERE state=3");if(incomplete.row())result.failed_records=static_cast<std::size_t>(incomplete.integer(0));
+    const auto resolved=resolved_transfers(all_transfers());
     for(const auto& [id,review]:impl_->reviews) {
         const auto info=batch(impl_->db,id);const auto owner=account_for_batch(id);
         const auto accepted=accepted_row_count(impl_->db,id);
@@ -28,10 +29,41 @@ app::AcceptanceReview ImportStore::acceptance_review() const {
         for(const auto& [ordinal,item]:review.rows) {
             if(item.row.excluded_by_clear || !item.row.draft)continue;
             if(item.row.decision.disposition!=imports::Disposition::duplicate || !item.warning.empty())++result.transactions;
-            const auto reason=!item.transfer_warning.empty()?item.transfer_warning:item.warning;
-            if(!reason.empty()) {
-                app::ImportBlocker warning{owner.identity,id,ordinal,"",reason};
-                warning.overridable=item.transfer_warning.empty();
+            if(!item.transfer_warning.empty()) {
+                bool other=false;
+                std::vector<std::string> missing;
+                for(const auto& allocation:item.row.draft->transaction.allocations()) {
+                    if(resolved.contains({id,ordinal,allocation.identity}))continue;
+                    const auto named=transfer_name(allocation.category);
+                    if(!named)continue;
+                    bool ambiguous=false;
+                    std::optional<std::int64_t> destination;
+                    try {destination=resolve_account_name(*named);}
+                    catch(const ImportError& error){if(error.code()!=SQLITE_CONSTRAINT)throw;ambiguous=true;}
+                    if(!destination && !ambiguous)missing.push_back(*named);
+                    else other=true;
+                }
+                // Keep the generic refusal when some other transfer on this row is unresolved,
+                // or when the stored warning did not classify. Missing names are separate lines.
+                if(other || missing.empty()) {
+                    app::ImportBlocker warning{owner.identity,id,ordinal,"",item.transfer_warning};
+                    result.warnings.push_back(std::move(warning));
+                }
+                std::string shown_date;
+                try {shown_date=display_date(item.row.draft->date,date_format());}
+                catch(const std::exception&){shown_date=item.row.draft->date;}
+                for(const auto& destination:missing) {
+                    std::string reason=owner.name;
+                    if(!shown_date.empty())reason+=" · "+shown_date;
+                    if(!item.row.draft->payee.empty())reason+=" · "+item.row.draft->payee;
+                    reason+=" · "+destination+" is not an account";
+                    app::ImportBlocker warning{owner.identity,id,ordinal,"",std::move(reason)};
+                    warning.missing_destination=true;
+                    result.warnings.push_back(std::move(warning));
+                }
+            } else if(!item.warning.empty()) {
+                app::ImportBlocker warning{owner.identity,id,ordinal,"",item.warning};
+                warning.overridable=true;
                 result.warnings.push_back(std::move(warning));
             }
         }

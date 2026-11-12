@@ -977,7 +977,7 @@ struct ImportModel::Worker {
             QVariantList archivedList;for(const auto& item:repo.archived_accounts()) archivedList.push_back(packAccount(item));
             state["archivedAccounts"]=archivedList;
             const auto acceptance=repo.acceptance_review();QVariantList acceptanceWarnings;bool canOverride=true;
-            for(const auto& warning:acceptance.warnings){acceptanceWarnings.push_back(QVariantMap{{"account",QString::number(warning.account)},{"batch",text(warning.batch)},{"ordinal",warning.ordinal?QVariant(static_cast<int>(*warning.ordinal)):QVariant()},{"reason",text(warning.reason)},{"overridable",warning.overridable}});canOverride &= warning.overridable;}
+            for(const auto& warning:acceptance.warnings){acceptanceWarnings.push_back(QVariantMap{{"account",QString::number(warning.account)},{"batch",text(warning.batch)},{"ordinal",warning.ordinal?QVariant(static_cast<int>(*warning.ordinal)):QVariant()},{"reason",text(warning.reason)},{"overridable",warning.overridable},{"missingDestination",warning.missing_destination}});canOverride &= warning.overridable;}
             const auto review=deferReview?app::ReviewSheet{}:repo.review_sheet();state["reviewReady"]=!deferReview;QVariantList questions;std::int64_t priorAccount=-1;
             for(const auto& q:review.questions){
                 QVariantList rows;

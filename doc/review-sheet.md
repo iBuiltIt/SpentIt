@@ -48,6 +48,8 @@ Close or Cancel on dialogs. Required import-time missing-category decisions stay
   overridable. Failed imports remain visible and may remain after acceptance.
   The old selected-import “blocking commit” dialog is removed. Dataset-wide
   acceptance concerns not already represented by questions appear inline.
+  A transfer whose destination account is not in the file is the warning list
+  beside **Accept transactions**, described below.
 - Undo import lists descriptions with separate **Undo…** buttons, retaining the
   existing preview/confirmation. The account picker filters imports; undo affects
   the entire selected source, potentially including other accounts.
@@ -64,6 +66,23 @@ Close or Cancel on dialogs. Required import-time missing-category decisions stay
   generation, acceptance, storage, or format policy changes are introduced.
 
 The manual already describes this workspace.
+
+## Missing destination warnings — owner Go, 2026-11-12
+
+A transfer allocation whose destination name identifies no account in the file
+is a warning. It is not an import-problem row and it has no **Correct** action.
+Review shows **Warnings [n]** beside **Accept transactions** when n is at least
+1. Each line names the account, the date in the file’s date format, the payee
+when the transaction has one, and the destination, and says that name is not an
+account. Choosing the line opens that ledger row. The sidebar button and the
+Review heading read **Review (questions)** and add **[warnings]** only when a
+warning remains. While Review is still checking, both read **Review**.
+
+**Accept transactions** still refuses until that account exists and the transfer
+is linked. There is no Acknowledge action. **Accept anyway** stays unavailable
+while one of these warnings remains. A destination that names an account already
+in the file, and an ambiguous account name, stay on their existing review path.
+**Set up imported transfers…** stays available.
 
 ## Ledger duplicate resolution — owner Go, 2026-11-07
 
