@@ -99,10 +99,22 @@ line stays. When only one of the two lines has a created entry, that
 question stays, including when it starts from the deposit. When neither
 line is outgoing, the earlier occurrence is the one that stays.
 
-**Not a transfer** on the kept question records the pair, so the other
+**Not this transfer** on the kept question records the pair, so the other
 direction does not return. **Link** is unchanged. The Review count is the
 number of questions after this collapse. Duplicate groups and import-problem
 cards still count. Missing-destination warnings stay in their own count.
+
+## Link card — owner Go, 2026-11-12
+
+**Link** joins the two imported lines on the card and removes the created
+entries. The other button reads **Not this transfer**. It records that this
+pair is not the match. Both imported lines stay. The created entry stays.
+Neither line becomes ordinary spending. A one-row card for that created entry
+can remain, and it can still offer **Accept without bank match**.
+
+**Accept without bank match** is not shown on a card that already lists the
+other imported line. It stays on a card that shows only the transfer. The
+Transfers panel is unchanged. **Set up imported transfers…** stays.
 
 ## Unmatched transfer count — owner Go, 2026-11-12
 

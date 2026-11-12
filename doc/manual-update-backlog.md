@@ -108,3 +108,21 @@ stays on its own line.
 Chapter: [Accept transactions](../manual/accept-transactions.md), section
 "When Review still has questions". Add the per-account count. No new picture.
 The current Accept dialog picture shows a record that must be repaired.
+
+### MAN-034 — Link card buttons
+
+Logged: 2026-11-12. Contract: [review sheet](review-sheet.md).
+
+On a Possible transfers card, the button beside **Link** reads **Not this
+transfer**. It rejects that pairing. Both imported lines stay, and neither
+becomes ordinary spending. **Accept without bank match** is absent when the
+other imported line is already on the card. It remains on a card that shows
+only the transfer.
+
+Chapter: [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
+section "Is it a payment between accounts?". Replace **Not a transfer** with
+**Not this transfer**. In "If SpentIt created the other side", say that
+**Accept without bank match** is not offered when the other imported line is
+already on the card. Recapture
+[review-link](../manual/images/review-link.png). That picture shows **Not a
+transfer**.

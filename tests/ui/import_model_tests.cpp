@@ -479,7 +479,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"returnToReview"),"clicked"));QTRY_VERIFY(dialog->property("visible").toBool());
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"-10.00");
         QVERIFY(visualItem(window->contentItem(),"reviewUndo")->isEnabled());visualItem(window->contentItem(),"reviewQuestions")->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_COMPARE(m.state().value("reviewCount").toInt(),1);
-        QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"-20.00");
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo"));QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Keep separate"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.state().value("balance").toString(),"-20.00");
         QVERIFY(QMetaObject::invokeMethod(dialog,"close"));run(m,"close");run(m,"open",{{"path",dir.path()+"/doc"}});QCOMPARE(m.state().value("reviewCount").toInt(),0);
     }
     void linkExclusions() {
@@ -559,13 +559,37 @@ private slots:
             }
         }
     }
+    void reviewLinkCardButtons() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        run(m,"create",{{"path",dir.path()+"/doc"},{"protected",false},{"name","Checking"},{"currency","CAD"},{"defaultCategories",true}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-01\nT-100.00\nPCard payment\nL[Visa]\n^\n")}});
+        QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        const auto waiting=m.state().value("reviewQuestions").toList().first().toMap();
+        QCOMPARE(waiting.value("rows").toList().size(),1);QVERIFY(!waiting.value("waitingLink").toString().isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTRY_COMPARE(window->property("currentPage").toString(),"review");
+        QTRY_VERIFY(visualItem(window->contentItem(),"acceptMissingMatch"));QVERIFY(visualItem(window->contentItem(),"acceptMissingMatch")->isVisible());
+        auto* absent=visualItem(window->contentItem(),"reviewNo");QVERIFY(!absent || !absent->isVisible());
+        run(m,"select_account",{{"id","2"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-03\nT100.00\nPReceipt\nL[Checking]\n^\n")}});
+        QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        const auto paired=m.state().value("reviewQuestions").toList().first().toMap();
+        QVERIFY(paired.value("rows").toList().size()>1);QVERIFY(!paired.value("waitingLink").toString().isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTRY_COMPARE(window->property("currentPage").toString(),"review");
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1") && visualItem(window->contentItem(),"reviewLinkCandidate_1")->isVisible());
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo") && visualItem(window->contentItem(),"reviewNo")->isVisible());
+        QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Not this transfer"));
+        auto* hidden=visualItem(window->contentItem(),"acceptMissingMatch");QVERIFY(!hidden || !hidden->isVisible());
+    }
     void unifiedReviewLinkDifference() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         run(m,"create",{{"path",dir.path()+"/doc"},{"protected",false},{"name","Checking"},{"currency","CAD"},{"defaultCategories",true}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10.40\nPTransfer\nL[Wise]\n^\n")}});
         run(m,"create_account",{{"id","2"},{"name","Wise"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT10.00\nPTransfer\n^\n")}});
         QCOMPARE(m.state().value("reviewCount").toInt(),1);QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
-        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1"));QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1"));QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo"));QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Not this transfer"));
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         auto* popup=window->findChild<QObject*>("reviewDifference");QVERIFY(popup);QTRY_VERIFY(popup->property("visible").toBool());QCOMPARE(m.state().value("reviewLinkPreview").toMap().value("common").toString(),"10.00");QCOMPARE(m.state().value("reviewLinkPreview").toMap().value("remainder").toString(),"0.40");
         if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_CAPTURE")));}
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewDifferenceNo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(!popup->property("visible").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),1);
