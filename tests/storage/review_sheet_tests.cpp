@@ -331,10 +331,36 @@ void policy_tests(const std::filesystem::path& dir) {
         s.select_account(2);s.ingest("in","!Type:Bank\nD03/01/2026\nT100.00\nPReceipt\nL[Checking]\n^\n",qif::DateOrder::dmy);if(committed)s.accept_all("accept-in",true);
         check(s.balance()==Money(20000,cad),"Both generated and independent destination visible before repair");
         const auto sheet=s.review_sheet();const auto q=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& v){return v.kind==ReviewKind::link && v.rows.size()>1;});check(q!=sheet.questions.end(),"Two generated relationships are reviewable");
+        check(std::count_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& v){return v.kind==ReviewKind::link && v.rows.size()>1;})==1,"One question names both imported lines");
+        check(q->rows.size()==2 && q->rows[0].identity==imports::Occurrence{"out",0} && q->rows[1].identity==imports::Occurrence{"in",0} && q->rows[0].draft.transaction.effective_total().units()<0,"The question starts from the withdrawal");
         ReviewAnswer link;link.question=q->key;link.generation=sheet.generation;link.action=ReviewAction::link;link.selected={{"out",0},{"in",0}};s.answer_review("join",link);
         s.select_account(1);check(s.balance()==Money(-10000,cad),"Checking counts once after joining");s.select_account(2);check(s.balance()==Money(10000,cad),"Visa counts once after joining");s.verify();
         s.undo_review("undo-join");s.select_account(1);check(s.balance()==Money(-20000,cad),"Undo restores Checking generated amount");s.select_account(2);check(s.balance()==Money(20000,cad),"Undo restores Visa generated amount");s.verify();}
         {auto s=ImportStore::open(both,"test");s.verify();}
+    }
+    {
+        auto s=ImportStore::create(dir/"two-payments","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
+        s.ingest("out","!Type:Bank\nD01/01/2026\nT-100.00\nPPayment\nL[Visa]\n^\nD02/01/2026\nT-40.00\nPSecond\nL[Visa]\n^\n",qif::DateOrder::dmy);
+        s.select_account(2);s.ingest("in","!Type:Bank\nD01/01/2026\nT100.00\nPReceipt\nL[Checking]\n^\nD02/01/2026\nT40.00\nPSecond receipt\nL[Checking]\n^\n",qif::DateOrder::dmy);
+        const auto sheet=s.review_sheet();
+        std::vector<ReviewQuestion> pairs;for(const auto& q:sheet.questions)if(q.kind==ReviewKind::link && q.rows.size()>1)pairs.push_back(q);
+        check(pairs.size()==2 && pairs[0].rows[0].identity==imports::Occurrence{"out",0} && pairs[0].rows[1].identity==imports::Occurrence{"in",0} && pairs[1].rows[0].identity==imports::Occurrence{"out",1} && pairs[1].rows[1].identity==imports::Occurrence{"in",1},"Two payments stay two questions, each from its withdrawal");
+        check(std::none_of(sheet.questions.begin(),sheet.questions.end(),[](const auto& q){return q.kind==ReviewKind::link && q.rows.size()==1 && (q.rows[0].identity.batch=="in");}),"A deposit already on a question is not its own card");
+        ReviewAnswer reject;reject.question=pairs[0].key;reject.generation=sheet.generation;reject.action=ReviewAction::not_linked;s.answer_review("reject-one",reject);
+        const auto after=s.review_sheet();
+        const auto remain=std::find_if(after.questions.begin(),after.questions.end(),[](const auto& q){return q.kind==ReviewKind::link && q.rows.size()>1;});
+        check(remain!=after.questions.end() && std::count_if(after.questions.begin(),after.questions.end(),[](const auto& q){return q.kind==ReviewKind::link && q.rows.size()>1;})==1,"Rejecting one payment leaves the other pair");
+        check(remain->rows[0].identity==imports::Occurrence{"out",1} && remain->rows[1].identity==imports::Occurrence{"in",1},"The rejected pair does not return from either side");
+        s.verify();
+    }
+    {
+        auto s=ImportStore::create(dir/"deposit-created","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("in","!Type:Bank\nD01/01/2026\nT100.00\nPReceipt\nL[Checking]\n^\n",qif::DateOrder::dmy);s.select_account(1);
+        s.ingest("out","!Type:Bank\nD01/01/2026\nT-100.00\nPPayment\n^\n",qif::DateOrder::dmy);
+        const auto sheet=s.review_sheet();const auto q=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& v){return v.kind==ReviewKind::link && v.rows.size()>1;});
+        check(q!=sheet.questions.end() && std::count_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& v){return v.kind==ReviewKind::link && v.rows.size()>1;})==1,"A one-sided created entry stays one question");
+        check(q->rows[0].identity==imports::Occurrence{"in",0} && q->rows[1].identity==imports::Occurrence{"out",0},"The question stays on the deposit when only that line created an entry");
+        s.verify();
     }
     std::cout<<"Review matching policy passed\n";
 }

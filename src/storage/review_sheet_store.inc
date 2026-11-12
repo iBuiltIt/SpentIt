@@ -461,6 +461,25 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         }
         if(candidates.size()>1){link_sources.insert(id);result.questions.push_back({"link:"+review_key(id),app::ReviewKind::link,left.account,left.account_name,"Does this link with any of these?",id.batch,id.ordinal,std::move(candidates)});}
     }
+    // Two questions that name the same two imported lines are one transfer.
+    // Keep the outgoing line. When neither line is outgoing, keep the earlier
+    // occurrence, matching the candidate filter above.
+    {
+        const auto outgoing=[](const app::ReviewTransaction& row){return std::any_of(row.draft.transaction.allocations().begin(),row.draft.transaction.allocations().end(),[](const auto& part){return part.amount.units()<0;});};
+        std::set<std::string> dropped;
+        for(std::size_t i=0;i<result.questions.size();++i)for(std::size_t j=i+1;j<result.questions.size();++j){
+            const auto& a=result.questions[i];const auto& b=result.questions[j];
+            if(a.kind!=app::ReviewKind::link || b.kind!=app::ReviewKind::link || a.rows.size()!=2 || b.rows.size()!=2)continue;
+            const bool mirrored=a.rows[0].identity==b.rows[1].identity && a.rows[1].identity==b.rows[0].identity;
+            const bool identical=a.rows[0].identity==b.rows[0].identity && a.rows[1].identity==b.rows[1].identity;
+            if(!mirrored && !identical)continue;
+            const bool a_out=outgoing(a.rows[0]),b_out=outgoing(b.rows[0]);
+            if(a_out!=b_out)dropped.insert(a_out?b.key:a.key);
+            else if(a.rows[0].identity!=b.rows[0].identity)dropped.insert(a.rows[0].identity<b.rows[0].identity?b.key:a.key);
+            else dropped.insert(b.key);
+        }
+        if(!dropped.empty())std::erase_if(result.questions,[&](const auto& q){return dropped.contains(q.key);});
+    }
     for(const auto& value:all_transfers()){
         const auto& link=value.link;
         if(link.unresolved || link.destination_released || link.destination.state==transfers::State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.attached_evidence || link.destination.proposed_evidence || link.destination.accepted_unmatched)continue;
@@ -468,6 +487,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         const auto message="Transfer recorded in "+account_by_id(link.destination.endpoint.account).name+"; bank transaction not yet matched";
         auto question=std::find_if(result.questions.begin(),result.questions.end(),[&](const auto& q){return q.kind==app::ReviewKind::link && !q.rows.empty() && q.rows.front().identity==row->first && q.waiting_link.empty();});
         if(question!=result.questions.end()){question->reason=message;question->waiting_link=link.identity;}
+        else if(std::any_of(result.questions.begin(),result.questions.end(),[&](const auto& q){return q.kind==app::ReviewKind::link && q.rows.size()>1 && std::any_of(q.rows.begin(),q.rows.end(),[&](const auto& candidate){return candidate.identity==row->first;});}))continue;
         else result.questions.push_back({"waiting:"+link.identity,app::ReviewKind::link,row->second.account,row->second.account_name,message,row->first.batch,row->first.ordinal,{row->second},link.identity});
     }
     const auto acceptance=acceptance_review();

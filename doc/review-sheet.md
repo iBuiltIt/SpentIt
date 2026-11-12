@@ -1,6 +1,6 @@
 # Unified Review sheet
 
-Last updated: 2026-11-09
+Last updated: 2026-11-12
 
 The release rules database is version 1. Incomplete preparation is cleaned up on
 cancellation or the next open. Completed uncommitted imports remain. Accept
@@ -83,6 +83,24 @@ is linked. There is no Acknowledge action. **Accept anyway** stays unavailable
 while one of these warnings remains. A destination that names an account already
 in the file, and an ambiguous account name, stay on their existing review path.
 **Set up imported transfers…** stays available.
+
+## One question per transfer — owner Go, 2026-11-12
+
+Before Review is published, two link questions that name the same two
+imported lines are one transfer. The published question is the one that
+starts from the outgoing line. The other line stays on that question. The
+other question is not published, and it does not come back as its own
+unmatched card.
+
+A second payment stays a second question. A question that names a third
+line stays. When only one of the two lines has a created entry, that
+question stays, including when it starts from the deposit. When neither
+line is outgoing, the earlier occurrence is the one that stays.
+
+**Not a transfer** on the kept question records the pair, so the other
+direction does not return. **Link** is unchanged. The Review count is the
+number of questions after this collapse. Duplicate groups and import-problem
+cards still count. Missing-destination warnings stay in their own count.
 
 ## Ledger duplicate resolution — owner Go, 2026-11-07
 

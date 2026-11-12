@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 The bundled manual includes the user-visible behavior through the 2026-11-11
 pass (MAN-001 through MAN-029). Later changes are the open items below.
@@ -79,3 +79,17 @@ unresolved-transfer steps that say to choose **Correct**), and
 and the warning that must be fixed). Recapture
 [accept-ready](../manual/images/accept-ready.png): the heading now reads
 **Review (0)** when nothing is open. No new picture for the warning list.
+
+### MAN-032 — One question per transfer
+
+Logged: 2026-11-12. Contract: [review sheet](review-sheet.md).
+
+A payment that appears in two imported files is one Review question. The
+question starts from the withdrawal, and the deposit is the other line.
+**Review (n)** counts that question once. A different payment stays its own
+question.
+
+Chapter: [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
+section "Is it a payment between accounts?". Add that one payment is one
+question, shown from the withdrawal. No new picture. The existing link
+picture already shows one question.
