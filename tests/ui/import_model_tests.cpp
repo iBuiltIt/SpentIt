@@ -656,12 +656,10 @@ private slots:
         QVERIFY(visualItem(window->contentItem(),"commitImport")->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"commitImport"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("newTransactions").toInt(),0);
         QVERIFY(!root->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());
-        run(m,"create_account",{{"id","2"},{"name","Other"},{"currency","CAD"},{"date","2026-01-01"}});
-        QVERIFY(root->setProperty("currentPage","review"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"openReviewTransfers"),"clicked"));
-        auto* chooser=visualItem(window->contentItem(),"reviewTransferAccount");QVERIFY(chooser);QVERIFY(chooser->setProperty("currentIndex",0));QVERIFY(QMetaObject::invokeMethod(chooser,"activated",Q_ARG(int,0)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(m.state().value("accountId").toString(),QString("1"));
-        capture("review-transfers");
-        QVERIFY(!visualItem(window->contentItem(),"createManualTransfer")->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"showAddTransfer"),"clicked"));QTRY_VERIFY(visualItem(window->contentItem(),"createManualTransfer")->property("visible").toBool());
+        QVERIFY(!visualItem(window->contentItem(),"openReviewTransfers"));
+        QVERIFY(!root->findChild<QObject*>("transferDialog"));
+        QVERIFY(!visualItem(window->contentItem(),"showAddTransfer"));
+        QVERIFY(!visualItem(window->contentItem(),"createManualTransfer"));
         QVERIFY(root->setProperty("currentPage","settings"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"hiddenTransferSuggestions"),"clicked"));
         auto* dialog=root->findChild<QObject*>("transferSuggestionSettings");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());capture("hidden-transfer-suggestions");QVERIFY(dialog->property("standardButtons").toInt()!=0);QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
         run(m,"close");
@@ -934,9 +932,7 @@ private slots:
         transfer("transfer_match",{{"allocation","source-0"}});run(m,"commit");
         QCOMPARE(m.state().value("committed").toString(),QString("100.00"));QCOMPARE(m.state().value("newTransactions").toInt(),0);
         run(m,"select_account",{{"id","1"}});QCOMPARE(m.state().value("filter").toString(),QString()); // Closing clears session navigation.
-        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("transferDialog"),"open"));QTest::qWait(100);
-        QVERIFY(root->findChild<QObject*>("transferDialog")->property("visible").toBool());
-        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);if(qEnvironmentVariableIsSet("SPENTIT_TRANSFERS_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_TRANSFERS_SCREENSHOT")));
+        QVERIFY(!root->findChild<QObject*>("transferDialog"));
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("committed").toString(),QString("100.00"));
         QVERIFY(QMetaObject::invokeMethod(root,"mergeSelected"));
         QCOMPARE(root->property("mergeHint").toString(),QString("Select one or two splits, then select Link"));
@@ -1021,15 +1017,8 @@ private slots:
         bool merged=false;for(const auto& item:m.state().value("transferJournal").toList())if(item.toMap().value("action").toString()=="Merge")merged=true;
         QVERIFY(merged);
         auto* mergePreview=root->findChild<QObject*>("mergePreview");QVERIFY(mergePreview);QVERIFY(!mergePreview->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("transferDialog"),"open"));
-        auto* dialog=root->findChild<QObject*>("transferDialog");QVERIFY(dialog);QVERIFY(dialog->property("visible").toBool());
-        const auto repeaterItem=[&](const char* name,int index)->QQuickItem*{
-            auto* repeater=root->findChild<QObject*>(name);if(!repeater)return nullptr;QQuickItem* item=nullptr;
-            QMetaObject::invokeMethod(repeater,"itemAt",Q_RETURN_ARG(QQuickItem*,item),Q_ARG(int,index));return item;
-        };
-        QTRY_VERIFY(repeaterItem("transferJournalRepeater",0));
-        QVERIFY(repeaterItem("transferJournalRepeater",0)->property("text").toString().contains("Merge"));
-        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QTRY_VERIFY(!dialog->property("visible").toBool());
+        QVERIFY(!root->findChild<QObject*>("transferDialog"));
+        QVERIFY(!root->findChild<QObject*>("transferJournalRepeater"));
         QVERIFY(QMetaObject::invokeMethod(root,"navigate",Q_ARG(QVariant,"ledger")));
         const auto findArrow=[&](const QString& name)->QQuickItem* {
             const auto find=[](auto&& self,QQuickItem* item,const QString& key)->QQuickItem* {
@@ -1086,11 +1075,7 @@ private slots:
         QCOMPARE(generated,1);QCOMPARE(named,1);
         bool retargeted=false;for(const auto& item:m.state().value("transferJournal").toList())if(item.toMap().value("action").toString()=="Change destination")retargeted=true;
         QVERIFY(retargeted);
-        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("transferDialog"),"open"));
-        QTRY_VERIFY(dialog->property("visible").toBool());
-        bool listed=false;const auto journal=root->findChild<QObject*>("transferJournalRepeater");QVERIFY(journal);
-        for(int i=0;i<journal->property("count").toInt();++i)if(auto* item=repeaterItem("transferJournalRepeater",i))listed=listed||item->property("text").toString().contains("Change destination");
-        QVERIFY(listed);
+        QVERIFY(!root->findChild<QObject*>("transferDialog"));
     }
     void committedMergePreview() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());

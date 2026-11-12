@@ -20,10 +20,9 @@ visible during work. It has no extra caption from the indicator itself.
   the next required decision. A saved operation whose refresh failed keeps the
   existing recovery message.
 - The shared calendar is used for report dates, opening dates in import
-  mapping, opening-balance corrections, and manual transfers, as well as
-  transaction dates. Choosing a date updates the field. It does not submit the
-  enclosing operation. Typing remains available. Date-format settings are not
-  calendar dates.
+  mapping, opening-balance corrections, and transaction dates. Choosing a date
+  updates the field. It does not submit the enclosing operation. Typing remains
+  available. Date-format settings are not calendar dates.
 - Export dialogs show their own progress and errors and disable Export while
   work is in progress.
 

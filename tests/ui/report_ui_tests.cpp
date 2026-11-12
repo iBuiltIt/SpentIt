@@ -163,7 +163,8 @@ private slots:
         QVERIFY(click(root,uncategorized?"uncategorizedImport":"applyImportCategories"));QVERIFY(progress->property("visible").toBool());
         QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));QVERIFY(model.state().value("importCategoryDecisions").toList().isEmpty());QVERIFY(!progress->property("visible").toBool());
         QVERIFY(!object(root,"groupOpeningDateCalendar")); // retired staged import opening
-        for(const char* name:{"correctOpeningCalendar","transferDateCalendar"}){auto* picker=object(root,name);QVERIFY(picker);auto* field=picker->property("field").value<QObject*>();QVERIFY(field);QVERIFY(QMetaObject::invokeMethod(picker,"choose",Q_ARG(QVariant,QVariant("2024-02-29"))));QCOMPARE(field->property("text").toString(),QString("2024-02-29"));QVERIFY(!model.busy());}
+        {auto* picker=object(root,"correctOpeningCalendar");QVERIFY(picker);auto* field=picker->property("field").value<QObject*>();QVERIFY(field);QVERIFY(QMetaObject::invokeMethod(picker,"choose",Q_ARG(QVariant,QVariant("2024-02-29"))));QCOMPARE(field->property("text").toString(),QString("2024-02-29"));QVERIFY(!model.busy());}
+        QVERIFY(!object(root,"transferDateCalendar"));
         for(const auto& warning:warnings)qWarning()<<warning;QCOMPARE(warnings.size(),0);
     }
     void incomeGroups(){

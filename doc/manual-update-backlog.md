@@ -126,3 +126,21 @@ section "Is it a payment between accounts?". Replace **Not a transfer** with
 already on the card. Recapture
 [review-link](../manual/images/review-link.png). That picture shows **Not a
 transfer**.
+
+### MAN-035 — Transfers panel removed
+
+Logged: 2026-11-12. Contract: [review sheet](review-sheet.md).
+
+Review no longer has **Transfers…** or the panel it opened. That panel was
+where a person added a transfer, read transfer history, and worked on the
+transfer boxes. Ledger **Link** still joins two existing transactions. Cmd+Z
+undoes a mistaken Link while it is the newest saved action. **Set up imported
+transfers…** stays. An Import problems line that does not name a transaction
+opens that account’s ledger.
+
+Chapter: [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
+section "If there is no suitable question". Remove the sentence that says
+**Transfers…** is where you add a transfer yourself. Recapture
+[review-keep](../manual/images/review-keep.png) and
+[review-link](../manual/images/review-link.png). Both headers show
+**Transfers…**. Recapture review-link once; MAN-034 also needs that picture.

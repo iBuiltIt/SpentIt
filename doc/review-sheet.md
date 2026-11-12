@@ -132,6 +132,27 @@ that still have no bank match. It is not the Review question count.
 its own line, and **Accept anyway** stays hidden while one remains. Question
 cards, missing-destination warnings, and **Set up imported transfers…** stay.
 
+## Transfers panel removed — owner Go, 2026-11-12
+
+Review has no **Transfers…** button and no Transfers panel. That removes Add
+transfer, the panel’s account picker, transfer history, and the match, delete,
+and accept actions that lived only on that panel. Nothing replaces the history.
+
+**Set up imported transfers…** stays. Ledger **Link** still joins two existing
+transactions: select one, switch accounts, select the other, then **Link**
+again. A transaction with one split can be linked that way. A transaction with
+more than one split still needs the split chosen; Review uses **Split to link**
+on a link question. Cmd+Z undoes a Link while that Link is the newest saved
+action. The Undo on an open Change history row stays. The Review Undo button
+stays.
+
+**Accept without bank match** stays on a Review card that shows only the
+transfer. An Import problems line that names a transaction still opens that
+transaction. A line that does not name a transaction opens that account’s ledger.
+
+This replaces the Transfers panel described in the 2026-11-08 workspace cleanup
+and the Link card note that the panel was unchanged.
+
 ## Ledger duplicate resolution — owner Go, 2026-11-07
 
 Accepted: keep the existing matching policy and Merge source-association storage.
@@ -199,8 +220,8 @@ fixtures. Record measurements and limitations in [status](status.md).
 Review is above Categories as the first sidebar action. Review and Commit open
 the same compact dataset-wide workspace,
 grouped by account. Import does not automatically open Review. Inline rows expose
-full transaction editing, splits and original-source inspection. Transfer details
-and manual resolution are available within Review. The count is outstanding questions, including correction tasks, rather
+full transaction editing, splits and original-source inspection. Link questions
+stay in Review. Ledger Link joins two existing transactions. The count is outstanding questions, including correction tasks, rather
 than candidate transactions. Changing account/import, inspecting a record or
 attempting Commit does not resolve a question. The selected-import summary is
 explicitly scoped and no longer supplies a competing unresolved count.

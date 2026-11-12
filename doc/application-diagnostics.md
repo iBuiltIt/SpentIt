@@ -112,7 +112,7 @@ Pending bits: 0 startup, 1 guard decision, 2 search, 3 account navigation, 4 cou
 ```text
 0: diagnosticFileMenu
 1: importBlockersDialog
-2: transferDialog
+2: unused (removed Transfers panel; do not renumber later bits)
 3: transferCommit
 4: protectedCommit
 5: ledgerContext

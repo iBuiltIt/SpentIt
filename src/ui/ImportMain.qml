@@ -169,6 +169,7 @@ ApplicationWindow {
         if(createDialog.visible) modals+=Math.pow(2,9)
         if(importMapping.visible) modals+=Math.pow(2,10)
         if(importDialog.visible) modals+=Math.pow(2,11)
+        // Bit 2 is unused. It belonged to the removed Transfers panel.
         // Bit 12 is unused. It belonged to the removed backup dialog.
         if(unsaved.visible) modals+=Math.pow(2,13)
         if(changePreview.visible) modals+=Math.pow(2,14)
@@ -263,7 +264,6 @@ ApplicationWindow {
         request.operation=workflow.newIdentity()
         guard(function(){workflow.command(action,request)})
     }
-    function transferDestinations() {return [{id:"",name:"Choose destination explicitly"}].concat((s.accounts||[]).filter(function(a){return a.id!==s.accountId}).map(function(a){return {id:a.id,name:a.name+" · "+a.currency+" · account "+a.id}}))}
     property var pendingCounterpart: null
     property var accountViewports: ({})
     function rememberAccountViewport() {
@@ -318,7 +318,6 @@ ApplicationWindow {
         onClicked:window.showCounterpart(destination)
     }
     function showCounterpart(item) {
-        transferDialog.close()
         guard(function(){
             rememberAccountViewport()
             pendingCounterpart={batch:item.counterpartBatch,ordinal:item.counterpartOrdinal}
@@ -1213,12 +1212,7 @@ ApplicationWindow {
         return ""
     }
     function allocationChoice(batch, ordinal) {
-        let allocation=""
-        if(selected.batch===batch && selected.ordinal===ordinal && transferAllocation.currentIndex>=0) {
-            let row=transferAllocation.model[transferAllocation.currentIndex]
-            if(row && row.allocationId) allocation=row.allocationId
-        }
-        return {account:s.accountId,batch:batch,ordinal:ordinal,allocation:allocation}
+        return {account:s.accountId,batch:batch,ordinal:ordinal,allocation:""}
     }
     function mergeFields(choice, other) {
         return {leftAccount:choice.account,leftBatch:choice.batch,leftOrdinal:choice.ordinal,leftAllocation:choice.allocation||"",
@@ -1923,7 +1917,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save_manual" || action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {if(!rulesLeaving)pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {acceptanceDialog.close();mappedTransferConfirm.close();transferDialog.close();importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {acceptanceDialog.close();mappedTransferConfirm.close();importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -1946,7 +1940,7 @@ ApplicationWindow {
                 historyOpenId="";historySelectedKey="";historyAccountSeen=""
                 duplicateOriginKey="";duplicateCandidateKey="";pendingDuplicateReveal=null;searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
                 loadCategoryForm();categoryVisitAdditions=[];categorySort="ascending";categorySelection="";categoryReveal="";categoryMenuEntry=({});categoryContext.close()
-                transferDate.text=workflow.todayDisplay();ledgerViewRestore=null;ledgerViewKind=""
+                ledgerViewRestore=null;ledgerViewKind=""
             }
             if(!success && (action==="preview_category" || action==="apply_category")) {
                 categorySaving=false
@@ -1954,7 +1948,6 @@ ApplicationWindow {
             }
             if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false;switchingHistoryAccount=false}
             if(success) {
-                if(action==="transfer_manual"){resolveAmount(transferAmount);transferDialog.addingTransfer=false}
                 if(action==="correct_opening")correctAmount.text=s.opening
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
@@ -3399,7 +3392,6 @@ ApplicationWindow {
                 Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true;Accessible.name:reviewCountAccessibleName()}
                 Flow {Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredHeight:childrenRect.height;spacing:6;layoutDirection:Qt.RightToLeft
                     Button {text:s.editUndoLabel||"Undo";objectName:"reviewUndo";visible:!!s.canUndoAction;enabled:!workflow.busy;onClicked:undoEdit()}
-                    Button {objectName:"openReviewTransfers";text:"Transfers…";visible:!!s.transfersSupported;enabled:!workflow.busy;onClicked:guard(function(){transferDialog.open()})}
                     Button {objectName:"chooseImportUndo";text:"Undo import…";visible:(s.undoableImports||[]).length>0;enabled:!workflow.busy;onClicked:guard(openImportUndoPicker)}
                 }
             }
@@ -3416,7 +3408,7 @@ ApplicationWindow {
             Repeater {model:reviewProblems()
                 delegate:RowLayout {required property var modelData;Layout.fillWidth:true
                     Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:window.reviewAccountName(modelData.account)+" · "+modelData.reason+(modelData.overridable?" — Can accept anyway":" — Must be fixed before accepting")}
-                    Button {text:"Review…";enabled:!workflow.busy;onClicked:{if((s.importCategoryDecisions||[]).length>0)showImportCategories();else if(modelData.batch)openImportReview({account:modelData.account,batch:modelData.batch,record:modelData.ordinal===undefined || modelData.ordinal===null?-1:modelData.ordinal});else guard(function(){pendingReviewInspection=true;workflow.command("select_account",{id:modelData.account});transferDialog.open()})}}
+                    Button {text:"Review…";enabled:!workflow.busy;onClicked:{if((s.importCategoryDecisions||[]).length>0)showImportCategories();else if(modelData.batch)openImportReview({account:modelData.account,batch:modelData.batch,record:modelData.ordinal===undefined || modelData.ordinal===null?-1:modelData.ordinal});else guard(function(){if(modelData.account===s.accountId)navigate("ledger");else workflow.command("select_account",{id:modelData.account})})}}
                 }
             }
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.importFailures||0)>0;text:(s.importFailures||0)+" import problems will remain after accepting. Repair the affected records below or undo their import."}
@@ -3566,102 +3558,6 @@ ApplicationWindow {
                 }
             }
         }
-        Frame {
-        id:transferDialog;objectName:"transferDialog";Layout.fillWidth:true;Layout.preferredHeight:Math.min(400,reviewSheet.height*0.6)
-        property bool expanded:false
-        property bool addingTransfer:false
-        visible:expanded && currentPage==="review"
-        function open(){navigate("review");expanded=true}
-        function close(){expanded=false}
-        contentItem:UsableScrollView {
-            clip:true
-            ColumnLayout {
-                width:transferDialog.availableWidth;spacing:8;enabled:!workflow.busy
-                RowLayout {Layout.fillWidth:true
-                    Label {text:"Transfers";font.bold:true}
-                    Label {text:"Account"}
-                    UsableComboBox {objectName:"reviewTransferAccount";Layout.fillWidth:true;model:s.accounts||[];textRole:"name";currentIndex:(s.accounts||[]).findIndex(a=>a.id===s.accountId)
-                        onActivated:guard(function(){reviewInspecting=false;pendingReviewInspection=true;transferDialog.addingTransfer=false;workflow.command("select_account",{id:(s.accounts||[])[currentIndex].id})})}
-                    Button {text:"Close details";onClicked:transferDialog.close()}
-                }
-                Button {objectName:"showAddTransfer";text:transferDialog.addingTransfer?"Cancel new transfer":"Add transfer…";visible:!s.readOnly;onClicked:{transferDialog.addingTransfer=!transferDialog.addingTransfer;if(transferDialog.addingTransfer){transferAmount.text="";transferPayee.text="";transferMemo.text="";transferDate.text=workflow.todayDisplay();transferDestination.currentIndex=0}}}
-                GroupBox {
-                    title:"New transfer";Layout.fillWidth:true;visible:transferDialog.addingTransfer
-                    ColumnLayout {
-                        anchors.fill:parent
-                        RowLayout {
-                            Label {text:"Destination"}
-                            UsableComboBox {id:transferDestination;objectName:"transferDestination";model:transferDestinations();textRole:"name";currentIndex:0;onModelChanged:currentIndex=0;Layout.fillWidth:true;Accessible.name:"Transfer destination account"}
-                        }
-                        RowLayout {
-                            NavigableTextField {id:transferDate;objectName:"transferDate";text:workflow.todayDisplay();placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Manual transfer date"}
-                            CalendarPicker {objectName:"transferDateCalendar";workflow:window.workflowBackend;field:transferDate;onSelected:function(value){transferDate.text=value}}
-                            NavigableTextField {id:transferAmount;onEditingFinished:if(!window.helpFocusSuspended)resolveAmount(transferAmount);objectName:"transferAmount";placeholderText:"Signed amount in "+(s.currency||"");Accessible.name:"Manual transfer amount"}
-                            NavigableTextField {id:transferPayee;objectName:"transferPayee";placeholderText:"Payee";Layout.fillWidth:true;Accessible.name:"Manual transfer payee"}
-                            Button {objectName:"createManualTransfer";text:"Add transfer";enabled:!s.readOnly && transferDestination.currentIndex>0 && transferAmount.text.length>0;onClicked:transferCommand("transfer_manual",{link:workflow.newIdentity(),destination:transferDestination.model[transferDestination.currentIndex].id,date:transferDate.text,amount:transferAmount.text,payee:transferPayee.text,memo:transferMemo.text})}
-                        }
-                        Label {text:"Choose the destination account. If the matching transfer is already listed, link it instead of adding another.";textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                        NavigableTextField {id:transferMemo;placeholderText:"Memo (optional)";Layout.fillWidth:true;Accessible.name:"Manual transfer memo"}
-
-                    }
-                }
-                RowLayout {Layout.fillWidth:true;visible:reviewInspecting && !!selected.transferEligible
-                    Label {text:"Inspected transaction split"}
-                    UsableComboBox {id:transferAllocation;objectName:"transferAllocation";model:(selected.draft||{}).splits||[];textRole:"transferLabel";Layout.fillWidth:true;Accessible.name:"Inspected transfer split"}
-                }
-                Label {text:(s.transferReceipt||{}).operation?((s.transferReceipt||{}).balanceImpact||""):((s.transferReceipt||{}).summary||"");textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
-                Label {text:"No transfers in this account.";visible:(s.transfers||[]).length===0 && (s.transferJournal||[]).length===0}
-                Label {text:"Transfer history";font.bold:true;visible:(s.transferJournal||[]).length>0}
-                Repeater {
-                    objectName:"transferJournalRepeater"
-                    model:s.transferJournal||[]
-                    delegate:Label {
-                        required property var modelData
-                        required property int index
-                        objectName:"transferJournal_"+index
-                        text:modelData.text
-                        textFormat:Text.PlainText
-                        wrapMode:Text.Wrap
-                        Layout.fillWidth:true
-                    }
-                }
-                Repeater {
-                    model:s.transfers||[]
-                    delegate:GroupBox {
-                        required property var modelData
-                        Layout.fillWidth:true;title:modelData.label
-                        ColumnLayout {
-                            anchors.fill:parent
-                            Label {text:(modelData.committed?"Accepted":"Not yet accepted")+(modelData.protected?" · Other side already accepted":"")+(modelData.provisional?" · Provisional date":"")+(modelData.evidenced?" · Matched to imported transaction":modelData.accepted?" · Accepted without bank match":" · Needs review")+(modelData.proposed?" · Accept imported transactions to use this match":"");wrapMode:Text.Wrap;Layout.fillWidth:true}
-                            RowLayout {
-                                Button {text:"Accept without bank match";visible:!modelData.evidenced && !modelData.accepted;enabled:!s.readOnly && !modelData.proposed;onClicked:{const task=(s.reviewQuestions||[]).find(q=>q.waitingLink===modelData.id);if(task)answerReview(task,"accept_missing",[]);else transferCommand("transfer_accept",{link:modelData.id})}}
-                                Button {text:"Delete this transfer";visible:modelData.isOrigin && modelData.local && !modelData.committed && !modelData.protected;enabled:!s.readOnly;onClicked:transferCommand("transfer_clear",{link:modelData.id})}
-                                Button {text:"Show other account ↗";onClicked:showCounterpart(modelData)}
-                            }
-                            RowLayout {
-                                Button {text:"Find matching transactions";visible:!modelData.evidenced && !modelData.proposed;enabled:!s.readOnly;onClicked:workflow.command("transfer_candidates",{link:modelData.id})}
-                                Button {text:"Match selected split";visible:reviewInspecting && !modelData.evidenced && !modelData.proposed;enabled:!s.readOnly && !!selected.transferEligible && transferAllocation.currentIndex>=0;onClicked:transferCommand("transfer_match",{link:modelData.id,allocation:transferAllocation.model[transferAllocation.currentIndex].allocationId})}
-                                Button {text:"Cancel match";visible:modelData.proposed;enabled:!s.readOnly;onClicked:transferCommand("transfer_unmatch",{link:modelData.id})}
-                            }
-                            ColumnLayout {
-                                visible:s.candidateLink===modelData.id
-                                Layout.fillWidth:true
-                                Repeater {
-                                    model:s.candidateLink===modelData.id?(s.transferCandidates||[]):[]
-                                    delegate:RowLayout {
-                                        required property var modelData
-                                        Layout.fillWidth:true
-                                        Label {text:modelData.label;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
-                                        Button {text:"Use this match";onClicked:transferCommand("transfer_match",{link:s.candidateLink,batch:modelData.batch,ordinal:modelData.ordinal,allocation:modelData.allocation})}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
         Item {id:reviewInspector;Layout.fillWidth:true;Layout.preferredHeight:reviewInspecting && !!selected.batch?330:0;visible:reviewInspecting && !!selected.batch;clip:true}
         Button {text:"Close inspection";visible:reviewInspecting;onClicked:guard(function(){reviewInspecting=false})}
         UsableScrollView {id:missingDestinationScroll;Layout.fillWidth:true;visible:missingDestinationWarningRows.length>0;Layout.preferredHeight:Math.min(140,missingDestinationList.implicitHeight);contentWidth:availableWidth
