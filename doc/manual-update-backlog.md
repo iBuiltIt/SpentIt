@@ -144,3 +144,19 @@ section "If there is no suitable question". Remove the sentence that says
 [review-keep](../manual/images/review-keep.png) and
 [review-link](../manual/images/review-link.png). Both headers show
 **Transfers…**. Recapture review-link once; MAN-034 also needs that picture.
+
+### MAN-036 — Starter income categories
+
+Logged: 2026-11-12. Contract:
+[categories and selection](../features/010-categories-and-selection.md).
+
+A new file with **Use default categories** checked starts these with Income
+checked: Income: Business / Self-Employment, Income: Investment & Interest,
+Income: Other, Income: Pension & Retirement, and Income: Salary & Wages. They
+appear in the Income group. Taxes: Income is an expense. Every other starter
+category, and a category the person adds, starts unchecked. An existing file
+keeps the checks it already has.
+
+Chapter: [Categories](../manual/categories.md), section "Keep your category
+list useful". The sentence that a new category starts unchecked still describes
+a category the person adds. Add the five starter names. No new picture.

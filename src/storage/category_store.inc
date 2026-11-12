@@ -364,10 +364,21 @@ void ImportStore::initialize_categories() {
         "Income: Pension & Retirement",
         "Income: Salary & Wages"
     };
+    const auto starter_income=[](std::string_view name){
+        return name=="Income: Business / Self-Employment"
+            || name=="Income: Investment & Interest"
+            || name=="Income: Other"
+            || name=="Income: Pension & Retirement"
+            || name=="Income: Salary & Wages";
+    };
     for(std::size_t i=0;i<names.size();++i){
         const auto id="starter-"+std::to_string(i+1);
         const auto preview=preview_category_change({app::CategoryAction::create,id,names[i],{},CategoryKind::leaf});
         write_category_change("setup-"+id,preview);
+        if(!starter_income(names[i]))continue;
+        // Create cannot carry Income. The same file-creation transaction records the check.
+        const app::CategoryRequest income{app::CategoryAction::set_income,id,{},{},CategoryKind::leaf,true};
+        write_category_change("setup-income-"+id,preview_category_change(income));
     }
 }
 

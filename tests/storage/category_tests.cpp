@@ -29,6 +29,13 @@ app::CategoryRequest make(std::string id,std::string name,std::string parent={},
 app::CategoryRequest change(app::CategoryAction action,std::string id,std::string name={},std::string parent={}){return {action,std::move(id),std::move(name),std::move(parent)};}
 app::CategoryReceipt apply(ImportStore& s,std::string_view operation,const app::CategoryRequest& request){auto p=s.preview_category_change(request);return s.apply_category_change(operation,p.request,p.catalog_revision);}
 CategoryDefinition definition(ImportStore& s,std::string_view id){for(const auto& d:s.category_catalog().categories)if(d.identity==id)return d;throw std::runtime_error("Missing category");}
+bool starter_income(ImportStore& s,const char* name){for(const auto& c:s.category_catalog().categories)if(c.name==name)return c.income;throw std::runtime_error(std::string("Missing starter category ")+name);}
+void check_starter_income(ImportStore& s){
+ for(const char* name:{"Income: Business / Self-Employment","Income: Investment & Interest","Income: Other","Income: Pension & Retirement","Income: Salary & Wages"})check(starter_income(s,name));
+ check(!starter_income(s,"Taxes: Income"));
+ int marked=0;for(const auto& c:s.category_catalog().categories)if(c.income)++marked;check(marked==5);
+ for(const auto& c:s.category_catalog().categories)if(c.name=="Income: Salary & Wages")check(c.revision==1);
+}
 void seed(ImportStore& s){apply(s,"auto-create",make("auto","Auto"));apply(s,"travel-create",make("travel","Travel"));apply(s,"parking-create",make("parking","Auto: Parking & Tolls"));}
 void catalog(){
  Directory dir;
@@ -96,8 +103,8 @@ void income_review(){Directory dir;
  {auto s=ImportStore::open(dir.path/"doc",password);check(definition(s,"parking").income && s.review_sheet().can_undo);s.verify();}
 }
 void setup(){Directory dir;
- {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check(s.category_catalog().categories.size()==46);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}
- {auto s=ImportStore::open(dir.path/"backup",password);check(s.date_format()=="MM/DD/YYYY" && s.category_catalog().categories.size()==46);s.verify();}
+ {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check_starter_income(s);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}
+ {auto s=ImportStore::open(dir.path/"backup",password);check(s.date_format()=="MM/DD/YYYY");check_starter_income(s);s.verify();check(s.category_catalog().categories.size()==46);}
  {auto s=ImportStore::create(dir.path/"empty",password,"Empty",cad,"2026-10-28",false,{"YYYYMMDD",false});check(s.date_format()=="YYYYMMDD" && s.category_catalog().categories.empty());}
  no_leaks(dir.path);
 }

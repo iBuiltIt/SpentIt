@@ -1,7 +1,7 @@
 # 010 — Categories and selection
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-12
 
 A category is an independently assignable name. It may contain one colon, shown
 as `Stem: Name`. A second colon is rejected. `Auto: Gas` does not create `Auto`.
@@ -15,10 +15,14 @@ unbracketed QIF split names. Use account commands to change an account.
 
 ## Income
 
-Categories has an Income checkbox. New categories, including starter and
-imported categories, default off. Only an explicit check marks income. The flag
-does not follow the name and does not change transaction signs or report
-arithmetic. Rename and archive keep it.
+Categories has an Income checkbox. A category the person adds, and a
+category created from an import, starts unchecked. A new file that uses the
+starter categories checks Income for Income: Business / Self-Employment,
+Income: Investment & Interest, Income: Other, Income: Pension & Retirement,
+and Income: Salary & Wages. Taxes: Income is an expense. Every other starter
+category starts unchecked. An existing file keeps the checks it already has.
+The flag does not follow the name and does not change transaction signs or
+report arithmetic. Rename and archive keep it.
 
 Default order is Expenses A–Z, Income A–Z, then Accounts A–Z. Uncategorized
 stays first where it is offered. Workspace Z–A and Order added apply inside
@@ -56,7 +60,8 @@ destinations are disabled in the menu. Rules still cannot create transfers.
 
 **Use default categories** starts checked and creates this list. Unchecked
 creates an empty catalog. Names stay editable. Each line is one category. The
-Income checkbox still defaults off, including for the Income names.
+five Income names in the Income section above start checked. Taxes: Income and
+the other names start unchecked. A category added later starts unchecked.
 
 ```text
 Housing: Rent & Mortgage
