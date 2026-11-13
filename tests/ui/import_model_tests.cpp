@@ -251,6 +251,33 @@ private slots:
         QCOMPARE(m.state().value("importPlan").toList().size(),1);
         run(m,"cancel_import_mapping"); run(m,"close");
     }
+    void qifImportNeedsAnActiveAccount() {
+        QTemporaryDir dir; QVERIFY(dir.isValid()); ImportModel m(storage::document_gateway());
+        create(m,dir.path()+"/doc");
+        run(m,"archive_account",{{"operation",m.newIdentity()}});
+        QCOMPARE(m.state().value("accounts").toList().size(),0);
+        const QByteArray named="!Account\nNSynthetic test\nTBank\n^\n!Type:Bank\nD2026-02-01\nT-4\nPArchived import\n^\n";
+        const auto namedPath=fixture(dir.path(),named);
+        const auto refused=QString("There is no active account. This statement file does not name a currency, so SpentIt uses an active account's currency. Reactivate an account, then import the file again. Nothing was imported.");
+        run(m,"import",{{"path",namedPath},{"account",""}},false);
+        QCOMPARE(m.error(),refused);
+        QVERIFY(m.state().value("importPlan").toList().isEmpty());
+        QVERIFY(!m.state().value("importDestination").toBool());
+        QCOMPARE(m.state().value("accounts").toList().size(),0);
+        const auto plain=dir.path()+"/plain.qif";
+        QFile plainFile(plain); QVERIFY(plainFile.open(QIODevice::WriteOnly));
+        const QByteArray plainBytes="!Type:Bank\nD2026-02-02\nT-1\nPNo account section\n^\n";
+        QCOMPARE(plainFile.write(plainBytes),plainBytes.size()); plainFile.close();
+        run(m,"import",{{"path",plain},{"account",""}},false);
+        QCOMPARE(m.error(),refused);
+        QVERIFY(!m.state().value("importDestination").toBool());
+        run(m,"select_account",{{"id","1"}});
+        run(m,"reactivate_account",{{"operation",m.newIdentity()}});
+        QCOMPARE(m.state().value("accounts").toList().size(),1);
+        run(m,"import",{{"path",fixture(dir.path(),named)},{"account",""}});
+        QCOMPARE(m.state().value("accountId").toString(),"1");
+        QVERIFY(m.error().isEmpty());
+    }
     void importRoutingAndLedgerCleanup() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/document");
         run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});

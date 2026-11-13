@@ -1967,6 +1967,8 @@ struct ImportModel::Worker {
                 }
             }
             dateImport.reset();importDateQuestion.clear();if(action=="confirm_import_destination")preparedImport.reset();
+            // A QIF file does not name a currency. SpentIt uses an active account's currency. An empty code is not a bad currency in the file.
+            if(document.format=="qif" && repo.accounts().empty()) throw std::invalid_argument("There is no active account. This statement file does not name a currency, so SpentIt uses an active account's currency. Reactivate an account, then import the file again. Nothing was imported.");
             std::optional<std::int64_t> destination;
             const bool unnamed=document.accounts.size()<=1 && !document.explicit_accounts;
             if(document.accounts.size()==1 || unnamed) {
