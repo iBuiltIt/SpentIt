@@ -884,6 +884,8 @@ ApplicationWindow {
     property string rulePendingPreviewKey: ""
     property bool currentRulePreview: !!rulePreviewKey && rulePreviewKey===rulesPreviewKey()
     property bool ruleApplyAfterPreview: false
+    property string ledgerRuleDraftId: ""
+    property bool returnAfterRuleApply: false
     function rulesPreviewKey() {return JSON.stringify([s.accountId,rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,false])}
     property int ruleEditGeneration: 0
     property var ruleBaseline: []
@@ -1090,6 +1092,7 @@ ApplicationWindow {
     function discardRule() {
         if(ruleIndex<0)return
         let row=ruleModel.get(ruleIndex),before=savedRule(row.id),index=ruleIndex
+        if(!before && row.id===ledgerRuleDraftId) ledgerRuleDraftId=""
         if(before && !ruleMovedIds[row.id])ruleModel.set(index,ruleRow(before))
         else if(before) {
             ruleModel.remove(index)
@@ -1405,6 +1408,7 @@ ApplicationWindow {
         return copy
     }
     function loadRulesForm() {
+        ledgerRuleDraftId="";returnAfterRuleApply=false
         ruleSync=true; ruleModel.clear()
         for(let rule of (s.rules||[])) ruleModel.append(ruleRow(rule))
         ruleMovedIds=({});ruleBaseline=[];for(let i=0;i<ruleModel.count;i++)ruleBaseline.push(ruleImage(ruleModel.get(i)))
@@ -1587,7 +1591,7 @@ ApplicationWindow {
         else if(choices.length>1)matchedRuleDialog.open()
     }
     function saveRules(apply) {
-        if(ruleIndex<0 || !acceptRuleCategory())return
+        if(ruleIndex<0 || !acceptRuleCategory())return false
         let row=ruleModel.get(ruleIndex)
         let image=ruleBaseline.filter(r=>r.id!==row.id)
         if(!row.pendingDelete) {
@@ -1601,14 +1605,19 @@ ApplicationWindow {
         }
         ruleSavingAll=false;ruleSavingId=row.id
         workflow.command("rules_save",{rules:image,apply:apply===true,rule:row.id,newOnly:ruleTransactionScope.currentIndex===1})
+        return true
     }
     function previewRules() {rulePreviewSingle=false;previewAccountRules()}
     function applyReady() {return !workflow.busy && !!s.accountId && ruleCanRun}
     function applyRules() {
         if(!applyReady() || !acceptRuleCategory())return
         rulePreviewSingle=true
-        if(ruleChanged(ruleIndex)){saveRules(true)}
-        else {ruleApplyAfterPreview=true;previewAccountRules()}
+        if(ruleChanged(ruleIndex)){
+            let row=ruleModel.get(ruleIndex)
+            returnAfterRuleApply=navigationIndex>0 && !!row && row.id===ledgerRuleDraftId
+            if(!saveRules(true)) returnAfterRuleApply=false
+        }
+        else {returnAfterRuleApply=false;ruleApplyAfterPreview=true;previewAccountRules()}
     }
     function rulesSaved() {
         let selectedId=ruleIndex>=0?ruleModel.get(ruleIndex).id:""
@@ -1633,8 +1642,13 @@ ApplicationWindow {
             openRule(draftIndex>=0?draftIndex:Math.min(Math.max(0,previousIndex),ruleModel.count-1))
         }
         updateRulesDirty()
+        const savedId=ruleSavingId
+        const returnToPrevious=returnAfterRuleApply && savedId===ledgerRuleDraftId
         ruleSavingId="";ruleSavingAll=false
+        returnAfterRuleApply=false
+        if(savedId && savedId===ledgerRuleDraftId) ledgerRuleDraftId=""
         if(rulesLeaving && !rulesDirty){setRulesLeaving(false);let next=pendingAction;pendingAction=null;if(next)guard(next)}
+        else if(returnToPrevious && currentPage==="rules" && navigationIndex>0) Qt.callLater(function(){traverseNavigation(-1)})
     }
     function createFromSource(kind, allocation) {
         if(workflow.busy || !s.rulesSupported) return
@@ -1655,6 +1669,7 @@ ApplicationWindow {
         if(ruleModel.count>=128 || newRuleIndex()>=0) return
         let row=s.rulePrefill||{}; if(!row.id) return
         ruleModel.append(ruleRow(row))
+        ledgerRuleDraftId=row.id
         updateRulesDirty();ruleSearch.clear(); openRule(ruleModel.count-1); showRulesPage()
     }
     function inspectRecord(batch, ordinal) { guard(function(){workflow.command("inspect",{batch:batch,ordinal:ordinal})}) }
@@ -1893,7 +1908,7 @@ ApplicationWindow {
             if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session.":"Edit saved."
             if(success && (action==="undo_edit" || action==="undo_action" || action==="undo_connected"))workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
-            if(!success){ruleApplyAfterPreview=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
+            if(!success){ruleApplyAfterPreview=false;returnAfterRuleApply=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
             if(success && (action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
             if(success && action.indexOf("transfer_")===0 && !(s.transferMergePreview||{}).id && (s.transferReceipt||{}).operation)workspaceFeedback="Transfer operation saved."
@@ -1917,7 +1932,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save_manual" || action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {if(!rulesLeaving)pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {acceptanceDialog.close();mappedTransferConfirm.close();importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {acceptanceDialog.close();mappedTransferConfirm.close();importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);ledgerRuleDraftId="";returnAfterRuleApply=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -3840,7 +3855,7 @@ ApplicationWindow {
                             RowLayout {
                                 visible:!!s.accountId
                                 Button {objectName:"previewThisRule";text:"Preview";enabled:ruleCanRun;onClicked:previewThisRule()}
-                                Button {objectName:"applyRules";text:{let generation=ruleEditGeneration;return ruleChanged(ruleIndex)?"Save and apply rule":"Apply rule"} enabled:applyReady();onClicked:applyRules()}
+                                Button {objectName:"applyRules";text:{let generation=ruleEditGeneration;return !ruleChanged(ruleIndex)?"Apply rule":(navigationIndex>0 && ledgerRuleDraftId && ruleModel.get(ruleIndex).id===ledgerRuleDraftId?"Save, apply and back":"Save and apply rule")} enabled:applyReady();onClicked:applyRules()}
                             }
                         }
                         Label {objectName:"rulePreviewStatus";visible:currentRulePreview;text:'Preview · '+(ruleLabel.text||"Unnamed rule")+' · '+rulesAccountName+' · '+(ruleTransactionScope.currentIndex===1?"New transactions only":"All transactions");font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}

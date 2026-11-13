@@ -243,3 +243,18 @@ sentence on a transfer row stays. Recapture
 [settings](../manual/images/settings.png). It shows **File settings**,
 **Hidden transfer suggestions…**, and **Current file**. The password fields
 in that picture stay.
+
+### MAN-041 — Save, apply and back
+
+Logged: 2026-11-12. Contract: [rules](../features/004-rules-and-explanations.md)
+and [ledger editing](ledger-editing.md).
+
+A new rule started from the ledger **Create rule…** command shows **Save,
+apply and back**. Choosing it saves the rule, applies it, and returns to the
+ledger. **New rule** and **Copy into new rule** keep **Save and apply rule**
+and stay in Rules. An existing rule keeps **Apply rule**, or **Save and apply
+rule** when it has unsaved edits, and stays in Rules.
+
+Chapter: [Use rules](../manual/rules.md), "Make a Market rule" and "Preview,
+save and apply". The Market pictures are the **New rule** path and still show
+**Save and apply rule**. No new picture.

@@ -1,7 +1,7 @@
 # 004 — Rules and explanations
 
 Status: **active**
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 Rules assign an explicit ordinary category. They do not create transfers,
 change amounts, dates, or split structure, or force a category that is already
@@ -57,6 +57,12 @@ accounts stays in Rules, keeps drafts, and clears the preview.
 
 The ledger **Create rule…** command needs exactly one eligible selection. It
 does not open the transaction editor. Several targets use the existing chooser.
+That new draft’s button reads **Save, apply and back**. A successful click
+saves the rule, applies it, and returns through **Back** to the page that was
+open before Rules. A missing category or a failed save stays in Rules. **New
+rule** and **Copy into new rule** keep **Save and apply rule** and stay in
+Rules. An existing rule keeps **Apply rule**, or **Save and apply rule** when
+it has unsaved edits, and stays in Rules.
 
 ## Retention
 

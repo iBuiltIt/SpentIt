@@ -129,6 +129,7 @@ private slots:
         QCOMPARE(page(s.root),"rules");
         QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Second shop");
         QCOMPARE(object(s.root,"ruleExpression")->property("text").toString(),"^Second shop$");
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save, apply and back");
         QVERIFY(click(s.root,"discardRules"));QVERIFY(click(s.root,"accountNavigation"));
         run(s.model,"select",{{"row",s.model.occurrenceIndex(batch,0)}});
         run(s.model,"select",{{"row",s.model.occurrenceIndex(batch,1)},{"toggle",true}});
@@ -171,6 +172,54 @@ private slots:
         const auto manual=selected(s.model);
         QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(manual.value("batch").toString(),0)))));wait(s.model);
         QVERIFY(!action->property("enabled").toBool());
+    }
+    void ledgerCreatedRuleReturnsAfterSaveAndApply(){
+        Session s;createDocument(s,"Ledger rule return");
+        const auto source=s.path("return.qif");
+        writeQif(source,"!Type:Bank\nD01/01/2026\nT-1.00\nPSecond shop\n^\n");
+        run(s.model,"import",{{"path",source},{"profile","DMY"}});
+        const auto batch=selected(s.model).value("batch").toString();
+        QVERIFY(s.root->setProperty("editorClosed",true));
+        QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(batch,0)))));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"createRuleContext"),"triggered"));wait(s.model);
+        QCOMPARE(page(s.root),"rules");
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save, apply and back");
+        QVERIFY(click(s.root,"applyRules"));
+        QCOMPARE(page(s.root),"rules");
+        QCOMPARE(s.model.state().value("rules").toList().size(),0);
+        QVERIFY(click(s.root,"discardRules"));
+        QVERIFY(click(s.root,"newRule"));
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply rule");
+        QVERIFY(click(s.root,"discardRules"));
+        QVERIFY(click(s.root,"accountNavigation"));wait(s.model);
+        QVERIFY(s.root->setProperty("editorClosed",true));
+        QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(batch,0)))));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"createRuleContext"),"triggered"));wait(s.model);
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save, apply and back");
+        QVERIFY(edit(s.root,"rulePayeeTemplate","Shop renamed"));
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QTRY_COMPARE(page(s.root),"ledger");
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Shop renamed");
+        QCOMPARE(s.model.state().value("rules").toList().size(),1);
+        QVERIFY(s.root->setProperty("editorClosed",false));
+        QVERIFY(click(s.root,"editTransactionRule"));
+        QCOMPARE(page(s.root),"rules");
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Apply rule");
+        QVERIFY(edit(s.root,"ruleExpression","^Second shop extra$"));
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply rule");
+        QVERIFY(click(s.root,"discardRules"));
+        QTest::qWait(50);
+        QCOMPARE(page(s.root),"rules");
+        QVERIFY(click(s.root,"newRule"));
+        QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply rule");
+        QVERIFY(edit(s.root,"ruleLabel","Later rule"));
+        QVERIFY(edit(s.root,"ruleExpression","^Later$"));
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QTest::qWait(50);
+        QCOMPARE(page(s.root),"rules");
+        QCOMPARE(s.model.state().value("rules").toList().size(),2);
     }
     void discardNewThenRemoveSavedWithAccessibility(){
         QAccessible::setActive(true);
