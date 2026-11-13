@@ -2968,6 +2968,8 @@ private slots:
         QQuickItem* payeeCol=nullptr;QQuickItem* categoryCol=nullptr;
         QTRY_VERIFY(payeeCol=shown("ledgerColumn_1"));QTRY_VERIFY(categoryCol=shown("ledgerColumn_2"));
         QTRY_VERIFY(payeeCol->width()>categoryCol->width());
+        auto* dimple=shown("ledgerColumnDimple_1");QVERIFY(dimple);QVERIFY(dimple->isVisible());QCOMPARE(dimple->width(),3.0);
+        auto* edge=shown("ledgerColumnEdge_1");QVERIFY(edge);QCOMPARE(edge->width(),dimple->width());QCOMPARE(edge->x(),dimple->x());
         const auto loadedReport=root->property("reportLedgerWidths").toList();
         QCOMPARE(loadedReport.size(),7);
         for(const auto& value:loadedReport) QCOMPARE(value.toInt(),240);
@@ -3006,8 +3008,6 @@ private slots:
         QVERIFY(qAbs(categoryCol->width()-lockedCategory)<0.5);
         QQuickItem* payeeLabel=nullptr;QTRY_VERIFY(payeeLabel=findText(window->contentItem(),"ledgerCellText_",payeeText));
         QVERIFY(payeeLabel->property("truncated").toBool());
-        QTest::mouseMove(window,QPoint(4,4));
-        QTest::mouseMove(window,payeeLabel->mapToScene(QPointF(8,payeeLabel->height()/2)).toPoint());
         const auto tipName=payeeLabel->objectName().replace("ledgerCellText_","ledgerCellTip_");
         auto* tip=window->findChild<QObject*>(tipName);
         if(!tip && payeeLabel->parentItem()) for(auto* child:payeeLabel->parentItem()->children()) if(child->objectName()==tipName) tip=child;
@@ -3016,7 +3016,12 @@ private slots:
             if(auto* cell=payeeLabel->parentItem()) for(auto* child:cell->children()) dump+=QString(child->metaObject()->className())+" "+child->objectName()+"\n";
             QVERIFY2(tip,qPrintable(dump));
         }
-        QTRY_VERIFY(tip->property("visible").toBool());
+        for(int attempt=0;attempt<6 && !tip->property("visible").toBool();++attempt) {
+            QTest::mouseMove(window,QPoint(2,2));QTest::qWait(20);
+            QTest::mouseMove(window,payeeLabel->mapToScene(QPointF(8,payeeLabel->height()/2)).toPoint());
+            QTest::qWait(400);
+        }
+        QVERIFY(tip->property("visible").toBool());
         QCOMPARE(tip->property("text").toString().replace("\n",""),payeeText);
         const auto rowName=payeeLabel->objectName().mid(QString("ledgerCellText_").size());
         const auto row=rowName.left(rowName.lastIndexOf('_'));
@@ -3049,15 +3054,35 @@ private slots:
         auto* memoHost=memo->parentItem();QVERIFY(memoHost);
         const auto memoPoint=memoHost->mapToScene(QPointF(memoHost->width()/2,memoHost->height()/2)).toPoint();
         QVERIFY2(QRectF(memoHost->mapToScene(QPointF(0,0)),QSizeF(memoHost->width(),memoHost->height())).contains(memoPoint),qPrintable(QString("memo %1,%2 %3x%4").arg(memoPoint.x()).arg(memoPoint.y()).arg(memoHost->width()).arg(memoHost->height())));
-        QTest::mouseMove(window,QPoint(4,4));
-        QTest::mouseMove(window,memoPoint);
         const auto memoTipName=memo->objectName().replace("ledgerSplitMemo_","ledgerSplitMemoTip_");
         auto* memoTip=window->findChild<QObject*>(memoTipName);
         if(!memoTip) for(auto* child:memo->children()) if(child->objectName()==memoTipName) memoTip=child;
         if(!memoTip && memo->parentItem()) for(auto* child:memo->parentItem()->children()) if(child->objectName()==memoTipName) memoTip=child;
         QVERIFY(memoTip);
-        QTRY_VERIFY(memoTip->property("visible").toBool());
+        for(int attempt=0;attempt<6 && !memoTip->property("visible").toBool();++attempt) {
+            QTest::mouseMove(window,QPoint(2,2));QTest::qWait(20);
+            QTest::mouseMove(window,memoHost->mapToScene(QPointF(memoHost->width()/2,memoHost->height()/2)).toPoint());
+            QTest::qWait(400);
+        }
+        QVERIFY(memoTip->property("visible").toBool());
         QCOMPARE(memoTip->property("text").toString().replace("\n",""),memoText);
+        const auto categoryBeforeFit=categoryCol->width();
+        payeeHandle=shown("ledgerColumnResize_1");QVERIFY(payeeHandle);
+        QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,payeeHandle->mapToScene(QPointF(payeeHandle->width()/2,payeeHandle->height()/2)).toPoint());
+        QTRY_VERIFY(!payeeLabel->property("truncated").toBool());
+        QVERIFY(payeeCol->width()>payeeMinimum.toDouble()+20);
+        QVERIFY(qAbs(categoryCol->width()-categoryBeforeFit)<0.5);
+        auto* dateCol=shown("ledgerColumn_0");QVERIFY(dateCol);
+        const auto dateBeforeFit=dateCol->width();
+        const auto payeeFitted=payeeCol->width();
+        auto* dateHandle=shown("ledgerColumnResize_0");QVERIFY(dateHandle);
+        QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,dateHandle->mapToScene(QPointF(dateHandle->width()/2,dateHandle->height()/2)).toPoint());
+        QVariant dateMinimum;QVERIFY(QMetaObject::invokeMethod(root,"ledgerColumnMinimum",Q_RETURN_ARG(QVariant,dateMinimum),Q_ARG(QVariant,QVariant(0)),Q_ARG(QVariant,QVariant(false))));
+        QTRY_VERIFY(dateCol->width()+0.5>=dateMinimum.toDouble());
+        QVERIFY(dateCol->width()<=dateBeforeFit+0.5);
+        if(dateBeforeFit>dateMinimum.toDouble()+8) QVERIFY(dateCol->width()<dateBeforeFit-4);
+        QVERIFY(qAbs(payeeCol->width()-payeeFitted)<0.5);
+        QVERIFY(!dateLabel->property("truncated").toBool());
         const auto finalCategory=categoryCol->width();const auto finalPayee=payeeCol->width();
         window->resize(720,560);QTest::qWait(100);
         auto* apply=root->findChild<QQuickItem*>("applyFilter");QVERIFY(apply);

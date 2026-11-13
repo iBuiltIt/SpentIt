@@ -696,6 +696,53 @@ ApplicationWindow {
         const widths=reportLedger?reportLedgerWidths:accountLedgerWidths
         if(widths.length===(reportLedger?7:6)) workflow.saveLedgerColumnWidths(reportLedger, widths)
     }
+    function ledgerColumnText(record, index) {
+        if(!record) return ""
+        if(index===ledgerCategoryColumn && (record.splits||[]).length>1)
+            return (!!splitViews[splitKey(record)]?"▾ ":"▸ ")+record.splits.length+" splits"
+        if(reportLedger) {
+            if(index===0) return record.date||""
+            if(index===1) return record.payee||""
+            if(index===2) return record.reportAccount||""
+            if(index===3) return record.category||""
+            if(index===4) return record.withdrawal||""
+            if(index===5) return record.deposit||""
+            if(index===6) return record.reportMatches?(record.reportIncluded||""):"No longer included"
+            return ""
+        }
+        if(index===0) return record.date||""
+        if(index===1) return record.payee||""
+        if(index===2) return record.category||""
+        if(index===3) return record.withdrawal||""
+        if(index===4) return record.deposit||""
+        if(index===5) return record.balance||""
+        return ""
+    }
+    function ledgerColumnTextInset(index, splits) {
+        // Category keeps room for the transfer arrow. A split count is a button.
+        // Date is inset. A few pixels keep the last glyph off the edge.
+        if(index===ledgerCategoryColumn && splits) return 32+8+4
+        if(index===ledgerCategoryColumn) return 32+4
+        if(index===0) return 8+4
+        return 4
+    }
+    function ledgerColumnContentWidth(index) {
+        let widest=0
+        const rows=ledger.count
+        for(let row=0;row<rows;++row) {
+            const record=workflow.rowRecord(row)
+            const splits=index===ledgerCategoryColumn && !!record && (record.splits||[]).length>1
+            const text=String(ledgerColumnText(record, index)||"")
+            const width=text.length?ledgerMeasure(text)+ledgerColumnTextInset(index, splits):0
+            if(width>widest) widest=width
+        }
+        return widest
+    }
+    function fitLedgerColumn(index) {
+        beginLedgerColumnResize()
+        setLedgerColumnWidth(index, Math.max(ledgerColumnMinimum(index), ledgerColumnContentWidth(index)))
+        finishLedgerColumnResize()
+    }
     function clampLedgerColumnSet(report) {
         const count=report?7:6
         const source=report?reportLedgerWidths:accountLedgerWidths
@@ -4259,7 +4306,24 @@ ApplicationWindow {
                             }
                             onReleased:if(moved) window.finishLedgerColumnResize()
                             onCanceled:if(moved) window.finishLedgerColumnResize()
-                            Rectangle {anchors.right:parent.right;anchors.top:parent.top;anchors.bottom:parent.bottom;width:2;color:theme.focus;visible:columnResize.containsMouse || columnResize.pressed}
+                            onDoubleClicked:function(mouse) {moved=false;window.fitLedgerColumn(index);mouse.accepted=true}
+                            // A short groove so the edge is visible before the pointer arrives.
+                            // Shadow on the left and a light lip on the right read as a dent.
+                            Item {
+                                objectName:"ledgerColumnDimple_"+index
+                                width:3;height:Math.round(Math.min(16, parent.height*0.5))
+                                anchors.horizontalCenter:parent.horizontalCenter;anchors.verticalCenter:parent.verticalCenter
+                                visible:!columnResize.containsMouse && !columnResize.pressed
+                                readonly property color face: theme.button
+                                Rectangle {width:1;height:parent.height;color:Qt.darker(parent.face, theme.dark?1.45:1.18)}
+                                Rectangle {x:1;width:1;height:parent.height;color:Qt.darker(parent.face, theme.dark?1.2:1.06)}
+                                Rectangle {x:2;width:1;height:parent.height;color:Qt.lighter(parent.face, theme.dark?1.45:1.22)}
+                            }
+                            Rectangle {
+                                objectName:"ledgerColumnEdge_"+index
+                                anchors.horizontalCenter:parent.horizontalCenter;anchors.top:parent.top;anchors.bottom:parent.bottom
+                                width:3;color:theme.focus;visible:columnResize.containsMouse || columnResize.pressed
+                            }
                         }
                     }
                 }

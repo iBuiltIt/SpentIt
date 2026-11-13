@@ -20,7 +20,14 @@ the window. Making the window wider shows more of that row and does not
 stretch columns that have been dragged. Each column has a minimum. Date and
 the money columns stay wide enough for the heading and a normal value, and
 every heading stays visible. A column stops growing at 4,000 pixels. The drag
-does not sort. Clicking the heading still sorts.
+does not sort. Clicking the heading still sorts. Each heading edge shows a
+narrow shaded notch. The edge highlights while the pointer is on it.
+
+Double-clicking that edge sizes the column to the longest text in the
+current list, including rows scrolled out of sight. A search limits the
+list. The column may become wider or narrower. A row that shows a split
+count is measured as that label. The same minimum and 4,000 pixel limit
+apply, and the other columns stay put.
 
 The widths are remembered on this computer, outside the file. They are whole
 numbers, one per column. A saved list of the wrong length, or a width below

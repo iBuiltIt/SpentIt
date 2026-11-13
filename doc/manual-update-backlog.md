@@ -85,10 +85,12 @@ write captures straight into `manual/images`. Do not point
 - `manual/find-transactions.md`, “Sort, scroll and come back”: outstanding
   text that dragging the right edge of a column heading changes that column’s
   width, the other columns stay as they are, and the horizontal scrollbar
-  appears when the row no longer fits. Also say that resting the pointer on
+  appears when the row no longer fits. Double-clicking that edge sizes the
+  column to the longest text in the current list, wider or narrower. Also say that resting the pointer on
   cut-off text shows the full text, including a category or memo in an open
   split. The widths are remembered on this computer.
 - `manual/reports.md`: one outstanding sentence that the transaction list
   behind a report amount uses the same column dragging, with its own widths.
-- Pictures: no recapture. The heading edge is only a pointer change until the
-  user drags it.
+- Pictures: recapture `transactions-ledger.png`. Each column edge in the
+  heading now has a small shaded notch. The blue line appears only while the
+  pointer is on that edge.
