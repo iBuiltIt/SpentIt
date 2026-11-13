@@ -885,15 +885,11 @@ private slots:
         QVERIFY(click(s.root,"accountNavigation"));
         QVERIFY(!object(s.root,"transactionRuleAction")->property("enabled").toBool());
         QVERIFY(object(s.root,"editTransactionRule")->property("enabled").toBool());
-        QCOMPARE(object(s.root,"ruleWinners")->property("text").toString(),QString::fromUtf8("Payee assigned by “Synthetic Shop”\nCategory assigned by “Synthetic Shop”"));
-        QTest::qWait(30);
+        QVERIFY(!object(s.root,"ruleWinners"));
         auto* action=qobject_cast<QQuickItem*>(object(s.root,"transactionRuleAction"));
-        auto* attribution=qobject_cast<QQuickItem*>(object(s.root,"ruleWinners"));
-        QVERIFY(action && attribution);
-        // The rule action now shares the Add split row; attribution is below it.
-        auto* addSplit=qobject_cast<QQuickItem*>(object(s.root,"addSplit"));QVERIFY(addSplit);
+        auto* addSplit=qobject_cast<QQuickItem*>(object(s.root,"addSplit"));
+        QVERIFY(action && addSplit);
         QTRY_VERIFY(action->mapToScene(QPointF()).x()<addSplit->mapToScene(QPointF()).x());
-        QTRY_VERIFY(action->mapToScene(QPointF()).y()<attribution->mapToScene(QPointF()).y());
         QVERIFY(click(s.root,"editTransactionRule"));
         QCOMPARE(object(s.root,"ruleLabel")->property("text").toString(),"Synthetic Shop");
         QVERIFY(edit(s.root,"ruleExpression","^No longer matches$"));QVERIFY(click(s.root,"saveRules"));wait(s.model);

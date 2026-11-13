@@ -4314,26 +4314,9 @@ ApplicationWindow {
                     Button {objectName:"inspectRemovalHistory";text:"Inspect removal history";visible:candidate.currentIndex>=0 && !!candidate.model[candidate.currentIndex].removed;onClicked:guard(function(){let c=candidate.model[candidate.currentIndex];navigate("history");workflow.command("entry_history",{batch:c.batch,ordinal:c.ordinal})})}
                     Button {objectName:"excludeDuplicate";text:candidate.currentIndex>=0 && candidate.model[candidate.currentIndex].removed?"Keep removed":"Already imported";enabled:candidate.currentIndex>=0;onClicked:guard(function(){let c=candidate.model[candidate.currentIndex];workflow.command("decide",{duplicate:true,batch:c.batch,ordinal:c.ordinal})})}
                 }
-                RowLayout {
-                    visible:!!s.rulesSupported && !!selected.batch
-                    Label {
-                        objectName:"ruleWinners";Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
-                        text:{
-                            let lines=[]
-                            for(let assignment of (selected.ruleAssignments||[])) {
-                                if(!assignment.available)continue
-                                let rule=(s.rules||[]).find(r=>r.id===assignment.rule)
-                                let name=rule && rule.label?rule.label:"Unnamed rule"
-                                let field=assignment.field
-                                if(assignment.allocation!==null && assignment.allocation!==undefined && ((selected.draft||{}).splits||[]).length>1)
-                                    field+=" (split "+(assignment.allocation+1)+")"
-                                let line=field+" assigned by “"+name+"”"
-                                if(lines.indexOf(line)<0)lines.push(line)
-                            }
-                            return lines.join("\n")
-                        }
-                    }
-                    Label {text:"The rule that assigned this value was deleted.";visible:(selected.ruleAssignments||[]).some(c=>!c.available);wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {
+                    visible:!!s.rulesSupported && !!selected.batch && (selected.ruleAssignments||[]).some(c=>!c.available)
+                    text:"The rule that assigned this value was deleted.";wrapMode:Text.Wrap;Layout.fillWidth:true
                 }
                 Label {visible:!!s.rulesSupported && !!selected.ruleMatchError;textFormat:Text.PlainText;text:selected.ruleMatchError||"";color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {text:selected.newManual?"New transaction · not saved":"Manually entered";visible:!!selected.manual;textFormat:Text.PlainText}

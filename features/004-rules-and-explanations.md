@@ -57,7 +57,9 @@ The Apply section has its own account picker and the scope control. Switching
 accounts stays in Rules, keeps drafts, and clears the preview.
 
 The ledger **Create rule…** command needs exactly one eligible selection. It
-does not open the transaction editor. Several targets use the existing chooser.
+does not open the transaction editor. An open transaction does not list which
+rule assigned its payee, memo, or category. **Edit rule…** still opens one.
+Several targets use the existing chooser.
 That new draft’s button reads **Save, apply and back**. A successful click
 saves the rule, applies it, and returns through **Back** to the page that was
 open before Rules. A missing category or a failed save stays in Rules. **New

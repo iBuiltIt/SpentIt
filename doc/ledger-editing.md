@@ -44,7 +44,9 @@ Cancel. That draft’s button reads **Save, apply and back**. A successful click
 saves the rule, applies it, and returns through **Back** to the ledger. A
 failed save stays in Rules. Existing original-field eligibility and the
 one-new-rule limit remain.
-See the [Rules entry point](../features/004-rules-and-explanations.md).
+The open editor does not list which rule assigned the payee, memo, or
+category. **Edit rule…** still opens one. See the
+[Rules entry point](../features/004-rules-and-explanations.md).
 
 Disabled ledger menu text and submenu arrows use a distinct colour in light and
 dark themes and do not highlight on hover. Financial command eligibility is
