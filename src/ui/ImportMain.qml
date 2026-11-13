@@ -184,7 +184,7 @@ ApplicationWindow {
         if(correctOpeningDialog.visible) modals+=Math.pow(2,24)
         if(currencyDialog.visible) modals+=Math.pow(2,25)
         if(discardDialog.visible) modals+=Math.pow(2,27)
-        if(acceptanceDialog.visible || mappedTransferConfirm.visible || reviewDifference.visible || reviewSurvivor.visible || statusDetails.visible) modals+=Math.pow(2,28)
+        if(acceptanceDialog.visible || mappedTransferConfirm.visible || reviewDifference.visible || reviewSurvivor.visible || statusDetails.visible || statusExplanationDialog.visible) modals+=Math.pow(2,28)
         let pending=(startupPending?1:0)+(pendingAction?2:0)+(pendingSearch?4:0)+(pendingAccountNavigation?8:0)+(pendingCounterpart?16:0)+((ledgerViewRestore || reviewViewRestoring)?32:0)+(closingRequested?64:0)+(guardHandoff?128:0)+(workflow.busy?256:0)+(probeTimer.running?512:0)
         let observedList=currentPage==="review"?reviewQuestions:ledger
         let first=currentPage==="review"?reviewVisibleIndex():observedList.indexAt(1,observedList.contentY+1)
@@ -991,7 +991,7 @@ ApplicationWindow {
         if (reportsWorkspace.leaving) return "help:answer-with-reports#keep-and-change-your-reports"
         // Qt Quick dialogs share the main window. Read the visible dialog,
         // never its text, selected values, or an error payload.
-        const dialogs = [bulkCategoryDialog, selectedEditDialog, deleteSelectionDialog, overwriteDialog, importCategories, importMapping, importDateOrder, importDestinationDialog, splitMismatch, unsaved, changePreview, mergePreview, bulkDialog, reapplyDialog, transferSuggestionSettings, ruleSplitDialog, matchedRuleDialog, categoryPicker, renameDialog, deleteAccountDialog, correctOpeningDialog, currencyDialog, acceptanceDialog, mappedTransferConfirm, importUndoPicker, importUndoConfirm, discardDialog, closeAuditFailure, quitCommit, linkExclusionDialog, statusDetails, reviewSurvivor, reviewDifference]
+        const dialogs = [bulkCategoryDialog, selectedEditDialog, deleteSelectionDialog, overwriteDialog, importCategories, importMapping, importDateOrder, importDestinationDialog, splitMismatch, unsaved, changePreview, mergePreview, bulkDialog, reapplyDialog, transferSuggestionSettings, ruleSplitDialog, matchedRuleDialog, categoryPicker, renameDialog, deleteAccountDialog, correctOpeningDialog, currencyDialog, acceptanceDialog, mappedTransferConfirm, importUndoPicker, importUndoConfirm, discardDialog, closeAuditFailure, quitCommit, linkExclusionDialog, statusExplanationDialog, statusDetails, reviewSurvivor, reviewDifference]
         for (const dialog of dialogs) if (dialog.visible) return dialog.helpTarget
         if (!s.active) return "help:create-open-file"
         if (addingAccount) return "help:set-up-accounts#add-an-account"
@@ -3080,17 +3080,26 @@ ApplicationWindow {
     property string ruleValidationError: ""
     // One visible owner for a global operation error. Dialog validation stays
     // beside its controls; closing the dialog returns the error to the status line.
-    readonly property var errorDialog: statusDetails.visible?statusDetails:
+    readonly property var errorDialog: statusExplanationDialog.visible?statusExplanationDialog:statusDetails.visible?statusDetails:
         qifExportDialog.visible?qifExportDialog:definitionExportDialog.visible?definitionExportDialog:definitionImportDialog.visible?definitionImportDialog:
         importUndoConfirm.visible?importUndoConfirm:importUndoPicker.visible?importUndoPicker:closeAuditFailure.visible?closeAuditFailure:reviewDifference.visible?reviewDifference:
         linkExclusionDialog.visible?linkExclusionDialog:reapplyDialog.visible?reapplyDialog:
         bulkDialog.visible?bulkDialog:mergePreview.visible?mergePreview:
         changePreview.visible?changePreview:importMapping.visible?importMapping:null
-    HelpDialog {
-        helpTarget: "help:messages-problems"
-        id:statusDetails;objectName:"statusDetails";title:"Status details";modal:true;anchors.centerIn:parent;width:Math.min(720,window.width-40)
+    Dialog {
+        id:statusDetails;objectName:"statusDetails";title:"Status";modal:true;anchors.centerIn:parent;width:Math.min(720,window.width-40)
+        property string helpTarget: "help:messages-problems"
         contentItem:Label {text:errorDialog===statusDetails?workflow.error:"";textFormat:Text.PlainText;wrapMode:Text.Wrap}
         standardButtons:Dialog.Close
+    }
+    Dialog {
+        id:statusExplanationDialog;objectName:"statusExplanationDialog";title:"Help with this problem";modal:true;anchors.centerIn:parent;width:Math.min(720,window.width-40)
+        property string helpTarget: "help:messages-problems"
+        contentItem:ColumnLayout {
+            Label {objectName:"statusExplanationSentence";text:workflow.error;textFormat:Text.PlainText;wrapMode:Text.Wrap;font.bold:true;Layout.fillWidth:true}
+            Label {objectName:"statusExplanationBody";text:workflow.statusExplanation(workflow.error);textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+        }
+        standardButtons:Dialog.Ok
     }
     function answerReview(question, answer, chosen) {
         if(currentPage==="ledger")captureLedgerView("review")
@@ -3204,7 +3213,7 @@ ApplicationWindow {
                     Button {objectName:"openProtectedDataset";text:"Open file";onClicked:openDataset()}
                 }
                 Label {objectName:"welcomeError";text:errorDialog?"":workflow.error;visible:text.length>0;textFormat:Text.PlainText;color:theme.error;wrapMode:Text.Wrap;Layout.fillWidth:true;Accessible.name:text}
-                Button {objectName:"welcomeErrorHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!errorDialog && !!workflow.error;onClicked:openContextHelp("help:messages-problems#opening-a-file")}
+                Button {objectName:"welcomeErrorHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!errorDialog && workflow.statusExplanation(workflow.error).length>0;onClicked:statusExplanationDialog.open()}
                 GroupBox {
                     title:"Create a new dataset";visible:settingUp;Layout.fillWidth:true;enabled:!workflow.busy
                     ColumnLayout {
@@ -3388,8 +3397,8 @@ ApplicationWindow {
                         }
                         Label {objectName:"ledgerSelectionCount";visible:currentPage==="ledger" || window.reportLedger;text:"Selected: "+(s.selectionCount||0);textFormat:Text.PlainText;Accessible.name:text}
                         Button {objectName:"cancelOperation";text:"Cancel";visible:workflow.busy && workflow.canCancel;enabled:!workflow.cancellationRequested;onClicked:workflow.requestCancel()}
-                        Button {objectName:"statusHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!workflow.busy && !!workflow.error && !errorDialog;onClicked:openContextHelp("help:messages-problems")}
-                        Button {objectName:"statusDetailsButton";text:"Details";visible:!workflow.busy && !!workflow.error && !errorDialog;onClicked:statusDetails.open()}
+                        Button {objectName:"statusHelp";text:"Help with this problem";focusPolicy:Qt.TabFocus;visible:!workflow.busy && !!workflow.error && !errorDialog && workflow.statusExplanation(workflow.error).length>0;onClicked:statusExplanationDialog.open()}
+                        Button {objectName:"statusDetailsButton";text:"Status";visible:!workflow.busy && !!workflow.error && !errorDialog;onClicked:statusDetails.open()}
                     }
                 }
                 Item {

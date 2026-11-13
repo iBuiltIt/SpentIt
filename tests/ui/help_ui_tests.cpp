@@ -2727,26 +2727,32 @@ private slots:
         QCOMPARE(reportDialog->modality(), Qt::ApplicationModal);
         QCOMPARE(reports->property("drafts").value<QJSValue>().toVariant(), drafts);
         QVERIFY(QMetaObject::invokeMethod(help, "dismiss")); mouse("reportsGuardStay");
-        // An actual invalid search produces an error. Help must not rerun it.
+        // An actual invalid search produces an error. The explanation dialog must not rerun it or open Help.
         QVERIFY(QMetaObject::invokeMethod(reports, "load"));
         QVERIFY(click(session.root, "accountNavigation")); wait(session.model);
         run(session.model, "query", {{"filter", "\"unclosed"}}, false);
-        const auto error = session.model.error(); QVERIFY(!error.isEmpty());
+        const auto error = session.model.error();
+        QCOMPARE(error, QString("Unclosed search quote"));
         before = session.model.state();
+        QCOMPARE(object(session.root, "statusDetailsButton")->property("text").toString(), QString("Status"));
         mouse("statusHelp");
-        QTRY_COMPARE(help->property("topicId").toString(), QString("messages-problems"));
+        auto* explanation = object(session.root, "statusExplanationDialog"); QVERIFY(explanation);
+        QTRY_VERIFY(explanation->property("visible").toBool());
+        QCOMPARE(object(session.root, "statusExplanationSentence")->property("text").toString(), error);
+        QVERIFY(object(session.root, "statusExplanationBody")->property("text").toString().contains(QString("quotation mark")));
+        QVERIFY(!help->isVisible());
         QCOMPARE(session.model.error(), error); QCOMPARE(session.model.state(), before);
         QVERIFY(!session.model.busy());
-        QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
+        QVERIFY(QMetaObject::invokeMethod(explanation, "close"));
+        QTRY_VERIFY(!explanation->property("visible").toBool());
         run(session.model, "close");
-        // Use the welcome field so its delayed probe and the tested path agree.
+        // A status error with no explanation has Status, and no Help button.
         QVERIFY(edit(session.root, "datasetPath", session.path("missing-file.spentit")));
         QTRY_VERIFY(!session.model.busy() && !session.model.error().isEmpty());
-        before = session.model.state();
-        const auto openError = session.model.error();
-        mouse("welcomeErrorHelp");
-        QTRY_COMPARE(help->property("currentSection").toString(), QString("Opening a file"));
-        QCOMPARE(session.model.state(), before); QCOMPARE(session.model.error(), openError);
+        QVERIFY(session.model.statusExplanation(session.model.error()).isEmpty());
+        auto* welcomeHelp = object(session.root, "welcomeErrorHelp"); QVERIFY(welcomeHelp);
+        QVERIFY(!welcomeHelp->property("visible").toBool());
+        QVERIFY(!help->isVisible());
     }
     void helpBesideRulesDialog() {
         HelpCatalog catalog;

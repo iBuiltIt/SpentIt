@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-12
+Last updated: 2026-11-13
 
 The bundled manual includes the user-visible behavior through the 2026-11-12
 pass (MAN-001 through MAN-044). There are no open items.
@@ -63,3 +63,17 @@ write captures straight into `manual/images`. Do not point
   ineligible; this is a separate case.
 - Pictures: `change-history.png` and `undo-import.png` do not show this case.
   No recapture unless a later pass adds an example of the missing button.
+
+### MAN-046 — Status message explanations
+
+- Date: 2026-11-13
+- The bottom **Details** button is now **Status**. It still shows the full
+  status sentence. **Help with this problem** appears only for a sentence in
+  [doc/status-message-help-draft.md](status-message-help-draft.md) and opens a
+  dialog with that sentence and its explanation. It no longer opens this
+  chapter.
+- `manual/messages-problems.md`: the opening still says **Details** and that
+  **Help with this problem** opens this chapter. Both are outstanding.
+- `manual/where-to-find.md` and `manual/backup-recovery.md`: **Details** is
+  outstanding. The name is **Status**.
+- Pictures: no recapture unless a later pass shows the status line.

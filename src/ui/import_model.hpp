@@ -52,6 +52,7 @@ public:
     Q_INVOKABLE void requestCancel();
     Q_INVOKABLE bool reorderAccounts(const QStringList& ids);
     QString error() const { return error_; }
+    Q_INVOKABLE QString statusExplanation(const QString& message) const;
     QStringList currencies() const;
     QString suggestedPath() const;
     QUrl documentsFolder() const;

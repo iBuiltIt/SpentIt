@@ -6,6 +6,7 @@
 #include <spentit/diagnostics.hpp>
 #include "import_model.hpp"
 #include "file_exchange_codec.hpp"
+#include "status_explanation.hpp"
 #include <spentit/import_view.hpp>
 #include <spentit/split_editor.hpp>
 #include <spentit/statements.hpp>
@@ -31,6 +32,7 @@
 #include <map>
 #include <set>
 using namespace spentit;
+QString ImportModel::statusExplanation(const QString& message) const { return spentit::statusExplanation(message); }
 namespace {
 QVariantList sidebarAccounts(const QVariantList& accounts,const QString& key) {
     auto remaining=accounts;QVariantList ordered;
