@@ -176,8 +176,9 @@ succeeds.
 **“Undo the current actions, or close and reopen the file first.”**
 
 **Discard new transactions…**, and undoing an import that is not the
-latest action, wait until Undo is empty. Undo the actions beside search,
-or close the file successfully, then try again.
+newest action, wait until Undo is empty. Undo the newest saved actions
+with **Command+Z** or **Ctrl+Z**, or close the file successfully, then
+try again.
 [When Undo is no longer offered](add-correct-transactions.md#undo-a-saved-change).
 
 **“Statement contains conflicting fields; no import was saved. Obtain a corrected export and try again.”**

@@ -20,7 +20,7 @@ Select **Credit card**, then **Rules** in the sidebar. Choose **New rule**.
 
 1. Give it a name, such as **Market groceries**.
 2. Under **Match**, leave **Transaction** and **Payee** selected.
-3. Enter **Market** in **Pattern (regular expression)**.
+3. Enter **Market** in **Pattern**. This field is a regular expression.
 4. Check **Whole field** to match just Market, rather than any payee
    containing that word. Leave **Case sensitive** off to allow different
    capitalization.
@@ -45,7 +45,10 @@ splits, **Create a rule for** asks whether the rule is for the transaction
 or one split. Check the proposed pattern and category. When the transaction
 is open, **Edit rule…** opens a rule that assigned a value to that entry.
 A selection of several transactions, or a transaction you typed yourself,
-does not offer this. Start with **New rule** in Rules instead.
+does not offer this. Start with **New rule** in Rules instead. The
+pictures in this chapter follow **New rule**, and that path leaves you
+in Rules. **Create rule…** shows **Save, apply and back**. That saves
+the rule, applies it, and returns you to the ledger.
 
 ## Preview, save and apply {#preview-save-and-apply}
 
@@ -69,18 +72,24 @@ transaction row. Preview does not change your transactions.
 **Discard changes** restores that rule. A new unsaved rule uses
 **Discard draft** instead. While the selected rule still has unsaved edits,
 the other button reads **Save and apply rule**. After the rule is saved, it
-reads **Apply rule**. You can apply without previewing, but a preview is
-useful while learning a pattern.
+reads **Apply rule**. **New rule**, **Copy into new rule**, and an
+existing rule all leave you in Rules. A rule you started from the ledger
+with **Create rule…** shows **Save, apply and back** instead. Choosing
+it saves the rule, applies it, and returns you to the ledger. You can
+apply without previewing, but a preview is useful while learning a
+pattern.
 
 These buttons concern the selected rule. Other unfinished rule edits stay
 unfinished. Saved enabled rules run during later imports, after any
 missing-category choices are resolved. They can match in any account.
 The Transactions choice applies only when you run the rule yourself.
 
-**Undo application** undoes a rule application when that is the latest
-saved action for the account named beside it. It keeps the saved rule.
-A later saved action replaces it. Disabling or deleting a rule leaves
-its earlier assignments in place. If the rule has no category, SpentIt
+To undo a rule you just applied, press **Command+Z** on a Mac, or
+**Ctrl+Z** on Windows and Linux, while that application is still the
+newest saved action. SpentIt asks before it undoes. The rule stays
+saved, so you can apply it again. A later saved action takes the
+shortcut’s place. Turning the rule off, or deleting it, leaves the
+categories it already assigned. If the rule has no category, SpentIt
 says **Choose an existing category.** Choose one, then try again.
 
 ## What a rule reads
@@ -173,7 +182,7 @@ unless you check **Case sensitive**.
 ### Common pattern pieces
 
 See [Common pattern pieces](search-examples.md#common-pattern-pieces) for the shared
-pattern reference. Enter these pieces in **Pattern (regular expression)**;
+pattern reference. Enter these pieces in **Pattern**;
 ledger search uses an extra `regex:"…"` wrapper.
 
 ### Keep the useful part of a PayPal description

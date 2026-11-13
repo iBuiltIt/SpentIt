@@ -105,12 +105,19 @@ When an imported transaction refers to another account, such as
 Chequing making a payment to Credit card, it is a transfer, not an
 ordinary spending category.
 
-For an unresolved transfer, open **Review**, choose **Correct**, and
-select the destination account in the transaction’s category field.
-For a split transaction, choose the field for the affected split.
-The destination must be another active account in the same currency.
-Create or reactivate it first if needed. Selecting an account creates
-the transfer posting in that account.
+When a transfer names an account that is not in your file, open
+**Review**. Beside **Accept transactions** you will see
+**Warnings [n]**, with one line for each missing account. The line
+names your account, the date, the payee when there is one, and says
+that destination is not an account. Choose the line to open the
+transaction.
+
+Create or reactivate the account first. Then, in the transaction’s
+category field, choose that account. For a split, choose the field
+for the part that is the transfer. The other account has to be active
+and use the same currency. Choosing it creates the transfer posting
+there. **Accept transactions** waits until the account exists and the
+transfer is linked.
 
 For mapped imports, **Set up imported transfers?** can use the account
 names you confirmed. **Set up transfers** links matching postings and
@@ -178,10 +185,12 @@ transaction already in the account.
 For an import into the wrong account, undo it first, then import the
 file into the correct account.
 
-If that import is the latest saved action in the file, the **Undo**
-button beside search can undo it. Right-click an account and choose
-**Undo last import…** for its newest eligible import. To choose one,
-open **Review → Undo import…**, select the account, then the import.
+If that import is the newest saved action in the file, press
+**Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux. SpentIt
+asks before it undoes. Right-click an account and choose **Undo last
+import…** for its newest eligible import. To choose one, open
+**Review** and choose **Undo import…**, select the account, then the
+import.
 The list is newest first and uses file type, dates, and record counts
 to help identify it. An older import waits until Undo is empty. The
 message is **Undo the current actions, or close and reopen the file

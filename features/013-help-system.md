@@ -1,7 +1,7 @@
 # 013 — Help and the user manual
 
 Status: **active**
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 Help is an offline viewer of the bundled manual: twelve chapters, five quick
 references, and 38 pictures. Sample topics in tests are fixtures, not the
@@ -43,8 +43,7 @@ user-visible change in [doc/manual-update-backlog.md](../doc/manual-update-backl
   Help even when Contents is open. Escape still closes Contents first. On an
   enlarged picture, **Escape** or **Close** returns to the article.
 
-Topic and section identifiers stay stable. Picture capture for a future
-authorized pass is in the manual backlog.
+Topic and section identifiers stay stable.
 
 ## Not in scope
 

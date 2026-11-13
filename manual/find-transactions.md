@@ -110,8 +110,7 @@ were no matches.
 ## Sort, scroll and come back
 
 Click a column heading to sort by it. Click it again to reverse the
-order; the heading’s arrow shows the direction. **Date** returns you
-to date order. Balance values still belong to their original dates.
+order; the heading’s arrow shows the direction. 
 
 Scroll to reach more rows. In a narrow window, use the horizontal
 scrollbar to reach the columns on the right.
@@ -130,20 +129,21 @@ choose it, then use **Merge**, **Keep this pair separate**, or
 **None of these match**. **Show match** finds the other entry. If a
 search is hiding it, the button says **Reveal hidden match (clear
 filter)**. **Next possible duplicate** moves to another marked row.
-**Undo review** reverses the latest review answer while it is available.
-You can answer the same questions in Review. Selecting a row does not
-answer them.
+Press **Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux, to
+undo the newest saved answer. SpentIt asks first. You can answer the
+same questions in Review.
 
-Choose **Review** in the sidebar. Its count is the number of outstanding
-review items, not the number of new transactions. Items are grouped by
-account and can include possible duplicates, transfer matches, and
-records that need correcting.
+Choose **Review** in the sidebar. It reads **Review (n)** for the
+questions still open. That number is not the count of new transactions.
+When a transfer names an account that is not in the file, it adds
+**[w]** for those warnings. Questions can include possible duplicates,
+transfer matches, and records that need correcting.
 
 Here, another import added a possible repeat of the Market purchase.
 Both entries currently count, making the card balance -98.36 while
 both remain.
 
-![Review showing an accepted Market purchase and a new Market groceries entry as a possible duplicate in Credit card.](images/transactions-review.png)
+![Review (1) showing an accepted Market purchase and a new Market groceries entry as a possible duplicate in Credit card.](images/transactions-review.png)
 *These entries might describe the same purchase. Review presents the question; opening a row does not answer it.*
 
 Read the question and compare the entries before choosing **Merge** or
@@ -151,10 +151,10 @@ Read the question and compare the entries before choosing **Merge** or
 **Correct** opens a repairable record. Duplicate and transfer decisions
 come next in the guide.
 
-The bottom status line reports activity and outcomes. **Nothing left
-to review.** means there are no outstanding review items; it does not
-mean all transactions have been accepted. Use **Back** or select an
-account to return to its ledger.
+The bottom status line reports activity and outcomes. When Review is
+empty it says **Nothing needs review.** That means there are no
+questions open. It does not mean the new transactions have been
+accepted. Use **Back** or select an account to return to its ledger.
 
 ## If something looks missing or wrong
 

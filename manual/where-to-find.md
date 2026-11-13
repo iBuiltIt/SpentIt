@@ -17,7 +17,7 @@ Most controls appear after you open a file.
 - **Switch files:** choose **File → Close file**, then open another from
   the welcome screen. [Close or switch files](create-open-file.md#close-or-switch-files).
 - **Check which file is open:** choose **Settings** in the left sidebar
-  and read **Current file**.
+  and read the path under **Current file settings**.
 - **Keep a copy of your file:** quit SpentIt after a successful close, then
   copy the file while SpentIt is not running.
   [Keep a copy of the file](backup-recovery.md#keep-a-copy).
@@ -90,10 +90,10 @@ Most controls appear after you open a file.
 
 Undo depends on what you changed. Later changes can make it unavailable.
 
-- **Undo the latest saved action:** look beside search. The button names
-  that action, such as **Undo edit…**. The same Undo is at the top of
-  Review, and **Undo application** in Rules when the latest action is a
-  rule application. [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
+- **Undo the latest saved action:** press **Command+Z** on a Mac, or
+  **Ctrl+Z** on Windows and Linux. SpentIt asks first. You can also open
+  the action in **Change history** and choose **Undo** there.
+  [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
 - **See changes since you opened the file:** choose **Change history**
   in the sidebar.
 - **Undo an import:** right-click the account for **Undo last import…**,

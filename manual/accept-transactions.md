@@ -17,10 +17,14 @@ in balances and reports. Accepting marks them as checked; it isn’t needed to s
 
 ## Accept the transactions you’ve checked
 
-Open **Review** in the sidebar. Look through any remaining questions, then
-choose **Accept transactions** at the bottom.
+Open **Review** in the sidebar. The button and the heading read
+**Review (n)** for the questions still open. With nothing waiting, that
+is **Review (0)**, as in the picture. When a transfer names an account
+that is not in the file, they add **[w]** for those warnings. Look
+through any remaining questions, then choose **Accept transactions**
+at the bottom.
 
-![Review with no remaining questions. Accept transactions is in the footer.](images/accept-ready.png)
+![Review (0), with Accept transactions at the bottom and no questions open.](images/accept-ready.png)
 *Accept transactions covers the new entries in both Chequing and Credit card.*
 
 These screenshots show the purchases and refund before recording the card payment.
@@ -50,11 +54,19 @@ Choosing **Accept transactions** while questions or warnings remain opens
   together. You can also answer a duplicate from the rose bar in its ledger.
   Acceptance does not merge duplicates or link transfers for you.
 - **Warnings you may proceed with:** **Accept anyway** is available when
-  there is no problem that must be fixed first. Use it only if you understand
-  the warnings. Suspected duplicates are kept as separate transactions.
+  there is no problem that must be fixed first. If a transfer has no
+  matching transaction from the bank, the question names the account and
+  the count. One reads **Chequing. There is 1 unmatched transfer
+  transaction.** Several read **Chequing. There are 3 unmatched transfer
+  transactions.** Use **Accept anyway** only if you understand the
+  warnings. Suspected duplicates are kept as separate transactions.
 - **Problems that must be resolved first:** the warning says **Must be fixed
-  before accepting**. An unresolved account or transfer destination, or a
-  missing imported-category choice, can prevent acceptance. Complete the
+  before accepting**. When a transfer names an account that is not in the
+  file, Review lists it beside **Accept transactions** as **Warnings [n]**.
+  The line names the account, the date, the payee when there is one, and
+  says that destination is not an account. Choose the line to open the
+  transaction, create the account, and link the transfer. A missing
+  imported-category choice can also prevent acceptance. Complete the
   offered choices. **Accept anyway** cannot bypass them.
 - **Failed imported records:** **Accept anyway** accepts the usable new
   transactions and leaves the failed records in Review. It does not repair

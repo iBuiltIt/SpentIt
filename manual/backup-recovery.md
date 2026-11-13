@@ -81,7 +81,7 @@ confirm the change, close the file and open it with the new password
 before you do anything else. If it says the password was not changed,
 the file still uses the password it had.
 
-![Settings for the Household file, including the password fields. Change password is faded until those fields are ready.](images/settings.png)
+![Settings for the Household file. Current file settings shows the path, the date format, and amount formatting. Change password is faded until those fields are ready.](images/settings.png)
 *Copy the file first if you want that copy to keep the password it has now.*
 
 ## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}

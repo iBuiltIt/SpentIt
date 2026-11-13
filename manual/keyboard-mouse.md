@@ -46,10 +46,9 @@ another row leaves that editor where it is.
 - **Home/End** in a text field: move to the start or end of its text.
   Hold **Shift** to select the text along the way.
 
-For a saved change, use the **Undo** button beside search. Its name
-follows the action. In a clean editor, **Command+Z** on macOS or
-**Ctrl+Z** does the same; while typing, it undoes text instead. A later
-saved action replaces it.
+For a saved change, press **Command+Z** on a Mac, or **Ctrl+Z** on
+Windows and Linux. SpentIt asks before it undoes the newest saved
+action. While you are typing, the shortcut undoes the text instead.
 
 [Editing and Undo](add-correct-transactions.md#correct-an-entry).
 
@@ -74,7 +73,9 @@ Choosing a date fills the field. Save the surrounding edit when ready.
 - In ledger search, **Enter** applies the search. **Escape** clears it
   and shows the account’s transactions again.
 - Click a sortable column heading to sort; click it again to reverse
-  the order. **Date** returns to date order.
+  the order. **Date** reverses the whole list, including two
+  transactions on the same day. Each row keeps the balance after that
+  transaction.
 - Click the arrow beside a transfer category to visit its other posting.
 - Use **Back** and **Forward** to return to places you’ve visited. A
   button you cannot use yet stays where it is and looks faded. Finish

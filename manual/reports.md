@@ -124,7 +124,8 @@ complete.
 
 ## Choose a chart
 
-Use **Back to Reports** to change **Chart**, then **Save and show**.
+Choose **Back** at the top of the window to return to the report list.
+Change **Chart**, then choose **Save and show**.
 
 - **None** shows just the table.
 - **Bar — separate periods** gives each period its own chart. Periods in the

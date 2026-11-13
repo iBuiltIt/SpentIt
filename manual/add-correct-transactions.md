@@ -189,11 +189,9 @@ Check both accounts afterward; see [Review and linking](review-duplicates-transf
 
 ## Undo a saved change {#undo-a-saved-change}
 
-The **Undo** button beside search undoes the latest saved action in
-the file. Its name follows that action, such as **Undo edit…** or
-**Undo payee rename…**. **Command+Z** on macOS, or **Ctrl+Z**, does
-the same when you are not typing. While typing, the shortcut undoes
-the text instead.
+Press **Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux, to
+undo the newest saved action in the file. While you are typing, the
+shortcut undoes the text instead.
 
 SpentIt asks before it undoes. The question names the action, how many
 transactions it covers, and which accounts. Choose **Undo**, or
@@ -237,7 +235,7 @@ changes also need to be undone**. Those changes are listed newest
 first. **Yes, undo all** undoes the whole list. **Cancel** leaves them.
 Changes that do not share those transactions stay.
 
-The Undo button beside search undoes only the newest action in the file.
+**Command+Z**, or **Ctrl+Z**, undoes only the newest action in the file.
 
 ### When Undo is no longer offered
 
@@ -249,10 +247,11 @@ If closing fails or you cancel it, or SpentIt stops unexpectedly, Undo
 is still there when you return.
 
 **Discard new transactions…**, and undoing an import that is not the
-latest action, wait until Undo is empty. The message is **Undo the
-current actions, or close and reopen the file first.** Undo the actions
-beside search, or close the file successfully, then try again. If that
-import is the latest action, the Undo button beside search undoes it.
+newest action, wait until Undo is empty. The message is **Undo the
+current actions, or close and reopen the file first.** Undo the newest
+saved actions with **Command+Z** or **Ctrl+Z**, or close the file
+successfully, then try again. If that import is the newest action, the
+same shortcut undoes it.
 
 If SpentIt cannot confirm that a change was saved, reopen the file and
 check the transaction before trying again.

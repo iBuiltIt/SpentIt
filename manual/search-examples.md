@@ -66,8 +66,9 @@ is ordinary text, not a wildcard.
 ### Common pattern pieces
 
 The table below applies inside `regex:"…"` in ledger search and in
-**Pattern (regular expression)** in Rules. In Rules, enter just the pattern,
-without the `regex:` wrapper. Search finds entries; it does not replace text.
+**Pattern** in Rules. Both are regular expressions. In Rules, enter
+just the pattern, without the `regex:` wrapper. Search finds entries;
+it does not replace text.
 
 | Piece | Meaning | Try it with bank text |
 | --- | --- | --- |

@@ -90,17 +90,23 @@ Our card payment is **-36.18 in Chequing** and **+36.18 in Credit card**.
 The bank might date it January 28 and the card provider January 29.
 These are two postings of one transfer, not a duplicate purchase.
 
+When that payment is in both imported files, Review asks once. The
+question starts from the withdrawal, and the deposit is the other line.
+The number in **Review (n)** includes it once. A different payment has
+its own section in Review.
+
 In a transfer question, check both account names, the signs and the
 dates. Select the matching candidate’s round button if there is more
 than one. A preselected candidate is only a suggestion.
 
 ![Review transfer question connecting a 36.18 Credit card deposit with the 36.18 Chequing withdrawal dated one day earlier.](images/review-link.png)
-*Both accounts need their posting. Link connects the selected pair. It does not merge them into one account.*
+*Link connects the selected pair. Not this transfer leaves both lines in their accounts. Neither choice merges them into one account.*
 
-Choose **Link** for the selected pair, or **Not a transfer** to reject
-the displayed comparisons and keep both transactions. If either
-transaction has several splits, use **Split to link** to choose the
-relevant part on each side. Check any preselected split before proceeding.
+Choose **Link** for the selected pair. Choose **Not this transfer** when
+that pair is not the same payment. Both imported lines stay in their
+accounts, and neither becomes ordinary spending. If either transaction
+has several splits, use **Split to link** to choose the relevant part
+on each side. Check any preselected split before proceeding.
 
 Suggestions use the same currency, opposite signs, and dates no more
 than seven calendar days apart. Ordinary spending categories can
@@ -124,11 +130,15 @@ entry where eligible. Read the question’s explanation before confirming;
 this is why an account balance may change when a generated duplicate
 is removed.
 
-If you have checked the transfer and have no bank posting to match,
-use **Accept without bank match** where offered. This acknowledges the
-missing match; it is separate from **Accept transactions**. You can
-match an imported posting later. Don’t add another transfer simply
-to clear the question.
+If you have checked the transfer and the bank posting has not arrived,
+choose **Accept without bank match** when the card shows only the
+transfer. That records the missing match. It is separate from
+**Accept transactions**. You can match an imported posting later.
+Don’t add another transfer just to clear the question.
+
+When the other imported line is already on the card, **Accept without
+bank match** is not offered. Use **Link** or **Not this transfer** for
+that pair.
 
 ## When the amounts differ {#when-the-amounts-differ}
 
@@ -175,22 +185,29 @@ meant. In a Review question, use **Split to link** when it is offered.
 Read the confirmation before you apply the link. The command still
 checks whether the two postings can be linked.
 
+If Review shows **Import problems**, choose **Review…** on that line.
+A line that names a transaction opens it. A line that does not opens
+that account’s ledger.
+
 For suggestions you do not want to see again, choose **Hide suggestions…**
 on a transfer row. **Don’t suggest links** asks for payee or memo text.
 By default that text must match the whole field, ignoring capitalization
 but keeping spaces and punctuation. You can limit it to that account.
 Choose **Preview** before **Save**. It affects later suggestions.
-**Transfers…** in Review is where you add a transfer yourself.
-Hidden suggestions are listed in **Settings → Hidden transfer suggestions…**.
+The matches you have hidden are listed in **Settings → Hidden transfer
+matches…**.
 
 ## Undo a mistaken answer
 
-**Undo** at the top of Review reverses the latest saved action in the
-file, including a Merge, a Link or a batch of merges. Confirm it before
-continuing. A batch is one step. There is no separate **Unlink** button.
+Press **Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux, to
+undo the newest saved action in the file. That includes a Merge, a
+Link, or a batch of merges. SpentIt asks before it undoes. A batch is
+one step. There is no separate **Unlink** button. You can also open
+that action in **Change history** and choose **Undo** there.
 
-A later saved action replaces that Undo. If a later change shares a
-transaction, Change history can still undo the review answer with it.
+A later saved action takes the place of that shortcut. If a later
+change shares a transaction, Change history can still undo the review
+answer with it.
 See [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
 If Undo is unavailable, look at both sides before you delete a posting.
 Deletion also changes the account balance.

@@ -79,6 +79,11 @@ file. If the right file is already shown, you can leave it selected.
 Enter the password if asked, then choose **Open file**. A file without
 a password may open automatically when you next start SpentIt.
 
+You can also open the file itself. On Windows and Linux, open the
+`.spentit` file in your files. SpentIt starts and opens that file.
+Enter the password if it asks. The file you opened last time stays
+closed, so check that this is the one you wanted.
+
 ![Welcome screen with the Household file selected, a password field, and the Open file button.](images/create-file-unlock.png)
 *Check the selected file, enter its password, and choose Open file.*
 

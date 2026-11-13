@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 SpentIt is the local rules-enabled application. The release rules database is
 version 1, and the application version is 1.0.0. A file whose number is not 1
@@ -88,7 +88,11 @@ release 1 does not add.
 
 ## Manual
 
-MAN-001 through MAN-029 are in the bundled manual. The backlog is empty. A
-later user-visible change is logged in
-[manual-update-backlog.md](manual-update-backlog.md) and waits for an
-owner-authorized manual pass. Do not edit `manual/` as part of feature work.
+MAN-001 through MAN-044 are in the bundled manual. The 2026-11-12 pass
+updated the chapters and installed recaptured pictures with
+`tools/capture_manual_images.py --install`. The help bundle was rebuilt
+into `./build/SpentIt`. In `build/import-ui-rules-release`, `help.prepare`
+and `help.catalog` passed. The backlog is empty. A later user-visible
+change is logged in [manual-update-backlog.md](manual-update-backlog.md)
+and waits for an owner-authorized manual pass. Do not edit `manual/` as
+part of feature work.
