@@ -168,6 +168,9 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
                 advance(impl_->db,id,revision,"undo-import",2);
             }
             impl_->selected_account=owner;
+            // A reviewing group must still have pending batches. Discarded
+            // batches are valid only after the group is aborted.
+            Statement group(impl_->db,"UPDATE import_groups SET state=3 WHERE id=? AND state=1");group.text(1,source);group.done();
             Statement detach(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE source_id=?)");detach.text(1,source);detach.done();
             Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(?,?,?,?,?,?)");receipt.text(1,operation);receipt.integer(2,owner);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.text(5,source);receipt.integer(6,expected);receipt.done();
             if(!collecting){finish([&]{verify();transaction->commit();},true);}return {std::string(operation),owner,review.transactions,review.failures};

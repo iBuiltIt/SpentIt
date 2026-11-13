@@ -465,6 +465,26 @@ void connected_undo(const std::filesystem::path& directory) {
         check(store.action_head() && store.action_head()->id=="accept","Acceptance stays after the layered Undo");
         store.verify();
     }
+    {
+        auto store=ImportStore::create(directory/"grouped-accept.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.create_account(2,"Savings",Currency("CAD"),"2026-01-01");
+        const std::string qif="!Account\nNChecking\nTBank\n^\n!Type:Bank\nD01/01/2026\nT-10.00\nPLeft\n^\n!Account\nNSavings\nTBank\n^\n!Type:Bank\nD01/01/2026\nT-5.00\nPRight\n^\n";
+        OperationContext capture,materialize;
+        store.prepare_import_group("both",qif,qif::DateOrder::dmy,{{0,1,{}},{1,2,{}}},capture);
+        store.resume_import_group("both",materialize);
+        store.accept_all("accept",true);
+        check(store.current_ledger().size()==1,"Accepted grouped import is in the checking ledger");
+        store.select_account(2);
+        check(store.current_ledger().size()==1,"Accepted grouped import is in the savings ledger");
+        store.select_account(1);
+        const auto preview=store.preview_connected_undo("both",store.action_token());
+        check(preview.lines.size()==2 && preview.lines[0].id=="accept" && preview.lines[1].id=="both","Accepted grouped import undo includes Accept");
+        store.undo_connected("undoGrouped",preview);
+        check(store.current_ledger().empty() && !store.action_head(),"Undoing the accepted grouped import removes it");
+        store.select_account(2);
+        check(store.current_ledger().empty(),"The other account loses the imported rows too");
+        store.verify();
+    }
 }
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;
