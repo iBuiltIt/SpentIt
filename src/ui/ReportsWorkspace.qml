@@ -432,6 +432,5 @@ Item {
             Item {id:detailLedgerHost;Layout.fillWidth:true;Layout.fillHeight:true}
 
         }
-        Button {objectName:"reportFeedbackHelp";text:"Help with reports";focusPolicy:Qt.TabFocus;onClicked:root.helpRequested("help:answer-with-reports")}
     }
 }

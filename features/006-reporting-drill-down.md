@@ -52,8 +52,11 @@ and saves only that removal. Unrelated drafts remain. After deletion, select
 the existing new draft first.
 
 Each row has one Show report or Save and show action. Leaving with unsaved
-report edits offers Save all changes, Discard all changes, or Cancel. Help
-stays available. Account and category checklists name their scope. Expenses and
+report edits offers Save all changes, Discard all changes, or Cancel, and that
+question keeps Help. The page has no Help with reports button. Top-bar Help
+opens the reports chapter. From the transaction list it opens the section for
+the transactions behind an amount. A stale result offers Help with this result.
+Account and category checklists name their scope. Expenses and
 Income are separate tri-state groups. Clear expenses and Clear income clear
 that whole group, including rows hidden by search, and do not change
 Uncategorized or the other group.

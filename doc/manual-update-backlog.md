@@ -291,3 +291,21 @@ transactions behind an amount" stays. Recapture
 beside **Refresh report**.
 [reports-transactions](../manual/images/reports-transactions.png) keeps
 **Back to report** and does not need a new capture for this change.
+
+### MAN-044 — Help with reports removed
+
+Logged: 2026-11-12. Contract:
+[reporting](../features/006-reporting-drill-down.md).
+
+Reports no longer shows **Help with reports**. The top-bar **Help** opens the
+reports chapter. From the transaction list it opens the section for the
+transactions behind an amount. A stale result still offers **Help with this
+result**. The question before leaving Reports still has **Help**.
+
+Chapter: [Answer with reports](../manual/reports.md) does not name the button.
+Recapture [reports-editor](../manual/images/reports-editor.png). It shows
+**Help with reports** under **Save report**. Recapture
+[reports-comparison](../manual/images/reports-comparison.png),
+[reports-pie](../manual/images/reports-pie.png), and
+[reports-transactions](../manual/images/reports-transactions.png) once, together
+with MAN-043. Each shows **Help with reports** at the bottom of the page.

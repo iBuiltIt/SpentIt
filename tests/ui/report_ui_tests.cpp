@@ -36,7 +36,7 @@ private slots:
         auto visible=[&](const char* name){auto* item=object(root,name);return item && item->property("visible").toBool();};
         auto drafts=[&]{return value(workspace->property("drafts")).toList();};
         auto field=[&](const QString& name,const QVariant& v){return QMetaObject::invokeMethod(workspace,"setField",Q_ARG(QVariant,name),Q_ARG(QVariant,v));};
-        QVERIFY(!visible("reportSearch"));QVERIFY(!visible("duplicateReport"));QVERIFY(visible("reportFeedbackHelp"));
+        QVERIFY(!visible("reportSearch"));QVERIFY(!visible("duplicateReport"));QVERIFY(!visible("reportFeedbackHelp"));
         QVERIFY(click(root,"newReport"));QVERIFY(field("name","First report"));
         QCOMPARE(drafts().size(),1);QVERIFY(!visible("duplicateReport"));QVERIFY(!visible("deleteReport"));
         QCOMPARE(object(root,"newReport")->property("text").toString(),"New report");
