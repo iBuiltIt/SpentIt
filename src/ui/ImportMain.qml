@@ -85,6 +85,15 @@ ApplicationWindow {
             parent:view;x:view.leftPadding;y:view.height-height;width:view.availableWidth
         }
     }
+    // Full cell text, kept plain so a payee cannot be read as markup.
+    // Newlines come from wrappedTip so a long value stays on the screen.
+    component PlainTip: ToolTip {
+        id:tip
+        delay:350;padding:6
+        contentItem:Text {
+            text:tip.text;font:tip.font;wrapMode:Text.Wrap;textFormat:Text.PlainText;color:tip.palette.toolTipText
+        }
+    }
     component UsableComboBox: ComboBox {
         id:combo
         property real popupPreferredWidth: 180
@@ -593,6 +602,120 @@ ApplicationWindow {
     property string ledgerViewKind: ""
     readonly property var ledgerColumnWeights: reportLedger?[0.12,0.20,0.18,0.16,0.12,0.10,0.12]:[0.14, 0.24, 0.17, 0.15, 0.14, 0.16]
     readonly property int ledgerCategoryColumn: reportLedger?3:2
+    readonly property int ledgerGutter: 20
+    property var accountLedgerWidths: workflow.ledgerColumnWidths(false)
+    property var reportLedgerWidths: workflow.ledgerColumnWidths(true)
+    property bool ledgerColumnDragging: false
+    readonly property bool ledgerColumnsFixed: (reportLedger?reportLedgerWidths:accountLedgerWidths).length===(reportLedger?7:6)
+    readonly property real ledgerSheetWidth: {
+        const available=ledgerScroll?ledgerScroll.availableWidth:0
+        if(!ledgerColumnsFixed) return Math.max(1080, available)
+        let sum=0
+        for(const width of (reportLedger?reportLedgerWidths:accountLedgerWidths)) sum+=Number(width)
+        return Math.max(sum+ledgerGutter, available)
+    }
+    TextMetrics {id:ledgerColumnMetrics;font:window.font;text:" "}
+    function wrappedTip(value) {
+        const text=String(value??"")
+        const limit=64
+        let out="", column=0
+        for(let i=0;i<text.length;++i) {
+            const ch=text.charAt(i)
+            if(ch==="\n" || ch==="\r") {out+="\n";column=0;continue}
+            if(column>=limit && (ch===" " || column>=limit+16)) {out+="\n";column=0}
+            out+=ch
+            column+=1
+        }
+        return out
+    }
+    function ledgerHeaderButton() {
+        const cell=ledgerHeaders.itemAt(0)
+        return cell && cell.headerButton?cell.headerButton:null
+    }
+    function ledgerMeasure(sample) {
+        const button=ledgerHeaderButton()
+        if(button) ledgerColumnMetrics.font=button.font
+        ledgerColumnMetrics.text=sample
+        return Math.ceil(ledgerColumnMetrics.width)
+    }
+    function ledgerColumnChrome() {
+        const button=ledgerHeaderButton()
+        if(!button) return 32
+        return button.leftPadding+button.rightPadding+Math.max(0, 8-button.rightPadding)+4
+    }
+    function ledgerColumnTitle(index, report) {
+        const names=report?["Date","Payee","Account","Category","Withdrawal","Deposit","In report"]:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
+        return names[index]||""
+    }
+    function ledgerAmountSample() {
+        if(s.amountFormatting===false) return "12345.67"
+        const style=s.amountStyle||"comma-dot"
+        if(style==="dot-comma") return "12.345,67"
+        if(style==="space-comma") return "12 345,67"
+        return "12,345.67"
+    }
+    function ledgerDateSample() {
+        const example=workflow.dateFormatExample(s.dateFormat||"YYYY-MM-DD")
+        if(!example || example.length>16 || example.indexOf("Invalid")===0) return "2026-10-28"
+        return example
+    }
+    function ledgerColumnMinimum(index, report) {
+        const which=report===undefined?reportLedger:report
+        const sortable=which?index!==2 && index!==6:true
+        const money=which?index===4 || index===5:index>=3
+        let sample=ledgerColumnTitle(index, which)+(sortable?" ▼":"")
+        if(index===0) {const date=ledgerDateSample();if(ledgerMeasure(date)>ledgerMeasure(sample)) sample=date}
+        else if(money) {const amount=ledgerAmountSample();if(ledgerMeasure(amount)>ledgerMeasure(sample)) sample=amount}
+        return ledgerMeasure(sample)+ledgerColumnChrome()
+    }
+    function ledgerColumnWidth(index) {
+        if(ledgerColumnsFixed) return Number((reportLedger?reportLedgerWidths:accountLedgerWidths)[index])
+        return Math.max(0, ledgerSheetWidth-ledgerGutter)*ledgerColumnWeights[index]
+    }
+    function beginLedgerColumnResize() {
+        ledgerColumnDragging=true
+        if(ledgerColumnsFixed) return
+        const count=reportLedger?7:6
+        const next=[]
+        for(let i=0;i<count;++i) next.push(Math.max(ledgerColumnMinimum(i), Math.round(ledgerColumnWidth(i))))
+        if(reportLedger) reportLedgerWidths=next
+        else accountLedgerWidths=next
+    }
+    function setLedgerColumnWidth(index, width) {
+        const count=reportLedger?7:6
+        const current=(reportLedger?reportLedgerWidths:accountLedgerWidths).slice()
+        if(current.length!==count) return
+        const next=Math.round(Math.max(ledgerColumnMinimum(index), Math.min(4000, width)))
+        if(Number(current[index])===next) return
+        current[index]=next
+        if(reportLedger) reportLedgerWidths=current
+        else accountLedgerWidths=current
+    }
+    function finishLedgerColumnResize() {
+        ledgerColumnDragging=false
+        const widths=reportLedger?reportLedgerWidths:accountLedgerWidths
+        if(widths.length===(reportLedger?7:6)) workflow.saveLedgerColumnWidths(reportLedger, widths)
+    }
+    function clampLedgerColumnSet(report) {
+        const count=report?7:6
+        const source=report?reportLedgerWidths:accountLedgerWidths
+        if(source.length!==count) return
+        const next=source.slice()
+        let changed=false
+        for(let i=0;i<count;++i) {
+            const minimum=ledgerColumnMinimum(i, report)
+            if(Number(next[i])<minimum) {next[i]=minimum;changed=true}
+        }
+        if(!changed) return
+        if(report) reportLedgerWidths=next
+        else accountLedgerWidths=next
+        workflow.saveLedgerColumnWidths(report, next)
+    }
+    function clampLedgerColumns() {
+        if(ledgerColumnDragging || !ledgerHeaders.itemAt(0)) return
+        clampLedgerColumnSet(false)
+        clampLedgerColumnSet(true)
+    }
     function sidebarBalanceText(account) {
         return "Balance "+(account.currency||"")+" "+(account.balance||"").replace(/ /g,"\u00a0")
     }
@@ -2032,6 +2155,11 @@ ApplicationWindow {
         workflow.restoreWindowPosition(window)
         startupPending=!!s.startup
         probeTimer.start()
+        Qt.callLater(clampLedgerColumns)
+    }
+    Connections {
+        target:workflow
+        function onChanged() {Qt.callLater(window.clampLedgerColumns)}
     }
     Timer {
         id:probeTimer;interval:startupPending?0:350
@@ -4053,14 +4181,12 @@ ApplicationWindow {
                         }
                     }
                 }
-                UsableScrollView {
-                    id:ledgerScroll;objectName:"ledgerScroll";parent:window.reportLedger?reportsWorkspace.ledgerHost:workspaceBody;anchors.fill:parent;visible:currentPage==="ledger" || window.reportLedger;clip:true
-                    // Keep controls reachable in a narrow window or with a wide sidebar.
-                    contentWidth:Math.max(1080,availableWidth);contentHeight:availableHeight
-                    ColumnLayout {
-            id:ledgerPage;objectName:"ledgerPage"
-            width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight;enabled:!workflow.busy || workflow.selecting
+                ColumnLayout {
+                    id:ledgerPage;objectName:"ledgerPage"
+                    parent:window.reportLedger?reportsWorkspace.ledgerHost:workspaceBody;anchors.fill:parent;visible:currentPage==="ledger" || window.reportLedger
+                    enabled:!workflow.busy || workflow.selecting
             RowLayout {
+                Layout.fillWidth:true
                 ClearableSearchField {id:search;objectName:"ledgerSearch";clearObjectName:"clearFilter";hasAppliedFilter:appliedFilter.length>0;onClearRequested:guard(function(){search.clearSearch();query()});placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
                 Button {objectName:"searchHelp";text:"Search help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp("help:search-examples")}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
@@ -4084,21 +4210,64 @@ ApplicationWindow {
                     Label {Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap;text:duplicateSurvivor?"Keeps “"+duplicateSurvivor.payee+"”"+(duplicateSurvivor.transferLinked?" and its account link.":"."):(duplicateCandidate?"Choose which transaction to keep when merging.":"")}
                 }
             }
+            UsableScrollView {
+                id:ledgerScroll;objectName:"ledgerScroll";Layout.fillWidth:true;Layout.fillHeight:true;clip:true
+                // Before a drag, a narrow window keeps a 1080-wide sheet. After a drag, the sheet is the columns.
+                contentWidth:window.ledgerSheetWidth;contentHeight:availableHeight
+                Item {
+                    id:ledgerSheet;width:ledgerScroll.contentWidth;height:ledgerScroll.availableHeight
             Row {
-                Layout.fillWidth:true;spacing:0
-                Repeater {model:window.reportLedger?["Date","Payee","Account","Category","Withdrawal","Deposit","In report"]:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
-                    Button {
+                id:ledgerHeader;spacing:0
+                Repeater {
+                    id:ledgerHeaders
+                    model:window.reportLedger?["Date","Payee","Account","Category","Withdrawal","Deposit","In report"]:["Date","Payee","Category","Withdrawal","Deposit","Balance"]
+                    Item {
+                        id:headerCell
                         required property string modelData;required property int index
-                        objectName:"ledgerColumn_"+index
-                        width:(ledger.width-20)*window.ledgerColumnWeights[index]
-                        readonly property int sortColumn:window.reportLedger?(index===2 || index===6?-1:index>2?index-1:index):index
-                        text:modelData+(sortColumn===(s.sort||0)?(s.descending?" ▼":" ▲"):"")
-                        enabled:sortColumn>=0;onClicked:guard(function(){query(sortColumn,s.sort===sortColumn?!s.descending:false)})
+                        property alias headerButton:columnHeader
+                        width:window.ledgerColumnWidth(index);height:columnHeader.implicitHeight
+                        Button {
+                            id:columnHeader
+                            anchors.fill:parent
+                            objectName:"ledgerColumn_"+index
+                            readonly property int sortColumn:window.reportLedger?(index===2 || index===6?-1:index>2?index-1:index):index
+                            text:modelData+(sortColumn===(s.sort||0)?(s.descending?" ▼":" ▲"):"")
+                            enabled:sortColumn>=0;onClicked:guard(function(){query(sortColumn,s.sort===sortColumn?!s.descending:false)})
+                        }
+                        MouseArea {
+                            id:columnResize
+                            objectName:"ledgerColumnResize_"+index
+                            anchors.right:parent.right;anchors.top:parent.top;anchors.bottom:parent.bottom;width:8;z:2
+                            hoverEnabled:true;cursorShape:Qt.SplitHCursor;preventStealing:true;acceptedButtons:Qt.LeftButton
+                            property real pressSceneX:0
+                            property real pressWidth:0
+                            property bool moved:false
+                            onPressed:function(mouse) {
+                                pressSceneX=mapToItem(null, mouse.x, mouse.y).x
+                                pressWidth=window.ledgerColumnWidth(index)
+                                moved=false
+                                mouse.accepted=true
+                            }
+                            onPositionChanged:function(mouse) {
+                                if(!pressed) return
+                                if(!moved) {
+                                    window.beginLedgerColumnResize()
+                                    pressWidth=window.ledgerColumnWidth(index)
+                                    moved=true
+                                }
+                                window.setLedgerColumnWidth(index, pressWidth+mapToItem(null, mouse.x, mouse.y).x-pressSceneX)
+                            }
+                            onReleased:if(moved) window.finishLedgerColumnResize()
+                            onCanceled:if(moved) window.finishLedgerColumnResize()
+                            Rectangle {anchors.right:parent.right;anchors.top:parent.top;anchors.bottom:parent.bottom;width:2;color:theme.focus;visible:columnResize.containsMouse || columnResize.pressed}
+                        }
                     }
                 }
             }
             ListView {
-                id:ledger;objectName:"durableLedger";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;model:workflow;reuseItems:true;highlightFollowsCurrentItem:false
+                id:ledger;objectName:"durableLedger";clip:true;model:workflow;reuseItems:true;highlightFollowsCurrentItem:false
+                y:ledgerHeader.height;width:ledgerSheet.width
+                height:Math.max(0, ledgerSheet.height-ledgerHeader.height-(ledgerScroll.contentWidth>ledgerScroll.availableWidth+1?16:0))
                 // Cached offscreen delegates incubate asynchronously across model resets.
                 // Visible delegates remain virtualized and reusable without that queue.
                 cacheBuffer:0
@@ -4134,7 +4303,7 @@ ApplicationWindow {
                 }
                 ScrollBar.vertical:UsableScrollBar {
                     objectName:"ledgerScrollBar";parent:ledgerScroll
-                    x:ledgerScroll.width-width;y:ledger.y+ledgerPage.y;height:ledger.height
+                    x:ledgerScroll.width-width;y:ledger.mapToItem(ledgerScroll, 0, 0).y;height:ledger.height
                 }
                 delegate:Rectangle {
                     readonly property bool ledgerSelectionRow:true
@@ -4157,7 +4326,12 @@ ApplicationWindow {
                     }
                     onExpandedChanged:syncEditorHost()
                     Component.onCompleted:syncEditorHost()
-                    ListView.onReused:syncEditorHost()
+                    ListView.onReused:{syncEditorHost();columnTipKey=""}
+                    property string columnTipKey:""
+                    function setColumnTip(key, active) {
+                        if(active) columnTipKey=key
+                        else if(columnTipKey===key) columnTipKey=""
+                    }
                     Component.onDestruction:if(window.ledgerEditorHost===ledgerRow)window.ledgerEditorHost=null
                     property bool viewingSplits: !!window.splitViews[window.splitKey(record)] && record.splits.length>1
                     property alias editorSlot: rowEditorSlot
@@ -4168,7 +4342,7 @@ ApplicationWindow {
                     readonly property bool comparingDuplicate:possibleDuplicate && (duplicateKey===duplicateOriginKey || duplicateCandidates.some(row=>row.key===duplicateKey))
                     border.width:comparingDuplicate?2:(s.selectionKeys||{})[duplicateKey]?1:0;border.color:comparingDuplicate?theme.duplicate:theme.focus
                     Rectangle {width:4;height:ledgerRow.rowHeight;visible:ledgerRow.possibleDuplicate;color:theme.duplicate}
-                    ToolTip.visible:duplicateHover.hovered && possibleDuplicate
+                    ToolTip.visible:duplicateHover.hovered && possibleDuplicate && columnTipKey.length===0
                     ToolTip.text:comparingDuplicate?(record.status==="Draft"?"New":"Accepted")+" · Possible duplicate":"Possible duplicate"
                     HoverHandler {id:duplicateHover}
                     MouseArea {width:parent.width;height:ledgerRow.rowHeight;acceptedButtons:Qt.LeftButton|Qt.RightButton
@@ -4179,11 +4353,25 @@ ApplicationWindow {
                         width:parent.width;height:ledgerRow.rowHeight;spacing:0
                         Repeater {model:window.reportLedger?[record.date,record.payee,record.reportAccount,record.category,record.withdrawal,record.deposit,record.reportMatches?record.reportIncluded:"No longer included"]:[record.date,record.payee,record.category,record.withdrawal,record.deposit,record.balance]
                             Item {
+                                id:ledgerCell
                                 required property string modelData
                                 required property int index
-                                width:(ledger.width-20)*window.ledgerColumnWeights[index];height:ledgerRow.rowHeight
+                                width:window.ledgerColumnWidth(index);height:ledgerRow.rowHeight
+                                HoverHandler {
+                                    id:cellHover
+                                    onHoveredChanged:ledgerRow.setColumnTip("cell-"+index, hovered && ledgerCellText.visible && ledgerCellText.truncated && ledgerCellText.text.length>0)
+                                }
                                 TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===window.ledgerCategoryColumn?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===window.ledgerCategoryColumn?window.firstLedgerTransfer(record):null}
-                                Label {anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:index===0?8:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2}
+                                Label {
+                                    id:ledgerCellText
+                                    objectName:"ledgerCellText_"+ledgerRow.index+"_"+index
+                                    anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:index===0?8:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2
+                                }
+                                PlainTip {
+                                    objectName:"ledgerCellTip_"+ledgerRow.index+"_"+index
+                                    visible:cellHover.hovered && ledgerCellText.visible && ledgerCellText.truncated && ledgerCellText.text.length>0
+                                    text:window.wrappedTip(ledgerCellText.text)
+                                }
                                 LedgerAction {
                                     anchors.fill:parent;anchors.leftMargin:32;visible:index===window.ledgerCategoryColumn && record.splits.length>1
                                     textAlignment:Text.AlignLeft
@@ -4208,14 +4396,31 @@ ApplicationWindow {
                         header:Label {text:"Saved splits (read-only) · "+(s.currency||"");height:26}
                         delegate:Row {
                             required property var modelData
+                            required property int index
                             property bool includedInReport:window.reportLedger && (record.reportAllocations||[]).indexOf(modelData.allocationId)>=0
                             width:splitPreview.width;height:30;spacing:8
                             Item {
                                 width:parent.width*0.25;height:30
                                 TransferArrow {id:splitTransfer;objectName:"splitTransferArrow_"+modelData.allocationId;destination:window.ledgerTransfer(record,modelData)}
-                                Label {anchors.fill:parent;anchors.leftMargin:splitTransfer.visible?32:0;verticalAlignment:Text.AlignVCenter;textFormat:Text.PlainText;text:(includedInReport?"● ":"")+(s.categoriesSupported?modelData.categoryDisplay:(modelData.category || "Uncategorized"));elide:Text.ElideRight}
+                                Label {
+                                    id:splitCategoryText
+                                    objectName:"ledgerSplitCategory_"+ledgerRow.index+"_"+index
+                                    anchors.fill:parent;anchors.leftMargin:splitTransfer.visible?32:0;verticalAlignment:Text.AlignVCenter;textFormat:Text.PlainText;text:(includedInReport?"● ":"")+(s.categoriesSupported?modelData.categoryDisplay:(modelData.category || "Uncategorized"));elide:Text.ElideRight
+                                }
+                                HoverHandler {id:splitCategoryHover;onHoveredChanged:ledgerRow.setColumnTip("split-category-"+index, hovered && splitCategoryText.truncated && splitCategoryText.text.length>0)}
+                                PlainTip {objectName:"ledgerSplitCategoryTip_"+ledgerRow.index+"_"+index;visible:splitCategoryHover.hovered && splitCategoryText.truncated && splitCategoryText.text.length>0;text:window.wrappedTip(splitCategoryText.text)}
                             }
-                            Label {textFormat:Text.PlainText;text:modelData.memo;width:parent.width*0.5;elide:Text.ElideRight}
+                            Item {
+                                width:parent.width*0.5;height:30
+                                Label {
+                                    id:splitMemoText
+                                    objectName:"ledgerSplitMemo_"+ledgerRow.index+"_"+index
+                                    anchors.fill:parent;verticalAlignment:Text.AlignVCenter
+                                    textFormat:Text.PlainText;text:modelData.memo;elide:Text.ElideRight
+                                }
+                                HoverHandler {id:splitMemoHover;onHoveredChanged:ledgerRow.setColumnTip("split-memo-"+index, hovered && splitMemoText.truncated && splitMemoText.text.length>0)}
+                                PlainTip {objectName:"ledgerSplitMemoTip_"+ledgerRow.index+"_"+index;visible:splitMemoHover.hovered && splitMemoText.truncated && splitMemoText.text.length>0;text:window.wrappedTip(splitMemoText.text)}
+                            }
                             Label {textFormat:Text.PlainText;text:modelData.amount;width:parent.width*0.2;horizontalAlignment:Text.AlignRight}
                         }
                     }
@@ -4223,13 +4428,14 @@ ApplicationWindow {
                     Item {id:rowEditorSlot;y:ledgerRow.rowHeight;width:parent.width;height:ledgerRow.expanded?editor.height:0}
                 }
             }
-            Label {visible:!window.reportLedger;textFormat:Text.PlainText;text: "Filtered totals · withdrawals (signed): "+(s.withdrawals||"unavailable")+" · deposits: "+(s.deposits||"unavailable")}
+                }
+            }
+            Label {visible:!window.reportLedger;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true;text: "Filtered totals · withdrawals (signed): "+(s.withdrawals||"unavailable")+" · deposits: "+(s.deposits||"unavailable")}
             Item {
                 id:reviewPanel;objectName:"reviewPanel"
                 Layout.fillWidth:true;Layout.preferredHeight:editor.visible && !editor.inlineRow?editor.height:0
             }
-                    }
-                }
+            }
             }
         }
     }

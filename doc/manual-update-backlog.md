@@ -77,3 +77,18 @@ write captures straight into `manual/images`. Do not point
 - `manual/where-to-find.md` and `manual/backup-recovery.md`: **Details** is
   outstanding. The name is **Status**.
 - Pictures: no recapture unless a later pass shows the status line.
+
+### MAN-047 — Ledger column width and cut-off text
+
+- Date: 2026-11-13
+- Contract: [transaction sheet](../features/005-transaction-sheet-navigation.md), Ledger
+- `manual/find-transactions.md`, “Sort, scroll and come back”: outstanding
+  text that dragging the right edge of a column heading changes that column’s
+  width, the other columns stay as they are, and the horizontal scrollbar
+  appears when the row no longer fits. Also say that resting the pointer on
+  cut-off text shows the full text, including a category or memo in an open
+  split. The widths are remembered on this computer.
+- `manual/reports.md`: one outstanding sentence that the transaction list
+  behind a report amount uses the same column dragging, with its own widths.
+- Pictures: no recapture. The heading edge is only a pointer change until the
+  user drags it.

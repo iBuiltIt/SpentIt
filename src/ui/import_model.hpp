@@ -33,6 +33,10 @@ public:
     void setRememberWindowPosition(bool);
     Q_INVOKABLE void restoreWindowPosition(QObject*);
     Q_INVOKABLE bool saveWindowPosition(QObject*);
+    // Whole-number column widths remembered on this computer. Empty means the
+    // ledger is still using its default ratios. Report columns are separate.
+    Q_INVOKABLE QVariantList ledgerColumnWidths(bool report) const;
+    Q_INVOKABLE bool saveLedgerColumnWidths(bool report, const QVariantList& widths);
     bool diagnosticsEnabled() const { return spentit::diagnostics::Collector::instance().enabled(); }
     qulonglong diagnosticGeneration() const { return spentit::diagnostics::Collector::instance().generation(); }
     Q_INVOKABLE void observeUi(const QVariantMap&);

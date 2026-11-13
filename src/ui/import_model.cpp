@@ -2494,6 +2494,44 @@ bool ImportModel::saveWindowPosition(QObject* object) {
     settings.sync();if(settings.status()==QSettings::NoError)return true;
     error_="The window geometry could not be saved. Disable Remember window geometry to quit without saving it.";emit changed();return false;
 }
+namespace {
+constexpr int ledgerColumnMinimumPx=24;
+constexpr int ledgerColumnMaximumPx=4000;
+QString ledgerColumnKey(bool report) {return report?QStringLiteral("Ledger/reportColumns"):QStringLiteral("Ledger/accountColumns");}
+int ledgerColumnCount(bool report) {return report?7:6;}
+QStringList readLedgerColumnWidths(bool report) {
+    const auto stored=QSettings().value(ledgerColumnKey(report)).toStringList();
+    if(stored.size()!=ledgerColumnCount(report)) return {};
+    QStringList widths;
+    for(const auto& value:stored) {
+        bool ok=false;const int width=value.toInt(&ok);
+        if(!ok || width<ledgerColumnMinimumPx || width>ledgerColumnMaximumPx) return {};
+        widths.push_back(QString::number(width));
+    }
+    return widths;
+}
+}
+QVariantList ImportModel::ledgerColumnWidths(bool report) const {
+    QVariantList widths;for(const auto& value:readLedgerColumnWidths(report)) widths.push_back(value.toInt());return widths;
+}
+bool ImportModel::saveLedgerColumnWidths(bool report,const QVariantList& widths) {
+    const auto fail=[&]{error_="The column widths could not be saved. Check that Settings is writable and try again.";emit changed();return false;};
+    if(widths.size()!=ledgerColumnCount(report)) return fail();
+    QStringList clean;clean.reserve(widths.size());
+    for(const auto& value:widths) {
+        bool ok=false;const int width=qRound(value.toDouble(&ok));
+        if(!ok || width<ledgerColumnMinimumPx || width>ledgerColumnMaximumPx) return fail();
+        clean.push_back(QString::number(width));
+    }
+    QSettings settings;const auto key=ledgerColumnKey(report);const auto prior=settings.value(key);
+    settings.setValue(key,clean);settings.sync();
+    if(settings.status()!=QSettings::NoError) {
+        if(prior.isValid()) settings.setValue(key,prior); else settings.remove(key);
+        return fail();
+    }
+    if(error_.startsWith(QStringLiteral("The column widths"))) {error_.clear();emit changed();}
+    return true;
+}
 QStringList ImportModel::currencies() const {QStringList out;for(const auto& c:supported_currencies())out<<text(c.code);return out;}
 QString ImportModel::suggestedPath() const {return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/spentit.spentit";}
 QUrl ImportModel::documentsFolder() const {return QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));}

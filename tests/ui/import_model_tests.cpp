@@ -18,6 +18,7 @@
 #include <QFont>
 #include <QRegularExpression>
 #include <QAccessible>
+#include <functional>
 #include <QJSValue>
 #include <QStyleHints>
 #include <sqlite3.h>
@@ -2945,6 +2946,141 @@ private slots:
         QVERIFY(m.state().value("passwordProtected").toBool());
         run(m,"close");run(m,"open",{{"path",path}},false);run(m,"unlock",{{"path",path},{"password","third-password"}});
         found=false;for(int i=0;i<m.rowCount();++i) if(m.rowRecord(i).value("payee").toString()=="Original payee") found=true;QVERIFY(found);
+    }
+    void ledgerColumnLayout() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        const QString payeeText="Northside Hardware and Garden Supply invoice 2026-0144 for the workshop shelves";
+        const QString memoText="This memo is deliberately long so the split line truncates in the ledger preview and the tooltip can show every word of it without losing the ending of the sentence.";
+        QSettings().setValue("Ledger/accountColumns",QStringList{"10","10","10","10","10","10"});
+        QVERIFY(m.ledgerColumnWidths(false).isEmpty());
+        QVariantList reportWidths;for(int i=0;i<7;++i) reportWidths<<240;
+        QVERIFY(m.saveLedgerColumnWidths(true,reportWidths));
+        QStringList remembered;
+        {
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        const auto source=fixture(dir.path(),("D1/5/2026\nT-10.00\nP"+payeeText+"\n^\nD2/5/2026\nT-12.00\nPSplit purchase\nSFood\nE"+memoText+"\n$-2.00\nSTravel\nEFare\n$-10.00\n^\n").toUtf8());
+        run(m,"import",{{"path",source},{"profile","DMY"}});
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto shown=[&](const char* name){return visualItem(window->contentItem(),QString::fromLatin1(name));};
+        QQuickItem* payeeCol=nullptr;QQuickItem* categoryCol=nullptr;
+        QTRY_VERIFY(payeeCol=shown("ledgerColumn_1"));QTRY_VERIFY(categoryCol=shown("ledgerColumn_2"));
+        QTRY_VERIFY(payeeCol->width()>categoryCol->width());
+        const auto loadedReport=root->property("reportLedgerWidths").toList();
+        QCOMPARE(loadedReport.size(),7);
+        for(const auto& value:loadedReport) QCOMPARE(value.toInt(),240);
+        const auto payeeBeforeClick=payeeCol->width();
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,payeeCol->mapToScene(QPointF(payeeCol->width()/2,payeeCol->height()/2)).toPoint());
+        QTRY_COMPARE(m.state().value("sort").toInt(),1);
+        QVERIFY(qAbs(payeeCol->width()-payeeBeforeClick)<0.5);
+        auto* handle=shown("ledgerColumnResize_2");QVERIFY(handle);
+        const auto payeeBefore=payeeCol->width();const auto categoryBefore=categoryCol->width();
+        const auto start=handle->mapToScene(QPointF(handle->width()/2,handle->height()/2)).toPoint();
+        const auto widened=start+QPoint(180,0);
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);
+        QTest::mouseMove(window,widened,30);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,widened);
+        QTRY_VERIFY(categoryCol->width()>=categoryBefore+160);
+        QVERIFY(qAbs(payeeCol->width()-payeeBefore)<=1.0);
+        const auto lockedCategory=categoryCol->width();
+        const auto saved=QSettings().value("Ledger/accountColumns").toStringList();
+        QCOMPARE(saved.size(),6);
+        QCOMPARE(saved.at(2).toInt(),qRound(lockedCategory));
+        window->resize(1700,900);QTest::qWait(100);
+        QVERIFY(qAbs(categoryCol->width()-lockedCategory)<0.5);
+        std::function<QQuickItem*(QQuickItem*,const QString&,const QString&)> findText=[&](QQuickItem* item,const QString& prefix,const QString& text)->QQuickItem*{
+            if(!item) return nullptr;
+            if(item->objectName().startsWith(prefix) && item->property("text").toString()==text) return item;
+            for(auto* child:item->childItems()) if(auto* found=findText(child,prefix,text)) return found;
+            return nullptr;
+        };
+        auto* payeeHandle=shown("ledgerColumnResize_1");QVERIFY(payeeHandle);
+        const auto payeeStart=payeeHandle->mapToScene(QPointF(payeeHandle->width()/2,payeeHandle->height()/2)).toPoint();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,payeeStart);
+        QTest::mouseMove(window,payeeStart-QPoint(800,0),30);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,payeeStart-QPoint(800,0));
+        QVariant payeeMinimum;QVERIFY(QMetaObject::invokeMethod(root,"ledgerColumnMinimum",Q_RETURN_ARG(QVariant,payeeMinimum),Q_ARG(QVariant,QVariant(1)),Q_ARG(QVariant,QVariant(false))));
+        QTRY_VERIFY(qAbs(payeeCol->width()-payeeMinimum.toDouble())<=1.0);
+        QVERIFY(qAbs(categoryCol->width()-lockedCategory)<0.5);
+        QQuickItem* payeeLabel=nullptr;QTRY_VERIFY(payeeLabel=findText(window->contentItem(),"ledgerCellText_",payeeText));
+        QVERIFY(payeeLabel->property("truncated").toBool());
+        QTest::mouseMove(window,QPoint(4,4));
+        QTest::mouseMove(window,payeeLabel->mapToScene(QPointF(8,payeeLabel->height()/2)).toPoint());
+        const auto tipName=payeeLabel->objectName().replace("ledgerCellText_","ledgerCellTip_");
+        auto* tip=window->findChild<QObject*>(tipName);
+        if(!tip && payeeLabel->parentItem()) for(auto* child:payeeLabel->parentItem()->children()) if(child->objectName()==tipName) tip=child;
+        if(!tip) {
+            QString dump;
+            if(auto* cell=payeeLabel->parentItem()) for(auto* child:cell->children()) dump+=QString(child->metaObject()->className())+" "+child->objectName()+"\n";
+            QVERIFY2(tip,qPrintable(dump));
+        }
+        QTRY_VERIFY(tip->property("visible").toBool());
+        QCOMPARE(tip->property("text").toString().replace("\n",""),payeeText);
+        const auto rowName=payeeLabel->objectName().mid(QString("ledgerCellText_").size());
+        const auto row=rowName.left(rowName.lastIndexOf('_'));
+        std::function<QQuickItem*(QQuickItem*,const QString&)> findVisual=[&](QQuickItem* item,const QString& name)->QQuickItem*{
+            if(!item) return nullptr;
+            if(item->objectName()==name) return item;
+            for(auto* child:item->childItems()) if(auto* found=findVisual(child,name)) return found;
+            return nullptr;
+        };
+        auto* dateLabel=findVisual(window->contentItem(),"ledgerCellText_"+row+"_0");QVERIFY(dateLabel);
+        QVERIFY(!dateLabel->property("truncated").toBool());
+        QTest::mouseMove(window,dateLabel->mapToScene(QPointF(8,dateLabel->height()/2)).toPoint());
+        QTest::qWait(500);
+        QVERIFY(!tip->property("visible").toBool());
+        const auto dateTipName="ledgerCellTip_"+row+"_0";
+        auto* dateTip=window->findChild<QObject*>(dateTipName);
+        if(!dateTip && dateLabel->parentItem()) for(auto* child:dateLabel->parentItem()->children()) if(child->objectName()==dateTipName) dateTip=child;
+        QVERIFY(dateTip);QVERIFY(!dateTip->property("visible").toBool());
+        QQuickItem* toggle=nullptr;
+        std::function<void(QQuickItem*)> seekToggle=[&](QQuickItem* item){
+            if(!item || toggle) return;
+            if(item->objectName().startsWith("splitToggle_") && item->isVisible()) toggle=item;
+            for(auto* child:item->childItems()) seekToggle(child);
+        };
+        seekToggle(window->contentItem());
+        QVERIFY(toggle);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene(QPointF(toggle->width()/2,toggle->height()/2)).toPoint());
+        QQuickItem* memo=nullptr;QTRY_VERIFY(memo=findText(window->contentItem(),"ledgerSplitMemo_",memoText));
+        QVERIFY(memo->property("truncated").toBool());
+        auto* memoHost=memo->parentItem();QVERIFY(memoHost);
+        const auto memoPoint=memoHost->mapToScene(QPointF(memoHost->width()/2,memoHost->height()/2)).toPoint();
+        QVERIFY2(QRectF(memoHost->mapToScene(QPointF(0,0)),QSizeF(memoHost->width(),memoHost->height())).contains(memoPoint),qPrintable(QString("memo %1,%2 %3x%4").arg(memoPoint.x()).arg(memoPoint.y()).arg(memoHost->width()).arg(memoHost->height())));
+        QTest::mouseMove(window,QPoint(4,4));
+        QTest::mouseMove(window,memoPoint);
+        const auto memoTipName=memo->objectName().replace("ledgerSplitMemo_","ledgerSplitMemoTip_");
+        auto* memoTip=window->findChild<QObject*>(memoTipName);
+        if(!memoTip) for(auto* child:memo->children()) if(child->objectName()==memoTipName) memoTip=child;
+        if(!memoTip && memo->parentItem()) for(auto* child:memo->parentItem()->children()) if(child->objectName()==memoTipName) memoTip=child;
+        QVERIFY(memoTip);
+        QTRY_VERIFY(memoTip->property("visible").toBool());
+        QCOMPARE(memoTip->property("text").toString().replace("\n",""),memoText);
+        const auto finalCategory=categoryCol->width();const auto finalPayee=payeeCol->width();
+        window->resize(720,560);QTest::qWait(100);
+        auto* apply=root->findChild<QQuickItem*>("applyFilter");QVERIFY(apply);
+        const auto applyPoint=apply->mapToScene(QPointF(apply->width()/2,apply->height()/2));
+        QVERIFY(applyPoint.x()>=0 && applyPoint.x()<window->width() && applyPoint.y()>=0 && applyPoint.y()<window->height());
+        auto* scroll=root->findChild<QQuickItem*>("ledgerScroll");QVERIFY(scroll);
+        QTRY_VERIFY(scroll->property("contentWidth").toDouble()>scroll->property("availableWidth").toDouble()+1);
+        QVERIFY(qAbs(categoryCol->width()-finalCategory)<0.5);
+        QVERIFY(qAbs(payeeCol->width()-finalPayee)<0.5);
+        remembered=QSettings().value("Ledger/accountColumns").toStringList();
+        }
+        QQmlApplicationEngine reopened;reopened.rootContext()->setContextProperty("workflow",&m);reopened.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!reopened.rootObjects().isEmpty());auto* again=reopened.rootObjects().first();auto* againWindow=qobject_cast<QQuickWindow*>(again);QVERIFY(againWindow);
+        QVERIFY(QTest::qWaitForWindowExposed(againWindow));
+        auto* restoredCategory=visualItem(againWindow->contentItem(),"ledgerColumn_2");
+        auto* restoredPayee=visualItem(againWindow->contentItem(),"ledgerColumn_1");
+        QTRY_VERIFY(restoredCategory && restoredPayee);
+        QTRY_COMPARE(qRound(restoredCategory->width()),remembered.at(2).toInt());
+        QTRY_COMPARE(qRound(restoredPayee->width()),remembered.at(1).toInt());
+        againWindow->close();
+        QVERIFY(!m.saveLedgerColumnWidths(false,QVariantList{100,100,100}));
+        QVERIFY(m.error().contains("column widths"));
+        QCOMPARE(QSettings().value("Ledger/accountColumns").toStringList(),remembered);
     }
 };
 int main(int argc,char** argv) {
