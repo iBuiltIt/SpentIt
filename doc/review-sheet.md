@@ -161,8 +161,9 @@ import…** stays.
 
 Cmd+Z, and Ctrl+Z on Windows and Linux, undoes only the newest saved action,
 after the existing confirmation. The Undo on an open Change history row stays.
-**Undo opening or currency…** in the account menu and **Undo application** on
-Rules stay.
+**Undo opening or currency…** in the account menu stays. Rules has no **Undo
+application** button. A rule application is undone with that same shortcut
+when it is the newest saved action. The saved rule remains.
 
 The ledger duplicate bar opens for a possible duplicate in the current account,
 or while that check is still running. A category change can still be the newest

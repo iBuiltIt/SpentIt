@@ -2153,12 +2153,13 @@ private slots:
         QVERIFY(!session.root->property("rulesDirty").toBool());
         QVERIFY(session.model.state().value("canUndoRules").toBool());
         QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
-        QVERIFY(QMetaObject::invokeMethod(object(session.root,"undoRules"),"clicked"));QTRY_VERIFY(object(session.root,"actionUndoConfirm")->property("visible").toBool()); mainClick("confirmActionUndo");
+        QVERIFY(QMetaObject::invokeMethod(session.root,"undoEdit"));QTRY_VERIFY(object(session.root,"actionUndoConfirm")->property("visible").toBool()); mainClick("confirmActionUndo");
         QVERIFY(!session.model.state().value("canUndoRules").toBool());
-        mainClick("previewThisRule");
+        // The match list has closed, so Preview sits under the window edge.
+        QVERIFY(QMetaObject::invokeMethod(object(session.root,"previewThisRule"),"clicked"));wait(session.model);
         QCOMPARE(session.model.state().value("rulePreview").toMap().value("records").toList().size(), 1);
         QVERIFY(QMetaObject::invokeMethod(object(session.root,"applyRules"),"clicked"));wait(session.model);
-        mainClick("previewThisRule");
+        QVERIFY(QMetaObject::invokeMethod(object(session.root,"previewThisRule"),"clicked"));wait(session.model);
         QCOMPARE(session.model.state().value("rulePreview").toMap().value("records").toList().size(), 0);
         flick->setProperty("contentY", 0);
         QVERIFY(edit(session.root, "ruleLabel", "Market groceries revised"));

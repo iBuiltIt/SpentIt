@@ -27,7 +27,8 @@ file has no rule commands.
   only**. Preview is optional and shows one row per eligible match. Apply and
   Save and apply use that scope. Save and apply saves the selected definition
   and applies it in one transaction. Undo restores the transactions and keeps
-  the saved rule.
+  the saved rule. Rules has no Undo button. Cmd+Z, and Ctrl+Z on Windows
+  and Linux, undoes that application when it is the newest saved action.
 - One Apply is one Undo action, including mixed new and accepted rows.
   Unchanged rows add no Undo members. Rules that run during an import stay
   inside that Import action.

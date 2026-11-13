@@ -214,8 +214,8 @@ section "Undo a mistaken import"; [Messages and problems](../manual/messages-pro
 the "Undo the current actions" message; and [Review duplicates and link
 transfers](../manual/review-duplicates-transfers.md), section "Undo a mistaken
 answer". Say that Cmd+Z or Ctrl+Z undoes the newest saved action. Keep **Undo
-import…**, **Undo last import…**, **Undo opening or currency…**, and **Undo
-application**.
+import…**, **Undo last import…**, and **Undo opening or currency…**.
+MAN-042 removes **Undo application**.
 
 Recapture [review-linked](../manual/images/review-linked.png). It shows
 **Undo Review transactions…**, **Undo review**, and "Review possible
@@ -258,3 +258,18 @@ rule** when it has unsaved edits, and stays in Rules.
 Chapter: [Use rules](../manual/rules.md), "Make a Market rule" and "Preview,
 save and apply". The Market pictures are the **New rule** path and still show
 **Save and apply rule**. No new picture.
+
+### MAN-042 — Undo application removed from Rules
+
+Logged: 2026-11-12. Contract: [review sheet](review-sheet.md) and
+[rules](../features/004-rules-and-explanations.md).
+
+Rules no longer shows **Undo application** or **Last rule application**.
+Cmd+Z, and Ctrl+Z on Windows and Linux, still undoes a rule application
+when that application is the newest saved action. The saved rule remains.
+
+Chapters: [Use rules](../manual/rules.md), "Preview, save and apply", the
+**Undo application** paragraph; and [Where to find it](../manual/where-to-find.md),
+"Undo and problems", the clause that names **Undo application** in Rules.
+[rules-preview](../manual/images/rules-preview.png) is taken before Apply and
+does not show the button. No recapture.

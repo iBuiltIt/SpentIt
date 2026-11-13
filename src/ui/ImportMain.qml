@@ -3880,11 +3880,6 @@ ApplicationWindow {
                                 Label {text:modelData.amount;textFormat:Text.PlainText;Layout.preferredWidth:160;horizontalAlignment:Text.AlignRight;elide:Text.ElideRight}
                             }
                         }
-                        RowLayout {
-                            visible:!!s.canUndoRules;Layout.fillWidth:true;Layout.topMargin:16
-                            Label {textFormat:Text.PlainText;text:"Last rule application · "+rulesAccountName;Layout.fillWidth:true;wrapMode:Text.Wrap}
-                            Button {objectName:"undoRules";text:"Undo application";enabled:!workflow.busy;onClicked:undoEdit()}
-                        }
                     }
                     }
                 }
