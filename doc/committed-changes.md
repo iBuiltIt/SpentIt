@@ -34,7 +34,7 @@ Strict Undo requires the target revision and all recorded dependencies to remain
 
 Duplicate matching still uses immutable original source facts. A byte-identical reimport matching a removed occurrence becomes unresolved rather than automatically excluded or restored. Explicit choices are Keep removed or Include as a separate transaction. Restoration uses a separate eligible history Undo; import review never restores a committed entry implicitly.
 
-An exclusion records its target revision/activity when reviewed. Saving another draft field carries that stamp unchanged; only explicit review reconfirmation refreshes it. A later correction/removal of the target makes the pending exclusion stale, withdraws the authoritative projection and blocks whole-batch commit. Historical committed exclusions remain valid against the state recorded at their original review event.
+An exclusion records its target revision and whether that transaction was still active. Saving another draft field carries that stamp unchanged; only an explicit review decision refreshes it. A later edit of the matched transaction does not require a new decision when the original date, amount, payee, and bank id still match and the transaction has not been removed. Removing the matched transaction, or a duplicate decision whose original facts no longer match, leaves that pending row out of the projected balance until the user chooses Already imported or Include as a separate transaction. Accepting anyway cannot add that row again. Historical committed exclusions remain valid against the state recorded at their original review event.
 
 ## UI scope
 

@@ -302,6 +302,9 @@ private:
     void verify_account_commands(const app::OperationContext* = nullptr) const;
     app::Account command_account(bool money_edit) const;
     void populate(std::string_view,std::string_view,const qif::Result&,std::int64_t,const app::OperationContext*);
+    // A saved revision change still names the same import when the original
+    // date, amount, payee and bank id match and the transaction was not removed.
+    bool duplicate_source_still_matches(const app::RowView&,std::int64_t revision) const;
     app::RowView load_row(const imports::Occurrence&, bool candidates) const;
     static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr,bool overwrite=false,const std::filesystem::path& cache={},bool activate=true);
 };

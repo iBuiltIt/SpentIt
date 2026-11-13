@@ -389,22 +389,20 @@ void review() {
         store.ingest("duplicate",source,qif::DateOrder::dmy);
         check(store.row({"duplicate",0}).decision.disposition==imports::Disposition::duplicate);
         apply(store,"correct",correction(store,first,-3000));
-        check(!store.projected_balance());
-        check(store.row({"duplicate",0}).review_stale);
-        rejects([&]{store.ledger(true);});
-        auto draft=*store.row({"duplicate",0}).draft;draft.payee="Draft save must not reconfirm";
+        check(!store.row({"duplicate",0}).review_stale);
+        check(store.projected_balance().has_value());
+        check(!store.ledger(true).empty());
+        auto draft=*store.row({"duplicate",0}).draft;draft.payee="Draft save keeps the duplicate";
         store.save({"duplicate",0},0,draft);
-        rejects([&]{store.commit("duplicate",1,"duplicate-op");});
+        check(!store.row({"duplicate",0}).review_stale);
+        const auto receipt=store.commit("duplicate",1,"duplicate-op");check(receipt.change.units()==0);
         check(store.committed_balance().units()==12000);store.verify();
     }
     {
         auto store=ImportStore::open(dir.path/"doc",password);
-        check(!store.projected_balance());
-        check(store.row({"duplicate",0}).review_stale);
-        rejects([&]{store.commit("duplicate",1,"duplicate-op");});
-        store.decide({"duplicate",0},1,{imports::Disposition::duplicate,first});
-        check(!store.row({"duplicate",0}).review_stale && store.projected_balance().has_value());
-        const auto receipt=store.commit("duplicate",2,"duplicate-op");check(receipt.change.units()==0);
+        check(store.projected_balance().has_value());
+        check(!store.row({"duplicate",0}).review_stale);
+        check(store.committed_balance().units()==12000);
         check(!eligible(store,first,"correct"));
         apply(store,"remove",removal(first));
         store.ingest("removed-repeat",source,qif::DateOrder::dmy);
@@ -423,6 +421,24 @@ void review() {
         check(store.committed_balance().units()==12069 && store.ledger(false).size()==2);
         check(!store.committed_entry(first).current.active);
         rejects([&]{store.committed_entry({"legitimate",0});});store.verify();
+    }
+    {
+        Directory extra;auto store=create(extra.path/"doc");store.opening(0,"2026-08-01",Money(10000,cad));
+        store.ingest("first",source,qif::DateOrder::dmy);store.commit("first",0,"publication-removed");
+        store.ingest("again",source,qif::DateOrder::dmy);
+        check(store.row({"again",0}).decision.disposition==imports::Disposition::duplicate && !store.row({"again",0}).review_stale);
+        check(store.acceptance_review().warnings.empty() && store.review_sheet().questions.empty());
+        apply(store,"remove-matched",removal(first));
+        check(store.row({"again",0}).review_stale && !store.projected_balance());
+        const auto sheet=store.review_sheet();
+        bool shown=false;
+        for(const auto& question:sheet.questions)for(const auto& row:question.rows)if(row.identity==imports::Occurrence{"again",0}){check(!question.rows.empty());shown=true;}
+        check(shown);
+        bool blocked=false;
+        for(const auto& warning:store.acceptance_review().warnings)if(warning.batch=="again" && warning.ordinal && *warning.ordinal==0){check(!warning.overridable);blocked=true;}
+        check(blocked);
+        rejects([&]{store.accept_all("accept-anyway",true);});
+        store.verify();
     }
     auto store=ImportStore::open(dir.path/"doc",password);store.verify();no_leaks(dir.path);
 }

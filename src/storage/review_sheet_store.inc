@@ -196,7 +196,11 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
                 const imports::Occurrence id{b.id,i};const auto row=load_row(id,false);
                 if(row.excluded_by_clear)continue;
                 if(!row.draft){result.questions.push_back({"repair:"+review_key(id),app::ReviewKind::correction,account.identity,account.name,"Needs correction: repair this imported record",b.id,i,{}});continue;}
-                if(row.decision.disposition==imports::Disposition::unresolved || row.review_stale)unresolved.insert(id);
+                if(row.decision.disposition==imports::Disposition::unresolved || row.review_stale){
+                    unresolved.insert(id);
+                    // A duplicate is hidden from the ledger, so the question has to carry the transaction itself.
+                    if(!rows.contains(id))rows.emplace(id,app::ReviewTransaction{id,account.identity,account.name,*row.draft,false,manual_batches.at(b.id)?"Manually entered":""});
+                }
             }
         }
     }
@@ -355,7 +359,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         std::sort(members.begin(),members.end(),[](const auto& a,const auto& b){return a.identity<b.identity;});
         const auto& first=members.front();
         const bool dates_differ=members.size()>1 && std::any_of(members.begin(),members.end(),[&](const auto& row){return row.draft.date!=first.draft.date;});
-        result.questions.push_back({"same:"+review_key(first.identity),members.size()>1?app::ReviewKind::same:app::ReviewKind::correction,first.account,first.account_name,members.size()>1?(dates_differ?"Are these the same? Dates differ.":"Are these the same?"):"Needs correction: review this transaction's duplicate decision",first.identity.batch,first.identity.ordinal,std::move(members)});
+        result.questions.push_back({"same:"+review_key(first.identity),members.size()>1?app::ReviewKind::same:app::ReviewKind::correction,first.account,first.account_name,members.size()>1?(dates_differ?"Are these the same? Dates differ.":"Are these the same?"):duplicate_decision_warning,first.identity.batch,first.identity.ordinal,std::move(members)});
     }
     std::set<imports::Occurrence> suppressed;
     std::size_t exclusion_comparisons=0,compiled_bytes=0,exclusion_steps=0;

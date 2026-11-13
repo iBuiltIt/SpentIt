@@ -63,7 +63,7 @@ app::AcceptanceReview ImportStore::acceptance_review() const {
                 }
             } else if(!item.warning.empty()) {
                 app::ImportBlocker warning{owner.identity,id,ordinal,"",item.warning};
-                warning.overridable=true;
+                warning.overridable=item.warning!=duplicate_decision_warning;
                 result.warnings.push_back(std::move(warning));
             }
         }

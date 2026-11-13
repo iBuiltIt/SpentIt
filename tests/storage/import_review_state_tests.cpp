@@ -37,22 +37,20 @@ void run() {
         const auto old=store.committed_entry({"first",0});auto correction=old.current.draft;correction.memo="Target changed";
         const auto preview=store.preview_committed_change({app::ChangeKind::correct,{"first",0},correction,{}});
         reviewed=0;store.apply_committed_change("change-target",preview.request,preview.expected,preview.preview_sequence);
-        check(reviewed==1 && store.row({"duplicate",0}).review_stale);
-        reviewed=0;rejects([&]{store.commit("duplicate",1,"stale");});check(reviewed==0);
-        store.decide({"duplicate",0},1,{imports::Disposition::duplicate,imports::Occurrence{"first",0}});
+        check(reviewed==1 && !store.row({"duplicate",0}).review_stale);
         // An interrupted edit must not leave its review result behind, even if
         // the next edit reuses the rolled-back version number.
         auto changed=*store.row({"duplicate",1}).draft;changed.memo="Must roll back";
         store.observer([](ImportPhase phase){if(phase==ImportPhase::before_commit)throw std::runtime_error("Synthetic failure");});
-        rejects([&]{store.save({"duplicate",1},2,changed);});
+        rejects([&]{store.save({"duplicate",1},1,changed);});
         store.observer({});check(store.row({"duplicate",1}).draft->memo!="Must roll back");
-        changed.memo="Retained edit";store.save({"duplicate",1},2,changed);
+        changed.memo="Retained edit";store.save({"duplicate",1},1,changed);
         store.verify();
     }
     {
         auto store=ImportStore::open(path,"synthetic-review");
         std::size_t reviewed=0,validated=0;store.observer([&](ImportPhase phase){if(phase==ImportPhase::review_row)++reviewed;if(phase==ImportPhase::validate_row)++validated;});
-        const auto receipt=store.commit("duplicate",3,"accept-duplicate");
+        const auto receipt=store.commit("duplicate",2,"accept-duplicate");
         check(reviewed==0 && validated==0 && receipt.included==1 && receipt.excluded==1);
         check(store.committed_entry({"duplicate",1}).current.draft.memo=="Retained edit");
         store.verify();

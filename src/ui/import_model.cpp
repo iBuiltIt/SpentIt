@@ -912,7 +912,7 @@ struct ImportModel::Worker {
         selected["editable"]=found->state==app::BatchState::pending && !repo.transaction_accepted({batch,ordinal});
         selected["decision"]=static_cast<int>(row.decision.disposition);
         selected["reviewStale"]=row.review_stale;
-        if(row.review_stale) selected["diagnostic"]=selected.value("diagnostic").toString()+" The matching transaction changed. Review whether these are the same transaction before accepting this import.";
+        if(row.review_stale) selected["diagnostic"]=selected.value("diagnostic").toString()+" Choose whether this is already imported or a separate transaction.";
         const auto transferLinks=repo.transfers();
         const auto accountAliases=repo.account_aliases();
         if(found->state==app::BatchState::pending)for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category) || std::any_of(accountAliases.begin(),accountAliases.end(),[&](const auto& alias){return app::account_name_matches(alias.name,allocation.category);})) {

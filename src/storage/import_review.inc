@@ -81,7 +81,7 @@ void ImportStore::prepare_review() {
                 if(!row.draft || row.decision.disposition==imports::Disposition::unresolved)
                     warning="Review possible duplicates before committing";
                 else if(row.decision.disposition==imports::Disposition::duplicate) {
-                    if(!row.decision.duplicate_of || row.review_stale)warning="Duplicate target changed; reconfirm the review decision";
+                    if(!row.decision.duplicate_of || row.review_stale)warning=duplicate_decision_warning;
                     else {
                         const auto& target=*row.decision.duplicate_of;
                         const auto other=load_row(target,false);

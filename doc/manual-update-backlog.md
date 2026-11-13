@@ -3,7 +3,7 @@
 Last updated: 2026-11-13
 
 The bundled manual includes the user-visible behavior through the 2026-11-12
-pass (MAN-001 through MAN-044). There are no open items.
+pass (MAN-001 through MAN-044). Open item: MAN-045.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -20,6 +20,17 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
+
+## Open items
+
+### MAN-045 — Repeated import of a file already accepted
+
+- Date: 2026-11-13
+- Contract: [committed changes](committed-changes.md), section "Dependencies and duplicate review"
+- Chapters: [Review duplicates and link transfers](../manual/review-duplicates-transfers.md), [Import transactions](../manual/import-transactions.md), [Accept transactions](../manual/accept-transactions.md)
+- A repeated import that still matches the original date, amount, payee, and bank id stays already imported. It does not appear in Review and is not a new transaction. Category, rule, memo, and amount edits of the matched transaction do not change that.
+- When the matched transaction was removed, or those original facts no longer match, Review shows the transaction and asks whether it is already imported or a separate transaction. Accept anyway does not add it again.
+- Text and pictures in the bundled manual do not say this yet.
 
 ## Recapturing pictures
 

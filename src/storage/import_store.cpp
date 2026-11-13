@@ -1569,6 +1569,18 @@ std::string ImportStore::record_evidence(const imports::Occurrence& id) const {
     return app::ImportRepository::record_evidence(id);
 }
 app::RowView ImportStore::row(const imports::Occurrence& id) const { return load_row(id,true); }
+bool ImportStore::duplicate_source_still_matches(const app::RowView& row,std::int64_t revision) const {
+    if(!row.decision.duplicate_of)return false;
+    const auto& target=*row.decision.duplicate_of;
+    if(review_merged_source(impl_->db,row.identity))return true;
+    const auto other=load_row(target,false);
+    if(other.decision.disposition!=imports::Disposition::include)return false;
+    std::optional<app::RowView> original_row;
+    const qif::Record* compared=&other.source;
+    if(other.source.format=="manual")if(const auto original=imported_original(target)){original_row=load_row(*original,false);compared=&original_row->source;}
+    const auto context=confirmed_duplicate(impl_->db,row.identity,target,revision)?imports::MatchContext::confirmed_decision:imports::MatchContext::suggestion;
+    return imports::candidate_basis(row.source,*compared,context).has_value();
+}
 app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates) const {
     if(!candidates && impl_->verification_rows) {
         const auto found=impl_->verification_rows->rows.find(id);
@@ -1602,20 +1614,25 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
             auto& cached=found->second;
             cached.matched_generated=generated_match(impl_->db,id);
             const auto prior_size=VerificationRows::row_size(cached);
+            bool reread=false;
             if(!impl_->verification_rows) {
                 cached.excluded_by_clear= !retained_member(impl_->db,id.batch,id.ordinal) || pending_removed(impl_->db,id);
                 load_associated_ids(impl_->db,id,cached.source);
                 if(cached.decision.duplicate_of && review_merged_source(impl_->db,id)){cached.decision.duplicate_of=review_association(impl_->db,id);cached.review_stale=false;}
                 else if(cached.decision.duplicate_of) {
                     const auto& target=*cached.decision.duplicate_of;
-                    Statement stale(impl_->db,"SELECT s.target_revision!=h.revision OR s.target_active!=h.active FROM review_stamps s JOIN review_targets h ON h.batch=? AND h.ordinal=? WHERE s.batch=? AND s.ordinal=? ORDER BY s.revision DESC LIMIT 1");
+                    Statement stale(impl_->db,"SELECT s.target_revision!=h.revision,s.target_active!=h.active FROM review_stamps s JOIN review_targets h ON h.batch=? AND h.ordinal=? WHERE s.batch=? AND s.ordinal=? ORDER BY s.revision DESC LIMIT 1");
                     stale.text(1,target.batch);stale.integer(2,integer(target.ordinal));stale.text(3,id.batch);stale.integer(4,integer(id.ordinal));
                     if(!stale.row())fail(SQLITE_CORRUPT);
-                    cached.review_stale=stale.integer(0)!=0;
+                    const bool revision_changed=stale.integer(0)!=0,activity_changed=stale.integer(1)!=0;
+                    // Reading the other transaction can refill this cache. Drop the
+                    // entry and load it again instead of keeping a dangling reference.
+                    if(revision_changed && !activity_changed)reread=true;
+                    else cached.review_stale=activity_changed;
                 }
             }
-            rows->bytes=rows->bytes-prior_size+VerificationRows::row_size(cached);
-            return cached;
+            if(reread){rows->bytes-=prior_size;rows->rows.erase(id);}
+            else {rows->bytes=rows->bytes-prior_size+VerificationRows::row_size(cached);return cached;}
         }
     }
     const auto b=batch(impl_->db,id.batch); const auto source_currency=pinned_currency(impl_->db,id.batch);
@@ -1658,7 +1675,8 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         Statement target(impl_->db,"SELECT s.target_revision,s.target_active,h.revision,h.active FROM review_stamps s JOIN review_targets h ON h.batch=? AND h.ordinal=? WHERE s.batch=? AND s.ordinal=? AND s.revision=?");
         target.text(1,out.decision.duplicate_of->batch);target.integer(2,integer(out.decision.duplicate_of->ordinal));target.text(3,id.batch);target.integer(4,integer(id.ordinal));target.integer(5,v.integer(0));
         if(!target.row())fail(SQLITE_CORRUPT);
-        out.review_stale=target.integer(0)!=target.integer(2) || target.integer(1)!=target.integer(3);
+        const bool revision_changed=target.integer(0)!=target.integer(2),activity_changed=target.integer(1)!=target.integer(3);
+        out.review_stale=activity_changed || (revision_changed && !duplicate_source_still_matches(out,v.integer(0)));
     }
     if (!candidates) {if(rows){rows->remember(out);if(rows->rows.contains(id))impl_->read_stamps[id]=std::move(stamp);}return out;}
     out.candidates=duplicate_candidates(out.source,id.batch,false);
@@ -2223,8 +2241,11 @@ std::optional<Money> ImportStore::projected_for(std::int64_t id) const {
         Statement s(impl_->db,"SELECT 1 FROM versions v WHERE batch=? AND decision=0 AND (NOT EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch) OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) LIMIT 1");
         s.text(1,b.id); if(s.row()) return {};
     }
-    Statement stale(impl_->db,"SELECT 1 FROM versions v JOIN batches b ON b.id=v.batch JOIN review_stamps s USING(batch,ordinal,revision) JOIN review_targets h ON h.batch=v.duplicate_batch AND h.ordinal=v.duplicate_ordinal WHERE b.account_id=? AND b.state=0 AND v.decision=2 AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) AND (s.target_revision!=h.revision OR s.target_active!=h.active) LIMIT 1");
-    stale.integer(1,id);if(stale.row())return {};
+    Statement stale(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch JOIN review_stamps s USING(batch,ordinal,revision) JOIN review_targets h ON h.batch=v.duplicate_batch AND h.ordinal=v.duplicate_ordinal WHERE b.account_id=? AND b.state=0 AND v.decision=2 AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) AND (s.target_revision!=h.revision OR s.target_active!=h.active)");
+    stale.integer(1,id);
+    struct AccountScope{Impl& state;std::int64_t selected;~AccountScope(){state.selected_account=selected;}} account_scope{*impl_,impl_->selected_account};
+    impl_->selected_account=id;
+    while(stale.row())if(load_row({stale.bytes(0),static_cast<std::size_t>(stale.integer(1))},false).review_stale)return {};
     const auto a=account_by_id(id);std::vector<Money> amounts{committed_for(id),local_transfer_total(id,true)-local_transfer_total(id,false)};
     Statement s(impl_->db,"SELECT v.total FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=? AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision=1 AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
     s.integer(1,id);while(s.row()) amounts.emplace_back(s.integer(0),a.currency);return imports::sum(a.currency,amounts);
@@ -2473,6 +2494,7 @@ namespace { std::int64_t review_generation(sqlite3*); }
 #include "import_category_decisions.inc"
 #include "import_group_store.inc"
 #include "account_lifecycle.inc"
+constexpr const char duplicate_decision_warning[]="Choose whether this transaction is already imported or a separate transaction.";
 #include "import_review.inc"
 #include "acceptance_undo.inc"
 #include "dataset_acceptance.inc"
