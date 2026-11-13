@@ -350,6 +350,128 @@ bool refuses_latest(ImportStore& store,std::string_view id) {
     try{store.preview_undo(id,store.action_token());}catch(const storage::ImportError& error){return std::string(error.what()).find("Undo the latest action first.")!=std::string::npos;}
     return false;
 }
+bool import_listed(ImportStore& store,std::string_view source) {
+    const auto imports=store.undoable_imports();
+    return std::any_of(imports.begin(),imports.end(),[&](const auto& item){return item.source==source;});
+}
+void held_import_undo(const std::filesystem::path& directory) {
+{
+    auto store=ImportStore::create(directory/"held-import.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+    const std::string coffee="D01/02/2026\nT-1\nPCoffee\n^\n";
+    const std::string changed="D01/02/2026\nT-1.00\nPCoffee\nMAnother export\n^\n";
+    store.ingest("base",coffee,qif::DateOrder::dmy);
+    store.accept_all("accept",true);
+    const auto beforeHold=history_page(store,1);
+    const auto* open=find_action(beforeHold,"base");
+    check(open && open->undoable,"Import Undo is available before another import holds its transactions");
+    store.ingest("again",changed,qif::DateOrder::dmy);
+    check(store.row({"again",0}).decision.duplicate_of==imports::Occurrence{"base",0},"The later import holds the original transaction");
+    const auto held=history_page(store,1);
+    const auto* base=find_action(held,"base");
+    const auto* again=find_action(held,"again");
+    const auto* accept=find_action(held,"accept");
+    check(base && !base->undoable && base->undo_wait=="Undo the later Import file before this can be undone.","Change history names the later import to undo first");
+    check(again && again->undoable,"The holding import can be undone");
+    check(accept && accept->undoable,"Acceptance can still be undone");
+    const auto blocked=store.preview_connected_undo("base",store.action_token());
+    check(blocked.refusal=="Undo the other import before undoing this change.","Undo and the button use the same refusal");
+    const auto balance=store.balance();
+    bool failed=false;
+    try{store.undo_connected("blocked",blocked);}catch(const storage::ImportError& error){failed=std::string(error.what()).find("Undo the other import before undoing this change.")!=std::string::npos;}
+    check(failed && store.balance()==balance && store.action_head() && store.action_head()->id=="again","A refused Undo writes nothing");
+    const auto acceptance=store.preview_connected_undo("accept",store.action_token());
+    check(acceptance.refusal.empty(),"Acceptance Undo does not remove the held import");
+    store.undo_connected("undoAccept",acceptance);
+    check(!store.transaction_accepted({"base",0}) && !import_listed(store,"base") && import_listed(store,"again"),"Review omits the import another import still holds");
+    const auto stillHeld=history_page(store,1);
+    const auto* still=find_action(stillHeld,"base");
+    check(still && !still->undoable,"Change history still omits Undo after acceptance is undone");
+    undo(store,"undoAgain","again");
+    const auto released=history_page(store,1);
+    const auto* releasedBase=find_action(released,"base");
+    check(import_listed(store,"base") && releasedBase && releasedBase->undoable,"Undo returns after the other import is undone");
+    const auto ready=store.preview_connected_undo("base",store.action_token());
+    check(ready.refusal.empty() && ready.lines.back().id=="base","Confirming Undo removes the import");
+    store.undo_connected("undoBase",ready);
+    check(store.current_ledger().empty() && store.balance().units()==0,"The import leaves the ledger");
+    store.verify();
+    store.certify({});
+}
+    auto reopened=ImportStore::open(directory/"held-import.db","synthetic");
+    check(reopened.current_ledger().empty() && reopened.balance().units()==0 && reopened.batches().empty(),"Close collects the retired import");
+    reopened.verify();
+}
+void older_acceptance_undo(const std::filesystem::path& directory) {
+    auto store=ImportStore::create(directory/"older-accept.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+    store.ingest("first","!Type:Bank\nD01/01/2026\nT-10.00\nPFirst\n^\nD02/01/2026\nT-5.00\nPSecond\n^\n",qif::DateOrder::dmy);
+    store.accept_all("acceptFirst",true);
+    check(store.account().frozen,"Acceptance freezes the account");
+    store.ingest("second","D03/01/2026\nT-2.00\nPLater\n^\n",qif::DateOrder::dmy);
+    store.accept_all("acceptSecond",true);
+    const auto preview=store.preview_connected_undo("acceptFirst",store.action_token());
+    bool includesLater=false;for(const auto& line:preview.lines)if(line.id=="acceptSecond")includesLater=true;
+    check(preview.refusal.empty() && !includesLater,"The earlier acceptance undoes without the later one");
+    const auto page=history_page(store,1);
+    const auto* earlier=find_action(page,"acceptFirst");
+    check(earlier && earlier->undoable && earlier->undo_wait.empty(),"The earlier acceptance can be undone");
+    store.undo_connected("undoOlder",preview);
+    check(!store.transaction_accepted({"first",0}) && !store.transaction_accepted({"first",1}),"The earlier transactions return to New");
+    check(store.transaction_accepted({"second",0}) && store.account().frozen,"The later acceptance keeps the account frozen");
+    store.verify();
+    store.undo_connected("undoLater",store.preview_connected_undo("acceptSecond",store.action_token()));
+    check(!store.transaction_accepted({"second",0}) && !store.account().frozen,"The last acceptance thaws the account");
+    store.verify();
+}
+void older_acceptance_undo_many_accounts(const std::filesystem::path& directory) {
+    auto store=ImportStore::create(directory/"many-accept.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+    store.create_account(2,"Savings",Currency("CAD"),"2026-01-01");
+    store.create_account(3,"Card",Currency("CAD"),"2026-01-01");
+    const std::string first="!Account\nNChecking\nTBank\n^\n!Type:Bank\nD01/01/2026\nT-10.00\nPOne\n^\nD02/01/2026\nT-4.00\nPTwo\n^\n!Account\nNSavings\nTBank\n^\n!Type:Bank\nD01/01/2026\nT-5.00\nPSave\n^\n!Account\nNCard\nTBank\n^\n!Type:Bank\nD01/01/2026\nT-7.00\nPCard\n^\n";
+    OperationContext capture,materialize;
+    store.prepare_import_group("wide",first,qif::DateOrder::dmy,{{0,1,{}},{1,2,{}},{2,3,{}}},capture);
+    store.resume_import_group("wide",materialize);
+    store.accept_all("acceptWide",true);
+    for(const auto id:{(std::int64_t)1,(std::int64_t)2,(std::int64_t)3}){store.select_account(id);check(store.account().frozen,"Each accepted account is frozen");}
+    store.select_account(1);
+    store.ingest("later","D03/01/2026\nT-2.00\nPLater\n^\n",qif::DateOrder::dmy);
+    store.accept_all("acceptLater",true);
+    const auto preview=store.preview_connected_undo("acceptWide",store.action_token());
+    bool includesLater=false;for(const auto& line:preview.lines)if(line.id=="acceptLater")includesLater=true;
+    check(preview.refusal.empty() && !includesLater && find_action(history_page(store,1),"acceptWide")->undoable,"The wide acceptance can be undone on its own");
+    store.undo_connected("undoWide",preview);
+    check(!store.transaction_accepted({"wide-account-0",0}) && !store.transaction_accepted({"wide-account-1",0}) && !store.transaction_accepted({"wide-account-2",0}),"The earlier transactions return to New");
+    check(store.transaction_accepted({"later",0}),"The later checking transaction stays accepted");
+    store.select_account(1);check(store.account().frozen,"Checking stays frozen");
+    store.select_account(2);check(!store.account().frozen,"Savings thaws");
+    store.select_account(3);check(!store.account().frozen,"Card thaws");
+    store.verify();
+}
+void held_import_other_account(const std::filesystem::path& directory) {
+    auto store=ImportStore::create(directory/"held-other.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+    store.create_account(2,"Savings",Currency("CAD"),"2026-01-01");
+    const std::string coffee="D01/02/2026\nT-1\nPCoffee\n^\n";
+    store.ingest("base",coffee,qif::DateOrder::dmy);
+    store.accept_all("accept",true);
+    store.select_account(2);
+    store.ingest("other",coffee,qif::DateOrder::dmy);
+    const auto row=store.row({"other",0});
+    const auto batches=store.batches();
+    const auto batch=std::find_if(batches.begin(),batches.end(),[&](const auto& value){return value.id==row.identity.batch;});
+    check(batch!=batches.end(),"Missing savings import");
+    bool linked=false;
+    for(const auto& candidate:row.candidates){
+        if(candidate.batch.find("base")==std::string::npos)continue;
+        store.decide(row.identity,batch->revision,{imports::Disposition::duplicate,candidate});
+        linked=true;break;
+    }
+    store.select_account(1);
+    const auto page=history_page(store,1);
+    const auto* base=find_action(page,"base");
+    check(base,"The checking import stays on its account");
+    if(!linked){check(base->undoable,"Another account's separate import does not block Undo");return;}
+    check(!base->undoable && base->undo_wait.find("Switch to Savings")!=std::string::npos && base->undo_wait.find("undo")!=std::string::npos,"The row names the other account when its import is not in this list");
+    check(!find_action(page,"other"),"The other account's import is not a row here");
+}
 void connected_undo(const std::filesystem::path& directory) {
     {
         auto store=ImportStore::create(directory/"separate.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
@@ -502,7 +624,7 @@ int main(int argc,char** argv){
     auto path=(std::filesystem::temp_directory_path()/"spentit-action-repository-XXXXXX").string();
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
-    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}corrupt_lineage(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
+    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}corrupt_lineage(path);held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

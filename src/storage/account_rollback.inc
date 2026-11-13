@@ -1,5 +1,18 @@
 // Sources already provide durable import identity. No new format or per-row tag
 // is needed; rowid supplies retained-source order, never transaction ownership.
+std::vector<std::string> ImportStore::import_undo_holders(std::string_view source) const {
+    std::vector<std::string> holders;
+    Statement retained(impl_->db,"SELECT 1 FROM entry_revisions e JOIN batches b ON b.id=e.batch WHERE b.source_id=? LIMIT 1");retained.text(1,source);
+    if(!retained.row())return holders;
+    Statement shared(impl_->db,R"SQL(
+        SELECT DISTINCT owner.source_id FROM source_associations a
+        JOIN batches b ON b.id=a.ledger_batch JOIN batches owner ON owner.id=a.source_batch
+        WHERE b.source_id=?1 AND owner.source_id!=?1
+    )SQL");shared.text(1,source);
+    while(shared.row())holders.push_back(shared.bytes(0));
+    return holders;
+}
+bool ImportStore::import_undo_held(std::string_view source) const { return !import_undo_holders(source).empty(); }
 std::vector<app::UndoableImport> ImportStore::undoable_imports() const {
     std::vector<app::UndoableImport> result;
     Statement sources(impl_->db,R"SQL(
@@ -16,6 +29,7 @@ std::vector<app::UndoableImport> ImportStore::undoable_imports() const {
     )SQL");
     while(sources.row()) {
         app::UndoableImport item;item.source=sources.bytes(0);item.format=sources.bytes(1);item.order=sources.integer(2);
+        if(import_undo_held(item.source))continue;
         Statement accounts(impl_->db,"SELECT DISTINCT account_id FROM batches WHERE source_id=? ORDER BY account_id");accounts.text(1,item.source);
         while(accounts.row())item.accounts.push_back(accounts.integer(0));
         Statement facts(impl_->db,"SELECT count(*),min(v.date),max(v.date) FROM source_occurrences o JOIN batches b ON b.id=o.batch LEFT JOIN versions v ON v.batch=o.batch AND v.ordinal=o.ordinal AND v.revision=(SELECT min(revision) FROM versions WHERE batch=o.batch AND ordinal=o.ordinal) WHERE b.source_id=?");facts.text(1,item.source);
@@ -155,8 +169,7 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
         {Statement retained(impl_->db,"SELECT 1 FROM entry_revisions e JOIN batches b ON b.id=e.batch WHERE b.source_id=? LIMIT 1");retained.text(1,source);financial_history=retained.row();}
         if(financial_history) {
             if(collecting)fail(SQLITE_CORRUPT,"Retired source still has financial dependencies");
-            Statement shared(impl_->db,"SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.ledger_batch JOIN batches owner ON owner.id=a.source_batch WHERE b.source_id=? AND owner.source_id!=?1 LIMIT 1");shared.text(1,source);
-            if(shared.row())fail(SQLITE_CONSTRAINT,"A retained import still owns transactions from this source.");
+            if(import_undo_held(source))fail(SQLITE_CONSTRAINT,"A retained import still owns transactions from this source.");
             // Revoked acceptance still supplies this session's financial replay.
             // Retire visibility now; close collects the no-longer-needed proof
             // after publishing the current baseline. No deleted-row copies are made.

@@ -209,7 +209,15 @@ private:
     bool history_includes(const app::ActionSummary&, const imports::Occurrence&) const;
     std::set<imports::Occurrence> history_occurrences(const app::ActionSummary&) const;
     std::vector<app::ActionSummary> connected_actions(std::string_view) const;
+    std::vector<std::string> connected_undo_blockers(const std::vector<app::ActionSummary>&) const;
+    bool connected_undo_blocked(const std::vector<app::ActionSummary>&) const;
+    bool history_offer(const app::ActionSummary&, std::int64_t account, bool& undoable, std::string& wait) const;
     app::ConnectedUndoLine connected_line(const app::ActionSummary&) const;
+    // Sources that still associate their occurrences with this source's ledger
+    // rows, and only when those rows still have financial revisions. Empty when
+    // Undo can retire or delete this source.
+    std::vector<std::string> import_undo_holders(std::string_view) const;
+    bool import_undo_held(std::string_view) const;
     std::vector<app::HistoryFieldChange> history_named_fields(const app::ActionSummary&) const;
     void begin_import_action(std::string_view,std::string_view);
     void complete_import_action(std::string_view,bool awaiting_decision=false);

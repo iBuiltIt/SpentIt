@@ -2239,6 +2239,21 @@ std::vector<app::AccountBalance> ImportStore::account_balances() const {
     }
     return result;
 }
+// The same predicate decides account.frozen. Undo of an earlier acceptance must
+// leave the flag set while a later acceptance or committed transfer remains.
+std::string acceptance_frozen_predicate(const char* alias) {
+    const std::string account(alias);
+    return "(EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id="+account+".singleton AND NOT EXISTS(SELECT 1 FROM ledger_operations inverse WHERE inverse.kind=6 AND inverse.undo_of=o.id)) OR EXISTS(SELECT 1 FROM transfer_events t WHERE t.account="+account+".singleton AND t.did_commit=1 AND NOT EXISTS(SELECT 1 FROM acceptance_operations m JOIN acceptance_states s ON s.id=m.parent WHERE m.operation=t.operation AND s.undo_id IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM acceptance_states s WHERE s.id=t.operation AND s.undo_id IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM review_link_restorations r JOIN ledger_operations l ON l.sequence IN(r.restored,r.intermediate) JOIN review_undos u ON u.id=r.undo_id JOIN acceptance_states s ON s.id=u.answer WHERE l.id=t.operation)))";
+}
+void sync_acceptance_frozen(sqlite3* db) {
+    Statement accounts(db,"SELECT singleton FROM account");
+    std::vector<std::int64_t> ids;while(accounts.row())ids.push_back(accounts.integer(0));
+    const auto sql="SELECT "+acceptance_frozen_predicate("a")+" FROM account a WHERE a.singleton=?";
+    for(const auto id:ids){
+        Statement should(db,sql.c_str());should.integer(1,id);if(!should.row())fail(SQLITE_CORRUPT,"Account acceptance state is inconsistent");
+        Statement set(db,"UPDATE account SET frozen=? WHERE singleton=?");set.integer(1,should.integer(0)?1:0);set.integer(2,id);set.done();
+    }
+}
 void ImportStore::verify(const app::OperationContext* context) const {
     diag::Span verificationSpan(diag::Code::verify);
     ActionChain(impl_->db).verify();
@@ -2296,12 +2311,12 @@ void ImportStore::verify(const app::OperationContext* context) const {
     }
     {diag::Span phaseSpan(diag::Code::accounts);verify_account_commands(context);}
     {diag::Span phaseSpan(diag::Code::groups);verify_import_groups(context);}
-    Statement invalid(impl_->db,
-        "SELECT 1 FROM batches b WHERE parser NOT IN('bank-v6','ofx-sgml-1','ofx-xml-2','manual-v1') OR (state=1 AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) "
-        "OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR (SELECT count(*) FROM events e JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision WHERE e.batch=b.id AND h.sequence>(SELECT history_cut FROM document_session)) != b.revision-coalesce((SELECT max(e.revision) FROM events e JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision WHERE e.batch=b.id AND h.sequence<=(SELECT history_cut FROM document_session)),-1) "
-        "UNION ALL SELECT 2 FROM versions v JOIN batches b ON b.id=v.batch WHERE v.revision>b.revision "
-        "UNION ALL SELECT 3 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id) "
-        "UNION ALL SELECT 4 FROM account a WHERE frozen!=(EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id=a.singleton AND NOT EXISTS(SELECT 1 FROM ledger_operations inverse WHERE inverse.kind=6 AND inverse.undo_of=o.id)) OR EXISTS(SELECT 1 FROM transfer_events t WHERE t.account=a.singleton AND t.did_commit=1 AND NOT EXISTS(SELECT 1 FROM acceptance_operations m JOIN acceptance_states s ON s.id=m.parent WHERE m.operation=t.operation AND s.undo_id IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM acceptance_states s WHERE s.id=t.operation AND s.undo_id IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM review_link_restorations r JOIN ledger_operations l ON l.sequence IN(r.restored,r.intermediate) JOIN review_undos u ON u.id=r.undo_id JOIN acceptance_states s ON s.id=u.answer WHERE l.id=t.operation)))");
+    const auto acceptance_check=std::string("SELECT 1 FROM batches b WHERE parser NOT IN('bank-v6','ofx-sgml-1','ofx-xml-2','manual-v1') OR (state=1 AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) ")
+        +"OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR (SELECT count(*) FROM events e JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision WHERE e.batch=b.id AND h.sequence>(SELECT history_cut FROM document_session)) != b.revision-coalesce((SELECT max(e.revision) FROM events e JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision WHERE e.batch=b.id AND h.sequence<=(SELECT history_cut FROM document_session)),-1) "
+        +"UNION ALL SELECT 2 FROM versions v JOIN batches b ON b.id=v.batch WHERE v.revision>b.revision "
+        +"UNION ALL SELECT 3 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id) "
+        +"UNION ALL SELECT 4 FROM account a WHERE frozen!="+acceptance_frozen_predicate("a");
+    Statement invalid(impl_->db,acceptance_check.c_str());
     if(invalid.row()){const auto code=invalid.integer(0);fail(SQLITE_CORRUPT,code==1?"Import revision history is inconsistent":code==2?"Transaction revision exceeds its import":code==3?"Import source has no owner":"Account acceptance state is inconsistent");}
     Statement headers(impl_->db,"SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM source_headers h WHERE h.source_id=s.id) UNION ALL SELECT 1 FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE NOT ((b.parser='manual-v1' AND h.format='manual' AND h.grammar='manual') OR (b.parser='bank-v6' AND h.format='qif' AND h.grammar='qif') OR (b.parser='ofx-sgml-1' AND h.grammar='ofx-sgml' AND h.format IN('ofx','qfx','qbo','aso')) OR (b.parser='ofx-xml-2' AND h.grammar='ofx-xml' AND h.format IN('ofx','qfx','qbo','aso')))");
     if(headers.row()) fail(SQLITE_CORRUPT,"Source evidence does not match its import");

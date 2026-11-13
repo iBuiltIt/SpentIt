@@ -86,6 +86,10 @@ struct HistoryActionView {
     std::vector<HistoryFieldChange> changes;
     std::vector<HistoryMemberView> members;
     bool lists_transactions = false;
+    // False when Undo would fail. The page then either names the later action
+    // that makes Undo possible, or leaves the row off the list.
+    bool undoable = true;
+    std::string undo_wait;
     ActionKind kind = ActionKind::transaction;
 };
 struct AccountHistoryPage {

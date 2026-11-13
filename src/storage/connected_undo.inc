@@ -54,6 +54,68 @@ app::ConnectedUndoLine ImportStore::connected_line(const app::ActionSummary& act
     if(line.changes.size()>8)line.changes.resize(8);
     return line;
 }
+std::vector<std::string> ImportStore::connected_undo_blockers(const std::vector<app::ActionSummary>& actions) const {
+    std::map<std::string,std::int64_t> sequence;
+    for(const auto& action:actions)if(action.kind==app::ActionKind::import)sequence.emplace(action.payload,action.sequence);
+    std::vector<std::string> blockers;
+    for(const auto& [source,at]:sequence)for(const auto& holder:import_undo_holders(source)){
+        const auto found=sequence.find(holder);
+        // A newer import in this same Undo is removed first and releases the hold.
+        if(found==sequence.end() || found->second<=at)blockers.push_back(holder);
+    }
+    std::sort(blockers.begin(),blockers.end());blockers.erase(std::unique(blockers.begin(),blockers.end()),blockers.end());
+    return blockers;
+}
+bool ImportStore::connected_undo_blocked(const std::vector<app::ActionSummary>& actions) const {
+    return !connected_undo_blockers(actions).empty();
+}
+bool ImportStore::history_offer(const app::ActionSummary& action,std::int64_t account,bool& undoable,std::string& wait) const {
+    undoable=true;wait.clear();
+    const auto chain=connected_actions(action.id);
+    const auto blockers=connected_undo_blockers(chain);
+    if(blockers.empty())return true;
+    std::map<std::string,std::int64_t> held;
+    for(const auto& item:chain)if(item.kind==app::ActionKind::import)held.emplace(item.payload,item.sequence);
+    std::vector<app::ActionSummary> imports;
+    Statement rows(impl_->db,"SELECT id,parent,sequence,kind,state,payload,label,count FROM action_headers WHERE state=? AND kind=? ORDER BY sequence DESC");
+    rows.integer(1,static_cast<int>(app::ActionState::applied));rows.integer(2,static_cast<int>(app::ActionKind::import));
+    while(rows.row()){
+        const auto kind=rows.integer(3),state=rows.integer(4);
+        if(kind<0 || kind>7 || state<0 || state>3)fail(SQLITE_CORRUPT,"Undo head is inconsistent");
+        imports.push_back({rows.bytes(0),rows.bytes(1),rows.integer(2),static_cast<app::ActionKind>(kind),static_cast<app::ActionState>(state),rows.bytes(5),rows.bytes(6),rows.integer(7)});
+    }
+    std::vector<app::ActionSummary> enablers;
+    for(const auto& holder:blockers){
+        const auto enabling=std::find_if(imports.begin(),imports.end(),[&](const auto& item){return item.payload==holder;});
+        if(enabling==imports.end())return false;
+        for(const auto& [source,at]:held){
+            const auto owners=import_undo_holders(source);
+            if(std::find(owners.begin(),owners.end(),holder)!=owners.end() && enabling->sequence<=at)return false;
+        }
+        enablers.push_back(*enabling);
+    }
+    std::sort(enablers.begin(),enablers.end(),[](const auto& left,const auto& right){return left.sequence>right.sequence;});
+    auto named=[&](const app::HistoryActionView& view){auto text=view.label;if(view.count>0)text+=" · "+std::to_string(view.count)+(view.count==1?" transaction":" transactions");return text;};
+    auto where=[&](const app::HistoryActionView& view){std::string text;for(std::size_t i=0;i<view.accounts.size();++i){if(i)text+=i+1==view.accounts.size()?" and ":", ";text+=view.accounts[i];}return text;};
+    auto clause=[&](const app::ActionSummary& item){
+        const auto view=history_view(item,0,false,false);
+        if(history_touches(item,account))return "the later "+named(view);
+        if(view.accounts.empty())return std::string("the other import");
+        return named(view)+" in "+where(view);
+    };
+    undoable=false;
+    if(enablers.size()==1){
+        const auto view=history_view(enablers.front(),0,false,false);
+        if(history_touches(enablers.front(),account))wait="Undo the later "+named(view)+" before this can be undone.";
+        else if(!view.accounts.empty())wait="Switch to "+where(view)+" and undo "+named(view)+" before this can be undone.";
+        else wait="Undo the other import before this can be undone.";
+    } else {
+        wait="Undo these before this can be undone: ";
+        for(std::size_t i=0;i<enablers.size();++i){if(i)wait+=", ";wait+=clause(enablers[i]);}
+        wait+=".";
+    }
+    return true;
+}
 app::ConnectedUndoPreview ImportStore::preview_connected_undo(std::string_view id,const app::ActionToken& expected) const {
     ActionChain chain(impl_->db);chain.require_current(expected);chain.require_idle();
     app::ConnectedUndoPreview result;result.token=chain.token();result.target=id;
@@ -65,6 +127,7 @@ app::ConnectedUndoPreview ImportStore::preview_connected_undo(std::string_view i
         result.label=line.label;result.count=line.count;result.kind=line.kind;result.accounts=view.accounts;result.changes=line.changes;
     }
     if(result.lines.empty() || result.lines.back().id!=id)fail(SQLITE_CONSTRAINT,"This change is no longer available.");
+    if(connected_undo_blocked(actions))result.refusal="Undo the other import before undoing this change.";
     return result;
 }
 std::optional<app::ActionReceipt> ImportStore::undo_connected_outcome(std::string_view operation,const app::ConnectedUndoPreview& preview) const {

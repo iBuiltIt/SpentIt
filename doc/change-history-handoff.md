@@ -31,10 +31,17 @@ The balance line appears only when the money changed. Each transaction is one
 line, with its category when it has one split. A memo and extra splits are
 further lines. The selected transaction is highlighted.
 
-**Show in ledger** and **Undo** sit on the open action. When nothing later
-wrote one of that action’s transactions, the existing confirmation undoes that
-action, even if a newer unrelated action is the head. When later actions share
-a transaction, one dialog lists that closure, newest first, including the
+**Show in ledger** and **Undo** sit on an open action that can be undone.
+When another import still holds transactions this action would remove, and a
+later action would release them, the row stays and names that action. If that
+import is on another account, the row names the account to switch to. Undo
+appears after it is undone. A row that cannot be undone, and that no later
+action would make undoable, is left off the page. The same eligibility decides
+**Undo import…** on Review. Undoing an earlier Accept leaves a later Accept in
+place, and the account stays frozen while any acceptance remains. When nothing
+later wrote one of that action’s transactions, the existing confirmation undoes
+that action, even if a newer unrelated action is the head. When later actions
+share a transaction, one dialog lists that closure, newest first, including the
 action that was opened. **Yes, undo all** restores the whole list, newest
 first, or none of it. **Cancel** writes nothing.
 

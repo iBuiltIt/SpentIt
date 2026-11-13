@@ -47,4 +47,19 @@ write captures straight into `manual/images`. Do not point
 
 ## Open items
 
-None.
+### MAN-045 — Undo hidden while another import holds the transactions
+
+- Date: 2026-11-12
+- Contracts: [change history](change-history-handoff.md), [import undo](import-undo.md)
+- `manual/add-correct-transactions.md`, section “Undo a saved change”: the
+  sentence “Undo is on every open action” is outstanding. Say that a row with
+  no Undo names the later action to undo first, and that a change no later
+  action can make undoable is left off the page. Also say that undoing an
+  earlier Accept leaves a later Accept in place.
+- `manual/import-transactions.md`, “Undo a mistaken import”, and the Undo
+  import row in `manual/accept-transactions.md`: outstanding text that an
+  import another import still holds is left off **Undo import…** until that
+  other import is undone. Accepted transactions already make an import
+  ineligible; this is a separate case.
+- Pictures: `change-history.png` and `undo-import.png` do not show this case.
+  No recapture unless a later pass adds an example of the missing button.

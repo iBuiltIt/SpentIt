@@ -401,6 +401,46 @@ private slots:
         run(model,"history");QVERIFY(model.state().value("history").toList().isEmpty());
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
     }
+    void heldImportOmitsHistoryUndo() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Synthetic hold"},{"currency","CAD"}});
+        run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        QFile first(dir.path()+"/coffee.qif");QVERIFY(first.open(QIODevice::WriteOnly));
+        const QByteArray coffee="D01/02/2026\nT-1\nPCoffee\n^\n";QCOMPARE(first.write(coffee),coffee.size());first.close();
+        run(model,"import",{{"path",first.fileName()},{"profile","DMY"}});run(model,"commit");
+        QFile second(dir.path()+"/coffee-again.qif");QVERIFY(second.open(QIODevice::WriteOnly));
+        const QByteArray changed="D01/02/2026\nT-1.00\nPCoffee\nMAnother export\n^\n";QCOMPARE(second.write(changed),changed.size());second.close();
+        run(model,"import",{{"path",second.fileName()},{"profile","DMY"}});
+        QVERIFY(click(root,"historyNavigation"));wait(model);
+        const auto rows=model.state().value("history").toList();
+        int held=-1,later=-1;QStringList described;
+        for(int i=0;i<rows.size();++i){
+            const auto row=rows.at(i).toMap();
+            described<<row.value("label").toString()+(row.value("undoable").toBool()?" undoable":" held");
+            if(row.value("label").toString()!="Import file")continue;
+            if(row.value("undoable").toBool())later=i;else held=i;
+        }
+        QVERIFY2(held>=0 && later>=0,qPrintable(described.join(" | ")));
+        QTRY_VERIFY(object(root,QString("historyUndoWait_%1").arg(held)));
+        QVERIFY(object(root,QString("historyUndoWait_%1").arg(held))->property("text").toString().contains("before this can be undone"));
+        QVERIFY(click(root,QString("historyRow_%1").arg(held)));
+        QVERIFY(!object(root,"historyUndo"));
+        QVERIFY(click(root,QString("historyRow_%1").arg(later)));
+        QTRY_VERIFY(object(root,"historyUndo"));
+        QVERIFY(click(root,"historyUndo"));
+        QTRY_VERIFY(object(root,"actionUndoConfirm")->property("visible").toBool() || object(root,"connectedUndoConfirm")->property("visible").toBool());
+        if(object(root,"actionUndoConfirm")->property("visible").toBool())QVERIFY(click(root,"confirmActionUndo"));
+        else QVERIFY(click(root,"confirmConnectedUndo"));
+        wait(model);
+        const auto after=model.state().value("history").toList();
+        int restored=-1;
+        for(int i=0;i<after.size();++i){const auto row=after.at(i).toMap();if(row.value("label").toString()=="Import file" && row.value("undoable").toBool())restored=i;}
+        QVERIFY(restored>=0);
+        QVERIFY(click(root,QString("historyRow_%1").arg(restored)));
+        QTRY_VERIFY(object(root,"historyUndo"));
+    }
     void staleBalancePreviewDoesNotOverwrite() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());prepare(model,dir.path());
         const auto original=model.rowIdentity(model.selectedRowIndex());

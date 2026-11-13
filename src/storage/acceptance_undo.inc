@@ -62,6 +62,8 @@ void ImportStore::undo_acceptance(std::string_view operation,std::string_view or
     }
     restore_review_answer(operation,original);
     for(const auto& old:before.groups){Statement group(impl_->db,"UPDATE import_groups SET state=?,publication=NULL WHERE id=?");group.integer(1,old.state);group.text(2,old.id);group.done();}
-    for(const auto& old:before.accounts){Statement account(impl_->db,"UPDATE account SET frozen=? WHERE singleton=?");account.integer(1,old.frozen);account.integer(2,old.id);account.done();}
-    finish([&]{transaction.commit();});
+    // Restore the flag after finish() drops associations. A later acceptance on
+    // the same account stored no frozen change of its own, so writing this
+    // action's earlier flag would thaw the account while that acceptance remains.
+    finish([&]{sync_acceptance_frozen(impl_->db);transaction.commit();});
 }

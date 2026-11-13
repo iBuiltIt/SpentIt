@@ -29,6 +29,12 @@ Accepted owner Go: 2026-11-03. Implementation and verification are recorded in
   account; import the file again into the correct account afterward.
 - An import containing accepted transactions is not eligible for whole-import undo.
   Account-wide discard remains available for its remaining uncommitted work/errors.
+- An import that still has financial history, while another import holds its
+  transactions, is omitted from **Undo import…**. On Change history the row
+  stays and names the later import to undo first. When no later action would
+  make Undo possible, the row is left off the page. Undoing the holding import
+  makes Undo available. Change history and the save use that same check. There
+  is no force override.
 
 ## Import identification and format decision
 
@@ -58,7 +64,9 @@ reversal history. Imported records required to replay that retained history rema
 stored in a discarded batch, excluded from the ledger and import-undo list. This is
 retention for the surviving transaction's history, not a general forgotten-import
 archive. When such an import also contains rows owned by another source, undoing that
-other import first can be required; no force override is provided.
+other import first can be required. **Undo import…** omits it until that other
+import is undone. Change history keeps the row and names the import to undo
+first. No force override is provided.
 
 Both paths verify before durability and store a retry receipt in the existing
 one-slot rollback receipt. Retry identities include the selected source. A stale

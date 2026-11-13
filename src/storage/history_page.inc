@@ -313,11 +313,16 @@ app::AccountHistoryPage ImportStore::account_change_history(std::int64_t account
     for(int walked=0;current && walked<100000;++walked){
         if(!seen.insert(current->id).second)break;
         const bool in_page=before==0 || current->sequence<before;
+        bool shown=false;
         if(in_page && history_touches(*current,account)){
-            if(page.actions.size()<limit)page.actions.push_back(history_view(*current,account,true,false));
-            else page.more=true;
+            bool undoable=true;std::string wait;
+            shown=history_offer(*current,account,undoable,wait);
+            if(shown){
+                if(page.actions.size()<limit){auto view=history_view(*current,account,true,false);view.undoable=undoable;view.undo_wait=std::move(wait);page.actions.push_back(std::move(view));}
+                else page.more=true;
+            }
         }
-        if(focus && page.focus.empty() && history_includes(*current,*focus))page.focus=current->id;
+        if(focus && page.focus.empty() && shown && history_includes(*current,*focus))page.focus=current->id;
         if(page.more && (!focus || !page.focus.empty()))break;
         if(current->parent.empty())break;
         auto parent=header(current->parent);if(!parent)fail(SQLITE_CORRUPT,"Undo head is inconsistent");

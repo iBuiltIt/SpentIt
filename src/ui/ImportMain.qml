@@ -1874,6 +1874,7 @@ ApplicationWindow {
             if(action==="report_leave" && pendingReportNavigation){let next=pendingReportNavigation;pendingReportNavigation=null;if(success)Qt.callLater(next)}
             if(success && action==="preview_import_undo")importUndoConfirm.open()
             if(success && action==="preview_connected_undo"){
+                if((s.connectedUndo||{}).refusal){workspaceFeedback=s.connectedUndo.refusal;return}
                 const lines=(s.connectedUndo||{}).lines||[]
                 if(lines.length>1)connectedUndoConfirm.open()
                 else if(lines.length===1){
@@ -3914,6 +3915,14 @@ ApplicationWindow {
                                 property bool open: historyOpenId===actionId
                                 width:historyColumn.width;spacing:6
                                 Button {objectName:"historyRow_"+index;width:parent.width;text:modelData.summary||"";highlighted:open;onClicked:{if(open){historyOpenId="";historySelectedKey="";return}historyOpenId=actionId;chooseHistoryMember(modelData)}}
+                                Label {
+                                    objectName:(modelData.undoWait||"").length?"historyUndoWait_"+index:""
+                                    visible:(modelData.undoWait||"").length>0
+                                    text:modelData.undoWait||""
+                                    textFormat:Text.PlainText
+                                    wrapMode:Text.Wrap
+                                    width:parent.width
+                                }
                                 Column {
                                     visible:open;objectName:open?"historyOpen":"";width:parent.width;spacing:4
                                     Label {objectName:open && historyAccountsText(modelData)?"historyAccounts":"";visible:historyAccountsText(modelData).length>0;text:"Accounts: "+historyAccountsText(modelData);textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
@@ -3957,6 +3966,14 @@ ApplicationWindow {
                                             MouseArea {anchors.fill:parent;enabled:!!historyMember.modelData.inLedger && !workflow.busy;onClicked:historySelectedKey=historyAction.actionId+":"+index}
                                         }
                                     }
+                                    Label {
+                                        objectName:open && (modelData.undoWait||"").length?"historyUndoWait":""
+                                        visible:(modelData.undoWait||"").length>0
+                                        text:modelData.undoWait||""
+                                        textFormat:Text.PlainText
+                                        wrapMode:Text.Wrap
+                                        width:parent.width
+                                    }
                                     Row {
                                         spacing:8
                                         Button {
@@ -3966,8 +3983,8 @@ ApplicationWindow {
                                             onClicked:{const row=selectedHistoryMember(modelData);if(!row)return;const batch=row.batch;const ordinal=row.ordinal;navigate("ledger");workflow.command("inspect",{batch:batch,ordinal:ordinal})}
                                         }
                                         Button {
-                                            objectName:open?"historyUndo":""
-                                            visible:open
+                                            objectName:open && modelData.undoable!==false?"historyUndo":""
+                                            visible:open && modelData.undoable!==false
                                             text:"Undo";onClicked:undoOpenHistory(historyAction)
                                         }
                                     }

@@ -714,7 +714,7 @@ struct ImportModel::Worker {
             members.push_back(QVariantMap{{"batch",text(member.batch)},{"ordinal",static_cast<int>(member.ordinal)},{"date",dateText(member.date)},{"payee",text(member.payee)},{"memo",memo},{"memoLine",memo.isEmpty()?QString():QString("Memo: ")+memo},{"amount",amount},{"state",text(member.state)},{"inLedger",member.in_ledger},{"line",parts.join(" · ")},{"splits",splitLines},{"changes",memberChanges}});
         }
         const auto summary=text(action.label)+(action.count>0?QString(" · %1 transaction%2").arg(action.count).arg(action.count==1?"":"s"):QString{});
-        return {{"id",text(action.id)},{"sequence",QString::number(action.sequence)},{"label",text(action.label)},{"count",static_cast<qlonglong>(action.count)},{"accounts",accounts.join(", ")},{"accountList",accountList},{"summary",summary},{"balance",historyBalanceText(action.balance)},{"changes",changes},{"members",members},{"listsTransactions",action.lists_transactions},{"kind",static_cast<int>(action.kind)}};
+        return {{"id",text(action.id)},{"sequence",QString::number(action.sequence)},{"label",text(action.label)},{"count",static_cast<qlonglong>(action.count)},{"accounts",accounts.join(", ")},{"accountList",accountList},{"summary",summary},{"balance",historyBalanceText(action.balance)},{"changes",changes},{"members",members},{"listsTransactions",action.lists_transactions},{"undoable",action.undoable},{"undoWait",text(action.undo_wait)},{"kind",static_cast<int>(action.kind)}};
     }
     void listHistory(std::int64_t before=0,bool append=false,const std::optional<imports::Occurrence>& focus=std::nullopt) {
         PresentationRead observation{diagnosticPresentationFailed};

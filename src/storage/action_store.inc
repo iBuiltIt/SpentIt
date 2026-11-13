@@ -65,6 +65,7 @@ app::UndoPreview ImportStore::preview_undo(std::string_view id,const app::Action
         Statement accounts(impl_->db,"SELECT DISTINCT b.account_id FROM operations o JOIN batches b ON b.id=o.batch WHERE o.id=?1 OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=?1) UNION SELECT t.account FROM transfer_events t JOIN acceptance_operations m ON m.operation=t.operation WHERE m.parent=?1 ORDER BY 1");accounts.text(1,current->payload);while(accounts.row())result.accounts.push_back(accounts.integer(0));relationship_scope();return result;
     }
     if(current->kind==app::ActionKind::import || current->kind==app::ActionKind::manual_creation) {
+        if(current->kind==app::ActionKind::import && import_undo_held(current->payload)){result.refusal="Undo the other import before undoing this change.";return result;}
         const auto scope=review_import_undo(current->payload);
         result.accounts=scope.affected_accounts;result.action.count=integer(scope.transactions);
         return result;
