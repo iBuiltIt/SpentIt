@@ -332,6 +332,9 @@ public:
     virtual LinkExclusionPreview preview_link_exclusion(const LinkExclusion&) const {throw std::logic_error("Link exclusions unavailable");}
     virtual ReviewReceipt save_link_exclusion(std::string_view,const LinkExclusion&,std::int64_t) {throw std::logic_error("Link exclusions unavailable");}
     virtual ReviewSheet review_sheet() const {return {};}
+    // Rows kept when another transaction in the same account was merged into them,
+    // excluding rows that have since been accepted.
+    virtual std::vector<imports::Occurrence> merge_survivors() const {return {};}
     virtual ReviewReceipt merge_review_batch(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Batch Review unavailable");}
     virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}
     virtual ReviewReceipt assign_categories(std::string_view,const CategorySelection&,const OperationContext&) {throw std::logic_error("Category assignment unavailable");}

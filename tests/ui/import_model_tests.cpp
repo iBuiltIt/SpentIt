@@ -333,7 +333,9 @@ private slots:
         run(m,"select",{{"row",m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())}});
         QVERIFY(click("ledgerDuplicateMerge"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QVERIFY(!window->findChild<QObject*>("reviewSurvivor")->property("visible").toBool());QCOMPARE(m.rowCount(),4);QCOMPARE(m.state().value("balance").toString(),"-22.00");QVERIFY(m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())>=0);QCOMPARE(m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt()),-1);
+        QVERIFY(m.state().value("mergedRows").toMap().contains(old.value("key").toString()));
         QVERIFY(undoShortcut());QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(m.rowCount(),5);
+        QVERIFY(!m.state().value("mergedRows").toMap().contains(old.value("key").toString()));
         QVERIFY(QMetaObject::invokeMethod(window,"showDuplicateInLedger",Q_ARG(QVariant,fresh),Q_ARG(QVariant,fresh)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
         QVERIFY(click("ledgerDuplicateNone"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.rowCount(),5);
     }
@@ -611,6 +613,58 @@ private slots:
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo") && visualItem(window->contentItem(),"reviewNo")->isVisible());
         QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Not this transfer"));
         auto* hidden=visualItem(window->contentItem(),"acceptMissingMatch");QVERIFY(!hidden || !hidden->isVisible());
+    }
+    void ledgerSamePayment() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        const auto path=dir.path()+"/doc";
+        run(m,"create",{{"path",path},{"protected",false},{"name","Checking"},{"currency","CAD"},{"defaultCategories",true}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-15\nT-450.00\nPVisa payment\nL[Visa]\n^\n")}});
+        run(m,"select_account",{{"id","2"}});
+        const auto visaBefore=m.rowCount();QVERIFY(m.state().value("transferDoubles").toMap().isEmpty());QVERIFY(m.state().value("linkedRows").toMap().isEmpty());
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:CCard\nD2026-01-15\nT450.00\nPPayment from Checking\nL[Checking]\n^\n")}});
+        QCOMPARE(m.rowCount(),visaBefore+1);QCOMPARE(m.state().value("balance").toString(),QString("900.00"));
+        const auto marksFor=[&](const QString& account){int count=0;const auto rows=m.state().value("transferDoubles").toMap();for(auto it=rows.cbegin();it!=rows.cend();++it)if(it.value().toMap().value("account").toString()==account)++count;return count;};
+        QCOMPARE(marksFor("2"),2);QVERIFY(m.state().value("linkedRows").toMap().isEmpty());
+        window->setProperty("editorClosed",true);
+        QList<int> marked;
+        for(int i=0;i<m.rowCount();++i){const auto record=m.rowRecord(i);const auto key=record.value("batch").toString()+":"+QString::number(record.value("ordinal").toInt());if(m.state().value("transferDoubles").toMap().contains(key))marked.push_back(i);}
+        QCOMPARE(marked.size(),2);
+        run(m,"select",{{"row",marked.front()}});
+        QTRY_VERIFY(visualItem(window->contentItem(),"ledgerSamePaymentNo"));
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"ledgerSamePaymentNo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.rowCount(),visaBefore+1);QVERIFY(m.state().value("transferDoubles").toMap().isEmpty());
+        auto* ledger=visualItem(window->contentItem(),"durableLedger");QVERIFY(ledger);ledger->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(marksFor("2"),2);
+        run(m,"select",{{"row",marked.front()}});run(m,"select",{{"row",marked.back()},{"toggle",true}});
+        QCOMPARE(m.state().value("selectionCount").toInt(),2);
+        auto* link=window->findChild<QObject*>("mergeSelection");QVERIFY(link);QCOMPARE(link->property("text").toString(),QString("Link to other account…"));QVERIFY(!link->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window,"ledgerMerge"));
+        auto* dialog=window->findChild<QObject*>("ledgerTransferMerge");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(!window->findChild<QObject*>("reviewSurvivor")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("cancelLedgerTransferMerge"),"clicked"));
+        QTRY_VERIFY(!dialog->property("visible").toBool());QCOMPARE(m.rowCount(),visaBefore+1);QCOMPARE(m.state().value("balance").toString(),QString("900.00"));
+        QVERIFY(QMetaObject::invokeMethod(window,"ledgerMerge"));QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmLedgerTransferMerge"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.rowCount(),visaBefore);QCOMPARE(m.state().value("balance").toString(),QString("450.00"));QVERIFY(m.state().value("transferDoubles").toMap().isEmpty());
+        const auto linkText=[&]{QStringList labels;const auto linked=m.state().value("linkedRows").toMap();for(auto it=linked.cbegin();it!=linked.cend();++it)labels<<it.value().toString();return labels;};
+        QCOMPARE(linkText().size(),2);QVERIFY(linkText().join(" ").contains("Checking"));QVERIFY(linkText().join(" ").contains("Visa"));
+        run(m,"select_account",{{"id","1"}});QCOMPARE(m.state().value("balance").toString(),QString("-450.00"));
+        ledger=visualItem(window->contentItem(),"durableLedger");ledger->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("balance").toString(),QString("-900.00"));QVERIFY(m.state().value("linkedRows").toMap().isEmpty());QCOMPARE(marksFor("1"),2);
+        run(m,"select_account",{{"id","2"}});QCOMPARE(m.rowCount(),visaBefore+1);QCOMPARE(m.state().value("balance").toString(),QString("900.00"));
+        marked.clear();for(int i=0;i<m.rowCount();++i){const auto record=m.rowRecord(i);const auto key=record.value("batch").toString()+":"+QString::number(record.value("ordinal").toInt());if(m.state().value("transferDoubles").toMap().contains(key))marked.push_back(i);}
+        QCOMPARE(marked.size(),2);
+        run(m,"select",{{"row",marked.front()}});run(m,"select",{{"row",marked.back()},{"toggle",true}});
+        QVERIFY(QMetaObject::invokeMethod(window,"ledgerMerge"));QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmLedgerTransferMerge"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.rowCount(),visaBefore);QCOMPARE(m.state().value("balance").toString(),QString("450.00"));
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"select_account",{{"id","2"}});
+        QCOMPARE(m.rowCount(),visaBefore);QVERIFY(linkText().join(" ").contains("Checking"));
+        run(m,"commit");QVERIFY(m.state().value("linkedRows").toMap().isEmpty());QCOMPARE(m.state().value("balance").toString(),QString("450.00"));
+        run(m,"select_account",{{"id","1"}});QVERIFY(m.state().value("linkedRows").toMap().isEmpty());QCOMPARE(m.state().value("balance").toString(),QString("-450.00"));
     }
     void unifiedReviewLinkDifference() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
@@ -973,7 +1027,7 @@ private slots:
         QVERIFY(!root->findChild<QObject*>("transferDialog"));
         run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(m.state().value("committed").toString(),QString("100.00"));
         QVERIFY(QMetaObject::invokeMethod(root,"mergeSelected"));
-        QCOMPARE(root->property("mergeHint").toString(),QString("Select one or two splits, then select Link"));
+        QCOMPARE(root->property("mergeHint").toString(),QString("Select one transaction, then choose Link to other account."));
         run(m,"transfer_manual",{{"link","clear-link"},{"operation","create-clear"},{"sequence",m.state().value("transferSequence")},{"destination","2"},{"date","2026-01-04"},{"amount","-1.00"}});
         run(m,"inspect",{{"batch","~transfer-clear-link-origin"},{"ordinal",0}});
         run(m,"transfer_clear",{{"link","clear-link"},{"operation","clear"},{"sequence",m.state().value("transferSequence")}});
@@ -999,6 +1053,7 @@ private slots:
         QVERIFY(choose(wise));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
         QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("transfers").toList().size(),2);
+        QVERIFY(m.state().value("linkedRows").toMap().isEmpty());
         QCOMPARE(m.rowRecord(m.occurrenceIndex(batch,0)).value("category").toString(),QString("Wise [Account]"));
         for(int count=1;count<=2;++count){
             run(m,"select",{{"row",m.occurrenceIndex(batch,0)}});if(count==2)run(m,"select",{{"row",m.occurrenceIndex(batch,1)},{"toggle",true}});
@@ -1049,7 +1104,7 @@ private slots:
         chooseImported();
         QCOMPARE(m.state().value("selectionCount").toInt(),1);
         QVERIFY(QMetaObject::invokeMethod(root,"mergeSelected"));
-        QCOMPARE(root->property("mergeHint").toString(),QString("Choose the other split, then select Link again"));
+        QCOMPARE(root->property("mergeHint").toString(),QString("Choose the transaction in the other account, then choose Link to other account again"));
         run(m,"select_account",{{"id","2"}});
         run(m,"import",{{"path",fixture(dir.path(),"D3/2/2026\nT100\nPVisa pay\n^\n")},{"profile","DMY"}});
         chooseImported();

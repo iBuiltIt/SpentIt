@@ -139,13 +139,11 @@ private slots:
         auto* theme=object(s.root,"applicationTheme");QVERIFY(theme);
         auto* content=action->property("contentItem").value<QObject*>();QVERIFY(content);
         QCOMPARE(content->property("color"),theme->property("disabled"));
-        auto* submenu=object(s.root,"ledgerSubmenu_ledgerDuplicateMenu");QVERIFY(submenu);
-        QVERIFY(!submenu->property("enabled").toBool());
-        auto* arrow=submenu->property("arrow").value<QObject*>();QVERIFY(arrow);
-        QCOMPARE(arrow->property("color"),theme->property("disabled"));
-        QVERIFY(submenu->setProperty("highlighted",true));
-        auto* background=submenu->property("background").value<QObject*>();QVERIFY(background);
-        QCOMPARE(background->property("color").value<QColor>().alpha(),0);
+        auto* linkItem=object(s.root,"mergeSelection");QVERIFY(linkItem);
+        QCOMPARE(linkItem->property("text").toString(),QString("Link to other account…"));
+        QVERIFY(!linkItem->property("enabled").toBool());
+        auto* linkContent=linkItem->property("contentItem").value<QObject*>();QVERIFY(linkContent);
+        QCOMPARE(linkContent->property("color"),theme->property("disabled"));
         if(qEnvironmentVariableIsSet("SPENTIT_LEDGER_MENU_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_LEDGER_MENU_SCREENSHOT")+(dark?"-dark.png":"-light.png")));}
         QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
         run(s.model,"select",{{"row",s.model.occurrenceIndex(batch,0)}});

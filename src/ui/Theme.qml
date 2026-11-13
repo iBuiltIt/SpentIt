@@ -24,6 +24,11 @@ QtObject {
     readonly property color draftAlternate: dark ? "#49402c" : "#fffdf2"
     readonly property color changed: dark ? "#463b24" : "#fff2cf"
     readonly property color duplicate: dark ? "#f0a1bf" : "#a13661"
+    // Ledger attention. Teal is a payment shown twice. Indigo was merged. Green is linked.
+    // These stay readable on the new-transaction yellow and are separate from warning and error.
+    readonly property color transferDuplicate: dark ? "#7dccc6" : "#0b6e6a"
+    readonly property color merged: dark ? "#d2c4f8" : "#5b3f9e"
+    readonly property color linked: dark ? "#8fdfa8" : "#1f7a3a"
     readonly property color error: dark ? "#ff9999" : "#a02020"
     readonly property color warning: dark ? "#e9be70" : "#855100"
     readonly property color scrollThumb: dark ? "#718396" : "#94a3b0"

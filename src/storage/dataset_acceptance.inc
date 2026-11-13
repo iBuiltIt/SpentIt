@@ -8,6 +8,14 @@ app::ImportResult ImportStore::import_result(std::string_view id) const {
 bool ImportStore::transaction_accepted(const imports::Occurrence& id) const {
     Statement row(impl_->db,"SELECT 1 FROM accepted_transactions WHERE batch=? AND ordinal=?");row.text(1,id.batch);row.integer(2,integer(id.ordinal));return row.row();
 }
+std::vector<imports::Occurrence> ImportStore::merge_survivors() const {
+    std::vector<imports::Occurrence> out;
+    Statement rows(impl_->db,R"SQL(SELECT DISTINCT target_batch,target_ordinal FROM review_merges m
+        WHERE EXISTS(SELECT 1 FROM records r WHERE r.batch=m.target_batch AND r.ordinal=m.target_ordinal)
+          AND NOT EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=m.target_batch AND a.ordinal=m.target_ordinal))SQL");
+    while(rows.row())out.push_back({rows.bytes(0),static_cast<std::size_t>(rows.integer(1))});
+    return out;
+}
 // Dataset acceptance consumes prepared mutation review. Financial revisions are
 // referenced by entry_revisions.draft_revision, never copied at acceptance.
 app::AcceptanceReview ImportStore::acceptance_review() const {

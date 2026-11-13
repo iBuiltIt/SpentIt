@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-12
+Last updated: 2026-11-13
 
 SpentIt is the local rules-enabled application. The release rules database is
 version 1, and the application version is 1.0.0. A file whose number is not 1
@@ -29,8 +29,10 @@ passed unless you ran it.
   new transactions across the file. Undo last import rolls back one source and
   leaves accepted transactions in place.
 - Review for duplicates, transfers, and import problems, plus ledger duplicate
-  resolution. Same-calendar-date duplicate suggestions. Strict bank IDs when
-  both sides have them.
+  resolution. A payment shown twice in one account is marked there, and Merge
+  joins it. Merged and linked rows stay marked until they are accepted.
+  Same-calendar-date duplicate suggestions. Strict bank IDs when both sides
+  have them.
 - Manual transactions, ledger editing, splits, amount expressions, amount
   formatting, Set memo, Rename payee, and Restore imported values.
 - Categories with an Income flag, rules that assign an explicit category to

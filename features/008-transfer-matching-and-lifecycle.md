@@ -1,7 +1,7 @@
 # 008 — Transfer matching and lifecycle
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-13
 
 Transfers are explicit links between two allocations. A generated counterpart
 stays in one currency. An explicit Link may join two existing allocations in
@@ -32,6 +32,12 @@ distinct.
   differences stay reviewable. No fuzzy name match and no date tolerance.
 - Every unresolved explicit transfer gets a generated counterpart, even when a
   plausible imported posting exists. Review Link retires a generated duplicate.
+- The ledger marks both rows when that payment is shown twice in one account.
+  Ledger Merge joins the bank lines and removes the created entries, using the
+  same command as Review Link. Link to other account is a separate command for
+  one selected transaction. A kept merge and a resolved link stay marked on new
+  transactions until acceptance. The contract is
+  [review sheet](../doc/review-sheet.md).
 - Link of unequal amounts in one currency is refused unless the user uses the
   amount-difference action, which splits the larger allocation, categorizes
   the remainder, and links the common amount. No fee and no rate are invented.

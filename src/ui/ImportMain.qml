@@ -498,16 +498,8 @@ ApplicationWindow {
         LedgerMenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
         LedgerMenuItem {objectName:"setMemoSelection";text:"Set memo…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedMemos()}
         LedgerMenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
-        Menu {
-            objectName:"ledgerDuplicateMenu";delegate:LedgerMenuItem {}
-            title:"Resolve duplicate";visible:!window.reportLedger;enabled:!!duplicateOrigin && !workflow.busy && !s.readOnly
-            LedgerMenuItem {text:"Merge";enabled:!!duplicateCandidate;onTriggered:resolveLedgerDuplicate("merge",false)}
-            LedgerMenuItem {text:"Keep this pair separate";enabled:!!duplicateCandidate;onTriggered:resolveLedgerDuplicate("separate",false)}
-            LedgerMenuItem {text:"None of these match";enabled:duplicateCandidates.length>1;onTriggered:resolveLedgerDuplicate("separate",true)}
-            LedgerMenuItem {text:"Show match";enabled:!!duplicateCandidate;onTriggered:showDuplicateInLedger(duplicateCandidate,duplicateOrigin)}
-        }
-        LedgerMenuItem {objectName:"duplicateMergeSelection";visible:!window.reportLedger;text:"Merge";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>=2;onTriggered:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
-        LedgerMenuItem {objectName:"mergeSelection";visible:!window.reportLedger;text:"Link";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0;onTriggered:mergeSelected()}
+        LedgerMenuItem {objectName:"duplicateMergeSelection";visible:!window.reportLedger;text:"Merge";enabled:ledgerMergeEnabled();onTriggered:guard(ledgerMerge)}
+        LedgerMenuItem {objectName:"mergeSelection";visible:!window.reportLedger;text:"Link to other account…";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)===1;onTriggered:mergeSelected()}
         LedgerMenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
         Menu {
             id:ledgerCategoryMenu;delegate:LedgerMenuItem {}
@@ -1040,7 +1032,7 @@ ApplicationWindow {
         })
     }
     Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
-    Shortcut {objectName:"duplicateMergeShortcut";sequence:"Alt+M";enabled:!window.reportLedger && !!s.active && !workflow.busy && !s.readOnly && (s.selectionCount||0)>=2;onActivated:guard(function(){answerReview({key:"selected"},"merge",s.selection||[])})}
+    Shortcut {objectName:"duplicateMergeShortcut";sequence:"Alt+M";enabled:!window.reportLedger && !!s.active && !workflow.busy && !s.readOnly && ledgerMergeEnabled();onActivated:guard(ledgerMerge)}
     Shortcut {objectName:"mergeShortcut";sequence:"Alt+L";enabled:!window.reportLedger && !!s.active && !workflow.busy && !s.readOnly && !!s.transfersSupported;onActivated:mergeSelected()}
     Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
     Shortcut {sequences:[StandardKey.Forward];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(1)}
@@ -1394,11 +1386,6 @@ ApplicationWindow {
     function mergeSelected() {
         if(workflow.busy || !s.active || s.readOnly || !s.transfersSupported) return
         let rows=s.selection||[]
-        if(rows.length===2) {
-            pendingMerge=null;mergeHint=""
-            transferCommand("transfer_merge",mergeFields(allocationChoice(rows[0].batch,rows[0].ordinal),allocationChoice(rows[1].batch,rows[1].ordinal)))
-            return
-        }
         if(rows.length===1 && pendingMerge) {
             let saved=pendingMerge
             pendingMerge=null;mergeHint=""
@@ -1407,10 +1394,11 @@ ApplicationWindow {
         }
         if(rows.length===1) {
             pendingMerge=allocationChoice(rows[0].batch,rows[0].ordinal)
-            mergeHint="Choose the other split, then select Link again"
+            mergeHint="Choose the transaction in the other account, then choose Link to other account again"
             return
         }
-        mergeHint="Select one or two splits, then select Link"
+        pendingMerge=null
+        mergeHint="Select one transaction, then choose Link to other account."
     }
     function removeSelected() {
         guard(function(){
@@ -2060,6 +2048,7 @@ ApplicationWindow {
 
             if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action" || action==="undo_connected") || action==="import"))editorClosed=false
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
+            if(transferMergeAnnounced && action==="review_link_preview"){transferMergeAnnounced=false;if(success && !(s.reviewLinkPreview||{}).common)workspaceFeedback="Payment merged. The extra entry was removed."}
             if(success && action==="change_password"){
                 currentPassword.text=""
                 newPassword.text=""
@@ -2079,7 +2068,7 @@ ApplicationWindow {
             if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session.":"Edit saved."
             if(success && (action==="undo_edit" || action==="undo_action" || action==="undo_connected"))workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
-            if(!success){ruleApplyAfterPreview=false;returnAfterRuleApply=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
+            if(!success){transferMergeAnnounced=false;ruleApplyAfterPreview=false;returnAfterRuleApply=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
             if(success && (action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
             if(success && action.indexOf("transfer_")===0 && !(s.transferMergePreview||{}).id && (s.transferReceipt||{}).operation)workspaceFeedback="Transfer operation saved."
@@ -3048,10 +3037,16 @@ ApplicationWindow {
             for(const row of q.rows)rows[row.key]=Object.assign({},row,{question:q.key})
         return rows
     }
+    readonly property var transferDoubleRows: s.transferDoubles||({})
+    readonly property var mergedRows: s.mergedRows||({})
+    readonly property var linkedRows: s.linkedRows||({})
     onDuplicateRowsChanged: {if(!duplicateRows[duplicateOriginKey]){duplicateOriginKey=duplicateRows[duplicateFocusKey]?duplicateFocusKey:"";duplicateCandidateKey=""}}
     property string duplicateOriginKey: ""
     property string duplicateCandidateKey: ""
+    property string transferPeerKey: ""
     property var pendingDuplicateReveal: null
+    property var pendingTransferMerge: null
+    property bool transferMergeAnnounced: false
     property var pendingMissingDestination: null
     readonly property string duplicateFocusKey: s.selectionFocusKey||""
     readonly property var duplicateOrigin: duplicateRows[duplicateOriginKey] && duplicateRows[duplicateOriginKey].account===s.accountId?duplicateRows[duplicateOriginKey]:null
@@ -3059,10 +3054,99 @@ ApplicationWindow {
     readonly property var duplicateCandidate: duplicateCandidates.find(row=>row.key===duplicateCandidateKey)||(duplicateCandidates.length===1?duplicateCandidates[0]:null)
     readonly property var duplicatePair: duplicateOrigin && duplicateCandidate?[duplicateOrigin,duplicateCandidate]:[]
     readonly property var duplicateSurvivor: automaticSurvivor(duplicatePair)
+    readonly property var transferOrigin: {
+        const row=transferDoubleRows[duplicateFocusKey]
+        return row && String(row.account)===String(s.accountId)?row:null
+    }
+    readonly property var transferPeer: {
+        if(!transferOrigin)return null
+        const peers=transferOrigin.peers||[]
+        const selected=(s.selection||[]).map(row=>row.batch+":"+row.ordinal)
+        const chosen=peers.find(peer=>selected.indexOf(peer.key)>=0 && peer.key!==duplicateFocusKey)
+        if(chosen)return chosen
+        const pinned=peers.find(peer=>peer.key===transferPeerKey)
+        if(pinned)return pinned
+        return peers.length===1?peers[0]:null
+    }
+    readonly property bool transferDoublesInAccount: Object.keys(transferDoubleRows).some(key=>String(transferDoubleRows[key].account)===String(s.accountId))
     onDuplicateFocusKeyChanged: {
+        transferPeerKey=""
         if(pendingDuplicateReveal)return
         if(duplicateOrigin && duplicateCandidates.some(row=>row.key===duplicateFocusKey))duplicateCandidateKey=duplicateFocusKey
         else if(duplicateFocusKey!==duplicateOriginKey){duplicateOriginKey=duplicateRows[duplicateFocusKey]?duplicateFocusKey:"";duplicateCandidateKey=""}
+    }
+    function selectionIdentityKeys() {
+        return (s.selection||[]).map(row=>row.batch+":"+row.ordinal)
+    }
+    function transferPair(keys) {
+        if(!keys.length || !transferDoubleRows[keys[0]])return null
+        const peers=transferDoubleRows[keys[0]].peers||[]
+        if(keys.length===1)return peers.length===1?peers[0]:null
+        if(keys.length===2)return peers.find(peer=>peer.key===keys[1])||null
+        return null
+    }
+    function ledgerMergeEnabled() {
+        if(s.readOnly || workflow.busy)return false
+        const rows=s.selection||[]
+        const keys=selectionIdentityKeys()
+        if(transferPair(keys))return true
+        if(duplicateCandidate && duplicateOrigin && keys.length>0 && keys.every(key=>key===duplicateOrigin.key || key===duplicateCandidate.key))return true
+        if(keys.length>=2)return true
+        if(keys.length===1 && (transferDoubleRows[keys[0]] || (duplicateOrigin && duplicateOrigin.key===keys[0])))return true
+        return false
+    }
+    function ledgerMerge() {
+        const rows=s.selection||[]
+        const keys=selectionIdentityKeys()
+        const pair=transferPair(keys)
+        if(pair){
+            if(pair.needsSplit){workspaceFeedback="This payment has more than one split. Open Review and choose Split to link.";return}
+            pendingTransferMerge=pair
+            ledgerTransferMerge.open()
+            return
+        }
+        if(keys.some(key=>transferDoubleRows[key])){
+            workspaceFeedback=keys.length<2?"Select both rows of this payment.":"These rows are different payments. Select one pair."
+            return
+        }
+        if(rows.some(row=>String(row.batch).indexOf("~transfer-")===0)){
+            workspaceFeedback="This entry was created for a transfer. Select the two rows of that payment, or answer it in Review."
+            return
+        }
+        if(duplicateCandidate && duplicateOrigin && keys.every(key=>key===duplicateOrigin.key || key===duplicateCandidate.key)){
+            resolveLedgerDuplicate("merge",false)
+            return
+        }
+        if(keys.length>=2){answerReview({key:"selected"},"merge",rows);return}
+        if(duplicateOrigin && !duplicateCandidate)workspaceFeedback="Choose the matching transaction first."
+    }
+    function confirmTransferMerge() {
+        const pair=pendingTransferMerge
+        if(!pair)return
+        pendingTransferMerge=null
+        transferMergeAnnounced=true
+        ledgerTransferMerge.close()
+        guard(function(){
+            captureLedgerView("review")
+            workflow.command("review_link_preview",{question:pair.question,generation:s.reviewGeneration,answer:"link",selected:[{batch:pair.originBatch,ordinal:pair.originOrdinal},{batch:pair.counterpartBatch,ordinal:pair.counterpartOrdinal}],leftAllocation:pair.leftAllocation||"",rightAllocation:pair.rightAllocation||""})
+        })
+    }
+    function showTransferPeer() {
+        const peer=transferPeer
+        const origin=transferOrigin
+        if(!peer || !origin)return
+        showDuplicateInLedger({batch:peer.batch,ordinal:peer.ordinal,account:s.accountId,key:peer.key},{key:origin.key,batch:origin.batch,ordinal:origin.ordinal,account:s.accountId})
+    }
+    function nextTransferDouble() {
+        const rows=Object.keys(transferDoubleRows).map(key=>transferDoubleRows[key]).filter(row=>String(row.account)===String(s.accountId))
+        let positions={}
+        for(let i=0;i<ledger.count;++i){const row=workflow.rowIdentity(i);positions[row.batch+":"+row.ordinal]=i}
+        rows.sort((a,b)=>(positions[a.batch+":"+a.ordinal]===undefined?ledger.count:positions[a.batch+":"+a.ordinal])-(positions[b.batch+":"+b.ordinal]===undefined?ledger.count:positions[b.batch+":"+b.ordinal]))
+        const index=rows.findIndex(row=>row.key===duplicateFocusKey)
+        if(rows.length){
+            const next=rows[(index+1)%rows.length]
+            showDuplicateInLedger({batch:next.batch,ordinal:next.ordinal,account:s.accountId,key:next.key},{key:next.key,batch:next.batch,ordinal:next.ordinal,account:s.accountId})
+        }
     }
     function automaticSurvivor(rows) {
         if(rows.length<2)return null
@@ -3310,6 +3394,19 @@ ApplicationWindow {
             }
         }
         standardButtons:Dialog.Cancel
+    }
+
+    HelpDialog {
+        helpTarget: "help:review-duplicates-transfers#is-it-a-payment-between-accounts"
+        id:ledgerTransferMerge;objectName:"ledgerTransferMerge";title:"Merge this payment?";modal:true;anchors.centerIn:parent;width:Math.min(window.width-64,640)
+        contentItem:ColumnLayout {
+            Label {objectName:"ledgerTransferMergeText";Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                text:"These two rows are the same payment. Merge keeps the bank transaction in this account and removes the extra entry. The payment in "+((pendingTransferMerge||{}).otherAccount||"the other account")+" stays and is connected to it."}
+        }
+        footer:DialogButtonBox {
+            Button {objectName:"cancelLedgerTransferMerge";text:"Cancel";enabled:!workflow.busy;DialogButtonBox.buttonRole:DialogButtonBox.RejectRole;onClicked:{pendingTransferMerge=null;ledgerTransferMerge.close()}}
+            Button {objectName:"confirmLedgerTransferMerge";text:"Merge";enabled:!workflow.busy;DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole;onClicked:confirmTransferMerge()}
+        }
     }
 
     HelpDialog {
@@ -4240,21 +4337,30 @@ ApplicationWindow {
                 Button {objectName:"addTransaction";visible:!window.reportLedger;text:"+ New transaction";enabled:!s.readOnly && !workflow.busy;onClicked:addTransaction();ToolTip.visible:hovered;ToolTip.text:"Add transaction";Accessible.name:"Add transaction"}
             }
             ColumnLayout {
-                objectName:"ledgerDuplicateBar";Layout.fillWidth:true;visible:!window.reportLedger && (!!duplicateOrigin || s.reviewReady===false || Object.values(duplicateRows).some(row=>row.account===s.accountId))
+                objectName:"ledgerDuplicateBar";Layout.fillWidth:true;visible:!window.reportLedger && (!!duplicateOrigin || !!transferOrigin || s.reviewReady===false || Object.values(duplicateRows).some(row=>row.account===s.accountId) || transferDoublesInAccount)
                 RowLayout {
                     Layout.fillWidth:true
                     Label {objectName:"ledgerDuplicateSummary";Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap
-                        text:duplicateOrigin?"Possible duplicate · "+duplicateCandidates.length+" possible "+(duplicateCandidates.length===1?"match":"matches")+" · "+(duplicateOrigin.committed?"Accepted":"New")+" — "+duplicateOrigin.payee+(duplicateCandidate?" ↔ "+(duplicateCandidate.committed?"Accepted":"New")+" — "+duplicateCandidate.payee: " · Select a marked transaction to compare"):(s.reviewReady===false?"Checking for possible duplicates…":"Review possible duplicates in this account.")}
+                        text:transferOrigin?("Same payment · "+((transferPeer||(transferOrigin.peers||[])[0]||{}).bankPayee||"")+" ↔ "+((transferPeer||(transferOrigin.peers||[])[0]||{}).createdPayee||"extra entry")+(transferPeer?"":" · Select the other marked row")):duplicateOrigin?"Possible duplicate · "+duplicateCandidates.length+" possible "+(duplicateCandidates.length===1?"match":"matches")+" · "+(duplicateOrigin.committed?"Accepted":"New")+" — "+duplicateOrigin.payee+(duplicateCandidate?" ↔ "+(duplicateCandidate.committed?"Accepted":"New")+" — "+duplicateCandidate.payee: " · Select a marked transaction to compare"):(s.reviewReady===false?"Checking for possible duplicates…":(transferDoublesInAccount&&Object.values(duplicateRows).some(row=>row.account===s.accountId)?"Review possible duplicates and payments shown twice in this account.":transferDoublesInAccount?"Review payments shown twice in this account.":"Review possible duplicates in this account."))}
                     Button {objectName:"ledgerDuplicateNext";text:"Next possible duplicate";visible:Object.values(duplicateRows).some(row=>row.account===s.accountId);onClicked:nextLedgerDuplicate()}
+                    Button {objectName:"ledgerSamePaymentNext";text:"Next same payment";visible:transferDoublesInAccount;onClicked:nextTransferDouble()}
                 }
                 RowLayout {
-                    visible:!!duplicateOrigin;Layout.fillWidth:true
+                    visible:!!duplicateOrigin && !transferOrigin;Layout.fillWidth:true
                     UsableComboBox {objectName:"ledgerDuplicateCandidates";visible:duplicateCandidates.length>1;Layout.preferredWidth:280;model:duplicateCandidates.map(row=>({key:row.key,label:row.date+" · "+row.payee+" · "+(row.committed?"Accepted":"New")}));textRole:"label";currentIndex:duplicateCandidates.findIndex(row=>duplicateCandidate && row.key===duplicateCandidate.key);displayText:currentIndex<0?"Choose a possible match":currentText;onActivated:duplicateCandidateKey=model[currentIndex].key}
                     Button {objectName:"ledgerDuplicateMerge";text:"Merge";enabled:!!duplicateCandidate && !s.readOnly;onClicked:resolveLedgerDuplicate("merge",false)}
                     Button {objectName:"ledgerDuplicateSeparate";text:"Keep this pair separate";enabled:!!duplicateCandidate && !s.readOnly;onClicked:resolveLedgerDuplicate("separate",false)}
                     Button {objectName:"ledgerDuplicateNone";text:"None of these match";visible:duplicateCandidates.length>1;enabled:!s.readOnly;onClicked:resolveLedgerDuplicate("separate",true)}
                     Button {objectName:"ledgerDuplicateShow";text:duplicateCandidate && workflow.occurrenceIndex(duplicateCandidate.batch,duplicateCandidate.ordinal)<0?"Reveal hidden match (clear filter)":"Show match";enabled:!!duplicateCandidate;onClicked:showDuplicateInLedger(duplicateCandidate,duplicateOrigin)}
                     Label {Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap;text:duplicateSurvivor?"Keeps “"+duplicateSurvivor.payee+"”"+(duplicateSurvivor.transferLinked?" and its account link.":"."):(duplicateCandidate?"Choose which transaction to keep when merging.":"")}
+                }
+                RowLayout {
+                    visible:!!transferOrigin;Layout.fillWidth:true
+                    UsableComboBox {objectName:"ledgerSamePaymentCandidates";visible:!!transferOrigin && (transferOrigin.peers||[]).length>1;Layout.preferredWidth:280;model:transferOrigin?(transferOrigin.peers||[]):[];textRole:"payee";currentIndex:transferOrigin?(transferOrigin.peers||[]).findIndex(peer=>transferPeer && peer.key===transferPeer.key):-1;displayText:currentIndex<0?"Choose the other row":currentText;onActivated:transferPeerKey=model[currentIndex].key}
+                    Button {objectName:"ledgerSamePaymentMerge";text:"Merge";enabled:!!transferPeer && !transferPeer.needsSplit && !s.readOnly;onClicked:ledgerMerge()}
+                    Button {objectName:"ledgerSamePaymentNo";text:"Not this transfer";enabled:!!transferPeer && !s.readOnly;onClicked:guard(function(){captureLedgerView("review");answerReview({key:transferPeer.question},"not_linked",[])})}
+                    Button {objectName:"ledgerSamePaymentShow";text:transferPeer && workflow.occurrenceIndex(transferPeer.batch,transferPeer.ordinal)<0?"Reveal hidden match (clear filter)":"Show match";enabled:!!transferPeer;onClicked:showTransferPeer()}
+                    Label {Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap;text:transferPeer && transferPeer.needsSplit?"This payment has more than one split. Open Review and choose Split to link.":(transferPeer?"Keeps the bank transaction in this account and removes the extra entry. "+transferPeer.otherAccount+" keeps its payment.":"")}
                 }
             }
             UsableScrollView {
@@ -4377,7 +4483,7 @@ ApplicationWindow {
                     objectName:"ledgerRow_"+index
                     Accessible.role:Accessible.ListItem
                     Accessible.name:record.date+", "+record.payee+", "+record.category+", withdrawal "+record.withdrawal+", deposit "+record.deposit+", balance "+record.balance+" "+(s.currency||"")+", "+record.status
-                    Accessible.description:possibleDuplicate?"Possible duplicate · "+(record.status==="Draft"?"New":"Accepted"):""
+                    Accessible.description:(possibleDuplicate?"Possible duplicate. ":"")+(samePayment?"Same payment. ":"")+(mergedMark?"Merged. ":"")+(linkedMark?linkedRows[duplicateKey]+". ":"")
                     Accessible.selectable:true
                     Accessible.selected:!!(s.selectionKeys||{})[record.batch+":"+record.ordinal]
                     Accessible.focusable:true
@@ -4403,11 +4509,21 @@ ApplicationWindow {
                     width:ledger.width-20;height:rowHeight+(expanded?editor.height:splitPreview.height);color:(s.selectionKeys||{})[record.batch+":"+record.ordinal]?theme.selection:record.status==="Draft"?(index%2===0?theme.draft:theme.draftAlternate):(index%2===0?theme.row:theme.rowAlternate)
                     readonly property string duplicateKey:record.batch+":"+record.ordinal
                     readonly property bool possibleDuplicate:!window.reportLedger && !!duplicateRows[duplicateKey]
+                    readonly property bool samePayment:!window.reportLedger && !!transferDoubleRows[duplicateKey]
+                    readonly property bool mergedMark:!window.reportLedger && record.status!=="Committed" && !!mergedRows[duplicateKey]
+                    readonly property bool linkedMark:!window.reportLedger && record.status!=="Committed" && !!linkedRows[duplicateKey]
                     readonly property bool comparingDuplicate:possibleDuplicate && (duplicateKey===duplicateOriginKey || duplicateCandidates.some(row=>row.key===duplicateKey))
-                    border.width:comparingDuplicate?2:(s.selectionKeys||{})[duplicateKey]?1:0;border.color:comparingDuplicate?theme.duplicate:theme.focus
-                    Rectangle {width:4;height:ledgerRow.rowHeight;visible:ledgerRow.possibleDuplicate;color:theme.duplicate}
-                    ToolTip.visible:duplicateHover.hovered && possibleDuplicate && columnTipKey.length===0
-                    ToolTip.text:comparingDuplicate?(record.status==="Draft"?"New":"Accepted")+" · Possible duplicate":"Possible duplicate"
+                    readonly property bool comparingPayment:samePayment && !!transferOrigin && (duplicateKey===transferOrigin.key || (transferOrigin.peers||[]).some(peer=>peer.key===duplicateKey))
+                    readonly property string attentionTip:(possibleDuplicate?"Possible duplicate":"")+(samePayment?(possibleDuplicate?" · ":"")+"Same payment":"")+(mergedMark?((possibleDuplicate||samePayment)?" · ":"")+"Merged":"")+(linkedMark?((possibleDuplicate||samePayment||mergedMark)?" · ":"")+linkedRows[duplicateKey]:"")
+                    border.width:(comparingPayment||comparingDuplicate)?2:(s.selectionKeys||{})[duplicateKey]?1:0;border.color:comparingPayment?theme.transferDuplicate:comparingDuplicate?theme.duplicate:theme.focus
+                    Row {
+                        Rectangle {width:possibleDuplicate?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.possibleDuplicate;color:theme.duplicate}
+                        Rectangle {width:samePayment?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.samePayment;color:theme.transferDuplicate}
+                        Rectangle {width:mergedMark?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.mergedMark;color:theme.merged}
+                        Rectangle {width:linkedMark?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.linkedMark;color:theme.linked}
+                    }
+                    ToolTip.visible:duplicateHover.hovered && attentionTip.length>0 && columnTipKey.length===0
+                    ToolTip.text:attentionTip
                     HoverHandler {id:duplicateHover}
                     MouseArea {width:parent.width;height:ledgerRow.rowHeight;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){openLedgerContext(ledgerRow.index)}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}

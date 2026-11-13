@@ -1,6 +1,6 @@
 # Unified Review sheet
 
-Last updated: 2026-11-12
+Last updated: 2026-11-13
 
 The release rules database is version 1. Incomplete preparation is cleaned up on
 cancellation or the next open. Completed uncommitted imports remain. Accept
@@ -528,3 +528,27 @@ via CTest in 394.72 s; the two committed-row scenarios passed separately using
 `spentit_review_sheet_tests faults 4`. No private datasets were used.
 
 Native interaction, keyboard-layout conflicts, Linux and Windows remain unverified.
+
+## Ledger same payment and result marks — owner Go, 2026-11-13
+
+This section supersedes the ledger right-click **Resolve duplicate** sentence and the sentence that ledger **Link** joins any two selected transactions.
+
+A payment Review would ask about as one transfer, and that is shown twice in one account, gets a teal edge on both rows. One row is the bank transaction. The other is the extra entry created from the other account. Rose stays the mark for a possible same purchase. The bar above the ledger names the payment and offers **Merge**, **Not this transfer**, **Show match**, and **Next same payment**.
+
+The ledger command for two rows in the current account is **Merge**.
+
+- A suggested purchase keeps one transaction. **Keep this pair separate**, **None of these match**, and **Show match** stay on the bar.
+- Two selected transactions that are not that payment use the same keep-one Merge.
+- The two rows of a payment shown twice use the same join as Review's **Link**. Merge keeps the bank transaction, removes the extra entry, and connects the other account's payment. It does not ask which row to keep. A payment with more than one split is answered in Review with **Split to link**.
+- An entry created for a transfer, selected with a transaction that is not its pair, is not offered the keep-one dialog.
+
+**Link to other account…** is offered for one selected transaction. Choose it, switch accounts, select the other transaction, and choose it again. Both transactions stay. It is not offered while two transactions in the current account are selected.
+
+Until a transaction is accepted, the ledger adds a result mark:
+
+- An indigo edge means this transaction was kept when another was merged into it. The tooltip says **Merged**.
+- A green edge means this transaction is linked to a transaction that stays in another account. The tooltip names that account.
+- A created entry that is still waiting for a bank transaction has no green edge. Choosing an account as the category, which creates the other side, has no green edge. A transfer paired from the imported files has the green edge until accept.
+- A row can show both result marks. The marks remain after close and reopen. Undo removes the merge or the link, and the mark goes with it. **Accept transactions** clears the marks. A linked payment still shows the other account on its category.
+
+Review's duplicate questions and transfer questions stay as they are.

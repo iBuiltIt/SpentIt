@@ -182,6 +182,7 @@ public:
     app::LinkExclusionPreview preview_link_exclusion(const app::LinkExclusion&) const override;
     app::ReviewReceipt save_link_exclusion(std::string_view,const app::LinkExclusion&,std::int64_t) override;
     app::ReviewSheet review_sheet() const override;
+    std::vector<imports::Occurrence> merge_survivors() const override;
     app::ReviewReceipt merge_review_batch(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&) override;
     app::ReviewReceipt answer_review(std::string_view,const app::ReviewAnswer&) override;
     app::ReviewReceipt assign_categories(std::string_view,const app::CategorySelection&,const app::OperationContext&) override;

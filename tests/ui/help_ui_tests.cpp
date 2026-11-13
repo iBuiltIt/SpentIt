@@ -2273,7 +2273,7 @@ private slots:
         QTRY_VERIFY(object(session.root,"ledgerContext")->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(object(session.root,"ledgerCategoryMenu"),"open"));
         QTRY_VERIFY(object(session.root,"ledgerCategoryMenu")->property("visible").toBool());
-        // The cursor can rest on Resolve duplicate and open that cascade over Change category.
+        // Change category is the cascade. Close it if a duplicate menu is still open.
         auto* duplicateMenu = object(session.root, "ledgerDuplicateMenu");
         if (duplicateMenu && duplicateMenu->property("visible").toBool())
             QVERIFY(QMetaObject::invokeMethod(duplicateMenu, "close"));

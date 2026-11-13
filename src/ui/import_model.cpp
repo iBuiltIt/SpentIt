@@ -43,6 +43,67 @@ QVariantList sidebarAccounts(const QVariantList& accounts,const QString& key) {
     ordered.append(remaining);return ordered;
 }
 QString text(std::string_view s) { return QString::fromUtf8(s.data(),static_cast<qsizetype>(s.size())); }
+QString occurrenceKey(const imports::Occurrence& id) { return text(id.batch)+":"+QString::number(id.ordinal); }
+// Suggestion and result marks for the ledger. A payment shown twice is the bank
+// line plus the extra entry created from the other account. A result mark is a
+// merge that kept this row, or a link between two postings that both stay.
+void publishLedgerAttention(app::ImportRepository& repo,const app::ReviewSheet& review,QVariantMap& state) {
+    QVariantMap merged,linked,doubles;
+    for(const auto& id:repo.merge_survivors())merged.insert(occurrenceKey(id),true);
+    if(repo.transfers_supported()){
+        std::map<std::int64_t,QString> names;
+        for(const auto& account:repo.accounts())names.emplace(account.identity,text(account.name));
+        for(const auto& account:repo.archived_accounts())names.emplace(account.identity,text(account.name));
+        const auto accountName=[&](std::int64_t id){const auto found=names.find(id);return found==names.end()?QString("the other account"):found->second;};
+        const auto kept=[](const transfers::Side& side){return side.independent_evidence || side.ledger_entry;};
+        // Same shape Review uses for a generated counterpart that a bank line can replace.
+        const auto disposable=[](const transfers::Side& side){return !side.independent_evidence && !side.ledger_entry && !side.attached_evidence && !side.proposed_evidence && !side.accepted_unmatched;};
+        struct Created {imports::Occurrence entry;std::int64_t account=0;QString payee;};
+        std::map<QString,Created> generated;
+        QMap<QString,QStringList> linkNames;
+        for(const auto& value:repo.transfers()){
+            const auto& link=value.link;
+            if(link.unresolved || link.destination_released || link.origin.state==transfers::State::removed || link.destination.state==transfers::State::removed)continue;
+            if(kept(link.origin) && disposable(link.destination))generated.emplace(occurrenceKey(link.origin.endpoint.entry),Created{link.destination.endpoint.entry,link.destination.endpoint.account,text(value.payee)});
+            if(!kept(link.origin) || !kept(link.destination))continue;
+            const auto mark=[&](const transfers::Side& side,std::int64_t other){
+                if(repo.transaction_accepted(side.endpoint.entry))return;
+                const auto key=occurrenceKey(side.endpoint.entry);const auto name=accountName(other);
+                if(!linkNames[key].contains(name))linkNames[key].push_back(name);
+            };
+            mark(link.origin,link.destination.endpoint.account);mark(link.destination,link.origin.endpoint.account);
+        }
+        for(auto it=linkNames.cbegin();it!=linkNames.cend();++it)linked.insert(it.key(),QString("Linked to ")+it.value().join(" and "));
+        const auto add=[&](const imports::Occurrence& self,const QString& payee,const QVariantMap& peer){
+            const auto key=occurrenceKey(self);auto row=doubles.value(key).toMap();
+            row.insert("key",key);row.insert("account",QString::number(peer.value("rowAccount").toLongLong()));row.insert("batch",text(self.batch));row.insert("ordinal",static_cast<int>(self.ordinal));row.insert("payee",payee);
+            auto peers=row.value("peers").toList();
+            for(const auto& existing:peers)if(existing.toMap().value("key").toString()==peer.value("key").toString())return;
+            auto stored=peer;stored.remove("rowAccount");peers.push_back(stored);row.insert("peers",peers);doubles.insert(key,row);
+        };
+        for(const auto& question:review.questions){
+            if(question.kind!=app::ReviewKind::link || question.rows.size()<2)continue;
+            const auto& origin=question.rows.front();
+            for(std::size_t i=1;i<question.rows.size();++i){
+                const auto& candidate=question.rows[i];
+                const bool multi=origin.draft.transaction.allocations().size()>1 || candidate.draft.transaction.allocations().size()>1;
+                const bool needsSplit=multi && candidate.suggested_left_allocation.empty();
+                const auto consider=[&](const app::ReviewTransaction& bank,const Created& created,const app::ReviewTransaction& other){
+                    if(created.account!=bank.account || created.entry==bank.identity)return;
+                    QVariantMap shared{{"question",text(question.key)},{"originBatch",text(origin.identity.batch)},{"originOrdinal",static_cast<int>(origin.identity.ordinal)},{"counterpartBatch",text(candidate.identity.batch)},{"counterpartOrdinal",static_cast<int>(candidate.identity.ordinal)},{"leftAllocation",text(candidate.suggested_left_allocation)},{"rightAllocation",text(candidate.suggested_right_allocation)},{"needsSplit",needsSplit},{"bankPayee",text(bank.draft.payee)},{"createdPayee",created.payee.isEmpty()?QString("Extra entry"):created.payee},{"otherAccount",accountName(other.account)},{"rowAccount",QString::number(bank.account)}};
+                    auto createdPeer=shared;createdPeer.insert("key",occurrenceKey(created.entry));createdPeer.insert("batch",text(created.entry.batch));createdPeer.insert("ordinal",static_cast<int>(created.entry.ordinal));createdPeer.insert("payee",created.payee.isEmpty()?QString("Extra entry"):created.payee);
+                    auto bankPeer=shared;bankPeer.insert("key",occurrenceKey(bank.identity));bankPeer.insert("batch",text(bank.identity.batch));bankPeer.insert("ordinal",static_cast<int>(bank.identity.ordinal));bankPeer.insert("payee",text(bank.draft.payee));
+                    add(bank.identity,text(bank.draft.payee),createdPeer);add(created.entry,created.payee.isEmpty()?QString("Extra entry"):created.payee,bankPeer);
+                };
+                const auto fromOrigin=generated.find(occurrenceKey(origin.identity));
+                if(fromOrigin!=generated.end())consider(candidate,fromOrigin->second,origin);
+                const auto fromCandidate=generated.find(occurrenceKey(candidate.identity));
+                if(fromCandidate!=generated.end())consider(origin,fromCandidate->second,candidate);
+            }
+        }
+    }
+    state["mergedRows"]=merged;state["linkedRows"]=linked;state["transferDoubles"]=doubles;
+}
 std::string str(const QVariant& v) { return v.toString().toUtf8().toStdString(); }
 QString money(const Money& m, const AmountFormat& amountFormat) { return text(display_amount(m,amountFormat)); }
 // Restores the worker's selected account after a cross-account fact read.
@@ -990,6 +1051,7 @@ struct ImportModel::Worker {
             for(const auto& rule:repo.link_exclusions())if(!rule.removed)exclusions.push_back(QVariantMap{{"identity",text(rule.identity)},{"field",text(rule.field)},{"expression",text(rule.expression)},{"account",QString::number(rule.account)},{"regex",rule.regex}});
             state["linkExclusions"]=exclusions;state["linkExclusionPreview"]=linkExclusionPreview;
             state["reviewQuestions"]=questions;state["reviewCount"]=questions.size();state["reviewGeneration"]=QString::number(review.generation);state["canUndoReview"]=review.can_undo;state["canUndoTransferAssignment"]=repo.can_undo_transfer_assignment();state["reviewLinkPreview"]=reviewLinkPreview;
+            publishLedgerAttention(repo,review,state);
             QVariantList undoableImports;
             for(const auto& item:repo.undoable_imports()) {
                 QVariantList accounts;for(const auto id:item.accounts)accounts.push_back(QString::number(id));

@@ -23,6 +23,15 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 
 ## Open items
 
+### MAN-048 — Ledger same payment, Merge, and result marks
+
+- Date: 2026-11-13
+- Contract: [review sheet](review-sheet.md), section "Ledger same payment and result marks"
+- `manual/find-transactions.md`, "See what needs attention": a teal edge means this payment is also shown by another row in the account. An indigo edge means the transaction was kept when another was merged into it. A green edge means it is linked to a transaction in another account, and the tooltip names that account. Those two edges remain until **Accept transactions**.
+- `manual/review-duplicates-transfers.md`, "If there is no suitable question": the ledger command is **Merge** for two rows in the current account, including a payment shown twice. **Link to other account…** is for one selected transaction. Choose it, switch accounts, select the other transaction, and choose it again.
+- The right-click menu no longer has **Resolve duplicate**. **Keep this pair separate**, **Not this transfer**, and **Show match** stay on the bar above the ledger.
+- Pictures: `transactions-ledger.png` does not show the new edges. Recapture only if a later pass shows a marked row.
+
 ### MAN-045 — Repeated import of a file already accepted
 
 - Date: 2026-11-13
