@@ -1991,14 +1991,14 @@ private slots:
         QCOMPARE(currency().value("totals").toList(), (QVariantList{"36.18", "90.00"}));
         run(session.model, "undo_edit");
         QCOMPARE(currency().value("totals").toList(), (QVariantList{"56.18", "70.00"}));
-        textClick("Back to report"); textClick("Back to Reports");
+        textClick("Back to report"); mouse("navigationBack");
         chooseChart(QStringLiteral("Pie"));
         QCOMPARE(graph->property("currentIndex").toInt(), 3);
         mouse("showReport");
         QTRY_COMPARE(workspace->property("mode").toString(), QString("result"));
         QCOMPARE(currency().value("totals").toList(), (QVariantList{"56.18", "70.00"}));
         capture("reports-pie");
-        textClick("Back to Reports");
+        mouse("navigationBack");
         QVERIFY(edit(session.root, "reportName", "Unfinished report name"));
         mouse("accountNavigation");
         auto* leave = namedWindow("reportsLeaveDialog"); QVERIFY(leave);

@@ -1,11 +1,13 @@
 # 006 — Reporting and drill-down
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-12
 
 Reports is one sidebar entry below Rules. It lists saved definitions and edits
-the selected one. Show opens the result. Back returns to the list. There is no
-separate report-creation dialog and no per-report sidebar entry.
+the selected one. Show opens the result. The top-bar Back returns to the list.
+Refresh report recalculates the open result. The transaction list keeps Back
+to report. There is no separate report-creation dialog and no per-report
+sidebar entry.
 
 ## Money
 

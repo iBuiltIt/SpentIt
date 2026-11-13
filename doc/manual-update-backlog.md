@@ -273,3 +273,21 @@ Chapters: [Use rules](../manual/rules.md), "Preview, save and apply", the
 "Undo and problems", the clause that names **Undo application** in Rules.
 [rules-preview](../manual/images/rules-preview.png) is taken before Apply and
 does not show the button. No recapture.
+
+### MAN-043 — Back to Reports removed
+
+Logged: 2026-11-12. Contract:
+[reporting](../features/006-reporting-drill-down.md).
+
+The report result no longer shows **Back to Reports**. The top-bar **Back**
+returns to the report list. **Refresh report** stays on the result. The
+transaction list still shows **Back to report**.
+
+Chapter: [Answer with reports](../manual/reports.md), "Choose a chart". Replace
+**Back to Reports** with the top-bar **Back**. **Back to report** in "Open the
+transactions behind an amount" stays. Recapture
+[reports-comparison](../manual/images/reports-comparison.png) and
+[reports-pie](../manual/images/reports-pie.png). Both show **Back to Reports**
+beside **Refresh report**.
+[reports-transactions](../manual/images/reports-transactions.png) keeps
+**Back to report** and does not need a new capture for this change.

@@ -213,7 +213,7 @@ Item {
         anchors.fill:parent;anchors.margins:12;spacing:8
         RowLayout {
             Label {textFormat:Text.PlainText;text:root.mode==="workspace"?"Reports":root.mode==="detail"?"Report transactions":root.result.name||"Report";font.pixelSize:22;Layout.fillWidth:true;Layout.minimumWidth:80;elide:Text.ElideRight}
-            Button {visible:root.mode!=="workspace";text:root.mode==="detail"?"Back to report":"Back to Reports";onClicked:root.back()}
+            Button {visible:root.mode==="detail";text:"Back to report";onClicked:root.back()}
             Button {visible:root.mode==="result";text:"Refresh report";enabled:!root.workflow.busy;onClicked:root.workflow.command("report_show",{id:root.result.id})}
         }
         ScrollView {
