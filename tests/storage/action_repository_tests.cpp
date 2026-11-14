@@ -955,6 +955,32 @@ void unmerge_linked(const std::filesystem::path& path) {
      reopened.answer_review("join-visa-again",again);reopened.verify();
      check(count(reopened,2)==savings_merged && count(reopened,3)==visa_merged,"Linking the reopened payment removes the extra rows again");
      const auto joined=visa_payment(reopened);check(!joined.first && !joined.second,"The payment leaves Review once it is linked again");}
+    {
+        auto store=ImportStore::create(std::filesystem::path(path.string()+"-accepted"),"synthetic","Checking",cad,"2026-01-01");
+        store.create_account(2,"Savings",cad,"2026-01-01");
+        store.ingest("out","!Type:Bank\nD04/01/2026\nT-25.00\nPPayment\nL[Savings]\n^\n",qif::DateOrder::dmy);
+        store.select_account(2);
+        store.ingest("in","!Type:Bank\nD05/01/2026\nT25.00\nPReceipt\nL[Checking]\n^\n",qif::DateOrder::dmy);
+        const auto sheet=store.review_sheet();
+        const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;});
+        check(question!=sheet.questions.end(),"Accepted-payment fixture has a link question");
+        ReviewAnswer join;join.question=question->key;join.generation=sheet.generation;join.action=ReviewAction::link;join.selected={question->rows.front().identity,question->rows[1].identity};
+        store.answer_review("join-accepted",join);store.accept_all("accept-payment",true);store.verify();
+        store.select_account(2);
+        check(store.transaction_accepted({"in",0}) && store.can_unmerge({{"in",0}}),"An accepted payment can still be unmerged");
+        check(store.unmerge_notice({{"in",0}}).find("stay accepted")!=std::string::npos,"Unmerge says the accepted payments stay accepted");
+        const auto before=store.current_ledger().size();
+        store.unmerge("unmerge-accepted",{{"in",0}});store.verify();
+        check(store.transaction_accepted({"in",0}),"Unmerge leaves the accepted receipt accepted");
+        store.select_account(1);check(store.transaction_accepted({"out",0}),"Unmerge leaves the accepted payment accepted");
+        store.select_account(2);
+        bool extra=false;for(const auto& row:store.current_ledger())if(row.identity.batch.starts_with("~transfer-")){extra=true;check(!row.committed,"The extra entry comes back and is not accepted");}
+        check(extra && store.current_ledger().size()>before,"Unmerge after Accept puts the extra entry back");
+        const auto opened=store.review_sheet();
+        check(std::count_if(opened.questions.begin(),opened.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;})==1,"Review shows both lines of the accepted payment");
+        undo(store,"undo-unmerge-accepted","unmerge-accepted");
+        store.select_account(2);check(!shows_generated(store) && store.transaction_accepted({"in",0}),"Undo of that Unmerge removes the extra entry and leaves the receipt accepted");
+    }
 }
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;

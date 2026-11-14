@@ -29,7 +29,7 @@ std::set<std::pair<imports::Occurrence,imports::Occurrence>> reopened_link_pairs
             if(!head.row() || std::string(head.bytes(0))!=result)live=false;
         }
         if(!live || identities.empty())continue;
-        Statement link(db,"SELECT a.id FROM review_answers a JOIN review_link_history h ON h.answer=a.id WHERE a.action=? AND a.sequence<? AND h.identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id) ORDER BY a.sequence DESC LIMIT 1");
+        Statement link(db,"SELECT a.id FROM review_answers a JOIN review_link_history h ON h.answer=a.id WHERE a.action=? AND a.question LIKE 'link:%' AND a.sequence<? AND h.identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id) ORDER BY a.sequence DESC LIMIT 1");
         link.integer(1,static_cast<int>(app::ReviewAction::link));link.integer(2,sequence);link.text(3,identities.front());
         if(!link.row())continue;
         const auto link_answer=std::string(link.bytes(0));
@@ -802,7 +802,11 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
     return {std::string(operation)};
 }
 std::optional<std::string> ImportStore::active_unmerge(const std::vector<imports::Occurrence>& selected) const {
-    if(selected.size()!=1 || transaction_accepted(selected.front()))return {};
+    if(selected.size()!=1)return {};
+    if(transaction_accepted(selected.front())){
+        Statement open_import(impl_->db,"SELECT state FROM batches WHERE id=?");open_import.text(1,selected.front().batch);
+        if(!open_import.row() || (open_import.integer(0)!=0 && open_import.integer(0)!=4))return {};
+    }
     const auto& survivor=selected.front();
     Statement rows(impl_->db,"SELECT DISTINCT answer FROM review_merges WHERE target_batch=? AND target_ordinal=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_merges.answer)");
     rows.text(1,survivor.batch);rows.integer(2,integer(survivor.ordinal));
@@ -831,8 +835,14 @@ std::optional<std::string> ImportStore::active_unmerge(const std::vector<imports
     return answer;
 }
 std::optional<ImportStore::LinkUnmergePlan> ImportStore::link_unmerge_plan(const std::vector<imports::Occurrence>& selected) const {
-    if(selected.size()!=1 || transaction_accepted(selected.front()))return {};
+    if(selected.size()!=1)return {};
     const auto& id=selected.front();
+    // Accept commits the bank lines. Restoring the earlier link must keep those
+    // lines committed and bring the extra entry back unaccepted.
+    const auto keep_acceptance=[&](transfers::Link link){
+        const auto fix=[&](transfers::Side& side){if(side.state==transfers::State::removed || side.endpoint.entry.batch.starts_with("~transfer-"))return;if(transaction_accepted(side.endpoint.entry))side.state=transfers::State::committed;};
+        fix(link.origin);fix(link.destination);return link;
+    };
     const auto kept=[](const transfers::Side& side){return side.independent_evidence || side.ledger_entry;};
     std::optional<app::TransferView> current;
     for(const auto& value:all_transfers()){
@@ -840,7 +850,6 @@ std::optional<ImportStore::LinkUnmergePlan> ImportStore::link_unmerge_plan(const
         if(link.unresolved || link.destination_released || link.origin.state==transfers::State::removed || link.destination.state==transfers::State::removed)continue;
         if(!kept(link.origin) || !kept(link.destination))continue;
         if(link.origin.endpoint.entry!=id && link.destination.endpoint.entry!=id)continue;
-        if(transaction_accepted(link.origin.endpoint.entry) || transaction_accepted(link.destination.endpoint.entry))return {};
         if(current)return {};
         current=value;
     }
@@ -857,6 +866,7 @@ std::optional<ImportStore::LinkUnmergePlan> ImportStore::link_unmerge_plan(const
             LinkUnmergeStep step{found->second,found->second,1};
             if(rows.null(1)){try{step.next.link=separate_kept_link(step.current.link);step.mode=0;}catch(const transfers::TransferError&){try{auto undone=step.current;undo_new_relationship(undone);step.next=undone;step.mode=1;}catch(const transfers::TransferError&){return {};}}}
             else {try{step.next=transfer_codec::view(rows.bytes(1));}catch(const ImportError&){return {};}catch(const transfers::TransferError&){return {};}step.mode=1;}
+            step.next.link=keep_acceptance(step.next.link);
             steps.push_back(std::move(step));
         }
         if(!any)return {};
@@ -865,20 +875,20 @@ std::optional<ImportStore::LinkUnmergePlan> ImportStore::link_unmerge_plan(const
     auto revives=[&](const std::vector<LinkUnmergeStep>& steps){std::vector<std::int64_t> accounts;for(const auto& step:steps)for(const auto* side:{&step.next.link.origin,&step.next.link.destination})if(generated(*side)){const bool still=(generated(step.current.link.origin)&&step.current.link.origin.endpoint.entry==side->endpoint.entry)||(generated(step.current.link.destination)&&step.current.link.destination.endpoint.entry==side->endpoint.entry);if(!still)accounts.push_back(side->endpoint.account);}std::sort(accounts.begin(),accounts.end());accounts.erase(std::unique(accounts.begin(),accounts.end()),accounts.end());return accounts;};
     Statement history(impl_->db,"SELECT a.id,h.result_payload FROM review_link_history h JOIN review_answers a ON a.id=h.answer WHERE h.identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=h.answer) ORDER BY a.sequence DESC");
     history.text(1,current->link.identity);
-    LinkUnmergePlan plan;bool saw_exact=false;std::string separable_answer;
+    LinkUnmergePlan plan;bool saw_exact=false,separable_kept=false;std::string separable_answer;
     while(history.row()){
         const auto result_bytes=history.bytes(1);
         std::optional<app::TransferView> result;try{result=transfer_codec::view(result_bytes);}catch(const ImportError&){continue;}catch(const transfers::TransferError&){continue;}
         if(result_bytes!=transfer_codec::encode(*current) && !same_banks(result->link,current->link))continue;
         if(result_bytes==transfer_codec::encode(*current)){saw_exact=true;separable_answer=history.bytes(0);}
         auto steps=steps_for(history.bytes(0));if(!steps)continue;
-        const auto accounts=revives(*steps);if(accounts.empty())continue;
+        const auto accounts=revives(*steps);if(accounts.empty()){separable_kept=true;if(separable_answer.empty())separable_answer=history.bytes(0);continue;}
         plan.steps=std::move(*steps);plan.restores_generated=true;plan.source_answer=history.bytes(0);
         std::string where;for(const auto account:accounts){if(!where.empty())where+=" and ";where+=account==impl_->selected_account?"this account":account_by_id(account).name;}
         plan.restored_where=where;break;
     }
     if(plan.steps.empty()){
-        if(!saw_exact){Statement any(impl_->db,"SELECT 1 FROM review_link_history WHERE identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_link_history.answer)");any.text(1,current->link.identity);if(any.row())return {};}
+        if(!saw_exact && !separable_kept){Statement any(impl_->db,"SELECT 1 FROM review_link_history WHERE identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_link_history.answer)");any.text(1,current->link.identity);if(any.row())return {};}
         try{LinkUnmergeStep step{*current,*current,0};step.next.link=separate_kept_link(current->link);plan.steps.push_back(std::move(step));plan.source_answer=separable_answer;}catch(const transfers::TransferError&){return {};}
     }
     std::vector<app::TransferView> next;next.reserve(plan.steps.size());
@@ -899,7 +909,9 @@ std::string ImportStore::unmerge_notice(const std::vector<imports::Occurrence>& 
     const auto plan=link_unmerge_plan(selected);if(!plan)return {};
     if(!plan->restores_generated)return "Unmerge this link? Both transactions stay, and they will no longer be one transfer.";
     const auto several=plan->restored_where.find(" and ")!=std::string::npos;
-    return std::string("Unmerge this payment? The removed ")+(several?"rows come":"row comes")+" back in "+plan->restored_where+", so the merge is split again.";
+    auto notice=std::string("Unmerge this payment? The removed ")+(several?"rows come":"row comes")+" back in "+plan->restored_where+", so the merge is split again.";
+    if(transaction_accepted(selected.front()))notice+=" Those rows are not accepted, and the payments stay accepted.";
+    return notice;
 }
 app::ReviewReceipt ImportStore::unmerge_link(std::string_view operation,const LinkUnmergePlan& plan) {
     if(const auto prior=review_outcome(operation))return *prior;
