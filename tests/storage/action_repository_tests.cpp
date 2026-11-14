@@ -765,6 +765,10 @@ void unmerge_kept(const std::filesystem::path& path) {
     check(store.can_unmerge({{"twins",0}}),"The kept row of one merge can be unmerged");
     check(!store.can_unmerge({{"twins",0},{"plain",0}}),"Unmerge stays unavailable when another transaction is selected");
     store.unmerge("unmerge-one",{{"twins",0}});store.verify();
+    const auto retry_token=store.action_token();
+    check(store.unmerge("unmerge-one",{{"twins",0}}).operation=="unmerge-one" && store.action_token()==retry_token,"Keep-one Unmerge retry returns its receipt without another mutation");
+    bool changed_retry=false;try{store.unmerge("unmerge-one",{{"plain",0}});}catch(const storage::ImportError&){changed_retry=true;}
+    check(changed_retry && store.action_token()==retry_token,"Unmerge rejects changed retry selections");
     check(on_ledger(store,"twins",0) && on_ledger(store,"twins",1),"Unmerge puts the hidden transaction back");
     check(store.row({"twins",0}).draft->payee=="Red edited","A later edit of the kept transaction stays");
     check(store.row({"twins",1}).draft->payee=="Blue" && store.row({"twins",1}).decision.disposition==imports::Disposition::include,"The transaction that left returns as it was");
@@ -971,6 +975,10 @@ void unmerge_linked(const std::filesystem::path& path) {
         check(store.unmerge_notice({{"in",0}}).find("stay accepted")!=std::string::npos,"Unmerge says the accepted payments stay accepted");
         const auto before=store.current_ledger().size();
         store.unmerge("unmerge-accepted",{{"in",0}});store.verify();
+        const auto retry_token=store.action_token();
+        check(store.unmerge("unmerge-accepted",{{"in",0}}).operation=="unmerge-accepted" && store.action_token()==retry_token,"Accepted-link Unmerge retry is idempotent");
+        bool changed=false;try{store.unmerge("unmerge-accepted",{{"out",0}});}catch(const storage::ImportError&){changed=true;}
+        check(changed && store.action_token()==retry_token,"Link Unmerge binds retries to the original selection");
         check(store.transaction_accepted({"in",0}),"Unmerge leaves the accepted receipt accepted");
         store.select_account(1);check(store.transaction_accepted({"out",0}),"Unmerge leaves the accepted payment accepted");
         store.select_account(2);
@@ -980,6 +988,66 @@ void unmerge_linked(const std::filesystem::path& path) {
         check(std::count_if(opened.questions.begin(),opened.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;})==1,"Review shows both lines of the accepted payment");
         undo(store,"undo-unmerge-accepted","unmerge-accepted");
         store.select_account(2);check(!shows_generated(store) && store.transaction_accepted({"in",0}),"Undo of that Unmerge removes the extra entry and leaves the receipt accepted");
+        for(const auto* batch:{"out","in"}){
+            store.select_account(std::string_view(batch)=="out"?1:2);
+            const imports::Occurrence id{batch,0};
+            auto entry=store.committed_entry(id);auto corrected=entry.current.draft;corrected.date="2026-01-10";
+            std::int64_t revision=0;for(const auto& info:store.batches())if(info.id==batch)revision=info.revision;
+            store.edit_transaction(std::string("correct-date-")+batch,id,revision,entry.token,corrected);store.verify();
+            const auto before=store.action_token();const auto balance=store.balance();
+            for(const auto* selected:{"out","in"}){
+                const auto preview=store.preview_unmerge({{selected,0}});
+                check(!preview.available && preview.notice.empty(),"Date correction blocks Unmerge from either account");
+                bool refused=false;try{store.unmerge("refused-unmerge",{{selected,0}});}catch(const storage::ImportError&){refused=true;}
+                check(refused && store.action_token()==before && store.balance()==balance,"Refused Unmerge changes neither history nor money");
+            }
+            check(store.committed_entry(id).current.draft.date=="2026-01-10","Refused Unmerge preserves the corrected date");store.verify();
+            undo(store,std::string("undo-date-")+batch,std::string("correct-date-")+batch);
+            check(store.preview_unmerge({id}).available,"Undo of the date correction restores Unmerge availability");
+        }
+        store.certify({});
+    }
+}
+void unmerge_faults(const std::filesystem::path& directory) {
+    fault_vfs::install();const auto seed=directory/"unmerge-seed.db";
+    {
+        auto store=ImportStore::create(seed,"synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.create_account(2,"Savings",Currency("CAD"),"2026-01-01");
+        store.ingest("out","!Type:Bank\nD04/01/2026\nT-25.00\nPPayment\nL[Savings]\n^\n",qif::DateOrder::dmy);
+        store.select_account(2);store.ingest("in","!Type:Bank\nD05/01/2026\nT25.00\nPReceipt\nL[Checking]\n^\n",qif::DateOrder::dmy);
+        const auto sheet=store.review_sheet();
+        const auto q=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& v){return v.kind==ReviewKind::link && v.rows.size()>1;});
+        check(q!=sheet.questions.end(),"Fault fixture has a transfer pair");
+        ReviewAnswer answer;answer.question=q->key;answer.generation=sheet.generation;answer.action=ReviewAction::link;answer.selected={q->rows[0].identity,q->rows[1].identity};
+        store.answer_review("join",answer);store.accept_all("accept",true);store.certify({});
+    }
+    for(const bool crash:{false,true})for(int boundary=1;boundary<1000;++boundary){
+        const auto file=directory/(std::string(crash?"unmerge-crash-":"unmerge-io-")+std::to_string(boundary));
+        std::filesystem::copy_file(seed,file);bool fired=false;
+        if(crash){
+            const auto child=fork();check(child>=0,"fork failed");
+            if(child==0){try{auto store=ImportStore::open(file,"synthetic");fault_vfs::arm(boundary,SQLITE_IOERR_WRITE,true,true);store.unmerge("split",{{"out",0}});_exit(0);}catch(...){_exit(72);}}
+            int status=0;check(waitpid(child,&status,0)==child,"wait failed");check(WIFEXITED(status) && (WEXITSTATUS(status)==0 || WEXITSTATUS(status)==71),"Unexpected Unmerge crash result");fired=WEXITSTATUS(status)==71;
+        }else{
+            auto store=ImportStore::open(file,"synthetic");fault_vfs::arm(boundary,boundary%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
+            try{store.unmerge("split",{{"out",0}});}catch(const std::exception&){}
+            fired=fault_vfs::fired;fault_vfs::disarm();
+        }
+        {
+            auto recovered=ImportStore::open(file,"synthetic");recovered.verify();const bool saved=recovered.review_outcome("split").has_value();
+            for(const auto account:{1,2}){
+                recovered.select_account(account);int extras=0;
+                for(const auto& row:recovered.current_ledger())if(row.identity.batch.starts_with("~transfer-")){++extras;check(!row.committed,"Restored extras stay unaccepted");}
+                check(extras==(saved?1:0),"Both account projections agree with durable Unmerge receipt");
+            }
+            check(recovered.transaction_accepted({"out",0}) && recovered.transaction_accepted({"in",0}),"Failure preserves acceptance");
+            recovered.unmerge("split",{{"out",0}});recovered.verify();
+            const auto token=recovered.action_token();recovered.unmerge("split",{{"out",0}});check(recovered.action_token()==token,"Recovered retry does not mutate");
+            recovered.certify({});
+        }
+        std::filesystem::remove(file);
+        if(!fired){std::cout<<(crash?"Crash":"I/O")<<" Unmerge boundaries: "<<boundary-1<<'\n';break;}
+        check(boundary<999,"Unmerge fault sweep did not terminate");
     }
 }
 void corrupt_lineage(const std::filesystem::path& directory) {
@@ -998,7 +1066,7 @@ int main(int argc,char** argv){
     auto path=(std::filesystem::temp_directory_path()/"spentit-action-repository-XXXXXX").string();
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
-    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge"){unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
+    try{if(argc>1 && std::string_view(argv[1])=="unmerge_faults"){unmerge_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge"){unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

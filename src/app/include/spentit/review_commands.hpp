@@ -53,5 +53,6 @@ struct ReviewAnswer {
     std::string left_allocation,right_allocation,remainder_category;
     bool split_difference=false;
 };
+struct UnmergePreview { bool available=false; std::string notice; };
 struct ReviewReceipt {std::string operation;};
 }

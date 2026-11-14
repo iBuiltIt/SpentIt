@@ -59,6 +59,10 @@ public:
     bool attempted=false,cancelAfterOpen=false,failAccountRefresh=false,failAccountSelection=false;
     QString groupFaultAction;bool groupInjected=false,cancelGroupResume=false;
     app::ImportRepository& repo() const { return inner->repository(); }
+    mutable int unmergePreviews=0,legacyUnmergeQueries=0;
+    app::UnmergePreview preview_unmerge(const std::vector<imports::Occurrence>& selected) const override {++unmergePreviews;return repo().preview_unmerge(selected);}
+    bool can_unmerge(const std::vector<imports::Occurrence>& selected) const override {++legacyUnmergeQueries;return repo().can_unmerge(selected);}
+    std::string unmerge_notice(const std::vector<imports::Occurrence>& selected) const override {++legacyUnmergeQueries;return repo().unmerge_notice(selected);}
     bool failReviewRefresh=false;
     bool delayClose=false,failClose=false;
     void check_file(const app::OperationContext& context) override {inner->check_file(context);}
@@ -211,6 +215,18 @@ class ImportUiTests : public QObject {
         run(m,"create",{{"path",path},{"protected",false},{"name","Synthetic test"},{"currency","CAD"}});
     }
 private slots:
+    void unmergeSelectionUsesOnePreview() {
+        QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* seam=gateway.get();ImportModel m(std::move(gateway));
+        create(m,dir.path()+"/doc");
+        run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT-1\nPFirst\n^\nD2/1/2026\nT-2\nPSecond\n^\n")},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch").toString();
+        const auto before=seam->unmergePreviews;
+        run(m,"inspect",{{"batch",batch},{"ordinal",1}});
+        QCOMPARE(seam->unmergePreviews,before+1);
+        QCOMPARE(seam->legacyUnmergeQueries,0);
+        QVERIFY(!m.state().value("canUnmerge").toBool());
+        QVERIFY(m.state().value("unmergeNotice").toString().isEmpty());
+    }
     void commonUndoDirtyTargetAndTextUndo() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());

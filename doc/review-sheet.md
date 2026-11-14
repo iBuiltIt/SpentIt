@@ -554,3 +554,28 @@ Until a transaction is accepted, the ledger adds a result mark:
 - The ledger menu **Unmerge** is available on one joined row, including after the file is closed. On the kept row of a single keep-one merge, it puts the transaction that left back on the ledger as it was at the merge, and leaves a later edit of the kept row in place. On one green linked row, it asks before separating that link. If the join removed an extra entry, the message names every account that gets a row back. The blue edges come back on those rows while they are still new. Merge joins that payment again, and Review shows both lines with Link and Not this transfer. After Accept, Unmerge stays available on that payment. The accepted payments stay accepted, the extra entries come back and are not accepted, and those accepted rows have no blue edge. Review still shows both lines. If both transactions stayed, the message says both stay and they will no longer be one transfer. It stays unavailable when the selection is anything else, or when that row is part of more than one join. **Unmerge** is its own Change history row. Undo of that row puts the join back.
 
 Review's duplicate questions and transfer questions stay as they are.
+
+### Unmerge safety and retries — 2026-11-14
+
+Restoring removed transfer rows requires every affected relationship to match
+its recorded merge result, allowing acceptance alone. A later relationship
+change, including a corrected date, blocks Unmerge until that change is undone.
+This check applies to both accounts and the released generated relationships.
+A retry of a completed Unmerge returns its existing receipt without another
+mutation; changing the selection or reusing another command's identity fails.
+The ledger obtains availability and confirmation text from one preview.
+
+Verification on 2026-11-14: macOS arm64, Qt 6.12.0, rules-enabled Release.
+`storage.action_repository`, `storage.unmerge_faults`, `import.review_sheet`,
+and `import.ledger_duplicates` passed. The Unmerge fault sweep covered 133
+write/sync boundaries with alternating disk-full/I/O failures and 133 with
+process exit, checking both account projections, acceptance, and durable retries.
+The UI cases `unmergeSelectionUsesOnePreview`, `ledgerSamePayment`,
+`selectedReviewMerge`, and `commonUndoDirtyTargetAndTextUndo` passed offscreen.
+The Release application was rebuilt. Sanitizers and other platforms were not run.
+
+The separate `transferstore.management` failure also reproduced in a clean
+build of `2fe53d3` (`c9ed419^`). Its `visa-b` row is unresolved when `link-b`
+attempts to use it: the October 29 payment follows an accepted October 30 payment
+of the same amount, triggering the existing adjacent-date review guard from
+`46d3acc`. No change to that policy or fixture is included here.

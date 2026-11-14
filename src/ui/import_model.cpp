@@ -1304,8 +1304,9 @@ struct ImportModel::Worker {
         state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;state["transferMergePreview"]=transferMergePreview;
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
         const auto selected_rows=std::vector<imports::Occurrence>(selection.begin(),selection.end());
-        state["canUnmerge"]=repo.can_unmerge(selected_rows);
-        state["unmergeNotice"]=text(repo.unmerge_notice(selected_rows));
+        const auto unmerge=repo.preview_unmerge(selected_rows);
+        state["canUnmerge"]=unmerge.available;
+        state["unmergeNotice"]=text(unmerge.notice);
         int focus=-1;
         if(selectionFocus)for(std::size_t i=0;i<cachedView->order.size();++i)if(cachedView->rows[cachedView->order[i]].identity==*selectionFocus){focus=static_cast<int>(i);break;}
         state["selectionIndex"]=focus;state["selectionFocusKey"]=selectionFocus?text(selectionFocus->batch)+":"+QString::number(selectionFocus->ordinal):QString();

@@ -335,6 +335,7 @@ public:
     // Rows kept when another transaction in the same account was merged into them,
     // excluding rows that have since been accepted.
     virtual std::vector<imports::Occurrence> merge_survivors() const {return {};}
+    virtual UnmergePreview preview_unmerge(const std::vector<imports::Occurrence>& selected) const {return {can_unmerge(selected),unmerge_notice(selected)};}
     // True when the selection is one joined row that can be split back into two.
     virtual bool can_unmerge(const std::vector<imports::Occurrence>&) const {return false;}
     // Empty when Unmerge applies immediately. Otherwise the confirmation text.

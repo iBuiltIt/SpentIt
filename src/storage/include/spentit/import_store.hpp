@@ -183,6 +183,7 @@ public:
     app::ReviewReceipt save_link_exclusion(std::string_view,const app::LinkExclusion&,std::int64_t) override;
     app::ReviewSheet review_sheet() const override;
     std::vector<imports::Occurrence> merge_survivors() const override;
+    app::UnmergePreview preview_unmerge(const std::vector<imports::Occurrence>&) const override;
     bool can_unmerge(const std::vector<imports::Occurrence>&) const override;
     std::string unmerge_notice(const std::vector<imports::Occurrence>&) const override;
     app::ReviewReceipt unmerge(std::string_view,const std::vector<imports::Occurrence>&) override;
@@ -269,7 +270,7 @@ private:
         std::string source_answer;
     };
     std::optional<LinkUnmergePlan> link_unmerge_plan(const std::vector<imports::Occurrence>&) const;
-    app::ReviewReceipt unmerge_link(std::string_view,const LinkUnmergePlan&);
+    app::ReviewReceipt unmerge_link(std::string_view,const LinkUnmergePlan&,const imports::Occurrence&);
     struct DeletionPlan;
     DeletionPlan plan_deletion(const app::LedgerSelectionEdit&,const app::OperationContext&) const;
     app::ReviewReceipt delete_transactions(std::string_view,const app::LedgerSelectionEdit&,const app::OperationContext&);

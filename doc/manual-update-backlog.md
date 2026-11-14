@@ -30,6 +30,11 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - `manual/add-correct-transactions.md` or `manual/review-duplicates-transfers.md`: the ledger menu has **Unmerge**. It is unavailable on an ordinary transaction. On the one kept row of a single merge, it puts the transaction that left back on the ledger. A later edit of the kept row stays. On one linked row, it asks first. Unmerging a payment puts the removed rows back in the named accounts. The blue edges come back while the rows are still new. Merge joins that payment again. Review shows both lines, with Link and Not this transfer. After Accept, Unmerge stays available. The accepted payments stay accepted, the extra entries come back and are not accepted, and an accepted row has no blue edge. Unmerging a link that left both transactions separates them and leaves both in place. It remains available after the file is closed.
 - Pictures: none.
 
+- 2026-11-14 safety follow-up: restoring removed transfer entries is unavailable
+  after a later relationship correction, including a date change. Undo that
+  correction first. Acceptance alone still permits Unmerge. See the
+  [Unmerge safety contract](review-sheet.md#unmerge-safety-and-retries--2026-11-14).
+
 ### MAN-050 — Merge and Link on Change history
 
 - Date: 2026-11-14
