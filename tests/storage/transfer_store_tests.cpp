@@ -155,9 +155,27 @@ void management(){
             s.select_account(1);s.ingest("twice","D27/10/2026\nT-190\nPTwice\nS[Old Visa export]\n$-95\nS[Old Visa export]\n$-95\n^\n",qif::DateOrder::dmy);s.select_account(2);s.ingest("visa-a","D30/10/2026\nT95\nPVisa A\n^\n",qif::DateOrder::dmy);s.select_account(1);
             s.apply_transfer("link-a",merge_of(s,"pay-a",allocation_fact(1,"twice","source-0",Money(-9500,cad),"2026-10-27",transfers::State::draft,true),allocation_fact(2,"visa-a","source-0",Money(9500,cad),"2026-10-30",transfers::State::draft,true),0,0));
             s.select_account(2);s.commit("visa-a",0,"commit-visa-a");check(view_of(s,"pay-a").link.destination.state==transfers::State::committed);s.ingest("visa-b","D29/10/2026\nT95\nPVisa B\n^\n",qif::DateOrder::dmy);s.select_account(1);
-            s.apply_transfer("link-b",merge_of(s,"pay-b",allocation_fact(1,"twice","source-1",Money(-9500,cad),"2026-10-27",transfers::State::draft,true),allocation_fact(2,"visa-b","source-0",Money(9500,cad),"2026-10-29",transfers::State::draft,true),0,0));
+            // October 29 is behind the accepted October 30 frontier. These are
+            // distinct payments, but the adjacent-date review must be answered.
+            s.select_account(2);
+            const imports::Occurrence visa_b{"visa-b",0};
+            check(s.row(visa_b).decision.disposition==imports::Disposition::unresolved);
+            const auto review=s.review_sheet();
+            const auto question=std::find_if(review.questions.begin(),review.questions.end(),[&](const auto& value){
+                return value.kind==app::ReviewKind::same && std::any_of(value.rows.begin(),value.rows.end(),[&](const auto& row){return row.identity==visa_b;});
+            });
+            check(question!=review.questions.end());
+            app::ReviewAnswer separate;separate.generation=review.generation;separate.question=question->key;
+            separate.action=app::ReviewAction::separate;separate.selected={visa_b};
+            const auto before_review=s.balance();s.answer_review("keep-visa-b-separate",separate);
+            check(s.row(visa_b).decision.disposition==imports::Disposition::include && !s.transaction_accepted(visa_b));
+            check(s.balance()==before_review && s.transaction_accepted({"visa-a",0}) && s.transaction_accepted({"visa95",0}));
+            const auto batches=s.batches();const auto reviewed=std::find_if(batches.begin(),batches.end(),[](const auto& batch){return batch.id=="visa-b";});
+            check(reviewed!=batches.end());const auto visa_b_revision=reviewed->revision;
+            s.select_account(1);
+            s.apply_transfer("link-b",merge_of(s,"pay-b",allocation_fact(1,"twice","source-1",Money(-9500,cad),"2026-10-27",transfers::State::draft,true),allocation_fact(2,"visa-b","source-0",Money(9500,cad),"2026-10-29",transfers::State::draft,true),0,visa_b_revision));
             check(view_of(s,"pay-a").link.origin.endpoint!=view_of(s,"pay-b").link.origin.endpoint && view_of(s,"pay-a").link.destination.endpoint!=view_of(s,"pay-b").link.destination.endpoint);
-            s.commit("twice",0,"commit-twice");s.select_account(2);s.commit("visa-b",0,"commit-visa-b");s.select_account(1);
+            s.commit("twice",0,"commit-twice");s.select_account(2);s.commit("visa-b",visa_b_revision,"commit-visa-b");s.select_account(1);
             s.ingest("plain","D26/10/2026\nT-3\nPShop\n^\n",qif::DateOrder::dmy);auto edit=*s.row({"plain",0}).draft;auto parts=edit.transaction.allocations();parts[0].category="Visa";parts[0].category_owner=FieldOwnership::manual;edit.transaction=edit.transaction.corrected(edit.transaction.effective_total(),std::move(parts));rejected([&]{s.save({"plain",0},0,edit);});check(s.transfers().size()==3);
             s.verify();s.backup_to(d.path/"backup",password);}
         {auto s=ImportStore::open(path,password);check(view_of(s,"pay-95").link.destination.amount==Money(9500,cad));check(s.transfer_journal().size()>=3);s.verify();}
