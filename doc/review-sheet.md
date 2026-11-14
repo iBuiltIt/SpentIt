@@ -533,7 +533,7 @@ Native interaction, keyboard-layout conflicts, Linux and Windows remain unverifi
 
 This section supersedes the ledger right-click **Resolve duplicate** sentence and the sentence that ledger **Link** joins any two selected transactions.
 
-A payment Review would ask about as one transfer, and that is shown twice in one account, gets a teal edge on both rows. One row is the bank transaction. The other is the extra entry created from the other account. Rose stays the mark for a possible same purchase. The bar above the ledger names the payment and offers **Merge**, **Not this transfer**, **Show match**, and **Next same payment**.
+A payment Review would ask about as one transfer, and that is shown twice in one account, gets a blue edge on both rows. One row is the bank transaction. The other is the extra entry created from the other account. Rose stays the mark for a possible same purchase. The bar above the ledger names the payment and offers **Merge**, **Not this transfer**, **Show match**, and **Next same payment**.
 
 The ledger command for two rows in the current account is **Merge**.
 
@@ -550,5 +550,6 @@ Until a transaction is accepted, the ledger adds a result mark:
 - A green edge means this transaction is linked to a transaction that stays in another account. The tooltip names that account.
 - A created entry that is still waiting for a bank transaction has no green edge. Choosing an account as the category, which creates the other side, has no green edge. A transfer paired from the imported files has the green edge until accept.
 - A row can show both result marks. The marks remain after close and reopen. Undo removes the merge or the link, and the mark goes with it. **Accept transactions** clears the marks. A linked payment still shows the other account on its category.
+- Change history lists the action until the file is closed. A keep-one merge and a same-payment merge are **Merge**. A link that leaves both transactions in place is **Link**. Undo on that row reverses it. Command+Z still reverses only the newest action.
 
 Review's duplicate questions and transfer questions stay as they are.

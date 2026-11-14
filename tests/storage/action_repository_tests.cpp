@@ -661,6 +661,94 @@ void link_then_undo_import(const std::filesystem::path& directory) {
     store.undo_connected("undoIn2",receipt);
     store.verify();
 }
+bool shows_generated(ImportStore& store) {
+    for(const auto& row:store.current_ledger())if(row.identity.batch.starts_with("~transfer-"))return true;
+    return false;
+}
+void merge_and_link_history(const std::filesystem::path& path) {
+    const Currency cad("CAD");
+    auto store=ImportStore::create(path,"synthetic","Checking",cad,"2026-01-01");
+    store.create_account(2,"Savings",cad,"2026-01-01");
+    store.ingest("left","!Type:Bank\nD01/01/2026\nT-10.00\nPAlpha\n^\n",qif::DateOrder::dmy);
+    store.select_account(2);
+    store.ingest("right","!Type:Bank\nD02/01/2026\nT10.00\nPBeta\n^\n",qif::DateOrder::dmy);
+    auto fact=[&](std::int64_t account,const char* batch) {
+        store.select_account(account);
+        const auto row=store.row({batch,0});
+        const auto& allocation=row.draft->transaction.allocations().front();
+        const bool imported=row.draft->transaction.original_imported_amount().has_value();
+        std::int64_t revision=0;for(const auto& item:store.batches())if(item.id==batch)revision=item.revision;
+        transfers::AllocationFact value{{account,{batch,0},allocation.identity},allocation.amount,row.draft->date,transfers::State::draft,imported,false,!imported};
+        return std::pair{value,revision};
+    };
+    const auto [left,left_revision]=fact(1,"left");
+    const auto [right,right_revision]=fact(2,"right");
+    store.select_account(1);
+    TransferRequest link{};link.action=TransferAction::merge;link.link="pair";link.kept="pair-kept";link.expected_sequence=store.transfer_sequence();
+    link.left=left;link.right=right;link.batch_revision=left_revision;link.right_revision=right_revision;link.payee="Alpha";
+    store.apply_transfer("link-pair",link);store.verify();
+    store.ingest("later",source("Gamma"),qif::DateOrder::dmy);
+    edit(store,"later-edit",{"later",0},"Gamma edited");
+    const auto checking=history_page(store,1);
+    const auto* linked=find_action(checking,"link-pair");
+    check(linked && linked->label=="Link" && linked->undoable,"A manual link is a Link row after a later edit");
+    bool saw_alpha=false,saw_beta=false;
+    for(const auto& member:linked->members){if(member.payee=="Alpha" && member.state=="New")saw_alpha=true;if(member.payee=="Beta" && member.state=="New")saw_beta=true;}
+    check(saw_alpha && saw_beta,"Link names both transactions");
+    check(find_action(history_page(store,2),"link-pair"),"Link appears on the other account");
+    const auto link_preview=store.preview_connected_undo("link-pair",store.action_token());
+    check(link_preview.refusal.empty() && link_preview.label=="Link","Link undo can finish");
+    bool undoes_edit=false;for(const auto& line:link_preview.lines)if(line.id=="later-edit")undoes_edit=true;
+    check(!undoes_edit,"An unrelated later edit stays when the link is undone");
+    store.undo_connected("undo-link",link_preview);store.verify();
+    check(store.action_head() && store.action_head()->id=="later-edit","The later edit remains newest");
+    auto active_link=[&](std::int64_t account,const char* batch){store.select_account(account);for(const auto& value:store.transfers()){if(value.link.unresolved || value.link.origin.state==transfers::State::removed || value.link.destination.state==transfers::State::removed)continue;for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.entry==imports::Occurrence{batch,0})return true;}return false;};
+    check(!active_link(1,"left") && !active_link(2,"right"),"Undo removes the link");
+    store.select_account(1);check(store.row({"left",0}).draft->payee=="Alpha","The first transaction stays");
+    store.select_account(2);check(store.row({"right",0}).draft->payee=="Beta","The other transaction stays");store.select_account(1);
+
+    store.ingest("twins","!Type:Bank\nD03/01/2026\nT-4.00\nPRed\n^\nD03/01/2026\nT-4.00\nPBlue\n^\n",qif::DateOrder::dmy);
+    ReviewAnswer merge;merge.question="selected";merge.action=ReviewAction::merge;merge.generation=store.review_sheet().generation;merge.selected={{"twins",0},{"twins",1}};merge.survivor={"twins",0};
+    store.answer_review("merge-two",merge);store.verify();
+    edit(store,"after-merge",{"later",0},"After merge");
+    const auto merged=history_page(store,1);
+    const auto* kept=find_action(merged,"merge-two");
+    check(kept && kept->label=="Merge" && kept->undoable,"A keep-one merge stays on Change history");
+    bool saw_red=false,saw_blue=false;
+    for(const auto& member:kept->members){if(member.payee=="Red" && member.state=="New")saw_red=true;if(member.payee=="Blue" && member.state=="Removed" && !member.in_ledger)saw_blue=true;}
+    check(saw_red && saw_blue,"Merge names the transaction that stayed and the one that left");
+    const auto merge_preview=store.preview_connected_undo("merge-two",store.action_token());
+    check(merge_preview.refusal.empty() && merge_preview.label=="Merge","Merge undo can finish");
+    store.undo_connected("undo-merge",merge_preview);store.verify();
+    check(store.row({"twins",0}).decision.disposition==imports::Disposition::include && store.row({"twins",1}).decision.disposition==imports::Disposition::include,"Undo puts both transactions back");
+    check(store.action_head() && store.action_head()->id=="after-merge","The later edit remains after undoing the merge");
+
+    store.ingest("out","!Type:Bank\nD04/01/2026\nT-25.00\nPPayment\nL[Savings]\n^\n",qif::DateOrder::dmy);
+    store.select_account(2);
+    store.ingest("in","!Type:Bank\nD05/01/2026\nT25.00\nPReceipt\nL[Checking]\n^\n",qif::DateOrder::dmy);
+    check(shows_generated(store),"The payment is shown twice before it is merged");
+    const auto sheet=store.review_sheet();
+    const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;});
+    check(question!=sheet.questions.end(),"The payment and the receipt are one link question");
+    ReviewAnswer join;join.question=question->key;join.generation=sheet.generation;join.action=ReviewAction::link;join.selected={question->rows.front().identity,question->rows[1].identity};
+    store.answer_review("join-payment",join);store.verify();
+    check(!shows_generated(store),"Same-payment merge removes the extra entry");
+    store.select_account(1);
+    edit(store,"after-join",{"later",0},"After join");
+    const auto joined=history_page(store,1);
+    const auto* payment=find_action(joined,"join-payment");
+    check(payment && payment->label=="Merge" && payment->undoable,"A same-payment merge is a Merge row");
+    bool saw_payment=false,saw_receipt=false,saw_removed=false;
+    for(const auto& member:payment->members){if(member.payee=="Payment")saw_payment=true;if(member.payee=="Receipt")saw_receipt=true;if(member.state=="Removed")saw_removed=true;}
+    check(saw_payment && saw_receipt && saw_removed,"Same-payment merge names both transactions and the extra entry that left");
+    check(find_action(history_page(store,2),"join-payment"),"Same-payment merge appears on the other account");
+    const auto join_preview=store.preview_connected_undo("join-payment",store.action_token());
+    check(join_preview.refusal.empty() && join_preview.label=="Merge","Same-payment merge undo can finish");
+    store.undo_connected("undo-join",join_preview);store.verify();
+    check(shows_generated(store),"Undo brings the extra entry back");
+    check(store.action_head() && store.action_head()->id=="after-join","The later edit remains after undoing the merge");
+    store.certify({});
+}
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;
     for(const auto* sql:{"UPDATE review_undo_members SET consumed=0", "UPDATE review_undo_members SET original_child='missing'"}) {
@@ -677,7 +765,7 @@ int main(int argc,char** argv){
     auto path=(std::filesystem::temp_directory_path()/"spentit-action-repository-XXXXXX").string();
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
-    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
+    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

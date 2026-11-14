@@ -28,14 +28,48 @@ void add_money(std::vector<app::HistoryFieldChange>& out,std::string field,std::
 std::vector<std::int64_t> sorted_unique(std::vector<std::int64_t> ids) {
     std::sort(ids.begin(),ids.end());ids.erase(std::unique(ids.begin(),ids.end()),ids.end());return ids;
 }
+template<class Visit>
+void visit_link_history(sqlite3* db,std::string_view answer,Visit visit) {
+    Statement rows(db,"SELECT prior_payload,result_payload FROM review_link_history WHERE answer=?1 OR answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||?1)");
+    rows.text(1,answer);
+    while(rows.row()) {
+        std::optional<app::TransferView> prior;
+        if(!rows.null(0))prior=transfer_codec::view(rows.bytes(0));
+        if(rows.null(1))continue;
+        visit(prior,transfer_codec::view(rows.bytes(1)));
+    }
+}
+bool retired_generated_link(sqlite3* db,std::string_view answer) {
+    bool retired=false;
+    visit_link_history(db,answer,[&](const std::optional<app::TransferView>& prior,const app::TransferView& result) {
+        if(!prior)return;
+        auto active=[&](const transfers::Endpoint& endpoint){for(const auto* side:{&result.link.origin,&result.link.destination})if(side->endpoint==endpoint && side->state!=transfers::State::removed)return true;return false;};
+        for(const auto* side:{&prior->link.origin,&prior->link.destination})if(side->endpoint.entry.batch.starts_with("~transfer-") && !active(side->endpoint))retired=true;
+    });
+    return retired;
+}
 }
 std::string ImportStore::action_display_label(const app::ActionSummary& action) const {
-    Statement saved(impl_->db,"SELECT question FROM review_answers WHERE id=?");saved.text(1,action.id);
-    if(!saved.row() || saved.bytes(0)!="ledger-bulk")return action.label;
-    Statement bulk(impl_->db,"SELECT kind FROM bulk_operations WHERE id=?");bulk.text(1,action.id);
-    if(!bulk.row())return action.label;
-    if(bulk.integer(0)==static_cast<int>(app::ChangeKind::correct))return "Change category";
-    if(bulk.integer(0)==static_cast<int>(app::ChangeKind::remove))return "Delete transactions";
+    Statement saved(impl_->db,"SELECT question,action FROM review_answers WHERE id=?");saved.text(1,action.id);
+    if(!saved.row())return action.label;
+    const auto question=saved.bytes(0);
+    const auto review_action=saved.integer(1);
+    if(question=="ledger-bulk") {
+        Statement bulk(impl_->db,"SELECT kind FROM bulk_operations WHERE id=?");bulk.text(1,action.id);
+        if(!bulk.row())return action.label;
+        if(bulk.integer(0)==static_cast<int>(app::ChangeKind::correct))return "Change category";
+        if(bulk.integer(0)==static_cast<int>(app::ChangeKind::remove))return "Delete transactions";
+        return action.label;
+    }
+    // A manual link joins two transactions that both stay. Other transfer commands keep their own labels.
+    if(question=="ledger-transfer") {
+        Statement event(impl_->db,"SELECT request FROM transfer_events WHERE operation=?");event.text(1,action.id);
+        if(event.row() && transfer_codec::request(event.bytes(0)).action==app::TransferAction::merge)return "Link";
+        return action.label;
+    }
+    if(review_action==static_cast<int>(app::ReviewAction::merge))return "Merge";
+    // Same-payment Merge removes the extra entry. A link that leaves both transactions in place stays Link.
+    if(review_action==static_cast<int>(app::ReviewAction::link))return retired_generated_link(impl_->db,action.id)?"Merge":"Link";
     return action.label;
 }
 std::vector<app::HistoryFieldChange> ImportStore::history_named_fields(const app::ActionSummary& action) const {
@@ -62,7 +96,15 @@ bool ImportStore::history_touches(const app::ActionSummary& action,std::int64_t 
     case app::ActionKind::import: return hit("SELECT 1 FROM batches WHERE source_id=? AND account_id=?",action.payload);
     case app::ActionKind::manual_creation: return hit("SELECT 1 FROM batches WHERE id=? AND account_id=?",action.payload);
     case app::ActionKind::acceptance: return hit("SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE (o.id=?1 OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=?1)) AND b.account_id=?2",action.payload);
-    default: return hit((std::string("SELECT 1 FROM review_members m JOIN batches b ON b.id=m.batch WHERE ")+member_where+" AND b.account_id=?2 UNION SELECT 1 FROM review_repairs r JOIN batches b ON b.id=r.batch WHERE r.answer=?1 AND b.account_id=?2").c_str(),action.id);
+    default: {
+        if(hit((std::string("SELECT 1 FROM review_members m JOIN batches b ON b.id=m.batch WHERE ")+member_where+" AND b.account_id=?2 UNION SELECT 1 FROM review_repairs r JOIN batches b ON b.id=r.batch WHERE r.answer=?1 AND b.account_id=?2").c_str(),action.id))return true;
+        bool found=false;
+        visit_link_history(impl_->db,action.id,[&](const std::optional<app::TransferView>& prior,const app::TransferView& result) {
+            auto touch=[&](const app::TransferView& view){if(view.link.origin.endpoint.account==account || view.link.destination.endpoint.account==account)found=true;};
+            if(prior)touch(*prior);touch(result);
+        });
+        return found;
+    }
     }
 }
 bool ImportStore::history_includes(const app::ActionSummary& action,const imports::Occurrence& id) const {
@@ -83,7 +125,13 @@ bool ImportStore::history_includes(const app::ActionSummary& action,const import
     }
     default: {
         Statement query(impl_->db,(std::string("SELECT 1 FROM review_members m WHERE ")+member_where+" AND m.batch=?2 AND m.ordinal=?3 UNION SELECT 1 FROM review_repairs r WHERE r.answer=?1 AND r.batch=?2 AND r.ordinal=?3").c_str());
-        query.text(1,action.id);query.text(2,id.batch);query.integer(3,integer(id.ordinal));return query.row();
+        query.text(1,action.id);query.text(2,id.batch);query.integer(3,integer(id.ordinal));if(query.row())return true;
+        bool found=false;
+        visit_link_history(impl_->db,action.id,[&](const std::optional<app::TransferView>& prior,const app::TransferView& result) {
+            auto hit_view=[&](const app::TransferView& view){if(view.link.origin.endpoint.entry==id || view.link.destination.endpoint.entry==id)found=true;};
+            if(prior)hit_view(*prior);hit_view(result);
+        });
+        return found;
     }
     }
 }
@@ -181,11 +229,12 @@ app::HistoryActionView ImportStore::history_view(const app::ActionSummary& actio
             member.in_ledger=current.active && retained_member(impl_->db,id.batch,id.ordinal) && !generated_match(impl_->db,id);
         } else {
             const bool removed=pending_removed(impl_->db,id) || !retained_member(impl_->db,id.batch,id.ordinal);
-            member.state=removed?"Removed":"New";
             Statement batch_state(impl_->db,"SELECT state FROM batches WHERE id=?");batch_state.text(1,id.batch);
             Statement decision(impl_->db,"SELECT decision FROM versions WHERE batch=? AND ordinal=? ORDER BY revision DESC LIMIT 1");decision.text(1,id.batch);decision.integer(2,integer(id.ordinal));
             const auto state=batch_state.row()?batch_state.integer(0):-1;const auto chosen=decision.row()?decision.integer(0):-1;
-            member.in_ledger=!removed && !generated_match(impl_->db,id) && (chosen==0 || chosen==1) && (state==static_cast<int>(app::BatchState::pending) || state==static_cast<int>(app::BatchState::protected_drafts));
+            const bool duplicate=chosen==static_cast<int>(imports::Disposition::duplicate);
+            member.state=removed || duplicate?"Removed":"New";
+            member.in_ledger=!removed && !duplicate && !generated_match(impl_->db,id) && (chosen==0 || chosen==1) && (state==static_cast<int>(app::BatchState::pending) || state==static_cast<int>(app::BatchState::protected_drafts));
         }
         member.date=current.date;member.payee=current.payee;member.memo=current.memo;member.amount={current.total,current.definition};
         for(const auto& split:current.splits)member.splits.push_back({split.category,split.memo,{split.units,current.definition}});
@@ -247,6 +296,20 @@ app::HistoryActionView ImportStore::history_view(const app::ActionSummary& actio
     while(members.row()){if(stored.size()>=4096)fail(SQLITE_TOOBIG,"This change's transactions could not be read.");if(members.integer(1)<0)fail(SQLITE_CORRUPT,"This change's transactions could not be read.");stored.push_back({{members.bytes(0),static_cast<std::size_t>(members.integer(1))},members.integer(2)!=0,members.integer(3),members.integer(4),members.bytes(5),members.bytes(6),members.integer(7)});}
     Statement repairs(impl_->db,"SELECT r.batch,r.ordinal,r.result,b.account_id FROM review_repairs r JOIN batches b ON b.id=r.batch WHERE r.answer=?");repairs.text(1,action.id);
     while(repairs.row()){if(stored.size()>=4096)fail(SQLITE_TOOBIG,"This change's transactions could not be read.");if(repairs.integer(1)<0)fail(SQLITE_CORRUPT,"This change's transactions could not be read.");stored.push_back({{repairs.bytes(0),static_cast<std::size_t>(repairs.integer(1))},false,-1,repairs.integer(2),std::string(action.id),{},repairs.integer(3)});}
+    // A link records its two postings on the relationship, not as edited transaction rows.
+    visit_link_history(impl_->db,action.id,[&](const std::optional<app::TransferView>&,const app::TransferView& result) {
+        for(const auto* side:{&result.link.origin,&result.link.destination}) {
+            if(side->state==transfers::State::removed)continue;
+            const auto& id=side->endpoint.entry;
+            if(id.batch.empty() || id.batch.starts_with("~transfer-"))continue;
+            if(std::any_of(stored.begin(),stored.end(),[&](const StoredMember& item){return item.id==id;}))continue;
+            if(stored.size()>=4096)fail(SQLITE_TOOBIG,"This change's transactions could not be read.");
+            const bool committed=transaction_accepted(id);std::int64_t revision=-1;
+            if(committed){Statement head(impl_->db,"SELECT revision FROM entry_heads WHERE batch=? AND ordinal=?");head.text(1,id.batch);head.integer(2,integer(id.ordinal));if(!head.row())continue;revision=head.integer(0);}
+            else {Statement latest(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");latest.text(1,id.batch);latest.integer(2,integer(id.ordinal));if(!latest.row() || latest.null(0))continue;revision=latest.integer(0);}
+            stored.push_back({id,committed,revision,revision,std::string(action.id),{},side->endpoint.account});
+        }
+    });
     if(require_members && action.count>0 && stored.empty())fail(SQLITE_CORRUPT,"This change's transactions could not be read.");
     struct AccountEffect {bool ledger=false,ok=false;std::int64_t sequence=0,before=0,change=0,after=0;std::string definition;};
     std::vector<AccountEffect> effects;
@@ -268,6 +331,18 @@ app::HistoryActionView ImportStore::history_view(const app::ActionSummary& actio
         }
         effects.push_back(std::move(effect));
     }
+    // The extra entry created for a transfer leaves the ledger when the payment is merged.
+    visit_link_history(impl_->db,action.id,[&](const std::optional<app::TransferView>& prior,const app::TransferView& result) {
+        if(!prior)return;
+        auto still=[&](const transfers::Endpoint& endpoint){for(const auto* side:{&result.link.origin,&result.link.destination})if(side->endpoint==endpoint && side->state!=transfers::State::removed)return true;return false;};
+        for(const auto* side:{&prior->link.origin,&prior->link.destination}) {
+            if(!side->endpoint.entry.batch.starts_with("~transfer-") || still(side->endpoint))continue;
+            if(std::any_of(view.members.begin(),view.members.end(),[&](const app::HistoryMemberView& member){return member.batch==side->endpoint.entry.batch && member.ordinal==side->endpoint.entry.ordinal;}))continue;
+            if(view.members.size()>=4096)fail(SQLITE_TOOBIG,"This change's transactions could not be read.");
+            app::HistoryMemberView member;member.batch=side->endpoint.entry.batch;member.ordinal=side->endpoint.entry.ordinal;member.date=side->date;member.payee=prior->payee;member.memo=prior->memo;member.state="Removed";member.in_ledger=false;member.amount={side->amount.units(),side->amount.currency().definition_id()};
+            view.members.push_back(std::move(member));
+        }
+    });
     view.lists_transactions=!view.members.empty();
     if(view.lists_transactions)view.count=integer(view.members.size());
     if(!view.members.empty() && std::all_of(view.members.begin(),view.members.end(),[&](const auto& member){return same_fields(member.changes,view.members.front().changes);})){view.changes=view.members.front().changes;for(auto& member:view.members)member.changes.clear();}

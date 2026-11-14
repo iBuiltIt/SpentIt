@@ -1,6 +1,6 @@
 # Change history
 
-Last updated: 2026-11-12
+Last updated: 2026-11-14
 
 The page reads the live file-wide Undo chain, newest first. One saved action
 is one row. A successful close clears the list. Opening a file does not. A
@@ -18,6 +18,16 @@ the saved rule.
 
 A bulk category change is one Change category row. The stored label may remain
 “Edit transactions”. The page says Change category.
+
+A merge that keeps one transaction, and a merge of a payment shown twice, are
+each one Merge row. The open row names the transaction that stayed and the one
+that left the ledger. Undo puts the one that left back. A same-payment merge
+also drops the link and brings the extra entry back. The row is on every
+account it touched.
+
+A link that leaves both transactions in place, including **Link to other
+account…**, is one Link row on both accounts. Undo removes the link and leaves
+both transactions.
 
 The account under the heading is a dropdown. It opens on the account you came
 from. Choosing another account stays on this page. The empty page has no Back
