@@ -1400,6 +1400,9 @@ ApplicationWindow {
         pendingMerge=null
         mergeHint="Select one transaction, then choose Link to other account."
     }
+    function deletionCount(n, singular, plural) {
+        return n+" "+(n===1?singular:plural)
+    }
     function removeSelected() {
         guard(function(){
             if(!(s.selectionCount>0))return
@@ -1412,20 +1415,16 @@ ApplicationWindow {
         helpTarget: "help:add-correct-transactions#change-a-selection-or-delete-entries"
         id:deleteSelectionDialog;objectName:"deleteSelectionDialog";title:"Delete selected transactions?";modal:true;anchors.centerIn:parent;width:Math.min(640,window.width-40)
         contentItem:ColumnLayout {
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:"Delete "+(deleteSelectionRequest?deleteSelectionRequest.selected.length:0)+" selected transactions?"}
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.deletionPreview||{}).links>0;text:"Some selected transactions are linked to other accounts. Choose what happens to their counterparts."}
-            RadioButton {id:keepDeletionCounterparts;objectName:"keepDeletionCounterparts";text:"Delete selected only";checked:true;visible:(s.deletionPreview||{}).links>0}
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.deletionPreview||{}).links>0 && keepDeletionCounterparts.checked;text:"Break the links and keep independent counterparts. Their linked splits become Uncategorized. Generated drafts are removed."}
-            RadioButton {objectName:"removeDeletionCounterparts";text:"Delete linked entries too";visible:(s.deletionPreview||{}).links>0}
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.deletionPreview||{}).links>0 && !keepDeletionCounterparts.checked;text:"Remove linked splits from counterparts, preserving their other splits. Delete counterparts that have no remaining splits."}
+            Label {objectName:"deleteSelectionCount";Layout.fillWidth:true;wrapMode:Text.Wrap;text:"Delete "+deletionCount((s.deletionPreview||{}).removed||0,"transaction?","transactions?")}
+            Label {objectName:"deleteSelectionSkipped";Layout.fillWidth:true;wrapMode:Text.Wrap;visible:((s.deletionPreview||{}).skipped||0)>0;text:deletionCount((s.deletionPreview||{}).skipped||0,"linked transaction stays in this account.","linked transactions stay in this account.")}
             ScrollView {
                 id:deleteImpactScroll;Layout.fillWidth:true;Layout.preferredHeight:Math.min(180,deletionImpacts.implicitHeight);clip:true
-                Label {id:deletionImpacts;objectName:"deletionImpacts";width:deleteImpactScroll.availableWidth;wrapMode:Text.Wrap;text:(s.deletionPreview||{})[keepDeletionCounterparts.checked?"keep":"both"]||""}
+                Label {id:deletionImpacts;objectName:"deletionImpacts";width:deleteImpactScroll.availableWidth;wrapMode:Text.Wrap;text:(s.deletionPreview||{}).keep||""}
             }
         }
         footer:DialogButtonBox {
             Button {text:"Cancel";onClicked:deleteSelectionDialog.close()}
-            Button {objectName:"confirmDeleteSelection";text:"Delete";enabled:!workflow.busy;onClicked:{deleteSelectionRequest.deleteCounterparts=!keepDeletionCounterparts.checked;captureLedgerView("selected-edit");deleteSelectionDialog.close();workflow.command("delete_selection",deleteSelectionRequest)}}
+            Button {objectName:"confirmDeleteSelection";text:"Delete";enabled:!workflow.busy;onClicked:{deleteSelectionRequest.deleteCounterparts=false;captureLedgerView("selected-edit");deleteSelectionDialog.close();workflow.command("delete_selection",deleteSelectionRequest)}}
         }
     }
     function accountForName(name) {
@@ -2068,6 +2067,12 @@ ApplicationWindow {
             if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session.":"Edit saved."
             if(success && (action==="undo_edit" || action==="undo_action" || action==="undo_connected"))workspaceFeedback="Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
+            if(success && action==="delete_selection"){
+                const preview=s.deletionPreview||{}
+                const removed=preview.removed||0
+                const skipped=preview.skipped||0
+                workspaceFeedback="Deleted "+deletionCount(removed,"transaction.","transactions.")+(skipped>0?" "+deletionCount(skipped,"linked transaction stays in this account.","linked transactions stay in this account."):"")
+            }
             if(!success){transferMergeAnnounced=false;ruleApplyAfterPreview=false;returnAfterRuleApply=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
             if(success && (action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo"))workspaceFeedback=(s.ruleReceipt||{}).summary||"Rules updated."
@@ -2148,7 +2153,11 @@ ApplicationWindow {
                     if(currentPage==="history")Qt.callLater(function(){workflow.command("history")})
                 }
                 if(action.indexOf("transfer_")===0 || action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment")loadEditor()
-                if(action==="preview_deletion"){keepDeletionCounterparts.checked=true;deleteSelectionDialog.open()}
+                if(action==="preview_deletion"){
+                    const preview=s.deletionPreview||{}
+                    if((preview.removed||0)===0)workspaceFeedback=(preview.skipped||0)>0?"These transactions are linked to other accounts. They stay in this account.":"Select transactions to delete."
+                    else deleteSelectionDialog.open()
+                }
                 if(action==="preview_bulk")bulkDialog.open()
                 if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
                 if(action==="rules_reapply_preview")reapplyDialog.open()

@@ -14,76 +14,48 @@ ImportStore::DeletionPlan ImportStore::plan_deletion(const app::LedgerSelectionE
     const std::set<imports::Occurrence> selected(request.selected.begin(),request.selected.end());
     if(selected.size()!=request.selected.size())fail(SQLITE_CONSTRAINT,"Select each transaction only once");
     DeletionPlan plan;
+    // A live link stays with both of its transactions. Delete does not break it,
+    // recategorize the other account, or remove the other side.
+    std::set<imports::Occurrence> linked;
+    for(const auto& value:all_transfers()){
+        context.checkpoint("Checking linked transactions");
+        const auto& link=value.link;
+        if(link.unresolved || link.destination_released)continue;
+        const auto note=[&](const transfers::Side& side){
+            if(side.state==transfers::State::removed || !selected.contains(side.endpoint.entry))return;
+            if(side.endpoint.account!=request.account)fail(SQLITE_CONSTRAINT,"Select transactions in this account");
+            linked.insert(side.endpoint.entry);
+        };
+        note(link.origin);note(link.destination);
+    }
+    plan.preview.skipped=linked.size();
+    std::set<imports::Occurrence> deleting;
+    for(const auto& id:selected)if(!linked.contains(id))deleting.insert(id);
     std::map<imports::Occurrence,std::set<std::string>> affected;
     std::map<imports::Occurrence,std::int64_t> accounts;
-    std::set<imports::Occurrence> generated;
-    for(const auto& id:selected){accounts[id]=request.account;if(!id.batch.starts_with("~transfer-"))affected[id];}
+    for(const auto& id:deleting){
+        if(id.batch.starts_with("~transfer-"))fail(SQLITE_CONSTRAINT,"This generated transaction is no longer linked. Change it individually.");
+        accounts[id]=request.account;affected[id];
+    }
     auto impact=[&](std::int64_t id)->app::DeletionImpact& {
         auto it=std::find_if(plan.preview.accounts.begin(),plan.preview.accounts.end(),[&](const auto& a){return a.account==id;});
         if(it==plan.preview.accounts.end()){const auto a=account_by_id(id);plan.preview.accounts.push_back({id,a.name,Money(0,a.currency)});return plan.preview.accounts.back();}return *it;
     };
-    for(const auto& value:all_transfers()){
-        context.checkpoint("Checking linked transactions");
-        const auto& link=value.link;
-        const bool origin=selected.contains(link.origin.endpoint.entry),destination=selected.contains(link.destination.endpoint.entry);
-        if(!origin && !destination)continue;
-        if((!origin || link.origin.state==transfers::State::removed) && (!destination || link.destination.state==transfers::State::removed))continue;
-        if(!link.unresolved && !link.destination_released)++plan.preview.links;
-        if((origin && link.origin.endpoint.account!=request.account) || (destination && link.destination.endpoint.account!=request.account))fail(SQLITE_CONSTRAINT,"Select transactions in this account");
-        const bool remove_origin=origin || request.delete_counterparts;
-        const bool remove_destination=destination || request.delete_counterparts || (origin && local_side(link.destination) && link.destination.state==transfers::State::draft);
-        auto middle=value;middle.link=transfers::unlink_for_deletion(link,origin,destination);
-        auto after=middle;after.link=transfers::unlink_for_deletion(middle.link,remove_origin,remove_destination);
-        const bool second=transfer_codec::encode(middle)!=transfer_codec::encode(after);
-        plan.links.push_back({value,middle,request.account,(origin?1:0)|(destination?2:0),second});
-        if(second)plan.links.push_back({middle,after,origin?link.destination.endpoint.account:link.origin.endpoint.account,(remove_origin?1:0)|(remove_destination?2:0),false});
-        for(const auto* side:{&link.origin,&link.destination}){
-            if(side->state==transfers::State::removed)continue;
-            require_writable_account(impl_->db,side->endpoint.account);
-            const auto& id=side->endpoint.entry;
-            if(local_side(*side)){
-                generated.insert(id);
-                const auto& next=side==&link.origin?after.link.origin:after.link.destination;
-                auto& out=impact(side->endpoint.account);
-                if(next.state==transfers::State::removed){out.change=out.change-side->amount;++out.removed;}else ++out.changed;
-            }else {accounts[id]=side->endpoint.account;affected[id].insert(side->endpoint.allocation);}
-        }
-    }
-    for(const auto& id:selected)if(id.batch.starts_with("~transfer-") && !generated.contains(id))fail(SQLITE_CONSTRAINT,"This generated transaction is no longer linked. Change it individually.");
-    for(const auto& [id,allocations]:affected){
+    for(const auto& item:affected){const auto& id=item.first;
         context.checkpoint("Checking transactions to delete");
         impl_->selected_account=accounts.at(id);require_writable_account(impl_->db,impl_->selected_account);require_account(id.batch);
         if(review_survivor(impl_->db,id)!=id)fail(SQLITE_CONSTRAINT,"Select the retained transaction instead of a merged transaction.");
-        const auto row=load_row(id,false);const auto info=batch(impl_->db,id.batch);
+        const auto row=load_row(id,false);
         if(!row.draft || row.excluded_by_clear || row.matched_generated || (row.decision.disposition!=imports::Disposition::include && row.decision.disposition!=imports::Disposition::unresolved))fail(SQLITE_CONSTRAINT,"Resolve the selected transactions in Review before deleting them.");
         const bool accepted=transaction_accepted(id);
         const auto before=accepted?committed_entry(id).current.draft:*row.draft;
-        auto draft=before;auto splits=before.transaction.allocations();
-        bool remove=selected.contains(id);
-        if(!remove){
-            for(const auto& allocation:allocations)if(std::none_of(splits.begin(),splits.end(),[&](const auto& a){return a.identity==allocation;}))fail(SQLITE_CONSTRAINT,"A linked split changed. Select the transactions again.");
-            if(request.delete_counterparts){
-                auto total=before.transaction.effective_total();
-                std::erase_if(splits,[&](const auto& a){if(!allocations.contains(a.identity))return false;total=total-a.amount;return true;});
-                remove=splits.empty();
-                if(!remove){draft.transaction=before.transaction.corrected(total,std::move(splits));if(allocations.contains(draft.remainder_allocation))draft.remainder_allocation.clear();}
-            }else {
-                for(auto& a:splits)if(allocations.contains(a.identity)){a.category.clear();a.category_binding.reset();a.category_owner=FieldOwnership::manual;a.category_rule.reset();}
-                draft.transaction=before.transaction.corrected(before.transaction.effective_total(),std::move(splits));
-            }
-        }
-        if(!remove){
-            const auto prior=accepted?committed_entry(id).current.revision:info.revision;
-            if(prior==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
-            const auto revision=prior+1;
-            draft=canonical_draft(id,draft,before,revision,accepted);
-            imports::validate_draft(row.source,draft,row.source.source_currency && *row.source.source_currency!=draft.transaction.effective_total().currency());
-        }
+        auto draft=before;
         auto& out=impact(impl_->selected_account);
-        out.change=out.change+(remove?Money(0,before.transaction.effective_total().currency()):draft.transaction.effective_total())-before.transaction.effective_total();
-        if(remove)++out.removed;else ++out.changed;
-        plan.rows.push_back({id,impl_->selected_account,std::move(draft),row.decision,remove});
+        out.change=out.change-before.transaction.effective_total();
+        ++out.removed;
+        plan.rows.push_back({id,impl_->selected_account,std::move(draft),row.decision,true});
     }
+    if(plan.rows.empty() && plan.links.empty() && plan.preview.skipped==0)fail(SQLITE_CONSTRAINT,"Select transactions to delete");
     return plan;
 }
 app::DeletionPreview ImportStore::preview_deletion(const app::LedgerSelectionEdit& request,const app::OperationContext& context){ScopedStatements statements(impl_->db,&context);return plan_deletion(request,context).preview;}
@@ -101,6 +73,7 @@ app::ReviewReceipt ImportStore::delete_transactions(std::string_view operation,c
         if(!saved.row() || saved.bytes(0)!=encoded.bytes)fail(SQLITE_CONSTRAINT,"Retry changed the deletion choice or selection");return *prior;
     }
     const auto plan=plan_deletion(request,context);
+    if(plan.rows.empty() && plan.links.empty())fail(SQLITE_CONSTRAINT,"These transactions are linked to other accounts. They stay in this account.");
     struct Scope {Impl& state;std::int64_t account;bool composing;~Scope(){state.selected_account=account;state.composing_review=composing;}} scope{*impl_,impl_->selected_account,impl_->composing_review};
     Atomic transaction(impl_->db);
     if(request.generation!=review_generation(impl_->db) || request.generation==INT64_MAX)fail(SQLITE_CONSTRAINT,"Transactions changed. Select them again.");

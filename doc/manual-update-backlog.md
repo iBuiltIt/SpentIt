@@ -23,6 +23,14 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 
 ## Open items
 
+### MAN-049 — Delete leaves linked transactions
+
+- Date: 2026-11-13
+- Contract: [ledger editing](ledger-editing.md), section "Delete a selection"
+- `manual/add-correct-transactions.md`, "Change a selection or delete entries": Delete removes the selected transactions that are not linked. The confirmation says how many will be deleted and how many linked transactions stay in this account. A selection that is only linked transactions deletes nothing and says they stay. Delete does not break the link or change the other account.
+- The same chapter's "Take care with transfers" still says deleting a linked posting ends the link. That sentence is outstanding. Delete leaves the link as it is.
+- Pictures: none. The bundled text still offers **Delete selected only** and **Delete linked entries too**.
+
 ### MAN-048 — Ledger same payment, Merge, and result marks
 
 - Date: 2026-11-13

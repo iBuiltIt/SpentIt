@@ -116,9 +116,9 @@ void origin_transfers(const std::filesystem::path& dir) {
             std::int64_t revision=0;for(const auto& batch:s.batches())if(batch.id==id.batch)revision=batch.revision;
             s.edit_transaction("date-"+std::to_string(account),id,revision,entry.token,edit);s.verify();
             s.undo_transaction_edit("undo-date-"+std::to_string(account),"date-"+std::to_string(account));s.verify();
-            const auto remove=deletion(s,{id});s.edit_transactions("delete-"+std::to_string(account),remove,context);s.verify();
-            check(s.balance().units()==0,"Delete removes only selected posting");s.select_account(3-account);check(s.balance().units()==(account==1?1000:-1000),"Delete preserves independent counterpart");s.select_account(account);
-            s.undo_transaction_edit("undo-delete-"+std::to_string(account),"delete-"+std::to_string(account));s.verify();
+            const auto remove=deletion(s,{id});bool stayed=false;try{s.edit_transactions("delete-"+std::to_string(account),remove,context);}catch(const std::exception& error){stayed=std::string(error.what())=="These transactions are linked to other accounts. They stay in this account.";}
+            check(stayed,"Linked posting stays");s.verify();
+            check(s.balance().units()==(account==1?-1000:1000),"Delete leaves the selected linked posting");s.select_account(3-account);check(s.balance().units()==(account==1?1000:-1000),"Delete leaves the other account");s.select_account(account);
         }
         s.select_account(1);}
         {auto s=ImportStore::open(path,"test-password");check(s.balance().units()==-1000,"Pair reopen left");s.select_account(2);check(s.balance().units()==1000,"Pair reopen right");s.verify();}

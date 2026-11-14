@@ -2176,8 +2176,9 @@ struct ImportModel::Worker {
             for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
             if(reportLedgerActive){reportSelectionAccount(std::set<imports::Occurrence>(request.selected.begin(),request.selected.end()));request.account=repo.account().identity;}
             const auto describe=[&](const app::DeletionPreview& preview){QStringList lines;for(const auto& impact:preview.accounts)lines.push_back(text(impact.name)+": delete "+QString::number(impact.removed)+", change "+QString::number(impact.changed)+"; balance change "+text(impact.change.currency().code())+" "+money(impact.change,amountFormat));return lines.join("\n");};
-            const auto keep=repo.preview_deletion(request,context);request.delete_counterparts=true;const auto both=repo.preview_deletion(request,context);
-            deletionPreview={{"links",static_cast<int>(keep.links)},{"keep",describe(keep)},{"both",describe(both)}};
+            const auto preview=repo.preview_deletion(request,context);
+            std::size_t removed=0;for(const auto& impact:preview.accounts)removed+=impact.removed;
+            deletionPreview={{"links",0},{"skipped",static_cast<int>(preview.skipped)},{"removed",static_cast<int>(removed)},{"keep",describe(preview)},{"both",describe(preview)}};
         }
         else if(action=="rename_payee_selection" || action=="set_memo_selection" || action=="restore_imported_selection" || action=="delete_selection") {
             app::LedgerSelectionEdit request;

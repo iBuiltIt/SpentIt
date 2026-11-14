@@ -531,8 +531,8 @@ void selection_edit_tests(const std::filesystem::path& dir){
     // Full reopening, rather than only inspecting the current connection.
     {auto copy=dir/"selection-backup";s.backup_to(copy,"test");auto reopened=ImportStore::open(copy,"test");reopened.verify();check(edit_row(reopened,ids[0]).payee=="APPLE.COM","Restored values survive reopen");reopened.undo_transaction_edit("reopen-undo","final");reopened.verify();check(edit_row(reopened,ids[0]).payee=="Edited","Durable group can be reversed exactly");}
     auto linked=ImportStore::create(dir/"selection-links","test","Checking",cad,"2026-01-01");assignment_setup(linked);OperationContext assign;linked.assign_transfer_batch("assign",assignment_requests(linked),assign);
-    OperationContext removal;linked.edit_transactions("delete-linked",selection_request(linked,LedgerSelectionAction::remove,{{"out",1},{"out",0}}),removal);
-    check(linked.current_ledger().size()==1,"Linked new deletion removes selected rows");linked.verify();linked.undo_transaction_edit("undo-delete-linked","delete-linked");assignment_check(linked,true);
+    OperationContext removal;refused=false;std::string message;try{linked.edit_transactions("delete-linked",selection_request(linked,LedgerSelectionAction::remove,{{"out",1},{"out",0}}),removal);}catch(const std::exception& error){refused=true;message=error.what();}
+    check(refused && message=="These transactions are linked to other accounts. They stay in this account." && !linked.review_outcome("delete-linked") && linked.current_ledger().size()==3,"Linked rows stay when Delete has no ordinary transaction");assignment_check(linked,true);
     linked.accept_all("accept",true);
     const std::vector<imports::Occurrence> linkedIds{{"out",0},{"out",1}};OperationContext linkContext;
     linked.edit_transactions("rename",selection_request(linked,LedgerSelectionAction::rename_payee,linkedIds,"Renamed transfer"),linkContext);assignment_check(linked,true);linked.verify();
@@ -540,13 +540,20 @@ void selection_edit_tests(const std::filesystem::path& dir){
 }
 void deletion_faults(const std::filesystem::path& dir){
     fault_vfs::install();const Currency cad("CAD");
-    for(int mode=0;mode<4;++mode){
-        const bool both=mode&1,undo=mode&2;const auto base=dir/("deletion-base-"+std::to_string(mode));LedgerSelectionEdit request;
-        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");assignment_setup(s);OperationContext assign;s.assign_transfer_batch("assign",assignment_requests(s),assign);s.accept_all("accept",true);
-            request=selection_request(s,LedgerSelectionAction::remove,{{"out",0},{"out",1}});request.delete_counterparts=both;
+    for(int mode=0;mode<2;++mode){
+        const bool undo=mode==1;const auto base=dir/("deletion-base-"+std::to_string(mode));LedgerSelectionEdit request;
+        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");assignment_setup(s);OperationContext assign;s.assign_transfer_batch("assign",assignment_requests(s),assign);
+            s.select_account(1);s.ingest("plain",source("Coffee","-1.00"),qif::DateOrder::dmy);s.accept_all("accept",true);
+            request=selection_request(s,LedgerSelectionAction::remove,{{"out",0},{"out",1},{"plain",0}});
             if(undo){OperationContext c;s.edit_transactions("delete",request,c);}}
         const auto apply=[&](ImportStore& s){s.select_account(1);if(undo)s.undo_transaction_edit("operation","delete");else{OperationContext c;s.edit_transactions("operation",request,c);}};
-        const auto verify=[&](ImportStore& s,bool saved){s.verify();const bool deleted=undo?!saved:saved;s.select_account(1);check(s.balance().units()==(deleted?-188918:-425639),"Deletion fault origin is atomic");s.select_account(2);check(s.balance().units()==(deleted && both?188918:425639),"Deletion fault counterpart is atomic");s.select_account(1);};
+        const auto verify=[&](ImportStore& s,bool saved){
+            s.verify();const bool plain_gone=undo?!saved:saved;s.select_account(1);
+            check(s.balance().units()==(plain_gone?-425639:-425739),"Ordinary deletion is atomic and linked rows stay");
+            bool plain=false;for(const auto& row:s.current_ledger())if(row.identity.batch=="plain")plain=true;
+            check(plain!=plain_gone && s.transfers().size()==3 && !s.transfers().front().link.unresolved,"Coffee follows the deletion and the links stay");
+            s.select_account(2);check(s.balance().units()==425639,"Other account is unchanged");s.select_account(1);
+        };
         int positions=0;
         for(int nth=1;nth<600;++nth){const auto trial=dir/"deletion-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired=false;
             {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(...){if(!fault_vfs::fired)throw;}fired=fault_vfs::fired;fault_vfs::disarm();}
@@ -590,44 +597,45 @@ void audit_eviction_tests(const std::filesystem::path& dir){
 }
 void linked_deletion_tests(const std::filesystem::path& dir){
     const Currency cad("CAD");
-    for(int mode=0;mode<8;++mode){
-        const bool accepted=mode&1,both=mode&2,split=mode&4;
-        auto s=ImportStore::create(dir/("deletion-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");
+    for(const bool accepted:{false,true}){
+        auto s=ImportStore::create(dir/(accepted?"deletion-accepted":"deletion-new"),"test","Checking",cad,"2026-01-01");
         s.create_account(2,"Savings",cad,"2026-01-01");
-        s.ingest("out",source("Outgoing"),qif::DateOrder::dmy);
-        s.select_account(2);s.ingest("in",split?"!Type:Bank\nD01/01/2026\nT12\nPIncoming\nS\n$10\nS\n$2\n^\n":source("Incoming","10"),qif::DateOrder::dmy);
-        s.select_account(1);TransferRequest link{};link.action=TransferAction::merge;link.link="linked";link.kept="kept";link.expected_sequence=s.transfer_sequence();link.batch_revision=edit_revision(s,{"out",0});s.select_account(2);link.right_revision=edit_revision(s,{"in",0});s.select_account(1);
-        link.left=transfers::AllocationFact{{1,{"out",0},"source-0"},Money(-1000,cad),"2026-01-01",transfers::State::draft,true};
-        link.right=transfers::AllocationFact{{2,{"in",0},"source-0"},Money(1000,cad),"2026-01-01",transfers::State::draft,true};s.apply_transfer("link",link);
+        s.ingest("out","!Type:Bank\nD01/01/2026\nT-10.00\nPPayment\nL[Savings]\n^\nD02/01/2026\nT-3.00\nPCoffee\n^\n",qif::DateOrder::dmy);
         if(accepted)s.accept_all("accept",true);
-        auto request=selection_request(s,LedgerSelectionAction::remove,{{"out",0}});request.delete_counterparts=both;
-        OperationContext preview;auto stale=request;--stale.generation;bool rejected=false;try{s.edit_transactions("stale",stale,preview);}catch(const storage::ImportError&){rejected=true;}check(rejected && !s.review_outcome("stale"),"Stale deletion rejects all changes");
-        const auto summary=s.preview_deletion(request,preview);check(summary.links==1 && summary.accounts.size()==2,"Both accounts in deletion preview");
-        OperationContext cancelled;int writes=0;cancelled.progress=[&](auto phase){if(phase=="Deleting selected transactions" && ++writes==2)cancelled.request();};
-        bool stopped=false;try{s.edit_transactions("delete",request,cancelled);}catch(const OperationCancelled&){stopped=true;}check(stopped && !s.review_outcome("delete") && !s.transfers().front().link.unresolved,"Linked cancellation rolls back rows and links");s.verify();
+        check(!s.transfers().empty() && !s.transfers().front().link.unresolved && !s.transfers().front().link.destination_released,"Imported transfer is linked");
+        const auto origin_category=edit_row(s,{"out",0}).transaction.allocations().front().category;
+        s.select_account(2);const auto other_balance=s.balance();const auto other_rows=s.current_ledger().size();s.select_account(1);
+        auto linked_only=selection_request(s,LedgerSelectionAction::remove,{{"out",0}});
+        OperationContext preview;bool refused=false;std::string message;
+        try{s.edit_transactions("linked-only",linked_only,preview);}catch(const std::exception& error){refused=true;message=error.what();}
+        check(refused && message=="These transactions are linked to other accounts. They stay in this account." && !s.review_outcome("linked-only") && s.balance().units()==-1300,"A linked transaction is not deleted");
+        auto request=selection_request(s,LedgerSelectionAction::remove,{{"out",0},{"out",1}});request.delete_counterparts=true;
+        auto stale=request;--stale.generation;refused=false;try{s.edit_transactions("stale",stale,preview);}catch(const storage::ImportError&){refused=true;}check(refused && !s.review_outcome("stale"),"Stale deletion rejects all changes");
+        const auto summary=s.preview_deletion(request,preview);std::size_t removed=0;for(const auto& impact:summary.accounts)removed+=impact.removed;
+        check(summary.skipped==1 && summary.links==0 && removed==1 && summary.accounts.size()==1 && summary.accounts.front().change.units()==300,"Preview deletes the ordinary transaction and leaves the link");
+        OperationContext cancelled;cancelled.progress=[&](auto phase){if(phase=="Deleting selected transactions")cancelled.request();};
+        bool stopped=false;try{s.edit_transactions("delete",request,cancelled);}catch(const OperationCancelled&){stopped=true;}
+        check(stopped && !s.review_outcome("delete") && s.balance().units()==-1300 && !s.transfers().front().link.unresolved,"Cancellation deletes nothing and leaves the link");s.verify();
         OperationContext apply;s.edit_transactions("delete",request,apply);s.edit_transactions("delete",request,apply);
-        check(s.current_ledger().empty() && s.balance().units()==0,"Selected origin deleted");s.select_account(2);
-        check(s.balance().units()==(both?(split?200:0):(split?1200:1000)),"Counterpart exact balance");
-        if(!both || split){auto draft=edit_row(s,{"in",0});check(draft.transaction.allocations().size()==(both?1:(split?2:1)),"Unrelated splits preserved");check(draft.transaction.allocations().front().category.empty(),"Kept linked split is Uncategorized");}
-        s.verify();s.select_account(1);s.backup_to(dir/("deletion-copy-"+std::to_string(mode)),"test");
-        auto reopened=ImportStore::open(dir/("deletion-copy-"+std::to_string(mode)),"test");reopened.undo_transaction_edit("undo","delete");reopened.verify();
-        reopened.select_account(1);check(reopened.balance().units()==-1000 && !reopened.transfers().front().link.unresolved,"Undo restores origin and link");reopened.select_account(2);check(reopened.balance().units()==(split?1200:1000) && edit_row(reopened,{"in",0}).transaction.allocations().size()==(split?2:1),"Undo restores counterpart splits");
+        check(s.balance().units()==-1000 && s.current_ledger().size()==1,"Coffee is deleted and the payment stays");
+        check(edit_row(s,{"out",0}).transaction.allocations().front().category==origin_category && !s.transfers().front().link.unresolved,"The payment stays linked");
+        s.select_account(2);check(s.balance()==other_balance && s.current_ledger().size()==other_rows,"The other account stays unchanged");
+        s.verify();s.select_account(1);s.backup_to(dir/(accepted?"deletion-copy-accepted":"deletion-copy-new"),"test");
+        auto reopened=ImportStore::open(dir/(accepted?"deletion-copy-accepted":"deletion-copy-new"),"test");reopened.undo_transaction_edit("undo","delete");reopened.verify();
+        reopened.select_account(1);check(reopened.balance().units()==-1300 && reopened.current_ledger().size()==2 && !reopened.transfers().front().link.unresolved,"Undo restores the ordinary transaction and leaves the link");
+        reopened.select_account(2);check(reopened.balance()==other_balance,"Undo does not change the other account");
     }
-    for(int mode=0;mode<8;++mode){
-        const bool accepted=mode&1,both=mode&2,destination=mode&4;
-        auto s=ImportStore::create(dir/("manual-deletion-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");s.create_account(2,"Savings",cad,"2026-01-01");
-        TransferRequest manual{};manual.action=TransferAction::manual;manual.link="manual";manual.destination=2;manual.expected_sequence=s.transfer_sequence();manual.amount=Money(-1000,cad);manual.date="2026-01-01";s.apply_transfer("manual",manual);
-        if(accepted)s.accept_all("accept",true);
-        s.select_account(destination?2:1);const auto id=s.current_ledger().front().identity;auto request=selection_request(s,LedgerSelectionAction::remove,{id});request.delete_counterparts=both;
-        OperationContext c;s.edit_transactions("delete",request,c);s.verify();
-        s.select_account(1);check(s.balance().units()==(destination && !both?-1000:0),"Manual origin deletion policy");s.select_account(2);check(s.balance().units()==(!destination && !both && accepted?1000:0),"Generated counterpart deletion policy");
-        if(accepted && !both && !destination){
-            auto retained=selection_request(s,LedgerSelectionAction::remove,{s.current_ledger().front().identity});OperationContext second;
-            check(s.preview_deletion(retained,second).links==0,"Kept generated posting is now independent");s.edit_transactions("delete-retained",retained,second);s.verify();check(s.balance().units()==0,"Kept generated posting can be deleted later");s.undo_transaction_edit("undo-retained","delete-retained");s.verify();check(s.balance().units()==1000,"Undo restores retained generated posting");
-        }
-        s.undo_transaction_edit("undo","delete");s.verify();s.select_account(1);check(s.balance().units()==-1000,"Undo restores manual origin");s.select_account(2);check(s.balance().units()==1000,"Undo restores generated counterpart");
-    }
-    std::cout<<"Linked deletion choices, split preservation, cancellation, retry and reopened Undo passed\n";
+    auto s=ImportStore::create(dir/"manual-deletion","test","Checking",cad,"2026-01-01");s.create_account(2,"Savings",cad,"2026-01-01");
+    TransferRequest manual{};manual.action=TransferAction::manual;manual.link="manual";manual.destination=2;manual.expected_sequence=s.transfer_sequence();manual.amount=Money(-1000,cad);manual.date="2026-01-01";s.apply_transfer("manual",manual);
+    s.select_account(1);const auto origin=s.current_ledger().front().identity;s.ingest("plain",source("Coffee","-2.00"),qif::DateOrder::dmy);s.accept_all("accept",true);
+    auto only=selection_request(s,LedgerSelectionAction::remove,{origin});OperationContext refused_context;bool refused=false;std::string message;
+    try{s.edit_transactions("linked-only",only,refused_context);}catch(const std::exception& error){refused=true;message=error.what();}
+    check(refused && message=="These transactions are linked to other accounts. They stay in this account." && s.balance().units()==-1200,"A manual transfer stays");
+    auto request=selection_request(s,LedgerSelectionAction::remove,{origin,{"plain",0}});OperationContext apply;s.edit_transactions("delete",request,apply);s.verify();
+    check(s.balance().units()==-1000,"Ordinary row is deleted from the manual transfer account");
+    s.select_account(2);check(s.balance().units()==1000 && !s.transfers().front().link.unresolved,"Generated side stays linked");
+    s.undo_transaction_edit("undo","delete");s.verify();s.select_account(1);check(s.balance().units()==-1200,"Undo restores the ordinary row beside the manual transfer");s.select_account(2);check(s.balance().units()==1000,"Undo leaves the generated side");
+    std::cout<<"Linked rows stay, ordinary deletion, cancellation, retry and reopened Undo passed\n";
 }
 // Cross the former ceiling with both accepted and new transactions in one command.
 void large_review_batch_tests(const std::filesystem::path& dir){

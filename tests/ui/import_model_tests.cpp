@@ -1270,14 +1270,28 @@ private slots:
         QTemporaryDir dir;const auto path=dir.path()+"/doc";
         {const Currency cad("CAD");auto seed=storage::document_gateway();seed->create(path.toStdString(),true,"test","Checking",cad,"2026-01-01");auto& store=seed->repository();store.create_account(2,"Savings",cad,"2026-01-01");store.ingest("out","!Type:Bank\nD01/01/2026\nT-10\nPPayment\n^\n",qif::DateOrder::dmy);
         const auto row=store.row({"out",0});app::TransferRequest r{};r.action=app::TransferAction::retarget;r.mode=1;r.link="link";r.kept="kept";r.expected_sequence=store.transfer_sequence();r.batch_revision=store.batches().front().revision;
-        r.left=transfers::AllocationFact{{1,{"out",0},row.draft->transaction.allocations().front().identity},Money(-1000,cad),row.draft->date,transfers::State::draft,true};r.generated=transfers::Endpoint{2,{"~transfer-link",0},"generated"};r.generated_currency=cad.definition_id();app::OperationContext c;store.assign_transfer_batch("assign",{r},c);store.accept_all("accept",true);}
+        r.left=transfers::AllocationFact{{1,{"out",0},row.draft->transaction.allocations().front().identity},Money(-1000,cad),row.draft->date,transfers::State::draft,true};r.generated=transfers::Endpoint{2,{"~transfer-link",0},"generated"};r.generated_currency=cad.definition_id();app::OperationContext c;store.assign_transfer_batch("assign",{r},c);store.ingest("spend","!Type:Bank\nD02/01/2026\nT-4.00\nPCoffee\n^\n",qif::DateOrder::dmy);store.accept_all("accept",true);}
         ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
-        run(m,"unlock",{{"path",path},{"password","test"}});run(m,"select",{{"mode","all"}});
-        auto* dialog=root->findChild<QObject*>("deleteSelectionDialog");auto* keep=root->findChild<QObject*>("keepDeletionCounterparts");auto* both=root->findChild<QObject*>("removeDeletionCounterparts");auto* confirm=root->findChild<QObject*>("confirmDeleteSelection");QVERIFY(dialog && keep && both && confirm);
-        const auto preview=[&]{QVERIFY(QMetaObject::invokeMethod(root,"removeSelected"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QTRY_VERIFY(dialog->property("visible").toBool());QVERIFY(keep->property("checked").toBool());QCOMPARE(m.state().value("deletionPreview").toMap().value("links").toInt(),1);};
-        preview();QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QCOMPARE(m.state().value("balance").toString(),QString("-10.00"));
-        preview();QVERIFY(QMetaObject::invokeMethod(confirm,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),QString("0.00"));run(m,"undo_edit");QCOMPARE(m.state().value("balance").toString(),QString("-10.00"));
-        run(m,"select_account",{{"id","1"}});run(m,"select",{{"mode","all"}});preview();both->setProperty("checked",true);QVERIFY(!keep->property("checked").toBool());QVERIFY(QMetaObject::invokeMethod(confirm,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),QString("0.00"));run(m,"undo_edit");QCOMPARE(m.state().value("balance").toString(),QString("-10.00"));run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("balance").toString(),QString("10.00"));run(m,"close");
+        run(m,"unlock",{{"path",path},{"password","test"}});QCOMPARE(m.state().value("balance").toString(),QString("-14.00"));
+        int payment=-1;for(int i=0;i<m.rowCount();++i)if(m.rowRecord(i).value("payee").toString()=="Payment")payment=i;QVERIFY(payment>=0);
+        run(m,"select",{{"row",payment}});
+        auto* dialog=root->findChild<QObject*>("deleteSelectionDialog");auto* confirm=root->findChild<QObject*>("confirmDeleteSelection");auto* count=root->findChild<QObject*>("deleteSelectionCount");auto* skipped=root->findChild<QObject*>("deleteSelectionSkipped");QVERIFY(dialog && confirm && count && skipped);
+        QVERIFY(!root->findChild<QObject*>("keepDeletionCounterparts"));QVERIFY(!root->findChild<QObject*>("removeDeletionCounterparts"));
+        QVERIFY(QMetaObject::invokeMethod(root,"removeSelected"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QTRY_COMPARE(root->property("workspaceFeedback").toString(),QString("These transactions are linked to other accounts. They stay in this account."));
+        QVERIFY(!dialog->property("visible").toBool());QCOMPARE(m.state().value("balance").toString(),QString("-14.00"));
+        run(m,"select",{{"mode","all"}});QVERIFY(QMetaObject::invokeMethod(root,"removeSelected"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        QCOMPARE(count->property("text").toString(),QString("Delete 1 transaction?"));
+        QCOMPARE(skipped->property("text").toString(),QString("1 linked transaction stays in this account."));
+        QCOMPARE(m.state().value("deletionPreview").toMap().value("links").toInt(),0);
+        QCOMPARE(m.state().value("deletionPreview").toMap().value("skipped").toInt(),1);
+        QCOMPARE(m.state().value("deletionPreview").toMap().value("removed").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(confirm,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("balance").toString(),QString("-10.00"));
+        QCOMPARE(root->property("workspaceFeedback").toString(),QString("Deleted 1 transaction. 1 linked transaction stays in this account."));
+        run(m,"undo_edit");QCOMPARE(m.state().value("balance").toString(),QString("-14.00"));
+        run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("balance").toString(),QString("10.00"));run(m,"close");
     }
     void selectionShortcuts() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());

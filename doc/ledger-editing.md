@@ -384,43 +384,32 @@ The implementation uses shared Qt Quick code on all platforms. macOS verificatio
 is recorded in [status](status.md); Windows/Linux behavior remains unverified.
 Read-only multiline displays retain Qt's existing navigation.
 
+## Delete a selection — owner Go 2026-11-13
+
+Delete removes the selected transactions that are not linked to another account.
+A linked transaction stays in this account, and the other account stays as it is.
+The link stays as it is. Delete does not break a link, change the other side's
+category, or delete the other side. That choice is later work.
+
+The confirmation says how many transactions will be deleted and how many linked
+transactions stay. It shows each affected account’s balance change in that
+account’s currency. It does not combine currencies. When every selected
+transaction is linked, nothing is deleted, and SpentIt says they stay in this
+account.
+
+A transaction whose link has already been released is an ordinary transaction
+for this command. A pending import-match proposal still has to be settled before
+deletion. Archived accounts and invalid or unavailable members reject the whole
+command. A stale selection is rejected. The ordinary rows and the Undo receipt
+commit together. Cancellation before that commit leaves every row in place.
+Undo restores the deleted ordinary transactions and does not change the links
+that were left in place.
+
 ## Linked selection deletion and large-operation performance — owner Go 2026-11-06
 
-Accepted: Delete offers **Delete selected only** (default), **Delete linked entries
-too**, and Cancel when selected rows participate in transfers. The preview shows affected
-accounts, numbers of deleted/changed transactions, and exact balance changes in
-each account's currency. It never combines currencies. Read-only planning and the
-final command both derive changes from retained rows and reject stale selection
-revisions.
-
-- Selected rows are removed in full. Keeping an independent counterpart preserves
-  its total and unrelated splits; only its former linked allocations become
-  Uncategorized with manual category ownership.
-- Deleting counterparts removes only allocations linked to the original selection.
-  Remaining splits retain their identities, amounts, text and provenance; the
-  effective total decreases by the exact removed amount. A counterpart with no
-  remaining allocations is deleted. This does not recursively follow unrelated
-  transfers on a surviving counterpart. Original imported totals remain retained.
-- Generated drafts are disposed of when their origin is deleted. Accepted
-  generated counterparts are kept by the default choice. Manual transfer postings
-  and generated entries use the same preview and group Undo. Previously unlinked
-  retained local postings can subsequently be deleted too.
-- A pending import-match proposal or attached legacy import relationship still
-  requires resolution before deletion; no implicit decision about source ownership
-  is made. Archived accounts and invalid/unavailable members reject the whole
-  command.
-- All affected rows, link transitions, receipts and the session Undo stack commit
-  in one transaction. Cancellation before the final commit gate rolls everything
-  back. The request records the counterpart policy, so retry with a different
-  choice is rejected. Undo restores counterpart splits, ownership, amounts and
-  relationships together and respects the existing later-mutation barrier.
-
-Implementation: deletion extends the existing transfer journal with an explicit,
-replayed unlink transition. Local postings in two accounts use separate monetary
-history entries inside the same transaction. Retained counterparts and earlier
-unlink stages have child receipts, reversed with their parent deletion. Existing
-history encodings for this deletion stay in release schema version 1. A
-different number is refused rather than decoded.
+The 2026-11-06 counterpart choices, **Delete selected only** and **Delete linked
+entries too**, are not offered. The paragraph above is the current command.
+Read-only planning and the final command both derive changes from retained rows.
 
 Bulk edits/deletion and Undo reuse bounded prepared statements for the operation.
 Committed-row writes maintain exact running balances initialized once per account;

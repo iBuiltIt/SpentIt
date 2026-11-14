@@ -51,12 +51,12 @@ terminology.
 Delete selected supports saved new transactions after reopening, including mixed
 new/accepted selections. It asks for confirmation after resolving unsaved editor
 changes. Deleting does not accept a new transaction. One atomic operation removes
-the selected rows from the ledger and balance; other imported rows remain. Deleted
-new rows are skipped by rules and acceptance, and cannot silently consume a later
-bank import. The session Undo command restores the whole selection and balance.
-New linked transfers must be unlinked first; the whole selection is refused if
-one such transaction is present. Accepted-only selections retain the existing
-bulk deletion preview and persistent group history/Undo.
+the selected rows that are not linked to another account. A linked transaction
+stays, including a new linked transfer, and the other account stays as it is.
+Other imported rows remain. Deleted new rows are skipped by rules and acceptance,
+and cannot silently consume a later bank import. The session Undo command restores
+the transactions Delete removed, and their balance. Accepted-only selections retain
+the existing bulk deletion preview and persistent group history/Undo.
 
 New-row deletion derives from the existing encrypted selection journal and its
 Undo records. These fixes keep formats 48/47 and work with existing manual entries

@@ -441,6 +441,10 @@ SpentIt created this side of the transfer from the other transaction. Change or 
 
 These two amounts are too far apart in date, size, or account for the suggested match. The link was not made. Select both transactions and choose Link if they are the transfer you mean.
 
+## These transactions are linked to other accounts. They stay in this account.
+
+Delete does not remove a transaction that is linked to another account. The link stays as it is. Select the transactions that are not linked, then choose Delete again.
+
 ## This account uses another currency. Select both transactions and choose Link.
 
 The other account uses a different currency. SpentIt will not convert the amount. If you still want them connected, select both transactions and choose Link. Otherwise leave them unlinked.
