@@ -1,5 +1,19 @@
 // Sources already provide durable import identity. No new format or per-row tag
 // is needed; rowid supplies retained-source order, never transaction ownership.
+// Import removal collects transfer versions. A link Undo that already restored
+// one of those versions would otherwise fail the next check. Drop only the
+// restoration rows that check rejects, and leave a row whose version remains.
+namespace {
+void release_collected_link_restorations(sqlite3* db) {
+    exec(db,R"SQL(
+DELETE FROM review_link_restorations WHERE (identity,restored) IN(
+ SELECT r.identity,r.restored FROM review_link_restorations r JOIN review_undos u ON u.id=r.undo_id
+ WHERE NOT EXISTS(SELECT 1 FROM transfer_versions v WHERE v.identity=r.identity AND v.sequence=r.restored)
+ OR (NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=u.answer AND h.identity=r.identity)
+     AND NOT EXISTS(SELECT 1 FROM action_headers a JOIN transfer_versions p ON p.identity=r.identity AND p.sequence=r.prior JOIN transfer_versions v ON v.identity=r.identity AND v.sequence=r.restored WHERE a.id=u.answer AND a.state=2 AND p.payload=v.payload AND r.prior<r.consumed AND r.consumed<r.restored)))
+)SQL");
+}
+}
 std::vector<std::string> ImportStore::import_undo_holders(std::string_view source) const {
     std::vector<std::string> holders;
     Statement retained(impl_->db,"SELECT 1 FROM entry_revisions e JOIN batches b ON b.id=e.batch WHERE b.source_id=? LIMIT 1");retained.text(1,source);
@@ -186,6 +200,7 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
             Statement group(impl_->db,"UPDATE import_groups SET state=3 WHERE id=? AND state=1");group.text(1,source);group.done();
             Statement detach(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE source_id=?)");detach.text(1,source);detach.done();
             Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(?,?,?,?,?,?)");receipt.text(1,operation);receipt.integer(2,owner);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.text(5,source);receipt.integer(6,expected);receipt.done();
+            release_collected_link_restorations(impl_->db);
             if(!collecting){finish([&]{verify();transaction->commit();},true);}return {std::string(operation),owner,review.transactions,review.failures};
         }
     }
@@ -285,6 +300,7 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
     // Full verification is appropriate for destructive collection, and runs
     // before durability so any broken retained relationship rolls back intact.
     exec(impl_->db,"DELETE FROM review_merges WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_merges.batch AND r.ordinal=review_merges.ordinal) OR NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_merges.target_batch AND r.ordinal=review_merges.target_ordinal); DELETE FROM review_choices WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_choices.batch AND r.ordinal=review_choices.ordinal); DELETE FROM review_sources WHERE NOT EXISTS(SELECT 1 FROM source_occurrences o WHERE o.batch=source_batch AND o.ordinal=source_ordinal); DELETE FROM review_undo_members WHERE original_child IN(SELECT child FROM review_members m WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=m.batch AND r.ordinal=m.ordinal)); DELETE FROM review_members WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_members.batch AND r.ordinal=review_members.ordinal); DELETE FROM review_link_restorations WHERE prior=0 AND undo_id IN(SELECT u.id FROM review_undos u JOIN review_link_history h ON h.answer=u.answer WHERE NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=h.operation)); DELETE FROM review_link_history WHERE NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=review_link_history.operation); DELETE FROM review_stack WHERE NOT EXISTS(SELECT 1 FROM action_headers h WHERE h.id=review_stack.answer AND h.state=1)");
+    release_collected_link_restorations(impl_->db);
     if(!collecting){finish([&]{verify();transaction->commit();},true);}return {std::string(operation),owner,review.transactions,review.failures};
 }
 
@@ -352,5 +368,6 @@ app::RollbackReceipt ImportStore::undo_linked_import(std::string_view operation,
     exec(impl_->db,"DELETE FROM review_stack WHERE NOT EXISTS(SELECT 1 FROM action_headers h WHERE h.id=review_stack.answer AND h.state=1)");
     Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(?,?,?,?,?,?)");receipt.text(1,key);receipt.integer(2,selected);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.text(5,source);receipt.integer(6,review.token);receipt.done();
     impl_->selected_account=selected;impl_->reviews.clear();impl_->reviewed_groups.clear();impl_->reviewed_sources.clear();impl_->read_rows=VerificationRows{};impl_->read_stamps.clear();impl_->reviewed_transfers.reset();impl_->reviewed_transfer_stamp.clear();impl_->review_changes=-1;
+    release_collected_link_restorations(impl_->db);
     finish([&]{verify();transaction.commit();},true);return {std::string(operation),selected,review.transactions,review.failures};
 }

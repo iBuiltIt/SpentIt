@@ -608,6 +608,59 @@ void connected_undo(const std::filesystem::path& directory) {
         store.verify();
     }
 }
+void link_then_undo_import(const std::filesystem::path& directory) {
+    const Currency cad("CAD");
+    auto round=[&](ImportStore& store,const char* payment,const char* receipt,const char* coffee,const char* join){
+        store.select_account(1);
+        store.ingest(payment,std::string("!Type:Bank\nD01/01/2026\nT-100.00\nPPayment\nL[Visa]\n^\n"),qif::DateOrder::dmy);
+        store.select_account(2);
+        store.ingest(receipt,std::string("!Type:Bank\nD03/01/2026\nT100.00\nPReceipt\nL[Checking]\n^\n"),qif::DateOrder::dmy);
+        store.select_account(1);
+        store.ingest(coffee,"D05/01/2026\nT-4.00\nPCoffee\n^\n",qif::DateOrder::dmy);
+        const auto sheet=store.review_sheet();
+        const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;});
+        check(question!=sheet.questions.end(),"The payment and the receipt are one link question");
+        ReviewAnswer link;link.question=question->key;link.generation=sheet.generation;link.action=ReviewAction::link;link.selected={{payment,0},{receipt,0}};
+        store.answer_review(join,link);
+        const auto page=history_page(store,1);
+        const auto* older=find_action(page,payment);
+        const auto* later=find_action(page,coffee);
+        check(older && older->undoable,"The earlier import keeps Undo beside a later import");
+        check(later && later->undoable,"The later import keeps its own Undo");
+        const auto preview=store.preview_connected_undo(payment,store.action_token());
+        check(preview.refusal.empty(),"Undo of the earlier import can finish");
+        bool includesLink=false,includesLater=false;
+        for(const auto& line:preview.lines){if(line.id==join)includesLink=true;if(line.id==coffee)includesLater=true;}
+        check(includesLink && !includesLater,"The link is undone with the import, and the other import stays");
+        store.undo_connected(std::string("undo-")+payment,preview);
+        check(store.action_head() && store.action_head()->id==coffee,"The unrelated import remains the newest action");
+        store.verify();
+    };
+    auto store=ImportStore::create(directory/"link-undo.db","synthetic","Checking",cad,"2026-01-01");
+    store.opening(0,"2026-01-01",Money(0,cad));
+    store.create_account(2,"Visa",cad,"2026-01-01");
+    store.select_account(2);store.opening(0,"2026-01-01",Money(0,cad));
+    round(store,"out","in","later","join");
+    undo(store,"undoLater","later");
+    store.select_account(1);
+    store.ingest("out2","!Type:Bank\nD01/01/2026\nT-100.00\nPPayment\nL[Visa]\n^\n",qif::DateOrder::dmy);
+    store.select_account(2);
+    store.ingest("in2","!Type:Bank\nD03/01/2026\nT100.00\nPReceipt\nL[Checking]\n^\n",qif::DateOrder::dmy);
+    const auto again=store.review_sheet();
+    const auto second=std::find_if(again.questions.begin(),again.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;});
+    check(second!=again.questions.end(),"The reimported payment is a link question");
+    ReviewAnswer relink;relink.question=second->key;relink.generation=again.generation;relink.action=ReviewAction::link;relink.selected={{"out2",0},{"in2",0}};
+    store.answer_review("rejoin",relink);
+    undo(store,"undoRejoin","rejoin");
+    const auto afterLink=store.preview_connected_undo("out2",store.action_token());
+    check(afterLink.refusal.empty(),"Undo of the import can finish after the link was undone");
+    store.undo_connected("undoOut2",afterLink);
+    store.verify();
+    const auto receipt=store.preview_connected_undo("in2",store.action_token());
+    check(receipt.refusal.empty(),"Undo of the receipt import can finish after its link was restored");
+    store.undo_connected("undoIn2",receipt);
+    store.verify();
+}
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;
     for(const auto* sql:{"UPDATE review_undo_members SET consumed=0", "UPDATE review_undo_members SET original_child='missing'"}) {
@@ -624,7 +677,7 @@ int main(int argc,char** argv){
     auto path=(std::filesystem::temp_directory_path()/"spentit-action-repository-XXXXXX").string();
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
-    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}corrupt_lineage(path);held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
+    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}
