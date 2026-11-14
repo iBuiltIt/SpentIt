@@ -86,6 +86,12 @@ class RuleUiTests : public QObject {
         for(auto* child:item->childItems())if(showsText(child,text))return true;
         return false;
     }
+    static QString collectedText(QObject* item,int depth=0){
+        if(!item || depth>8)return {};
+        auto seen=item->property("text").toString();
+        for(auto* child:item->children())seen+=collectedText(child,depth+1);
+        return seen;
+    }
     static bool sameEdge(QQuickItem* a,QQuickItem* b){return a && b && a->isVisible() && b->isVisible() && qAbs(a->mapToScene(QPointF()).x()-b->mapToScene(QPointF()).x())<1.0;}
     static void writeQif(const QString& path,const QByteArray& bytes){QFile file(path);if(!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size())qFatal("QIF fixture unavailable");}
     static QByteArray wise(){return "!Type:Bank\nD01/01/2026\nT-29.31\nPTfl Travel UK\nEWise Charges for: card\n$-0.14\nECARD-123\n$-29.17\n^\n";}
@@ -313,14 +319,14 @@ private slots:
         auto accounts=s.model.state().value("accounts").toList();int firstIndex=-1,secondIndex=-1;
         for(int i=0;i<accounts.size();++i){if(accounts[i].toMap().value("id").toString()==first)firstIndex=i;else secondIndex=i;}
         QVERIFY(firstIndex>=0 && secondIndex>=0);
-        QVERIFY(choose(s.root,"rulesAccount",firstIndex));wait(s.model);
+        QVERIFY(choose(s.root,"rulesAccount",firstIndex+1));wait(s.model);
         QCOMPARE(page(s.root),"rules");QCOMPARE(s.root->property("ruleIndex").toInt(),0);
         QVERIFY(!s.root->property("currentRulePreview").toBool());QVERIFY(s.root->property("rulesDirty").toBool());
         QCOMPARE(object(s.root,"rulePayeeTemplate")->property("text").toString(),"Changed shop");
         QVERIFY(object(s.root,"openRule_1")->property("text").toString().contains("Unfinished"));
         QVERIFY(click(s.root,"previewThisRule"));wait(s.model);
         QCOMPARE(s.model.state().value("rulePreview").toMap().value("changed").toInt(),0);
-        QVERIFY(choose(s.root,"rulesAccount",secondIndex));wait(s.model);
+        QVERIFY(choose(s.root,"rulesAccount",secondIndex+1));wait(s.model);
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
         QCOMPARE(s.model.state().value("rules").toList().size(),1);
         QVERIFY(s.root->property("rulesDirty").toBool());
@@ -784,6 +790,66 @@ private slots:
         run(s.model,"inspect",{{"batch",oldBatch},{"ordinal",0}});QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
         QVERIFY(QMetaObject::invokeMethod(s.root,"undoEdit"));QVERIFY(object(s.root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(s.root,"confirmActionUndo"));wait(s.model);QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride old");
         run(s.model,"inspect",{{"batch",newBatch},{"ordinal",0}});QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride new");
+    }
+    void allAccountsIsTheDefaultApplyScope(){
+        Session s;createDocument(s,"First account");
+        const auto first=s.model.state().value("accountId").toString();
+        writeQif(s.path("first.qif"),"!Type:Bank\nD01/01/2026\nT-1.00\nPRide first\n^\n");
+        run(s.model,"import",{{"path",s.path("first.qif")},{"profile","DMY"}});
+        const auto firstBatch=selected(s.model).value("batch").toString();
+        run(s.model,"create_account",{{"id","2"},{"name","Second account"},{"currency","CAD"},{"date","2026-01-01"}});
+        const auto second=s.model.state().value("accountId").toString();
+        QVERIFY(second!=first);
+        writeQif(s.path("second.qif"),"!Type:Bank\nD02/01/2026\nT-2.00\nPRide second\n^\n");
+        run(s.model,"import",{{"path",s.path("second.qif")},{"profile","DMY"}});
+        const auto secondBatch=selected(s.model).value("batch").toString();
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QCOMPARE(s.model.state().value("accountId").toString(),second);
+        QCOMPARE(s.root->property("ruleApplyAllAccounts").toBool(),true);
+        QCOMPARE(object(s.root,"rulesAccount")->property("currentIndex").toInt(),0);
+        QCOMPARE(object(s.root,"rulesAccount")->property("currentText").toString(),"All accounts");
+        transactionRule(s.root,"Ride","^Ride","Travel");
+        QVERIFY(click(s.root,"previewThisRule"));wait(s.model);
+        QCOMPARE(summary(s.model),"2 transactions match. 0 already categorized. 0 handled by earlier rules. 2 eligible; 2 will change.");
+        QVERIFY(object(s.root,"rulePreviewStatus")->property("text").toString().contains("All accounts"));
+        QCOMPARE(object(s.root,"ruleMatchAccount_0")->property("text").toString(),"First account");
+        QCOMPARE(object(s.root,"ruleMatchAccount_1")->property("text").toString(),"Second account");
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QCOMPARE(s.model.state().value("accountId").toString(),second);
+        run(s.model,"inspect",{{"batch",secondBatch},{"ordinal",0}});
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
+        run(s.model,"select_account",{{"id",first}});
+        run(s.model,"inspect",{{"batch",firstBatch},{"ordinal",0}});
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
+        QVERIFY(QMetaObject::invokeMethod(s.root,"undoEdit"));
+        QVERIFY(object(s.root,"actionUndoConfirm")->property("visible").toBool());
+        const auto undoText=collectedText(object(s.root,"actionUndoConfirm"));
+        QVERIFY(undoText.contains("First account"));
+        QVERIFY(undoText.contains("Second account"));
+        QVERIFY(click(s.root,"confirmActionUndo"));wait(s.model);
+        run(s.model,"inspect",{{"batch",firstBatch},{"ordinal",0}});
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride first");
+        run(s.model,"select_account",{{"id",second}});
+        run(s.model,"inspect",{{"batch",secondBatch},{"ordinal",0}});
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride second");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QCOMPARE(s.root->property("ruleApplyAllAccounts").toBool(),true);
+        QVERIFY(choose(s.root,"rulesAccount",2));wait(s.model);
+        QCOMPARE(s.model.state().value("accountId").toString(),second);
+        QVERIFY(click(s.root,"openRule_0"));
+        QVERIFY(click(s.root,"previewThisRule"));wait(s.model);
+        QCOMPARE(summary(s.model),"1 transactions match. 0 already categorized. 0 handled by earlier rules. 1 eligible; 1 will change.");
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        run(s.model,"inspect",{{"batch",secondBatch},{"ordinal",0}});
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Travel");
+        run(s.model,"select_account",{{"id",first}});
+        run(s.model,"inspect",{{"batch",firstBatch},{"ordinal",0}});
+        QCOMPARE(draftOf(s.model).value("payee").toString(),"Ride first");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        const auto before=s.model.state().value("accountId").toString();
+        QVERIFY(choose(s.root,"rulesAccount",0));
+        QCOMPARE(s.root->property("ruleApplyAllAccounts").toBool(),true);
+        QCOMPARE(s.model.state().value("accountId").toString(),before);
     }
     void appliedSplitAndTransactionTargets() {
         Session s;createDocument(s,"Applied targets");

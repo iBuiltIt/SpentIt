@@ -36,6 +36,7 @@ struct AccountRuleRequest {
     std::int64_t account=0, generation=0, ruleset_revision=0, catalog_revision=0;
     bool new_only=false, replace_manual=false;
     std::string rule; // Empty selects all enabled rules.
+    bool all_accounts=false; // Active accounts. The account field is unused.
 };
 struct RulePreviewRequest {
     std::string batch;
@@ -46,6 +47,7 @@ struct RulePreviewRequest {
     bool matches_only = false; // Compact UI results; no retained before/after snapshots.
     bool account_scope = false, new_only = false, changed_only = false;
     std::string saved_rule{};
+    bool all_accounts = false; // Active accounts. Ignores the selected account.
 };
 struct RulePreviewRecord {
     imports::Occurrence identity;
@@ -57,6 +59,7 @@ struct RulePreviewMatch {
     imports::Occurrence identity;
     std::string date, payee;
     Money amount;
+    std::string account;
 };
 struct RulePreviewResult {
     std::string batch;

@@ -931,6 +931,7 @@ ApplicationWindow {
             let entries=navigation.slice(0,navigationIndex+1)
             entries.push(page);navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage=page
             if(page==="ledger")restoreAccountViewport()
+            if(page==="rules"){ruleApplyAllAccounts=true;rulePreviewKey=""}
         })
     }
     function chooseAccount(id) {
@@ -1059,7 +1060,7 @@ ApplicationWindow {
     property bool ruleApplyAfterPreview: false
     property string ledgerRuleDraftId: ""
     property bool returnAfterRuleApply: false
-    function rulesPreviewKey() {return JSON.stringify([s.accountId,rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,false])}
+    function rulesPreviewKey() {return JSON.stringify([ruleApplyAllAccounts?"*":s.accountId,rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,false])}
     property int ruleEditGeneration: 0
     property var ruleBaseline: []
     property var ruleMovedIds: ({})
@@ -1557,7 +1558,10 @@ ApplicationWindow {
         return shape.complete && body.startsWith("^") && shape.endAnchor && !shape.alternative
     }
     property bool switchingRulesAccount: false
+    property bool ruleApplyAllAccounts: true
+    readonly property var rulesAccountChoices: {const source=s.accounts||[];const rows=[{id:"*",name:"All accounts"}];for(let i=0;i<source.length;++i)rows.push(source[i]);return rows}
     readonly property string rulesAccountName: ((s.accounts||[]).find(a=>a.id===s.accountId)||{}).name||"Choose account"
+    readonly property string rulesApplyScopeName: ruleApplyAllAccounts?"All accounts":rulesAccountName
     readonly property bool rulePendingRemoval: {let generation=ruleEditGeneration;return ruleIndex>=0 && ruleIndex<ruleModel.count && !!ruleModel.get(ruleIndex).pendingDelete}
     readonly property bool ruleCanRun: {let generation=ruleEditGeneration;return ruleIndex>=0 && ruleIndex<ruleModel.count && !rulePendingRemoval && !!ruleModel.get(ruleIndex).ruleOn}
     function ruleMatchesSearch(row) {if(!row)return false;return (row.label+" "+row.expression+" "+actionSummary(row)).toLowerCase().indexOf(ruleSearch.text.toLowerCase())>=0}
@@ -1584,6 +1588,7 @@ ApplicationWindow {
     }
     function showRulesPage() {
         if(currentPage==="rules") return
+        ruleApplyAllAccounts=true;rulePreviewKey=""
         rememberAccountViewport()
         let entries=navigation.slice(0,navigationIndex+1); entries.push("rules"); navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts; navigationIndex=entries.length-1; currentPage="rules"
     }
@@ -1723,7 +1728,7 @@ ApplicationWindow {
     }
     function previewAccountRules() {
         if(!acceptRuleCategory())return
-        let args={accountScope:true,newOnly:ruleTransactionScope.currentIndex===1,replaceManual:false,unsaved:rulePreviewSingle?ruleChanged(ruleIndex):rulesDirty,singleRule:rulePreviewSingle}
+        let args={accountScope:true,allAccounts:ruleApplyAllAccounts,newOnly:ruleTransactionScope.currentIndex===1,replaceManual:false,unsaved:rulePreviewSingle?ruleChanged(ruleIndex):rulesDirty,singleRule:rulePreviewSingle}
         if(rulePreviewSingle){args.rule=ruleModel.get(ruleIndex).id;if(ruleChanged(ruleIndex))args.rules=[ruleImage(ruleModel.get(ruleIndex))]}
         else if(rulesDirty)args.rules=rulesImage()
         rulePendingPreviewKey=rulesPreviewKey();rulePreviewKey=""
@@ -1772,11 +1777,11 @@ ApplicationWindow {
             image.splice(position,0,ruleImage(row))
         }
         ruleSavingAll=false;ruleSavingId=row.id
-        workflow.command("rules_save",{rules:image,apply:apply===true,rule:row.id,newOnly:ruleTransactionScope.currentIndex===1})
+        workflow.command("rules_save",{rules:image,apply:apply===true,rule:row.id,newOnly:ruleTransactionScope.currentIndex===1,allAccounts:ruleApplyAllAccounts})
         return true
     }
     function previewRules() {rulePreviewSingle=false;previewAccountRules()}
-    function applyReady() {return !workflow.busy && !!s.accountId && ruleCanRun}
+    function applyReady() {return !workflow.busy && ruleCanRun && (ruleApplyAllAccounts?(s.accounts||[]).length>0:!!s.accountId)}
     function applyRules() {
         if(!applyReady() || !acceptRuleCategory())return
         rulePreviewSingle=true
@@ -4149,7 +4154,7 @@ ApplicationWindow {
                             GridLayout {
                                 Layout.fillWidth:true;columns:rulesPage.availableWidth>=760?4:2
                                 Label {text:"Account"}
-                                UsableComboBox {objectName:"rulesAccount";Layout.fillWidth:true;Layout.minimumWidth:160;model:s.accounts||[];textRole:"name";currentIndex:(s.accounts||[]).findIndex(a=>a.id===s.accountId);onActivated:selectRulesAccount(currentIndex)}
+                                UsableComboBox {objectName:"rulesAccount";Layout.fillWidth:true;Layout.minimumWidth:160;model:rulesAccountChoices;textRole:"name";Accessible.name:"Account";currentIndex:ruleApplyAllAccounts?0:Math.max(0,rulesAccountChoices.findIndex(a=>a.id===s.accountId));onActivated:function(index){rulePreviewKey="";if(index<=0){ruleApplyAllAccounts=true;return}ruleApplyAllAccounts=false;selectRulesAccount(index-1)}}
                                 Label {visible:!!s.accountId;text:"Transactions"}
                                 UsableComboBox {visible:!!s.accountId;id:ruleTransactionScope;objectName:"ruleTransactionScope";model:["All transactions","New transactions only"];currentIndex:0;Layout.preferredWidth:220}
                             }
@@ -4160,11 +4165,12 @@ ApplicationWindow {
                                 Button {objectName:"applyRules";text:{let generation=ruleEditGeneration;return !ruleChanged(ruleIndex)?"Apply rule":(navigationIndex>0 && ledgerRuleDraftId && ruleModel.get(ruleIndex).id===ledgerRuleDraftId?"Save, apply and back":"Save and apply rule")} enabled:applyReady();onClicked:applyRules()}
                             }
                         }
-                        Label {objectName:"rulePreviewStatus";visible:currentRulePreview;text:'Preview · '+(ruleLabel.text||"Unnamed rule")+' · '+rulesAccountName+' · '+(ruleTransactionScope.currentIndex===1?"New transactions only":"All transactions");font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
+                        Label {objectName:"rulePreviewStatus";visible:currentRulePreview;text:'Preview · '+(ruleLabel.text||"Unnamed rule")+' · '+rulesApplyScopeName+' · '+(ruleTransactionScope.currentIndex===1?"New transactions only":"All transactions");font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                         Label {objectName:"rulePreviewBody";visible:currentRulePreview;text:(s.rulePreview||{}).summaryText||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                         RowLayout {
                             visible:currentRulePreview && ((s.rulePreview||{}).records||[]).length>0;Layout.fillWidth:true;Layout.rightMargin:18
                             Label {text:"Date";font.bold:true;Layout.preferredWidth:110}
+                            Label {text:"Account";font.bold:true;Layout.preferredWidth:140}
                             Label {text:"Imported payee";font.bold:true;Layout.fillWidth:true}
                             Label {text:"Amount";font.bold:true;Layout.preferredWidth:160;horizontalAlignment:Text.AlignRight}
                         }
@@ -4178,6 +4184,7 @@ ApplicationWindow {
                                 required property int index
                                 width:ruleMatches.width-18;height:36;spacing:8
                                 Label {text:modelData.date;textFormat:Text.PlainText;Layout.preferredWidth:110;elide:Text.ElideRight}
+                                Label {objectName:"ruleMatchAccount_"+index;text:modelData.account||"";textFormat:Text.PlainText;Layout.preferredWidth:140;Layout.minimumWidth:0;elide:Text.ElideRight}
                                 Label {objectName:"ruleMatchPayee_"+index;text:String(modelData.payee||"").replace(/[\r\n\t]+/g," ");textFormat:Text.PlainText;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
                                 Label {text:modelData.amount;textFormat:Text.PlainText;Layout.preferredWidth:160;horizontalAlignment:Text.AlignRight;elide:Text.ElideRight}
                             }

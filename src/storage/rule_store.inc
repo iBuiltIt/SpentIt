@@ -260,11 +260,12 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
     ScopedStatements read_plans(impl_->db);
     context.checkpoint("Loading rules");
     if(request.single_rule && request.saved_rule.empty() && (!request.editor || request.editor->size()!=1))fail(SQLITE_CONSTRAINT,"Choose one rule to preview");
-    const auto scope=(request.single_rule || request.account_scope)?PreparedScope{}:pending_scope(*this,request.batch);
+    const bool ledger=request.single_rule || request.account_scope || request.all_accounts;
+    const auto scope=ledger?PreparedScope{}:pending_scope(*this,request.batch);
     if(scope.present && request.batch_revision!=-1 && request.batch_revision!=scope.batch_revision) fail(SQLITE_CONSTRAINT,refresh_rules);
     app::RulePreviewResult result;result.batch=scope.batch;result.batch_revision=scope.batch_revision;result.catalog_revision=catalog_sequence(impl_->db);result.replace_manual=request.replace_manual;result.unsaved_rules=request.editor.has_value();result.ruleset_revision=request.editor?-1:ruleset_revision(impl_->db);
     if(!impl_->composing_rule_save && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
-    result.account_request={account().identity,review_generation(impl_->db),ruleset_revision(impl_->db),result.catalog_revision,request.new_only,request.replace_manual,request.saved_rule};
+    result.account_request={request.all_accounts?0:account().identity,review_generation(impl_->db),ruleset_revision(impl_->db),result.catalog_revision,request.new_only,request.replace_manual,request.saved_rule,request.all_accounts};
     auto definitions=rules_at(impl_->db,ruleset_revision(impl_->db));
     std::string selected=request.saved_rule;
     if(request.editor) {
@@ -279,10 +280,6 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
     rules::RuleSet ruleset(definitions,selected);
     const auto catalog=category_catalog();
     std::map<imports::Occurrence,std::vector<std::string>> protected_allocations;
-    if(request.account_scope)for(const auto& transfer:all_transfers())if(!transfer.link.unresolved)
-        for(const auto* side:{&transfer.link.origin,&transfer.link.destination})
-            if(side->state!=transfers::State::removed && side->endpoint.account==account().identity)
-                protected_allocations[side->endpoint.entry].push_back(side->endpoint.allocation);
     std::size_t result_bytes=0;
     auto evaluate=[&](app::RowView viewed) {
         if(viewed.excluded_by_clear)return;
@@ -303,20 +300,25 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
         auto diffs=app::rule_field_diffs(*viewed.draft,proposal);
         if(!diffs.empty())++result.changed;
         if(!request.changed_only && proposal.match.eligible) {
-            const auto bytes=512+viewed.identity.batch.size()+viewed.draft->date.size()+viewed.source.payee.size();
-            if(bytes>match_preview_budget-result_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,"This preview has too many matching details to display. Preview fewer rules or narrow their patterns.");
+            const auto bytes=512+viewed.identity.batch.size()+viewed.draft->date.size()+viewed.source.payee.size()+account().name.size();
+            if(bytes>match_preview_budget-result_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,"This preview has too many matching details to display. Choose one account or narrow the pattern.");
             result_bytes+=bytes;
-            result.matches.push_back({viewed.identity,viewed.draft->date,viewed.source.payee,viewed.draft->transaction.effective_total()});
+            result.matches.push_back({viewed.identity,viewed.draft->date,viewed.source.payee,viewed.draft->transaction.effective_total(),account().name});
         }
         if(!request.matches_only && (!request.single_rule || proposal.match.eligible) && (!request.changed_only || !diffs.empty())) {
             auto bytes=rule_snapshot_bytes(*viewed.draft)+rule_snapshot_bytes(proposal.after);
             for(const auto& diff:diffs)bytes+=512+diff.before_text.size()+diff.after_text.size();
-            if(bytes>(request.changed_only?rule_apply_budget:match_preview_budget)-result_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,request.changed_only?"These rule changes exceed the Apply memory budget. Narrow the rules and preview again.":"Detailed rule preview exceeds its memory budget. Use a compact matching preview.");
+            if(bytes>(request.changed_only?rule_apply_budget:match_preview_budget)-result_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,request.changed_only?"These rule changes exceed the Apply memory budget. Choose one account or narrow the rules, then preview again.":"Detailed rule preview exceeds its memory budget. Use a compact matching preview.");
             result_bytes+=bytes;
             result.records.push_back({viewed.identity,std::move(*viewed.draft),std::move(proposal),std::move(diffs)});
         }
     };
-    if(request.single_rule || request.account_scope) {
+    auto scan_selected=[&]{
+        protected_allocations.clear();
+        if(request.account_scope || request.all_accounts)for(const auto& transfer:all_transfers())if(!transfer.link.unresolved)
+            for(const auto* side:{&transfer.link.origin,&transfer.link.destination})
+                if(side->state!=transfers::State::removed && side->endpoint.account==account().identity)
+                    protected_allocations[side->endpoint.entry].push_back(side->endpoint.allocation);
         // Same membership as current_ledger(), without materializing all drafts
         // or generated counterpart rows (which have no imported source).
         Statement accepted(impl_->db,"SELECT h.batch,h.ordinal,h.revision FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1 ORDER BY e.date,h.batch,h.ordinal");
@@ -327,6 +329,11 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
         }
         Statement pending(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision IN(0,1) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
         while(pending.row()){context.checkpoint();evaluate(load_row({pending.bytes(0),static_cast<std::size_t>(pending.integer(1))},false));}
+    };
+    if(ledger) {
+        struct Selection { Impl& state; std::int64_t selected; ~Selection(){state.selected_account=selected;} } selection{*impl_,impl_->selected_account};
+        if(request.all_accounts){for(const auto& acct:accounts()){impl_->selected_account=acct.identity;scan_selected();}}
+        else scan_selected();
     } else {
         for(std::size_t ordinal=0;ordinal<scope.count;++ordinal) {
             context.checkpoint();
@@ -334,7 +341,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
             if(viewed.draft && !viewed.matched_generated && !transaction_accepted(id))evaluate(std::move(viewed));
         }
     }
-    std::sort(result.matches.begin(),result.matches.end(),[](const auto& a,const auto& b){return std::tie(a.date,a.identity.batch,a.identity.ordinal)<std::tie(b.date,b.identity.batch,b.identity.ordinal);});
+    std::sort(result.matches.begin(),result.matches.end(),[](const auto& a,const auto& b){return std::tie(a.account,a.date,a.identity.batch,a.identity.ordinal)<std::tie(b.account,b.date,b.identity.batch,b.identity.ordinal);});
     context.checkpoint();
     return result;
 }
@@ -374,7 +381,7 @@ app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view operatio
             if(!diffs.empty()) {
                 auto bytes=rule_snapshot_bytes(*viewed.draft)+rule_snapshot_bytes(proposals.front().after);
                 for(const auto& diff:diffs)bytes+=512+diff.before_text.size()+diff.after_text.size();
-                if(bytes>rule_apply_budget-prepared_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,"These rule changes exceed the Apply memory budget. Narrow the rules and preview again.");
+                if(bytes>rule_apply_budget-prepared_bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,"These rule changes exceed the Apply memory budget. Choose one account or narrow the rules, then preview again.");
                 prepared_bytes+=bytes;
                 prepared.push_back({id,std::move(*viewed.draft),viewed.decision,std::move(proposals.front()),std::move(diffs)});
             }

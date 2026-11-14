@@ -1,7 +1,7 @@
 # 004 — Rules and explanations
 
 Status: **active**
-Last updated: 2026-11-12
+Last updated: 2026-11-14
 
 Rules assign an explicit ordinary category. They do not create transfers,
 change amounts, dates, or split structure, or force a category that is already
@@ -23,15 +23,19 @@ file has no rule commands.
   Restore imported values returns eligible text to source ownership when it
   matches the original. A memo written by Set memo is manual.
 - Disabled or deleted rules do not reverse earlier assignments.
-- Scope is **All transactions in this account** (default) or **New transactions
-  only**. Preview is optional and shows one row per eligible match. Apply and
-  Save and apply use that scope. Save and apply saves the selected definition
-  and applies it in one transaction. Undo restores the transactions and keeps
-  the saved rule. Rules has no Undo button. Cmd+Z, and Ctrl+Z on Windows
-  and Linux, undoes that application when it is the newest saved action.
-- One Apply is one Undo action, including mixed new and accepted rows.
-  Unchanged rows add no Undo members. Rules that run during an import stay
-  inside that Import action.
+- Account scope is **All accounts** (default) or one account. All accounts
+  means every active account. Archived accounts stay unchanged. Inside those
+  accounts, transaction scope is **All transactions** (default) or **New
+  transactions only**. Preview is optional and shows one row per eligible
+  match, naming that row’s account. Apply, Save and apply, and Save, apply
+  and back use both choices. One pass is one commit. A failure writes nothing.
+  Save and apply saves the selected definition and applies it together. Undo
+  restores the transactions and keeps the saved rule. Rules has no Undo
+  button. Cmd+Z, and Ctrl+Z on Windows and Linux, undoes that whole pass when
+  it is the newest saved action.
+- One Apply is one Undo action, including new and accepted rows in every
+  chosen account. Unchanged rows add no Undo members. Rules that run during
+  an import stay inside that Import action.
 - Accepted-account reapply of a saved rule still has its own preview limit.
   Account and pending previews do not use the old 4,096-row ceiling.
 - A live transfer category is left unchanged and named as a skip. A payee
@@ -53,15 +57,19 @@ every outstanding edit and does not apply transactions.
 Delete rule… is a named confirmation. It removes that definition and does not
 reverse transactions. Afterward, select the existing new draft first.
 
-The Apply section has its own account picker and the scope control. Switching
-accounts stays in Rules, keeps drafts, and clears the preview.
+The Apply section has the account box and the Transactions control. It opens
+on All accounts. Choosing All accounts does not change the ledger account.
+Choosing one account selects it, stays in Rules, keeps drafts, and clears the
+preview. Each visit to Rules opens on All accounts. A narrowed choice stays
+until it is changed or Rules is left.
 
 The ledger **Create rule…** command needs exactly one eligible selection. It
 does not open the transaction editor. An open transaction does not list which
 rule assigned its payee, memo, or category. **Edit rule…** still opens one.
 Several targets use the existing chooser.
 That new draft’s button reads **Save, apply and back**. A successful click
-saves the rule, applies it, and returns through **Back** to the page that was
+saves the rule, applies it to every active account unless the Apply section
+was limited to one account, and returns through **Back** to the page that was
 open before Rules. A missing category or a failed save stays in Rules. **New
 rule** and **Copy into new rule** keep **Save and apply rule** and stay in
 Rules. An existing rule keeps **Apply rule**, or **Save and apply rule** when

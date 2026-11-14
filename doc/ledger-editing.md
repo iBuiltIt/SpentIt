@@ -41,7 +41,8 @@ multiple selection; the action never silently chooses one row from it. Unsaved-e
 guards run before context inspection, and stale inspector data cannot supply the
 rule target. One target opens a draft directly; several targets use a chooser with
 Cancel. That draft’s button reads **Save, apply and back**. A successful click
-saves the rule, applies it, and returns through **Back** to the ledger. A
+saves the rule, applies it to every active account unless the Apply section
+was limited to one account, and returns through **Back** to the ledger. A
 failed save stays in Rules. Existing original-field eligibility and the
 one-new-rule limit remain.
 The open editor does not list which rule assigned the payee, memo, or

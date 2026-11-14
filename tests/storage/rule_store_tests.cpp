@@ -301,6 +301,61 @@ void session_rules(){
     {auto s=ImportStore::open(pending,password);s.verify();app::OperationContext c;bool completed=false;try{s.apply_pending_rules("pending-rules",fault_apply_request(),c);}catch(const app::OperationAlreadyCompleted&){completed=true;}check(completed);auto changed=fault_apply_request();changed.batch_revision++;rejects_text([&]{s.apply_pending_rules("pending-rules",changed,c);},"different content");s.certify({});}
 }
 
+void all_accounts(){
+    Directory dir("spentit-all-account-rules-XXXXXX");const auto path=dir.path/"doc";const Currency usd("USD");
+    {
+        auto s=create(path);
+        s.create_account(2,"Other",cad,"2026-08-01");s.create_account(3,"Old drawer",cad,"2026-08-01");s.create_account(4,"Dollar",usd,"2026-08-01");
+        s.select_account(1);s.ingest("home","D01/08/2026\nT-1.00\nPRide home\n^\nD04/08/2026\nT-4.00\nPRide mine\n^\n",qif::DateOrder::dmy);
+        auto manual=*s.row({"home",1}).draft;manual.payee="Ride mine";manual.payee_owner=FieldOwnership::manual;s.save({"home",1},batch_revision(s,"home"),manual);
+        s.select_account(2);s.ingest("other","D02/08/2026\nT-2.00\nPRide other\n^\nD03/08/2026\nT-3.00\nPRide kept\n^\n",qif::DateOrder::dmy);s.commit("other",batch_revision(s,"other"),"accept-other");
+        s.select_account(3);s.ingest("drawer","D07/08/2026\nT-7.00\nPRide drawer\n^\n",qif::DateOrder::dmy);s.commit("drawer",batch_revision(s,"drawer"),"accept-drawer");
+        s.select_account(4);s.ingest("dollar","D06/08/2026\nT-6.00\nPRide dollar\n^\n",qif::DateOrder::dmy);
+        s.certify({});
+    }
+    auto s=ImportStore::open(path,password);s.select_account(3);s.archive_account("archive-drawer");s.select_account(1);
+    const auto ride=rule_of("ride","Ride",rules::Scope::transaction,rules::InputField::payee,"^Ride",{"Ruled",{},"rule-default",false});
+    auto scope=[&]{app::AccountRuleRequest request;request.all_accounts=true;request.generation=s.ledger_edit_generation();request.ruleset_revision=s.rule_image().revision;request.catalog_revision=s.category_catalog().revision;request.rule="ride";return request;};
+    s.select_account(1);const auto home=s.balance(),home_committed=s.committed_balance();
+    s.select_account(2);const auto other=s.balance(),other_committed=s.committed_balance();
+    s.select_account(3);const auto drawer=s.balance();
+    s.select_account(4);const auto dollar=s.balance(),dollar_committed=s.committed_balance();
+    s.select_account(1);
+    app::OperationContext cancel;cancel.progress=[&](std::string_view phase){if(phase=="Applying matching rules")cancel.request();};
+    rejects_text([&]{s.save_and_apply_rules("cancel-save",{{ride}},s.rule_image().revision,scope(),cancel);},"cancel");
+    check(s.rule_image().ordered.empty() && s.account().identity==1 && s.row({"home",0}).draft->payee=="Ride home");
+    app::OperationContext apply;s.save_and_apply_rules("save-apply",{{ride}},s.rule_image().revision,scope(),apply);
+    check(s.account().identity==1 && s.rule_image().ordered.size()==1 && s.rule_image().ordered[0].identity=="ride");
+    check(s.row({"home",0}).draft->payee=="Ruled" && s.row({"home",1}).draft->payee=="Ride mine" && s.row({"home",1}).draft->transaction.allocations()[0].category=="Rule category");
+    s.select_account(2);check(s.committed_entry({"other",0}).current.draft.payee=="Ruled" && s.committed_entry({"other",1}).current.draft.payee=="Ruled");
+    s.select_account(3);check(s.committed_entry({"drawer",0}).current.draft.payee=="Ride drawer" && s.account().archived);
+    s.select_account(4);check(s.row({"dollar",0}).draft->payee=="Ruled" && s.can_undo_account_rules());
+    s.select_account(1);check(s.balance()==home && s.committed_balance()==home_committed);
+    s.select_account(2);check(s.balance()==other && s.committed_balance()==other_committed);
+    s.select_account(3);check(s.balance()==drawer);
+    s.select_account(4);check(s.balance()==dollar && s.committed_balance()==dollar_committed && s.can_undo_account_rules());
+    s.undo_account_rules("undo-all");
+    check(s.rule_image().ordered.size()==1 && s.row({"dollar",0}).draft->payee=="Ride dollar");
+    s.select_account(1);check(s.row({"home",0}).draft->payee=="Ride home" && s.row({"home",1}).draft->payee=="Ride mine" && s.row({"home",1}).draft->transaction.allocations()[0].category.empty());
+    s.select_account(2);check(s.committed_entry({"other",0}).current.draft.payee=="Ride other");
+    app::OperationContext one;app::RulePreviewRequest narrowed;narrowed.account_scope=true;narrowed.matches_only=true;narrowed.saved_rule="ride";
+    auto preview=s.preview_pending_rules(narrowed,one);check(preview.matches.size()==2 && !preview.account_request.all_accounts);
+    s.apply_account_rules("only-other",preview.account_request,one);
+    check(s.can_undo_account_rules() && s.committed_entry({"other",0}).current.draft.payee=="Ruled");
+    s.select_account(1);check(!s.can_undo_account_rules() && s.row({"home",0}).draft->payee=="Ride home");
+    s.select_account(4);check(s.row({"dollar",0}).draft->payee=="Ride dollar");
+    s.select_account(2);s.undo_account_rules("undo-one");check(s.committed_entry({"other",0}).current.draft.payee=="Ride other");
+    app::RulePreviewRequest wide;wide.account_scope=true;wide.all_accounts=true;wide.matches_only=true;wide.saved_rule="ride";
+    auto all=s.preview_pending_rules(wide,one);
+    check(all.account_request.all_accounts && all.matches.size()==5 && all.changed==5 && s.account().identity==2);
+    check(all.matches[0].account=="Dollar" && all.matches[1].account=="Other" && all.matches[3].account=="Synthetic account");
+    for(const auto& match:all.matches)check(match.account!="Old drawer");
+    wide.new_only=true;check(s.preview_pending_rules(wide,one).matches.size()==3);
+    auto stale=all.account_request;stale.generation++;
+    rejects_text([&]{s.apply_account_rules("stale-all",stale,one);},"refresh");
+    check(s.account().identity==2 && s.committed_entry({"other",0}).current.draft.payee=="Ride other");
+    s.verify();
+}
 void account_fault_recover(const fs::path& path,const app::AccountRuleRequest& request){
     auto s=ImportStore::open(path,password);const bool saved=s.review_outcome("fault").has_value();
     check(s.committed_entry({"old",0}).current.draft.payee==(saved?"Ruled":"Ride old"));
@@ -467,4 +522,4 @@ void category_faults() {
     }
     std::cout<<"Import category resolution: "<<positions<<" write/sync faults, cancellation and both commit boundaries passed\n";
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="all_accounts")all_accounts();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -3,7 +3,7 @@
 Last updated: 2026-11-14
 
 The bundled manual includes the user-visible behavior through the 2026-11-12
-pass (MAN-001 through MAN-044). Open item: MAN-045.
+pass (MAN-001 through MAN-044). Open items run through MAN-052.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -22,6 +22,14 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+### MAN-052 — Rules Apply opens on all accounts
+
+- Date: 2026-11-14
+- Contract: [feature 004](../features/004-rules-and-explanations.md), sections "Matching and application" and "Workspace"
+- `manual/rules.md`, "Preview, save and apply": the Account box opens on **All accounts**, every active account. Archived accounts stay unchanged. One account can be chosen for this pass. Choosing All accounts leaves the ledger account as it is. Choosing one account selects it and stays in Rules. Each visit to Rules opens on All accounts. **All transactions** and **New transactions only** still apply inside the chosen accounts. Each preview row names its account. Apply, Save and apply, and Save, apply and back use that choice. A saved rule already matches later imports in any account. Command+Z, and Ctrl+Z on Windows and Linux, undoes the whole pass and keeps the saved rule.
+- The current text says to choose the Account, and that Transactions chooses entries in that account. The sentence that saved rules can match in any account stays true and should sit next to the new default.
+- Pictures: recapture `manual/images/rules-preview.png` and its caption. The Account box and an Account column on the preview rows are not in that picture.
 
 ### MAN-051 — Unmerge on the ledger menu
 

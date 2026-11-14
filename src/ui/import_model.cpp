@@ -1316,7 +1316,7 @@ struct ImportModel::Worker {
         QVariantList records;
         for(const auto& match:result.matches)records.push_back(QVariantMap{
             {"batch",text(match.identity.batch)},{"ordinal",static_cast<int>(match.identity.ordinal)},
-            {"date",dateText(match.date)},{"payee",text(match.payee)},{"amount",money(match.amount,amountFormat)}});
+            {"date",dateText(match.date)},{"payee",text(match.payee)},{"account",text(match.account)},{"amount",money(match.amount,amountFormat)}});
         const auto count=result.matches.size();
         rulePreview={{"label",single?QString("This rule · current account"):result.unsaved_rules?QString("Unsaved rules"):QString("Saved rules")},
             {"unsaved",result.unsaved_rules},{"single",single},{"batch",text(result.batch)},{"batchRevision",QString::number(result.batch_revision)},
@@ -2373,6 +2373,7 @@ struct ImportModel::Worker {
                 request.single_rule=a.value("singleRule").toBool();
                 request.matches_only=true;
                 request.account_scope=a.value("accountScope").toBool();
+                request.all_accounts=a.value("allAccounts").toBool();
                 request.new_only=a.value("newOnly").toBool();
                 request.saved_rule=str(a.value("rule"));
                 std::optional<std::vector<app::RuleDefinitionImage>> editor;
@@ -2387,20 +2388,20 @@ struct ImportModel::Worker {
                 }
                 publishPreview(result,request.single_rule);
                 rulePreview["accountScope"]=request.account_scope;rulePreview["newOnly"]=request.new_only;rulePreview["rule"]=text(request.saved_rule);
-                rulePreview["label"]=request.account_scope?(request.single_rule?"This rule":"All enabled rules")+QString(request.new_only?" · new transactions only":" · all transactions in this account"):rulePreview.value("label").toString();
+                rulePreview["label"]=request.account_scope||request.all_accounts?(request.single_rule?"This rule":"All enabled rules")+QString(request.new_only?" · new transactions only":request.all_accounts?" · all transactions in all accounts":" · all transactions in this account"):rulePreview.value("label").toString();
             } else if(action=="rules_save") {
                 ruleReceipt.clear();
                 if(!rulesLoaded) loadRules();
                 const auto expected=ruleRevision;
                 const auto operation=identity();
                 if(a.value("apply").toBool()) {
-                    const app::AccountRuleRequest request{repo.account().identity,repo.ledger_edit_generation(),expected,repo.category_catalog().revision,a.value("newOnly").toBool(),false,str(a.value("rule"))};
+                    app::AccountRuleRequest request{a.value("allAccounts").toBool()?0:repo.account().identity,repo.ledger_edit_generation(),expected,repo.category_catalog().revision,a.value("newOnly").toBool(),false,str(a.value("rule")),a.value("allAccounts").toBool()};
                     try {repo.save_and_apply_rules(operation,{images()},expected,request,context);}
                     catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> saved;
                         try{saved=repo.review_outcome(operation);}catch(...){closeUnknown("Reopen the file and check the rule and transactions before retrying.");}
                         if(!saved)std::rethrow_exception(failure);
                     }
-                    observedSaved();ruleReceipt={{"operation",text(operation)},{"unchanged",false},{"summary","Rule saved and applied. Undo reverses the transaction changes; the saved rule remains."}};
+                    observedSaved();ruleReceipt={{"operation",text(operation)},{"unchanged",false},{"summary",a.value("allAccounts").toBool()?"Rule saved and applied in all accounts. Undo reverses the transaction changes; the saved rule remains.":"Rule saved and applied. Undo reverses the transaction changes; the saved rule remains."}};
                     rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();
                     try {loadRules();if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);}
                     catch(...){refreshFailed("The rule and its application were saved, but the view could not update. Reopen the file before continuing.");}
@@ -2435,7 +2436,8 @@ struct ImportModel::Worker {
                     if(!outcome){preparedAccountApply.reset();rulePreview.clear();ruleApplyOperation.clear();std::rethrow_exception(failure);}result=*outcome;
                 }
                 if(result.operation.empty())diagnosticUnchanged=true;else observedSaved();
-                ruleReceipt={{"operation",text(result.operation)},{"summary",undo?QString("Rule application undone."):QString("%1 transaction%2 updated.").arg(changed).arg(changed==1?"":"s")}};
+                const auto where=preparedAccountApply && preparedAccountApply->all_accounts?QString(" in all accounts"):QString();
+                ruleReceipt={{"operation",text(result.operation)},{"summary",undo?QString("Rule application undone."):QString("%1 transaction%2 updated%3.").arg(changed).arg(changed==1?"":"s").arg(where)}};
                 preparedAccountApply.reset();rulePreview.clear();ruleApplyOperation.clear();
                 try {if(qEnvironmentVariableIsSet("SPENTIT_RULE_REFRESH_FAIL"))throw std::runtime_error("refresh");if(historyLoaded)listHistory();if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);}
                 catch(...) {refreshFailed(ruleApplyRefreshFailure(text(result.operation)));}
