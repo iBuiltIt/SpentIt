@@ -1,7 +1,7 @@
 # 006 — Reporting and drill-down
 
 Status: **active**
-Last updated: 2026-11-12
+Last updated: 2026-11-14
 
 Reports is one sidebar entry below Rules. It lists saved definitions and edits
 the selected one. Show opens the result. The top-bar Back returns to the list.
@@ -21,7 +21,10 @@ negative. The Income flag does not change signs or arithmetic. Results use
 current edited values and include new and accepted transactions. One result set
 per currency. No combined grand total and no inferred conversion.
 
-Rows are one per category, with no inclusive stem subtotal. A checklist
+Rows are one per category that is not exactly zero in every shown period.
+A category at zero in the main period and every comparison is omitted from
+the table and the charts. Its allocations remain in the period total. A
+negative amount stays. There is no inclusive stem subtotal. A checklist
 selection of a stem can include matching `Stem:` categories; the user can turn
 individuals off. Direct rows must not double-count.
 
@@ -35,7 +38,7 @@ Bar scales are shared across periods inside one currency.
 
 ## Charts and drill-down
 
-Charts come before one full-length striped category table. Grouped-period bars
+Charts come before one striped table of the remaining categories. Grouped-period bars
 are an additional saved choice. Pie is available when the period is suitable.
 
 Drill-down reuses the ledger editor over the contributing transaction

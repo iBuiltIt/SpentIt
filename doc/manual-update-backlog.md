@@ -3,7 +3,7 @@
 Last updated: 2026-11-14
 
 The bundled manual includes the user-visible behavior through the 2026-11-12
-pass (MAN-001 through MAN-044). Open items run through MAN-052.
+pass (MAN-001 through MAN-044). Open items run through MAN-053.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -22,6 +22,13 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+### MAN-053 — Zero category rows omitted from reports
+
+- Date: 2026-11-14
+- Contract: [feature 006](../features/006-reporting-drill-down.md), section "Money"
+- `manual/reports.md`, "Read the answer": a category that is 0.00 in the main period and every comparison is left out of the table and the charts. A category that is 0.00 in one period and has an amount in another stays, with 0.00 in the empty period. A negative amount stays. The Total still includes allocations that cancel to 0.00. Double-click the Total to open them.
+- Pictures: none. The comparison and pie pictures show Groceries and Household, which have amounts.
 
 ### MAN-052 — Rules Apply opens on all accounts
 

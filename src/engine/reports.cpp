@@ -79,6 +79,8 @@ Snapshot calculate(const Definition& d,std::string_view today,std::vector<Entry>
         const auto sum=[&](Cell& c){std::vector<detail::Term> terms;terms.reserve(c.entries.size());for(auto i:c.entries)terms.push_back({out.entries[i].amount.units(),true});c.amount=Money(detail::exact_sum(terms),currency);};
         for(auto& row:result.rows)for(auto& c:row.cells)sum(c);
         for(auto& c:result.totals)sum(c);
+        // A category that is exactly zero in every shown period takes no table or chart space. Its allocations stay in the period total.
+        result.rows.erase(std::remove_if(result.rows.begin(),result.rows.end(),[](const Row& row){return std::all_of(row.cells.begin(),row.cells.end(),[](const Cell& cell){return cell.amount.units()==0;});}),result.rows.end());
         std::stable_sort(result.rows.begin(),result.rows.end(),[](const Row& a,const Row& b){return a.cells.front().amount.units()!=b.cells.front().amount.units()?a.cells.front().amount.units()>b.cells.front().amount.units():a.category.name<b.category.name;});
         out.currencies.push_back(std::move(result));
     }

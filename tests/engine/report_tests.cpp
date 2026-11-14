@@ -41,5 +41,19 @@ int main(){try{
     add(1,"auto",-10000,cad,"2026-01-01");add(1,"gas",-5000,cad,"2026-01-01");add(1,"repairs",-2500,cad,"2026-01-01");
     auto direct=calculate(d,"2026-11-04",entries,{{"auto","Auto"},{"gas","Auto: Gas"},{"repairs","Auto: Repairs"}},{cad});
     check(direct.currencies[0].rows.size()==3 && direct.currencies[0].totals[0].amount.units()==17500 && direct.currencies[0].totals[1].amount.units()==17500);
+    d.categories={"food","empty","offset","later","refund"};entries.clear();
+    add(1,"food",-10000,cad,"2026-01-15");
+    add(1,"offset",-5000,cad,"2026-01-10");add(1,"offset",5000,cad,"2026-01-10");
+    add(1,"later",-2500,cad,"2026-01-01");add(1,"later",2500,cad,"2026-01-20");
+    add(1,"refund",10000,cad,"2026-01-15");
+    auto hidden=calculate(d,"2026-11-04",entries,{{"food","Food"},{"empty","Empty"},{"offset","Offset"},{"later","Later"},{"refund","Refund"}},{cad,usd});
+    check(hidden.currencies.size()==2 && hidden.currencies[0].rows.size()==3 && hidden.currencies[1].rows.empty());
+    check(hidden.currencies[0].rows[0].category.id=="food" && hidden.currencies[0].rows[0].cells[0].amount.units()==10000);
+    check(hidden.currencies[0].rows[1].category.id=="later" && hidden.currencies[0].rows[1].cells[0].amount.units()==0 && hidden.currencies[0].rows[1].cells[1].amount.units()==2500);
+    check(hidden.currencies[0].rows[2].category.id=="refund" && hidden.currencies[0].rows[2].cells[0].amount.units()==-10000);
+    for(const auto& row:hidden.currencies[0].rows)check(row.category.id!="empty" && row.category.id!="offset");
+    check(hidden.currencies[0].totals[0].amount.units()==0 && hidden.currencies[0].totals[0].entries.size()==6);
+    check(hidden.currencies[0].totals[1].amount.units()==2500 && hidden.currencies[0].totals[1].entries.size()==1);
+    check(hidden.currencies[1].totals[0].amount.units()==0 && hidden.currencies[1].totals[1].amount.units()==0);
     std::cout<<"Exact report reconciliation, currencies, signs and boundaries passed\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
