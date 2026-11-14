@@ -13,6 +13,48 @@ bool review_pair(sqlite3* db,int kind,const imports::Occurrence& a,const imports
       AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=p.answer))SQL");
     s.integer(1,kind);s.text(2,a.batch);s.integer(3,integer(a.ordinal));s.text(4,b.batch);s.integer(5,integer(b.ordinal));return s.row();
 }
+// Unmerge puts the extra entries back. The earlier Link stays recorded, and this
+// pair has to be asked again until a later Link or Not this transfer decides it.
+std::set<std::pair<imports::Occurrence,imports::Occurrence>> reopened_link_pairs(sqlite3* db) {
+    std::set<std::pair<imports::Occurrence,imports::Occurrence>> opened;
+    Statement unmerges(db,"SELECT id,sequence FROM review_answers WHERE question='unmerge-link' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_answers.id) ORDER BY sequence DESC");
+    while(unmerges.row()){
+        const auto answer=std::string(unmerges.bytes(0));const auto sequence=unmerges.integer(1);
+        Statement history(db,"SELECT identity,result_payload FROM review_link_history WHERE answer=?");history.text(1,answer);
+        std::vector<std::string> identities;bool live=true;
+        while(history.row()){
+            const auto identity=std::string(history.bytes(0));const auto result=std::string(history.bytes(1));
+            identities.push_back(identity);
+            Statement head(db,"SELECT v.payload FROM transfer_heads t JOIN transfer_versions v ON v.identity=t.identity AND v.sequence=t.sequence WHERE t.identity=?");head.text(1,identity);
+            if(!head.row() || std::string(head.bytes(0))!=result)live=false;
+        }
+        if(!live || identities.empty())continue;
+        Statement link(db,"SELECT a.id FROM review_answers a JOIN review_link_history h ON h.answer=a.id WHERE a.action=? AND a.sequence<? AND h.identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id) ORDER BY a.sequence DESC LIMIT 1");
+        link.integer(1,static_cast<int>(app::ReviewAction::link));link.integer(2,sequence);link.text(3,identities.front());
+        if(!link.row())continue;
+        const auto link_answer=std::string(link.bytes(0));
+        std::set<imports::Occurrence> banks;bool readable=true;
+        for(const auto& identity:identities){
+            Statement recorded(db,"SELECT result_payload FROM review_link_history WHERE answer=? AND identity=?");recorded.text(1,link_answer);recorded.text(2,identity);
+            if(!recorded.row()){readable=false;break;}
+            const auto payload=std::string(recorded.bytes(0));
+            try{
+                const auto value=transfer_codec::view(payload);
+                for(const auto* side:{&value.link.origin,&value.link.destination}){
+                    if(side->state==transfers::State::removed || side->endpoint.entry.batch.starts_with("~transfer-"))continue;
+                    if(side->independent_evidence || side->ledger_entry)banks.insert(side->endpoint.entry);
+                }
+            }catch(const ImportError&){readable=false;break;}catch(const transfers::TransferError&){readable=false;break;}
+        }
+        if(!readable || banks.size()!=2)continue;
+        const auto left=*banks.begin();const auto right=*std::next(banks.begin());
+        Statement later(db,"SELECT 1 FROM review_answers a JOIN review_choices p ON p.answer=a.id AND p.kind=1 AND p.batch=?2 AND p.ordinal=?3 JOIN review_choices q ON q.answer=a.id AND q.kind=1 AND q.batch=?4 AND q.ordinal=?5 WHERE a.sequence>?1 AND a.action IN(?6,?7) AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id)");
+        later.integer(1,sequence);later.text(2,left.batch);later.integer(3,integer(left.ordinal));later.text(4,right.batch);later.integer(5,integer(right.ordinal));later.integer(6,static_cast<int>(app::ReviewAction::link));later.integer(7,static_cast<int>(app::ReviewAction::not_linked));
+        if(later.row())continue;
+        opened.emplace(left<right?std::pair{left,right}:std::pair{right,left});
+    }
+    return opened;
+}
 std::string review_request(const app::ReviewAnswer& a) {
     std::string out=std::to_string(a.generation)+":"+std::to_string(static_cast<int>(a.action))+":";
     const auto field=[&](std::string_view v){out+=std::to_string(v.size())+":"+std::string(v);};
@@ -455,6 +497,8 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         }
     }
     impl_->link_rows=rows;impl_->link_edges=std::move(edges);impl_->link_alias_stamp=alias_stamp;impl_->link_occupied=occupied;
+    const auto reopened=reopened_link_pairs(impl_->db);
+    const auto pair_closed=[&](const imports::Occurrence& a,const imports::Occurrence& b){if(!review_pair(impl_->db,1,a,b))return false;const auto key=a<b?std::pair{a,b}:std::pair{b,a};return !reopened.contains(key);};
     std::set<imports::Occurrence> link_sources;
     for(const auto& [id,left]:rows){
         if(suppressed.contains(id) || linked.contains(id) || duplicate_rows.contains(id) || (left.committed && !repair_origins.contains(id)))continue;
@@ -464,7 +508,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         if(found!=impl_->link_edges.end() && found->second.size()>4096){result.questions.push_back({"many-links:"+review_key(id),app::ReviewKind::correction,left.account,left.account_name,"More than 4096 eligible counterparts; select this transfer manually",id.batch,id.ordinal,{left}});continue;}
         if(found!=impl_->link_edges.end())for(const auto& [other,difference]:found->second){
             const auto target=rows.find(other);if(target==rows.end())continue;const auto& right=target->second;
-            if(suppressed.contains(other) || linked.contains(other) || duplicate_rows.contains(other) || review_pair(impl_->db,1,id,other))continue;
+            if(suppressed.contains(other) || linked.contains(other) || duplicate_rows.contains(other) || pair_closed(id,other))continue;
             if(repair_origins.contains(other) && !repair_origins.contains(id))continue;
             if(!right.committed && !repair_origins.contains(id)){
                 const auto outgoing=[](const app::ReviewTransaction& row){return std::any_of(row.draft.transaction.allocations().begin(),row.draft.transaction.allocations().end(),[](const auto& part){return part.amount.units()<0;});};

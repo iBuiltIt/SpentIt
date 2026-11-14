@@ -27,7 +27,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 
 - Date: 2026-11-14
 - Contract: [review sheet](review-sheet.md), section "Ledger same payment and result marks"
-- `manual/add-correct-transactions.md` or `manual/review-duplicates-transfers.md`: the ledger menu has **Unmerge**. It is unavailable on an ordinary transaction. On the one kept row of a single merge, it puts the transaction that left back on the ledger. A later edit of the kept row stays. On one linked row, it asks first. Unmerging a payment puts the removed rows back in the named accounts. Unmerging a link that left both transactions separates them and leaves both in place. It remains available after the file is closed.
+- `manual/add-correct-transactions.md` or `manual/review-duplicates-transfers.md`: the ledger menu has **Unmerge**. It is unavailable on an ordinary transaction. On the one kept row of a single merge, it puts the transaction that left back on the ledger. A later edit of the kept row stays. On one linked row, it asks first. Unmerging a payment puts the removed rows back in the named accounts. The blue edges come back. Merge joins that payment again. Review shows both lines, with Link and Not this transfer. Unmerging a link that left both transactions separates them and leaves both in place. It remains available after the file is closed.
 - Pictures: none.
 
 ### MAN-050 — Merge and Link on Change history

@@ -863,16 +863,40 @@ void unmerge_linked(const std::filesystem::path& path) {
         store.unmerge("unmerge-payment",{{"in",0}});store.verify();
         store.select_account(2);
         check(shows_generated(store) && store.current_ledger().size()>before,"Unmerge puts the extra entry back beside the bank transaction");
+        const auto reopened_sheet=store.review_sheet();
+        check(std::count_if(reopened_sheet.questions.begin(),reopened_sheet.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;})==1,"Unmerge puts the payment back on Review");
         store.select_account(1);undo(store,"undo-unmerge-payment","unmerge-payment");store.select_account(2);check(!shows_generated(store),"Undo of Unmerge removes the extra entry again");
+        const auto joined_sheet=store.review_sheet();
+        check(std::none_of(joined_sheet.questions.begin(),joined_sheet.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;}),"Undo of Unmerge leaves the payment joined");
         store.certify({});
     }
     {auto reopened=ImportStore::open(payment,"synthetic");
      check(reopened.can_unmerge({{"out",0}}),"Unmerge of a payment remains after the file is closed");
      reopened.unmerge("unmerge-closed-payment",{{"out",0}});reopened.verify();
-     reopened.select_account(2);check(shows_generated(reopened),"Unmerge after close puts the extra entry back");}
+     reopened.select_account(2);check(shows_generated(reopened),"Unmerge after close puts the extra entry back");
+     const auto sheet=reopened.review_sheet();
+     const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;});
+     check(question!=sheet.questions.end(),"Unmerge after close puts the payment back on Review");
+     ReviewAnswer refuse;refuse.question=question->key;refuse.generation=sheet.generation;refuse.action=ReviewAction::not_linked;
+     reopened.answer_review("not-payment",refuse);reopened.verify();
+     const auto refused=reopened.review_sheet();
+     check(std::none_of(refused.questions.begin(),refused.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;}),"Not this transfer keeps the split payment off Review");
+     reopened.select_account(2);check(shows_generated(reopened),"Not this transfer leaves the extra entry");}
     auto count=[&](ImportStore& store,std::int64_t account){store.select_account(account);return store.current_ledger().size();};
     const auto both=std::filesystem::path(path.string()+"-both");
-    std::size_t savings_before=0,visa_before=0;
+    std::size_t savings_before=0,visa_before=0,savings_merged=0,visa_merged=0;
+    auto visa_payment=[&](ImportStore& store){
+        const auto sheet=store.review_sheet();
+        bool paired=false,one_sided=false;
+        for(const auto& question:sheet.questions){
+            if(question.kind!=ReviewKind::link)continue;
+            bool savings=false,visa=false;
+            for(const auto& row:question.rows){if(row.account==2 && row.draft.payee=="Visa payment")savings=true;if(row.account==3 && row.draft.payee=="Payment from Savings")visa=true;}
+            if(savings && visa && question.rows.size()>=2)paired=true;
+            if(question.rows.size()==1 && !question.waiting_link.empty() && (savings||visa))one_sided=true;
+        }
+        return std::pair{paired,one_sided};
+    };
     {
         auto store=ImportStore::create(both,"synthetic","Checking",cad,"2026-01-01");
         store.create_account(2,"Savings",cad,"2026-01-01");
@@ -894,7 +918,7 @@ void unmerge_linked(const std::filesystem::path& path) {
         check(payment!=nullptr,"The savings and visa payments are one link");
         ReviewAnswer join;join.question=payment->key;join.generation=sheet.generation;join.action=ReviewAction::link;join.selected={payment->rows[0].identity,payment->rows[1].identity};
         store.answer_review("join-visa",join);store.verify();
-        const auto savings_merged=count(store,2),visa_merged=count(store,3);
+        savings_merged=count(store,2);visa_merged=count(store,3);
         check(savings_merged<savings_before && visa_merged<visa_before,"Merging the visa payment removes a row from savings and from visa");
         store.select_account(3);
         imports::Occurrence kept{"",0};bool found=false;
@@ -903,8 +927,11 @@ void unmerge_linked(const std::filesystem::path& path) {
         check(store.unmerge_notice({kept}).find("Savings")!=std::string::npos,"Unmerge says the savings row comes back");
         store.unmerge("unmerge-visa",{kept});store.verify();
         check(count(store,2)==savings_before && count(store,3)==visa_before,"Unmerge puts the removed rows back in savings and visa");
+        const auto split=visa_payment(store);
+        check(split.first && !split.second,"Unmerge shows both lines of the payment on Review");
         undo(store,"undo-unmerge-visa","unmerge-visa");
         check(count(store,2)==savings_merged && count(store,3)==visa_merged,"Undo of Unmerge removes those rows again");
+        const auto joined=visa_payment(store);check(!joined.first && !joined.second,"Undo of Unmerge leaves that payment joined");
         store.certify({});
     }
     {auto reopened=ImportStore::open(both,"synthetic");
@@ -913,7 +940,21 @@ void unmerge_linked(const std::filesystem::path& path) {
      for(const auto& row:reopened.current_ledger())if(row.draft.payee=="Payment from Savings"){kept=row.identity;found=true;}
      check(found && reopened.can_unmerge({kept}),"Unmerge of a payment in both accounts remains after the file is closed");
      reopened.unmerge("unmerge-closed-visa",{kept});reopened.verify();
-     check(count(reopened,2)==savings_before && count(reopened,3)==visa_before,"Unmerge after close puts the removed rows back in savings and visa");}
+     check(count(reopened,2)==savings_before && count(reopened,3)==visa_before,"Unmerge after close puts the removed rows back in savings and visa");
+     const auto split=visa_payment(reopened);check(split.first && !split.second,"Unmerge after close shows both lines on Review");
+     const auto sheet=reopened.review_sheet();
+     const app::ReviewQuestion* payment=nullptr;
+     for(const auto& question:sheet.questions){
+         if(question.kind!=ReviewKind::link || question.rows.size()<2)continue;
+         bool savings=false,visa=false;
+         for(const auto& row:question.rows){if(row.account==2 && row.draft.payee=="Visa payment")savings=true;if(row.account==3 && row.draft.payee=="Payment from Savings")visa=true;}
+         if(savings && visa)payment=&question;
+     }
+     check(payment!=nullptr,"The reopened payment can be linked again");
+     ReviewAnswer again;again.question=payment->key;again.generation=sheet.generation;again.action=ReviewAction::link;again.selected={payment->rows[0].identity,payment->rows[1].identity};
+     reopened.answer_review("join-visa-again",again);reopened.verify();
+     check(count(reopened,2)==savings_merged && count(reopened,3)==visa_merged,"Linking the reopened payment removes the extra rows again");
+     const auto joined=visa_payment(reopened);check(!joined.first && !joined.second,"The payment leaves Review once it is linked again");}
 }
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;

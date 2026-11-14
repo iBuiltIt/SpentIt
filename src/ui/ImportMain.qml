@@ -3130,7 +3130,7 @@ ApplicationWindow {
             return
         }
         if(rows.some(row=>String(row.batch).indexOf("~transfer-")===0)){
-            workspaceFeedback="This entry was created for a transfer. Select the two rows of that payment, or answer it in Review."
+            workspaceFeedback="Select the bank transaction and the extra entry of this payment, then choose Merge."
             return
         }
         if(duplicateCandidate && duplicateOrigin && keys.every(key=>key===duplicateOrigin.key || key===duplicateCandidate.key)){
