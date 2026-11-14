@@ -828,7 +828,16 @@ bool confirmed_duplicate(sqlite3* db,const imports::Occurrence& id,const imports
     return s.row() && s.integer(0)==2 && s.bytes(1)==target.batch && s.integer(2)==integer(target.ordinal);
 }
 bool explicit_review_merge(sqlite3* db,const imports::Occurrence& id,std::int64_t revision) {
-    Statement m(db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.ordinal=? AND m.result=? AND m.committed=0 AND a.action=1");m.text(1,id.batch);m.integer(2,integer(id.ordinal));m.integer(3,revision);return m.row();
+    // The merge result is one revision. Undoing Unmerge writes another revision of
+    // that same decision, and close keeps the latest one with the merge record.
+    Statement m(db,R"SQL(
+SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=?1 AND m.ordinal=?2 AND m.result=?3 AND m.committed=0 AND a.action=1
+UNION ALL
+SELECT 1 FROM versions v
+ JOIN review_merges g ON g.batch=v.batch AND g.ordinal=v.ordinal AND g.target_batch=v.duplicate_batch AND g.target_ordinal=v.duplicate_ordinal
+ JOIN review_answers a ON a.id=g.answer AND a.action=1
+ WHERE v.batch=?1 AND v.ordinal=?2 AND v.revision=?3 AND v.decision=2
+)SQL");m.text(1,id.batch);m.integer(2,integer(id.ordinal));m.integer(3,revision);return m.row();
 }
 void verify_source_facts(sqlite3* db,const app::BatchInfo& b,const qif::Result& parsed,bool materialized) {
     Statement occurrences(db,"SELECT count(*) FROM source_occurrences WHERE batch=?");occurrences.text(1,b.id);if(!occurrences.row()) fail(SQLITE_CORRUPT);

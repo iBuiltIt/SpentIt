@@ -18,6 +18,28 @@ std::string review_request(const app::ReviewAnswer& a) {
     const auto field=[&](std::string_view v){out+=std::to_string(v.size())+":"+std::string(v);};
     field(a.question);for(const auto& id:a.selected)field(review_key(id));field(a.survivor?review_key(*a.survivor):"");field(a.left_allocation);field(a.right_allocation);field(a.remainder_category);out+=a.split_difference?"1":"0";return out;
 }
+// A released placeholder and the kept payment share a bank line. Restoring either
+// side first can name that line twice, so each prefix of the write has to stay valid.
+bool ordered_link_writes(const std::vector<app::TransferView>& baseline,const std::vector<app::TransferView>& next,std::vector<std::size_t>& order) {
+    const auto count=next.size();if(count>6)return false;
+    order.clear();std::vector<char> used(count,0);
+    auto search=[&](auto&& self,std::vector<app::TransferView> working)->bool {
+        if(order.size()==count)return true;
+        for(std::size_t index=0;index<count;++index){
+            if(used[index])continue;
+            auto trial=working;
+            const auto found=std::find_if(trial.begin(),trial.end(),[&](const auto& value){return value.link.identity==next[index].link.identity;});
+            if(found==trial.end())return false;
+            *found=next[index];
+            try{validate_transfer_set(trial);}catch(const transfers::TransferError&){continue;}
+            used[index]=1;order.push_back(index);
+            if(self(self,std::move(trial)))return true;
+            order.pop_back();used[index]=0;
+        }
+        return false;
+    };
+    return search(search,baseline);
+}
 }
 namespace {
 rules::Pattern exclusion_pattern(const app::LinkExclusion& rule) {
@@ -735,6 +757,212 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
     if(parent.empty()){Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();impl_->pending_review_action=operation;finish([&]{transaction->commit();});if(same)retain_review_ledger_entries(*impl_,cache_changes,selected);}
     return {std::string(operation)};
 }
+std::optional<std::string> ImportStore::active_unmerge(const std::vector<imports::Occurrence>& selected) const {
+    if(selected.size()!=1 || transaction_accepted(selected.front()))return {};
+    const auto& survivor=selected.front();
+    Statement rows(impl_->db,"SELECT DISTINCT answer FROM review_merges WHERE target_batch=? AND target_ordinal=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_merges.answer)");
+    rows.text(1,survivor.batch);rows.integer(2,integer(survivor.ordinal));
+    std::vector<std::string> answers;while(rows.row())answers.push_back(rows.bytes(0));
+    if(answers.size()!=1)return {};
+    const auto& answer=answers.front();
+    Statement targets(impl_->db,"SELECT batch,ordinal,target_batch,target_ordinal FROM review_merges WHERE answer=?");targets.text(1,answer);
+    bool any=false;
+    while(targets.row()){
+        any=true;
+        if(targets.bytes(2)!=survivor.batch || targets.integer(3)!=integer(survivor.ordinal))return {};
+        const imports::Occurrence loser{targets.bytes(0),static_cast<std::size_t>(targets.integer(1))};
+        if(transaction_accepted(loser))return {};
+        Statement record(impl_->db,"SELECT 1 FROM records WHERE batch=? AND ordinal=?");record.text(1,loser.batch);record.integer(2,integer(loser.ordinal));if(!record.row())return {};
+        Statement decision(impl_->db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? ORDER BY revision DESC LIMIT 1");
+        decision.text(1,loser.batch);decision.integer(2,integer(loser.ordinal));
+        if(!decision.row() || decision.integer(0)!=static_cast<int>(imports::Disposition::duplicate) || decision.bytes(1)!=survivor.batch || decision.integer(2)!=integer(survivor.ordinal))return {};
+    }
+    if(!any)return {};
+    Statement sources(impl_->db,"SELECT source_batch,source_ordinal,result_batch,result_ordinal FROM review_sources WHERE answer=?");sources.text(1,answer);
+    while(sources.row()){
+        Statement current(impl_->db,"SELECT ledger_batch,ledger_ordinal FROM source_associations WHERE source_batch=? AND source_ordinal=?");
+        current.text(1,sources.bytes(0));current.integer(2,sources.integer(1));
+        if(!current.row() || current.bytes(0)!=sources.bytes(2) || current.integer(1)!=sources.integer(3))return {};
+    }
+    return answer;
+}
+std::optional<ImportStore::LinkUnmergePlan> ImportStore::link_unmerge_plan(const std::vector<imports::Occurrence>& selected) const {
+    if(selected.size()!=1 || transaction_accepted(selected.front()))return {};
+    const auto& id=selected.front();
+    const auto kept=[](const transfers::Side& side){return side.independent_evidence || side.ledger_entry;};
+    std::optional<app::TransferView> current;
+    for(const auto& value:all_transfers()){
+        const auto& link=value.link;
+        if(link.unresolved || link.destination_released || link.origin.state==transfers::State::removed || link.destination.state==transfers::State::removed)continue;
+        if(!kept(link.origin) || !kept(link.destination))continue;
+        if(link.origin.endpoint.entry!=id && link.destination.endpoint.entry!=id)continue;
+        if(transaction_accepted(link.origin.endpoint.entry) || transaction_accepted(link.destination.endpoint.entry))return {};
+        if(current)return {};
+        current=value;
+    }
+    if(!current)return {};
+    const auto generated=[](const transfers::Side& side){return side.state!=transfers::State::removed && side.endpoint.entry.batch.starts_with("~transfer-");};
+    const auto kept_entries=[&](const transfers::Link& link){std::set<imports::Occurrence> ids;const auto add=[&](const transfers::Side& side){if(kept(side) && side.state!=transfers::State::removed)ids.insert(side.endpoint.entry);};add(link.origin);add(link.destination);return ids;};
+    const auto same_banks=[&](const transfers::Link& left,const transfers::Link& right){return kept_entries(left)==kept_entries(right);};
+    std::map<std::string,app::TransferView> heads;for(const auto& value:all_transfers())heads.emplace(value.link.identity,value);
+    auto steps_for=[&](std::string_view answer)->std::optional<std::vector<LinkUnmergeStep>>{
+        Statement rows(impl_->db,"SELECT identity,prior_payload,result_payload FROM review_link_history WHERE answer=?");rows.text(1,answer);
+        std::vector<LinkUnmergeStep> steps;bool any=false;
+        while(rows.row()){
+            any=true;const auto found=heads.find(rows.bytes(0));if(found==heads.end())return {};
+            LinkUnmergeStep step{found->second,found->second,1};
+            if(rows.null(1)){try{step.next.link=separate_kept_link(step.current.link);step.mode=0;}catch(const transfers::TransferError&){try{auto undone=step.current;undo_new_relationship(undone);step.next=undone;step.mode=1;}catch(const transfers::TransferError&){return {};}}}
+            else {try{step.next=transfer_codec::view(rows.bytes(1));}catch(const ImportError&){return {};}catch(const transfers::TransferError&){return {};}step.mode=1;}
+            steps.push_back(std::move(step));
+        }
+        if(!any)return {};
+        return steps;
+    };
+    auto revives=[&](const std::vector<LinkUnmergeStep>& steps){std::vector<std::int64_t> accounts;for(const auto& step:steps)for(const auto* side:{&step.next.link.origin,&step.next.link.destination})if(generated(*side)){const bool still=(generated(step.current.link.origin)&&step.current.link.origin.endpoint.entry==side->endpoint.entry)||(generated(step.current.link.destination)&&step.current.link.destination.endpoint.entry==side->endpoint.entry);if(!still)accounts.push_back(side->endpoint.account);}std::sort(accounts.begin(),accounts.end());accounts.erase(std::unique(accounts.begin(),accounts.end()),accounts.end());return accounts;};
+    Statement history(impl_->db,"SELECT a.id,h.result_payload FROM review_link_history h JOIN review_answers a ON a.id=h.answer WHERE h.identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=h.answer) ORDER BY a.sequence DESC");
+    history.text(1,current->link.identity);
+    LinkUnmergePlan plan;bool saw_exact=false;std::string separable_answer;
+    while(history.row()){
+        const auto result_bytes=history.bytes(1);
+        std::optional<app::TransferView> result;try{result=transfer_codec::view(result_bytes);}catch(const ImportError&){continue;}catch(const transfers::TransferError&){continue;}
+        if(result_bytes!=transfer_codec::encode(*current) && !same_banks(result->link,current->link))continue;
+        if(result_bytes==transfer_codec::encode(*current)){saw_exact=true;separable_answer=history.bytes(0);}
+        auto steps=steps_for(history.bytes(0));if(!steps)continue;
+        const auto accounts=revives(*steps);if(accounts.empty())continue;
+        plan.steps=std::move(*steps);plan.restores_generated=true;plan.source_answer=history.bytes(0);
+        std::string where;for(const auto account:accounts){if(!where.empty())where+=" and ";where+=account==impl_->selected_account?"this account":account_by_id(account).name;}
+        plan.restored_where=where;break;
+    }
+    if(plan.steps.empty()){
+        if(!saw_exact){Statement any(impl_->db,"SELECT 1 FROM review_link_history WHERE identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_link_history.answer)");any.text(1,current->link.identity);if(any.row())return {};}
+        try{LinkUnmergeStep step{*current,*current,0};step.next.link=separate_kept_link(current->link);plan.steps.push_back(std::move(step));plan.source_answer=separable_answer;}catch(const transfers::TransferError&){return {};}
+    }
+    std::vector<app::TransferView> next;next.reserve(plan.steps.size());
+    for(const auto& step:plan.steps)next.push_back(step.next);
+    std::vector<std::size_t> order;
+    if(!ordered_link_writes(all_transfers(),next,order))return {};
+    std::vector<LinkUnmergeStep> arranged;arranged.reserve(order.size());
+    for(const auto index:order)arranged.push_back(std::move(plan.steps[index]));
+    plan.steps=std::move(arranged);
+    return plan;
+}
+bool ImportStore::can_unmerge(const std::vector<imports::Occurrence>& selected) const {
+    const auto keep=active_unmerge(selected).has_value();const auto link=link_unmerge_plan(selected).has_value();
+    return keep!=link && (keep || link);
+}
+std::string ImportStore::unmerge_notice(const std::vector<imports::Occurrence>& selected) const {
+    if(active_unmerge(selected))return {};
+    const auto plan=link_unmerge_plan(selected);if(!plan)return {};
+    if(!plan->restores_generated)return "Unmerge this link? Both transactions stay, and they will no longer be one transfer.";
+    const auto several=plan->restored_where.find(" and ")!=std::string::npos;
+    return std::string("Unmerge this payment? The removed ")+(several?"rows come":"row comes")+" back in "+plan->restored_where+", so the merge is split again.";
+}
+app::ReviewReceipt ImportStore::unmerge_link(std::string_view operation,const LinkUnmergePlan& plan) {
+    if(const auto prior=review_outcome(operation))return *prior;
+    struct Scope{Impl& state;std::int64_t selected;~Scope(){state.selected_account=selected;}} scope{*impl_,impl_->selected_account};
+    const auto cache_changes=sqlite3_total_changes64(impl_->db);
+    Atomic transaction(impl_->db);
+    const std::string request=plan.steps.front().current.link.identity;
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),0,'unmerge-link',?,?)");
+    receipt.text(1,operation);receipt.text(2,request);receipt.integer(3,ledger_edit_generation());receipt.done();
+    auto working=all_transfers();
+    std::set<imports::Occurrence> touched;
+    std::size_t serial=0;
+    for(const auto& step:plan.steps){
+        const auto child=std::string(operation)+"-link-"+std::to_string(serial++);
+        Statement recorded(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");
+        recorded.text(1,operation);recorded.text(2,step.current.link.identity);recorded.blob(3,transfer_codec::encode(step.current));recorded.blob(4,transfer_codec::encode(step.next));recorded.text(5,child);recorded.integer(6,step.current.sequence);recorded.done();
+        const auto account_delta=[&](std::int64_t account){const auto currency=account_by_id(account).currency;return local_total({step.next},account,currency,false)-local_total({step.current},account,currency,false);};
+        const auto origin_delta=account_delta(step.next.link.origin.endpoint.account);const auto destination_delta=account_delta(step.next.link.destination.endpoint.account);
+        if(origin_delta.units()!=0 && destination_delta.units()!=0)fail(SQLITE_CONSTRAINT,"Undo this link from Change history while the file is open.");
+        impl_->selected_account=origin_delta.units()!=0?step.next.link.origin.endpoint.account:step.current.link.origin.endpoint.account;
+        const auto before=committed_balance();
+        for(auto& value:working)if(value.link.identity==step.next.link.identity)value=step.next;
+        try{validate_transfer_set(working);}catch(const transfers::TransferError&){fail(SQLITE_CONSTRAINT,"Unmerge could not restore the removed rows.");}
+        const auto delta=local_total(working,impl_->selected_account,before.currency(),false)-local_total(all_transfers(),impl_->selected_account,before.currency(),false);
+        if(financial_sequence(impl_->db)==INT64_MAX)fail(SQLITE_FULL,"History capacity exhausted");
+        const auto sequence=financial_sequence(impl_->db)+1;
+        app::TransferRequest transfer{};transfer.action=app::TransferAction::unmerge;transfer.link=step.current.link.identity;transfer.expected_sequence=sequence-1;transfer.mode=step.mode;
+        Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");event.text(1,child);event.integer(2,impl_->selected_account);event.blob(3,transfer_codec::encode(transfer));event.integer(4,delta.units()!=0?1:0);event.integer(5,delta.units());event.done();
+        store_transfer(impl_->db,step.next,sequence,false);
+        append_financial(impl_->db,child,app::ChangeKind::transfer,{"",0},-1,0,before,delta,before+delta,"",sequence-1,catalog_sequence(impl_->db));
+        for(const auto* side:{&step.current.link.origin,&step.current.link.destination,&step.next.link.origin,&step.next.link.destination})touched.insert(side->endpoint.entry);
+    }
+    if(!plan.source_answer.empty()){
+        std::string header=plan.source_answer;
+        Statement child_question(impl_->db,"SELECT question FROM review_answers WHERE id=?");child_question.text(1,plan.source_answer);
+        if(child_question.row() && child_question.bytes(0).starts_with("batch-child:"))header=child_question.bytes(0).substr(std::string("batch-child:").size());
+        Statement applied(impl_->db,"SELECT state FROM action_headers WHERE id=?");applied.text(1,header);
+        if(applied.row() && applied.integer(0)==static_cast<int>(app::ActionState::applied))
+            ActionChain(impl_->db).detached(header,std::string(operation)+"-retire",session_snapshot::digest(request));
+    }
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,ledger_edit_generation()+1);stack.done();
+    impl_->pending_review_action=operation;
+    finish([&]{transaction.commit();});
+    retain_review_ledger_entries(*impl_,cache_changes,touched);
+    return {std::string(operation)};
+}
+app::ReviewReceipt ImportStore::unmerge(std::string_view operation,const std::vector<imports::Occurrence>& selected) {
+    diag::Span span(diag::Code::review_write);
+    identifier(operation);if(operation.size()>72)fail(SQLITE_MISUSE,"Unmerge operation identifier is too long");
+    const auto keep=active_unmerge(selected);const auto link=link_unmerge_plan(selected);
+    if(keep && link)fail(SQLITE_CONSTRAINT,"Choose one merged or linked transaction.");
+    if(link)return unmerge_link(operation,*link);
+    const auto original=keep;if(!original)fail(SQLITE_CONSTRAINT,"Choose one merged or linked transaction.");
+    if(const auto prior=review_outcome(operation))return *prior;
+    struct Loser {imports::Occurrence id;};
+    std::vector<Loser> losers;
+    Statement listed(impl_->db,"SELECT batch,ordinal FROM review_merges WHERE answer=? ORDER BY batch,ordinal");listed.text(1,*original);
+    while(listed.row())losers.push_back({imports::Occurrence{listed.bytes(0),static_cast<std::size_t>(listed.integer(1))}});
+    if(losers.empty())fail(SQLITE_CORRUPT,"Merge details are missing");
+    const auto& survivor=selected.front();
+    std::string request=*original+"\n"+survivor.batch+"\n"+std::to_string(integer(survivor.ordinal))+"\n"+std::to_string(losers.size())+"\n";
+    for(const auto& loser:losers)request+=loser.id.batch+"\n"+std::to_string(integer(loser.id.ordinal))+"\n";
+    struct Scope{Impl& state;std::int64_t selected;bool cleaning;~Scope(){state.selected_account=selected;state.cleaning=cleaning;}} scope{*impl_,impl_->selected_account,impl_->cleaning};
+    const auto cache_changes=sqlite3_total_changes64(impl_->db);
+    std::set<imports::Occurrence> restored;
+    Atomic transaction(impl_->db);
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),0,'unmerge',?,?)");
+    receipt.text(1,operation);receipt.text(2,request);receipt.integer(3,ledger_edit_generation());receipt.done();
+    struct SourceMove {std::string source_batch;std::int64_t source_ordinal=0;std::string from_batch;std::int64_t from_ordinal=0;std::string to_batch;std::int64_t to_ordinal=0;};
+    std::vector<SourceMove> moves;
+    Statement sources(impl_->db,"SELECT source_batch,source_ordinal,prior_batch,prior_ordinal,result_batch,result_ordinal FROM review_sources WHERE answer=?");sources.text(1,*original);
+    while(sources.row()){
+        Statement current(impl_->db,"SELECT ledger_batch,ledger_ordinal FROM source_associations WHERE source_batch=? AND source_ordinal=?");
+        current.text(1,sources.bytes(0));current.integer(2,sources.integer(1));if(!current.row() || current.bytes(0)!=sources.bytes(4) || current.integer(1)!=sources.integer(5))fail(SQLITE_CONSTRAINT,"This merge was changed. Undo it from Change history.");
+        moves.push_back({sources.bytes(0),sources.integer(1),current.bytes(0),current.integer(1),sources.bytes(2),sources.integer(3)});
+    }
+    std::size_t child=0;
+    for(const auto& loser:losers){
+        const auto row=load_row(loser.id,false);if(!row.draft)fail(SQLITE_CORRUPT,"Merged transaction is missing");
+        write_review_row(operation,std::string(operation)+"-"+std::to_string(++child),loser.id,*row.draft,{imports::Disposition::include,{}},true);
+        restored.insert(loser.id);
+    }
+    impl_->cleaning=true;
+    for(const auto& move:moves){
+        Statement recorded(impl_->db,"INSERT INTO review_sources VALUES(?,?,?,?,?,?,?)");
+        recorded.text(1,operation);recorded.text(2,move.source_batch);recorded.integer(3,move.source_ordinal);recorded.text(4,move.from_batch);recorded.integer(5,move.from_ordinal);recorded.text(6,move.to_batch);recorded.integer(7,move.to_ordinal);recorded.done();
+        Statement now(impl_->db,"SELECT ledger_batch,ledger_ordinal FROM source_associations WHERE source_batch=? AND source_ordinal=?");
+        now.text(1,move.source_batch);now.integer(2,move.source_ordinal);
+        if(now.row() && now.bytes(0)==move.to_batch && now.integer(1)==move.to_ordinal)continue;
+        Statement del(impl_->db,"DELETE FROM source_associations WHERE source_batch=? AND source_ordinal=?");del.text(1,move.source_batch);del.integer(2,move.source_ordinal);del.done();
+        Statement add(impl_->db,"INSERT INTO source_associations VALUES(?,?,?,?)");add.text(1,move.to_batch);add.integer(2,move.to_ordinal);add.text(3,move.source_batch);add.integer(4,move.source_ordinal);add.done();
+    }
+    impl_->cleaning=scope.cleaning;
+    Statement clear(impl_->db,"DELETE FROM review_merges WHERE answer=?");clear.text(1,*original);clear.done();
+    Statement drop(impl_->db,"DELETE FROM review_stack WHERE answer=?");drop.text(1,*original);drop.done();
+    std::string header=*original;
+    Statement child_question(impl_->db,"SELECT question FROM review_answers WHERE id=?");child_question.text(1,*original);
+    if(child_question.row() && child_question.bytes(0).starts_with("batch-child:"))header=child_question.bytes(0).substr(std::string("batch-child:").size());
+    Statement applied(impl_->db,"SELECT state FROM action_headers WHERE id=?");applied.text(1,header);
+    if(applied.row() && applied.integer(0)==static_cast<int>(app::ActionState::applied))
+        ActionChain(impl_->db).detached(header,std::string(operation)+"-retire",session_snapshot::digest(request));
+    Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,ledger_edit_generation()+1);stack.done();
+    impl_->pending_review_action=operation;
+    finish([&]{transaction.commit();});
+    retain_review_ledger_entries(*impl_,cache_changes,restored);
+    return {std::string(operation)};
+}
 app::ReviewReceipt ImportStore::undo_review(std::string_view operation) {
     ScopedStatements statements(impl_->db);
     session_snapshot::retry(impl_->db,operation,"review-undo",session_snapshot::digest(operation));
@@ -825,8 +1053,17 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
     if(!restored.empty()){
         const auto current=all_transfers();
         auto working=current;std::map<std::int64_t,Money> link_balances;
+        Statement link_question(impl_->db,"SELECT question FROM review_answers WHERE id=?");link_question.text(1,answer);
+        if(link_question.row() && link_question.bytes(0)=="unmerge-link"){
+            std::vector<std::size_t> order;
+            if(!ordered_link_writes(current,restored,order))fail(SQLITE_CONSTRAINT,"This unmerge cannot be undone.");
+            std::vector<app::TransferView> arranged;arranged.reserve(order.size());
+            for(const auto index:order)arranged.push_back(std::move(restored[index]));
+            restored=std::move(arranged);
+        }else{
         const auto active_count=[&](const app::TransferView& value){const auto found=std::find_if(current.begin(),current.end(),[&](const auto& v){return v.link.identity==value.link.identity;});if(found==current.end())fail(SQLITE_CORRUPT);return int(found->link.origin.state!=transfers::State::removed)+int(found->link.destination.state!=transfers::State::removed);};
         std::stable_sort(restored.begin(),restored.end(),[&](const auto& a,const auto& b){return active_count(a)>active_count(b);});
+        }
         std::size_t link_serial=0;
         for(const auto& target:restored){
             const auto initial=std::find_if(working.begin(),working.end(),[&](const auto& v){return v.link.identity==target.link.identity;});if(initial==working.end())fail(SQLITE_CORRUPT);
@@ -884,7 +1121,10 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
         }else{
             Statement decision(impl_->db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? AND revision=?");decision.text(1,id.batch);decision.integer(2,integer(id.ordinal));decision.integer(3,members.integer(3));if(!decision.row())fail(SQLITE_CORRUPT);
             imports::Decision value{static_cast<imports::Disposition>(decision.integer(0)),{}};if(value.disposition==imports::Disposition::duplicate)value.duplicate_of=imports::Occurrence{decision.bytes(1),static_cast<std::size_t>(decision.integer(2))};
-            write_review_row(answer,next_child(),id,review_draft(id,members.integer(3)),value,true,true,!editor_undo);
+            // Unmerge only changes the duplicate decision. Restore that decision on the current text.
+            const auto current_row=root_kind.bytes(0)=="unmerge"?load_row(id,false):app::RowView{};
+            const auto& restored_draft=root_kind.bytes(0)=="unmerge"&&current_row.draft?*current_row.draft:review_draft(id,members.integer(3));
+            write_review_row(answer,next_child(),id,restored_draft,value,true,true,!editor_undo);
         }
     }
     impl_->cleaning=true;
@@ -911,6 +1151,16 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
     }
     impl_->cleaning=prior_cleaning;
     Statement merged(impl_->db,"DELETE FROM review_merges WHERE answer=?");merged.text(1,answer);merged.done();
+    Statement unmerge(impl_->db,"SELECT question,request FROM review_answers WHERE id=?");unmerge.text(1,answer);
+    if(!unmerge.row() || unmerge.bytes(0)!="unmerge")return;
+    const auto stored_request=unmerge.bytes(1);
+    std::string_view request=stored_request;
+    auto take=[&](std::string& out){if(request.empty() || request.front()=='\n')fail(SQLITE_CORRUPT,"Unmerge history is incomplete");const auto mark=request.find('\n');if(mark==std::string_view::npos || mark==0 || mark>1000000)fail(SQLITE_CORRUPT,"Unmerge history is incomplete");out.assign(request.substr(0,mark));request.remove_prefix(mark+1);};
+    auto number=[&]{std::string text;take(text);std::int64_t value=0;for(const char c:text){if(c<'0'||c>'9'||value>(std::numeric_limits<std::int64_t>::max()- (c-'0'))/10)fail(SQLITE_CORRUPT,"Unmerge history is incomplete");value=value*10+(c-'0');}return value;};
+    std::string original,target;take(original);take(target);const auto target_ordinal=number();const auto count=number();
+    if(count<1 || count>4096)fail(SQLITE_CORRUPT,"Unmerge history is incomplete");
+    for(std::int64_t i=0;i<count;++i){std::string batch;take(batch);const auto ordinal=number();Statement restore(impl_->db,"INSERT INTO review_merges VALUES(?,?,?,?,?)");restore.text(1,batch);restore.integer(2,ordinal);restore.text(3,target);restore.integer(4,target_ordinal);restore.text(5,original);restore.done();}
+    if(!request.empty())fail(SQLITE_CORRUPT,"Unmerge history is incomplete");
 }
 
 app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) {

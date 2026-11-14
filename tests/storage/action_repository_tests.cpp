@@ -749,6 +749,172 @@ void merge_and_link_history(const std::filesystem::path& path) {
     check(store.action_head() && store.action_head()->id=="after-join","The later edit remains after undoing the merge");
     store.certify({});
 }
+bool on_ledger(ImportStore& store,const char* batch,std::size_t ordinal) {
+    for(const auto& row:store.current_ledger())if(row.identity.batch==batch && row.identity.ordinal==ordinal)return true;
+    return false;
+}
+void unmerge_kept(const std::filesystem::path& path) {
+    const Currency cad("CAD");
+    {auto store=ImportStore::create(path,"synthetic","Checking",cad,"2026-01-01");
+    store.ingest("plain",source("Ordinary"),qif::DateOrder::dmy);
+    check(!store.can_unmerge({{"plain",0}}),"An ordinary transaction cannot be unmerged");
+    store.ingest("twins","!Type:Bank\nD03/01/2026\nT-4.00\nPRed\n^\nD03/01/2026\nT-4.00\nPBlue\n^\n",qif::DateOrder::dmy);
+    ReviewAnswer merge;merge.question="selected";merge.action=ReviewAction::merge;merge.generation=store.review_sheet().generation;merge.selected={{"twins",0},{"twins",1}};merge.survivor={"twins",0};
+    store.answer_review("merge-one",merge);store.verify();
+    edit(store,"keep-edit",{"twins",0},"Red edited");
+    check(store.can_unmerge({{"twins",0}}),"The kept row of one merge can be unmerged");
+    check(!store.can_unmerge({{"twins",0},{"plain",0}}),"Unmerge stays unavailable when another transaction is selected");
+    store.unmerge("unmerge-one",{{"twins",0}});store.verify();
+    check(on_ledger(store,"twins",0) && on_ledger(store,"twins",1),"Unmerge puts the hidden transaction back");
+    check(store.row({"twins",0}).draft->payee=="Red edited","A later edit of the kept transaction stays");
+    check(store.row({"twins",1}).draft->payee=="Blue" && store.row({"twins",1}).decision.disposition==imports::Disposition::include,"The transaction that left returns as it was");
+    check(!store.can_unmerge({{"twins",0}}),"Unmerge is finished");
+    const auto page=history_page(store,1);
+    const auto* row=find_action(page,"unmerge-one");
+    check(row && row->label=="Unmerge" && row->undoable,"Unmerge is its own Change history row");
+    check(!find_action(page,"merge-one"),"The merge row leaves Change history once it is unmerged");
+    undo(store,"undo-unmerge","unmerge-one");
+    check(!on_ledger(store,"twins",1) && store.row({"twins",0}).draft->payee=="Red edited","Undo of Unmerge hides that transaction again and keeps the later edit");
+    check(store.can_unmerge({{"twins",0}}),"The kept row can be unmerged again");
+    store.ingest("third","!Type:Bank\nD04/01/2026\nT-4.00\nPGreen\n^\n",qif::DateOrder::dmy);
+    ReviewAnswer again;again.question="selected";again.action=ReviewAction::merge;again.generation=store.review_sheet().generation;again.selected={{"twins",0},{"third",0}};again.survivor={"twins",0};
+    store.answer_review("merge-two",again);store.verify();
+    check(!store.can_unmerge({{"twins",0}}),"Two merges of the same kept row cannot be split by one Unmerge");
+    store.certify({});}
+    {auto reopened=ImportStore::open(path,"synthetic");
+     check(reopened.can_unmerge({{"twins",0}})==false,"Two merges stay joined after the file is closed");
+     reopened.verify();}
+    {auto fresh=ImportStore::create(std::filesystem::path(path.string()+"-closed"),"synthetic","Checking",cad,"2026-01-01");
+    fresh.ingest("twins","!Type:Bank\nD03/01/2026\nT-4.00\nPRed\n^\nD03/01/2026\nT-4.00\nPBlue\n^\n",qif::DateOrder::dmy);
+    ReviewAnswer closed;closed.question="selected";closed.action=ReviewAction::merge;closed.generation=fresh.review_sheet().generation;closed.selected={{"twins",0},{"twins",1}};closed.survivor={"twins",0};
+    fresh.answer_review("merge-closed",closed);edit(fresh,"later",{"twins",0},"Red kept");fresh.certify({});}
+    {auto reopened=ImportStore::open(std::filesystem::path(path.string()+"-closed"),"synthetic");
+     check(!reopened.action_head() && reopened.can_unmerge({{"twins",0}}),"Unmerge remains after Change history is cleared");
+     reopened.unmerge("unmerge-closed",{{"twins",0}});reopened.verify();
+     check(on_ledger(reopened,"twins",1) && reopened.row({"twins",0}).draft->payee=="Red kept","Unmerge after close restores the hidden transaction and keeps the later edit");}
+}
+void unmerge_linked(const std::filesystem::path& path) {
+    const Currency cad("CAD");
+    auto active=[&](ImportStore& store,std::int64_t account,const char* batch){store.select_account(account);for(const auto& value:store.transfers()){if(value.link.unresolved || value.link.origin.state==transfers::State::removed || value.link.destination.state==transfers::State::removed)continue;for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.entry==imports::Occurrence{batch,0} && (side->independent_evidence || side->ledger_entry))return true;}return false;};
+    auto fact=[&](ImportStore& store,std::int64_t account,const char* batch) {
+        store.select_account(account);
+        const auto row=store.row({batch,0});
+        const auto& allocation=row.draft->transaction.allocations().front();
+        const bool imported=row.draft->transaction.original_imported_amount().has_value();
+        std::int64_t revision=0;for(const auto& item:store.batches())if(item.id==batch)revision=item.revision;
+        transfers::AllocationFact value{{account,{batch,0},allocation.identity},allocation.amount,row.draft->date,transfers::State::draft,imported,false,!imported};
+        return std::pair{value,revision};
+    };
+    {
+        auto store=ImportStore::create(path,"synthetic","Checking",cad,"2026-01-01");
+        store.create_account(2,"Savings",cad,"2026-01-01");
+        store.ingest("left","!Type:Bank\nD01/01/2026\nT-10.00\nPAlpha\n^\n",qif::DateOrder::dmy);
+        store.select_account(2);
+        store.ingest("right","!Type:Bank\nD02/01/2026\nT10.00\nPBeta\n^\n",qif::DateOrder::dmy);
+        const auto [left,left_revision]=fact(store,1,"left");
+        const auto [right,right_revision]=fact(store,2,"right");
+        store.select_account(1);
+        TransferRequest link{};link.action=TransferAction::merge;link.link="pair";link.kept="pair-kept";link.expected_sequence=store.transfer_sequence();
+        link.left=left;link.right=right;link.batch_revision=left_revision;link.right_revision=right_revision;link.payee="Alpha";
+        store.apply_transfer("link-pair",link);store.verify();
+        store.ingest("later",source("Gamma"),qif::DateOrder::dmy);
+        edit(store,"later-edit",{"later",0},"Gamma edited");
+        check(store.can_unmerge({{"left",0}}),"One linked transaction can be unmerged");
+        check(store.unmerge_notice({{"left",0}}).find("Both transactions stay")!=std::string::npos,"A link that left both transactions says both stay");
+        check(!store.can_unmerge({{"left",0},{"right",0}}),"Unmerge stays unavailable when another transaction is selected");
+        store.unmerge("unmerge-link",{{"left",0}});store.verify();
+        check(!active(store,1,"left") && !active(store,2,"right"),"Unmerge separates the link");
+        store.select_account(1);check(store.row({"left",0}).draft->payee=="Alpha" && store.row({"later",0}).draft->payee=="Gamma edited","The linked transaction and a later edit stay");
+        store.select_account(2);check(store.row({"right",0}).draft->payee=="Beta","The other transaction stays");
+        store.select_account(1);
+        const auto page=history_page(store,1);
+        const auto* row=find_action(page,"unmerge-link");
+        check(row && row->label=="Unmerge" && row->undoable,"Unmerge of a link is its own Change history row");
+        check(!find_action(page,"link-pair"),"The link row leaves Change history once it is unmerged");
+        undo(store,"undo-unmerge-link","unmerge-link");
+        check(active(store,1,"left") && active(store,2,"right"),"Undo of Unmerge puts the link back");
+        store.select_account(1);check(store.row({"later",0}).draft->payee=="Gamma edited","Undo of Unmerge keeps the later edit");
+        store.certify({});
+    }
+    {auto reopened=ImportStore::open(path,"synthetic");
+     check(!reopened.action_head() && reopened.can_unmerge({{"left",0}}),"Unmerge of a link remains after Change history is cleared");
+     reopened.unmerge("unmerge-closed-link",{{"left",0}});reopened.verify();
+     check(!active(reopened,1,"left") && !active(reopened,2,"right"),"Unmerge after close separates the link");
+     reopened.select_account(1);check(on_ledger(reopened,"left",0),"The first transaction stays after close");
+     reopened.select_account(2);check(on_ledger(reopened,"right",0),"The other transaction stays after close");}
+    const auto payment=std::filesystem::path(path.string()+"-payment");
+    {
+        auto store=ImportStore::create(payment,"synthetic","Checking",cad,"2026-01-01");
+        store.create_account(2,"Savings",cad,"2026-01-01");
+        store.ingest("out","!Type:Bank\nD04/01/2026\nT-25.00\nPPayment\nL[Savings]\n^\n",qif::DateOrder::dmy);
+        store.select_account(2);
+        store.ingest("in","!Type:Bank\nD05/01/2026\nT25.00\nPReceipt\nL[Checking]\n^\n",qif::DateOrder::dmy);
+        check(shows_generated(store),"The payment is shown twice before it is merged");
+        const auto sheet=store.review_sheet();
+        const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& value){return value.kind==ReviewKind::link && value.rows.size()>1;});
+        check(question!=sheet.questions.end(),"The payment and the receipt are one link question");
+        ReviewAnswer join;join.question=question->key;join.generation=sheet.generation;join.action=ReviewAction::link;join.selected={question->rows.front().identity,question->rows[1].identity};
+        store.answer_review("join-payment",join);store.verify();
+        check(!shows_generated(store),"Same-payment merge removes the extra entry");
+        store.select_account(2);
+        check(store.can_unmerge({{"in",0}}),"The account that showed two rows can unmerge the one that remains");
+        check(store.unmerge_notice({{"in",0}}).find("this account")!=std::string::npos,"Unmerge says the extra entry comes back in this account");
+        const auto before=store.current_ledger().size();
+        store.unmerge("unmerge-payment",{{"in",0}});store.verify();
+        store.select_account(2);
+        check(shows_generated(store) && store.current_ledger().size()>before,"Unmerge puts the extra entry back beside the bank transaction");
+        store.select_account(1);undo(store,"undo-unmerge-payment","unmerge-payment");store.select_account(2);check(!shows_generated(store),"Undo of Unmerge removes the extra entry again");
+        store.certify({});
+    }
+    {auto reopened=ImportStore::open(payment,"synthetic");
+     check(reopened.can_unmerge({{"out",0}}),"Unmerge of a payment remains after the file is closed");
+     reopened.unmerge("unmerge-closed-payment",{{"out",0}});reopened.verify();
+     reopened.select_account(2);check(shows_generated(reopened),"Unmerge after close puts the extra entry back");}
+    auto count=[&](ImportStore& store,std::int64_t account){store.select_account(account);return store.current_ledger().size();};
+    const auto both=std::filesystem::path(path.string()+"-both");
+    std::size_t savings_before=0,visa_before=0;
+    {
+        auto store=ImportStore::create(both,"synthetic","Checking",cad,"2026-01-01");
+        store.create_account(2,"Savings",cad,"2026-01-01");
+        store.create_account(3,"Visa",cad,"2026-01-01");
+        store.ingest("checking","!Type:Bank\nD15/10/2026\nT-800.00\nPTransfer to Savings\nL[Savings]\n^\nD15/10/2026\nT-450.00\nPVisa payment\nL[Visa]\n^\n",qif::DateOrder::dmy);
+        store.select_account(2);
+        store.ingest("savings","!Type:Bank\nD15/10/2026\nT800.00\nPTransfer from Checking\nL[Checking]\n^\nD15/10/2026\nT-200.00\nPVisa payment\nL[Visa]\n^\n",qif::DateOrder::dmy);
+        store.select_account(3);
+        store.ingest("visa","!Type:CCard\nD15/10/2026\nT450.00\nPPayment from Checking\nL[Checking]\n^\nD15/10/2026\nT200.00\nPPayment from Savings\nL[Savings]\n^\n",qif::DateOrder::dmy);
+        savings_before=count(store,2);visa_before=count(store,3);
+        const auto sheet=store.review_sheet();
+        const app::ReviewQuestion* payment=nullptr;
+        for(const auto& question:sheet.questions){
+            if(question.kind!=ReviewKind::link || question.rows.size()<2)continue;
+            bool savings=false,visa=false;
+            for(const auto& row:question.rows){if(row.account==2)savings=true;if(row.account==3)visa=true;}
+            if(savings && visa)payment=&question;
+        }
+        check(payment!=nullptr,"The savings and visa payments are one link");
+        ReviewAnswer join;join.question=payment->key;join.generation=sheet.generation;join.action=ReviewAction::link;join.selected={payment->rows[0].identity,payment->rows[1].identity};
+        store.answer_review("join-visa",join);store.verify();
+        const auto savings_merged=count(store,2),visa_merged=count(store,3);
+        check(savings_merged<savings_before && visa_merged<visa_before,"Merging the visa payment removes a row from savings and from visa");
+        store.select_account(3);
+        imports::Occurrence kept{"",0};bool found=false;
+        for(const auto& row:store.current_ledger())if(row.draft.payee=="Payment from Savings"){kept=row.identity;found=true;}
+        check(found && store.can_unmerge({kept}),"The merged visa payment can be unmerged");
+        check(store.unmerge_notice({kept}).find("Savings")!=std::string::npos,"Unmerge says the savings row comes back");
+        store.unmerge("unmerge-visa",{kept});store.verify();
+        check(count(store,2)==savings_before && count(store,3)==visa_before,"Unmerge puts the removed rows back in savings and visa");
+        undo(store,"undo-unmerge-visa","unmerge-visa");
+        check(count(store,2)==savings_merged && count(store,3)==visa_merged,"Undo of Unmerge removes those rows again");
+        store.certify({});
+    }
+    {auto reopened=ImportStore::open(both,"synthetic");
+     reopened.select_account(3);
+     imports::Occurrence kept{"",0};bool found=false;
+     for(const auto& row:reopened.current_ledger())if(row.draft.payee=="Payment from Savings"){kept=row.identity;found=true;}
+     check(found && reopened.can_unmerge({kept}),"Unmerge of a payment in both accounts remains after the file is closed");
+     reopened.unmerge("unmerge-closed-visa",{kept});reopened.verify();
+     check(count(reopened,2)==savings_before && count(reopened,3)==visa_before,"Unmerge after close puts the removed rows back in savings and visa");}
+}
 void corrupt_lineage(const std::filesystem::path& directory) {
     int serial=0;
     for(const auto* sql:{"UPDATE review_undo_members SET consumed=0", "UPDATE review_undo_members SET original_child='missing'"}) {
@@ -765,7 +931,7 @@ int main(int argc,char** argv){
     auto path=(std::filesystem::temp_directory_path()/"spentit-action-repository-XXXXXX").string();
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
-    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
+    try{if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge"){unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

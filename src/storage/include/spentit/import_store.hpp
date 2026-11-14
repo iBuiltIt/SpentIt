@@ -183,6 +183,9 @@ public:
     app::ReviewReceipt save_link_exclusion(std::string_view,const app::LinkExclusion&,std::int64_t) override;
     app::ReviewSheet review_sheet() const override;
     std::vector<imports::Occurrence> merge_survivors() const override;
+    bool can_unmerge(const std::vector<imports::Occurrence>&) const override;
+    std::string unmerge_notice(const std::vector<imports::Occurrence>&) const override;
+    app::ReviewReceipt unmerge(std::string_view,const std::vector<imports::Occurrence>&) override;
     app::ReviewReceipt merge_review_batch(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&) override;
     app::ReviewReceipt answer_review(std::string_view,const app::ReviewAnswer&) override;
     app::ReviewReceipt assign_categories(std::string_view,const app::CategorySelection&,const app::OperationContext&) override;
@@ -254,6 +257,19 @@ private:
     void verify_transfers(const app::OperationContext*) const;
     void require_unlinked(const imports::Occurrence&) const;
     bool transfer_linked(const imports::Occurrence&) const;
+    std::optional<std::string> active_unmerge(const std::vector<imports::Occurrence>&) const;
+    struct LinkUnmergeStep {
+        app::TransferView current,next;
+        int mode=1;
+    };
+    struct LinkUnmergePlan {
+        std::vector<LinkUnmergeStep> steps;
+        bool restores_generated=false;
+        std::string restored_where;
+        std::string source_answer;
+    };
+    std::optional<LinkUnmergePlan> link_unmerge_plan(const std::vector<imports::Occurrence>&) const;
+    app::ReviewReceipt unmerge_link(std::string_view,const LinkUnmergePlan&);
     struct DeletionPlan;
     DeletionPlan plan_deletion(const app::LedgerSelectionEdit&,const app::OperationContext&) const;
     app::ReviewReceipt delete_transactions(std::string_view,const app::LedgerSelectionEdit&,const app::OperationContext&);

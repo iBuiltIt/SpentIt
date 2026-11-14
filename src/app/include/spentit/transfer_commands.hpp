@@ -2,7 +2,7 @@
 #include <spentit/transfer.hpp>
 
 namespace spentit::app {
-enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard, merge, retarget, relink, restore, review_undo, resize_generated, release_generated, delete_selection };
+enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard, merge, retarget, relink, restore, review_undo, resize_generated, release_generated, delete_selection, unmerge };
 struct TransferRequest {
     TransferAction action;
     std::string link;
@@ -15,6 +15,7 @@ struct TransferRequest {
     std::string date,payee,memo;
     std::optional<transfers::BankEvidence> evidence;
     // For Review Undo, mode 0 is a single step; 1/2 restore two account sides.
+    // For Unmerge, mode 0 separates two kept transactions; mode 1 restores the recorded link.
     // For merge and retarget, mode 0 releases to a category; mode 1
     // generates or replaces a destination. Facts are the caller's complete request.
     std::string kept;

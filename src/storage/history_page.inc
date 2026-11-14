@@ -67,9 +67,12 @@ std::string ImportStore::action_display_label(const app::ActionSummary& action) 
         if(event.row() && transfer_codec::request(event.bytes(0)).action==app::TransferAction::merge)return "Link";
         return action.label;
     }
-    if(review_action==static_cast<int>(app::ReviewAction::merge))return "Merge";
+    // Ledger edits, rules, and acceptance store the same action numbers as Review
+    // merge and link. Only a review question is renamed here.
+    const bool review_decision=!question.starts_with("ledger-") && !question.starts_with("rules-") && question!="acceptance" && question!="transfer-assignment" && question!="review-exclusion" && question!="unmerge";
+    if(review_decision && review_action==static_cast<int>(app::ReviewAction::merge))return "Merge";
     // Same-payment Merge removes the extra entry. A link that leaves both transactions in place stays Link.
-    if(review_action==static_cast<int>(app::ReviewAction::link))return retired_generated_link(impl_->db,action.id)?"Merge":"Link";
+    if(review_decision && review_action==static_cast<int>(app::ReviewAction::link))return retired_generated_link(impl_->db,action.id)?"Merge":"Link";
     return action.label;
 }
 std::vector<app::HistoryFieldChange> ImportStore::history_named_fields(const app::ActionSummary& action) const {

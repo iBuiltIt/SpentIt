@@ -335,6 +335,11 @@ public:
     // Rows kept when another transaction in the same account was merged into them,
     // excluding rows that have since been accepted.
     virtual std::vector<imports::Occurrence> merge_survivors() const {return {};}
+    // True when the selection is one joined row that can be split back into two.
+    virtual bool can_unmerge(const std::vector<imports::Occurrence>&) const {return false;}
+    // Empty when Unmerge applies immediately. Otherwise the confirmation text.
+    virtual std::string unmerge_notice(const std::vector<imports::Occurrence>&) const {return {};}
+    virtual ReviewReceipt unmerge(std::string_view,const std::vector<imports::Occurrence>&) {throw std::logic_error("Unmerge unavailable");}
     virtual ReviewReceipt merge_review_batch(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Batch Review unavailable");}
     virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}
     virtual ReviewReceipt assign_categories(std::string_view,const CategorySelection&,const OperationContext&) {throw std::logic_error("Category assignment unavailable");}

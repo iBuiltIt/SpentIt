@@ -8,6 +8,17 @@ void undo_new_relationship(app::TransferView& value) {
         destination.state=transfers::State::removed;
     value.link.origin.state=transfers::State::removed;value.link.unresolved=true;
 }
+transfers::Link separate_kept_link(transfers::Link link) {
+    const auto kept=[](const transfers::Side& side){return side.independent_evidence || side.ledger_entry;};
+    if(link.unresolved || link.destination_released || link.origin.state==transfers::State::removed || link.destination.state==transfers::State::removed || !kept(link.origin) || !kept(link.destination))
+        throw transfers::TransferError(transfers::Error::invalid_relationship,"Choose one linked transaction.");
+    link.destination.proposed_evidence.reset();
+    link.unresolved=true;
+    link.origin.state=transfers::State::removed;link.origin.proposed_evidence.reset();link.origin.attached_evidence.reset();link.origin.accepted_unmatched=false;
+    if(link.origin.manually_entered)link.origin.independent_evidence=false;
+    link.origin.provisional_date=false;link.origin.date=link.generated_date;link.origin_date_corrected=false;
+    transfers::validate(link);return link;
+}
 Money local_total(const std::vector<app::TransferView>& values,std::int64_t account,const Currency& currency,bool projected){
     std::vector<Money> amounts;
     for(const auto& value:values)for(const auto* side:{&value.link.origin,&value.link.destination})
@@ -84,6 +95,7 @@ const char* transfer_action_name(const app::TransferRequest& request) {
     case app::TransferAction::restore: return "Restore";
     case app::TransferAction::review_undo: return "Undo Review";
     case app::TransferAction::delete_selection: return "Unlink for deletion";
+    case app::TransferAction::unmerge: return "Unmerge";
     case app::TransferAction::release_generated: return "Replace generated transfer relationship";
     case app::TransferAction::resize_generated: return "Adjust generated transfer after fee split";
     }
@@ -499,7 +511,7 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
         else if(request.action==app::TransferAction::relink){if(kind!=static_cast<int>(app::ChangeKind::correct) && kind!=static_cast<int>(app::ChangeKind::remove))fail(SQLITE_CORRUPT,"Transfer history does not replay");expected_kind=kind;}
         else if(request.action==app::TransferAction::restore)expected_kind=static_cast<int>(app::ChangeKind::undo);
         else if(committed_category)expected_kind=static_cast<int>(app::ChangeKind::correct);
-        const bool posts_money=request.action==app::TransferAction::commit_local || request.action==app::TransferAction::import_commit || ((request.action==app::TransferAction::merge || request.action==app::TransferAction::review_undo || request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated || request.action==app::TransferAction::delete_selection) && events.integer(6)!=0);
+        const bool posts_money=request.action==app::TransferAction::commit_local || request.action==app::TransferAction::import_commit || ((request.action==app::TransferAction::merge || request.action==app::TransferAction::review_undo || request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated || request.action==app::TransferAction::delete_selection || request.action==app::TransferAction::unmerge) && events.integer(6)!=0);
         if(kind!=expected_kind || request.expected_sequence!=sequence-1 || (request.action!=app::TransferAction::import_commit && events.integer(7)!=sequence-1) || (events.integer(3)!=0)!=posts_money)fail(SQLITE_CORRUPT);
         if(append_only && request.action==app::TransferAction::merge && !request.kept.empty() && request.left && request.right &&
            request.left->imported && request.right->imported && !request.left->generated && !request.right->generated &&
@@ -563,6 +575,21 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
             if(!restored)fail(SQLITE_CORRUPT);
             std::vector<app::TransferView> after;for(const auto& [id,v]:previous){(void)id;after.push_back(v);}validate_transfer_set(after);
             if((local_total(after,account.identity,currency,false)-local_total(before,account.identity,currency,false)).units()!=events.integer(6))fail(SQLITE_CORRUPT);
+            continue;
+        }
+        if(request.action==app::TransferAction::unmerge){
+            try{
+            Statement history(impl_->db,"SELECT prior_payload,result_payload FROM review_link_history WHERE operation=? AND identity=?");history.text(1,events.bytes(0));history.text(2,request.link);
+            if(!history.row() || history.null(0))fail(SQLITE_CORRUPT,"Unmerge history is incomplete");
+            const auto prior=transfer_codec::view(history.bytes(0));const auto result=transfer_codec::view(history.bytes(1));
+            const auto found=previous.find(request.link);if(found==previous.end() || transfer_codec::encode(found->second)!=transfer_codec::encode(prior))fail(SQLITE_CORRUPT,"Unmerge relationship changed");
+            if(request.mode==0){auto separated=prior;try{separated.link=separate_kept_link(prior.link);}catch(const transfers::TransferError&){fail(SQLITE_CORRUPT,"Unmerge relationship changed");}if(transfer_codec::encode(separated)!=transfer_codec::encode(result))fail(SQLITE_CORRUPT,"Unmerge relationship changed");}
+            Statement stored(impl_->db,"SELECT payload FROM transfer_versions WHERE identity=? AND sequence=?");stored.text(1,request.link);stored.integer(2,sequence);if(!stored.row() || stored.bytes(0)!=transfer_codec::encode(result))fail(SQLITE_CORRUPT,"Unmerge history does not replay");
+            std::vector<app::TransferView> before;for(const auto& [id,value]:previous){(void)id;before.push_back(value);}
+            previous.insert_or_assign(request.link,result);++count;
+            std::vector<app::TransferView> after;for(const auto& [id,value]:previous){(void)id;after.push_back(value);}try{validate_transfer_set(after);}catch(const transfers::TransferError&){fail(SQLITE_CORRUPT,"Unmerge replay is not a valid transfer set");}
+            if((local_total(after,account.identity,currency,false)-local_total(before,account.identity,currency,false)).units()!=events.integer(6))fail(SQLITE_CORRUPT);
+            }catch(const transfers::TransferError&){fail(SQLITE_CORRUPT,"Unmerge replay failed");}
             continue;
         }
         if(request.action==app::TransferAction::relink || request.action==app::TransferAction::restore){

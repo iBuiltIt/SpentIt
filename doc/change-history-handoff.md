@@ -29,6 +29,11 @@ A link that leaves both transactions in place, including **Link to other
 account…**, is one Link row on both accounts. Undo removes the link and leaves
 both transactions.
 
+**Unmerge** on one joined row is one Unmerge row. For a keep-one merge it
+restores the transaction that left. For a linked payment it brings the
+removed rows back, including a row in the other account. For a link that left both transactions, it separates them. Undo of
+that row puts the join back.
+
 The account under the heading is a dropdown. It opens on the account you came
 from. Choosing another account stays on this page. The empty page has no Back
 to account button. The window Back button leaves the page.

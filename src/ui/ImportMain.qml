@@ -490,6 +490,16 @@ ApplicationWindow {
             Button {objectName:"confirmRemovePassword";text:"Remove password protection";DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole;onClicked:{removePasswordDialog.close();workflow.command("change_password",{current:currentPassword.text,password:"",confirmation:"",remove:true})}}
         }
     }
+    property string pendingUnmergeNotice:""
+    Dialog {
+        id:unmergeConfirm;objectName:"unmergeConfirm";modal:true;anchors.centerIn:parent;width:Math.min(480,window.width-40)
+        title:"Unmerge"
+        contentItem:Label {text:pendingUnmergeNotice;wrapMode:Text.Wrap;textFormat:Text.PlainText}
+        footer:DialogButtonBox {
+            Button {objectName:"cancelUnmerge";text:"Cancel";DialogButtonBox.buttonRole:DialogButtonBox.RejectRole;onClicked:unmergeConfirm.close()}
+            Button {objectName:"confirmUnmerge";text:"Unmerge";DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole;onClicked:{unmergeConfirm.close();captureLedgerView("review");workflow.command("unmerge")}}
+        }
+    }
     Menu {
         id:ledgerContext;objectName:"ledgerContext";popupType:Popup.Item;cascade:true
         delegate:LedgerMenuItem {}
@@ -499,6 +509,7 @@ ApplicationWindow {
         LedgerMenuItem {objectName:"setMemoSelection";text:"Set memo…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedMemos()}
         LedgerMenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
         LedgerMenuItem {objectName:"duplicateMergeSelection";visible:!window.reportLedger;text:"Merge";enabled:ledgerMergeEnabled();onTriggered:guard(ledgerMerge)}
+        LedgerMenuItem {objectName:"unmergeSelection";visible:!window.reportLedger;text:"Unmerge";enabled:!s.readOnly && !workflow.busy && !!s.canUnmerge;onTriggered:guard(function(){pendingUnmergeNotice=s.unmergeNotice||"";if(pendingUnmergeNotice.length)unmergeConfirm.open();else{captureLedgerView("review");workflow.command("unmerge")}})}
         LedgerMenuItem {objectName:"mergeSelection";visible:!window.reportLedger;text:"Link to other account…";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)===1;onTriggered:mergeSelected()}
         LedgerMenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
         Menu {
@@ -2046,7 +2057,7 @@ ApplicationWindow {
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
 
             if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action" || action==="undo_connected") || action==="import"))editorClosed=false
-            if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
+            if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="unmerge"?(pendingUnmergeNotice.indexOf("back in")>=0?"Unmerged. The removed row is back.":pendingUnmergeNotice.length?"Unmerged. These are no longer one transfer.":"Unmerged. The transaction that left the ledger is back."):action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
             if(transferMergeAnnounced && action==="review_link_preview"){transferMergeAnnounced=false;if(success && !(s.reviewLinkPreview||{}).common)workspaceFeedback="Payment merged. The extra entry was removed."}
             if(success && action==="change_password"){
                 currentPassword.text=""

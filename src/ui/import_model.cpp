@@ -298,6 +298,7 @@ QString phaseFor(const QString& action){
     if(action=="release_transfer_batch")return "Changing categories";
     if(action=="undo_transfer_assignment")return "Undoing transfer assignment";
     if(action=="review_undo")return "Undoing Review decision";
+    if(action=="unmerge")return "Unmerging";
     if(action=="create")return "Creating file";
     if(action=="save" || action=="accept_edit")return "Accepting edit";
     if(action=="undo_action" || action=="undo_connected")return "Undoing action";
@@ -1302,6 +1303,9 @@ struct ImportModel::Worker {
         for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat,amountFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}value["manual"]=state.value("manualBatches").toMap().contains(text(id.batch));value["transferLinked"]=cachedLinkedRows.contains(id);selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
         state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;state["transferMergePreview"]=transferMergePreview;
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
+        const auto selected_rows=std::vector<imports::Occurrence>(selection.begin(),selection.end());
+        state["canUnmerge"]=repo.can_unmerge(selected_rows);
+        state["unmergeNotice"]=text(repo.unmerge_notice(selected_rows));
         int focus=-1;
         if(selectionFocus)for(std::size_t i=0;i<cachedView->order.size();++i)if(cachedView->rows[cachedView->order[i]].identity==*selectionFocus){focus=static_cast<int>(i);break;}
         state["selectionIndex"]=focus;state["selectionFocusKey"]=selectionFocus?text(selectionFocus->batch)+":"+QString::number(selectionFocus->ordinal):QString();
@@ -1613,6 +1617,12 @@ struct ImportModel::Worker {
         }
         if(action=="review_cancel_link"){reviewLinkPreview.clear();return;}
         if(action=="review_undo") {const auto op=identity();try{repo.undo_review(op);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}diagnosticSaved=true;reviewLinkPreview.clear();selected.clear();return;}
+        if(action=="unmerge") {
+            const auto op=identity();
+            try{repo.unmerge(op,std::vector<imports::Occurrence>(selection.begin(),selection.end()));}
+            catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            diagnosticSaved=true;return;
+        }
         if(action=="transfer_candidates"){
             transferCandidates.clear();candidateLink=a.value("link").toString();
             const auto links=repo.transfers();const auto found=std::find_if(links.begin(),links.end(),[&](const auto& value){return value.link.identity==str(a.value("link"));});
@@ -2842,6 +2852,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."
                 :((action=="map_import" || action=="resolve_import_categories" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved, but its view could not be refreshed. Reopen and inspect Review before retrying."
+                :(action=="unmerge" && result.success)?"Unmerge was saved, but the screen could not update. Reopen the file and check the ledger before making more changes."
                 :((action.startsWith("transfer_") || action=="assign_transfer_batch" || action=="release_transfer_batch" || action=="undo_transfer_assignment") && result.success)?"Transfer operation was saved, but its view could not be refreshed. Reopen and inspect transfers before retrying."
                 :(action=="apply_category" && !worker->categoryReceipt.isEmpty())?"Category change was saved, but the refreshed view could not be loaded. Reopen and inspect category history; do not apply it again."
                 :(action=="apply_change" && !worker->changeReceipt.isEmpty())?"Your change was saved, but the screen could not update. Reopen the file and check the transaction before making more changes."
