@@ -1,7 +1,7 @@
 # 001 — Documents, storage, and security
 
 Status: **active**
-Last updated: 2026-11-11
+Last updated: 2026-11-15
 
 Encrypted local files are the application. One running process has one active
 file. There is no application-wide instance limit. Settings remembers the file
@@ -23,6 +23,11 @@ There is no forgotten-password recovery. Settings can change a file's password,
 add one, or remove protection after confirmation. A copy made beforehand keeps
 the password it was made with. A wrong current password leaves the file unchanged.
 
+A password is 1 to 64 characters. An empty password says “Enter a password.”
+A longer password says “Use a password of 1 to 64 characters.” and leaves the
+password box in place. Help for that sentence says the password is stored as
+UTF-8 text. This check does not change the file format.
+
 ## Creation and welcome
 
 Creation defaults to the account name SpentIt, CAD, password protection on, and
@@ -40,8 +45,10 @@ replacement; say so and allow another explicit overwrite.
 
 Startup tries the last-used no-password file once. Success skips the welcome
 screen. Otherwise the welcome screen offers Open, New, Browse, and a password
-when needed. File → Close returns to that screen and does not reopen the file
-just closed.
+when needed. Choosing Open file for a password-protected file with an empty
+password leaves that password box in place and says “Enter a password.” The
+file is not opened. File → Close returns to that screen and does not reopen the
+file just closed.
 
 The welcome screen shows SpentIt, “Where did my money go?”, the file prompt,
 and errors. The logo follows system appearance.

@@ -1406,11 +1406,17 @@ struct ImportModel::Worker {
                 if(!QDir().mkpath(location.absolutePath())) throw std::runtime_error("Cannot create dataset directory");
                 gateway->create_configured(path.toStdString(),a.value("overwrite").toBool(),a.value("protected",true).toBool(),str(a.value("password")),str(a.value("name")),Currency(str(a.value("currency"))),QDate::currentDate().toString(Qt::ISODate).toStdString(),{str(a.value("dateFormat","YYYY-MM-DD")),a.value("defaultCategories",false).toBool()});observedSaved();
             } else {
+                // An empty password has not been tried. Keep the welcome box so it can be typed.
+                if(action=="unlock" && str(a.value("password")).empty()) throw std::invalid_argument("Enter a password.");
                 canOpen=false;welcomePassword=false;
                 try {gateway->open_controlled(path.toStdString(),action=="unlock"?std::optional(str(a.value("password"))):std::nullopt,context);}
                 catch(const app::UnlockRequired&) {
                     if(action!="open" || !a.value("startup").toBool())throw;
                     welcomePassword=true;return;
+                }
+                catch(const std::invalid_argument&) {
+                    if(action=="unlock") welcomePassword=true;
+                    throw;
                 }
                 canOpen=true;if(gateway->repository().startup_import_cleanup())cleanupNoticePath=path;
                 try { context.seal(); } catch (...) { gateway->close(); throw; }

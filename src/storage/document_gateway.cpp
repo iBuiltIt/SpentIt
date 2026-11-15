@@ -17,9 +17,20 @@ bool same_secret(std::string_view left,std::string_view right) {
     if(left.size()!=right.size())return false;
     return CRYPTO_memcmp(left.data(),right.data(),left.size())==0;
 }
+std::size_t password_characters(std::string_view password) {
+    std::size_t count=0;
+    for(const char byte:password) {
+        const auto c=static_cast<unsigned char>(byte);
+        if((c&0xc0)!=0x80) ++count;
+    }
+    return count;
+}
 std::string password_key(std::string_view password) {
-    if(password.empty() || password.size()>1000 || !qif::valid_utf8(password) || password.find('\0')!=password.npos)
-        throw std::invalid_argument("Password must contain 1–1000 UTF-8 bytes without NUL");
+    if(password.empty()) throw std::invalid_argument("Enter a password.");
+    // 64 characters, counted as Unicode characters. A hidden null or bytes that
+    // are not text use the same sentence a person sees for a password that is too long.
+    if(!qif::valid_utf8(password) || password.find('\0')!=password.npos || password_characters(password)>64)
+        throw std::invalid_argument("Use a password of 1 to 64 characters.");
     // Domain separation prevents user input from being interpreted as a raw key.
     return "SpentIt/password/v1:" + std::string(password);
 }

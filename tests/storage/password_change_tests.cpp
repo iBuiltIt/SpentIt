@@ -73,7 +73,7 @@ void behavior() {
     {
         auto gateway=storage::document_gateway();
         gateway->open(original,std::string(second));
-        rejects([&]{gateway->change_password(second,"",false);},"1–1000");
+        rejects([&]{gateway->change_password(second,"",false);},"Enter a password.");
         check(gateway->change_password(second,"",true)==app::PasswordUpdate::removed);
         check(!gateway->password_protected());
         check(!gateway->password_matches(second));
@@ -92,6 +92,28 @@ void behavior() {
     }
     expect(original,"third-password",units);
     check(!opens(original,std::nullopt,units));
+    const auto limited=directory.path/"limited";
+    const std::string sixty_four=std::string(63,'a')+"\xC3\xA9";
+    check(sixty_four.size()==65);
+    {
+        auto gateway=storage::document_gateway();
+        gateway->create(limited,true,sixty_four,"Synthetic",Currency("CAD"),"2026-01-01");
+        gateway->repository().opening(0,"2026-01-01",Money(7,Currency("CAD")));
+        gateway->close();
+    }
+    expect(limited,sixty_four,7);
+    const auto limitedBytes=bytes(limited);
+    {
+        auto gateway=storage::document_gateway();
+        gateway->open(limited,sixty_four);
+        rejects([&]{gateway->change_password(sixty_four,std::string(65,'b'),false);},"1 to 64");
+        rejects([&]{gateway->change_password(sixty_four,std::string("ab\0c",4),false);},"1 to 64");
+        rejects([&]{gateway->change_password(sixty_four,"\xFF",false);},"1 to 64");
+        check(gateway->password_matches(sixty_four));
+        gateway->close();
+    }
+    check(bytes(limited)==limitedBytes);
+    check(!opens(limited,std::string(65,'b'),7));
 }
 void faults() {
     fault_vfs::install();

@@ -299,11 +299,11 @@ This command cannot change the password on this file. The password is unchanged.
 
 ## Password length is invalid
 
-Use a password of 1 to 1,000 characters. An empty password is not accepted on a protected file.
+Use a password of 1 to 64 characters. SpentIt stores the password as UTF-8 text.
 
-## Password must contain 1–1000 UTF-8 bytes without NUL
+## Use a password of 1 to 64 characters.
 
-Use a password of 1 to 1,000 characters. An empty password is not accepted on a protected file, and a hidden null character is not allowed.
+SpentIt stores the password as UTF-8 text.
 
 ## Pattern compilation failed at byte <n> (code <n>)
 

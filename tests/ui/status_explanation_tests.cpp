@@ -32,7 +32,7 @@ void StatusExplanationTests::everyDraftSentenceHasItsExplanation() {
         QCOMPARE(statusExplanation(sample), body);
         ++count;
     }
-    QCOMPARE(count, 130);
+    QCOMPARE(count, 131);
 }
 
 void StatusExplanationTests::placeholdersAndUnlistedMessages() {

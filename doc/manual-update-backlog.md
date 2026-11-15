@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-14
+Last updated: 2026-11-15
 
 The bundled manual includes MAN-001 through MAN-056 after the owner-authorized
 2026-11-14 pass. Both entries previously labelled MAN-045 are covered; the
@@ -18,14 +18,21 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-057. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-058. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
 
-None. Add the next user-visible change as MAN-057.
+- MAN-057 (2026-11-15) — Password length. Contract:
+  [001](../features/001-documents-storage-security.md). Chapters:
+  [Create or open a file](../manual/create-open-file.md) (Choose password
+  protection), [Backup and recovery](../manual/backup-recovery.md) (Change or
+  remove the password), and [Messages and problems](../manual/messages-problems.md).
+  A password is 1 to 64 characters. An empty password says “Enter a password.”
+  A longer password says “Use a password of 1 to 64 characters.” Help for that
+  sentence says the password is stored as UTF-8 text. No picture change.
 
 ## Recapturing pictures
 
