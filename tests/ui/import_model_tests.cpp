@@ -2711,6 +2711,39 @@ private slots:
         QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().size(),1);
         run(m,"undo_edit");QCOMPARE(root->property("automaticSplitIndex").toInt(),1);
     }
+    void automaticReviewSettings() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->show();
+        const auto path=dir.path()+"/doc";create(m,path);
+        QVERIFY(!m.state().value("autoMerge").toBool());QVERIFY(!m.state().value("autoLink").toBool());
+        window->setProperty("currentPage","settings");
+        auto* merge=visualItem(window->contentItem(),"autoMergeReview");auto* link=visualItem(window->contentItem(),"autoLinkReview");auto* hidden=visualItem(window->contentItem(),"hiddenTransferSuggestions");
+        QVERIFY(merge && link && hidden);QVERIFY(merge->y()<link->y() && link->y()<hidden->y());
+        run(m,"automatic_review_settings",{{"kind","merge"},{"enabled",true}});
+        QVERIFY(m.state().value("autoMerge").toBool());QVERIFY(!m.state().value("autoLink").toBool());
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-15\nT-10.00\nPOld\n^\n")}});
+        run(m,"commit",{{"ignoreWarnings",true}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-15\nT-10.00\nPNew\n^\n")}});
+        QCOMPARE(m.state().value("balance").toString(),QString("-10.00"));
+        QCOMPARE(m.state().value("mergedRows").toMap().size(),1);
+        window->setProperty("currentPage","ledger");window->setProperty("editorClosed",true);
+        const auto key=m.state().value("mergedRows").toMap().firstKey();const auto colon=key.lastIndexOf(':');
+        const auto row=m.occurrenceIndex(key.left(colon),key.mid(colon+1).toInt());QVERIFY(row>=0);
+        QTRY_VERIFY(visualItem(window->contentItem(),"ledgerRow_"+QString::number(row)));
+        QTRY_VERIFY(visualItem(window->contentItem(),"ledgerRow_"+QString::number(row))->property("mergedMark").toBool());
+        QVERIFY(m.state().value("reviewQuestions").toList().isEmpty());
+        run(m,"close");run(m,"open",{{"path",path},{"password",""}});
+        QVERIFY(m.state().value("autoMerge").toBool());QCOMPARE(m.state().value("mergedRows").toMap().size(),1);
+        run(m,"commit",{{"ignoreWarnings",true}});QVERIFY(m.state().value("mergedRows").toMap().isEmpty());
+        run(m,"automatic_review_settings",{{"kind","link"},{"enabled",true}});
+        run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-20\nT-25.00\nPPayment\nL[Visa]\n^\n")}});
+        run(m,"select_account",{{"id","2"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-20\nT25.00\nPReceipt\nL[Synthetic test]\n^\n")}});
+        QCOMPARE(m.state().value("balance").toString(),QString("25.00"));QCOMPARE(m.state().value("linkedRows").toMap().size(),2);
+        QVERIFY(m.state().value("newTransactions").toLongLong()>0);
+    }
     void amountFormatting() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

@@ -49,6 +49,7 @@ QString occurrenceKey(const imports::Occurrence& id) { return text(id.batch)+":"
 // merge that kept this row, or a link between two postings that both stay.
 void publishLedgerAttention(app::ImportRepository& repo,const app::ReviewSheet& review,QVariantMap& state) {
     QVariantMap merged,linked,doubles;
+    const auto pendingLinks=repo.pending_review_links();
     for(const auto& id:repo.merge_survivors())merged.insert(occurrenceKey(id),true);
     if(repo.transfers_supported()){
         std::map<std::int64_t,QString> names;
@@ -67,7 +68,7 @@ void publishLedgerAttention(app::ImportRepository& repo,const app::ReviewSheet& 
             if(kept(link.origin) && disposable(link.destination))generated.emplace(occurrenceKey(link.origin.endpoint.entry),Created{link.destination.endpoint.entry,link.destination.endpoint.account,text(value.payee)});
             if(!kept(link.origin) || !kept(link.destination))continue;
             const auto mark=[&](const transfers::Side& side,std::int64_t other){
-                if(repo.transaction_accepted(side.endpoint.entry))return;
+                if(repo.transaction_accepted(side.endpoint.entry) && std::find(pendingLinks.begin(),pendingLinks.end(),link.identity)==pendingLinks.end())return;
                 const auto key=occurrenceKey(side.endpoint.entry);const auto name=accountName(other);
                 if(!linkNames[key].contains(name))linkNames[key].push_back(name);
             };
@@ -671,6 +672,43 @@ struct ImportModel::Worker {
     app::ImportGroup resumeGroup(std::string_view id,app::OperationContext& context) {
         try{return gateway->repository().resume_import_group(id,context);}catch(...){const auto failure=std::current_exception();const auto saved=durableGroup(id);if(saved && (saved->state==app::GroupState::reviewing || saved->state==app::GroupState::started))return *saved;try{std::rethrow_exception(failure);}catch(const app::OperationCancelled&){try{gateway->repository().cleanup_incomplete_imports(id);}catch(...){gateway->close();active=false;throw std::runtime_error("Interrupted import cleanup failed. Reopen to retry cleanup before making further changes.");}throw app::OperationCancelled("Import cancelled. You can import the file again.");}}
     }
+    void automaticReview(const std::vector<std::string>& batches) {
+        auto& repo=gateway->repository();
+        const QSettings settings;
+        const bool merges=settings.value(sortDocument+"/AutoMerge",false).toBool();
+        const bool links=settings.value(sortDocument+"/AutoLink",false).toBool();
+        if(!merges && !links)return;
+        std::size_t merged=0,linked=0;
+        try {
+            const auto plan=repo.automatic_review_plan(batches,merges,links);
+            for(const auto& planned:plan){
+                // Revalidate only the originally eligible pairs. Never grow the plan.
+                auto answer=planned;answer.generation=repo.ledger_edit_generation();
+                const auto op=identity();
+                try {repo.answer_automatic_review(op,answer);}
+                catch(...) {
+                    const auto failure=std::current_exception();std::optional<app::ReviewReceipt> saved;
+                    try {saved=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}
+                    if(!saved)std::rethrow_exception(failure);
+                }
+                if(answer.action==app::ReviewAction::merge)++merged;else ++linked;
+            }
+        }catch(const app::OperationOutcomeUnknown&){throw;}
+        catch(const std::exception& error){
+            throw std::runtime_error("The import was saved. Automatic matching stopped after "+std::to_string(merged)+" merges and "+std::to_string(linked)+" links. Review the remaining matches. "+error.what());
+        }
+        if(merged || linked){
+            if(!importFeedback.isEmpty() && !importFeedback.endsWith('.'))importFeedback+=".";
+            importFeedback+=QString(" Automatically merged %1 %2 and linked %3 %4.").arg(merged).arg(merged==1?"pair":"pairs").arg(linked).arg(linked==1?"transfer":"transfers");
+        }
+    }
+    void automaticReviewSource(const std::string& source) {
+        for(const auto& group:gateway->repository().import_groups())if(group.id==source){
+            std::vector<std::string> batches;for(const auto& member:group.accounts)batches.push_back(member.batch);
+            automaticReview(batches);return;
+        }
+        automaticReview({source});
+    }
     void catalog() {
         PresentationRead observation{diagnosticPresentationFailed};
         diag::cache(diag::Code::catalog,catalogLoaded?diag::EventKind::cache_hit:diag::EventKind::cache_miss);
@@ -1186,6 +1224,8 @@ struct ImportModel::Worker {
         if(!reportsLoaded)loadReports();
         state["exchangePreview"]=exchangePreview;state["qifExportAccounts"]=qifExportAccounts;state["exchangeMessage"]=exchangeMessage;state["actionPreparing"]=repo.action_preparing();
         state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;state["reportLedgerActive"]=reportLedgerActive;state["reportRowInfo"]=reportRowInfo;
+        state["autoMerge"]=QSettings().value(sortDocument+"/AutoMerge",false).toBool();
+        state["autoLink"]=QSettings().value(sortDocument+"/AutoLink",false).toBool();
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         QVariantMap actionUndo;
         if(const auto head=repo.action_head();head && !repo.action_preparing()) {
@@ -1467,6 +1507,18 @@ struct ImportModel::Worker {
             reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportDetails.clear();
             if(reportPriorAccount)repo.select_account(reportPriorAccount);
             filter=reportPriorFilter;sort=reportPriorSort;descending=reportPriorDescending;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();return;
+        }
+        if(action=="automatic_review_settings") {
+            const auto kind=a.value("kind").toString();
+            if(kind!="merge" && kind!="link")throw std::invalid_argument("Choose a matching setting.");
+            const auto key=sortDocument+(kind=="merge"?"/AutoMerge":"/AutoLink");
+            QSettings settings;const auto prior=settings.value(key);
+            settings.setValue(key,a.value("enabled").toBool());settings.sync();
+            if(settings.status()!=QSettings::NoError){
+                if(prior.isValid())settings.setValue(key,prior);else settings.remove(key);
+                throw std::runtime_error("The automatic matching setting could not be saved. Check that Settings is writable and try again.");
+            }
+            repo.local_preferences_changed();return;
         }
         if(action=="amount_format") {
             const AmountFormat requested{a.value("enabled").toBool(),str(a.value("style"))};
@@ -2071,6 +2123,7 @@ struct ImportModel::Worker {
             observedSaved(diag::Code::prepare);
             const auto result=repo.import_result(batch.id);
             importFeedback=QString("Import: %1 added; %2 already present; %3 failed").arg(result.added+result.unresolved).arg(result.already_present).arg(result.failed);
+            automaticReview({batch.id});
             projected=true; selected.clear();selectedBatch.clear();
             if(batch.count && !batch.processing_incomplete) inspect(batch.id,0,context);
             else selected={{"batch",text(batch.id)},{"editable",false},{"source",evidencePreview(owned)}};
@@ -2104,21 +2157,24 @@ struct ImportModel::Worker {
             catch(...){repo.select_account(selectedAccount);throw;}
             repo.select_account(selectedAccount);
             importFeedback=QString("Import: %1 added; %2 already present; %3 failed").arg(added).arg(present).arg(failed);
+            automaticReviewSource(group.id);
             if(!group.accounts.empty()){const auto batches=repo.batches();const auto b=std::find_if(batches.begin(),batches.end(),[&](const auto& b){return b.id==group.accounts.front().batch;});if(b!=batches.end() && b->count)inspect(b->id,0,context);}
         } else if(action=="resolve_import_categories") {
             std::vector<std::string> selectedNames;for(const auto& name:a.value("selected").toList())selectedNames.push_back(str(name));
             repo.resolve_import_categories(str(a.value("source")),selectedNames,context);observedSaved();
             if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
             importFeedback="Imported categories applied.";
+            automaticReviewSource(str(a.value("source")));
         } else if(action=="group_resolve_transfers") {
             try{repo.resolve_import_transfers(str(a.value("group")),context);}catch(...){const auto failure=std::current_exception();(void)durableGroup(str(a.value("group")));std::rethrow_exception(failure);}
             if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);
         } else if(action=="group_abort") {
             try{repo.abort_import_group(str(a.value("group")));}catch(...){const auto failure=std::current_exception();const auto saved=durableGroup(str(a.value("group")));if(!saved || saved->state!=app::GroupState::aborted)std::rethrow_exception(failure);repo.abort_import_group(saved->id);}selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();filter.clear();projected=true;
         } else if(action=="resume") {
-            for(const auto& group:repo.import_groups())for(const auto& member:group.accounts)if(member.batch==str(a.value("batch"))){resumeGroup(group.id,context);projected=true;selected.clear();selectedBatch.clear();if(repo.parsed_source(member.batch).records.size())inspect(member.batch,0,context);return;}
+            for(const auto& group:repo.import_groups())for(const auto& member:group.accounts)if(member.batch==str(a.value("batch"))){resumeGroup(group.id,context);automaticReviewSource(group.id);projected=true;selected.clear();selectedBatch.clear();if(repo.parsed_source(member.batch).records.size())inspect(member.batch,0,context);return;}
 
             const auto batch=repo.resume(str(a.value("batch")),a.value("revision").toLongLong(),context);
+            automaticReview({batch.id});
             projected=true;selected.clear();selectedBatch.clear();
             if(batch.count && !batch.processing_incomplete)inspect(batch.id,0,context);
         } else if(action=="evidence") {

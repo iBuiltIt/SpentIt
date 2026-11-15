@@ -185,6 +185,10 @@ public:
     app::LinkExclusionPreview preview_link_exclusion(const app::LinkExclusion&) const override;
     app::ReviewReceipt save_link_exclusion(std::string_view,const app::LinkExclusion&,std::int64_t) override;
     app::ReviewSheet review_sheet() const override;
+    std::vector<app::ReviewAnswer> automatic_review_plan(const std::vector<std::string>&,bool,bool) const override;
+    app::ReviewReceipt answer_automatic_review(std::string_view,const app::ReviewAnswer&) override;
+    void local_preferences_changed() override;
+    std::vector<std::string> pending_review_links() const override;
     std::vector<imports::Occurrence> merge_survivors() const override;
     app::UnmergePreview preview_unmerge(const std::vector<imports::Occurrence>&) const override;
     bool can_unmerge(const std::vector<imports::Occurrence>&) const override;

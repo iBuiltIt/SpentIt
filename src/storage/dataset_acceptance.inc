@@ -12,9 +12,29 @@ std::vector<imports::Occurrence> ImportStore::merge_survivors() const {
     std::vector<imports::Occurrence> out;
     Statement rows(impl_->db,R"SQL(SELECT DISTINCT target_batch,target_ordinal FROM review_merges m
         WHERE EXISTS(SELECT 1 FROM records r WHERE r.batch=m.target_batch AND r.ordinal=m.target_ordinal)
-          AND NOT EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=m.target_batch AND a.ordinal=m.target_ordinal))SQL");
+          AND (NOT EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=m.target_batch AND a.ordinal=m.target_ordinal)
+            OR ((SELECT substr(request,-5) FROM review_answers WHERE id=m.answer)='|auto'
+              AND (SELECT sequence FROM review_answers WHERE id=m.answer) >
+                (SELECT coalesce(max(a.sequence),0) FROM review_answers a JOIN acceptance_states s ON s.id=a.id WHERE s.undo_id IS NULL))))SQL");
     while(rows.row())out.push_back({rows.bytes(0),static_cast<std::size_t>(rows.integer(1))});
     return out;
+}
+std::vector<std::string> ImportStore::pending_review_links() const {
+    std::vector<std::string> result;
+    Statement rows(impl_->db,R"SQL(SELECT DISTINCT h.identity FROM review_link_history h JOIN review_answers a ON a.id=h.answer
+      WHERE a.action=2 AND a.question LIKE 'link:%' AND substr(a.request,-5)='|auto'
+        AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id)
+        AND a.sequence>(SELECT coalesce(max(r.sequence),0) FROM review_answers r JOIN acceptance_states s ON s.id=r.id WHERE s.undo_id IS NULL))SQL");
+    std::set<std::string> live;
+    for(const auto& value:all_transfers()){
+        const auto& link=value.link;
+        if(!link.unresolved && !link.destination_released && link.origin.state!=transfers::State::removed && link.destination.state!=transfers::State::removed && (link.origin.independent_evidence || link.origin.ledger_entry) && (link.destination.independent_evidence || link.destination.ledger_entry))live.insert(link.identity);
+    }
+    while(rows.row())if(live.contains(rows.bytes(0)))result.push_back(rows.bytes(0));
+    return result;
+}
+void ImportStore::local_preferences_changed() {
+    impl_->redo.clear();impl_->redo_names.clear();
 }
 // Dataset acceptance consumes prepared mutation review. Financial revisions are
 // referenced by entry_revisions.draft_revision, never copied at acceptance.
@@ -115,6 +135,7 @@ app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool i
         return *prior;
     }
     ActionChain(impl_->db).require_idle();
+    const bool has_marks=!merge_survivors().empty() || !pending_review_links().empty();
     const auto baseline=acceptance_baseline(impl_->db,all_transfers());
     const auto review=acceptance_review();
     for(const auto& warning:review.warnings)if(!ignore_warnings || !warning.overridable)fail(SQLITE_CONSTRAINT,warning.reason.c_str());
@@ -169,8 +190,8 @@ app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool i
         if(!side.accepted_unmatched){request.action=app::TransferAction::accept;request.expected_sequence=transfer_sequence();const auto op=child();accept_local(op,request);member(op);}
         request.action=app::TransferAction::commit_local;request.expected_sequence=transfer_sequence();const auto op=child();accept_local(op,request);member(op);
     }
-    if(serial)record_acceptance_action(operation,acceptance_recipe(impl_->db,baseline),baseline.links,digest,review.transactions);
+    if(serial || has_marks)record_acceptance_action(operation,acceptance_recipe(impl_->db,baseline),baseline.links,digest,review.transactions);
     else ActionChain(impl_->db).no_change(action_token(),operation,digest);
-    finish([&]{transaction.commit();},serial==0);
+    finish([&]{transaction.commit();},serial==0 && !has_marks);
     return {std::string(operation),review.transactions,review.failed_records,ignore_warnings};
 }

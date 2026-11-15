@@ -58,7 +58,7 @@ std::set<std::pair<imports::Occurrence,imports::Occurrence>> reopened_link_pairs
 std::string review_request(const app::ReviewAnswer& a) {
     std::string out=std::to_string(a.generation)+":"+std::to_string(static_cast<int>(a.action))+":";
     const auto field=[&](std::string_view v){out+=std::to_string(v.size())+":"+std::string(v);};
-    field(a.question);for(const auto& id:a.selected)field(review_key(id));field(a.survivor?review_key(*a.survivor):"");field(a.left_allocation);field(a.right_allocation);field(a.remainder_category);out+=a.split_difference?"1":"0";return out;
+    field(a.question);for(const auto& id:a.selected)field(review_key(id));field(a.survivor?review_key(*a.survivor):"");field(a.left_allocation);field(a.right_allocation);field(a.remainder_category);out+=a.split_difference?"1":"0";if(a.automatic)out+="|auto";return out;
 }
 // A released placeholder and the kept payment share a bank line. Restoring either
 // side first can name that line twice, so each prefix of the write has to stay valid.
@@ -634,6 +634,65 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
     if(undoing){Statement member(impl_->db,"INSERT INTO review_undo_members SELECT id,?1,?2,?4,?5 FROM review_undos WHERE answer=?3");member.text(1,child);member.text(2,known_restore->child);member.text(3,answer);member.integer(4,prior);member.integer(5,result);member.done();}
     if(!undoing){Statement member(impl_->db,"INSERT INTO review_members VALUES(?,?,?,?,?,?,?)");member.text(1,answer);member.text(2,id.batch);member.integer(3,integer(id.ordinal));member.integer(4,committed?1:0);member.integer(5,prior);member.integer(6,result);member.text(7,child);member.done();}
 }
+// Plan once; callers must not expand it after earlier pairs are resolved.
+std::vector<app::ReviewAnswer> ImportStore::automatic_review_plan(const std::vector<std::string>& batches,bool merges,bool links) const {
+    if((!merges && !links) || batches.empty() || ActionChain(impl_->db).preparing())return {};
+    const auto sheet=review_sheet();
+    std::map<imports::Occurrence,std::set<imports::Occurrence>> peers;
+    std::set<imports::Occurrence> blocked;
+    for(const auto& q:sheet.questions){
+        if(q.kind==app::ReviewKind::correction){for(const auto& r:q.rows)blocked.insert(r.identity);if(q.ordinal)blocked.insert({q.batch,*q.ordinal});continue;}
+        if(q.rows.size()>2){for(const auto& r:q.rows)blocked.insert(r.identity);continue;}
+        if(q.rows.size()==2){peers[q.rows[0].identity].insert(q.rows[1].identity);peers[q.rows[1].identity].insert(q.rows[0].identity);}
+    }
+    // Do not construct a quadratic graph for large repeated-payment groups.
+    std::set<imports::Occurrence> joined;
+    Statement prior(impl_->db,"SELECT batch,ordinal,target_batch,target_ordinal FROM review_merges");
+    while(prior.row()){joined.insert({prior.bytes(0),static_cast<std::size_t>(prior.integer(1))});joined.insert({prior.bytes(2),static_cast<std::size_t>(prior.integer(3))});}
+    std::vector<app::ReviewAnswer> result;
+    std::set<imports::Occurrence> used;
+    for(const auto& q:sheet.questions){
+        if(q.rows.size()!=2 || (q.kind==app::ReviewKind::same?!merges:q.kind==app::ReviewKind::link?!links:true))continue;
+        const auto& a=q.rows[0];const auto& b=q.rows[1];
+        if(std::none_of(q.rows.begin(),q.rows.end(),[&](const auto& r){return std::find(batches.begin(),batches.end(),r.identity.batch)!=batches.end();}))continue;
+        if(blocked.contains(a.identity) || blocked.contains(b.identity) || peers[a.identity].size()!=1 || peers[b.identity].size()!=1 || used.contains(a.identity) || used.contains(b.identity))continue;
+        // A second keep-one join would make selective Unmerge unavailable.
+        if(joined.contains(a.identity) || joined.contains(b.identity))continue;
+        app::ReviewAnswer answer;answer.automatic=true;answer.generation=sheet.generation;answer.question=q.key;answer.selected={a.identity,b.identity};
+        if(q.kind==app::ReviewKind::same){
+            if(a.transfer_linked || b.transfer_linked || a.draft.date!=b.draft.date || a.draft.transaction.effective_total()!=b.draft.transaction.effective_total())continue;
+            // Review also contains conflicting-ID/date evidence and adjacent-day
+            // questions. Neither is permission to merge automatically.
+            const auto original=[&](const app::ReviewTransaction& r){return load_row(r.identity,false).source;};
+            const auto x=original(a),y=original(b);
+            if(x.date.empty() || x.date!=y.date || !x.original_amount || !y.original_amount || *x.original_amount!=*y.original_amount)continue;
+            const auto protected_row=[](const auto& r){return r.committed || r.note=="Manually entered";};
+            if(protected_row(a) && protected_row(b))continue;
+            if(protected_row(a))answer.survivor=a.identity;
+            else if(protected_row(b))answer.survivor=b.identity;
+            else if(a.import_order>0 && b.import_order>0 && a.import_order!=b.import_order)answer.survivor=a.import_order<b.import_order?a.identity:b.identity;
+            else continue;
+            answer.action=app::ReviewAction::merge;
+        }else{
+            const auto& x=a.draft.transaction.allocations();const auto& y=b.draft.transaction.allocations();
+            if(x.size()!=1 || y.size()!=1 || x[0].amount.currency()!=y[0].amount.currency() || x[0].amount.units()==INT64_MIN || y[0].amount.units()==INT64_MIN || x[0].amount.units()==0 || x[0].amount.units()!=-y[0].amount.units())continue;
+            answer.action=app::ReviewAction::link;
+        }
+        result.push_back(std::move(answer));used.insert(a.identity);used.insert(b.identity);
+    }
+    return result;
+}
+
+app::ReviewReceipt ImportStore::answer_automatic_review(std::string_view operation,const app::ReviewAnswer& answer) {
+    if(!review_outcome(operation)){
+        std::vector<std::string> batches;for(const auto& id:answer.selected)batches.push_back(id.batch);
+        const auto plan=automatic_review_plan(batches,answer.action==app::ReviewAction::merge,answer.action==app::ReviewAction::link);
+        if(std::none_of(plan.begin(),plan.end(),[&](const auto& candidate){return review_request(candidate)==review_request(answer);}))fail(SQLITE_CONSTRAINT,"This match needs review. No automatic change was saved.");
+    }
+    struct Guard {bool& flag;~Guard(){flag=false;}} guard{impl_->automatic_review};impl_->automatic_review=true;
+    return answer_review(operation,answer);
+}
+
 app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const app::ReviewAnswer& answer) {
     diag::Span span(diag::Code::review_write);
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE);const auto encoded=review_request(answer);
@@ -798,15 +857,15 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
             }
         }
     }
+    if(impl_->automatic_review){
+        const auto kept=survivor.value_or(chosen.front().identity);
+        if(!preview_unmerge({kept}).available)fail(SQLITE_CONSTRAINT,"This match needs review because it cannot be unmerged. No automatic change was saved.");
+    }
     if(parent.empty()){Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();impl_->pending_review_action=operation;finish([&]{transaction->commit();});if(same)retain_review_ledger_entries(*impl_,cache_changes,selected);}
     return {std::string(operation)};
 }
 std::optional<std::string> ImportStore::active_unmerge(const std::vector<imports::Occurrence>& selected) const {
     if(selected.size()!=1)return {};
-    if(transaction_accepted(selected.front())){
-        Statement open_import(impl_->db,"SELECT state FROM batches WHERE id=?");open_import.text(1,selected.front().batch);
-        if(!open_import.row() || (open_import.integer(0)!=0 && open_import.integer(0)!=4))return {};
-    }
     const auto& survivor=selected.front();
     Statement rows(impl_->db,"SELECT DISTINCT answer FROM review_merges WHERE target_batch=? AND target_ordinal=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_merges.answer)");
     rows.text(1,survivor.batch);rows.integer(2,integer(survivor.ordinal));

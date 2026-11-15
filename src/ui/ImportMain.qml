@@ -2047,9 +2047,9 @@ ApplicationWindow {
             }
             if(action==="close"){currentPassword.text="";newPassword.text="";confirmPassword.text=""}
 
-            if(success && ["import","confirm_import_date","confirm_import_destination","map_import"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
+            if(success && ["import","confirm_import_date","confirm_import_destination","map_import","resume"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
-            if(success && action==="resolve_import_categories") {importCategories.close();workspaceFeedback="Imported categories applied.";Qt.callLater(showImportCategories)}
+            if(success && action==="resolve_import_categories") {importCategories.close();workspaceFeedback=s.importFeedback||"Imported categories applied.";Qt.callLater(showImportCategories)}
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import","open","unlock"].indexOf(action)>=0)Qt.callLater(showImportCategories)
             if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Transactions accepted."
             if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
@@ -3875,7 +3875,7 @@ ApplicationWindow {
             }
         }
         RowLayout {
-            Layout.fillWidth:true;visible:(s.newTransactions||0)>0 || missingDestinationWarningRows.length>0
+            Layout.fillWidth:true;visible:(s.newTransactions||0)>0 || Object.keys(s.mergedRows||{}).length>0 || Object.keys(s.linkedRows||{}).length>0 || missingDestinationWarningRows.length>0
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.newTransactions||0)>0;text:(s.newTransactions||0)+((s.newTransactions||0)===1?" new transaction across all accounts":" new transactions across all accounts")+((s.importFailures||0)>0?" · "+s.importFailures+" import problems will remain":"")}
             Label {objectName:"missingDestinationWarnings";visible:missingDestinationWarningRows.length>0;text:"Warnings ["+missingDestinationWarningRows.length+"]";Accessible.name:missingDestinationWarningRows.length===1?"1 warning":missingDestinationWarningRows.length+" warnings"}
             Button {objectName:"commitImport";text:"Accept transactions";enabled:!workflow.busy && !s.readOnly;onClicked:guard(requestCommit)}
@@ -4295,6 +4295,11 @@ ApplicationWindow {
                                 onActivated:guard(function(){workflow.command("amount_format",{enabled:true,style:["comma-dot","dot-comma","space-comma"][currentIndex]})})}
                         }
                         Label {text:"Use this style when entering amounts and calculations. Thousands separators are optional.";Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        CheckBox {objectName:"autoMergeReview";text:"Automatically merge one-to-one duplicate suggestions";checked:!!s.autoMerge
+                            onToggled:guard(function(){workflow.command("automatic_review_settings",{kind:"merge",enabled:checked})})}
+                        CheckBox {objectName:"autoLinkReview";text:"Automatically link one-to-one transfer suggestions";checked:!!s.autoLink
+                            onToggled:guard(function(){workflow.command("automatic_review_settings",{kind:"link",enabled:checked})})}
+                        Label {text:"Applies after import in this file on this computer. Matches stay marked until you choose Accept transactions. Uncertain matches stay in Review.";Layout.fillWidth:true;wrapMode:Text.Wrap}
                         Button {objectName:"hiddenTransferSuggestions";text:"Hidden transfer matches…";onClicked:transferSuggestionSettings.open()}
 
                         Item {Layout.fillWidth:true;Layout.preferredHeight:16}
@@ -4509,8 +4514,8 @@ ApplicationWindow {
                     readonly property string duplicateKey:record.batch+":"+record.ordinal
                     readonly property bool possibleDuplicate:!window.reportLedger && !!duplicateRows[duplicateKey]
                     readonly property bool samePayment:!window.reportLedger && !!transferDoubleRows[duplicateKey]
-                    readonly property bool mergedMark:!window.reportLedger && record.status!=="Committed" && !!mergedRows[duplicateKey]
-                    readonly property bool linkedMark:!window.reportLedger && record.status!=="Committed" && !!linkedRows[duplicateKey]
+                    readonly property bool mergedMark:!window.reportLedger && !!mergedRows[duplicateKey]
+                    readonly property bool linkedMark:!window.reportLedger && !!linkedRows[duplicateKey]
                     readonly property bool comparingDuplicate:possibleDuplicate && (duplicateKey===duplicateOriginKey || duplicateCandidates.some(row=>row.key===duplicateKey))
                     readonly property bool comparingPayment:samePayment && !!transferOrigin && (duplicateKey===transferOrigin.key || (transferOrigin.peers||[]).some(peer=>peer.key===duplicateKey))
                     readonly property string attentionTip:(possibleDuplicate?"Possible duplicate":"")+(samePayment?(possibleDuplicate?" · ":"")+"Same payment":"")+(mergedMark?((possibleDuplicate||samePayment)?" · ":"")+"Merged":"")+(linkedMark?((possibleDuplicate||samePayment||mergedMark)?" · ":"")+linkedRows[duplicateKey]:"")

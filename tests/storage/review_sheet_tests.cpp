@@ -1059,9 +1059,104 @@ void adjacent_day_tests(const std::filesystem::path& dir) {
     }
     std::cout<<"Adjacent-day duplicate review passed\n";
 }
+void automatic_review_faults(const std::filesystem::path& dir) {
+    fault_vfs::install();const Currency cad("CAD");
+    for(int mode=0;mode<4;++mode){
+        const auto base=dir/("auto-base-"+std::to_string(mode));ReviewAnswer request;
+        {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("old",source("Old"),qif::DateOrder::dmy);s.accept_all("accept-old");
+        if(mode==1){s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));}
+        s.ingest("new",source("New",mode==1?"10.00":"-10.00"),qif::DateOrder::dmy);
+        const auto plan=s.automatic_review_plan({"new"},mode!=1,mode==1);check(plan.size()==1,"Fault fixture eligible");request=plan[0];
+        if(mode>=2)s.answer_automatic_review("merge",request);}
+        const auto apply=[&](ImportStore& s){if(mode==2)s.accept_all("operation");else if(mode==3)s.unmerge("operation",{{"old",0}});else s.answer_automatic_review("operation",request);};
+        const auto saved=[&](ImportStore& s){return mode==2?s.acceptance_outcome("operation").has_value():s.review_outcome("operation").has_value();};
+        const auto verify=[&](ImportStore& s){s.select_account(1);const bool done=saved(s);s.verify();
+            if(mode==0)check(s.balance().units()==(done?-1000:-2000) && s.merge_survivors().size()==(done?1:0),"Merge money and mark atomic");
+            if(mode==1){check(s.balance().units()==-1000 && s.pending_review_links().size()==(done?1:0),"Link money and mark atomic");s.select_account(2);check(s.balance().units()==1000,"Other account preserved");}
+            if(mode==2)check(s.balance().units()==-1000 && s.merge_survivors().size()==(done?0:1),"Mark acceptance atomic");
+            if(mode==3)check(s.balance().units()==(done?-2000:-1000) && s.merge_survivors().size()==(done?0:1),"Accepted-survivor Unmerge atomic");
+        };
+        int positions=0;
+        for(int nth=1;nth<2000;++nth){const auto trial=dir/"auto-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
+            {auto s=ImportStore::open(trial,"test");verify(s);apply(s);check(saved(s),"Retry saved once");apply(s);verify(s);}
+            if(!fired)break;++positions;
+        }
+        check(positions>0 && positions<1999,"Fault sweep completed");
+        for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
+            const auto trial=dir/"auto-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
+            const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto at){if(at==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}
+            int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Automatic boundary interrupted");
+            auto s=ImportStore::open(trial,"test");check(saved(s)==(phase==storage::ImportPhase::after_commit),"Automatic durable outcome");verify(s);apply(s);verify(s);
+        }
+        std::cout<<"Automatic fault mode "<<mode<<": "<<positions<<" positions\n"<<std::flush;
+    }
+}
+void automatic_review_tests(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const auto path=dir/"automatic";
+    auto store=ImportStore::create(path,"test","Checking",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));
+    store.ingest("old",source("Old payee"),qif::DateOrder::dmy);store.accept_all("accept-old");
+    store.ingest("new",source("New payee"),qif::DateOrder::dmy);
+    check(store.automatic_review_plan({"new"},false,false).empty(),"Both options off");
+    check(store.automatic_review_plan({"unrelated"},true,true).empty(),"Only current import participates");
+    auto plan=store.automatic_review_plan({"new"},true,false);check(plan.size()==1 && plan[0].survivor==imports::Occurrence{"old",0},"Accepted survivor chosen");
+    store.answer_automatic_review("auto-merge",plan[0]);store.answer_automatic_review("auto-merge",plan[0]);
+    check(store.balance().units()==-1000 && store.transaction_accepted({"old",0}) && !store.transaction_accepted({"new",0}),"Merge does not accept transactions");
+    check(store.merge_survivors()==std::vector<imports::Occurrence>{{"old",0}},"Accepted survivor marked");
+    check(store.preview_unmerge({{"old",0}}).available,"Accepted survivor can be unmerged");
+    store.undo_action("undo-auto-merge",store.preview_undo("auto-merge",store.action_token()));
+    check(store.merge_survivors().empty() && store.balance().units()==-2000,"Undo automatic merge");
+    UndoPreview merge_redo;merge_redo.token=store.action_token();merge_redo.action=store.redo_history().front();store.redo_action("redo-auto-merge",merge_redo);
+    check(store.merge_survivors().size()==1 && store.balance().units()==-1000,"Redo retains automatic result mark");
+    test_session::close_reopen(store,path,"test");
+    check(store.merge_survivors().size()==1 && store.preview_unmerge({{"old",0}}).available,"Mark and Unmerge survive close");
+    store.accept_all("accept-marks");check(store.merge_survivors().empty(),"Accept clears marks even without new postings");
+    const auto undo=store.preview_undo("accept-marks",store.action_token());store.undo_action("undo-accept-marks",undo);
+    check(store.merge_survivors().size()==1,"Undo Accept restores marks");
+    UndoPreview redo;redo.token=store.action_token();redo.action=store.redo_history().front();store.redo_action("redo-accept-marks",redo);
+    check(store.merge_survivors().empty(),"Redo Accept clears marks");
+    test_session::close_reopen(store,path,"test");check(store.merge_survivors().empty(),"Cleared marks stay cleared after close");
+    store.unmerge("split-auto",{{"old",0}});check(store.balance().units()==-2000 && store.merge_survivors().empty(),"Unmerge restores new row beside accepted survivor");store.verify();
+    // Multiple candidates stay manual; resolving some cannot expand a saved plan.
+    store.ingest("third",source("Third payee"),qif::DateOrder::dmy);
+    check(store.automatic_review_plan({"third"},true,true).empty(),"Three-row group stays manual");
+    auto adjacent=ImportStore::create(dir/"auto-adjacent","test","Checking",cad,"2026-01-01");adjacent.opening(0,"2026-01-01",Money(0,cad));
+    adjacent.ingest("old","!Type:Bank\nD02/01/2026\nT-10.00\nPOld\n^\n",qif::DateOrder::dmy);adjacent.accept_all("accept");adjacent.ingest("new",source("New"),qif::DateOrder::dmy);
+    check(!adjacent.review_sheet().questions.empty() && adjacent.automatic_review_plan({"new"},true,true).empty(),"Adjacent-day pair stays manual");
+    auto links=ImportStore::create(dir/"auto-links","test","Checking",cad,"2026-01-01");links.opening(0,"2026-01-01",Money(0,cad));links.create_account(2,"Visa",cad,"2026-01-01");links.select_account(2);links.opening(0,"2026-01-01",Money(0,cad));links.select_account(1);
+    links.ingest("out",source("Payment"),qif::DateOrder::dmy);links.accept_all("accept-out");links.select_account(2);links.ingest("in",source("Receipt","10.00"),qif::DateOrder::dmy);
+    plan=links.automatic_review_plan({"in"},false,true);check(plan.size()==1 && plan[0].action==ReviewAction::link,"Mutually unique link chosen");
+    links.answer_automatic_review("auto-link",plan[0]);check(links.pending_review_links().size()==1,"Link has pending result mark");check(links.preview_unmerge({{"out",0}}).available,"Automatic link can be unmerged");links.verify();
+    links.accept_all("accept-link");check(links.pending_review_links().empty(),"Accept clears link marks");links.verify();
+    auto ambiguous=ImportStore::create(dir/"auto-ambiguous","test","Checking",cad,"2026-01-01");ambiguous.opening(0,"2026-01-01",Money(0,cad));ambiguous.create_account(2,"Visa",cad,"2026-01-01");ambiguous.select_account(2);ambiguous.opening(0,"2026-01-01",Money(0,cad));
+    ambiguous.ingest("in",source("Receipt","10.00"),qif::DateOrder::dmy);ambiguous.select_account(1);ambiguous.ingest("out",source("One")+source("Two").substr(11),qif::DateOrder::dmy);
+    check(ambiguous.automatic_review_plan({"out"},true,true).empty(),"Reverse competitor blocks a two-row card");
+    for(int mode=0;mode<3;++mode){
+        auto s=ImportStore::create(dir/("auto-skip-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        if(mode==0){s.ingest("same",source("One")+source("Two").substr(11),qif::DateOrder::dmy);check(s.automatic_review_plan({"same"},true,true).empty(),"Survivor ambiguity stays manual");continue;}
+        s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("in",mode==1?source("Receipt","10.00"):"!Type:Bank\nD01/01/2026\nT11.50\nPReceipt\nSUncategorized\n$10.00\nSOther\n$1.50\n^\n",qif::DateOrder::dmy);
+        s.select_account(1);s.ingest("out",mode==1?"!Type:Bank\nD01/01/2026\nT-10.40\nPPayment\nL[Visa]\n^\n":source("Payment"),qif::DateOrder::dmy);
+        check(!s.review_sheet().questions.empty() && s.automatic_review_plan({"out"},false,true).empty(),"Difference or split choice stays manual");
+    }
+    {const auto legacy_path=dir/"legacy-marks";auto s=ImportStore::create(legacy_path,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+    s.ingest("old",source("Old"),qif::DateOrder::dmy);s.accept_all("accept-old");s.ingest("new",source("New"),qif::DateOrder::dmy);
+    answer(s,"manual-merge",ReviewAction::merge,{{"old",0},{"new",0}},imports::Occurrence{"old",0});
+    test_session::close_reopen(s,legacy_path,"test");check(s.merge_survivors().empty(),"Older manual requests do not gain accepted-result marks");s.verify();}
+    {const auto retained=dir/"retained-accept";auto s=ImportStore::create(retained,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+    s.ingest("old",source("Old"),qif::DateOrder::dmy);s.accept_all("accept-old");s.ingest("new",source("New"),qif::DateOrder::dmy);
+    s.answer_automatic_review("automatic",s.automatic_review_plan({"new"},true,false).front());s.accept_all("accept-result");
+    s.ingest("later",source("Unrelated","-3.00"),qif::DateOrder::dmy);test_session::close_reopen(s,retained,"test");
+    check(s.merge_survivors().empty() && s.balance().units()==-1300,"Full close pruning keeps the acceptance boundary");s.verify();}
+    std::cout<<"Automatic review passed\n";
+}
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
+        if(argc>1 && std::string(argv[1])=="automatic_faults"){automatic_review_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="automatic"){automatic_review_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="acceptance_order"){acceptance_order_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="deletion_faults"){deletion_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="audit_eviction"){audit_eviction_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

@@ -52,6 +52,8 @@ struct ReviewAnswer {
     std::optional<imports::Occurrence> survivor;
     std::string left_allocation,right_allocation,remainder_category;
     bool split_difference=false;
+    // Retained in the request so accepted automatic results can stay marked.
+    bool automatic=false;
 };
 struct UnmergePreview { bool available=false; std::string notice; };
 struct ReviewReceipt {std::string operation;};

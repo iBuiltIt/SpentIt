@@ -32,7 +32,10 @@ passed unless you ran it.
   resolution. A payment shown twice in one account is marked there, and Merge
   joins it. Merged and linked rows stay marked until they are accepted.
   Same-calendar-date duplicate suggestions. Strict bank IDs when both sides
-  have them.
+  have them. Optional automatic one-to-one Merge and Link after import and rules,
+  with separate, initially off local settings. Ambiguous and choice-requiring
+  pairs stay manual. Automatic results on accepted rows stay marked until the
+  next Accept. See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 - Manual transactions, ledger editing, splits, amount expressions, amount
   formatting, Set memo, Rename payee, and Restore imported values.
 - Categories with an Income flag, rules that assign an explicit category to
@@ -95,6 +98,37 @@ covered by the Redo suite.
 undefined-behavior sanitizers. These are targeted checks, not a full repository
 or cross-platform run. Manual updates remain queued as MAN-054.
 
+## Automatic Review verification — 2026-11-14
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release application at
+`build/SpentIt` was rebuilt. `import.automatic_review`, `import.review_sheet`,
+`import.ledger_duplicates`, `import.review_policy`, `import.adjacent_day`,
+`import.review_batch`, `storage.action_repository`, and `storage.action_redo`
+passed. The new case checks mutually unique pairs, reverse competitors,
+ambiguous survivors, adjacent dates, splits and amount differences, accepted
+survivor Unmerge, ordinary Undo/Redo, and result marks across successful close
+and full history pruning. Older manual requests keep their previous marks.
+
+The offscreen Qt cases `automaticReviewSettings`, `ledgerSamePayment`,
+`selectedReviewMerge`, and `commonUndoDirtyTargetAndTextUndo` passed. The new UI
+case checks initially off and independently saved settings, placement above
+Hidden transfer matches, import-driven Merge and Link, and the visible result
+mark on an accepted survivor. `automaticReviewSettings` was rerun after the
+completion-message update and passed.
+
+`import.automatic_review_faults` passed 580 injected write/sync failures,
+alternating disk-full and I/O errors: 181 for automatic Merge, 157 for automatic
+Link, 77 for accepting result marks without new postings, and 165 for Unmerge
+with an accepted survivor. All eight process interruptions immediately before
+and after durable commit passed. Reopen, retry, exact balances, result marks,
+and durable receipts were checked on both sides of each boundary.
+
+`import.automatic_review` also passed in `build/category-sanitized` with address
+and undefined-behavior sanitizers (`ASAN_OPTIONS=detect_leaks=0`). No leak-check,
+full-suite, native interactive, Linux, or Windows verification is claimed.
+Changed-document relative file links and `git diff --check` passed. Manual work
+is queued as MAN-055; no manual files were changed.
+
 ## Limits that still bind a claim
 
 - The owner-reported Rules crash is a native accessibility notification during
@@ -114,7 +148,8 @@ MAN-001 through MAN-044 are in the bundled manual. The 2026-11-12 pass
 updated the chapters and installed recaptured pictures with
 `tools/capture_manual_images.py --install`. The help bundle was rebuilt
 into `./build/SpentIt`. In `build/import-ui-rules-release`, `help.prepare`
-and `help.catalog` passed. MAN-054 now records the Undo/Redo and History
-changes in [manual-update-backlog.md](manual-update-backlog.md)
-and waits for an owner-authorized manual pass. Do not edit `manual/` as
+and `help.catalog` passed. MAN-054 records the Undo/Redo and History
+changes, and MAN-055 records automatic Review in
+[manual-update-backlog.md](manual-update-backlog.md). Both wait for an
+owner-authorized manual pass. Do not edit `manual/` as
 part of feature work.

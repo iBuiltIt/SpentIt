@@ -335,8 +335,14 @@ public:
     virtual LinkExclusionPreview preview_link_exclusion(const LinkExclusion&) const {throw std::logic_error("Link exclusions unavailable");}
     virtual ReviewReceipt save_link_exclusion(std::string_view,const LinkExclusion&,std::int64_t) {throw std::logic_error("Link exclusions unavailable");}
     virtual ReviewSheet review_sheet() const {return {};}
+    // A fixed, conservative plan for pairs involving this completed import.
+    virtual std::vector<ReviewAnswer> automatic_review_plan(const std::vector<std::string>&,bool,bool) const {return {};}
+    virtual ReviewReceipt answer_automatic_review(std::string_view operation,const ReviewAnswer& answer) {return answer_review(operation,answer);}
+    virtual void local_preferences_changed() {}
+    // Automatic links made since the latest non-reversed Accept.
+    virtual std::vector<std::string> pending_review_links() const {return {};}
     // Rows kept when another transaction in the same account was merged into them,
-    // excluding rows that have since been accepted.
+    // including accepted automatic survivors joined since the last dataset acceptance.
     virtual std::vector<imports::Occurrence> merge_survivors() const {return {};}
     virtual UnmergePreview preview_unmerge(const std::vector<imports::Occurrence>& selected) const {return {can_unmerge(selected),unmerge_notice(selected)};}
     // True when the selection is one joined row that can be split back into two.

@@ -579,3 +579,50 @@ build of `2fe53d3` (`c9ed419^`). Its `visa-b` row is unresolved when `link-b`
 attempts to use it: the October 29 payment follows an accepted October 30 payment
 of the same amount, triggering the existing adjacent-date review guard from
 `46d3acc`. No change to that policy or fixture is included here.
+
+## Automatic one-to-one review — owner Go, 2026-11-14
+
+Settings has two checkboxes immediately above **Hidden transfer matches…**:
+**Automatically merge one-to-one duplicate suggestions** and **Automatically
+link one-to-one transfer suggestions**. Both default off. These opt-ins are
+local preferences for this file path on this computer; a copy at another path
+starts with both off. They do not change the version-1 database format.
+Changing a preference preserves Undo and clears pending Redo.
+
+After an import finishes its category choices and rules, take one fixed Review
+snapshot. Only pairs involving that import are eligible. Both endpoints must
+have only each other as a candidate across Review. Mirror questions count as one
+pair; generated transfer entries are handled by the existing Link command.
+A group with a third row stays manual. Resolving another pair does not expand
+the original automatic plan. Opening a file, changing a setting, editing a row,
+and Undo do not trigger automatic decisions.
+
+A duplicate pair needs equal known original dates and amounts, equal current
+dates and totals, and an unambiguous survivor under the existing protection and
+import-order rules. Adjacent-day questions stay manual. Rows already in a
+keep-one merge, or with transfer relationships, stay manual for duplicate Merge.
+Links require one allocation on each side and exact opposite, nonzero amounts
+in the same currency; split choices and amount differences stay manual. Existing
+suggestion exclusions and category/destination/date constraints still apply.
+Each automatic command revalidates eligibility and verifies Unmerge availability
+before committing. A pair that cannot be safely unmerged is not saved.
+
+These are automatic Merge/Link decisions, not Accept transactions. Each pair is
+a normal atomic Review action after the completed import, with its existing
+source retention, Undo/Redo, and durable retry behavior. Import Undo follows
+those actions in the file-wide stack. If a later pair fails, the import and
+previous saved pairs remain; the error reports the completed counts and directs
+the user to Review. An uncertain durable outcome closes the session for recovery.
+
+Indigo Merged and green linked-account result marks remain until a later explicit
+Accept transactions, including when an automatic survivor or linked endpoint was already
+accepted. Marks persist across close/reopen. Accept is available when only these
+marks remain; clearing them is undoable, and Undo of Accept restores them.
+An accepted survivor can be unmerged when the removed row and source
+relationships still satisfy the existing checks. Successful close expires
+ordinary Undo, but does not remove the result marks or eligible Unmerge.
+
+Automatic Review requests carry an optional `|auto` suffix in the existing
+request payload. Older requests remain unchanged and do not acquire new marks
+on accepted rows. Close retains the latest non-reversed Accept request as the
+mark boundary, without keeping its ordinary Undo stack or changing the schema.

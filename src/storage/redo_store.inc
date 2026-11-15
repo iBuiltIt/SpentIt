@@ -14,9 +14,10 @@ imports::Occurrence redo_key(std::string_view bytes) {
     return {std::move(name),ordinal};
 }
 app::ReviewAnswer redo_answer(std::string_view bytes) {
+    const bool automatic=bytes.ends_with("|auto");if(automatic)bytes.remove_suffix(5);
     auto number=[&]{const auto end=bytes.find(':');if(end==bytes.npos)fail(SQLITE_CORRUPT);int n=0;auto result=std::from_chars(bytes.data(),bytes.data()+end,n);if(result.ec!=std::errc{} || result.ptr!=bytes.data()+end)fail(SQLITE_CORRUPT);bytes.remove_prefix(end+1);return n;};
     (void)number();const auto kind=number();if(kind<0 || kind>4)fail(SQLITE_CORRUPT);
-    transfer_codec::Reader in{bytes};app::ReviewAnswer answer;answer.action=static_cast<app::ReviewAction>(kind);answer.question=in.text();
+    transfer_codec::Reader in{bytes};app::ReviewAnswer answer;answer.automatic=automatic;answer.action=static_cast<app::ReviewAction>(kind);answer.question=in.text();
     std::vector<std::string> fields;while(in.bytes.size()>1)fields.push_back(in.text());
     if(fields.size()<4 || (in.bytes!="0" && in.bytes!="1"))fail(SQLITE_CORRUPT);
     answer.split_difference=in.bytes=="1";const auto selected=fields.size()-4;

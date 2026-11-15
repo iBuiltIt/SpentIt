@@ -166,3 +166,15 @@ write captures straight into `manual/images`. Do not point
 - Pictures: recapture `transactions-ledger.png`. Each column edge in the
   heading now has a small shaded notch. The blue line appears only while the
   pointer is on that edge.
+
+### MAN-055 — Automatic one-to-one Merge and Link
+
+- Date: 2026-11-14
+- Contract: [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+- Explain the two initially off checkboxes above Hidden transfer matches in
+  Settings, their per-file local scope, and the conservative eligibility rules.
+- Explain that automatic Merge/Link leaves Accept transactions explicit. Include
+  the import summary, marks on accepted survivors, Unmerge, and ordinary Undo.
+- Marks survive reopen and clear on the next Accept, even when no new rows remain.
+- Recapture Settings and an accepted survivor with a result mark during the next
+  owner-authorized manual pass. No manual files changed in this implementation.

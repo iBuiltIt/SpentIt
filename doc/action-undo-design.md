@@ -450,3 +450,14 @@ native text Undo/Redo taking precedence in a focused editor. Ordinary saved Undo
 and Redo execute directly; import Undo confirms its non-redoable removal. History
 shows applied actions across the file and the available Redo sequence. Only the
 latest applied action exposes Undo; there is no branch selection.
+
+### Automatic Review decisions — 2026-11-14
+
+The opt-in [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14)
+pass runs after the import, initial category choices, and rules have completed.
+Each eligible Merge or Link is an ordinary atomic Review action on the file-wide
+stack, above the import. This differs from the import-owned initial rule and
+confirmed-mapping transfer work. Undo does not trigger the pass again. Redo uses
+the normal Review command. Local automatic-review preference saves preserve Undo
+and clear pending Redo. Accepting only outstanding result marks also records an
+Accept action, so Undo restores those marks without changing financial amounts.

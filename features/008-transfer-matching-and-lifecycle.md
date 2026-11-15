@@ -1,7 +1,7 @@
 # 008 — Transfer matching and lifecycle
 
 Status: **active**
-Last updated: 2026-11-13
+Last updated: 2026-11-14
 
 Transfers are explicit links between two allocations. A generated counterpart
 stays in one currency. An explicit Link may join two existing allocations in
@@ -45,8 +45,10 @@ distinct.
   amounts. One amount must be outgoing and the other incoming. No rate is
   stored or applied. Choosing another account as the category still creates a
   same-currency counterpart and refuses a different currency.
-- Candidate ranking and automatic transfer matching beyond those confirmed
-  mapping pairs are not done. Links otherwise require an explicit choice.
+- Candidate ranking is not done. The optional, initially off automatic Link
+  setting resolves mutually one-to-one, exact-amount Review pairs after import
+  and rules, with no split choice or amount difference. Other suggestions require
+  an explicit choice. See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 
 ## Committed edits
 

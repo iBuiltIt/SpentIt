@@ -1,7 +1,7 @@
 # 003 — Import and review
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-14
 
 Supported imports are the [QIF bank-v6 profile](009-qif-profile.md) and the
 [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md). Further dialects
@@ -50,6 +50,14 @@ Automatic recognition uses saved original facts.
 - An uncertain match is not permission to drop a transaction. Unresolved rows
   stay in the balance until the user decides.
 - Reimport of a removed transaction stays unresolved for an explicit decision.
+
+Two optional, initially off Settings preferences automatically Merge or Link
+mutually one-to-one Review pairs after import and rules. They leave transaction
+acceptance explicit. Ambiguous groups, adjacent-day duplicates, survivor choices,
+split choices, and amount differences stay manual. Accepted survivors also keep
+their result marks until the next Accept. The exact eligibility, local preference
+scope, failure behavior, and Undo contract are in the automatic-review section of
+[doc/review-sheet.md](../doc/review-sheet.md).
 
 Review behavior is in [doc/review-sheet.md](../doc/review-sheet.md). Dataset-wide
 acceptance is in [doc/import-commit-discussion.md](../doc/import-commit-discussion.md).
