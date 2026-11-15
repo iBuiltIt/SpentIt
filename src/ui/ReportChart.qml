@@ -31,22 +31,31 @@ ColumnLayout {
         onWidthChanged:requestPaint()
         onVisibleChanged:requestPaint()
         MouseArea {
-            anchors.fill:parent;hoverEnabled:true
+            id:hover;objectName:"reportChartHover";anchors.fill:parent;hoverEnabled:true
             property int categoryIndex:-1
             property int chartPeriod:root.periodIndex
+            readonly property string tipText:{
+                const rows=root.result.rows
+                const row=categoryIndex>=0 && rows && categoryIndex<rows.length?rows[categoryIndex]:null
+                const period=root.periods[chartPeriod]||root.period
+                const cell=row&&row.cells?row.cells[chartPeriod]:null
+                return row&&period&&cell?row.name+" · "+period.label+": "+root.result.currency+" "+cell.amount:""
+            }
             onPositionChanged:function(mouse){
                 if(root.graph==="pie"){categoryIndex=-1;return}
-                const step=(width-24)/Math.max(1,root.result.rows.length)
-                categoryIndex=Math.floor((mouse.x-12)/step)
-                if(categoryIndex<0 || categoryIndex>=root.result.rows.length){categoryIndex=-1;return}
+                const rows=root.result.rows||[]
+                const step=(width-24)/Math.max(1,rows.length)
+                const next=Math.floor((mouse.x-12)/step)
+                if(next<0 || next>=rows.length || !rows[next]){categoryIndex=-1;return}
                 const count=root.grouped?root.periods.length:1
                 const groupWidth=Math.min(step*0.82,count*50),slot=groupWidth/count
-                chartPeriod=root.grouped?Math.max(0,Math.min(count-1,Math.floor((mouse.x-12-categoryIndex*step-(step-groupWidth)/2)/slot))):root.periodIndex
+                chartPeriod=root.grouped?Math.max(0,Math.min(count-1,Math.floor((mouse.x-12-next*step-(step-groupWidth)/2)/slot))):root.periodIndex
+                categoryIndex=next
             }
             onExited:categoryIndex=-1
-            onDoubleClicked:if(categoryIndex>=0)root.drill(categoryIndex,chartPeriod)
-            ToolTip.visible:containsMouse && categoryIndex>=0
-            ToolTip.text:categoryIndex<0?"":root.result.rows[categoryIndex].name+" · "+(root.periods[chartPeriod]||root.period).label+": "+root.result.currency+" "+root.result.rows[categoryIndex].cells[chartPeriod].amount
+            onDoubleClicked:if(categoryIndex>=0 && root.result.rows && root.result.rows[categoryIndex])root.drill(categoryIndex,chartPeriod)
+            ToolTip.visible:containsMouse && categoryIndex>=0 && root.result.rows && categoryIndex<root.result.rows.length && !!root.result.rows[categoryIndex]
+            ToolTip.text:tipText
         }
         onPaint: {
             const ctx=getContext("2d");ctx.reset()
