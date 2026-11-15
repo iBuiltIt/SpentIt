@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-13
+Last updated: 2026-11-14
 
 SpentIt is the local rules-enabled application. The release rules database is
 version 1, and the application version is 1.0.0. A file whose number is not 1
@@ -40,8 +40,12 @@ passed unless you ran it.
   drill-down.
 - File menu QIF export and SpentIt export/import of rules, reports, and
   categories.
-- One file-wide Undo chain and a Change history page. A successful close
-  expires ordinary Undo.
+- One file-wide linear Undo/Redo stack with Edit menu commands and platform
+  shortcuts. Redo is in memory while the file stays open; import Undo clears it
+  and cannot be redone. Change history is a stack viewer with only newest-action
+  Undo. Successful close expires both stacks; crash recovery preserves the
+  durable Undo chain but loses Redo. The database remains version 1. See the
+  [design](action-undo-design.md#version-1-linear-redo--2026-11-14).
 - Bundled Help for the current manual, with contextual links.
 
 The feature documents and the contracts they name are the behavior. This page
@@ -75,6 +79,22 @@ release 1 does not add.
   recorded above were built as 0.1.0 before that stamp. Rebuild them before
   publication. See [release schema](release-schema.md).
 
+## Undo/Redo verification — 2026-11-14
+
+The rules-enabled Release app at `build/SpentIt` was rebuilt. In
+`build/import-ui-rules-release`, these passed: `storage.action_repository`,
+`storage.action_redo`, `storage.action_redo_faults`,
+`import.manual_transactions`, `import.action_undo_ui`, `import.committed_ui`,
+`import.linear_redo_ui`, `category.assignments`, `category.history`, and
+`category.validation`. The Redo fault sweep covers disk-full/I/O failures and
+process exits at write boundaries. Historical category replay, corruption
+refusal, close/reopen, identity remapping, retries, and version-1 retention are
+covered by the Redo suite.
+
+`storage.action_redo` also passed in `build/category-sanitized` with address and
+undefined-behavior sanitizers. These are targeted checks, not a full repository
+or cross-platform run. Manual updates remain queued as MAN-054.
+
 ## Limits that still bind a claim
 
 - The owner-reported Rules crash is a native accessibility notification during
@@ -94,7 +114,7 @@ MAN-001 through MAN-044 are in the bundled manual. The 2026-11-12 pass
 updated the chapters and installed recaptured pictures with
 `tools/capture_manual_images.py --install`. The help bundle was rebuilt
 into `./build/SpentIt`. In `build/import-ui-rules-release`, `help.prepare`
-and `help.catalog` passed. The backlog is empty. A later user-visible
-change is logged in [manual-update-backlog.md](manual-update-backlog.md)
+and `help.catalog` passed. MAN-054 now records the Undo/Redo and History
+changes in [manual-update-backlog.md](manual-update-backlog.md)
 and waits for an owner-authorized manual pass. Do not edit `manual/` as
 part of feature work.

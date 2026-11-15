@@ -20,10 +20,142 @@ void edit(ImportStore& store,std::string_view operation,const imports::Occurrenc
     check(batch!=batches.end(),"Missing batch");
     store.edit_transaction(operation,id,batch->revision,store.transaction_accepted(id)?std::optional<EntryToken>{store.committed_entry(id).token}:std::nullopt,draft);
 }
+bool cycle_redo=false;
 void undo(ImportStore& store,std::string_view operation,std::string_view expected) {
     if(std::getenv("SPENTIT_TEST_TRACE"))std::cerr<<"Undo "<<expected<<"\n";
     const auto head=store.action_head();check(head && head->id==expected,"Unexpected Undo head");
     store.undo_action(operation,store.preview_undo(head->id,store.action_token()));store.verify();
+    if(cycle_redo && head->kind!=ActionKind::import){
+        const auto redo=store.redo_history();check(!redo.empty(),"Undo prepares Redo");
+        UndoPreview preview;preview.token=store.action_token();preview.action=redo.front();
+        const auto id="redo-"+std::to_string(preview.token.epoch);
+        if(std::getenv("SPENTIT_TEST_TRACE"))std::cerr<<"Redo "<<expected<<" as "<<id<<"\n";
+        store.redo_action(id,preview);if(std::getenv("SPENTIT_TEST_TRACE"))std::cerr<<"Verify redo\n";store.verify();
+        check(store.action_head() && store.action_head()->id==id,"Redo creates a new action");
+        store.redo_action(id,preview);store.verify();
+        if(std::getenv("SPENTIT_TEST_TRACE"))std::cerr<<"Undo replay\n";
+        store.undo_action("undo-"+id,store.preview_undo(id,store.action_token()));store.verify();
+    }
+}
+
+UndoPreview redo_preview(ImportStore& store) {
+    const auto history=store.redo_history();check(!history.empty(),"Redo available");
+    UndoPreview preview;preview.token=store.action_token();preview.action=history.front();return preview;
+}
+void linear_stack(const std::filesystem::path& directory) {
+    const auto path=directory/"linear.db";
+    int expected_format=1;
+    {
+        auto store=ImportStore::create(path,"synthetic","Checking",Currency("CAD"),"2026-01-01");
+        expected_format=store.rules_supported()?1:69;
+        store.ingest("import",source("Original"),qif::DateOrder::dmy);
+        edit(store,"first",{"import",0},"First");edit(store,"second",{"import",0},"Second");
+        store.undo_action("u2",store.preview_undo("second",store.action_token()));
+        store.undo_action("u1",store.preview_undo("first",store.action_token()));
+        check(store.redo_history().size()==2 && store.redo_history()[0].id=="first","Redo order is oldest undone first");
+        const auto before=store.action_token();const auto preview=redo_preview(store);
+        store.observer([](storage::ImportPhase phase){if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("synthetic failure");});
+        bool failed=false;try{store.redo_action("r1",preview);}catch(const std::runtime_error&){failed=true;}store.observer({});
+        check(failed && store.action_token()==before && store.redo_history().size()==2 && store.row({"import",0}).draft->payee=="Original","Failed Redo preserves both stacks and data");
+        store.redo_action("r1",preview);store.verify();check(store.row({"import",0}).draft->payee=="First","Redo restores the first result");
+        store.redo_action("r1",preview);check(store.redo_history().size()==1,"Retry does not pop the next Redo");
+        auto conflict=preview;conflict.action.id="different";failed=false;try{store.redo_action("r1",conflict);}catch(const storage::ImportError&){failed=true;}check(failed,"Conflicting Redo retry refused");
+        const auto second=redo_preview(store);
+        store.observer([](storage::ImportPhase phase){if(phase==storage::ImportPhase::after_commit)throw std::runtime_error("synthetic lost acknowledgement");});
+        failed=false;try{store.redo_action("r2",second);}catch(const std::runtime_error&){failed=true;}store.observer({});
+        check(failed && store.redo_action_outcome("r2",second) && store.redo_history().empty() && store.row({"import",0}).draft->payee=="Second","Lost acknowledgement publishes the committed Redo exactly once");
+        store.redo_action("r2",second);store.verify();
+        store.undo_action("ur2",store.preview_undo("r2",store.action_token()));
+        auto row=store.row({"import",0});store.edit_transaction("noop",row.identity,store.batches().front().revision,{},*row.draft);
+        check(store.redo_history().size()==1,"No-op preserves Redo");
+        const auto stale=redo_preview(store);store.rename_account("rename","Renamed");
+        check(store.redo_history().empty() && store.action_head()->id=="r1","Definition save clears Redo and preserves Undo");
+        failed=false;try{store.redo_action("stale",stale);}catch(const storage::ImportError&){failed=true;}check(failed,"Stale Redo cannot overwrite a new mutation");
+        store.undo_action("ur1",store.preview_undo("r1",store.action_token()));
+        check(store.redo_history().size()==1,"Undo remains available after a definition save");
+        store.undo_action("ui",store.preview_undo("import",store.action_token()));
+        check(store.redo_history().empty() && !store.action_head(),"Import Undo is not redoable and clears descendants");
+        imports::DraftRow manual{"2026-01-02","Manual","",Transaction::manual(Money(-250,Currency("CAD")),{{"","",Money(-250,Currency("CAD"))}})};
+        store.create_manual("manual",manual);edit(store,"manual-edit",{"manual",0},"Edited manual");
+        store.undo_action("ume",store.preview_undo("manual-edit",store.action_token()));store.undo_action("um",store.preview_undo("manual",store.action_token()));
+        store.redo_action("new-manual",redo_preview(store));store.redo_action("new-edit",redo_preview(store));store.verify();
+        check(store.row({"new-manual",0}).draft->payee=="Edited manual" && store.current_ledger().size()==1,"Redo remaps edits to the newly created manual identity");
+        const auto history=store.account_change_history(0,0,50,{});check(history.actions.size()==2 && history.actions.front().undoable && !history.actions.back().undoable,"History displays the linear file-wide stack");
+        store.undo_action("last",store.preview_undo("new-edit",store.action_token()));
+        store.observer([](storage::ImportPhase phase){if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("synthetic close failure");});
+        failed=false;try{store.certify({});}catch(const std::runtime_error&){failed=true;}store.observer({});
+        check(failed && store.redo_history().size()==1,"Failed close preserves Redo");store.verify();
+    }
+    {
+        auto store=ImportStore::open(path,"synthetic");store.verify();
+        check(store.redo_history().empty() && store.action_head()->id=="new-manual","Unclean reopen preserves Undo but forgets Redo");
+        store.undo_action("after-reopen",store.preview_undo("new-manual",store.action_token()));
+        check(!store.redo_history().empty(),"Recovered Undo can prepare new Redo");store.certify({});check(store.redo_history().empty(),"Successful close clears Redo");
+    }
+    sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK,"Open synthetic schema check");check(sqlite3_key(db,"synthetic",9)==SQLITE_OK,"Unlock synthetic schema check");
+    sqlite3_stmt* version=nullptr;check(sqlite3_prepare_v2(db,"PRAGMA user_version",-1,&version,nullptr)==SQLITE_OK && sqlite3_step(version)==SQLITE_ROW && sqlite3_column_int(version,0)==expected_format,"Redo keeps the existing schema version (release version 1)");sqlite3_finalize(version);sqlite3_close(db);
+}
+void redo_faults(const std::filesystem::path& directory) {
+    fault_vfs::install();const auto seed=directory/"redo-seed.db";
+    {auto store=ImportStore::create(seed,"synthetic","Checking",Currency("CAD"),"2026-01-01");store.ingest("source",source("Original"),qif::DateOrder::dmy);edit(store,"edit",{"source",0},"Changed");}
+    for(const bool crash:{false,true})for(int boundary=1;boundary<1000;++boundary){
+        const auto file=directory/(std::string(crash?"redo-crash-":"redo-io-")+std::to_string(boundary));std::filesystem::copy_file(seed,file);bool fired=false;
+        if(crash){
+            const auto child=fork();check(child>=0,"fork failed");
+            if(child==0){try{auto store=ImportStore::open(file,"synthetic");store.undo_action("undo",store.preview_undo("edit",store.action_token()));const auto preview=redo_preview(store);fault_vfs::arm(boundary,SQLITE_IOERR_WRITE,true,true);store.redo_action("replay",preview);_exit(0);}catch(...){_exit(72);}}
+            int status=0;check(waitpid(child,&status,0)==child,"wait failed");check(WIFEXITED(status) && (WEXITSTATUS(status)==0 || WEXITSTATUS(status)==71),"Unexpected Redo crash outcome");fired=WEXITSTATUS(status)==71;
+        } else {
+            auto store=ImportStore::open(file,"synthetic");store.undo_action("undo",store.preview_undo("edit",store.action_token()));const auto preview=redo_preview(store);
+            fault_vfs::arm(boundary,boundary%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
+            try{store.redo_action("replay",preview);}catch(const std::exception&){}
+            fired=fault_vfs::fired;fault_vfs::disarm();store.verify();
+            const bool saved=store.row({"source",0}).draft->payee=="Changed";
+            check(store.redo_history().empty()==saved,"Redo availability follows durable commit under I/O failure");
+            check(store.action_head()->id==(saved?"replay":"source"),"Redo action and result commit together under I/O failure");
+        }
+        {auto recovered=ImportStore::open(file,"synthetic");recovered.verify();const auto payee=recovered.row({"source",0}).draft->payee;check(payee=="Original" || payee=="Changed","Recovery never exposes partial Redo");check(recovered.action_head()->id==(payee=="Changed"?"replay":"source"),"Recovered financial state and action agree");check(recovered.redo_history().empty(),"Crash/reopen forgets pending Redo");check(recovered.balance().units()==-1000,"Redo failure never changes money");recovered.certify({});}
+        std::filesystem::remove(file);if(!fired){std::cout<<(crash?"Crash":"I/O")<<" Redo boundaries: "<<boundary-1<<'\n';break;}check(boundary<999,"Redo fault sweep did not terminate");
+    }
+}
+void redo_dependencies(const std::filesystem::path& directory) {
+    {
+        auto store=ImportStore::create(directory/"redo-category.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.apply_category_change("category",{CategoryAction::create,"food","Food",{},CategoryKind::leaf},store.category_catalog().revision);
+        Allocation allocation{"Food","",Money(-250,Currency("CAD"))};allocation.category_binding=CategoryBinding{"food",store.category_catalog().revision};
+        imports::DraftRow draft{"2026-01-02","Manual","",Transaction::manual(allocation.amount,{allocation})};
+        store.create_manual("manual",draft);
+        store.apply_category_change("rename-category",{CategoryAction::rename,"food","Meals",{},CategoryKind::leaf},store.category_catalog().revision);
+        store.undo_action("undo-manual",store.preview_undo("manual",store.action_token()));
+        store.redo_action("redo-manual",redo_preview(store));store.verify();
+        check(store.row({"redo-manual",0}).draft->transaction.allocations().front().category_binding==allocation.category_binding,"Redo preserves a historical category binding after a definition change");
+        store.ingest("import",source("Imported"),qif::DateOrder::dmy);
+        auto row=*store.row({"import",0}).draft;auto splits=row.transaction.allocations();splits.front().category="Meals";splits.front().category_binding=CategoryBinding{"food",store.category_catalog().revision};splits.front().category_owner=FieldOwnership::manual;row.transaction=row.transaction.corrected(row.transaction.effective_total(),splits);
+        store.edit_transaction("assign",{"import",0},0,{},row);
+        store.apply_category_change("archive-category",{CategoryAction::archive,"food",{}, {},CategoryKind::leaf},store.category_catalog().revision);
+        store.undo_action("undo-assign",store.preview_undo("assign",store.action_token()));
+        store.redo_action("redo-assign",redo_preview(store));store.verify();
+        check(store.row({"import",0}).draft->transaction.allocations().front().category_binding==splits.front().category_binding,"Redo restores an assignment archived before Undo");
+    }
+    const auto corrupted=directory/"redo-category-corrupt.db";std::filesystem::copy_file(directory/"redo-category.db",corrupted);
+    sqlite3* db=nullptr;check(sqlite3_open(corrupted.c_str(),&db)==SQLITE_OK,"Open synthetic Redo corruption fixture");check(sqlite3_key(db,"synthetic",9)==SQLITE_OK,"Unlock synthetic Redo corruption fixture");
+    check(sqlite3_exec(db,"DROP TRIGGER allocation_immutable; DROP TRIGGER draft_allocation_meta_immutable; UPDATE allocations SET category='Food' WHERE batch='import' AND revision=(SELECT max(revision) FROM versions WHERE batch='import'); UPDATE draft_allocation_meta SET catalog_revision=1 WHERE batch='import' AND revision=(SELECT max(revision) FROM versions WHERE batch='import')",nullptr,nullptr,nullptr)==SQLITE_OK,"Alter a replayed historical assignment");
+    check(sqlite3_exec(db,"CREATE TRIGGER allocation_immutable BEFORE UPDATE ON allocations BEGIN SELECT RAISE(ABORT,'immutable'); END; CREATE TRIGGER draft_allocation_meta_immutable BEFORE UPDATE ON draft_allocation_meta BEGIN SELECT RAISE(ABORT,'immutable'); END;",nullptr,nullptr,nullptr)==SQLITE_OK,"Restore fixture schema before verification");sqlite3_close(db);
+    bool refused=false;try{auto invalid=ImportStore::open(corrupted,"synthetic");invalid.verify();}catch(const storage::ImportError& error){refused=std::string_view(error.what()).find("Category assignment bypassed catalog freshness")!=std::string_view::npos;}check(refused,"A Redo fingerprint cannot authorize an altered historical assignment");
+    {auto reopened=ImportStore::open(directory/"redo-category.db","synthetic");reopened.verify();check(reopened.redo_history().empty(),"Reopen loses Redo recipes and verifies historical results");reopened.certify({});}
+    {auto reopened=ImportStore::open(directory/"redo-category.db","synthetic");reopened.verify();check(!reopened.action_head(),"Historical replay results survive successful close");}
+    {
+        auto store=ImportStore::create(directory/"redo-transfer-chain.db","synthetic","Checking",Currency("CAD"),"2026-01-01");
+        store.create_account(2,"Savings",Currency("CAD"),"2026-01-01");
+        TransferRequest request{};request.action=TransferAction::manual;request.link="manual-link";request.destination=2;request.amount=Money(-1000,Currency("CAD"));request.date="2026-01-01";request.expected_sequence=store.transfer_sequence();
+        store.apply_transfer("transfer",request);
+        request={};request.action=TransferAction::accept;request.link="manual-link";request.expected_sequence=store.transfer_sequence();store.apply_transfer("accept-side",request);
+        request.action=TransferAction::commit_local;request.expected_sequence=store.transfer_sequence();store.apply_transfer("commit-side",request);
+        for(const auto* id:{"commit-side","accept-side","transfer"})store.undo_action(std::string("undo-")+id,store.preview_undo(id,store.action_token()));
+        for(const auto* id:{"redo-transfer","redo-accept","redo-commit"}){store.redo_action(id,redo_preview(store));store.verify();}
+        check(store.redo_history().empty() && store.balance().units()==-1000,"Dependent transfer actions follow the recreated relationship identity");
+        for(const auto* id:{"redo-commit","redo-accept","redo-transfer"})store.undo_action(std::string("undo-")+id,store.preview_undo(id,store.action_token()));
+        check(store.balance().units()==0,"Replayed transfer chain remains undoable");store.verify();
+    }
 }
 void run(const std::filesystem::path& path) {
     auto store=ImportStore::create(path,"synthetic","Checking",Currency("CAD"),"2026-01-01");
@@ -1066,7 +1198,8 @@ int main(int argc,char** argv){
     auto path=(std::filesystem::temp_directory_path()/"spentit-action-repository-XXXXXX").string();
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
-    try{if(argc>1 && std::string_view(argv[1])=="unmerge_faults"){unmerge_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge"){unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
+    cycle_redo=std::getenv("SPENTIT_TEST_REDO") || (argc>1 && std::string_view(argv[1])=="redo");
+    try{linear_stack(path);redo_dependencies(path);if(argc>1 && std::string_view(argv[1])=="redo_faults"){redo_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_faults"){unmerge_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge"){unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

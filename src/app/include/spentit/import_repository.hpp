@@ -207,6 +207,9 @@ public:
     virtual UndoPreview preview_undo(std::string_view,const ActionToken&) const {throw std::logic_error("Undo unavailable");}
     virtual std::optional<ActionReceipt> undo_action_outcome(std::string_view,const UndoPreview&) const { return {}; }
     virtual ActionReceipt undo_action(std::string_view,const UndoPreview&) {throw std::logic_error("Undo unavailable");}
+    virtual std::vector<ActionSummary> redo_history() const { return {}; }
+    virtual ActionReceipt redo_action(std::string_view,const UndoPreview&) {throw std::logic_error("Redo unavailable");}
+    virtual std::optional<ActionReceipt> redo_action_outcome(std::string_view,const UndoPreview&) const { return {}; }
     virtual ConnectedUndoPreview preview_connected_undo(std::string_view,const ActionToken&) const {throw std::logic_error("Undo unavailable");}
     virtual ActionReceipt undo_connected(std::string_view,const ConnectedUndoPreview&) {throw std::logic_error("Undo unavailable");}
     virtual std::optional<ActionReceipt> undo_connected_outcome(std::string_view,const ConnectedUndoPreview&) const { return {}; }

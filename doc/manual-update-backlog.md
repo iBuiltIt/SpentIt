@@ -3,7 +3,7 @@
 Last updated: 2026-11-14
 
 The bundled manual includes the user-visible behavior through the 2026-11-12
-pass (MAN-001 through MAN-044). Open items run through MAN-053.
+pass (MAN-001 through MAN-044). Open items run through MAN-054.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -22,6 +22,16 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+### MAN-054 — Linear Undo/Redo and History
+
+2026-11-14: See the [Undo/Redo contract](action-undo-design.md#version-1-linear-redo--2026-11-14).
+Update the saved-change Undo chapter and relevant screenshots for
+Edit → Undo/Redo, platform shortcuts, direct ordinary Undo, the file-wide History
+stack viewer, and in-memory Redo lifetime. Explain that new saved changes clear
+Redo, import Undo is not redoable and clears pending Redo, successful close clears
+both stacks, and crash recovery retains Undo but loses Redo. Manual edits await
+the owner's explicit manual-update request.
 
 ### MAN-053 — Zero category rows omitted from reports
 

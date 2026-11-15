@@ -139,11 +139,15 @@ format. See [file exchange](doc/file-exchange.md).
 
 These are the current rules. The linked documents are the full contracts.
 
-- **Undo.** One file-wide newest-first chain for transaction edits, opening and
-  currency corrections, and acceptance. An import is one source-owned rollback
-  and creates no ordinary edit record for its new rows. Import-created accounts,
+- **Undo.** One file-wide newest-first Undo/Redo stack. Redo is in memory only,
+  is lost on crash, and replays fresh ordinary actions without schema changes.
+  Import Undo is not redoable and clears pending Redo. History is a file-wide
+  linear stack viewer, not selective branch Undo. The durable chain covers
+  transaction edits, opening and currency corrections, and acceptance. An import
+  is one source-owned rollback and creates no ordinary edit record for its new rows. Import-created accounts,
   categories, aliases, and the explicit opening remain after that rollback.
-  Definition and settings saves are not Undo steps and do not clear the chain.
+  Definition and settings saves are not Undo steps. They preserve Undo and
+  clear pending Redo.
   Save and apply is atomic; Undo restores the transactions and keeps the saved
   rule. Older-import removal and account Discard require an empty chain and are
   not themselves undoable. Do not resume generic per-row storage capture.

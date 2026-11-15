@@ -95,12 +95,21 @@ app::ActionReceipt ImportStore::undo_action(std::string_view operation,const app
     }
     const auto checked=preview_undo(preview.action.id,preview.token);
     if(!checked.refusal.empty())fail(SQLITE_CONSTRAINT,checked.refusal.c_str());
+    (void)redo_history();
+    auto redo=capture_redo(checked.action);
+    impl_->redo.reserve(impl_->redo.size()+1);
     if(impl_->undo_token)fail(SQLITE_MISUSE,"Undo cannot be nested");
     struct Guard {
         Impl& state;
         ~Guard(){state.undo_token.reset();state.undo_operation.clear();state.undo_digest.clear();}
     } guard{*impl_};
     impl_->undo_token=preview.token;impl_->undo_operation=operation;impl_->undo_digest=digest;
+    const auto publish_redo=[&]{
+        if(redo.replay)impl_->redo.push_back(std::move(redo));
+        else {impl_->redo.clear();impl_->redo_names.clear();}
+        impl_->redo_epoch=ledger_edit_generation();
+    };
+    try {
     switch(checked.action.kind) {
     case app::ActionKind::transaction:
     case app::ActionKind::review:
@@ -120,6 +129,11 @@ app::ActionReceipt ImportStore::undo_action(std::string_view operation,const app
     }
     default:fail(SQLITE_CONSTRAINT,"This action cannot yet be undone.");
     }
+    } catch(...) {
+        if(sqlite3_get_autocommit(impl_->db) && chain.durable_outcome(operation,digest))publish_redo();
+        throw;
+    }
+    publish_redo();
     return {std::string(operation),checked.action.id};
 }
 

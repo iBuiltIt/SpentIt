@@ -1,6 +1,6 @@
 # Unified transaction Undo and whole-import rollback
 
-Last updated: 2026-11-10
+Last updated: 2026-11-14
 
 This replacement is the Undo implementation. The release rules database is
 version 1. Do not resume generic per-row storage capture. An import must not
@@ -24,7 +24,9 @@ Example:
 
 Undo traverses those steps newest first. Import occupies one position in this
 order, but does not pass its inserted rows through the ordinary edit journal.
-There is no Redo, selective skipping, or automatic undo-to-here.
+Redo is connection-local and replays a saved result as a fresh ordinary action.
+Import Undo is not redoable. There is no selective skipping or automatic
+undo-to-here. See the version-1 Redo section below.
 
 Accounts and categories created by an import **remain after its rollback**, as
 the owner explicitly accepted during this rethink. The proposed retained setup
@@ -207,8 +209,8 @@ Physical revision counters continue upward; unrelated definition revisions do no
 need the rejected design's universal backwards-head/ancestry conversion.
 
 Undo is a durable command, not another undoable head. After A, B, Undo B, C, the
-active chain is A → C. B remains an undone session summary, not C's parent. No Redo
-payload is kept solely for B. Retain its restoration lineage only while required
+active chain is A → C. B remains an undone session summary, not C's parent. B's in-memory Redo
+payload is discarded when C is saved. Retain its restoration lineage only while required
 by current state, another active action or verification of this session.
 
 Retry lookup precedes freshness refusal. Identical completed requests return their
@@ -399,3 +401,52 @@ Import-only produces one root and **zero ordinary transaction-Undo members for
 new imported rows**. Initial setup and automatic rules cannot add per-row
 capture. The command map is [action-undo-inventory.md](action-undo-inventory.md).
 Change history is [change-history-handoff.md](change-history-handoff.md).
+
+## Version-1 linear Redo — 2026-11-14
+
+The owner authorized a conventional file-wide Undo/Redo stack. History is its
+viewer; arbitrary older-action and connected-branch reversal are no longer
+application commands. Existing typed inverse routines and the durable Undo chain
+remain. There are no schema changes, new persisted action kinds, or migrations.
+
+Before Undo, storage prepares a typed, connection-local replay recipe from the
+saved result. Undo publishes that recipe only after durable completion. Ordinary
+transaction and rule results retain exact drafts, decisions and provenance;
+rules are not evaluated again. Review and transfer recipes retain the selected
+domain operation. Acceptance checks that replay publishes the exact recorded
+membership. Manual creation and new transfer creation allocate fresh identities;
+later replay recipes resolve their references to the recreated objects.
+
+Replayed row images retain a SHA-256 fingerprint in the existing version-1
+no-change receipt structure, keyed by row identity, revision and draft/accepted
+kind. This is verification evidence, not a pending Redo recipe. It permits exact
+restoration of a historical category binding after a rename/archive that happened
+before Undo; normal assignment freshness checks remain. The fingerprint and row
+commit atomically. Close expires the receipt under existing rules, retaining its
+fingerprint for any retained historical snapshot. No new table, column, schema
+number or receipt status is introduced.
+
+Redo writes a fresh normal action using the existing version-1 receipts. It never
+resets an old completion or rewinds revisions. Its entire financial operation,
+normal Undo information, and receipt commit together. Redo performs full domain
+verification before committing. Failure leaves the recipe available. A lost
+acknowledgement is resolved against the committed action before publishing the
+stack change; a retry cannot replay the next action.
+
+A saved semantic mutation outside Undo/Redo invalidates pending Redo, including
+standalone definitions/settings. It preserves the existing Undo chain. No-ops,
+failed commands, selection, navigation, and previews preserve Redo. The saved
+mutation epoch is the authority for detecting invalidation. Import Undo clears
+all pending Redo and creates no recipe: reimport the file to bring it back.
+Import-created setup retains its existing rollback semantics.
+
+Redo lasts only while this file remains open. A failed or cancelled close retains
+it. Successful close expires both stacks. A crash loses pending Redo; the durable
+Undo chain and saved financial state retain the existing recovery guarantees.
+No Redo sidecar, persistent journal, or database snapshot is created.
+
+Edit menus and platform shortcuts operate on the latest applicable action, with
+native text Undo/Redo taking precedence in a focused editor. Ordinary saved Undo
+and Redo execute directly; import Undo confirms its non-redoable removal. History
+shows applied actions across the file and the available Redo sequence. Only the
+latest applied action exposes Undo; there is no branch selection.

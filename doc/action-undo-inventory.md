@@ -1,6 +1,6 @@
 # Unified Undo — operation adaptation inventory
 
-Last updated: 2026-11-09
+Last updated: 2026-11-14
 
 `ImportStore` and the UI use `ActionChain` with release schema version 1. Read the
 [design](action-undo-design.md) first. Do not resume generic per-row capture.
@@ -96,3 +96,24 @@ related command types; UI consumers are `src/ui/import_model.cpp` and
 Generic per-row capture is not the implementation. Do not restore a probe that
 journals an inverse for every imported row. The active chain is the typed
 `ActionChain` described above.
+
+## Linear Redo adapters
+
+`redo_store.inc` captures connection-local recipes before ordinary Undo and
+publishes them after its commit. Transaction edits and rules use recorded result
+snapshots; Review, transfer, deletion, exclusion, opening/currency, manual creation,
+and acceptance use typed domain replay. Recreated identities are mapped for later
+stack entries. Manual replay preserves validated historical category bindings.
+Import rollback has no replay recipe and clears pending Redo.
+
+`action_store.inc` coordinates Undo publication. `import_review.inc` verifies
+Redo inside the transaction before commit; `acceptance_undo.inc` checks exact
+reaccepted membership. The model exposes only latest-action Undo/Redo; legacy
+connected-Undo storage routines remain for compatibility and verification tests,
+but have no application command or History control.
+
+`storage.action_redo` exercises the existing action-family suite with an
+Undo/Redo/Undo cycle, plus ordering, retries, invalidation, file lifetime and
+identity dependencies. `storage.action_redo_faults` sweeps I/O and process-exit
+boundaries. UI coverage is `import.linear_redo_ui`, `import.action_undo_ui`, and
+`import.committed_ui`.

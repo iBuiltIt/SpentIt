@@ -14,6 +14,12 @@ void ImportStore::record_acceptance_action(std::string_view operation,std::strin
         Statement decisions(impl_->db,"SELECT m.ordinal,m.draft_revision,(SELECT max(v.revision) FROM versions v WHERE v.batch=o.batch AND v.ordinal=m.ordinal AND v.revision<=?3) FROM acceptance_members m JOIN operations o ON o.id=m.operation WHERE o.batch=?2 AND (o.id=?1 OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=?1)) AND m.draft_revision>?3");decisions.text(1,operation);decisions.text(2,batch_id);decisions.integer(3,prior_revision);
         while(decisions.row()){if(decisions.null(2))fail(SQLITE_CORRUPT);Statement member(impl_->db,"INSERT INTO review_members VALUES(?,?,?,0,?,?,?)");member.text(1,operation);member.text(2,batch_id);member.integer(3,decisions.integer(0));member.integer(4,decisions.integer(2));member.integer(5,decisions.integer(1));member.text(6,std::string(operation)+"-decision-"+std::to_string(++serial));member.done();}
     }
+    if(impl_->redo_acceptance_members) {
+        std::set<imports::Occurrence> actual;
+        Statement members(impl_->db,"SELECT o.batch,m.ordinal FROM acceptance_members m JOIN operations o ON o.id=m.operation WHERE m.decision=1 AND (o.id=?1 OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=?1))");members.text(1,operation);
+        while(members.row())actual.insert({members.bytes(0),static_cast<std::size_t>(members.integer(1))});
+        if(actual!=*impl_->redo_acceptance_members)fail(SQLITE_CONSTRAINT,"The transactions to accept changed. Redo was not saved.");
+    }
     app::ActionSummary action;action.id=operation;action.payload=operation;action.kind=app::ActionKind::acceptance;action.label="Accept transactions";action.count=integer(count);
     impl_->pending_action=std::move(action);impl_->pending_action_digest=digest;
 }

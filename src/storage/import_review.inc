@@ -34,6 +34,7 @@ void ImportStore::finish(const std::function<void()>& commit,bool compatible) {
         Statement complete(impl_->db,"INSERT INTO import_completions SELECT id FROM batches WHERE id=? AND state=0 AND blocked=0 AND NOT EXISTS(SELECT 1 FROM import_group_accounts m WHERE m.batch=batches.id AND m.created=1)");complete.text(1,id);complete.done();
     }
     impl_->review_changes=sqlite3_total_changes64(impl_->db);
+    if(!impl_->redo_operation.empty())verify();
     if(impl_->observer && !impl_->undo_joined)impl_->observer(ImportPhase::before_commit);
     commit();
     if(impl_->observer && !impl_->undo_joined)impl_->observer(ImportPhase::after_commit);

@@ -1,8 +1,8 @@
 # Session history
 
-Last updated: 2026-11-09
+Last updated: 2026-11-14
 
-Ordinary Change History and Undo belong to the current session. A successful
+Ordinary Change History, Undo, and in-memory Redo belong to the current session. A successful
 close makes the saved state the next baseline. Ordinary earlier edits are no
 longer listed or undoable. Closing does not accept transactions, discard them,
 or change balances.
@@ -56,3 +56,7 @@ close expires that journal.
 
 Do not reset conflict generations when compacting. Do not synthesize a
 balancing transaction or change an opening to make history shorter.
+
+Redo is held only by the open document connection. Failed/cancelled close keeps
+it; successful close or a crash discards it. Crash recovery still restores the
+existing durable Undo chain. Import Undo is not redoable and clears pending Redo.

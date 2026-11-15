@@ -379,7 +379,7 @@ std::vector<app::HistoryFieldChange> ImportStore::action_field_changes(const app
 }
 app::AccountHistoryPage ImportStore::account_change_history(std::int64_t account,std::int64_t before,std::size_t limit,const std::optional<imports::Occurrence>& focus) const {
     if(before<0 || limit==0 || limit>50)fail(SQLITE_MISUSE,"Invalid Undo history page");
-    Statement present(impl_->db,"SELECT 1 FROM account WHERE singleton=?");present.integer(1,account);if(!present.row())fail(SQLITE_NOTFOUND,"This account is not in the file.");
+    Statement present(impl_->db,"SELECT 1 FROM account WHERE singleton=?");present.integer(1,account);if(account!=0 && !present.row())fail(SQLITE_NOTFOUND,"This account is not in the file.");
     app::AccountHistoryPage page;const auto head=ActionChain(impl_->db).head();if(!head)return page;
     auto header=[&](std::string_view id)->std::optional<app::ActionSummary>{
         if(id.empty())return {};
@@ -392,11 +392,14 @@ app::AccountHistoryPage ImportStore::account_change_history(std::int64_t account
         if(!seen.insert(current->id).second)break;
         const bool in_page=before==0 || current->sequence<before;
         bool shown=false;
-        if(in_page && history_touches(*current,account)){
+        if(in_page && (account==0 || history_touches(*current,account))){
             bool undoable=true;std::string wait;
-            shown=history_offer(*current,account,undoable,wait);
+            shown=account==0?true:history_offer(*current,account,undoable,wait);
+            if(account==0)undoable=current->id==head->id;
             if(shown){
-                if(page.actions.size()<limit){auto view=history_view(*current,account,true,false);view.undoable=undoable;view.undo_wait=std::move(wait);page.actions.push_back(std::move(view));}
+                if(page.actions.size()<limit){auto view=history_view(*current,account,true,false);
+                    if(account==0 && view.accounts.size()==1){for(const auto& owner:accounts())if(owner.name==view.accounts.front()){view=history_view(*current,owner.identity,true,false);break;}}
+                    view.undoable=undoable;view.undo_wait=std::move(wait);page.actions.push_back(std::move(view));}
                 else page.more=true;
             }
         }

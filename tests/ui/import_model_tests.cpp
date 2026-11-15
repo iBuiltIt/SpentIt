@@ -240,9 +240,9 @@ private slots:
         QTRY_VERIFY(!m.busy());QTRY_COMPARE(selected(m).value("draft").toMap().value("payee").toString(),QString("B"));
         QVERIFY(!root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());QVERIFY(m.state().value("actionUndo").toMap().value("id")!=first.value("id"));
         run(m,"undo_action",first,false);QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),QString("B"));
-        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));QVERIFY(root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));QVERIFY(!root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());
         QCOMPARE(root->property("pendingUndo").toMap().value("count").toInt(),1);QVERIFY(!root->property("pendingUndo").toMap().value("accounts").toString().isEmpty());
-        QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QTRY_COMPARE(selected(m).value("draft").toMap().value("payee").toString(),QString("A"));
         const auto token=m.state().value("actionUndo");payee->forceActiveFocus();payee->setProperty("cursorPosition",1);QTest::keyClick(window,Qt::Key_X);QTest::keySequence(window,QKeySequence::Undo);
         QTRY_COMPARE(payee->property("text").toString(),QString("A"));QCOMPARE(m.state().value("actionUndo"),token);QVERIFY(!root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());

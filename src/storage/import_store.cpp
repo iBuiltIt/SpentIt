@@ -831,7 +831,16 @@ bool explicit_review_merge(sqlite3* db,const imports::Occurrence& id,std::int64_
     // The merge result is one revision. Undoing Unmerge writes another revision of
     // that same decision, and close keeps the latest one with the merge record.
     Statement m(db,R"SQL(
-SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=?1 AND m.ordinal=?2 AND m.result=?3 AND m.committed=0 AND a.action=1
+WITH RECURSIVE restored(revision) AS (
+ SELECT ?3
+ UNION
+ SELECT m.prior FROM restored r
+ JOIN review_undo_members u ON u.restored=r.revision
+ JOIN review_undos undo ON undo.id=u.undo_id
+ JOIN review_members m ON m.answer=undo.answer AND m.child=u.original_child
+ WHERE m.batch=?1 AND m.ordinal=?2 AND m.committed=0 AND m.prior<r.revision
+)
+SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=?1 AND m.ordinal=?2 AND m.result IN(SELECT revision FROM restored) AND m.committed=0 AND a.action=1
 UNION ALL
 SELECT 1 FROM versions v
  JOIN review_merges g ON g.batch=v.batch AND g.ordinal=v.ordinal AND g.target_batch=v.duplicate_batch AND g.target_ordinal=v.duplicate_ordinal
@@ -962,7 +971,20 @@ struct PreparedImport {
     std::map<std::size_t,PreparedImportRow> rows;
     std::string warning;
 };
+struct ImportStore::RedoFrame {
+    app::ActionSummary action;
+    std::function<void(ImportStore&,std::string_view)> replay;
+};
+namespace { void retain_redo_image(sqlite3*,const imports::Occurrence&,std::int64_t,bool,const imports::DraftRow&); }
 struct ImportStore::Impl {
+    std::vector<RedoFrame> redo;
+    std::string redo_operation;
+    std::optional<std::set<imports::Occurrence>> redo_acceptance_members;
+    std::int64_t redo_epoch=-1;
+    std::map<std::string,std::string> redo_names;
+    struct RedoRequest {app::UndoPreview preview;bool completed=false;};
+    std::map<std::string,RedoRequest> redo_requests;
+
     sqlite3* db=nullptr;
     std::unique_ptr<DocumentLock> lock;
     std::filesystem::path path;
@@ -2024,7 +2046,7 @@ void ImportStore::save(const imports::Occurrence& id,std::int64_t expected,const
     require_unlinked(id);require_writable_account(impl_->db,account_for_batch(id.batch).identity);
     Atomic a(impl_->db); expect(impl_->db,id.batch,expected); if(generated_match(impl_->db,id))fail(SQLITE_CONSTRAINT,"Edit the existing transfer rather than its matched source");const auto old=load_row(id,false);
     if(old.excluded_by_clear)fail(SQLITE_CONSTRAINT,"This transaction was deleted. Undo the deletion before editing it.");
-    const auto canonical=canonical_draft(id,edit,old.draft,expected+1,false);
+    const auto canonical=impl_->redo_operation.empty()?canonical_draft(id,edit,old.draft,expected+1,false):edit;
     const bool reassigned=old.source.source_currency && canonical.transaction.effective_total().currency()!=*old.source.source_currency;
     imports::validate_draft(old.source,canonical,reassigned);
     if(old.draft && same_draft(*old.draft,canonical))return;
@@ -2051,12 +2073,13 @@ void ImportStore::save(const imports::Occurrence& id,std::int64_t expected,const
     // A first repair requires an explicit subsequent duplicate disposition.
     version(impl_->db,id,expected+1,canonical,old.decision,false); advance(impl_->db,id.batch,expected,"save",0,blocked);
     if(impl_->import_action.empty() && !impl_->composing_review) {
-        const auto token=action_token();const auto operation="draft-save-"+std::to_string(token.session)+"-"+std::to_string(token.epoch);
+        const auto token=action_token();const auto operation=impl_->redo_operation.empty()?"draft-save-"+std::to_string(token.session)+"-"+std::to_string(token.epoch):impl_->redo_operation;
         transfer_codec::Writer request;request.text(id.batch);request.number(integer(id.ordinal));request.number(expected);session_snapshot::request_draft(request,canonical);
         record_transaction_action(operation,"ledger-draft",session_snapshot::digest(request.bytes),{});
         if(old.draft){Statement member(impl_->db,"INSERT INTO review_members SELECT ?1,?2,?3,0,max(revision),?4,?1 FROM versions WHERE batch=?2 AND ordinal=?3 AND revision<?4");member.text(1,operation);member.text(2,id.batch);member.integer(3,integer(id.ordinal));member.integer(4,expected+1);member.done();}
         else {Statement repair(impl_->db,"INSERT INTO review_repairs VALUES(?,?,?,?,?)");repair.text(1,operation);repair.text(2,id.batch);repair.integer(3,integer(id.ordinal));repair.integer(4,1);repair.integer(5,expected+1);repair.done();}
     }
+    if(!impl_->redo_operation.empty())retain_redo_image(impl_->db,id,expected+1,false,canonical);
     finish([&]{a.commit();});
 }
 void ImportStore::decide(const imports::Occurrence& id,std::int64_t expected,const imports::Decision& decision) {
@@ -2512,6 +2535,7 @@ constexpr const char duplicate_decision_warning[]="Choose whether this transacti
 #include "review_sheet_store.inc"
 #include "ledger_selection_store.inc"
 #include "rule_account_store.inc"
+#include "redo_store.inc"
 #include "action_store.inc"
 #include "history_page.inc"
 #include "connected_undo.inc"

@@ -218,6 +218,7 @@ ApplicationWindow {
     Timer {interval:100;repeat:true;running:workflow.diagnosticsEnabled;onTriggered:window.publishDiagnostics()}
     property var s: workflow.state
     property bool startupPending: false
+    property var editMenuFocus: null
     menuBar: MenuBar {
         Menu {
             id:diagnosticFileMenu
@@ -231,6 +232,27 @@ ApplicationWindow {
                 objectName: "fileCloseDataset";text: "Close file"
                 enabled: !!s.active && !workflow.busy
                 onTriggered: guard(function(){workflow.command("close")})
+            }
+        }
+        Menu {
+            title:"Edit";objectName:"editMenu"
+            onAboutToShow: editMenuFocus=window.activeFocusItem
+            onClosed: Qt.callLater(function(){if(editMenuFocus)editMenuFocus.forceActiveFocus();editMenuFocus=null})
+            LedgerMenuItem {
+                objectName:"editUndo"
+                readonly property var editor:editMenuFocus || window.activeFocusItem
+                readonly property bool textEditing:!!editor && typeof editor.undo === "function"
+                text:"Undo"+(!textEditing && s.actionUndo && s.actionUndo.label?" "+s.actionUndo.label:"")
+                enabled:!workflow.busy && (textEditing?editor.canUndo:!!s.canUndoAction)
+                onTriggered:{if(textEditing)editor.undo();else undoEdit()}
+            }
+            LedgerMenuItem {
+                objectName:"editRedo"
+                readonly property var editor:editMenuFocus || window.activeFocusItem
+                readonly property bool textEditing:!!editor && typeof editor.redo === "function"
+                text:"Redo"+(!textEditing && s.actionRedo && s.actionRedo.label?" "+s.actionRedo.label:"")
+                enabled:!workflow.busy && (textEditing?editor.canRedo:!!s.canRedoAction)
+                onTriggered:{if(textEditing)editor.redo();else redoEdit()}
             }
         }
         Menu {
@@ -826,7 +848,6 @@ ApplicationWindow {
     property string historyOpenId: ""
     property string historySelectedKey: ""
     property string historyAccountSeen: ""
-    property bool switchingHistoryAccount: false
     property var navigation: ["ledger"]
     property int navigationIndex: 0
     property var navigationAccounts: [""]
@@ -972,15 +993,9 @@ ApplicationWindow {
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"reassignCurrency";text:"Reassign currency…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:guard(function(){currencySearch.text="";currencyDialog.open()})}
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:undoEdit()}
     }
-    function historyAccountChoices() {
-        const rows=(s.sidebarAccounts||s.accounts||[]).slice()
-        if(s.accountId && !rows.some(function(account){return account.id===s.accountId}))
-            rows.unshift({id:s.accountId,name:s.name||"Account"})
-        return rows
-    }
     function historyAccountsText(action) {
         const names=action && action.accountList || []
-        return names.length>1?names.join(", "):""
+        return names.join(", ")
     }
     function selectedHistoryMember(action) {
         if(!action)return null
@@ -1896,13 +1911,18 @@ ApplicationWindow {
         })
     }
     property var pendingUndo: ({})
+    function redoEdit() {
+        if(!s.canRedoAction || workflow.busy)return
+        const target=Object.assign({},s.actionRedo)
+        guard(function(){if((s.selectionCount||0)>1){captureLedgerView("selected-edit");editView=null;editFocus=null}else rememberEditView();workflow.command("redo_action",target)})
+    }
     function undoEdit() {
         if(!s.canUndoAction || workflow.busy)return
         const target=Object.assign({},s.actionUndo)
         const show=function(){
             const current=s.actionUndo||{}
             if(current.id!==target.id || current.epoch!==target.epoch || current.session!==target.session){workspaceFeedback="The latest action changed. Choose Undo again to review it.";return}
-            pendingUndo=target;if((s.selectionCount||0)>1){captureLedgerView("selected-edit");editView=null;editFocus=null}else rememberEditView();actionUndoConfirm.open()
+            pendingUndo=target;if((s.selectionCount||0)>1){captureLedgerView("selected-edit");editView=null;editFocus=null}else rememberEditView();if(target.kind===7)actionUndoConfirm.open();else workflow.command("undo_action",target)
         }
         // Undo changes saved transactions, openings and source ownership. Rule,
         // report and category definition drafts remain independent.
@@ -1912,44 +1932,10 @@ ApplicationWindow {
     HelpDialog {
         id:actionUndoConfirm;objectName:"actionUndoConfirm";helpTarget:"help:add-correct-transactions#undo-a-saved-change";modal:true;anchors.centerIn:parent;width:540
         title:"Undo "+(pendingUndo.label||"action")+"?"
-        Label {width:500;wrapMode:Text.Wrap;text:(pendingUndo.count?pendingUndo.count+" transaction"+(pendingUndo.count===1?"":"s")+".\n":"")+(pendingUndo.accounts?"Accounts: "+pendingUndo.accounts+".\n":"")+(pendingUndo.change?pendingUndo.change+"\n":"")+(pendingUndo.kind===7?"Remove the whole import. Accounts and categories created during import remain.":pendingUndo.kind===2?"Reverse the transaction changes. Saved rules remain.":pendingUndo.kind===6?"Return these transactions to New without changing their amounts.":"Restore the state before this action.")}
+        Label {width:500;wrapMode:Text.Wrap;text:(pendingUndo.count?pendingUndo.count+" transaction"+(pendingUndo.count===1?"":"s")+".\n":"")+(pendingUndo.accounts?"Accounts: "+pendingUndo.accounts+".\n":"")+(pendingUndo.change?pendingUndo.change+"\n":"")+(pendingUndo.kind===7?"Remove the whole import and clear Redo. This cannot be redone; import the file again if needed. Accounts and categories created during import remain.":pendingUndo.kind===2?"Reverse the transaction changes. Saved rules remain.":pendingUndo.kind===6?"Return these transactions to New without changing their amounts.":"Restore the state before this action.")}
         footer:DialogButtonBox {
-            Button {objectName:"confirmActionUndo";text:"Undo";onClicked:{actionUndoConfirm.close();workflow.command(pendingUndo.connected?"undo_connected":"undo_action",pendingUndo)}}
+            Button {objectName:"confirmActionUndo";text:"Undo";onClicked:{actionUndoConfirm.close();workflow.command("undo_action",pendingUndo)}}
             Button {text:"Cancel";onClicked:actionUndoConfirm.close()}
-        }
-    }
-    function undoOpenHistory(action) {
-        if(workflow.busy || !action || !action.actionId)return
-        const target=action.actionId
-        const show=function(){workflow.command("preview_connected_undo",{id:target})}
-        if(dirty){pendingAction=show;if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open()}
-        else show()
-    }
-    HelpDialog {
-        id:connectedUndoConfirm;objectName:"connectedUndoConfirm";helpTarget:"help:add-correct-transactions#undo-a-saved-change";modal:true;anchors.centerIn:parent;width:540
-        title:"To undo, these changes also need to be undone"
-        contentItem:ColumnLayout {
-            UsableScrollView {
-                id:connectedUndoScroll;Layout.fillWidth:true;Layout.maximumHeight:240
-                Layout.preferredHeight:Math.min(240,Math.max(24,connectedUndoList.implicitHeight));clip:true
-                Column {
-                    id:connectedUndoList;width:connectedUndoScroll.availableWidth;spacing:6
-                    Repeater {
-                        model:(s.connectedUndo||{}).lines||[]
-                        delegate:Label {
-                            required property var modelData
-                            required property int index
-                            objectName:"connectedUndoLine_"+index
-                            width:connectedUndoList.width;wrapMode:Text.Wrap;textFormat:Text.PlainText
-                            text:modelData.text||""
-                        }
-                    }
-                }
-            }
-        }
-        footer:DialogButtonBox {
-            Button {objectName:"confirmConnectedUndo";text:"Yes, undo all";enabled:!workflow.busy;onClicked:{connectedUndoConfirm.close();workflow.command("undo_connected",s.connectedUndo||{})}}
-            Button {objectName:"cancelConnectedUndo";text:"Cancel";onClicked:connectedUndoConfirm.close()}
         }
     }
     function selectLedgerRow(row, modifiers) {
@@ -2046,22 +2032,11 @@ ApplicationWindow {
             if(success && action==="report_leave"){search.text=s.filter||"";editorClosed=true}
             if(action==="report_leave" && pendingReportNavigation){let next=pendingReportNavigation;pendingReportNavigation=null;if(success)Qt.callLater(next)}
             if(success && action==="preview_import_undo")importUndoConfirm.open()
-            if(success && action==="preview_connected_undo"){
-                if((s.connectedUndo||{}).refusal){workspaceFeedback=s.connectedUndo.refusal;return}
-                const lines=(s.connectedUndo||{}).lines||[]
-                if(lines.length>1)connectedUndoConfirm.open()
-                else if(lines.length===1){
-                    pendingUndo=Object.assign({connected:true},s.connectedUndo||{})
-                    if((s.selectionCount||0)>1){captureLedgerView("selected-edit");editView=null;editFocus=null}else rememberEditView()
-                    actionUndoConfirm.open()
-                }
-            }
-            if(success && action==="undo_connected"){connectedUndoConfirm.close();actionUndoConfirm.close()}
             if(success && action==="undo_import"){importUndoConfirm.close();importUndoPicker.close();workspaceFeedback=(s.receipt||{}).summary||"Import undone."}
             if(action==="close" && !success && closingRequested){closingRequested=false;closeAuditFailure.open()}
             if(action==="review_load" && commitAfterReview){commitAfterReview=false;if(success)Qt.callLater(requestCommit);else commitBeforeQuit=false}
 
-            if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action" || action==="undo_connected") || action==="import"))editorClosed=false
+            if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action" || action==="redo_action") || action==="import"))editorClosed=false
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="unmerge"?(pendingUnmergeNotice.indexOf("back in")>=0?"Unmerged. The removed row is back.":pendingUnmergeNotice.length?"Unmerged. These are no longer one transfer.":"Unmerged. The transaction that left the ledger is back."):action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
             if(transferMergeAnnounced && action==="review_link_preview"){transferMergeAnnounced=false;if(success && !(s.reviewLinkPreview||{}).common)workspaceFeedback="Payment merged. The extra entry was removed."}
             if(success && action==="change_password"){
@@ -2081,7 +2056,7 @@ ApplicationWindow {
             if(success && action==="release_transfer_batch")workspaceFeedback="Category changed. Undo is available."
             if(success && action==="undo_transfer_assignment")workspaceFeedback="Category change undone."
             if(success && (action==="save" || action==="accept_edit"))workspaceFeedback=s.canUndoEdit?"Edit saved. Undo is available for this session.":"Edit saved."
-            if(success && (action==="undo_edit" || action==="undo_action" || action==="undo_connected"))workspaceFeedback="Edit undone."
+            if(success && (action==="undo_edit" || action==="undo_action" || action==="redo_action"))workspaceFeedback=action==="redo_action"?"Edit redone.":"Edit undone."
             if(success && action==="apply_bulk")workspaceFeedback=(s.bulkReceipt||{}).summary||"Changes saved."
             if(success && action==="delete_selection"){
                 const preview=s.deletionPreview||{}
@@ -2142,7 +2117,7 @@ ApplicationWindow {
                 categorySaving=false
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
-            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false;switchingHistoryAccount=false}
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false}
             if(success) {
                 if(action==="correct_opening")correctAmount.text=s.opening
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
@@ -2150,11 +2125,10 @@ ApplicationWindow {
                     if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
                     else if(accountViewports[s.accountId])restoreAccountViewport()
                     if(switchingRulesAccount) {currentPage="rules";let accounts=navigationAccounts.slice();accounts[navigationIndex]=s.accountId;navigationAccounts=accounts}
-                    else if(switchingHistoryAccount) {currentPage="history";let accounts=navigationAccounts.slice();accounts[navigationIndex]=s.accountId;navigationAccounts=accounts}
                     else if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
                     if(pendingReviewInspection){currentPage="review";pendingReviewInspection=false}
-                    loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false;switchingHistoryAccount=false
+                    loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false
                     if(pendingDuplicateReveal){
                         const request=pendingDuplicateReveal;pendingDuplicateReveal=null
                         duplicateOriginKey=request.origin.key;duplicateCandidateKey=request.row.key===request.origin.key?"":request.row.key
@@ -2187,7 +2161,7 @@ ApplicationWindow {
                 if(action==="apply_change") dismiss(changePreview)
                 if(action==="transfer_merge" && (s.transferMergePreview||{}).id) mergePreview.open()
                 if(action==="transfer_merge_apply") dismiss(mergePreview)
-                if(["delete_selection","rename_payee_selection","set_memo_selection","restore_imported_selection","begin_manual","cancel_manual","save_manual","undo_manual","inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","undo_action","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
+                if(["delete_selection","rename_payee_selection","set_memo_selection","restore_imported_selection","begin_manual","cancel_manual","save_manual","undo_manual","inspect","entry_history","import","map_import","group_abort","resume","save","accept_edit","undo_edit","undo_action","redo_action","decide","opening","commit","discard","evidence","create","open","unlock","close","apply_change","rename_account","archive_account","reactivate_account","delete_account","correct_opening","reassign_currency","undo_account"].indexOf(action)>=0) loadEditor()
                 if(action==="save" || action==="save_manual" || action==="cancel_manual" || action==="accept_edit" || action==="apply_change") {
                     dirty=false
                     if(pendingAction) {let next=pendingAction;pendingAction=null;guard(next)}
@@ -2206,9 +2180,9 @@ ApplicationWindow {
                 if(action==="create" || action==="unlock") {password.text="";confirmation.text="";unlockPassword.text=""}
                 if(action==="close") {settingUp=false;probeTimer.restart();if(closingRequested){allowClose=true;Qt.callLater(function(){window.close();Qt.quit()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
-            if(success && ["history","entry_history","select_account","create_account","undo_action","undo_edit"].indexOf(action)>=0) syncHistoryOpen()
+            if(success && ["history","entry_history","select_account","create_account","undo_action","redo_action","undo_edit"].indexOf(action)>=0) syncHistoryOpen()
             settleLedgerView(action,success)
-            if(action==="save" || action==="save_manual" || action==="accept_edit" || (action==="undo_edit" || action==="undo_action"))restoreEditView()
+            if(action==="save" || action==="save_manual" || action==="accept_edit" || (action==="undo_edit" || action==="undo_action" || action==="redo_action"))restoreEditView()
             if(success && action==="begin_manual"){editorClosed=false;Qt.callLater(function(){ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain);editPayee.forceActiveFocus()})}
         }
     }
@@ -3016,8 +2990,13 @@ ApplicationWindow {
     }
     Shortcut {
         sequences:[StandardKey.Undo]
-        enabled:!reviewSheet.visible && !actionUndoConfirm.visible && !connectedUndoConfirm.visible && (!!s.canUndoAction) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        enabled:!reviewSheet.visible && !actionUndoConfirm.visible && (!!s.canUndoAction) && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
         onActivated:undoEdit()
+    }
+    Shortcut {
+        sequences:[StandardKey.Redo]
+        enabled:!reviewSheet.visible && !!s.canRedoAction && !workflow.busy && !actionUndoConfirm.visible && !(window.activeFocusItem && typeof window.activeFocusItem.redo === "function")
+        onActivated:redoEdit()
     }
     property var exclusionEndpoint: ({})
     property var exclusionEditing: ({})
@@ -3773,7 +3752,7 @@ ApplicationWindow {
             onMovementEnded:captureReviewView()
     Shortcut {objectName:"reviewUndoShortcut";
         sequences:[StandardKey.Undo]
-        enabled:reviewSheet.visible && !actionUndoConfirm.visible && !connectedUndoConfirm.visible && !acceptanceDialog.visible && !mappedTransferConfirm.visible && !importUndoPicker.visible && !importUndoConfirm.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoAction && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        enabled:reviewSheet.visible && !actionUndoConfirm.visible && !acceptanceDialog.visible && !mappedTransferConfirm.visible && !importUndoPicker.visible && !importUndoConfirm.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoAction && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
         onActivated:undoEdit()
     }
             ScrollBar.vertical:UsableScrollBar {}
@@ -4197,21 +4176,14 @@ ApplicationWindow {
                     Column {
                         id:historyColumn;width:historyPage.availableWidth;spacing:10
                         Label {objectName:"historyHeading";text:"Change history";font.pixelSize:20}
-                        UsableComboBox {
-                            objectName:"historyAccount"
-                            width:Math.min(parent.width,Math.max(220,implicitWidth))
-                            model:historyAccountChoices()
-                            textRole:"name"
-                            currentIndex:historyAccountChoices().findIndex(function(account){return account.id===s.accountId})
-                            onActivated:guard(function(){
-                                const account=historyAccountChoices()[currentIndex]
-                                if(!account || account.id===s.accountId)return
-                                switchingHistoryAccount=true
-                                workflow.command("select_account",{id:account.id})
-                            })
+                        Label {objectName:"historyIntro";visible:(s.history||[]).length>0;text:"Applied changes across this file, newest first. Undo reverses the first action.";wrapMode:Text.Wrap;width:parent.width}
+                        Label {objectName:"historyEmpty";visible:(s.history||[]).length===0;text:"No applied changes to undo.";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
+                        Label {text:"Redo — next action first";visible:(s.redoHistory||[]).length>0;font.bold:true}
+                        Repeater {
+                            model:s.redoHistory||[]
+                            delegate:Label {required property var modelData;required property int index;objectName:"historyRedo_"+index;text:modelData.label+(modelData.count?" · "+modelData.count+(modelData.count===1?" transaction":" transactions"):"");width:historyColumn.width;wrapMode:Text.Wrap}
                         }
-                        Label {objectName:"historyIntro";visible:(s.history||[]).length>0;text:"Changes in this account before you close this file.";wrapMode:Text.Wrap;width:parent.width}
-                        Label {objectName:"historyEmpty";visible:(s.history||[]).length===0;text:"No changes in "+(s.name||"")+" before you close this file.";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
+                        Button {objectName:"historyRedo";text:"Redo";visible:(s.redoHistory||[]).length>0;enabled:!!s.canRedoAction && !workflow.busy;onClicked:redoEdit()}
                         Label {objectName:"historyNotice";visible:(s.historyNotice||"").length>0;text:s.historyNotice||"";textFormat:Text.PlainText;wrapMode:Text.Wrap;width:parent.width}
                         Repeater {
                             model:s.history||[]
@@ -4293,7 +4265,7 @@ ApplicationWindow {
                                         Button {
                                             objectName:open && modelData.undoable!==false?"historyUndo":""
                                             visible:open && modelData.undoable!==false
-                                            text:"Undo";onClicked:undoOpenHistory(historyAction)
+                                            text:"Undo";onClicked:undoEdit()
                                         }
                                     }
                                 }

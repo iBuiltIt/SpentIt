@@ -48,6 +48,9 @@ public:
     app::UndoPreview preview_undo(std::string_view,const app::ActionToken&) const override;
     std::optional<app::ActionReceipt> undo_action_outcome(std::string_view,const app::UndoPreview&) const override;
     app::ActionReceipt undo_action(std::string_view,const app::UndoPreview&) override;
+    std::vector<app::ActionSummary> redo_history() const override;
+    app::ActionReceipt redo_action(std::string_view,const app::UndoPreview&) override;
+    std::optional<app::ActionReceipt> redo_action_outcome(std::string_view,const app::UndoPreview&) const override;
     app::ConnectedUndoPreview preview_connected_undo(std::string_view,const app::ActionToken&) const override;
     app::ActionReceipt undo_connected(std::string_view,const app::ConnectedUndoPreview&) override;
     std::optional<app::ActionReceipt> undo_connected_outcome(std::string_view,const app::ConnectedUndoPreview&) const override;
@@ -204,6 +207,12 @@ public:
     app::AcceptanceReceipt accept_all(std::string_view,bool=false) override;
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
 private:
+    struct RedoFrame;
+    RedoFrame capture_redo(const app::ActionSummary&) const;
+    imports::Occurrence redo_occurrence(imports::Occurrence) const;
+    app::TransferRequest redo_transfer(app::TransferRequest,std::string_view);
+    app::ReviewAnswer redo_review_answer(app::ReviewAnswer) const;
+
     void publish_review_action(std::string_view);
     void verify_action_restorations() const;
     void undo_acceptance(std::string_view,std::string_view);

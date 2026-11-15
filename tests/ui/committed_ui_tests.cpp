@@ -118,7 +118,7 @@ class CommittedUiTests : public QObject {
     static bool undoLatest(QObject* root,QQuickWindow* window,const char* focusName="durableLedger") {
         auto* focus=qobject_cast<QQuickItem*>(object(root,QString::fromLatin1(focusName)));if(!focus)return false;
         focus->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);
-        auto* confirm=object(root,"confirmActionUndo");return confirm && confirm->property("visible").toBool() && click(root,"confirmActionUndo");
+        auto* confirm=object(root,"confirmActionUndo");return !confirm || !confirm->property("visible").toBool() || click(root,"confirmActionUndo");
     }
     static bool pointerClick(QQuickWindow* window,QObject* root,const QString& name) {
         auto* item=qobject_cast<QQuickItem*>(object(root,name));if(!item || !item->isEnabled() || !item->isVisible())return false;
@@ -145,6 +145,27 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());
     }
     void init(){QSettings().clear();}
+    void linearUndoRedo() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(QTest::qWaitForWindowExposed(window));
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);prepare(model,dir.path());
+        run(model,"select",{{"row",0}});
+        run(model,"rename_payee_selection",{{"payee","Redo merchant"},{"account",model.state().value("accountId")},{"generation",model.state().value("ledgerEditGeneration")},{"selected",QVariantList{QVariantMap{{"batch",selected(model).value("batch")},{"ordinal",0}}}}});
+        QVERIFY(model.state().value("canUndoAction").toBool());QVERIFY(!model.state().value("canRedoAction").toBool());
+        QVERIFY(undoLatest(root,window));wait(model);QVERIFY(model.state().value("canRedoAction").toBool());
+        auto* ledger=qobject_cast<QQuickItem*>(object(root,"durableLedger"));QVERIFY(ledger);ledger->forceActiveFocus();QVERIFY(object(root,"editRedo")->property("enabled").toBool());QTest::keySequence(window,QKeySequence::Redo);wait(model);
+        QVERIFY(!model.state().value("canRedoAction").toBool());QVERIFY(model.state().value("canUndoAction").toBool());
+        QVERIFY(undoLatest(root,window));wait(model);QVERIFY(model.state().value("canRedoAction").toBool());
+        QVERIFY(click(root,"historyNavigation"));wait(model);QVERIFY(object(root,"historyRedo_0"));
+        QVERIFY(click(root,"historyRedo"));wait(model);QVERIFY(!model.state().value("canRedoAction").toBool());
+        const auto history=model.state().value("history").toList();QVERIFY(!history.isEmpty());QVERIFY(history.front().toMap().value("undoable").toBool());
+        for(int i=1;i<history.size();++i)QVERIFY(!history[i].toMap().value("undoable").toBool());
+        QVERIFY(object(root,"editUndo"));QVERIFY(object(root,"editRedo"));QCOMPARE(warnings.size(),0);
+        QVERIFY(!object(root,"editRedo")->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object(root,"editUndo"),"triggered"));wait(model);QVERIFY(model.state().value("canRedoAction").toBool());
+        QVERIFY(QMetaObject::invokeMethod(object(root,"editRedo"),"triggered"));wait(model);QVERIFY(!model.state().value("canRedoAction").toBool());
+    }
     void selectedRenameRestoreAndUndo(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
@@ -168,7 +189,7 @@ private slots:
         QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo Restore imported values…");
         // Native Undo shortcut reverses the entire selection even after it leaves the filter.
         qobject_cast<QQuickItem*>(object(root,"durableLedger"))->forceActiveFocus();
-        QTest::keySequence(window,QKeySequence::Undo);QVERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);QTRY_COMPARE(model.rowCount(),3);
+        QVERIFY(undoLatest(root,window));wait(model);QTRY_COMPARE(model.rowCount(),3);
         QCOMPARE(model.state().value("editUndoLabel").toString(),"Undo Rename payee…");
         QVERIFY(undoLatest(root,window));wait(model);QCOMPARE(model.rowCount(),0);
         run(model,"query",{{"filter",""}});
@@ -360,16 +381,8 @@ private slots:
         QVERIFY(click(root,"historyNavigation"));wait(model);
         QVERIFY(click(root,"historyRow_1"));
         QTRY_VERIFY(object(root,"historyBalance"));
-        QTRY_VERIFY(object(root,"historyUndo"));
-        QCOMPARE(object(root,"historyUndo")->property("text").toString(),"Undo");
-        QVERIFY(click(root,"historyUndo"));
-        QTRY_VERIFY(object(root,"connectedUndoConfirm")->property("visible").toBool());
-        QTRY_VERIFY(object(root,"connectedUndoLine_0"));
-        const auto newestLine=object(root,"connectedUndoLine_0")->property("text").toString();
-        QVERIFY(newestLine.contains("Payee:"));QVERIFY(newestLine.contains("→"));QVERIFY(newestLine.contains("Corrected merchant"));
-        QVERIFY(!object(root,"connectedUndoLine_2"));
-        QVERIFY(click(root,"cancelConnectedUndo"));
-        QTRY_VERIFY(!object(root,"connectedUndoConfirm")->property("visible").toBool());
+        QVERIFY(!object(root,"historyUndo"));
+        QVERIFY(!object(root,"connectedUndoConfirm"));
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
         QVERIFY(click(root,"accountNavigation"));
         QVERIFY(QMetaObject::invokeMethod(object(root,"deleteSelectedContext"),"triggered"));
@@ -378,7 +391,7 @@ private slots:
         QCOMPARE(model.state().value("committed").toString(),"110.00");QCOMPARE(model.selectedRowIndex(),-1);
         QVERIFY(click(root,"historyNavigation"));wait(model);QTRY_VERIFY(object(root,"historyRow_0"));QVERIFY(click(root,"historyRow_0"));
         QTRY_VERIFY(object(root,"historyUndo"));QVERIFY(click(root,"historyUndo"));
-        QTRY_VERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        QVERIFY(!object(root,"actionUndoConfirm")->property("visible").toBool());wait(model);
         QCOMPARE(model.state().value("committed").toString(),"80.00");
         run(model,"inspect",id);QVERIFY(!selected(model).value("removed").toBool());
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
@@ -386,7 +399,7 @@ private slots:
         QVERIFY(click(root,"historyNavigation"));wait(model);QVERIFY(click(root,"historyRow_0"));QTRY_VERIFY(object(root,"historyOpen"));
         run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
         QCOMPARE(root->property("currentPage").toString(),"ledger");QVERIFY(!object(root,"historyOpen"));
-        QVERIFY(click(root,"historyNavigation"));wait(model);QVERIFY(object(root,"historyEmpty")->property("visible").toBool());
+        QVERIFY(click(root,"historyNavigation"));wait(model);QVERIFY(!object(root,"historyEmpty")->property("visible").toBool());
         QVERIFY(!object(root,"historyBack"));
         run(model,"select_account",{{"id",checking}});
         run(model,"inspect",id);
@@ -401,7 +414,7 @@ private slots:
         run(model,"history");QVERIFY(model.state().value("history").toList().isEmpty());
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
     }
-    void heldImportOmitsHistoryUndo() {
+    void historyOnlyOffersNewestUndo() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
@@ -423,17 +436,16 @@ private slots:
             if(row.value("undoable").toBool())later=i;else held=i;
         }
         QVERIFY2(held>=0 && later>=0,qPrintable(described.join(" | ")));
-        QTRY_VERIFY(object(root,QString("historyUndoWait_%1").arg(held)));
-        QVERIFY(object(root,QString("historyUndoWait_%1").arg(held))->property("text").toString().contains("before this can be undone"));
+        QVERIFY(!object(root,QString("historyUndoWait_%1").arg(held)));
         QVERIFY(click(root,QString("historyRow_%1").arg(held)));
         QVERIFY(!object(root,"historyUndo"));
         QVERIFY(click(root,QString("historyRow_%1").arg(later)));
         QTRY_VERIFY(object(root,"historyUndo"));
         QVERIFY(click(root,"historyUndo"));
-        QTRY_VERIFY(object(root,"actionUndoConfirm")->property("visible").toBool() || object(root,"connectedUndoConfirm")->property("visible").toBool());
-        if(object(root,"actionUndoConfirm")->property("visible").toBool())QVERIFY(click(root,"confirmActionUndo"));
-        else QVERIFY(click(root,"confirmConnectedUndo"));
-        wait(model);
+        QTRY_VERIFY(object(root,"actionUndoConfirm")->property("visible").toBool());
+        QVERIFY(click(root,"confirmActionUndo"));wait(model);
+        const auto remaining=model.state().value("history").toList();QCOMPARE(remaining.front().toMap().value("label").toString(),"Accept transactions");
+        QVERIFY(click(root,"historyRow_0"));QVERIFY(click(root,"historyUndo"));wait(model);
         const auto after=model.state().value("history").toList();
         int restored=-1;
         for(int i=0;i<after.size();++i){const auto row=after.at(i).toMap();if(row.value("label").toString()=="Import file" && row.value("undoable").toBool())restored=i;}

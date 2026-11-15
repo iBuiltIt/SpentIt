@@ -25,9 +25,11 @@ imports::Occurrence ImportStore::create_manual(std::string_view id,const imports
         transaction.commit();return {std::string(id),0};
     }
     for(const auto& a:row.transaction.allocations()) {
-        if(resolve_account_name(a.category) || qif::transfer_destination(a.category))fail(SQLITE_CONSTRAINT,"Save the transaction before assigning a transfer account");
+        if(impl_->redo_operation.empty() && (resolve_account_name(a.category) || qif::transfer_destination(a.category)))fail(SQLITE_CONSTRAINT,"Save the transaction before assigning a transfer account");
         if(a.category_binding){validate_binding(impl_->db,a);const auto current=resolve_category(a.category_binding->identity);
-            if(!current.assignable || current.path!=a.category || a.category_binding->catalog_revision!=catalog_sequence(impl_->db))fail(SQLITE_CONSTRAINT,"Choose an available category");}
+            // Redo restores a previously validated historical binding. A
+            // definition saved before Undo need not still offer that category.
+            if(impl_->redo_operation.empty() && (!current.assignable || current.path!=a.category || a.category_binding->catalog_revision!=catalog_sequence(impl_->db)))fail(SQLITE_CONSTRAINT,"Choose an available category");}
         else if(!a.category.empty())fail(SQLITE_CONSTRAINT,"Choose a category from the list");
     }
     Statement source(impl_->db,"INSERT INTO sources(id,bytes) VALUES(?,?)");source.text(1,id);source.blob(2,bytes);source.done();
@@ -42,6 +44,7 @@ imports::Occurrence ImportStore::create_manual(std::string_view id,const imports
     Statement creation(impl_->db,"INSERT INTO manual_creations VALUES(?,(SELECT revision+1 FROM mutation_generation WHERE singleton=1))");creation.text(1,id);creation.done();
     app::ActionSummary action;action.id=id;action.payload=id;action.kind=app::ActionKind::manual_creation;action.label="Add transaction";action.count=1;
     impl_->pending_action=std::move(action);impl_->pending_action_digest=digest;
+    if(!impl_->redo_operation.empty())retain_redo_image(impl_->db,{std::string(id),0},0,false,row);
     finish([&]{transaction.commit();});return {std::string(id),0};
 }
 void ImportStore::undo_manual(std::string_view id,std::int64_t generation) {

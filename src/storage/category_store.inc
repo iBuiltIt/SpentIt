@@ -1,5 +1,20 @@
 namespace { bool same_draft(const imports::DraftRow&,const imports::DraftRow&); }
 namespace {
+// A Redo can restore an assignment whose definition was renamed/archived before
+// Undo. Retain an exact-image fingerprint in an existing v1 no-change receipt;
+// this is validation evidence, not a persisted Redo recipe or another action.
+std::string redo_image_key(const imports::Occurrence& id,std::int64_t revision,bool entry) {
+    transfer_codec::Writer key;key.text(id.batch);key.number(integer(id.ordinal));key.number(revision);key.number(entry?1:0);
+    const auto digest=session_snapshot::digest(key.bytes);std::string result="redo-image-";
+    for(const char byte:digest){const auto value=static_cast<unsigned char>(byte);result+="0123456789abcdef"[value>>4];result+="0123456789abcdef"[value&15];}return result;
+}
+bool verified_redo_image(sqlite3* db,const imports::Occurrence& id,std::int64_t revision,bool entry,const imports::DraftRow& draft) {
+    Statement receipt(db,"SELECT digest FROM action_receipts WHERE id=? AND kind=2 AND status IN(3,4) AND target=''");receipt.text(1,redo_image_key(id,revision,entry));
+    return receipt.row() && receipt.bytes(0)==session_snapshot::image(draft);
+}
+void retain_redo_image(sqlite3* db,const imports::Occurrence& id,std::int64_t revision,bool entry,const imports::DraftRow& draft) {
+    ActionChain chain(db);chain.no_change(chain.token(),redo_image_key(id,revision,entry),session_snapshot::image(draft));
+}
 std::int64_t catalog_sequence(sqlite3* db){Statement state(db,"SELECT revision FROM category_state WHERE singleton=1");if(!state.row())fail(SQLITE_CORRUPT);return state.integer(0);}
 CategoryDefinition category_at(sqlite3* db,std::string_view id,std::int64_t catalog=INT64_MAX) {
     Statement row(db,"SELECT id,name,parent,kind,revision,archived,deleted,income FROM category_versions WHERE id=? AND catalog_revision<=? ORDER BY revision DESC LIMIT 1");row.text(1,id);row.integer(2,catalog);if(!row.row())fail(SQLITE_NOTFOUND,"Category does not exist");return {row.bytes(0),row.bytes(1),row.bytes(2),static_cast<CategoryKind>(row.integer(3)),row.integer(4),row.integer(5)!=0,row.integer(6)!=0,row.integer(7)!=0};
@@ -297,7 +312,7 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
                 if(publication_draft)previous_revision=publication_draft;
                 if(previous_revision){Statement prior_allocation(impl_->db,prior_entry?"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM entry_allocation_meta m JOIN entry_allocation_values a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?":"SELECT m.category_id,m.catalog_revision,a.category,m.category_owner,m.memo_owner FROM draft_allocation_meta m JOIN allocations a USING(batch,ordinal,revision,position) WHERE m.batch=? AND m.ordinal=? AND m.revision=? AND m.identity=?");prior_allocation.text(1,id.batch);prior_allocation.integer(2,integer(id.ordinal));prior_allocation.integer(3,*previous_revision);prior_allocation.text(4,allocation.identity);if(prior_allocation.row()){if(!undo && prior_allocation.integer(3)==static_cast<int>(FieldOwnership::manual) && allocation.category_owner==FieldOwnership::source)fail(SQLITE_CORRUPT,"Manual allocation ownership was silently removed");previous_identity=true;carried=allocation.category_binding && !prior_allocation.null(0) && prior_allocation.bytes(0)==allocation.category_binding->identity && prior_allocation.integer(1)==allocation.category_binding->catalog_revision && prior_allocation.bytes(2)==allocation.category;}}
                 if(allocation.source_ordinal && previous_revision && !previous_identity && !undo)fail(SQLITE_CORRUPT,"Source association was recreated without Undo");
-                if(allocation.category_binding){validate_binding(impl_->db,allocation);if(allocation.category_binding->catalog_revision>current_catalog || (!carried && !undo && allocation.category_owner!=FieldOwnership::source && allocation.category_binding->catalog_revision!=current_catalog))fail(SQLITE_CORRUPT,"Category assignment bypassed catalog freshness");}
+                if(allocation.category_binding){validate_binding(impl_->db,allocation);if(allocation.category_binding->catalog_revision>current_catalog || (!carried && !undo && allocation.category_owner!=FieldOwnership::source && allocation.category_binding->catalog_revision!=current_catalog && !verified_redo_image(impl_->db,id,revision,entry,draft)))fail(SQLITE_CORRUPT,"Category assignment bypassed catalog freshness");}
             }
         }
     }
