@@ -1,11 +1,11 @@
 # Building
 
-Last updated: 2026-11-09
+Last updated: 2026-11-14
 
 The release rules database is version 1. A file whose number is not 1 is
 refused, and its bytes stay the same. There is no migrator. The rules-off
 build still writes version 69 and is not the release format. The application
-version is 1.0.0.
+version is 1.0.1.
 
 ## Prerequisites
 

@@ -1,9 +1,9 @@
 # Release schema version 1
 
-Last updated: 2026-11-11
+Last updated: 2026-11-14
 
 Status: **done.** The owner said to make the release schema on 2026-11-11.
-The application version is 1.0.0.
+The application version is 1.0.1.
 
 The rules database is version 1. A new rules file reads back `user_version` 1.
 A file whose number is not 1 is refused, and its bytes stay the same. There is

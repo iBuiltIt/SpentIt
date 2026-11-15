@@ -3,7 +3,7 @@
 Last updated: 2026-11-14
 
 SpentIt is the local rules-enabled application. The release rules database is
-version 1, and the application version is 1.0.0. A file whose number is not 1
+version 1, and the application version is 1.0.1. A file whose number is not 1
 is refused, and its bytes stay the same. There is no migrator. The rules-off
 build still writes version 69 and is not the release format. The SpentIt
 exchange file is JSON version 1.
@@ -78,9 +78,9 @@ release 1 does not add.
   produces a Developer ID DMG aimed at macOS 14.4. A Mac running 14.4 was not
   used. Publication is not approved. `./build/SpentIt` stays the development
   build.
-- The release schema and application version 1.0.0 are stamped. The installers
-  recorded above were built as 0.1.0 before that stamp. Rebuild them before
-  publication. See [release schema](release-schema.md).
+- The release schema is version 1 and the application version is 1.0.1. The
+  installers recorded above were built as 0.1.0 before the 1.0.0 stamp.
+  Rebuild them before publication. See [release schema](release-schema.md).
 
 ## Undo/Redo verification — 2026-11-14
 
