@@ -177,6 +177,63 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(manual.value("batch").toString(),0)))));wait(s.model);
         QVERIFY(!action->property("enabled").toBool());
     }
+    void reportContextCreatesRule_data(){
+        QTest::addColumn<bool>("dark");QTest::newRow("light")<<false;QTest::newRow("dark")<<true;
+    }
+    void reportContextCreatesRule(){
+        QFETCH(bool,dark);
+        const auto original=QGuiApplication::styleHints()->colorScheme();
+        const auto restore=qScopeGuard([&]{QGuiApplication::styleHints()->setColorScheme(original);});
+        QGuiApplication::styleHints()->setColorScheme(dark?Qt::ColorScheme::Dark:Qt::ColorScheme::Light);
+        Session s;createDocument(s,"Report rules");
+        const auto source=s.path("report.qif");
+        writeQif(source,"!Type:Bank\nD01/01/2026\nT-1.00\nPReport shop\n^\n");
+        run(s.model,"import",{{"path",source},{"profile","DMY"}});
+        const auto batch=selected(s.model).value("batch").toString();
+        run(s.model,"commit");
+        run(s.model,"create_account",{{"id","2"},{"name","Other"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(s.model,"import",{{"path",source},{"profile","DMY"}});
+        QVariantMap definition{{"id","rules-report"},{"name","Report rules"},{"graph","bar"},{"accounts",QVariantList{"1","2"}},{"categories",QVariantList{""}},
+            {"periods",QVariantList{QVariantMap{{"preset","custom"},{"start","2026-01-01"},{"end","2026-01-31"}}}}};
+        QVERIFY(click(s.root,"reportsNavigation"));wait(s.model);
+        QCOMPARE(page(s.root),"reports");
+        run(s.model,"report_save",{{"revision",s.model.state().value("reportRevision")},{"reports",QVariantList{definition}}});
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"reportsWorkspace"),"load"));
+        run(s.model,"report_show",{{"id","rules-report"}});
+        run(s.model,"report_drill",{{"currency",0},{"period",0},{"row",0}});
+        QCOMPARE(s.model.rowCount(),2);
+        QVERIFY(!s.root->property("dirty").toBool());
+        QVERIFY(!s.root->property("rulesDirty").toBool());
+        QVERIFY(!s.root->property("categoryDirty").toBool());
+        QVERIFY(!object(s.root,"reportsWorkspace")->property("dirty").toBool());
+        QVERIFY(s.model.occurrenceIndex(batch,0)>=0);
+        QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(batch,0)))));wait(s.model);
+        QVERIFY(s.root->property("editorClosed").toBool());
+        QCOMPARE(selected(s.model).value("batch").toString(),batch);
+        auto* theme=object(s.root,"applicationTheme");QVERIFY(theme);
+        for(const auto* name:{"addTransactionContext","duplicateMergeSelection","unmergeSelection","mergeSelection"}){
+            auto* item=object(s.root,name);QVERIFY(item);QVERIFY(item->property("visible").toBool());QVERIFY(!item->property("enabled").toBool());
+            auto* content=item->property("contentItem").value<QObject*>();QVERIFY(content);
+            QCOMPARE(content->property("color"),theme->property("disabled"));
+        }
+        if(qEnvironmentVariableIsSet("SPENTIT_LEDGER_MENU_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_LEDGER_MENU_SCREENSHOT")+(dark?"-report-dark.png":"-report-light.png")));}
+        auto* action=object(s.root,"createRuleContext");QVERIFY(action);QVERIFY(action->property("visible").toBool());QVERIFY(action->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(action,"triggered"));wait(s.model);
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
+        QCOMPARE(page(s.root),"rules");QCOMPARE(object(s.root,"ruleExpression")->property("text").toString(),"^Report shop$");
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));
+        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QTRY_COMPARE(page(s.root),"reports");
+        QVERIFY(s.model.state().value("reportLedgerActive").toBool());
+        QCOMPARE(object(s.root,"reportsWorkspace")->property("mode").toString(),"detail");
+        QCOMPARE(s.model.rowCount(),2);
+        QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"0.00");
+        for(int i=0;i<s.model.rowCount();++i)QVERIFY(!s.model.rowRecord(i).value("reportMatches").toBool());
+        run(s.model,"undo_action",s.model.state().value("actionUndo").toMap());
+        QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"2.00");
+        run(s.model,"redo_action",s.model.state().value("actionRedo").toMap());
+        QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"0.00");
+    }
     void ledgerCreatedRuleReturnsAfterSaveAndApply(){
         Session s;createDocument(s,"Ledger rule return");
         const auto source=s.path("return.qif");

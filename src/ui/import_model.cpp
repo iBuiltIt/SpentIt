@@ -607,7 +607,9 @@ struct ImportModel::Worker {
         else for(const auto& row:result->rows)if(row.category.id==reportCategory)cell=&row.cells.at(static_cast<std::size_t>(reportPeriod));
         std::map<imports::Occurrence,std::vector<Money>> contributions;
         std::map<imports::Occurrence,QStringList> allocations;
-        if(cell){reportDetails["total"]=money(cell->amount,amountFormat);
+        // The last allocation can leave a category after editing or applying a rule.
+        reportDetails["total"]=money(cell?cell->amount:Money(0,result->currency),amountFormat);
+        if(cell){
             for(auto i:cell->entries){const auto& e=reportSnapshot->entries[i];const imports::Occurrence id{e.batch,e.ordinal};contributions[id].push_back(e.amount);allocations[id].push_back(text(e.allocation));}
         }
         std::vector<app::LedgerRow> rows;reportRowInfo.clear();

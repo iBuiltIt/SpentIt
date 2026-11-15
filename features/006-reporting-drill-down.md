@@ -45,7 +45,10 @@ Drill-down reuses the ledger editor over the contributing transaction
 identities, with the account and the included amount. Saved edits and Undo
 refresh the report. Reopening uses current membership. Group edits stay inside
 one account. Merge, Link, and creation stay in the account ledger. Other
-dataset changes mark the result stale until Refresh.
+dataset changes mark the result stale until Refresh. Create rule… is available
+from the context menu for one eligible transaction. Save, apply and back returns
+to the report transactions and refreshes the result. Unavailable context-menu
+commands stay visible with disabled text.
 
 ## Workspace
 

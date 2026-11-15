@@ -178,3 +178,12 @@ write captures straight into `manual/images`. Do not point
 - Marks survive reopen and clear on the next Accept, even when no new rows remain.
 - Recapture Settings and an accepted survivor with a result mark during the next
   owner-authorized manual pass. No manual files changed in this implementation.
+
+### MAN-056 — Report ledger context menu
+
+- Date: 2026-11-14
+- Explain Create rule… from one eligible report transaction and Save, apply and
+  back returning to the refreshed report transactions.
+- Unavailable ledger menu commands stay visible in grey. Recapture the report
+  transaction context menu during the next owner-authorized manual pass.
+- Contract: [ledger editing](ledger-editing.md).

@@ -66,6 +66,8 @@ app::TransferRequest ImportStore::redo_transfer(app::TransferRequest request,std
     return request;
 }
 ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& action) const {
+    // Recorded actions can span accounts; source reads must use each member's owner.
+    struct Selection {std::int64_t& value;std::int64_t prior;~Selection(){value=prior;}} selection{impl_->selected_account,impl_->selected_account};
     RedoFrame frame;frame.action=action;frame.action.label=action_display_label(action);
     if(action.kind==app::ActionKind::import)return frame;
     if(action.kind==app::ActionKind::manual_creation) {
@@ -129,6 +131,7 @@ ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& actio
     Statement rows(impl_->db,"SELECT batch,ordinal,committed,result FROM review_members WHERE answer=? ORDER BY rowid");rows.text(1,action.payload);
     while(rows.row()){
         const imports::Occurrence id{rows.bytes(0),static_cast<std::size_t>(rows.integer(1))};const auto committed=rows.integer(2)!=0;const auto revision=rows.integer(3);
+        impl_->selected_account=account_for_batch(id.batch).identity;
         auto draft=committed?entry_snapshot(id,revision).draft:review_draft(id,revision);imports::Decision decision{imports::Disposition::include,{}};bool active=true;
         if(committed)active=entry_snapshot(id,revision).active;
         else {Statement saved(impl_->db,"SELECT decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? AND revision=?");saved.text(1,id.batch);saved.integer(2,integer(id.ordinal));saved.integer(3,revision);if(!saved.row())fail(SQLITE_CORRUPT);decision.disposition=static_cast<imports::Disposition>(saved.integer(0));if(decision.disposition==imports::Disposition::duplicate)decision.duplicate_of=imports::Occurrence{saved.bytes(1),static_cast<std::size_t>(saved.integer(2))};}

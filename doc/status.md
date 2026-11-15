@@ -153,3 +153,28 @@ changes, and MAN-055 records automatic Review in
 [manual-update-backlog.md](manual-update-backlog.md). Both wait for an
 owner-authorized manual pass. Do not edit `manual/` as
 part of feature work.
+
+## Report ledger menu verification — 2026-11-14
+
+The rules-enabled Release app at `build/SpentIt` was rebuilt on macOS arm64
+with Qt 6.12.0. Report ledger commands remain visible when unavailable, using
+disabled text. Create rule… inspects one eligible selection without opening
+the transaction editor. Save, apply and back retains the report transaction
+session. A category emptied by edits or rules now displays a zero drill-down
+total. Capturing Redo reads each recorded transaction in its owning account
+and restores the prior account on success or failure.
+
+The targeted offscreen Qt cases `reportContextCreatesRule` (light/dark
+requests), `ledgerContextCreatesRuleWithoutOpeningEditor` (light/dark requests),
+and `ledgerCreatedRuleReturnsAfterSaveAndApply` passed: 7 QtTest results including
+setup/cleanup. The report case covers new and accepted transactions across two
+accounts, visible disabled menu labels, source prefill, return navigation,
+category removal from the result, and exact totals through Undo and Redo.
+The offscreen menu screenshot was inspected; native dark appearance was not
+established by that platform.
+
+`import.reports_ui`, `storage.action_repository`, `storage.action_redo`, and
+`storage.action_redo_faults` passed (4/4). Changed-document relative file links
+and `git diff --check` passed. No full-suite, sanitizer, native interactive,
+Linux, or Windows verification is claimed. Manual work is queued as MAN-056;
+no manual files were changed.

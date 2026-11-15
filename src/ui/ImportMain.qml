@@ -525,14 +525,14 @@ ApplicationWindow {
     Menu {
         id:ledgerContext;objectName:"ledgerContext";popupType:Popup.Item;cascade:true
         delegate:LedgerMenuItem {}
-        LedgerMenuItem {objectName:"addTransactionContext";visible:!window.reportLedger;text:"Add transaction…";enabled:!s.readOnly && !workflow.busy;onTriggered:addTransaction()}
-        LedgerMenuItem {objectName:"createRuleContext";visible:!window.reportLedger && !!s.rulesSupported;text:"Create rule…";enabled:canCreateLedgerRule();onTriggered:if(canCreateLedgerRule())transactionRuleAction()}
+        LedgerMenuItem {objectName:"addTransactionContext";text:"Add transaction…";enabled:!window.reportLedger && !s.readOnly && !workflow.busy;onTriggered:addTransaction()}
+        LedgerMenuItem {objectName:"createRuleContext";text:"Create rule…";enabled:canCreateLedgerRule();onTriggered:if(canCreateLedgerRule())transactionRuleAction()}
         LedgerMenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
         LedgerMenuItem {objectName:"setMemoSelection";text:"Set memo…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedMemos()}
         LedgerMenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
-        LedgerMenuItem {objectName:"duplicateMergeSelection";visible:!window.reportLedger;text:"Merge";enabled:ledgerMergeEnabled();onTriggered:guard(ledgerMerge)}
-        LedgerMenuItem {objectName:"unmergeSelection";visible:!window.reportLedger;text:"Unmerge";enabled:!s.readOnly && !workflow.busy && !!s.canUnmerge;onTriggered:guard(function(){pendingUnmergeNotice=s.unmergeNotice||"";if(pendingUnmergeNotice.length)unmergeConfirm.open();else{captureLedgerView("review");workflow.command("unmerge")}})}
-        LedgerMenuItem {objectName:"mergeSelection";visible:!window.reportLedger;text:"Link to other account…";enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)===1;onTriggered:mergeSelected()}
+        LedgerMenuItem {objectName:"duplicateMergeSelection";text:"Merge";enabled:!window.reportLedger && ledgerMergeEnabled();onTriggered:guard(ledgerMerge)}
+        LedgerMenuItem {objectName:"unmergeSelection";text:"Unmerge";enabled:!window.reportLedger && !s.readOnly && !workflow.busy && !!s.canUnmerge;onTriggered:guard(function(){pendingUnmergeNotice=s.unmergeNotice||"";if(pendingUnmergeNotice.length)unmergeConfirm.open();else{captureLedgerView("review");workflow.command("unmerge")}})}
+        LedgerMenuItem {objectName:"mergeSelection";text:"Link to other account…";enabled:!window.reportLedger && !s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)===1;onTriggered:mergeSelected()}
         LedgerMenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
         Menu {
             id:ledgerCategoryMenu;delegate:LedgerMenuItem {}
@@ -590,7 +590,7 @@ ApplicationWindow {
                 workflow.command("select",{row:index})
             }
             const rows=s.selection||[]
-            if(!window.reportLedger && s.rulesSupported && rows.length===1) {
+            if(s.rulesSupported && rows.length===1) {
                 inspectingLedgerRuleContext=true;editorClosed=true
                 workflow.command("inspect",{batch:rows[0].batch,ordinal:rows[0].ordinal})
             }
@@ -1049,6 +1049,10 @@ ApplicationWindow {
         let destination=navigationIndex+delta
         if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
         guard(function(){
+            // A rule opened from report transactions retains that report session.
+            if(s.reportLedgerActive && currentPage==="rules" && navigation[destination]==="reports") {
+                navigationIndex=destination;currentPage="reports";return
+            }
             if(s.reportLedgerActive){pendingReportNavigation=function(){traverseNavigation(delta)};workflow.command("report_leave");return}
             rememberAccountViewport()
             if(navigationAccounts[destination]!==s.accountId) {

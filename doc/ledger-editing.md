@@ -35,7 +35,7 @@ and explicit committed-edit opt-in presentation.
 
 ## Ledger rule creation and menu availability — owner Go, 2026-11-08
 
-The normal ledger context menu offers Create rule… for exactly one eligible
+The account and report ledger context menus offer Create rule… for exactly one eligible
 selected transaction without opening its editor. Right-click preserves an existing
 multiple selection; the action never silently chooses one row from it. Unsaved-edit
 guards run before context inspection, and stale inspector data cannot supply the
@@ -48,6 +48,11 @@ one-new-rule limit remain.
 The open editor does not list which rule assigned the payee, memo, or
 category. **Edit rule…** still opens one. See the
 [Rules entry point](../features/004-rules-and-explanations.md).
+
+Report-ledger Create rule… uses the same source inspection without opening the
+transaction editor. Save, apply and back returns to the report transactions,
+with refreshed allocations and totals. Commands unavailable in report ledgers
+(Add transaction, Merge, Unmerge, and Link) remain visible and disabled.
 
 Disabled ledger menu text and submenu arrows use a distinct colour in light and
 dark themes and do not highlight on hover. Financial command eligibility is
