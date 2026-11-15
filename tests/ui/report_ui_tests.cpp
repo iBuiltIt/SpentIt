@@ -24,6 +24,35 @@ class ReportUiTests:public QObject {
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItReportsTests");QCoreApplication::setApplicationName("Reports");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());}
     void init(){QSettings().clear();}
+    void pdfWorkflow(){
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* workspace=object(root,"reportsWorkspace");
+        QVERIFY(!object(root,"fileReportPdf")->property("enabled").toBool());
+        run(model,"create",{{"path",dir.filePath("document.spentit")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        QVariantMap definition{{"id","pdf"},{"name","PDF report"},{"graph","bar"},{"accounts",QVariantList{"1"}},{"categories",QVariantList{""}},
+            {"periods",QVariantList{QVariantMap{{"preset","ytd"},{"start",""},{"end",""}}}}};
+        run(model,"report_save",{{"revision",model.state().value("reportRevision")},{"reports",QVariantList{definition}}});
+        run(model,"report_show",{{"id","pdf"}});root->setProperty("currentPage","reports");
+        QTRY_VERIFY(workspace->property("canSavePdf").toBool());
+        QVERIFY(click(root,"saveReportPdf"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        auto* dialog=object(root,"reportPdfDialog");QVERIFY(dialog);QVERIFY(dialog->property("visible").toBool());QVERIFY(dialog->property("ready").toBool());
+        QCOMPARE(dialog->property("destination").toString(),dir.filePath("PDF report.pdf"));
+        QCOMPARE(object(root,"reportPdfLayout")->property("currentIndex").toInt(),0);
+        if(!qEnvironmentVariable("SPENTIT_PDF_FIXTURES").isEmpty()){QTest::qWait(200);qobject_cast<QQuickWindow*>(root)->grabWindow().save(qEnvironmentVariable("SPENTIT_PDF_FIXTURES")+"/dialog.png");}
+        QVERIFY(model.state().value("reportPdf").toMap().value("image").toString().startsWith("data:image/png;base64,"));
+        QVERIFY(click(root,"reportPdfSave"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QVERIFY(dialog->property("saved").toBool());QFile pdf(dir.filePath("PDF report.pdf"));QVERIFY(pdf.open(QIODevice::ReadOnly));QVERIFY(pdf.readAll().startsWith("%PDF-"));pdf.close();
+        model.command("report_pdf_save",{{"path",dir.filePath("document.spentit")},{"overwrite",true}});QTRY_VERIFY(!model.busy());QVERIFY(model.error().contains("open SpentIt file"));
+        model.command("report_pdf_save",{{"path",dir.filePath("PDF report.pdf")}});QTRY_VERIFY(!model.busy());QVERIFY2(model.error().contains("already exists"),qPrintable(model.error()));
+        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QTRY_VERIFY(!model.busy());
+        QVERIFY(model.state().value("reportPdf").toMap().isEmpty());
+        workspace->setProperty("mode","workspace");QVERIFY(!object(root,"fileReportPdf")->property("enabled").toBool());
+        definition["name"]="Changed report";
+        run(model,"report_save",{{"revision",model.state().value("reportRevision")},{"reports",QVariantList{definition}}});
+        model.command("report_pdf_layout");QTRY_VERIFY(!model.busy());QVERIFY(model.error().contains("Refresh the report"));
+        run(model,"close");
+    }
     void workspaceUsability(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         QSignalSpy warnings(&engine,&QQmlEngine::warnings);

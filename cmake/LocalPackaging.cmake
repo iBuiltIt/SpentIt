@@ -5,7 +5,7 @@ if(APPLE)
   find_package(Qt6 6.8 REQUIRED COMPONENTS Svg)
   qt_add_executable(spentit_macos_bundle MACOSX_BUNDLE EXCLUDE_FROM_ALL import_main.cpp)
   target_link_libraries(spentit_macos_bundle PRIVATE spentit_import_model spentit_import_store spentit_help Qt6::Quick Qt6::QuickControls2 Qt6::Svg)
-  qt_add_resources(spentit_macos_bundle "bundle_ui" PREFIX "/spentit" FILES ImportMain.qml about/AboutWindow.qml ClearableSearchField.qml NavigableTextField.qml CategoryCompletion.qml Theme.qml CalendarPicker.qml ReportsWorkspace.qml ReportChart.qml help/HelpWindow.qml)
+  qt_add_resources(spentit_macos_bundle "bundle_ui" PREFIX "/spentit" FILES ImportMain.qml about/AboutWindow.qml ClearableSearchField.qml NavigableTextField.qml CategoryCompletion.qml Theme.qml CalendarPicker.qml ReportsWorkspace.qml ReportChart.qml ReportPdfDialog.qml help/HelpWindow.qml)
   qt_add_resources(spentit_macos_bundle "bundle_help" PREFIX "/spentit/help" BASE "${SPENTIT_HELP_BUNDLE}" FILES ${SPENTIT_HELP_BUNDLE_FILES})
   qt_add_resources(spentit_macos_bundle "bundle_icons" PREFIX "/spentit/images"
     BASE "${PROJECT_SOURCE_DIR}/assets/images" FILES ${spentit_icon_files})

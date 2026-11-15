@@ -6,6 +6,7 @@
 #include <spentit/diagnostics.hpp>
 #include "import_model.hpp"
 #include "file_exchange_codec.hpp"
+#include "report_pdf.hpp"
 #include "status_explanation.hpp"
 #include <spentit/import_view.hpp>
 #include <spentit/split_editor.hpp>
@@ -290,6 +291,7 @@ QString phaseFor(const QString& action){
     if(action=="commit")return "Accepting transactions";
     if(action=="change_password")return "Changing password";
     if(action=="exchange_import")return "Importing definitions";
+    if(action.startsWith("report_pdf_"))return "Preparing PDF…";
     if(action=="exchange_qif_export")return "Exporting QIF…";
     if(action=="exchange_export")return "Exporting SpentIt definitions…";
     if(action.startsWith("exchange_"))return "Preparing file exchange…";
@@ -494,6 +496,8 @@ struct ImportModel::Worker {
     bool reportsLoaded=false;
     std::optional<reports::Snapshot> reportSnapshot;
     QVariantMap reportResult,reportDetails;
+    std::optional<spentit::ui::pdf::Document> reportPdf;
+    QVariantMap reportPdfState;
     QVariantList reportDefinitions;
     bool reportLedgerActive=false;
     std::map<imports::Occurrence,std::int64_t> reportMembers;
@@ -541,6 +545,7 @@ struct ImportModel::Worker {
         for(const auto& d:reportCatalog.definitions)reportDefinitions.push_back(reportMap(d));reportsLoaded=true;
     }
     void showReport(const reports::Definition& d,app::OperationContext& context){
+        reportPdf.reset();reportPdfState.clear();
         auto& repo=gateway->repository();
         auto accounts=repo.accounts();const auto archived=repo.archived_accounts();accounts.insert(accounts.end(),archived.begin(),archived.end());
         std::vector<Currency> currencies;
@@ -563,8 +568,9 @@ struct ImportModel::Worker {
             for(const auto& total:currency.totals)totals.push_back(money(total.amount,amountFormat));
             results.push_back(QVariantMap{{"currency",text(currency.currency.code())},{"definition",text(currency.currency.definition_id())},{"rows",rows},{"totals",totals},{"minimum",static_cast<double>(minimum)},{"maximum",static_cast<double>(maximum)},{"minimumLabel",money(Money(minimum,currency.currency),amountFormat)},{"maximumLabel",money(Money(maximum,currency.currency),amountFormat)}});
         }
+        QStringList accountNames;for(auto id:d.accounts)for(const auto& account:accounts)if(account.identity==id)accountNames.push_back(text(account.name));
         reportSnapshot=std::move(calculated);if(!reportLedgerActive)reportDetails.clear();
-        reportResult={{"id",text(d.id)},{"name",text(d.name)},{"graph",text(d.graph)},{"periods",ranges},{"currencies",results},{"stale",false}};
+        reportResult={{"id",text(d.id)},{"name",text(d.name)},{"graph",text(d.graph)},{"periods",ranges},{"currencies",results},{"stale",false},{"accountNames",accountNames}};
     }
     void reportDrill(const QVariantMap& args){
         if(!reportSnapshot || reportResult.value("stale").toBool())throw std::invalid_argument("Refresh this report before opening its transactions.");
@@ -1225,7 +1231,7 @@ struct ImportModel::Worker {
         if(reportLedgerActive && !cachedView)buildReportLedger(context);
         if(!reportsLoaded)loadReports();
         state["exchangePreview"]=exchangePreview;state["qifExportAccounts"]=qifExportAccounts;state["exchangeMessage"]=exchangeMessage;state["actionPreparing"]=repo.action_preparing();
-        state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;state["reportLedgerActive"]=reportLedgerActive;state["reportRowInfo"]=reportRowInfo;
+        state["reportPdf"]=reportPdfState;state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;state["reportLedgerActive"]=reportLedgerActive;state["reportRowInfo"]=reportRowInfo;
         state["autoMerge"]=QSettings().value(sortDocument+"/AutoMerge",false).toBool();
         state["autoLink"]=QSettings().value(sortDocument+"/AutoLink",false).toBool();
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
@@ -1394,7 +1400,7 @@ struct ImportModel::Worker {
         const bool incomeOnly=action=="apply_category" &&
             (a.contains("income") || (preparedCategory && preparedCategory->request.action==app::CategoryAction::set_income));
         if(!incomeOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
-        if(action=="close" || action=="open" || action=="unlock" || action=="create"){exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();exchangeMessage.clear();reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
+        if(action=="close" || action=="open" || action=="unlock" || action=="create"){exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();exchangeMessage.clear();reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportPdf.reset();reportPdfState.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
             path=a.value("path").toString();
@@ -1491,6 +1497,33 @@ struct ImportModel::Worker {
             } else if(action=="exchange_cancel") {exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();}
             else throw std::invalid_argument("Unknown file command.");
             return;
+        }
+        if(action.startsWith("report_pdf_")) {
+            if(action=="report_pdf_clear"){reportPdf.reset();reportPdfState.clear();return;}
+            if(!reportSnapshot || reportResult.value("stale").toBool())throw std::runtime_error("Refresh the report before saving a PDF.");
+            if(action=="report_pdf_layout") {
+                reportPdf.reset();reportPdfState.clear();
+                auto source=reportResult;
+                const auto failures=repo.acceptance_review().failed_records;
+                if(failures)source["warning"]=QString("This file has %1 imported records needing repair. They have no reportable amount.").arg(failures);
+                auto document=spentit::ui::pdf::layout(source,a,[&]{context.checkpoint();});
+                auto image=spentit::ui::pdf::preview(document,0);context.checkpoint();
+                reportPdfState={{"count",document.pages.size()},{"page",0},{"image",image},{"smallText",document.scale<0.8},
+                    {"path",spentit::ui::pdf::suggestedFile(path,reportResult.value("name").toString())}};
+                reportPdf=std::move(document);return;
+            }
+            if(!reportPdf)throw std::runtime_error("Preview the report before saving it.");
+            if(action=="report_pdf_page") {
+                const int page=a.value("page").toInt();auto image=spentit::ui::pdf::preview(*reportPdf,page);context.checkpoint();reportPdfState["image"]=image;reportPdfState["page"]=page;return;
+            }
+            if(action=="report_pdf_save") {
+                const auto destination=a.value("path").toString();const QFileInfo target(destination),source(path);
+                if(target.absoluteFilePath()==source.absoluteFilePath() || (!target.canonicalFilePath().isEmpty() && target.canonicalFilePath()==source.canonicalFilePath()))throw std::runtime_error("Choose a different filename. This is the open SpentIt file.");
+                if(target.exists() && !a.value("overwrite").toBool())throw std::runtime_error("That file already exists. Confirm Replace or choose another filename.");
+                spentit::ui::pdf::save(destination,*reportPdf,[&]{context.checkpoint();},[&]{context.seal();});
+                reportPdfState["saved"]=destination;return;
+            }
+            throw std::runtime_error("Unknown PDF action.");
         }
         if(action=="report_load"){loadReports();return;}
         if(action=="report_save"){
@@ -2797,7 +2830,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
     operation_=std::make_shared<app::OperationContext>();
     const auto operation=operation_;
     if(observer.enabled())try{operation->observeCancellation=[diagnosticId](app::OperationContext::State state){diag::Collector::instance().cancel(diagnosticId,state==app::OperationContext::available?diag::Code::available:state==app::OperationContext::requested?diag::Code::requested:diag::Code::sealed);};}catch(...){observer.healthFailure();}
-    if(!action.startsWith("exchange_") && action!="report_show" && action!="probe" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="set_memo_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
+    if(!action.startsWith("exchange_") && !action.startsWith("report_pdf_") && action!="report_show" && action!="probe" && action!="open" && action!="unlock" && action!="import" && action!="confirm_import_date" && action!="confirm_import_destination" && action!="map_import" && action!="resolve_import_categories" && action!="resume" && action!="query" && action!="rules_preview" && action!="rules_apply" && action!="rules_account_apply" && action!="rules_save" && action!="rules_reapply_preview" && action!="rules_reapply_apply" && action!="transfer_candidates" && action!="review_batch" && action!="assign_transfer_batch" && action!="release_transfer_batch" && action!="rename_payee_selection" && action!="set_memo_selection" && action!="restore_imported_selection" && action!="delete_selection" && action!="preview_deletion") operation->seal();
     observer.cancel(diagnosticId,operation->state.load()==app::OperationContext::sealed?diag::Code::sealed:diag::Code::available);
     operation->progress=[this,weak=std::weak_ptr(operation)](std::string_view value) {
         const auto operation=weak.lock();
@@ -2901,9 +2934,9 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             }
         }
         catch(const app::OperationOutcomeUnknown& e){uncertain=true;worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();worker->selectedBatch.clear();worker->invalidate();result.error=QString::fromUtf8(e.what());}
-        catch(const app::OperationCancelled& e){outcome=diag::Result::cancelled;if(action!="query")worker->invalidate();result.error=QString::fromUtf8(e.what());}
+        catch(const app::OperationCancelled& e){outcome=diag::Result::cancelled;if(action!="query" && !action.startsWith("report_pdf_"))worker->invalidate();result.error=QString::fromUtf8(e.what());}
         catch(const app::UnlockRequired& e){worker->invalidate();result.error=QString::fromUtf8(e.what());unlock=true;}
-        catch(const std::exception& e){if(action!="query")worker->invalidate();result.error=QString::fromUtf8(e.what());}
+        catch(const std::exception& e){if(action!="query" && !action.startsWith("report_pdf_"))worker->invalidate();result.error=QString::fromUtf8(e.what());}
         if(!result.success && worker->active && (action=="import" || action=="confirm_import_date" || action=="confirm_import_destination" || action=="map_import")) {
             try {if(worker->gateway->repository().cleanup_incomplete_imports())result.error+=" Incomplete import preparation was removed; you can import the file again.";}
             catch(...) {worker->gateway->close();worker->active=false;worker->selected.clear();worker->selectedBatch.clear();result.error="Interrupted import cleanup failed. Reopen to retry cleanup before making further changes.";}
@@ -2921,7 +2954,8 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             worker->invalidate();
             const auto ruleOperation=worker->ruleReceipt.value("operation").toString();
             const auto reapplyOperationText=worker->reapplyReceipt.value("operation").toString();
-            result.error=((action=="save_manual" || action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="set_memo_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
+            result.error=(action=="report_pdf_save" && result.success)?"The PDF was saved, but the screen could not update. Reopen the SpentIt file before continuing."
+                :((action=="save_manual" || action=="save" || action=="accept_edit" || action=="undo_edit" || action=="rename_payee_selection" || action=="set_memo_selection" || action=="restore_imported_selection") && worker->diagnosticSaved)?"Edit was saved, but its view could not be refreshed. Reopen and inspect the transaction before retrying."
                 :((action=="undo_action" || action=="redo_action") && worker->diagnosticSaved)?"The change was saved, but the screen could not update. Reopen the file before continuing."
                 :(action=="delete_selection" && worker->diagnosticSaved)?"The transactions were deleted, but the screen could not update. Reopen the file before continuing."
                  :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
@@ -3069,3 +3103,6 @@ QVariantMap ImportModel::reportPeriod(const QVariantMap& value,const QVariantMap
         return {{"start",text(r.start)},{"end",text(r.end)},{"startDisplay",dateDisplay(text(r.start))},{"endDisplay",dateDisplay(text(r.end))},{"label",text(r.label)}};
     }catch(const std::exception& e){return {{"error",text(e.what())}};}
 }
+
+bool ImportModel::pdfFileExists(const QString& path) const {return QFileInfo::exists(path);}
+QUrl ImportModel::fileUrl(const QString& path) const {return QUrl::fromLocalFile(path);}

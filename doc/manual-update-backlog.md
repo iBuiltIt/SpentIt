@@ -18,7 +18,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-059. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-060. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -42,6 +42,15 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   The file opened last time stays closed until this one opens. If SpentIt
   already has a file open, the window comes forward and that file stays open.
   No picture change. `create-file-unlock.png` already shows the password field.
+
+- MAN-059 (2026-11-15) — Save report as PDF. Contract:
+  [Report PDF export](report-pdf.md). Describe the toolbar and File menu entry,
+  refreshing a stale result, preview navigation, Readable pages, Letter/A4,
+  orientation, Fit on one page and its small-text warning. Explain the default
+  report filename beside the open file, Browse, replacement confirmation, and
+  that exported PDFs are not password-protected. Include the separate-currency
+  and repeated-main-period layout. Consider a preview-dialog picture in the
+  next owner-authorized manual pass.
 
 ## Recapturing pictures
 

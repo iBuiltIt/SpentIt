@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-14
+Last updated: 2026-11-15
 
 SpentIt is the local rules-enabled application. The release rules database is
 version 1, and the application version is 1.0.1. A file whose number is not 1
@@ -54,6 +54,36 @@ passed unless you ran it.
 The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
+
+## Report PDF export — 2026-11-15
+
+Reports now offer Save as PDF… beside Refresh report and in the File menu.
+The modal preview defaults to Readable pages, Letter, Automatic orientation,
+and a report-named PDF beside the open file. It supports A4, explicit
+orientation, Fit on one page, Browse, and overwrite confirmation. Tables
+paginate with repeated headings and group wide comparisons with the main
+period repeated. The PDF retains exact report strings and separate currencies;
+text and charts use vector output. Exported PDFs are explicitly unprotected.
+See the [contract](report-pdf.md). Manual work is queued as MAN-059.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release `build/SpentIt` was
+rebuilt and its offscreen `--smoke` launch passed. The report UI suite passed
+9 checks, including PDF defaults, saved output, open-file overwrite refusal,
+existing-file confirmation enforcement, stale-report refusal, and menu gating.
+The PDF suite passed 7 checks, including pagination, complete wide tables,
+Unicode labels, exact negative strings, currency separation, negative pie
+refusal, cancellation, failed output, and process interruption on both sides
+of replacement. A POSIX file-size limit forces a real QSaveFile write failure
+and verifies preservation of the previous file. A successful retry is covered.
+
+The PDF layout/writer suite also passed under address and undefined-behavior
+sanitizers in an isolated build with leak detection disabled. Synthetic bar,
+grouped-bar, pie, table, wide and fit layouts were generated; representative
+pages and the dialog were visually inspected with Poppler-rendered output.
+Text extraction verified the final category in all three wide-table column
+groups and the final comparison. Changed-document links and diff whitespace
+checks passed. No native Browse-picker interaction, Windows/Linux run, full
+repository suite, leak check, or physical disk-full test is claimed.
 
 ## Still to do
 

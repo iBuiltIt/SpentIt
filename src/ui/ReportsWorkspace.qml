@@ -8,6 +8,10 @@ Item {
     required property var workflow
     property var guardAction: function(action) { action() }
     property alias ledgerHost: detailLedgerHost
+    property alias pdfWindow: pdfDialog
+    readonly property bool canSavePdf: visible && mode === "result" && !!result.id && !workflow.busy && !pdfDialog.visible
+    function savePdf() { if (!canSavePdf) return; if (result.stale) { feedback="Refresh the report before saving a PDF."; return } pdfDialog.start() }
+    ReportPdfDialog { id: pdfDialog; workflow: root.workflow; parent: Overlay.overlay }
     Theme { id: reportTheme }
     // Same enabled and disabled colours as the ledger menu in ImportMain.qml.
     component ReportMenuItem: MenuItem {
@@ -56,7 +60,7 @@ Item {
     onSelectedIndexChanged:{feedback="";if(root.visible && root.mode==="workspace")root.forceActiveFocus()}
     function touch(){generation++;feedback=""}
     function load() {savedDefinitions=copy(state.reports||[]);drafts=copy(savedDefinitions);selectedIndex=Math.min(selectedIndex,drafts.length-1);if(selectedIndex<0 && drafts.length)selectedIndex=0;generation++}
-    function reset(){if(leaving)leaveHiding();drafts=[];savedDefinitions=[];selectedIndex=-1;mode="workspace";feedback="";leaving=false;leaveAction=null;showAfterSave="";deletingId="";deleteDialog.close();generation++}
+    function reset(){if(leaving)leaveHiding();drafts=[];savedDefinitions=[];selectedIndex=-1;mode="workspace";feedback="";leaving=false;leaveAction=null;showAfterSave="";deletingId="";deleteDialog.close();pdfDialog.close();generation++}
     function revealEditor(){Qt.callLater(function(){editorScroll.contentItem.contentY=Math.max(0,reportName.y+reportName.parent.y-editorScroll.height/4)})}
     function newReport(duplicate) {
         if(workflow.busy || state.readOnly)return
@@ -215,6 +219,7 @@ Item {
             Label {textFormat:Text.PlainText;text:root.mode==="workspace"?"Reports":root.mode==="detail"?"Report transactions":root.result.name||"Report";font.pixelSize:22;Layout.fillWidth:true;Layout.minimumWidth:80;elide:Text.ElideRight}
             Button {visible:root.mode==="detail";text:"Back to report";onClicked:root.back()}
             Button {visible:root.mode==="result";text:"Refresh report";enabled:!root.workflow.busy;onClicked:root.workflow.command("report_show",{id:root.result.id})}
+            Button {objectName:"saveReportPdf";visible:root.mode==="result";text:"Save as PDF…";enabled:root.canSavePdf;onClicked:root.savePdf()}
         }
         ScrollView {
             id:editorScroll;objectName:"reportsEditorScroll";rightPadding:20;visible:root.mode==="workspace";Layout.fillWidth:true;Layout.fillHeight:true;contentWidth:availableWidth;enabled:!root.workflow.busy && !deleteDialog.visible
@@ -348,6 +353,7 @@ Item {
                 }
             }
         }
+        Label {visible:root.mode==="result" && root.feedback.length>0;text:root.feedback;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
         Label {textFormat:Text.PlainText;visible:root.mode!=="workspace";text:"Accounts: "+(root.resultAccountNames.length?root.resultAccountNames.join(", "):"None");wrapMode:Text.Wrap;Layout.fillWidth:true}
         Label {textFormat:Text.PlainText;visible:root.mode!=="workspace";text:"Net spending: outflows are positive; refunds reduce spending; income is negative.";wrapMode:Text.Wrap;Layout.fillWidth:true}
         Label {textFormat:Text.PlainText;visible:root.mode!=="workspace" && (root.state.importFailures||0)>0;text:"This file has "+(root.state.importFailures||0)+" imported records needing repair. They have no reportable amount. Open Review to repair them.";wrapMode:Text.Wrap;Layout.fillWidth:true}

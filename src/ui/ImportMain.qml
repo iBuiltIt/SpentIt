@@ -223,6 +223,7 @@ ApplicationWindow {
         Menu {
             id:diagnosticFileMenu
             title: "File"
+            LedgerMenuItem {objectName:"fileReportPdf";text:"Save report as PDF…";enabled:reportsWorkspace.canSavePdf;onTriggered:reportsWorkspace.savePdf()}
             LedgerMenuItem {objectName:"fileQifExport";text:"QIF Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){workflow.command("exchange_qif_prepare")})}
             LedgerMenuItem {objectName:"fileSpentItExport";text:"SpentIt Export…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){definitionExportDialog.open()})}
             LedgerMenuItem {objectName:"fileSpentItImport";text:"SpentIt Import…";enabled:window.fileExchangeEnabled;onTriggered:guard(function(){exchangeOpenDialog.open()})}
@@ -3348,7 +3349,7 @@ ApplicationWindow {
     property string ruleValidationError: ""
     // One visible owner for a global operation error. Dialog validation stays
     // beside its controls; closing the dialog returns the error to the status line.
-    readonly property var errorDialog: statusExplanationDialog.visible?statusExplanationDialog:statusDetails.visible?statusDetails:
+    readonly property var errorDialog: reportsWorkspace.pdfWindow.visible?reportsWorkspace.pdfWindow:statusExplanationDialog.visible?statusExplanationDialog:statusDetails.visible?statusDetails:
         qifExportDialog.visible?qifExportDialog:definitionExportDialog.visible?definitionExportDialog:definitionImportDialog.visible?definitionImportDialog:
         importUndoConfirm.visible?importUndoConfirm:importUndoPicker.visible?importUndoPicker:closeAuditFailure.visible?closeAuditFailure:reviewDifference.visible?reviewDifference:
         linkExclusionDialog.visible?linkExclusionDialog:reapplyDialog.visible?reapplyDialog:

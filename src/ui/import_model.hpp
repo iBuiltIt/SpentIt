@@ -88,6 +88,8 @@ public:
     Q_INVOKABLE QVariantMap amountValue(const QString& expression,const QString& currencyDefinition) const;
     Q_INVOKABLE QVariantMap splitAmounts(const QString& total,const QVariantList& amounts,bool automatic,const QString& currencyDefinition,int remainderIndex=0) const;
     Q_INVOKABLE int chooseSplitRemainder(const QString& total,const QVariantList& splits,const QString& currencyDefinition) const;
+    Q_INVOKABLE bool pdfFileExists(const QString&) const;
+    Q_INVOKABLE QUrl fileUrl(const QString&) const;
     Q_INVOKABLE QString localPath(const QUrl&) const;
     Q_INVOKABLE int selectedRowIndex() const;
     Q_INVOKABLE QVariantMap rowIdentity(int row) const;
