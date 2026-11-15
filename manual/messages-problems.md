@@ -7,16 +7,16 @@ keywords: messages, problems, errors, troubleshooting, failed, unavailable, mism
 
 # Messages and problems
 
-Search Help for words from the message, or find it below. Choose **Details**
+Search Help for words from the message, or find it below. Choose **Status**
 if the bottom status line cuts it short. Quoted text is the message or an
 excerpt; a split total varies with your entry.
 
 For a missing transaction or unexpected balance without an error, start with
 [Find a particular problem](backup-recovery.md#find-a-particular-problem).
 
-When **Help with this problem** appears beside a message, it opens this
-reference without retrying the action. A dialog’s **Help** button opens the
-instructions for that task.
+When **Help with this problem** appears beside a message, choose it to read
+an explanation of that message and what you can do next. A dialog’s **Help**
+button opens the instructions for that task.
 
 ## Opening a file {#opening-a-file}
 

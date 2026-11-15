@@ -96,7 +96,7 @@ covered by the Redo suite.
 
 `storage.action_redo` also passed in `build/category-sanitized` with address and
 undefined-behavior sanitizers. These are targeted checks, not a full repository
-or cross-platform run. Manual updates remain queued as MAN-054.
+or cross-platform run. Manual updates were queued as MAN-054 and are now included; see [Manual](#manual).
 
 ## Automatic Review verification — 2026-11-14
 
@@ -126,8 +126,8 @@ and durable receipts were checked on both sides of each boundary.
 `import.automatic_review` also passed in `build/category-sanitized` with address
 and undefined-behavior sanitizers (`ASAN_OPTIONS=detect_leaks=0`). No leak-check,
 full-suite, native interactive, Linux, or Windows verification is claimed.
-Changed-document relative file links and `git diff --check` passed. Manual work
-is queued as MAN-055; no manual files were changed.
+Changed-document relative file links and `git diff --check` passed. Manual work was queued as MAN-055 during that implementation and is now
+included; see [Manual](#manual).
 
 ## Limits that still bind a claim
 
@@ -144,15 +144,33 @@ is queued as MAN-055; no manual files were changed.
 
 ## Manual
 
-MAN-001 through MAN-044 are in the bundled manual. The 2026-11-12 pass
-updated the chapters and installed recaptured pictures with
-`tools/capture_manual_images.py --install`. The help bundle was rebuilt
-into `./build/SpentIt`. In `build/import-ui-rules-release`, `help.prepare`
-and `help.catalog` passed. MAN-054 records the Undo/Redo and History
-changes, and MAN-055 records automatic Review in
-[manual-update-backlog.md](manual-update-backlog.md). Both wait for an
-owner-authorized manual pass. Do not edit `manual/` as
-part of feature work.
+The owner-authorized 2026-11-14 pass brings MAN-045 through MAN-056 into the
+bundled manual, including both notes previously labelled MAN-045. The earlier
+selective History guidance was replaced by the current file-wide Undo/Redo
+instructions. The chapters and quick references now cover automatic Review,
+Unmerge and result marks, linked-row deletion, repeated imports, column sizing,
+Status explanations, all-account rule application, zero report rows, and the
+report-ledger rule workflow.
+
+`python3 tools/capture_manual_images.py --install` passed all eleven native
+chapter walkthroughs and installed 40 synthetic pictures. All staged pictures
+were visually inspected, including the new automatic-Merge and report-menu
+examples. The rules-enabled Release application at `./build/SpentIt` and the
+Help UI test were rebuilt on macOS arm64 with Qt 6.12.0.
+
+`help.prepare`, `help.capture_manual_images`, and `help.catalog` passed in
+`build/import-ui-rules-release`. Native `createOpenChapterReading` passed all
+16 chapter/reference cases, checking rendered widths, section navigation and
+enlarged pictures. Native `continuousManualWalkthrough` also passed both date/amount
+formats (20 QtTest results including setup/cleanup across the two test functions).
+All 17 topic IDs and existing section IDs were preserved. Changed-document
+relative file links and `git diff --check` passed.
+Completed items were removed from [manual-update-backlog.md](manual-update-backlog.md);
+the next entry is MAN-057. Future feature work still logs manual changes there
+unless the owner authorizes a manual pass.
+
+This is Help and synthetic walkthrough verification, not a full repository,
+Linux, Windows, or spoken screen-reader run.
 
 ## Report ledger menu verification — 2026-11-14
 
@@ -176,5 +194,5 @@ established by that platform.
 `import.reports_ui`, `storage.action_repository`, `storage.action_redo`, and
 `storage.action_redo_faults` passed (4/4). Changed-document relative file links
 and `git diff --check` passed. No full-suite, sanitizer, native interactive,
-Linux, or Windows verification is claimed. Manual work is queued as MAN-056;
-no manual files were changed.
+Linux, or Windows verification is claimed. Manual work was queued as MAN-056 during that implementation and is now
+included; see [Manual](#manual).

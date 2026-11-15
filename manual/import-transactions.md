@@ -131,7 +131,10 @@ is covered later in the guide.
 The bottom status line reports how many records were **added**,
 **already present**, or **failed**. Select each affected account and
 check its transactions and balance. A category choice may replace
-the completion message with “Imported categories applied.”
+the completion message with “Imported categories applied.” If you enabled
+[automatic Merge or Link](review-duplicates-transfers.md#let-spentit-handle-straightforward-matches),
+the summary also reports the pairs resolved. Check their marks in the ledger
+and any questions left in Review.
 
 ![Credit card ledger with the 42.18 Market purchase, the 6.00 refund, and an opening dated the day before the purchase. The balance is -36.18.](images/import-results.png)
 *The purchase and refund are saved. The opening sorts ahead of that day’s transactions. They do not need accepting before you leave.*
@@ -173,6 +176,15 @@ saved, reopen the file and check the transactions before trying again.
 
 Use **Import…** again for the next export. SpentIt recognizes transactions
 that are already in the same account.
+A repeat that still matches the original date, amount, payee and bank ID is
+recognized even if you have since changed its category, memo, payee or amount.
+It is already imported, rather than a new transaction to accept.
+
+If the matched transaction was removed, or its original facts no longer
+match, Review asks whether the incoming entry is already imported or is a
+separate transaction. **Accept anyway** does not add that unresolved entry
+again; answer its Review question first.
+
 Possible duplicates appear in **Review** and are highlighted in rose in
 the account’s ledger. Two purchases with the same date and amount are not
 necessarily duplicates; they are left for you to review.
@@ -207,7 +219,10 @@ for the import stay, including a new account’s chosen opening.
 
 Check the preview, then choose **Undo import**, or **Cancel** to keep it.
 An import containing accepted transactions is not eligible. Later
-conflicting edits or links can also prevent Undo.
+conflicting edits or links can also prevent Undo. An import held by another
+import is left out of the list until that other import is undone.
+Import Undo clears Redo and cannot itself be redone; import the original
+file again if you want to bring those transactions back.
 
 **Discard new transactions…** is broader: it removes eligible new
 work across imports in the selected account, not just one file import.

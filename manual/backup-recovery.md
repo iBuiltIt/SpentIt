@@ -55,6 +55,11 @@ opens next time. If SpentIt stops unexpectedly, it checks the file when
 you open it again. That check tells you what it found. It does not repair
 the file.
 
+For automatic duplicate and transfer matching, use the two checkboxes above
+**Hidden transfer matches…**. Both start off. See
+[Let SpentIt handle straightforward matches](review-duplicates-transfers.md#let-spentit-handle-straightforward-matches)
+to decide whether either would suit your imports.
+
 ### Change or remove the password {#change-or-remove-the-password}
 
 If you want a copy of your file that still opens with the password you
@@ -81,7 +86,7 @@ confirm the change, close the file and open it with the new password
 before you do anything else. If it says the password was not changed,
 the file still uses the password it had.
 
-![Settings for the Household file. Current file settings shows the path, the date format, and amount formatting. Change password is faded until those fields are ready.](images/settings.png)
+![Settings for the Household file, with amount formatting, automatic Merge and Link both unchecked, and password fields.](images/settings.png)
 *Copy the file first if you want that copy to keep the password it has now.*
 
 ## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}
@@ -135,7 +140,7 @@ repair button.
 
 ### A change failed, or its result is unclear
 
-Read the message before trying again. Choose **Details** if the bottom line
+Read the message before trying again. Choose **Status** if the bottom line
 cuts it short.
 
 - **The change was saved, but the screen could not update:** reopen the file

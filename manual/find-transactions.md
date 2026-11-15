@@ -112,8 +112,14 @@ were no matches.
 Click a column heading to sort by it. Click it again to reverse the
 order; the heading’s arrow shows the direction. 
 
-Scroll to reach more rows. In a narrow window, use the horizontal
-scrollbar to reach the columns on the right.
+If a column feels too narrow, drag the right edge of its heading. The other
+columns keep their widths; use the horizontal scrollbar if the list no
+longer fits. Double-click that edge to fit the longest text in the current
+list. A search can make that a smaller set of transactions.
+
+Rest the pointer on cut-off text to read it in full, including category and
+memo text in an expanded split. SpentIt remembers your column widths on
+this computer.
 
 **Back** and **Forward** return to visited accounts and workspaces.
 You can also choose the account again in the sidebar. SpentIt keeps
@@ -130,8 +136,14 @@ choose it, then use **Merge**, **Keep this pair separate**, or
 search is hiding it, the button says **Reveal hidden match (clear
 filter)**. **Next possible duplicate** moves to another marked row.
 Press **Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux, to
-undo the newest saved answer. SpentIt asks first. You can answer the
-same questions in Review.
+undo the newest saved answer. You can answer the same questions in Review.
+
+A blue edge means a payment appears twice in this account. Select the two
+rows and choose **Merge** to join that payment. An indigo edge marks the
+entry kept after a merge; a green edge marks a linked transfer. Rest the
+pointer on the green mark to see the other account. These result marks
+remain until **Accept transactions**. Automatic Merge or Link can also
+mark an already accepted entry, so you can check what happened.
 
 Choose **Review** in the sidebar. It reads **Review (n)** for the
 questions still open. That number is not the count of new transactions.

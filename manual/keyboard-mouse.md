@@ -47,8 +47,10 @@ another row leaves that editor where it is.
   Hold **Shift** to select the text along the way.
 
 For a saved change, press **Command+Z** on a Mac, or **Ctrl+Z** on
-Windows and Linux. SpentIt asks before it undoes the newest saved
-action. While you are typing, the shortcut undoes the text instead.
+Windows and Linux, to undo the newest saved action. Import Undo asks for
+confirmation; other saved actions undo straight away. **Edit → Redo** puts
+an undone action back, except for an import. Its shortcut appears in the
+menu. While you are typing, Undo and Redo act on the text instead.
 
 [Editing and Undo](add-correct-transactions.md#correct-an-entry).
 

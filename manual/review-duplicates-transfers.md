@@ -2,7 +2,7 @@
 id: review-duplicates-transfers
 title: Review duplicates and link transfers
 order: 6
-keywords: duplicate, merge, link, transfer, matching, payment, fee, survivor, undo, unlink
+keywords: duplicate, merge, unmerge, link, transfer, matching, automatic, payment, fee, survivor, undo, unlink
 ---
 
 # Review duplicates and link transfers
@@ -17,6 +17,12 @@ to Credit card belongs in both accounts.
 Open **Review** in the sidebar. Read the question above each group
 before you answer it. **Accept transactions** is at the bottom and
 covers every account.
+
+A recognized repeat of an accepted import does not need another Review
+answer, even after you edit the transaction. If the matched entry was
+removed or its original details no longer agree, answer the question about
+whether it is already imported or a separate transaction. **Accept anyway**
+does not add that unresolved entry again.
 
 ## Is it the same purchase? {#is-it-the-same-purchase}
 
@@ -54,8 +60,7 @@ splits stay; Merge does not combine everyone’s edited fields.
 With one accepted entry, SpentIt normally keeps that entry without
 asking. A manually entered transaction takes priority when matching
 it to an import: the manual entry stays and gains its imported original.
-Manual entries are not automatically consumed just because a matching
-import arrives.
+Without automatic Merge enabled, you still choose whether to merge the pair.
 
 For these examples, we return to the original Market purchase and
 refund, without the extra Corner shop purchase from the previous
@@ -172,8 +177,8 @@ use the duplicate line above the ledger, described in
 Check which entry will be kept, just as in Review.
 
 For a transfer whose two entries each have just one split, select
-the first entry, right-click and choose **Link**. Switch accounts,
-select the other entry, then right-click and choose **Link** again.
+the first entry, right-click and choose **Link to other account…**. Switch
+accounts, select the other entry, then choose **Link to other account…** again.
 The same steps work when the accounts use different currencies. One
 amount should be money going out and the other money coming in.
 SpentIt keeps both amounts. It does not look up a rate or change
@@ -197,20 +202,64 @@ Choose **Preview** before **Save**. It affects later suggestions.
 The matches you have hidden are listed in **Settings → Hidden transfer
 matches…**.
 
+## Let SpentIt handle straightforward matches
+
+Once you are comfortable with Review, you can let SpentIt resolve simple
+pairs after each import. In **Settings**, above **Hidden transfer matches…**,
+choose either or both:
+
+- **Automatically merge one-to-one duplicate suggestions**
+- **Automatically link one-to-one transfer suggestions**
+
+Both start off. Your choices apply to this file on this computer; a copy
+opened from another location starts with both off. Turning them on does not
+resolve existing questions immediately. They run after a later import has
+finished its category choices and rules.
+
+Each entry must have only the other as a possible match. Duplicate dates and
+amounts must agree, and SpentIt must be able to choose which entry to keep.
+Dates a day apart and groups with a third candidate still need your attention.
+Automatic links need equal, opposite amounts in the same currency, with one
+split on each side. Split choices and amount differences stay in Review.
+
+Check the import summary for how many pairs were merged or linked, then
+look over the marked transactions. An indigo edge means Merged; a green edge
+means linked to another account. These marks can appear on accepted entries
+too, and stay if you close and reopen the file.
+
+![Accepted Market purchase marked Merged after an automatic duplicate merge.](images/review-automatic.png)
+*The accepted purchase stays, with a mark to help you check the automatic result.*
+
+You still choose **Accept transactions** when you are ready. It clears those
+marks, even when there are no new transactions left. If automatic review
+stops with an error, check the completed counts and the remaining Review
+questions before trying again; the import and earlier completed pairs may
+already be saved.
+
 ## Undo a mistaken answer
 
-Press **Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux, to
-undo the newest saved action in the file. That includes a Merge, a
-Link, or a batch of merges. SpentIt asks before it undoes. A batch is
-one step. There is no separate **Unlink** button. You can also open
-that action in **Change history** and choose **Undo** there.
-
-A later saved action takes the place of that shortcut. If a later
-change shares a transaction, Change history can still undo the review
-answer with it.
+If Merge or Link was your latest saved action, choose **Edit → Undo**, or
+press **Command+Z** on a Mac or **Ctrl+Z** on Windows and Linux. A batch of
+merges is one step. Each automatic pair is a separate step after its import.
+To undo an earlier answer, undo the newer actions first. You can inspect
+that order in **Change history** and put an undone answer back with **Redo**.
 See [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
-If Undo is unavailable, look at both sides before you delete a posting.
-Deletion also changes the account balance.
+
+For a joined transaction, you can also select its row in the account ledger,
+right-click and choose **Unmerge**. This can remain available after acceptance
+and after closing the file. It is unavailable on an ordinary transaction or
+one that belongs to more than one join.
+
+For a duplicate merge, Unmerge restores the removed transaction and keeps any
+later edits to the entry you retained. For a linked payment, read the
+confirmation: it names the accounts where extra entries will return. If the
+link kept both transactions, Unmerge leaves both in place and separates them.
+
+Accepted payments stay accepted. Restored extra transfer entries return as
+new transactions, with blue marks where the payment is shown twice again.
+You can use Merge to join the payment again, or answer its Link question in
+Review. If a later transfer correction, including a date change, prevents
+Unmerge, undo that correction first.
 
 A refused Merge or Link leaves a message explaining what needs attention.
 Different current totals or existing transfer relationships can prevent

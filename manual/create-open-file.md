@@ -105,8 +105,8 @@ needs a decision, SpentIt asks before leaving.
 
 Saved transactions stay in your file, including those you haven’t
 accepted yet. An edit still waiting for **Save** or **Enter** is not
-saved yet. A successful close also clears Undo. If closing fails or
-you cancel it, Undo is still there when you return.
+saved yet. A successful close also clears Undo and Redo. If closing fails or
+you cancel it, both are still there when you return.
 [When Undo is no longer offered](add-correct-transactions.md#undo-a-saved-change).
 
 You now have a place for your transactions. Next comes setting up

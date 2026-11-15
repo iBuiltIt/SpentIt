@@ -107,6 +107,12 @@ are ordered by their main-period amount, largest first. Scroll sideways for more
 and down for more categories. Accounts in different currencies get separate
 tables and charts; there is no combined or converted total.
 
+A category is left out of the table and charts when its total is zero in
+every shown period. If it has an amount in any period, it stays, with 0.00
+where appropriate. Negative amounts stay too. To see purchases and refunds
+that cancel each other out, double-click **Total**; those transactions are
+still included there.
+
 ### Why this is not your account balance
 
 Reports use the **current edited** dates, categories and amounts, including
@@ -170,7 +176,20 @@ or Stay before you leave.
 
 Search here only narrows the transactions you opened. Group edits must concern
 one account at a time. To add transactions, Merge duplicates or Link transfers,
-return to an ordinary account ledger.
+return to an ordinary account ledger. Those commands, and Unmerge, appear
+in grey here.
+
+To make a rule from one eligible imported transaction, select it and
+right-click **Create rule…**. Check the pattern, category and account scope,
+then choose **Save, apply and back** to return to these transactions with
+the report refreshed. The rule starts with All accounts selected, so narrow
+that choice if you intend to change only one account.
+
+![Report transaction menu with Create rule available and account-only commands in grey.](images/reports-menu.png)
+*Create a rule from a report transaction without opening its editor.*
+
+You can drag the right edge of a column heading to make more room, just as
+in an account ledger. Report transactions remember their own column widths.
 
 ## Keep and change your reports {#keep-and-change-your-reports}
 

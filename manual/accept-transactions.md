@@ -35,8 +35,10 @@ at the same time.
 
 Wait for the status line to confirm acceptance. It tells you how many new
 transactions were accepted across all accounts and whether import problems
-remain. If there are no new transactions, Accept transactions is disabled.
-It is also unavailable while SpentIt is busy.
+remain. Accept also clears the indigo Merge and green Link marks you have
+checked, including automatic results on already accepted transactions. It
+stays available when only those marks remain. With neither new transactions
+nor marks to clear, it is disabled, as it is while SpentIt is busy.
 
 Accepted transactions can still be [corrected](add-correct-transactions.md).
 However, an import containing accepted transactions can no longer be undone
@@ -59,7 +61,9 @@ Choosing **Accept transactions** while questions or warnings remain opens
   the count. One reads **Chequing. There is 1 unmatched transfer
   transaction.** Several read **Chequing. There are 3 unmatched transfer
   transactions.** Use **Accept anyway** only if you understand the
-  warnings. Suspected duplicates are kept as separate transactions.
+  warnings. Suspected duplicates are kept as separate transactions. An unresolved
+  already-imported entry still needs its Review answer; Accept anyway does
+  not add it again.
 - **Problems that must be resolved first:** the warning says **Must be fixed
   before accepting**. When a transfer names an account that is not in the
   file, Review lists it beside **Accept transactions** as **Warnings [n]**.
@@ -119,8 +123,8 @@ Undoing **Accept transactions** returns those transactions to New. See
 | --- | --- |
 | Save or Enter in a transaction editor | Saves a validated edit. It does not accept all new transactions. |
 | Accept transactions | Marks valid new transactions across all accounts as accepted. |
-| Undo import… | Reverses one eligible file import, including its other accounts. Check the preview; accepted transactions make the import ineligible. |
-| Delete selected… | Removes the selected transactions after confirmation. Check any transfer consequences shown. |
+| Undo import… | Reverses one eligible file import, including its other accounts. Check the preview; accepted transactions make the import ineligible. An import held by another import is omitted until that other import is undone. This clears Redo and cannot be redone. |
+| Delete selected… | Removes selected transactions that are not linked, after confirmation. Linked transactions stay. |
 | Discard new transactions… | Removes eligible new work across imports in the selected account. The confirmation lists affected accounts; accepted transactions remain. |
 
 Use [Undo import or Discard](import-transactions.md#undo-a-mistaken-import)

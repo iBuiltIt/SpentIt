@@ -88,18 +88,23 @@ Most controls appear after you open a file.
 
 ## Undo and problems
 
-Undo depends on what you changed. Later changes can make it unavailable.
+Undo works newest first across all accounts in the file.
 
 - **Undo the latest saved action:** press **Command+Z** on a Mac, or
-  **Ctrl+Z** on Windows and Linux. SpentIt asks first. You can also open
-  the action in **Change history** and choose **Undo** there.
+  **Ctrl+Z** on Windows and Linux, or choose **Edit → Undo**. You can also
+  open the newest action in **Change history** and choose **Undo** there.
   [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
+- **Put an undone action back:** choose **Edit → Redo**. Import Undo cannot
+  be redone. [Undo and Redo](add-correct-transactions.md#undo-a-saved-change).
+- **Separate a merged or linked transaction:** select it in its account,
+  right-click and choose **Unmerge** when available.
+  [Undo a mistaken answer](review-duplicates-transfers.md#undo-a-mistaken-answer).
 - **See changes since you opened the file:** choose **Change history**
   in the sidebar.
 - **Undo an import:** right-click the account for **Undo last import…**,
   or use **Undo import…** in Review. Accepted transactions can prevent it.
   [Undo a mistaken import](import-transactions.md#undo-a-mistaken-import).
-- **Read a long status message:** choose **Details** beside the bottom
+- **Read a long status message:** choose **Status** beside the bottom
   status line when available. [When a change needs attention](backup-recovery.md#a-change-failed-or-its-result-is-unclear).
 
 For a missing entry, unexpected total or error, start with

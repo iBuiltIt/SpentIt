@@ -84,7 +84,7 @@ split transaction at a time. SpentIt does not guess which parts you meant.
 
 Press **Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux, to
 undo a category change from this menu while it is the newest saved
-action. SpentIt asks first. A later saved action takes its place.
+action. Undo newer actions first if you need to reach an earlier change.
 Check the result before you continue. A category chosen in the
 transaction editor is part of that edit, so the same shortcut undoes
 the whole edit.

@@ -669,7 +669,7 @@ private slots:
             << QStringList{"transactions-ledger.png", "transactions-search.png", "transactions-review.png"}
             << QString("find-a-purchase") << QString("Find a purchase");
         QTest::newRow("review") << QString("review-duplicates-transfers")
-            << QStringList{"review-keep.png", "review-link.png", "review-linked.png", "review-difference.png"}
+            << QStringList{"review-keep.png", "review-link.png", "review-linked.png", "review-difference.png", "review-automatic.png"}
             << QString("when-the-amounts-differ") << QString("When the amounts differ");
         QTest::newRow("editing") << QString("add-correct-transactions")
             << QStringList{"editing-new.png", "editing-calendar.png", "editing-splits.png", "editing-mismatch.png", "change-history.png"}
@@ -684,10 +684,10 @@ private slots:
             << QStringList{"accept-ready.png", "accept-review.png", "accept-quit.png"}
             << QString("leave-them-new-and-return-later") << QString("Leave them new and return later");
         QTest::newRow("reports") << QString("answer-with-reports")
-            << QStringList{"reports-editor.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png"}
+            << QStringList{"reports-editor.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png", "reports-menu.png"}
             << QString("open-the-transactions-behind-an-amount") << QString("Open the transactions behind an amount");
         QTest::newRow("recovery") << QString("look-after-your-work")
-            << QStringList{}
+            << QStringList{"settings.png"}
             << QString("keep-a-copy") << QString("Keep a copy of the file");
         QTest::newRow("where-to-find") << QString("where-to-find")
             << QStringList{}
@@ -1187,9 +1187,7 @@ private slots:
             if (!ledger) return false;
             ledger->forceActiveFocus();
             QTest::keySequence(session.window, QKeySequence::Undo);
-            auto* confirm = object(session.root, "confirmActionUndo");
-            if (!confirm || !confirm->property("visible").toBool()) return false;
-            mouse("confirmActionUndo");
+            wait(session.model);
             return true;
         };
         std::function<QQuickItem*(QQuickItem*, const QString&)> byText = [&](QQuickItem* parent, const QString& text) -> QQuickItem* {
@@ -1482,7 +1480,7 @@ private slots:
         QCOMPARE(session.model.state().value("currency").toString(), QString("USD"));
         QCOMPARE(session.model.state().value("opening").toString(), QString("1,000.00"));
         mouse("accountNavigation", Qt::RightButton);
-        mouse("undoAccountCommand"); mouse("confirmActionUndo");
+        mouse("undoAccountCommand");
         wait(session.model);
         QCOMPARE(session.model.state().value("currency").toString(), QString("CAD"));
         run(session.model,"close");run(session.model,"open",{{"path",session.path("Household.spentit")}});run(session.model,"select_account",{{"id","1"}});
@@ -1981,6 +1979,16 @@ private slots:
         QVERIFY(splitIndex >= 0);
         QCOMPARE(session.model.rowRecord(splitIndex).value("reportIncluded").toString(), QString("12.00"));
         QCOMPARE(session.model.rowRecord(splitIndex).value("reportAllocations").toStringList().size(), 1);
+        run(session.model, "select", {{"row", splitIndex}});
+        auto* menuRow = qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_" + QString::number(splitIndex)));
+        QVERIFY(menuRow);
+        QTest::mouseClick(session.window, Qt::RightButton, Qt::NoModifier,
+            menuRow->mapToScene(QPointF(menuRow->width()/2, menuRow->height()/2)).toPoint());
+        QTRY_VERIFY(object(session.root, "ledgerContext")->property("visible").toBool());
+        QTRY_VERIFY(object(session.root, "createRuleContext")->property("enabled").toBool());
+        QVERIFY(!object(session.root, "addTransactionContext")->property("enabled").toBool());
+        capture("reports-menu");
+        QVERIFY(QMetaObject::invokeMethod(object(session.root, "ledgerContext"), "close"));
         run(session.model, "inspect", {{"batch", cardBatch}, {"ordinal", 2}});
         QTRY_VERIFY(object(session.root, "editSplitAmount_1"));
         capture("reports-transactions");
@@ -2153,7 +2161,7 @@ private slots:
         QVERIFY(!session.root->property("rulesDirty").toBool());
         QVERIFY(session.model.state().value("canUndoRules").toBool());
         QCOMPARE(session.model.state().value("balance").toString(), QString("-56.18"));
-        QVERIFY(QMetaObject::invokeMethod(session.root,"undoEdit"));QTRY_VERIFY(object(session.root,"actionUndoConfirm")->property("visible").toBool()); mainClick("confirmActionUndo");
+        QVERIFY(QMetaObject::invokeMethod(session.root,"undoEdit")); wait(session.model);
         QVERIFY(!session.model.state().value("canUndoRules").toBool());
         // The match list has closed, so Preview sits under the window edge.
         QVERIFY(QMetaObject::invokeMethod(object(session.root,"previewThisRule"),"clicked"));wait(session.model);
@@ -2214,9 +2222,7 @@ private slots:
             if (!ledger) return false;
             ledger->forceActiveFocus();
             QTest::keySequence(session.window, QKeySequence::Undo);
-            auto* confirm = object(session.root, "confirmActionUndo");
-            if (!confirm || !confirm->property("visible").toBool()) return false;
-            mouse("confirmActionUndo");
+            wait(session.model);
             return true;
         };
         mouse("categoryNavigation");
@@ -2411,9 +2417,7 @@ private slots:
             if (!questions) return false;
             questions->forceActiveFocus();
             QTest::keySequence(session.window, QKeySequence::Undo);
-            auto* confirm = object(session.root, "confirmActionUndo");
-            if (!confirm || !confirm->property("visible").toBool()) return false;
-            mouse("confirmActionUndo");
+            wait(session.model);
             return true;
         };
         int sequence = 0;
@@ -2505,6 +2509,28 @@ private slots:
             mouse("ledgerTransferArrow_3");
             QTRY_COMPARE(session.model.state().value("name").toString(), QString("Chequing"));
             QCOMPARE(session.model.state().value("balance").toString(), QString("963.82"));
+
+            // Show an automatic result on an already accepted purchase.
+            run(session.model, "close");
+            run(session.model, "create", {{"path", session.path("automatic-picture.spentit")}, {"protected", false},
+                {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
+            run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+            run(session.model, "automatic_review_settings", {{"kind", "merge"}, {"enabled", true}});
+            import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\n^\n", "1");
+            run(session.model, "commit");
+            import("!Type:CCard\nD2026-01-15\nT-42.18\nPMarket groceries\n^\n", "1");
+            QCOMPARE(session.model.state().value("mergedRows").toMap().size(), 1);
+            QCOMPARE(session.model.state().value("balance").toString(), QString("-42.18"));
+            QCOMPARE(session.model.state().value("newTransactions").toInt(), 0);
+            mouse("accountNavigation");
+            session.root->setProperty("editorClosed", true);
+            const auto mark = session.model.state().value("mergedRows").toMap().firstKey();
+            const auto colon = mark.lastIndexOf(':');
+            const auto row = session.model.occurrenceIndex(mark.left(colon), mark.mid(colon+1).toInt());
+            QVERIFY(row >= 0);
+            QTRY_VERIFY(object(session.root, "ledgerRow_" + QString::number(row)));
+            QTRY_VERIFY(object(session.root, "ledgerRow_" + QString::number(row))->property("mergedMark").toBool());
+            capture("review-automatic");
         } else {
             import("!Type:Bank\nD2026-01-28\nT-37.18\nPCredit card payment\nL[Credit card]\n^\n", "1");
             run(session.model, "create_account", {{"id", "2"}, {"name", "Credit card"}, {"currency", "CAD"}, {"date", "2026-01-01"}});

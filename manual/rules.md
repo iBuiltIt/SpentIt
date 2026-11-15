@@ -48,12 +48,21 @@ A selection of several transactions, or a transaction you typed yourself,
 does not offer this. Start with **New rule** in Rules instead. The
 pictures in this chapter follow **New rule**, and that path leaves you
 in Rules. **Create rule…** shows **Save, apply and back**. That saves
-the rule, applies it, and returns you to the ledger.
+the rule, applies it, and returns you to the ledger. From a report’s
+transaction list, it returns to that list with refreshed amounts. Check the
+Account choice before applying: it starts at All accounts even when you
+created the rule from one report transaction.
 
 ## Preview, save and apply {#preview-save-and-apply}
 
-Under **Preview or Apply Rule**, choose the **Account**. **Transactions**
-chooses which entries in that account to consider:
+Under **Preview or Apply Rule**, **Account** starts at **All accounts**
+each time you visit Rules. This includes every active account and leaves
+archived accounts unchanged. Choose one account if you want a smaller pass.
+Choosing one also selects that ledger account, while keeping you in Rules;
+All accounts leaves your ledger account as it is.
+
+Saved rules can match later imports in any account. The Account and
+**Transactions** choices below control this preview or application:
 
 - **All transactions** includes both new and accepted entries.
 - **New transactions only** leaves out entries you have already accepted.
@@ -62,11 +71,11 @@ The line **Uncategorized transactions only.** is a reminder. A rule does
 not replace a category you have already chosen.
 
 Choose **Preview**. The list shows eligible matching transactions with
-their imported payee, date and amount. A split match still appears as one
+their account, imported payee, date and amount. A split match still appears as one
 transaction row. Preview does not change your transactions.
 
-![Rules preview listing the Market purchase for -42.18 beneath the selected rule’s controls.](images/rules-preview.png)
-*The Uncategorized Market purchase matches. The already categorized entries stay as they are.*
+![Rules preview listing the Market purchase for -42.18 in Credit card, with All accounts selected.](images/rules-preview.png)
+*All accounts checks every active account. The preview names the account for each match.*
 
 **Save rule** keeps the selected rule without changing transactions.
 **Discard changes** restores that rule. A new unsaved rule uses
@@ -86,10 +95,10 @@ The Transactions choice applies only when you run the rule yourself.
 
 To undo a rule you just applied, press **Command+Z** on a Mac, or
 **Ctrl+Z** on Windows and Linux, while that application is still the
-newest saved action. SpentIt asks before it undoes. The rule stays
-saved, so you can apply it again. A later saved action takes the
-shortcut’s place. Turning the rule off, or deleting it, leaves the
-categories it already assigned. If the rule has no category, SpentIt
+newest saved action. This reverses the whole pass across the chosen accounts
+and keeps the saved rule. Use **Redo** to put that pass back, or undo newer
+actions first to reach an earlier application. Turning the rule off, or
+deleting it, leaves the categories it already assigned. If the rule has no category, SpentIt
 says **Choose an existing category.** Choose one, then try again.
 
 ## What a rule reads
