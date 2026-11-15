@@ -20,7 +20,8 @@ if(APPLE)
     MACOSX_BUNDLE_GUI_IDENTIFIER "local.spentit.desktop"
     MACOSX_BUNDLE_ICON_FILE SpentIt_light.icns
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/packaging/macos/Info.plist.in")
   spentit_compiler_options(spentit_macos_bundle)
 elseif(WIN32)
   enable_language(RC)

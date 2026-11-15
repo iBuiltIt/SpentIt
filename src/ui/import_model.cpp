@@ -2515,6 +2515,12 @@ ImportModel::ImportModel(std::unique_ptr<app::DocumentGateway> gateway,QObject* 
     pool_.setStackSize(4 * 1024 * 1024);
     pool_.setMaxThreadCount(1); state_={{"active",false},{"path",QSettings().value("datasetPath",suggestedPath())},{"startup",QSettings().contains("datasetPath")}};
 }
+namespace {
+QString absoluteLaunchPath(const QString& path) {
+    if(path.isEmpty()) return {};
+    return QFileInfo(path).absoluteFilePath();
+}
+}
 QString ImportModel::launchDocumentPath(const QStringList& arguments, QString* error) {
     if(error) error->clear();
     QString found;
@@ -2535,8 +2541,34 @@ QString ImportModel::launchDocumentPath(const QStringList& arguments, QString* e
     return found;
 }
 void ImportModel::setLaunchDocument(const QString& path) {
-    state_["path"]=QFileInfo(path).absoluteFilePath();
+    const auto absolute=absoluteLaunchPath(path);
+    state_["path"]=absolute;
     state_["startup"]=true;
+    pendingLaunchPath_=absolute;
+    emit changed();
+}
+void ImportModel::holdLaunch() {
+    if(launchHeld_) return;
+    launchHeld_=true;
+    emit launchHeldChanged();
+}
+void ImportModel::releaseLaunchHold() {
+    if(!launchHeld_) return;
+    launchHeld_=false;
+    emit launchHeldChanged();
+    emit launchSettled();
+}
+ImportModel::LaunchDelivery ImportModel::deliverLaunchDocument(const QString& requested) {
+    const auto path=absoluteLaunchPath(requested);
+    if(path.isEmpty()) return LaunchDelivery::ignored;
+    // One file at a time. An open file stays open. A second file delivered with
+    // the first, or a file that arrives while opening, only brings the window forward.
+    if(state_.value("active").toBool() || busy_ || !pendingLaunchPath_.isEmpty()) return LaunchDelivery::attention;
+    if(state_.value("unlockRequired").toBool() && absoluteLaunchPath(state_.value("path").toString())==path) return LaunchDelivery::attention;
+    setLaunchDocument(path);
+    if(launchHeld_) releaseLaunchHold();
+    else emit externalDocument();
+    return LaunchDelivery::open;
 }
 ImportModel::~ImportModel() {pool_.waitForDone();worker_->gateway->close();}
 void ImportModel::setRememberWindowPosition(bool enabled) {
@@ -2790,7 +2822,9 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         } else state_=std::move(result.state);
         diag::Collector::instance().applied(diagnosticId,action=="close" || action=="open" || action=="unlock" || action=="create");
         auto finish=[this,action,error=std::move(result.error),success=result.success]() mutable {
-            error_=std::move(error);busy_=false;phase_.clear();operation_->progress={};operation_.reset();emit changed();emit completed(action,success);
+            error_=std::move(error);busy_=false;phase_.clear();operation_->progress={};operation_.reset();
+            if(action=="open" || action=="unlock" || action=="probe" || action=="create" || action=="close") pendingLaunchPath_.clear();
+            emit changed();emit completed(action,success);
             if(pendingInspection_ && !busy_){auto args=std::move(*pendingInspection_);pendingInspection_.reset();resumedDiagnostic_=deferredDiagnostic_;deferredDiagnostic_=0;diag::Collector::instance().deferred(0);if(state_.value("active").toBool())command("inspect",args);else{diag::Collector::instance().admit(diag::Action::inspect,diag::EventKind::superseded,resumedDiagnostic_);resumedDiagnostic_=0;}}
         };
         if(action=="close" && result.success) {

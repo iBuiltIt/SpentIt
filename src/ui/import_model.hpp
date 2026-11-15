@@ -27,6 +27,7 @@ class ImportModel final : public QAbstractListModel {
     Q_PROPERTY(QUrl suggestedFile READ suggestedFile CONSTANT)
     Q_PROPERTY(bool diagnosticsEnabled READ diagnosticsEnabled CONSTANT)
     Q_PROPERTY(qulonglong diagnosticGeneration READ diagnosticGeneration NOTIFY changed)
+    Q_PROPERTY(bool launchHeld READ launchHeld NOTIFY launchHeldChanged)
 public:
     AboutInfo* aboutInformation() { return &aboutInformation_; }
     bool rememberWindowPosition() const {return rememberWindowPosition_;}
@@ -45,6 +46,13 @@ public:
     // Empty error means no document argument. A message means SpentIt must not start.
     static QString launchDocumentPath(const QStringList& arguments, QString* error);
     void setLaunchDocument(const QString& path);
+    // Finder can deliver the file after startup has begun. Hold the remembered-file
+    // open until that delivery, or until releaseLaunchHold when no file arrived.
+    enum class LaunchDelivery { ignored, open, attention };
+    bool launchHeld() const { return launchHeld_; }
+    void holdLaunch();
+    void releaseLaunchHold();
+    LaunchDelivery deliverLaunchDocument(const QString& path);
     ~ImportModel() override;
     QVariantMap state() const { return state_; }
     bool busy() const { return busy_; }
@@ -85,7 +93,7 @@ public:
     Q_INVOKABLE QVariantMap rowIdentity(int row) const;
     Q_INVOKABLE int occurrenceIndex(const QString& batch, int ordinal) const;
     Q_INVOKABLE QVariantMap rowRecord(int row) const;
-signals: void windowPreferencesChanged(); void changed(); void completed(QString action,bool success);
+signals: void windowPreferencesChanged(); void changed(); void completed(QString action,bool success); void launchHeldChanged(); void launchSettled(); void externalDocument();
 private:
     AboutInfo aboutInformation_{this};
     struct Worker;
@@ -95,6 +103,8 @@ private:
     std::shared_ptr<const spentit::app::LedgerView> rows_;
     spentit::diagnostics::Id diagnosticOperation_=0, deferredDiagnostic_=0, resumedDiagnostic_=0, diagnosticFrameRequested_=UINT64_MAX;
     bool rememberWindowPosition_=false;
+    bool launchHeld_=false;
+    QString pendingLaunchPath_;
     bool busy_=false;
     QString error_,phase_;
     QString activeAction_;

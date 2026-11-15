@@ -1,7 +1,7 @@
 # 007 — Licensing and distribution
 
 Status: **active**
-Last updated: 2026-11-11
+Last updated: 2026-11-15
 
 The owner selected the Unlicense for SpentIt. The text is [LICENSE](../LICENSE).
 It permits any use, including selling copies. That choice replaces the earlier
@@ -27,7 +27,11 @@ network.
 Local development packages remain. The distribution command is
 `python3 tools/package.py`. On macOS, `--sign` writes a Developer ID DMG and
 notarizes it when `APPLE_NOTARY_PROFILE` is set. Icons follow system appearance,
-with light as the fallback. Installed icons use the light variant. See
+with light as the fallback. Installed icons use the light variant. The macOS
+app registers `.spentit`. Opening that file in Finder starts SpentIt and opens
+it. A password-protected file stays on the welcome screen with that file
+selected and asks for the password. If a file is already open, SpentIt brings
+its window forward and leaves that file open. See
 [packaging/README.md](../packaging/README.md).
 
 On Windows the same command writes a per-user installer,

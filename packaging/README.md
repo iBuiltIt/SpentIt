@@ -19,7 +19,7 @@ APPLE_NOTARY_PROFILE=machines-notary python3 tools/package.py --sign --smoke
 
 `--smoke` launches that packaged app with Homebrew hidden and creates a file through the same command as Create file. The file is temporary and is removed at the end of the check.
 
-The bundle id is `com.stefanwessels.SpentIt`. Saved settings keep the existing organization and application name. The script copies Qt, its plugins, QML, and every non-system library those binaries link, then refuses to finish if any of them still points outside the app or requires a newer system than macOS 14.4. Qt 6.12's own floor is 14.4, and it is built with the current SDK by `python3 tools/build_macos_14_4.py`. That build does not replace the Homebrew Qt used by `./build/SpentIt`.
+The bundle id is `com.stefanwessels.SpentIt`. Saved settings keep the existing organization and application name. The app registers `.spentit`. Opening that file in Finder starts SpentIt and opens it. A password-protected file stays on the welcome screen with that file selected and asks for the password. If SpentIt already has a file open, the window comes forward and that file stays open. The script copies Qt, its plugins, QML, and every non-system library those binaries link, then refuses to finish if any of them still points outside the app or requires a newer system than macOS 14.4. Qt 6.12's own floor is 14.4, and it is built with the current SDK by `python3 tools/build_macos_14_4.py`. That build does not replace the Homebrew Qt used by `./build/SpentIt`.
 
 ## Windows installer
 
@@ -47,7 +47,7 @@ Qt and PCRE2 are found from `CMAKE_PREFIX_PATH` and `SPENTIT_PCRE2_ROOT`. When t
 
 ## macOS local packages
 
-Keep using `./build/SpentIt` for the normal development executable. The separate `spentit_macos_bundle` target produces `local-app/SpentIt.app` inside the configured build directory, with the supplied light ICNS and a local bundle identifier. Saved settings retain their existing organization/application identity.
+Keep using `./build/SpentIt` for the normal development executable. That executable accepts one `.spentit` path on the command line. It is not a Finder document handler. The separate `spentit_macos_bundle` target produces `local-app/SpentIt.app` inside the configured build directory, with the supplied light ICNS, a local bundle identifier, and the `.spentit` document type. Finder binds the extension to one app. Saved settings retain their existing organization/application identity.
 
 To create a fresh package from the repository root, with a Release build configured (choose an unused output name):
 

@@ -20,6 +20,12 @@
 #include <QTemporaryDir>
 #include <QIcon>
 #include <QStyleHints>
+#ifdef Q_OS_MACOS
+#include <QEvent>
+#include <QEventLoop>
+#include <QFileOpenEvent>
+#include <QWindow>
+#endif
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -33,6 +39,33 @@ void reportLaunchError(const QString& message) {
     MessageBoxW(nullptr,reinterpret_cast<const wchar_t*>(message.utf16()),L"SpentIt",MB_OK|MB_ICONWARNING);
 #endif
 }
+#ifdef Q_OS_MACOS
+void raiseSpentItWindow(QObject* root) {
+    auto* window=qobject_cast<QWindow*>(root);
+    if(!window) return;
+    auto states=window->windowStates();
+    if(states.testFlag(Qt::WindowMinimized)) {states.setFlag(Qt::WindowMinimized,false);window->setWindowStates(states);}
+    if(!window->isVisible()) window->show();
+    window->raise();
+    window->requestActivate();
+}
+class MacDocumentOpen final : public QObject {
+public:
+    MacDocumentOpen(ImportModel* model, QObject** window, QObject* parent):QObject(parent),model_(model),window_(window) {}
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if(event->type()!=QEvent::FileOpen || watched!=qApp) return QObject::eventFilter(watched,event);
+        const auto* opened=static_cast<const QFileOpenEvent*>(event);
+        auto path=opened->file();
+        if(path.isEmpty()) path=opened->url().toLocalFile();
+        if(model_->deliverLaunchDocument(path)!=ImportModel::LaunchDelivery::ignored) raiseSpentItWindow(window_?*window_:nullptr);
+        return true;
+    }
+private:
+    ImportModel* model_;
+    QObject** window_;
+};
+#endif
 }
 int main(int argc,char** argv) {
     QGuiApplication app(argc,argv);
@@ -78,6 +111,18 @@ int main(int argc,char** argv) {
     }
     ImportModel model(spentit::storage::document_gateway((QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/verification").toStdString()));
     if(!launchPath.isEmpty()) model.setLaunchDocument(launchPath);
+#ifdef Q_OS_MACOS
+    // Finder delivers a double-clicked file while NSApplication finishes launching.
+    // That can be after QML would already open the remembered file. Hold that open
+    // until the file arrives, or until the event loop shows that none did.
+    QObject* root=nullptr;
+    MacDocumentOpen documentOpen(&model,&root,nullptr);
+    if(launchPath.isEmpty() && !smoke && !smokeCreate) {
+        model.holdLaunch();
+        app.installEventFilter(&documentOpen);
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    } else app.installEventFilter(&documentOpen);
+#endif
     app.setApplicationVersion(model.aboutInformation()->version());
     HelpCatalog helpCatalog;
     helpCatalog.load(QStringLiteral(":/spentit/help/manifest.json"));
@@ -86,6 +131,9 @@ int main(int argc,char** argv) {
     engine.rootContext()->setContextProperty("helpCatalog",&helpCatalog);
     {spentit::diagnostics::Span qmlSpan(spentit::diagnostics::Code::qml_creation);
     engine.load(QUrl("qrc:/spentit/ImportMain.qml"));if(engine.rootObjects().isEmpty())return 1;}
+#ifdef Q_OS_MACOS
+    root=engine.rootObjects().first();
+#endif
     if(diagnosticsRequested) {
         auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
         if(window) {
@@ -134,6 +182,9 @@ int main(int argc,char** argv) {
         wait->start();
         QTimer::singleShot(30000,&app,[&]{std::cerr<<"Create did not finish.\n";app.exit(1);});
     } else if(smoke) QTimer::singleShot(diagnosticsRequested?1500:500,&app,[&]{engine.rootObjects().first()->setProperty("allowClose",true);app.quit();});
+#ifdef Q_OS_MACOS
+    if(model.launchHeld()) QTimer::singleShot(0,&model,[&model]{model.releaseLaunchHold();});
+#endif
     spentit::diagnostics::Collector::instance().metric(spentit::diagnostics::Code::startup,spentit::diagnostics::now()-diagnosticStartup,0,false);
     return app.exec();
 }

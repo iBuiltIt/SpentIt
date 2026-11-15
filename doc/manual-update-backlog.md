@@ -18,7 +18,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-058. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-059. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -33,6 +33,15 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   A password is 1 to 64 characters. An empty password says “Enter a password.”
   A longer password says “Use a password of 1 to 64 characters.” Help for that
   sentence says the password is stored as UTF-8 text. No picture change.
+- MAN-058 (2026-11-15) — Open a `.spentit` file from Finder. Contract:
+  [007](../features/007-licensing-and-distribution.md). Chapter:
+  [Create or open a file](../manual/create-open-file.md) (Open your file).
+  Include macOS with the Windows and Linux sentence. Double-clicking a
+  `.spentit` file starts SpentIt and opens it. A password-protected file stays
+  on the welcome screen with that file selected and asks for the password.
+  The file opened last time stays closed until this one opens. If SpentIt
+  already has a file open, the window comes forward and that file stays open.
+  No picture change. `create-file-unlock.png` already shows the password field.
 
 ## Recapturing pictures
 

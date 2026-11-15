@@ -5,9 +5,10 @@
     python3 tools/package.py --sign
     APPLE_NOTARY_PROFILE=machines-notary python3 tools/package.py --sign
 
-macOS writes dist/SpentIt.app. Without --sign it also writes a zip. With
---sign it signs with the Developer ID in the keychain, writes a DMG, and
-notarizes when a notary profile or key is already in the environment.
+macOS writes dist/SpentIt.app and registers .spentit. Without --sign it
+also writes a zip. With --sign it signs with the Developer ID in the
+keychain, writes a DMG, and notarizes when a notary profile or key is
+already in the environment.
 
 Windows writes dist/SpentIt-<version>-windows-x64-setup.exe, a per-user
 installer. It bundles Qt, the libraries the program imports, and the Visual
@@ -451,6 +452,35 @@ def highest_minos(app: Path) -> tuple[int, ...]:
     return best
 
 
+def register_spentit_document(info: dict) -> None:
+    """Finder association for .spentit. packaging/macos/Info.plist.in has the same keys."""
+    info["CFBundleDocumentTypes"] = [{
+        "CFBundleTypeName": "SpentIt file",
+        "CFBundleTypeRole": "Editor",
+        "LSHandlerRank": "Owner",
+        "LSItemContentTypes": ["com.stefanwessels.spentit.file"],
+        "CFBundleTypeExtensions": ["spentit"],
+    }]
+    info["UTExportedTypeDeclarations"] = [{
+        "UTTypeIdentifier": "com.stefanwessels.spentit.file",
+        "UTTypeDescription": "SpentIt file",
+        "UTTypeConformsTo": ["public.data"],
+        "UTTypeTagSpecification": {"public.filename-extension": ["spentit"]},
+    }]
+
+
+def assert_spentit_document(info: dict) -> None:
+    types = info.get("CFBundleDocumentTypes") or []
+    exported = info.get("UTExportedTypeDeclarations") or []
+    extensions: list[str] = []
+    for item in exported:
+        tags = item.get("UTTypeTagSpecification") or {}
+        extensions.extend(tags.get("public.filename-extension") or [])
+    owns = any("com.stefanwessels.spentit.file" in (item.get("LSItemContentTypes") or []) for item in types)
+    if "spentit" not in extensions or not owns:
+        raise SystemExit("the app did not register .spentit")
+
+
 def patch_info_plist(app: Path, version: str, minimum: tuple[int, ...]) -> None:
     path = app / "Contents" / "Info.plist"
     with path.open("rb") as handle:
@@ -462,6 +492,8 @@ def patch_info_plist(app: Path, version: str, minimum: tuple[int, ...]) -> None:
     info["LSMinimumSystemVersion"] = format_version(minimum)
     info["NSHighResolutionCapable"] = True
     info["LSApplicationCategoryType"] = "public.app-category.finance"
+    register_spentit_document(info)
+    assert_spentit_document(info)
     with path.open("wb") as handle:
         plistlib.dump(info, handle)
     log(f"minimum macOS {format_version(minimum)}")

@@ -2192,13 +2192,14 @@ ApplicationWindow {
     }
     Component.onCompleted: {
         workflow.restoreWindowPosition(window)
-        startupPending=!!s.startup
-        probeTimer.start()
+        if(!workflow.launchHeld){startupPending=!!s.startup;probeTimer.start()}
         Qt.callLater(clampLedgerColumns)
     }
     Connections {
         target:workflow
         function onChanged() {Qt.callLater(window.clampLedgerColumns)}
+        function onLaunchSettled() {if(s.active || settingUp)return;startupPending=!!s.startup;probeTimer.restart()}
+        function onExternalDocument() {if(s.active || workflow.busy)return;settingUp=false;location.text=s.path;startupPending=true;probeTimer.restart()}
     }
     Timer {
         id:probeTimer;interval:startupPending?0:350
@@ -3448,7 +3449,7 @@ ApplicationWindow {
                 running:workflow.busy
             }
         }
-        Item {visible:!s.active && (startupPending || workflow.openingDocument);Layout.fillWidth:true;Layout.fillHeight:true
+        Item {visible:!s.active && (startupPending || workflow.launchHeld || workflow.openingDocument);Layout.fillWidth:true;Layout.fillHeight:true
             ColumnLayout {anchors.centerIn:parent;spacing:24
                 Image {source:"qrc:/spentit/images/SpentIt_light_1024.png";Layout.preferredWidth:256;Layout.preferredHeight:256;Layout.alignment:Qt.AlignHCenter;fillMode:Image.PreserveAspectFit}
                 Label {text:"Where did my money go?";font.pixelSize:24;Layout.alignment:Qt.AlignHCenter}
@@ -3457,7 +3458,7 @@ ApplicationWindow {
             Label {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:40;verticalAlignment:Text.AlignVCenter;text:workflow.cancellationRequested?"Cancellation requested…":workflow.phase;textFormat:Text.PlainText;elide:Text.ElideRight}
         }
         UsableScrollView {
-            id:welcomeScroll;objectName:"welcomeScreen";visible:!s.active && !startupPending && !workflow.openingDocument;Layout.fillWidth:true;Layout.fillHeight:true;clip:true
+            id:welcomeScroll;objectName:"welcomeScreen";visible:!s.active && !startupPending && !workflow.launchHeld && !workflow.openingDocument;Layout.fillWidth:true;Layout.fillHeight:true;clip:true
             contentWidth:availableWidth
             ColumnLayout {
                 width:Math.min(welcomeScroll.availableWidth-48,660);x:(welcomeScroll.availableWidth-width)/2

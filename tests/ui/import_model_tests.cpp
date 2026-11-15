@@ -1676,6 +1676,77 @@ private slots:
         else QVERIFY(!m.error().isEmpty());
     }
 
+    void externalDocumentChoice() {
+        QTemporaryDir dir;
+        const auto first=QFileInfo(dir.path()+"/first.spentit").absoluteFilePath();
+        const auto second=QFileInfo(dir.path()+"/second.spentit").absoluteFilePath();
+        ImportModel m(storage::document_gateway());
+        QCOMPARE(int(m.deliverLaunchDocument(first)),int(ImportModel::LaunchDelivery::open));
+        QCOMPARE(m.state().value("path").toString(),first);
+        QVERIFY(m.state().value("startup").toBool());
+        QCOMPARE(int(m.deliverLaunchDocument(second)),int(ImportModel::LaunchDelivery::attention));
+        QCOMPARE(int(m.deliverLaunchDocument(QString())),int(ImportModel::LaunchDelivery::ignored));
+        QCOMPARE(m.state().value("path").toString(),first);
+        run(m,"probe",{{"path",first}},false);
+        QCOMPARE(int(m.deliverLaunchDocument(second)),int(ImportModel::LaunchDelivery::open));
+        QCOMPARE(m.state().value("path").toString(),second);
+        run(m,"create",{{"path",second},{"name","Second"},{"currency","CAD"},{"protected",false}});
+        QVERIFY(m.state().value("active").toBool());
+        QCOMPARE(int(m.deliverLaunchDocument(first)),int(ImportModel::LaunchDelivery::attention));
+        QCOMPARE(m.state().value("path").toString(),second);
+        QCOMPARE(m.state().value("accounts").toList().front().toMap().value("name").toString(),QString("Second"));
+    }
+    void externalDocument_data() {
+        QTest::addColumn<QString>("kind");
+        for(const auto* kind:{"public","protected","missing"})QTest::newRow(kind)<<QString(kind);
+    }
+    void externalDocument() {
+        QFETCH(QString,kind);
+        QTemporaryDir dir;
+        const auto remembered=dir.path()+"/remembered.spentit";
+        const auto launched=dir.path()+"/launched.spentit";
+        ImportModel owner(storage::document_gateway());
+        run(owner,"create",{{"path",remembered},{"name","Remembered"},{"currency","CAD"},{"protected",false}});
+        run(owner,"close");
+        if(kind!="missing") {
+            run(owner,"create",{{"path",launched},{"name","Launched"},{"currency","CAD"},{"protected",kind=="protected"},{"password","synthetic"},{"confirmation","synthetic"}});
+            run(owner,"close");
+        }
+        QSettings().setValue("datasetPath",remembered);
+        ImportModel m(storage::document_gateway());
+        m.holdLaunch();
+        QSignalSpy startupCommands(&m,&ImportModel::completed);
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        QVERIFY(m.launchHeld());
+        QTest::qWait(100);
+        QVERIFY(m.launchHeld());QVERIFY(!m.busy());QVERIFY(!m.state().value("active").toBool());
+        QCOMPARE(startupCommands.size(),0);
+        QVERIFY(!root->findChild<QObject*>("welcomeScreen")->property("visible").toBool());
+        QCOMPARE(int(m.deliverLaunchDocument(launched)),int(ImportModel::LaunchDelivery::open));
+        QVERIFY(!m.launchHeld());
+        QTRY_VERIFY(!root->property("startupPending").toBool());QTRY_VERIFY(!m.busy());
+        QCOMPARE(startupCommands.size(),1);
+        QCOMPARE(startupCommands.front()[0].toString(),QString("open"));
+        QCOMPARE(m.state().value("path").toString(),QFileInfo(launched).absoluteFilePath());
+        if(kind=="public") {
+            QVERIFY2(m.state().value("active").toBool(),qPrintable(m.error()));
+            const auto accounts=m.state().value("accounts").toList();
+            QVERIFY(!accounts.isEmpty());
+            QCOMPARE(accounts.front().toMap().value("name").toString(),QString("Launched"));
+            QCOMPARE(QSettings().value("datasetPath").toString(),QFileInfo(launched).absoluteFilePath());
+            QCOMPARE(int(m.deliverLaunchDocument(remembered)),int(ImportModel::LaunchDelivery::attention));
+            QVERIFY(m.state().value("active").toBool());
+            QCOMPARE(m.state().value("accounts").toList().front().toMap().value("name").toString(),QString("Launched"));
+            return;
+        }
+        QVERIFY(!m.state().value("active").toBool());
+        QCOMPARE(QSettings().value("datasetPath").toString(),remembered);
+        QVERIFY(root->findChild<QObject*>("welcomeScreen")->property("visible").toBool());
+        if(kind=="protected") {QVERIFY(m.state().value("unlockRequired").toBool());QVERIFY(m.error().isEmpty());}
+        else QVERIFY(!m.error().isEmpty());
+    }
+
     void configuredDatesAndCategories() {
         QTemporaryDir dir;const auto path=dir.path()+"/dates.spentit";
         ImportModel m(storage::document_gateway());
