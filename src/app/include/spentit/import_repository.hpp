@@ -338,6 +338,8 @@ public:
     // A fixed, conservative plan for pairs involving this completed import.
     virtual std::vector<ReviewAnswer> automatic_review_plan(const std::vector<std::string>&,bool,bool) const {return {};}
     virtual ReviewReceipt answer_automatic_review(std::string_view operation,const ReviewAnswer& answer) {return answer_review(operation,answer);}
+    // One save for every automatic pair from an import. It is not its own Undo step.
+    virtual void save_automatic_import_review(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Automatic import review is unavailable");}
     virtual void local_preferences_changed() {}
     // Automatic links made since the latest non-reversed Accept.
     virtual std::vector<std::string> pending_review_links() const {return {};}

@@ -187,6 +187,7 @@ public:
     app::ReviewSheet review_sheet() const override;
     std::vector<app::ReviewAnswer> automatic_review_plan(const std::vector<std::string>&,bool,bool) const override;
     app::ReviewReceipt answer_automatic_review(std::string_view,const app::ReviewAnswer&) override;
+    void save_automatic_import_review(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&) override;
     void local_preferences_changed() override;
     std::vector<std::string> pending_review_links() const override;
     std::vector<imports::Occurrence> merge_survivors() const override;

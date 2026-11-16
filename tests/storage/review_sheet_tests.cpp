@@ -1150,6 +1150,45 @@ void automatic_review_tests(const std::filesystem::path& dir) {
     s.answer_automatic_review("automatic",s.automatic_review_plan({"new"},true,false).front());s.accept_all("accept-result");
     s.ingest("later",source("Unrelated","-3.00"),qif::DateOrder::dmy);test_session::close_reopen(s,retained,"test");
     check(s.merge_survivors().empty() && s.balance().units()==-1300,"Full close pruning keeps the acceptance boundary");s.verify();}
+    {auto pairs=ImportStore::create(dir/"auto-pairs","test","Checking",cad,"2026-01-01");pairs.opening(0,"2026-01-01",Money(0,cad));
+    const auto file=[](const char* one,const char* two){return std::string("!Type:Bank\nD01/01/2026\nT-10.00\nP")+one+"\n^\nD02/01/2026\nT-25.00\nP"+two+"\n^\n";};
+    pairs.ingest("old",file("Old one","Old two"),qif::DateOrder::dmy);pairs.accept_all("accept-old");pairs.ingest("new",file("New one","New two"),qif::DateOrder::dmy);
+    auto plan=pairs.automatic_review_plan({"new"},true,false);check(plan.size()==2,"Two disjoint duplicate pairs");
+    auto bad=plan[0];bad.survivor=*bad.survivor==bad.selected[0]?bad.selected[1]:bad.selected[0];
+    bool refused=false;try{pairs.answer_automatic_review("bad-survivor",bad);}catch(const std::exception&){refused=true;}
+    check(refused && !pairs.review_outcome("bad-survivor"),"Wrong survivor is not saved");
+    pairs.answer_automatic_review("pair-1",plan[0]);
+    auto second=plan[1];second.generation=pairs.ledger_edit_generation();pairs.answer_automatic_review("pair-2",second);
+    check(pairs.balance().units()==-3500 && pairs.merge_survivors().size()==2,"Both automatic pairs saved separately");
+    auto again=plan[0];again.generation=pairs.ledger_edit_generation();
+    refused=false;try{pairs.answer_automatic_review("again",again);}catch(const std::exception&){refused=true;}
+    check(refused && !pairs.review_outcome("again"),"A pair that is no longer one-to-one is left");
+    pairs.undo_action("undo-pair-2",pairs.preview_undo("pair-2",pairs.action_token()));
+    const auto undone=pairs.balance().units();check(pairs.merge_survivors().size()==1 && (undone==-4500 || undone==-6000),"Undo removes one automatic pair");pairs.verify();}
+    {auto batch=ImportStore::create(dir/"auto-import","test","Checking",cad,"2026-01-01");batch.opening(0,"2026-01-01",Money(0,cad));
+    const auto file=[](const char* one,const char* two){return std::string("!Type:Bank\nD01/01/2026\nT-10.00\nP")+one+"\n^\nD02/01/2026\nT-25.00\nP"+two+"\n^\n";};
+    batch.ingest("old",file("Old one","Old two"),qif::DateOrder::dmy);batch.accept_all("accept-old");batch.ingest("new",file("New one","New two"),qif::DateOrder::dmy);
+    auto plan=batch.automatic_review_plan({"new"},true,false);check(plan.size()==2,"Import plan has two pairs");
+    OperationContext context;batch.save_automatic_import_review("auto-import",plan,context);
+    const auto head=batch.action_head();check(head && head->kind==ActionKind::import && head->payload=="new","Automatic pairs stay inside the import Undo step");
+    check(batch.merge_survivors().size()==2 && batch.balance().units()==-3500,"Both pairs are saved with the import");
+    check(batch.preview_unmerge({*plan[0].survivor}).available,"One automatic merge can be broken");
+    batch.unmerge("break-one",{*plan[0].survivor});check(batch.merge_survivors().size()==1,"Unmerge breaks one pair");
+    batch.undo_action("undo-break",batch.preview_undo(batch.action_head()->id,batch.action_token()));
+    check(batch.merge_survivors().size()==2,"Undo of Unmerge restores that pair");
+    batch.undo_import("undo-new","new",batch.ledger_edit_generation());
+    check(batch.merge_survivors().empty() && batch.balance().units()==-3500,"Undo import removes the new rows and both merges");batch.verify();}
+    {auto joined=ImportStore::create(dir/"auto-import-link","test","Checking",cad,"2026-01-01");joined.opening(0,"2026-01-01",Money(0,cad));joined.create_account(2,"Visa",cad,"2026-01-01");joined.select_account(2);joined.opening(0,"2026-01-01",Money(0,cad));joined.select_account(1);
+    joined.ingest("out",source("Payment"),qif::DateOrder::dmy);joined.accept_all("accept-out");joined.select_account(2);joined.ingest("in",source("Receipt","10.00"),qif::DateOrder::dmy);
+    auto plan=joined.automatic_review_plan({"in"},false,true);check(plan.size()==1,"Import link plan");
+    OperationContext context;joined.save_automatic_import_review("auto-link-import",plan,context);
+    const auto head=joined.action_head();check(head && head->kind==ActionKind::import && head->payload=="in","Automatic link stays inside the import Undo step");
+    check(joined.pending_review_links().size()==1 && joined.preview_unmerge({{"out",0}}).available,"Automatic link can be broken");
+    joined.unmerge("break-link",{{"out",0}});check(joined.pending_review_links().empty(),"Unmerge breaks the link");
+    joined.undo_action("undo-break-link",joined.preview_undo(joined.action_head()->id,joined.action_token()));
+    check(joined.pending_review_links().size()==1,"Undo of Unmerge restores the link");
+    joined.undo_import("undo-in","in",joined.ledger_edit_generation());
+    check(joined.pending_review_links().empty(),"Undo import removes the automatic link");joined.verify();}
     std::cout<<"Automatic review passed\n";
 }
 int main(int argc,char** argv){

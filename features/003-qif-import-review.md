@@ -54,10 +54,11 @@ Automatic recognition uses saved original facts.
 Two optional, initially off Settings preferences automatically Merge or Link
 mutually one-to-one Review pairs after import and rules. They leave transaction
 acceptance explicit. Ambiguous groups, adjacent-day duplicates, survivor choices,
-split choices, and amount differences stay manual. Accepted survivors also keep
-their result marks until the next Accept. The exact eligibility, local preference
-scope, failure behavior, and Undo contract are in the automatic-review section of
-[doc/review-sheet.md](../doc/review-sheet.md).
+split choices, and amount differences stay manual. Those pairs are one save
+inside the import, not separate Undo steps. Cancel saves none of them. Accepted survivors
+also keep their result marks until the next Accept. The exact eligibility, local
+preference scope, failure behavior, and Undo contract are in the automatic-review
+section of [doc/review-sheet.md](../doc/review-sheet.md).
 
 Review behavior is in [doc/review-sheet.md](../doc/review-sheet.md). Dataset-wide
 acceptance is in [doc/import-commit-discussion.md](../doc/import-commit-discussion.md).

@@ -2842,6 +2842,29 @@ private slots:
         QCOMPARE(m.state().value("balance").toString(),QString("25.00"));QCOMPARE(m.state().value("linkedRows").toMap().size(),2);
         QVERIFY(m.state().value("newTransactions").toLongLong()>0);
     }
+    void automaticReviewCancelStopsBeforeNextPair() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->show();
+        const auto path=dir.path()+"/doc";create(m,path);
+        run(m,"automatic_review_settings",{{"kind","merge"},{"enabled",true}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-15\nT-10.00\nPOld one\n^\nD2026-01-16\nT-25.00\nPOld two\n^\n")}});
+        run(m,"commit",{{"ignoreWarnings",true}});
+        bool sawMerge=false,couldCancel=false;
+        QStringList phases;
+        auto connection=connect(&m,&ImportModel::changed,&m,[&]{
+            if(!m.phase().isEmpty())phases.push_back(m.phase());
+            if(!sawMerge && m.phase().startsWith(QStringLiteral("Merging duplicate suggestions"))){couldCancel=m.canCancel();sawMerge=true;m.requestCancel();}
+        });
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-15\nT-10.00\nPNew one\n^\nD2026-01-16\nT-25.00\nPNew two\n^\n")}});
+        disconnect(connection);
+        QVERIFY2(sawMerge,qPrintable(phases.join(" | ")));QVERIFY(couldCancel);QVERIFY(m.error().isEmpty());
+        QCOMPARE(m.state().value("balance").toString(),QString("-70.00"));
+        QCOMPARE(m.state().value("mergedRows").toMap().size(),0);
+        QVERIFY(m.state().value("importFeedback").toString().contains("Automatic matching was not saved"));
+        QVERIFY(!m.state().value("reviewQuestions").toList().isEmpty());
+        QVERIFY(m.state().value("active").toBool());
+    }
     void amountFormatting() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

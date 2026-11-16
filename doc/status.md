@@ -34,8 +34,11 @@ passed unless you ran it.
   Same-calendar-date duplicate suggestions. Strict bank IDs when both sides
   have them. Optional automatic one-to-one Merge and Link after import and rules,
   with separate, initially off local settings. Ambiguous and choice-requiring
-  pairs stay manual. Automatic results on accepted rows stay marked until the
-  next Accept. See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+  pairs stay manual. Automatic pairs are saved with the import, not as their
+  own Undo steps. Undo of the import removes them. Unmerge still breaks one
+  pair. Cancel during automatic matching saves none of those pairs; the import
+  stays. Automatic results on accepted rows
+  stay marked until the next Accept. See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 - Manual transactions, ledger editing, splits, amount expressions, amount
   formatting, Set memo, Rename payee, and Restore imported values.
 - Categories with an Income flag, rules that assign an explicit category to
@@ -84,6 +87,22 @@ Text extraction verified the final category in all three wide-table column
 groups and the final comparison. Changed-document links and diff whitespace
 checks passed. No native Browse-picker interaction, Windows/Linux run, full
 repository suite, leak check, or physical disk-full test is claimed.
+
+## Automatic matching with the import — 2026-11-15
+
+Automatic Merge and Link from an import are one save. Review is built once.
+Each pair is rechecked, then written in that save. The file is synced once.
+Those pairs are not Undo steps. Undo of the import removes them. Unmerge still
+breaks one pair. Cancel or a failure saves none of the automatic pairs. The
+import stays. Manual work is queued as MAN-060.
+
+On macOS arm64 with Qt 6.12.0, `import.automatic_review` passed. It covers two
+pairs saved with the import, Unmerge of one pair, Undo of that Unmerge, and
+Undo of the import removing the pairs. The same checks passed for one automatic
+link. The offscreen cases `automaticReviewSettings` and
+`automaticReviewCancelStopsBeforeNextPair` passed. The rules-enabled Release
+`build/SpentIt` was relinked. The per-pair fault sweep was not rerun. Sanitizers,
+other platforms, and the full repository suite were not run.
 
 ## Still to do
 

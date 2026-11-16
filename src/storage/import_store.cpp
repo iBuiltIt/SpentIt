@@ -995,6 +995,7 @@ struct ImportStore::Impl {
     bool finalized=false;
     std::string pending_review_action;
     bool automatic_review=false;
+    bool enclosing_automatic_review=false;
     std::optional<app::ActionSummary> pending_action;
     std::string pending_action_digest;
     std::string import_action;

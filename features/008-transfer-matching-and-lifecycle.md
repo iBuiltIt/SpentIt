@@ -48,7 +48,9 @@ distinct.
 - Candidate ranking is not done. The optional, initially off automatic Link
   setting resolves mutually one-to-one, exact-amount Review pairs after import
   and rules, with no split choice or amount difference. Other suggestions require
-  an explicit choice. See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+  an explicit choice. The links are one save inside the import. Cancel saves none
+  of them. Unmerge still breaks one link.
+  See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 
 ## Committed edits
 

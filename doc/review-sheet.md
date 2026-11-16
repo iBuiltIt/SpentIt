@@ -604,15 +604,27 @@ keep-one merge, or with transfer relationships, stay manual for duplicate Merge.
 Links require one allocation on each side and exact opposite, nonzero amounts
 in the same currency; split choices and amount differences stay manual. Existing
 suggestion exclusions and category/destination/date constraints still apply.
-Each automatic command revalidates eligibility and verifies Unmerge availability
-before committing. A pair that cannot be safely unmerged is not saved.
+Each planned pair is revalidated from its two transactions, including Unmerge,
+before it is written. Resolving one pair does not add another. A pair that is
+no longer a clean one-to-one match, or that cannot be safely unmerged, is not
+saved.
 
-These are automatic Merge/Link decisions, not Accept transactions. Each pair is
-a normal atomic Review action after the completed import, with its existing
-source retention, Undo/Redo, and durable retry behavior. Import Undo follows
-those actions in the file-wide stack. If a later pair fails, the import and
-previous saved pairs remain; the error reports the completed counts and directs
-the user to Review. An uncertain durable outcome closes the session for recovery.
+All of these pairs are one save inside the import. They are not separate Undo
+steps. Undo of the import removes the import and these pairs together. Unmerge
+still breaks one link or one merge on its own, and that Unmerge is an ordinary
+Undo step.
+
+While this step runs, the progress text says **Checking duplicate and transfer
+suggestions**, then **Merging duplicate suggestions, N of M** or **Linking
+transfer suggestions, N of M**. Cancel is available again after the import
+rows have been saved. Cancel saves none of the automatic pairs. The import
+stays, and the summary says to review the remaining matches. A failure does
+the same: the import stays, and none of the automatic pairs stay.
+
+These are automatic Merge/Link decisions, not Accept transactions. During an
+import they are written with that import, not as later Undo steps. Import Undo
+removes them with the import. Unmerge remains available for one pair. An
+uncertain durable outcome closes the session for recovery.
 
 Indigo Merged and green linked-account result marks remain until a later explicit
 Accept transactions, including when an automatic survivor or linked endpoint was already
