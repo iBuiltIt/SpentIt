@@ -1364,6 +1364,88 @@ void automatic_review_tests(const std::filesystem::path& dir) {
     check(joined.pending_review_links().empty(),"Undo import removes the automatic link");joined.verify();}
     std::cout<<"Automatic review passed\n";
 }
+void cross_account_selection_tests(const std::filesystem::path& dir){
+    const Currency cad("CAD"),usd("USD");
+    auto s=ImportStore::create(dir/"cross-account","test","Checking",cad,"2026-01-01");
+    s.opening(0,"2026-01-01",Money(0,cad));
+    s.ingest("checking",source("Cafe","-10.00"),qif::DateOrder::dmy);s.accept_all("accept-checking",false);
+    s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));
+    s.ingest("visa",source("Shop","-20.00"),qif::DateOrder::dmy);s.accept_all("accept-visa",false);
+    s.create_account(3,"Cash",usd,"2026-01-01");s.select_account(3);s.opening(0,"2026-01-01",Money(0,usd));
+    s.ingest("cash",source("Taxi","-3.00"),qif::DateOrder::dmy);s.accept_all("accept-cash",false);
+    s.select_account(1);
+    const std::vector<imports::Occurrence> ids{{"checking",0},{"visa",0},{"cash",0}};
+    const auto expect_payees=[&](const char* checking,const char* visa,const char* cash){
+        check(s.account().identity==1,"The open account stays Checking");
+        s.select_account(1);check(edit_row(s,{"checking",0}).payee==checking,"Checking payee");
+        s.select_account(2);check(edit_row(s,{"visa",0}).payee==visa,"Visa payee");
+        s.select_account(3);check(edit_row(s,{"cash",0}).payee==cash,"Cash payee");
+        s.select_account(1);
+    };
+    const auto expect_balances=[&]{
+        const auto open=s.account().identity;
+        s.select_account(1);check(s.balance().units()==-1000,"Checking balance is unchanged");
+        s.select_account(2);check(s.balance().units()==-2000,"Visa balance is unchanged");
+        s.select_account(3);check(s.balance().units()==-300,"Cash balance is unchanged");
+        s.select_account(open);
+    };
+    OperationContext context;
+    auto rename=selection_request(s,LedgerSelectionAction::rename_payee,ids,"Renamed");
+    s.edit_transactions("rename",rename,context);s.edit_transactions("rename",rename,context);
+    expect_payees("Renamed","Renamed","Renamed");expect_balances();s.verify();s.select_account(1);
+    auto changed=rename;changed.payee="Other";bool refused=false;try{s.edit_transactions("rename",changed,context);}catch(const std::exception&){refused=true;}
+    check(refused,"A changed rename retry is refused");expect_payees("Renamed","Renamed","Renamed");
+    const auto head=s.action_head();check(head && head->id=="rename","Rename is the Undo head");
+    s.undo_action("undo-rename",s.preview_undo(head->id,s.action_token()));s.verify();
+    expect_payees("Cafe","Shop","Taxi");
+    const auto redo=s.redo_history();check(redo.size()==1,"Undo keeps one Redo");
+    UndoPreview preview;preview.token=s.action_token();preview.action=redo.front();
+    s.redo_action("redo-rename",preview);s.verify();s.select_account(1);expect_payees("Renamed","Renamed","Renamed");
+    s.undo_action("undo-redo-rename",s.preview_undo(s.action_head()->id,s.action_token()));s.verify();s.select_account(1);
+    expect_payees("Cafe","Shop","Taxi");
+    auto memo=memo_request(s,ids,"Note",false);
+    s.edit_transactions("memo",memo,context);s.edit_transactions("memo",memo,context);
+    s.select_account(1);check(edit_row(s,{"checking",0}).memo=="Note","Checking memo");
+    s.select_account(2);check(edit_row(s,{"visa",0}).memo=="Note","Visa memo");
+    s.select_account(3);check(edit_row(s,{"cash",0}).memo=="Note","Cash memo");s.select_account(1);
+    expect_balances();s.undo_action("undo-memo",s.preview_undo(s.action_head()->id,s.action_token()));s.verify();s.select_account(1);
+    s.select_account(1);check(edit_row(s,{"checking",0}).memo.empty(),"Checking memo undone");
+    s.select_account(3);check(edit_row(s,{"cash",0}).memo.empty(),"Cash memo undone");s.select_account(1);
+    s.apply_category_change("food-def",{CategoryAction::create,"food","Food",{},CategoryKind::leaf},0);
+    CategorySelection categories{s.account().identity,s.ledger_edit_generation(),"food",{}};
+    for(const auto& id:ids)categories.selected.push_back({id,{}});
+    s.assign_categories("categories",categories,context);s.assign_categories("categories",categories,context);
+    for(const auto& account:std::initializer_list<std::pair<std::int64_t,imports::Occurrence>>{{1,{"checking",0}},{2,{"visa",0}},{3,{"cash",0}}}){s.select_account(account.first);const auto draft=edit_row(s,account.second);const auto& allocation=draft.transaction.allocations().front();check(allocation.category=="Food" && allocation.category_owner==FieldOwnership::manual,"Category is saved on every account");}
+    s.select_account(1);
+    expect_balances();check(s.account().identity==1,"Category save leaves Checking open");s.verify();
+    s.undo_action("undo-categories",s.preview_undo(s.action_head()->id,s.action_token()));s.verify();s.select_account(1);
+    for(const auto& account:std::initializer_list<std::pair<std::int64_t,imports::Occurrence>>{{1,{"checking",0}},{2,{"visa",0}},{3,{"cash",0}}}){s.select_account(account.first);check(edit_row(s,account.second).transaction.allocations().front().category.empty(),"Undo clears every category");}
+    s.select_account(1);
+    const auto category_redo=s.redo_history();check(!category_redo.empty(),"Category Undo keeps Redo");
+    UndoPreview category_preview;category_preview.token=s.action_token();category_preview.action=category_redo.front();
+    s.redo_action("redo-categories",category_preview);s.verify();s.select_account(1);
+    for(const auto& account:std::initializer_list<std::pair<std::int64_t,imports::Occurrence>>{{1,{"checking",0}},{2,{"visa",0}},{3,{"cash",0}}}){s.select_account(account.first);check(edit_row(s,account.second).transaction.allocations().front().category=="Food","Redo restores every category");}
+    s.select_account(1);
+    s.undo_action("undo-redo-categories",s.preview_undo(s.action_head()->id,s.action_token()));s.verify();s.select_account(1);
+    OperationContext cancel;int writes=0;cancel.progress=[&](auto phase){if(phase=="Updating selected transactions" && ++writes==2)cancel.request();};
+    bool cancelled=false;try{s.edit_transactions("cancel-rename",selection_request(s,LedgerSelectionAction::rename_payee,ids,"Cancelled"),cancel);}catch(const OperationCancelled&){cancelled=true;}
+    check(cancelled && writes==2 && !s.review_outcome("cancel-rename"),"Cancelling a cross-account rename saves nothing");
+    expect_payees("Cafe","Shop","Taxi");expect_balances();
+    auto bad=selection_request(s,LedgerSelectionAction::rename_payee,ids,"Missing");bad.selected.push_back({"missing",0});
+    refused=false;try{OperationContext rejected;s.edit_transactions("bad",bad,rejected);}catch(const std::exception&){refused=true;}
+    check(refused && !s.review_outcome("bad"),"A missing row rejects the whole selection");expect_payees("Cafe","Shop","Taxi");
+    refused=false;std::string message;try{OperationContext rejected;s.edit_transactions("delete-mixed",selection_request(s,LedgerSelectionAction::remove,ids),rejected);}catch(const std::exception& error){refused=true;message=error.what();}
+    s.select_account(1);check(refused && message=="Import belongs to another account; refresh the account view" && edit_row(s,{"checking",0}).payee=="Cafe","Delete stays inside one account");
+    refused=false;message.clear();try{OperationContext rejected;s.edit_transactions("restore-mixed",selection_request(s,LedgerSelectionAction::restore_imported,ids),rejected);}catch(const std::exception& error){refused=true;message=error.what();}
+    check(refused && message=="Select transactions from one account for a group edit.","Restore stays inside one account");
+    s.select_account(1);s.ingest("split","!Type:Bank\nD02/01/2026\nT-30.00\nPSplit shop\nS\n$-10.00\nS\n$-20.00\n^\n",qif::DateOrder::dmy);s.accept_all("accept-split",false);s.select_account(1);
+    const auto checking_balance=s.balance().units();
+    CategorySelection mixed{s.account().identity,s.ledger_edit_generation(),"food",{{{"visa",0},{}},{{"split",0},{}}}};
+    refused=false;try{OperationContext rejected;s.assign_categories("split-category",mixed,rejected);}catch(const std::exception&){refused=true;}
+    s.select_account(2);check(refused && !s.review_outcome("split-category") && edit_row(s,{"visa",0}).transaction.allocations().front().category.empty(),"A split row rejects the category save for every account");
+    s.select_account(1);check(s.balance().units()==checking_balance,"The failed category save leaves the balance");s.verify();
+    std::cout<<"Cross-account category, memo, and payee passed\n";
+}
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
@@ -1379,6 +1461,7 @@ int main(int argc,char** argv){
         if(argc>1 && std::string(argv[1])=="large_review"){large_review_batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="large_selection"){large_selection_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="selection"){selection_edit_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="cross_account"){cross_account_selection_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="memo"){selection_memo_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="selection_faults"){selection_edit_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="editor"){editor_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

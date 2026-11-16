@@ -135,14 +135,27 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
     if(!current())fail(SQLITE_CONSTRAINT,"Transactions changed. Select them again before editing.");
     require_writable_account(impl_->db,request.account);
     if(request.generation==INT64_MAX)fail(SQLITE_FULL,"History capacity exhausted");
-    struct Plan {imports::Occurrence id;imports::DraftRow draft;imports::Decision decision;std::optional<EntryLinkPlan> links;};
+    struct Plan {imports::Occurrence id;std::int64_t account=0;imports::DraftRow draft;imports::Decision decision;std::optional<EntryLinkPlan> links;};
     std::vector<Plan> plans;const auto before_links=all_transfers();std::set<std::string> changed_links;
     const auto catalog=category_catalog();
-    auto balance=committed_balance();
+    const auto open_account=impl_->selected_account;
+    struct OpenAccount {Impl& state;std::int64_t account;~OpenAccount(){state.selected_account=account;}} open{*impl_,open_account};
+    // One running balance per account. A selection inside the open account still
+    // reads that balance once, then updates it as each row is written.
+    std::map<std::int64_t,Money> balances;
+    auto account_balance=[&](std::int64_t account)->Money&{
+        auto found=balances.find(account);
+        if(found==balances.end()){impl_->selected_account=account;found=balances.emplace(account,committed_balance()).first;}
+        return found->second;
+    };
     const auto memo_has_text=[](std::string_view value){return std::any_of(value.begin(),value.end(),[](unsigned char c){return c!=' ' && c!='\t' && c!='\n' && c!='\r' && c!='\v' && c!='\f';});};
+    const bool across=request.action==app::LedgerSelectionAction::rename_payee || request.action==app::LedgerSelectionAction::set_memo;
     for(const auto& id:request.selected){
         context.checkpoint("Checking selected transactions");
         if(id.batch.starts_with("~transfer-"))fail(SQLITE_CONSTRAINT,"Select imported transactions. Generated transfer entries cannot use this action.");
+        const auto owner=account_for_batch(id.batch).identity;
+        if(owner!=request.account && !across)fail(SQLITE_CONSTRAINT,"Select transactions from one account for a group edit.");
+        impl_->selected_account=owner;
         require_account(id.batch);
         if(review_survivor(impl_->db,id)!=id)fail(SQLITE_CONSTRAINT,"Select the retained transaction instead of a merged transaction.");
         const auto info=batch(impl_->db,id.batch);const auto row=load_row(id,false);
@@ -189,7 +202,7 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
         }
         std::optional<EntryLinkPlan> links;
         if(committed){
-            const auto preview=preview_change({removing?app::ChangeKind::remove:app::ChangeKind::correct,id,removing?std::optional<imports::DraftRow>{}:std::optional<imports::DraftRow>{draft},{}},true,balance);draft=preview.after_entry.draft;
+            const auto preview=preview_change({removing?app::ChangeKind::remove:app::ChangeKind::correct,id,removing?std::optional<imports::DraftRow>{}:std::optional<imports::DraftRow>{draft},{}},true,account_balance(owner));draft=preview.after_entry.draft;
             links=plan_entry_links(before_links,id,before,draft,removing);
             for(const auto& link:links->changed)if(!changed_links.insert(link.link.identity).second)fail(SQLITE_CONSTRAINT,"These transactions belong to the same transfer. Change one transaction at a time.");
         }else{
@@ -201,17 +214,19 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
             imports::validate_draft(row.source,draft,row.source.source_currency && *row.source.source_currency!=draft.transaction.effective_total().currency());
         }
         if(same_draft(before,draft) && (!links || links->changed.empty()))continue;
-        plans.push_back({id,std::move(draft),row.decision,std::move(links)});
+        plans.push_back({id,owner,std::move(draft),row.decision,std::move(links)});
     }
+    impl_->selected_account=open_account;
     Atomic transaction(impl_->db);if(!current())fail(SQLITE_CONSTRAINT,"Transactions changed. Select them again before editing.");
     if(plans.empty()){ActionChain(impl_->db).no_change(action_token(),operation,request_hash);session_snapshot::completed(impl_->db,operation,"selection",request_hash);context.seal();transaction.commit();return {std::string(operation)};}
     Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,?,?,?)");receipt.text(1,operation);receipt.text(2,question);receipt.text(3,encoded.bytes);receipt.integer(4,request.generation);receipt.done();
     std::size_t serial=0;
     for(const auto& plan:plans){
         context.checkpoint("Updating selected transactions");const auto child=std::string(operation)+"-edit-"+std::to_string(++serial);
-        write_review_row(operation,child,plan.id,plan.draft,plan.decision,!removing,false,false,{},{},&balance);
+        auto& running=account_balance(plan.account);
+        write_review_row(operation,child,plan.id,plan.draft,plan.decision,!removing,false,false,{},{},&running);
         if(plan.links && !plan.links->changed.empty()){
-            write_entry_links(child,request.account,app::TransferAction::relink,financial_sequence(impl_->db),plan.links->changed);
+            write_entry_links(child,plan.account,app::TransferAction::relink,financial_sequence(impl_->db),plan.links->changed);
             for(const auto& value:plan.links->changed){
                 const auto old=std::find_if(before_links.begin(),before_links.end(),[&](const auto& v){return v.link.identity==value.link.identity;});
                 Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);

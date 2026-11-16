@@ -1,7 +1,7 @@
 # 006 — Reporting and drill-down
 
 Status: **active**
-Last updated: 2026-11-15
+Last updated: 2026-11-16
 
 Reports is one sidebar entry below Rules. It lists saved definitions and edits
 the selected one. Show opens the result. The top-bar Back returns to the list.
@@ -43,8 +43,12 @@ are an additional saved choice. Pie is available when the period is suitable.
 
 Drill-down reuses the ledger editor over the contributing transaction
 identities, with the account and the included amount. Saved edits and Undo
-refresh the report. Reopening uses current membership. Group edits stay inside
-one account. Merge, Link, and creation stay in the account ledger. Other
+refresh the report. Reopening uses current membership. Change category,
+Rename payee, and Set memo apply to the whole selection in one save, including
+rows from several accounts. One Undo reverses that selection. Delete, Restore,
+and an account destination stay inside one account. Merge, Link, and creation
+stay in the account ledger. The Account heading sorts the list. Rows from one
+account stay together, newest date first inside that account. Other
 dataset changes mark the result stale until Refresh. Create rule… is available
 from the context menu for one eligible transaction. Save, apply and back returns
 to the report transactions and refreshes the result. Unavailable context-menu

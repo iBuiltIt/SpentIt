@@ -687,7 +687,7 @@ ApplicationWindow {
     }
     function ledgerColumnMinimum(index, report) {
         const which=report===undefined?reportLedger:report
-        const sortable=which?index!==2 && index!==6:true
+        const sortable=which?index!==6:true
         const money=which?index===4 || index===5:index>=3
         let sample=ledgerColumnTitle(index, which)+(sortable?" ▼":"")
         if(index===0) {const date=ledgerDateSample();if(ledgerMeasure(date)>ledgerMeasure(sample)) sample=date}
@@ -4394,7 +4394,7 @@ ApplicationWindow {
                             id:columnHeader
                             anchors.fill:parent
                             objectName:"ledgerColumn_"+index
-                            readonly property int sortColumn:window.reportLedger?(index===2 || index===6?-1:index>2?index-1:index):index
+                            readonly property int sortColumn:window.reportLedger?(index===6?-1:index===2?6:index>2?index-1:index):index
                             text:modelData+(sortColumn===(s.sort||0)?(s.descending?" ▼":" ▲"):"")
                             enabled:sortColumn>=0;onClicked:guard(function(){query(sortColumn,s.sort===sortColumn?!s.descending:false)})
                         }

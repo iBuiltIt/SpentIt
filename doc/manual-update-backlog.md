@@ -18,12 +18,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-064. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-065. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-064 (2026-11-16) — Report list account sort and cross-account edits.
+  Contract: [reporting](../features/006-reporting-drill-down.md). Chapter:
+  [Reports](../manual/reports.md), section "Open the transactions behind an
+  amount". The Account heading sorts that list. Change category, Rename payee,
+  and Set memo can include several accounts in one save and one Undo. Delete,
+  Restore, and choosing an account destination stay inside one account. Replace
+  the sentence that group edits must concern one account at a time. Text only.
 
 - MAN-063 (2026-11-16) — Follow-on links after a manual Link. Contract:
   [follow-on links](review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).

@@ -1583,7 +1583,8 @@ app::ReviewReceipt ImportStore::assign_categories(std::string_view operation,con
         transfer_codec::Reader in{std::string_view(bytes).substr(prefix.size())};
         for(const auto& target:selection.selected) {
             const auto request=transfer_codec::request(in.text());
-            if(request.mode!=0 || !request.left || request.left->endpoint.account!=selection.account || request.left->endpoint.entry!=target.identity || request.allocation!=target.allocation || request.category_id!=selection.category || request.category_generation!=selection.generation)
+            const auto owner=account_for_batch(target.identity.batch).identity;
+            if(request.mode!=0 || !request.left || request.left->endpoint.account!=owner || request.left->endpoint.entry!=target.identity || request.allocation!=target.allocation || request.category_id!=selection.category || request.category_generation!=selection.generation)
                 fail(SQLITE_CONSTRAINT,"Category assignment retry changed its selections");
         }
         if(!in.bytes.empty())fail(SQLITE_CONSTRAINT,"Category assignment retry changed its selections");
@@ -1593,8 +1594,12 @@ app::ReviewReceipt ImportStore::assign_categories(std::string_view operation,con
     std::string category_path;
     if(!selection.category.empty()){const auto category=resolve_category(selection.category);if(!category.assignable)fail(SQLITE_CONSTRAINT,"Choose an available category");category_path=category.path;}
     const auto links=all_transfers();std::vector<app::TransferRequest> requests;std::size_t serial=0;
+    const auto open_account=impl_->selected_account;
+    struct OpenAccount {Impl& state;std::int64_t account;~OpenAccount(){state.selected_account=account;}} open{*impl_,open_account};
     for(const auto& target:selection.selected) {
-        context.checkpoint("Reading selected transactions");require_account(target.identity.batch);
+        context.checkpoint("Reading selected transactions");
+        const auto owner=account_for_batch(target.identity.batch).identity;
+        impl_->selected_account=owner;require_account(target.identity.batch);
         const auto info=batch(impl_->db,target.identity.batch);const bool accepted=transaction_accepted(target.identity);
         const auto row=load_row(target.identity,false);if(!row.draft || row.excluded_by_clear)fail(SQLITE_CONSTRAINT,"Transaction is unavailable");
         const auto draft=accepted?committed_entry(target.identity).current.draft:*row.draft;
@@ -1605,7 +1610,7 @@ app::ReviewReceipt ImportStore::assign_categories(std::string_view operation,con
         const bool imported=!info.manual;
         app::TransferRequest request{};request.action=app::TransferAction::retarget;request.mode=0;
         request.link=std::string(operation)+"-"+std::to_string(++serial);request.kept=request.link+"-kept";
-        request.left=transfers::AllocationFact{{selection.account,target.identity,allocation->identity},allocation->amount,draft.date,accepted?transfers::State::committed:transfers::State::draft,imported,false,!imported,!imported};
+        request.left=transfers::AllocationFact{{owner,target.identity,allocation->identity},allocation->amount,draft.date,accepted?transfers::State::committed:transfers::State::draft,imported,false,!imported,!imported};
         for(const auto& value:links)if(!value.link.unresolved)for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed && side->endpoint==request.left->endpoint){request.link=value.link.identity;request.left=fact_from(*side);}
         request.expected_sequence=transfer_sequence();request.batch_revision=info.revision;
         request.allocation=target.allocation;request.category_generation=selection.generation;request.category_id=selection.category;request.category_path=category_path;
@@ -1622,10 +1627,16 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
     std::set<imports::Occurrence> entries;
     std::set<std::string> link_ids;
     const auto sequence=requests.front().expected_sequence;
+    const bool categories=requests.front().mode==0;
+    const auto open_account=impl_->selected_account;
+    struct OpenAccount {Impl& state;std::int64_t account;~OpenAccount(){state.selected_account=account;}} open{*impl_,open_account};
     for(const auto& request:requests){
         context.checkpoint("Checking transfer assignments");
-        if(request.action!=app::TransferAction::retarget || (request.mode!=0 && request.mode!=1) || !request.left || (request.mode==1 && !request.generated) || request.mode!=requests.front().mode || request.left->endpoint.account!=impl_->selected_account || request.expected_sequence!=sequence)
+        if(request.action!=app::TransferAction::retarget || (request.mode!=0 && request.mode!=1) || !request.left || (request.mode==1 && !request.generated) || request.mode!=requests.front().mode || request.expected_sequence!=sequence)
             fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
+        // An account destination still names the open account. A category can name each row's own account.
+        if(!categories && request.left->endpoint.account!=impl_->selected_account)fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
+        if(categories && account_for_batch(request.left->endpoint.entry.batch).identity!=request.left->endpoint.account)fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
         if(!entries.insert(request.left->endpoint.entry).second || !link_ids.insert(request.link).second)fail(SQLITE_CONSTRAINT,"Select each transaction and relationship only once");
         const auto bytes=transfer_codec::encode(request);encoded+=std::to_string(bytes.size())+":"+bytes;
     }
@@ -1644,9 +1655,10 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
     const auto linked=[&](const app::TransferRequest& request){return std::any_of(initial.begin(),initial.end(),[&](const auto& v){return !v.link.unresolved && v.link.origin.state!=transfers::State::removed && (v.link.origin.endpoint==request.left->endpoint || v.link.destination.endpoint==request.left->endpoint);});};
     const auto category_draft=[&](const app::TransferRequest& request){
         const auto& fact=*request.left;const auto id=fact.endpoint.entry;
-        if(request.expected_sequence!=sequence || sequence!=transfer_sequence() || batch(impl_->db,id.batch).revision!=request.batch_revision || account_for_batch(id.batch).identity!=impl_->selected_account)
+        const auto owner=account_for_batch(id.batch).identity;
+        if(request.expected_sequence!=sequence || sequence!=transfer_sequence() || batch(impl_->db,id.batch).revision!=request.batch_revision || owner!=fact.endpoint.account)
             fail(SQLITE_CONSTRAINT,"Transaction changed; refresh before changing category");
-        require_writable_account(impl_->db,impl_->selected_account);require_management_shape(request);
+        impl_->selected_account=owner;require_writable_account(impl_->db,impl_->selected_account);require_management_shape(request);
         const bool committed=transaction_accepted(id);
         if(committed!=(fact.state==transfers::State::committed) || fact.generated)fail(SQLITE_CONSTRAINT,"Invalid category assignment");
         auto row=load_row(id,false);if(!row.draft || row.excluded_by_clear || row.matched_generated || (row.decision.disposition!=imports::Disposition::include && row.decision.disposition!=imports::Disposition::unresolved))fail(SQLITE_CONSTRAINT,"Resolve the transaction before changing category");
@@ -1666,6 +1678,7 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
     };
     std::vector<std::optional<imports::DraftRow>> ordinary;
     for(const auto& request:requests){context.checkpoint("Checking transfer assignments");
+        if(request.left)impl_->selected_account=request.left->endpoint.account;
         if(request.mode==0 && !linked(request))ordinary.push_back(category_draft(request));
         else {(void)preview_transfer(request);ordinary.push_back({});}
     }
@@ -1676,6 +1689,7 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
     for(auto request:requests){
         context.checkpoint("Assigning transfers");
         const auto before=all_transfers();const auto child=std::string(operation)+"-transfer-"+std::to_string(++serial);
+        if(request.left)impl_->selected_account=request.left->endpoint.account;
         const auto id=request.left->endpoint.entry;
         const bool record_category=request.mode==0 && (request.left->imported || request.left->ledger_entry);
         const bool committed=record_category && transaction_accepted(id);

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <exception>
 #include <tuple>
 #include <QGuiApplication>
@@ -516,10 +517,13 @@ struct ImportModel::Worker {
         auto& repo=gateway->repository();
         if(repo.account().identity!=found->second){repo.select_account(found->second);metadata.clear();cachedAccount.reset();cachedLedger.reset();}
     }
+    void reportRequireMembers(const std::set<imports::Occurrence>& ids) {
+        for(const auto& id:ids)if(reportMembers.find(id)==reportMembers.end())throw std::invalid_argument("This transaction is not in the opened report.");
+    }
     void reportSelectionAccount(const std::set<imports::Occurrence>& ids) {
+        reportRequireMembers(ids);
         std::optional<std::int64_t> account;
         for(const auto& id:ids){const auto found=reportMembers.find(id);
-            if(found==reportMembers.end())throw std::invalid_argument("This transaction is not in the opened report.");
             if(account && *account!=found->second)throw std::invalid_argument("Select transactions from one account for a group edit.");
             account=found->second;
         }
@@ -656,8 +660,20 @@ struct ImportModel::Worker {
             }
             return found->second;
         };
-        auto view=app::search_ledger(account,std::move(rows),query,std::min(sort,4),descending,lookup,[&]{return context && context->state.load()==app::OperationContext::requested;});
+        const bool byAccount=sort==6;
+        auto view=app::search_ledger(account,std::move(rows),query,byAccount?0:std::min(sort,4),byAccount?true:descending,lookup,[&]{return context && context->state.load()==app::OperationContext::requested;});
         std::erase_if(view.order,[&](auto i){return view.rows[i].identity.batch.empty();});
+        // Account is display data on the report list. Group by it after the date order,
+        // so one account's rows stay together with the newest date first.
+        if(byAccount){
+            const auto key=[&](std::size_t index){
+                const auto info=reportRowInfo.value(reportKey(view.rows[index].identity)).toMap();
+                return std::pair{info.value("account").toString().toStdString(),info.value("accountId").toString().toLongLong()};
+            };
+            std::stable_sort(view.order.begin(),view.order.end(),[&](std::size_t a,std::size_t b){
+                const auto left=key(a),right=key(b);if(left==right)return false;return descending?right<left:left<right;
+            });
+        }
         cachedView=std::make_shared<const app::LedgerView>(std::move(view));
     }
 
@@ -1626,7 +1642,8 @@ struct ImportModel::Worker {
             const auto op=identity();try{repo.save_link_exclusion(op,*preparedLinkExclusion,linkExclusionGeneration);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
             preparedLinkExclusion.reset();linkExclusionPreview.clear();return;
         }
-        if(reportLedgerActive && (action=="assign_transfer_batch" || action=="release_transfer_batch"))reportSelectionAccount(selection);
+        if(reportLedgerActive && action=="assign_transfer_batch")reportSelectionAccount(selection);
+        if(reportLedgerActive && action=="release_transfer_batch")reportRequireMembers(selection);
         if(action=="assign_transfer_batch" || action=="release_transfer_batch") {
             if(selection.empty())throw std::invalid_argument("Select at least one transaction");
             const auto destinationId=a.value("destination").toString().toLongLong();
@@ -2284,7 +2301,12 @@ struct ImportModel::Worker {
             request.account=a.value("account").toString().toLongLong();request.generation=a.value("generation").toString().toLongLong();
             request.payee=str(a.value("payee"));request.memo=str(a.value("memo"));request.overwrite_memo=a.value("overwriteMemo").toBool();request.delete_counterparts=a.value("deleteCounterparts").toBool();
             for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
-            if(reportLedgerActive){reportSelectionAccount(std::set<imports::Occurrence>(request.selected.begin(),request.selected.end()));request.account=repo.account().identity;}
+            if(reportLedgerActive){
+                const auto ids=std::set<imports::Occurrence>(request.selected.begin(),request.selected.end());
+                if(action=="restore_imported_selection" || action=="delete_selection")reportSelectionAccount(ids);
+                else reportRequireMembers(ids);
+                request.account=repo.account().identity;
+            }
             const auto operation=identity();
             try {repo.edit_transactions(operation,request,context);}
             catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;
@@ -2398,7 +2420,7 @@ struct ImportModel::Worker {
             if(projected!=nextProjected) cachedLedger.reset();
             cachedView.reset();
             filter=a.value("filter").toString();sort=a.value("sort",0).toInt();descending=a.value("descending",false).toBool();projected=nextProjected;
-            if(sort<0 || sort>=6)throw std::invalid_argument("Choose a valid ledger sort column.");
+            if(sort<0 || sort>6 || (sort==6 && !reportLedgerActive))throw std::invalid_argument("Choose a valid ledger sort column.");
             (void)snapshot(&context);
             if(!reportLedgerActive && (sort!=oldSort || descending!=oldDescending))saveAccountSort();
             } catch(...) {

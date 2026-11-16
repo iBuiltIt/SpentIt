@@ -1,7 +1,7 @@
 # 010 — Categories and selection
 
 Status: **active**
-Last updated: 2026-11-12
+Last updated: 2026-11-16
 
 A category is an independently assignable name. It may contain one colon, shown
 as `Stem: Name`. A second colon is rejected. `Auto: Gas` does not create `Auto`.
@@ -47,7 +47,8 @@ Sort choices last for the visit, not as a saved preference. Selectors always
 use the grouped alphabetical order above, sized to the current labels.
 
 The ledger **Change category** submenu applies immediately to the selection
-through the atomic assignment command, with one Undo. Ordinary category changes
+through the atomic assignment command, with one Undo. A report list can include
+several accounts in that one save. Ordinary category changes
 preserve an unresolved duplicate decision. A split transaction needs a split
 choice. An ambiguous multi-split selection is refused. Keep the viewport.
 

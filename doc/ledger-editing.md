@@ -53,6 +53,10 @@ Report-ledger Create rule… uses the same source inspection without opening the
 transaction editor. Save, apply and back returns to the report transactions,
 with refreshed allocations and totals. Commands unavailable in report ledgers
 (Add transaction, Merge, Unmerge, and Link) remain visible and disabled.
+Change category, Rename payee, and Set memo in that list can include several
+accounts in one save. Delete, Restore, and an account destination stay inside
+one account. The Account heading sorts the list, newest date first within
+each account.
 
 Disabled ledger menu text and submenu arrows use a distinct colour in light and
 dark themes and do not highlight on hover. Financial command eligibility is

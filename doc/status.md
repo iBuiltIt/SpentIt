@@ -61,6 +61,27 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Report account sort and cross-account edits — 2026-11-16
+
+The Account heading in a report's transaction list sorts that list. Rows from
+one account stay together, newest date first inside the account. Change
+category, Rename payee, and Set memo apply to the whole selection in one save,
+including rows from several accounts. One Undo reverses that selection, and
+Redo replays it. Delete, Restore, and choosing an account destination stay
+inside one account. A transaction with more than one split is still changed
+one at a time. An ordinary category change in one account uses the same save
+it used before. Manual work is MAN-064. See
+[reporting](../features/006-reporting-drill-down.md).
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release report UI suite passed
+9 checks, including account order, a category, payee, and memo change across
+Checking and Savings, Undo of each, and refusal of a mixed Delete. The storage
+checks passed for category, memo, and payee across Checking, Visa, and a USD
+cash account, including retry, cancellation before the second row, a missing
+row, a split row, Undo, and Redo. Same-account payee, memo, transfer
+assignment, and linked deletion checks passed. No full repository suite,
+sanitizer run, private-file reproduction, or other-platform run is claimed.
+
 ## Report PDF export — 2026-11-15
 
 Reports now offer Save as PDF… beside Refresh report and in the File menu.
