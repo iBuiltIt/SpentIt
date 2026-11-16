@@ -643,11 +643,37 @@ static bool automatic_duplicate_dates(const app::ReviewTransaction& a,const app:
     return a.draft.date==x.date && b.draft.date==y.date && imports::adjacent_day_basis(x,y).has_value();
 }
 
+// Select stable allocation identities, never a transaction-total approximation.
+// Occupied allocations are excluded exactly as in Review discovery; disposable
+// generated counterparts remain eligible for the existing replacement command.
+std::optional<std::pair<std::string,std::string>> ImportStore::automatic_link_allocations(
+    const app::ReviewTransaction& left,const app::ReviewTransaction& right,const std::vector<app::TransferView>& relationships) const {
+    if(left.account==right.account || review_opening_balance(left.draft) || review_opening_balance(right.draft) || imports::posting_distance(left.draft.date,right.draft.date)>7)return {};
+    std::set<std::pair<imports::Occurrence,std::string>> occupied;
+    for(const auto& v:relationships)if(!v.link.unresolved && !v.link.destination_released && v.link.origin.state!=transfers::State::removed && v.link.destination.state!=transfers::State::removed){
+        if((v.link.origin.independent_evidence || v.link.origin.ledger_entry) && !v.link.destination.independent_evidence && !v.link.destination.ledger_entry && !v.link.destination.attached_evidence && !v.link.destination.proposed_evidence)continue;
+        for(const auto* side:{&v.link.origin,&v.link.destination}){
+            occupied.insert({side->endpoint.entry,side->endpoint.allocation});
+            if(side->attached_evidence)occupied.insert({side->attached_evidence->endpoint.entry,side->attached_evidence->endpoint.allocation});
+            if(side->proposed_evidence)occupied.insert({side->proposed_evidence->endpoint.entry,side->proposed_evidence->endpoint.allocation});
+        }
+    }
+    std::optional<std::pair<std::string,std::string>> match;
+    for(const auto& a:left.draft.transaction.allocations())for(const auto& b:right.draft.transaction.allocations()){
+        if(occupied.contains({left.identity,a.identity}) || occupied.contains({right.identity,b.identity}) || !review_link_category(a.category,right.account) || !review_link_category(b.category,left.account))continue;
+        if(a.amount.currency()!=b.amount.currency() || a.amount.units()==INT64_MIN || b.amount.units()==INT64_MIN || a.amount.units()==0 || a.amount.units()!=-b.amount.units())continue;
+        if(match)return {}; // A second exact allocation pair requires a choice.
+        match=std::pair{a.identity,b.identity};
+    }
+    return match;
+}
+
 // Build once, reserve same-day pairs, then inspect the remaining graph once.
 // No per-pair Review rebuild or repeated elimination of ambiguous groups.
 std::vector<app::ReviewAnswer> ImportStore::automatic_review_plan(const std::vector<std::string>& batches,bool merges,bool links) const {
     if((!merges && !links) || batches.empty() || ActionChain(impl_->db).preparing())return {};
     const auto sheet=review_sheet();
+    const auto relationships=all_transfers();
     using Id=imports::Occurrence;
     struct Edge {Id left,right;app::ReviewKind kind;std::string question;int distance;};
     std::map<Id,app::ReviewTransaction> rows;
@@ -714,8 +740,9 @@ std::vector<app::ReviewAnswer> ImportStore::automatic_review_plan(const std::vec
                 else continue;
                 answer.action=app::ReviewAction::merge;
             }else{
-                const auto& x=a.draft.transaction.allocations();const auto& y=b.draft.transaction.allocations();
-                if(x.size()!=1 || y.size()!=1 || x[0].amount.currency()!=y[0].amount.currency() || x[0].amount.units()==INT64_MIN || y[0].amount.units()==INT64_MIN || x[0].amount.units()==0 || x[0].amount.units()!=-y[0].amount.units())continue;
+                const auto allocations=automatic_link_allocations(a,b,relationships);
+                if(!allocations)continue;
+                answer.left_allocation=allocations->first;answer.right_allocation=allocations->second;
                 answer.action=app::ReviewAction::link;
             }
             result.push_back(std::move(answer));used.insert(a.identity);used.insert(b.identity);
@@ -764,8 +791,12 @@ app::ReviewReceipt ImportStore::answer_automatic_review(std::string_view operati
         else if(a.import_order>0 && b.import_order>0 && a.import_order!=b.import_order)survivor=a.import_order<b.import_order?a.identity:b.identity;
         if(!survivor || answer.survivor!=survivor)refuse();
     }else{
-        const auto& x=left.first.draft.transaction.allocations();const auto& y=right.first.draft.transaction.allocations();
-        if(review_opening_balance(left.first.draft) || review_opening_balance(right.first.draft) || x.size()!=1 || y.size()!=1 || x[0].amount.currency()!=y[0].amount.currency() || x[0].amount.units()==INT64_MIN || y[0].amount.units()==INT64_MIN || x[0].amount.units()==0 || x[0].amount.units()!=-y[0].amount.units())refuse();
+        const auto allocations=automatic_link_allocations(left.first,right.first,all_transfers());
+        if(!allocations || answer.split_difference || !answer.remainder_category.empty())refuse();
+        // Existing single-allocation requests may omit identities. Splits must
+        // name the exact pair chosen by the plan; never silently pick another.
+        const auto matches=[](const app::ReviewTransaction& row,const std::string& requested,const std::string& expected){return requested==expected || (requested.empty() && row.draft.transaction.allocations().size()==1);};
+        if(!matches(left.first,answer.left_allocation,allocations->first) || !matches(right.first,answer.right_allocation,allocations->second))refuse();
     }
     app::ReviewSheet sheet;sheet.generation=answer.generation;
     app::ReviewQuestion question{answer.question,merge?app::ReviewKind::same:app::ReviewKind::link,left.first.account,left.first.account_name,merge?"Are these the same?":"Does this link with any of these?",left.first.identity.batch,left.first.identity.ordinal,{left.first,right.first}};

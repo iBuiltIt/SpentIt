@@ -250,6 +250,7 @@ private:
     void finish(const std::function<void()>&,bool compatible=false);
     void require_account_name(std::string_view,std::int64_t) const;
     std::optional<std::string> transfer_name(std::string_view) const;
+    std::optional<std::pair<std::string,std::string>> automatic_link_allocations(const app::ReviewTransaction&,const app::ReviewTransaction&,const std::vector<app::TransferView>&) const;
     bool review_link_category(std::string_view,std::int64_t counterpart_account) const;
     void require_qif_transfers(const imports::Occurrence&,const imports::DraftRow&,const std::set<std::tuple<std::string,std::size_t,std::string>>&) const;
     void resolve_group_transfers(std::string_view,const app::OperationContext&);

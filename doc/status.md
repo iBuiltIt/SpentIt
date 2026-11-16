@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-15
+Last updated: 2026-11-16
 
 SpentIt is the local rules-enabled application. The release rules database is
 version 1, and the application version is 1.0.1. A file whose number is not 1
@@ -88,6 +88,31 @@ Text extraction verified the final category in all three wide-table column
 groups and the final comparison. Changed-document links and diff whitespace
 checks passed. No native Browse-picker interaction, Windows/Linux run, full
 repository suite, leak check, or physical disk-full test is claimed.
+
+## Automatic links for unique split pairs — 2026-11-16
+
+Automatic Link now selects exactly one eligible allocation pair, including when
+one or both transactions have other splits. The plan carries stable allocation
+identities and the save rechecks their uniqueness, categories, currency, exact
+opposite amounts, dates and occupied endpoints. Other splits remain unchanged.
+Multiple eligible pairs stay manual. Same-day priority, the seven-day transfer
+window, bulk save, import Undo and individual Unmerge remain. No schema change.
+Manual work is MAN-062; see [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+
+The rules-enabled macOS arm64 Release app was rebuilt and its offscreen smoke
+launch passed. `import.automatic_review` and `import.review_sheet` passed.
+Automatic matching also passed address and undefined-behavior sanitizers with
+leak detection disabled. The offscreen `automaticReviewSettings` and
+`automaticReviewCancelStopsBeforeNextPair` cases passed with Qt 6.12.0.
+Synthetic split cases cover generated-counterpart replacement, splits on both
+sides, mixed signs with an adjacent-day match, ambiguous allocations, category
+exclusions, wrong allocation identity, cancellation, unchanged sibling fields,
+Unmerge, Undo of Unmerge and import Undo. `import.automatic_review_faults`
+also passed with a bulk split-link fixture, verifying unchanged sibling splits
+through simulated disk-full/I/O write failures, retries, and process exits on
+both sides of durable commit. `import.adjacent_day`, changed-document relative
+links and diff whitespace checks passed. No private-file reproduction, full
+repository suite or other-platform run is claimed.
 
 ## Automatic matching date priority — 2026-11-15
 

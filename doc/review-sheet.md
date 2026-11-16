@@ -611,8 +611,11 @@ bank-ID and manual-row restrictions; both current dates must still equal their
 own original dates. Duplicate suggestion discovery and its accepted-date frontier
 are unchanged. The survivor keeps its date; no date is invented or corrected.
 Rows already in a keep-one merge, or with transfer relationships, stay manual for duplicate Merge.
-Links require one allocation on each side and exact opposite, nonzero amounts
-in the same currency; split choices and amount differences stay manual. Existing
+Links require exactly one eligible allocation pair with exact opposite, nonzero
+amounts in the same currency. Either transaction may have other splits; their
+amounts, categories, memos and identities stay unchanged. The plan records the
+selected allocation identities and rechecks them before saving. Multiple eligible
+allocation pairs, occupied endpoints, and amount differences stay manual. Existing
 suggestion exclusions and category/destination/date constraints still apply.
 Each planned pair is revalidated from its two transactions, including Unmerge,
 before it is written. Resolving one pair does not add another. A pair that is

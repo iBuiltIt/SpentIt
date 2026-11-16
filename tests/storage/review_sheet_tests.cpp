@@ -1064,16 +1064,16 @@ void automatic_review_faults(const std::filesystem::path& dir) {
     for(int mode=0;mode<4;++mode){
         const auto base=dir/("auto-base-"+std::to_string(mode));ReviewAnswer request;
         {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
-        s.ingest("old",source("Old"),qif::DateOrder::dmy);s.accept_all("accept-old");
+        s.ingest("old",mode==1?"!Type:Bank\nD01/01/2026\nT-11.50\nPOld\nSUncategorized\n$-10.00\nSOther\nEKeep this memo\n$-1.50\n^\n":source("Old"),qif::DateOrder::dmy);s.accept_all("accept-old");
         if(mode==1){s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));}
         s.ingest("new",source("New",mode==1?"10.00":"-10.00"),qif::DateOrder::dmy);
         const auto plan=s.automatic_review_plan({"new"},mode!=1,mode==1);check(plan.size()==1,"Fault fixture eligible");request=plan[0];
         if(mode>=2)s.answer_automatic_review("merge",request);}
-        const auto apply=[&](ImportStore& s){if(mode==2)s.accept_all("operation");else if(mode==3)s.unmerge("operation",{{"old",0}});else s.answer_automatic_review("operation",request);};
-        const auto saved=[&](ImportStore& s){return mode==2?s.acceptance_outcome("operation").has_value():s.review_outcome("operation").has_value();};
+        const auto apply=[&](ImportStore& s){if(mode==2)s.accept_all("operation");else if(mode==3)s.unmerge("operation",{{"old",0}});else if(mode==1){if(!s.review_outcome("operation-1")){OperationContext context;s.save_automatic_import_review("operation",{request},context);}}else s.answer_automatic_review("operation",request);};
+        const auto saved=[&](ImportStore& s){return mode==2?s.acceptance_outcome("operation").has_value():s.review_outcome(mode==1?"operation-1":"operation").has_value();};
         const auto verify=[&](ImportStore& s){s.select_account(1);const bool done=saved(s);s.verify();
             if(mode==0)check(s.balance().units()==(done?-1000:-2000) && s.merge_survivors().size()==(done?1:0),"Merge money and mark atomic");
-            if(mode==1){check(s.balance().units()==-1000 && s.pending_review_links().size()==(done?1:0),"Link money and mark atomic");s.select_account(2);check(s.balance().units()==1000,"Other account preserved");}
+            if(mode==1){const auto extra=s.row({"old",0}).draft->transaction.allocations().at(1);check(extra.amount.units()==-150 && extra.category=="Other" && extra.memo=="Keep this memo","Unrelated split preserved across bulk faults");check(s.balance().units()==-1150 && s.pending_review_links().size()==(done?1:0),"Link money and mark atomic");s.select_account(2);check(s.balance().units()==1000,"Other account preserved");}
             if(mode==2)check(s.balance().units()==-1000 && s.merge_survivors().size()==(done?0:1),"Mark acceptance atomic");
             if(mode==3)check(s.balance().units()==(done?-2000:-1000) && s.merge_survivors().size()==(done?0:1),"Accepted-survivor Unmerge atomic");
         };
@@ -1206,13 +1206,49 @@ void automatic_review_tests(const std::filesystem::path& dir) {
     auto ambiguous=ImportStore::create(dir/"auto-ambiguous","test","Checking",cad,"2026-01-01");ambiguous.opening(0,"2026-01-01",Money(0,cad));ambiguous.create_account(2,"Visa",cad,"2026-01-01");ambiguous.select_account(2);ambiguous.opening(0,"2026-01-01",Money(0,cad));
     ambiguous.ingest("in",source("Receipt","10.00"),qif::DateOrder::dmy);ambiguous.select_account(1);ambiguous.ingest("out",source("One")+source("Two").substr(11),qif::DateOrder::dmy);
     check(ambiguous.automatic_review_plan({"out"},true,true).empty(),"Reverse competitor blocks a two-row card");
-    for(int mode=0;mode<3;++mode){
+    for(int mode=0;mode<2;++mode){
         auto s=ImportStore::create(dir/("auto-skip-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
         if(mode==0){s.ingest("same",source("One")+source("Two").substr(11),qif::DateOrder::dmy);check(s.automatic_review_plan({"same"},true,true).empty(),"Survivor ambiguity stays manual");continue;}
         s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));
         s.ingest("in",mode==1?source("Receipt","10.00"):"!Type:Bank\nD01/01/2026\nT11.50\nPReceipt\nSUncategorized\n$10.00\nSOther\n$1.50\n^\n",qif::DateOrder::dmy);
         s.select_account(1);s.ingest("out",mode==1?"!Type:Bank\nD01/01/2026\nT-10.40\nPPayment\nL[Visa]\n^\n":source("Payment"),qif::DateOrder::dmy);
         check(!s.review_sheet().questions.empty() && s.automatic_review_plan({"out"},false,true).empty(),"Difference or split choice stays manual");
+    }
+    for(int mode=0;mode<6;++mode){
+        // Explicit destination covers replacement of a generated counterpart.
+        // Repeated exact splits, disqualified categories and both-side splits
+        // exercise allocation uniqueness independently of transaction uniqueness.
+        auto s=ImportStore::create(dir/("auto-split-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.create_account(2,"Savings",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
+        std::string outgoing=mode==1
+            ?"!Type:Bank\nD01/01/2026\nT-20.00\nPPayment\nSUncategorized\n$-10.00\nSUncategorized\n$-10.00\n^\n"
+            :"!Type:Bank\nD01/01/2026\nT-11.50\nPPayment\nS[Savings]\n$-10.00\nSOther\nEKeep this memo\n$-1.50\n^\n";
+        if(mode==5){outgoing.replace(outgoing.find("T-11.50"),7,"T-8.50");outgoing.replace(outgoing.find("$-1.50"),6,"$1.50");}
+        s.ingest("out",outgoing,qif::DateOrder::dmy);
+        const auto before=*s.row({"out",0}).draft;
+        s.select_account(2);
+        s.ingest("in",mode==2?"!Type:Bank\nD01/01/2026\nT10.00\nPReceipt\nLOther\n^\n":mode==3?"!Type:Bank\nD01/01/2026\nT12.00\nPReceipt\nSUncategorized\n$10.00\nSOther\n$2.00\n^\n":mode==5?"!Type:Bank\nD02/01/2026\nT10.00\nPReceipt\n^\n":source("Receipt","10.00"),qif::DateOrder::dmy);
+        const auto incoming=*s.row({"in",0}).draft;
+        auto planned=s.automatic_review_plan({"in"},false,true);
+        if(mode==1 || mode==2){check(planned.empty(),"Multiple exact allocations or disqualified category stay manual");s.verify();continue;}
+        check(planned.size()==1 && !planned[0].left_allocation.empty() && !planned[0].right_allocation.empty(),"Unique split pair carries stable identities");
+        auto unchanged=[&]{
+            s.select_account(1);const auto draft=*s.row({"out",0}).draft;
+            const auto& extra=draft.transaction.allocations().at(1);const auto& original=before.transaction.allocations().at(1);
+            check(draft.transaction.effective_total()==before.transaction.effective_total() && draft.transaction.allocations().size()==2 && extra.identity==original.identity && extra.amount==original.amount && extra.category==original.category && extra.memo==original.memo && extra.category_binding==original.category_binding && extra.source_ordinal==original.source_ordinal && extra.category_owner==original.category_owner && extra.memo_owner==original.memo_owner && extra.category_rule==original.category_rule && extra.memo_rule==original.memo_rule,"Other outgoing split stays unchanged");
+            s.select_account(2);const auto right=*s.row({"in",0}).draft;
+            check(right.transaction.effective_total()==incoming.transaction.effective_total() && right.transaction.allocations().size()==incoming.transaction.allocations().size(),"Incoming total and split count stay unchanged");
+            if(mode==3)check(right.transaction.allocations()[1].amount==incoming.transaction.allocations()[1].amount && right.transaction.allocations()[1].category==incoming.transaction.allocations()[1].category,"Other incoming split stays unchanged");
+        };
+        if(mode==4){auto bad=planned;bad[0].left_allocation="source-1";bool refused=false;try{OperationContext c;s.save_automatic_import_review("bad-split",bad,c);}catch(const std::exception&){refused=true;}check(refused && s.pending_review_links().empty(),"Wrong split identity is refused atomically");unchanged();}
+        if(mode==0){OperationContext cancelled;cancelled.progress=[&](auto phase){if(phase=="Saving the import matches")cancelled.request();};bool stopped=false;try{s.save_automatic_import_review("cancel-split",planned,cancelled);}catch(const OperationCancelled&){stopped=true;}check(stopped && s.pending_review_links().empty(),"Cancellation rolls back the split link");unchanged();s.verify();}
+        OperationContext context;s.save_automatic_import_review("save-split",planned,context);unchanged();
+        check(s.pending_review_links().size()==1 && s.action_head() && s.action_head()->kind==ActionKind::import,"Split link shares import Undo");
+        check(s.preview_unmerge({{"out",0}}).available,"Split link can be unmerged");s.verify();
+        s.unmerge("break-split",{{"out",0}});unchanged();s.verify();
+        s.undo_action("undo-break-split",s.preview_undo(s.action_head()->id,s.action_token()));unchanged();s.verify();
+        s.undo_import("undo-split-import","in",s.ledger_edit_generation());s.select_account(1);
+        check(s.pending_review_links().empty() && s.row({"out",0}).draft->transaction.effective_total()==before.transaction.effective_total(),"Import Undo removes split link and preserves outgoing total");s.verify();
     }
     {const auto legacy_path=dir/"legacy-marks";auto s=ImportStore::create(legacy_path,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
     s.ingest("old",source("Old"),qif::DateOrder::dmy);s.accept_all("accept-old");s.ingest("new",source("New"),qif::DateOrder::dmy);

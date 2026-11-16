@@ -1,7 +1,7 @@
 # 003 — Import and review
 
 Status: **active**
-Last updated: 2026-11-14
+Last updated: 2026-11-16
 
 Supported imports are the [QIF bank-v6 profile](009-qif-profile.md) and the
 [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md). Further dialects
@@ -55,8 +55,9 @@ Two optional, initially off Settings preferences automatically Merge or Link
 mutually one-to-one Review pairs after import and rules. They leave transaction
 acceptance explicit. Same-day pairs take priority, followed by mutually unique adjacent-day pairs.
 Ambiguous relationships, survivor choices,
-split choices, and amount differences stay manual. Those pairs are one save
-inside the import, not separate Undo steps. Cancel saves none of them. Accepted survivors
+multiple eligible split pairs, and amount differences stay manual. A unique
+matching split can link without changing the other allocations. Those pairs are
+one save inside the import, not separate Undo steps. Cancel saves none of them. Accepted survivors
 also keep their result marks until the next Accept. The exact eligibility, local
 preference scope, failure behavior, and Undo contract are in the automatic-review
 section of [doc/review-sheet.md](../doc/review-sheet.md).

@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-15
+Last updated: 2026-11-16
 
 The bundled manual includes MAN-001 through MAN-056 after the owner-authorized
 2026-11-14 pass. Both entries previously labelled MAN-045 are covered; the
@@ -18,12 +18,19 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-062. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-063. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-062 (2026-11-16) — Automatic links for unique split pairs. Contract:
+  [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+  Chapter: [Duplicates and transfers](../manual/review-duplicates-transfers.md).
+  Explain that one uniquely eligible split pair can link automatically while
+  other splits remain unchanged. Multiple matching splits stay manual. Date
+  priority, bulk save and import Undo stay the same. Text only; no picture change.
 
 - MAN-061 (2026-11-15) — Automatic matching date priority. Contract:
   [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).

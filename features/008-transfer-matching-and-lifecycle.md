@@ -1,7 +1,7 @@
 # 008 — Transfer matching and lifecycle
 
 Status: **active**
-Last updated: 2026-11-14
+Last updated: 2026-11-16
 
 Transfers are explicit links between two allocations. A generated counterpart
 stays in one currency. An explicit Link may join two existing allocations in
@@ -48,8 +48,9 @@ distinct.
 - The optional, initially off automatic Link
   setting resolves mutually one-to-one, exact-amount Review pairs after import
   and rules, prioritizing same-day pairs before remaining mutually unique pairs
-  throughout the existing seven-day window, with no split choice or amount
-  difference. Other suggestions require
+  throughout the existing seven-day window. Exactly one eligible allocation pair
+  may link even when other splits exist; those splits stay unchanged. Multiple eligible allocation pairs and amount
+  differences stay manual. Other suggestions require
   an explicit choice. The links are one save inside the import. Cancel saves none
   of them. Unmerge still breaks one link.
   See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
