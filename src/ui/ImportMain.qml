@@ -4154,7 +4154,7 @@ ApplicationWindow {
                         Label {objectName:"rulePreviewStatus";visible:currentRulePreview;text:'Preview · '+(ruleLabel.text||"Unnamed rule")+' · '+rulesApplyScopeName+' · '+(ruleTransactionScope.currentIndex===1?"New transactions only":"All transactions");font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                         Label {objectName:"rulePreviewBody";visible:currentRulePreview;text:(s.rulePreview||{}).summaryText||"";wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
                         RowLayout {
-                            visible:currentRulePreview && ((s.rulePreview||{}).records||[]).length>0;Layout.fillWidth:true;Layout.rightMargin:18
+                            visible:currentRulePreview && ((s.rulePreview||{}).records||[]).length>0;Layout.fillWidth:true;Layout.rightMargin:18+(ruleMatches.contentHeight>ruleMatches.height?rulesPage.effectiveScrollBarWidth:0)
                             Label {text:"Date";font.bold:true;Layout.preferredWidth:110}
                             Label {text:"Account";font.bold:true;Layout.preferredWidth:140}
                             Label {text:"Imported payee";font.bold:true;Layout.fillWidth:true}
@@ -4163,8 +4163,10 @@ ApplicationWindow {
                         ListView {
                             id:ruleMatches;objectName:"ruleMatches";model:currentRulePreview?((s.rulePreview||{}).records||[]):[]
                             visible:count>0;Layout.fillWidth:true;Layout.preferredHeight:Math.min(360,Math.max(40,count*36))
+                            Layout.rightMargin:contentHeight>height?rulesPage.effectiveScrollBarWidth:0
                             clip:true;reuseItems:true;boundsBehavior:Flickable.StopAtBounds
-                            ScrollBar.vertical:UsableScrollBar {}
+                            // The page scrollbar covers the right edge and would take this press.
+                            ScrollBar.vertical:UsableScrollBar {objectName:"ruleMatchesScrollBar"}
                             delegate:RowLayout {
                                 required property var modelData
                                 required property int index

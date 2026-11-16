@@ -1153,6 +1153,42 @@ private slots:
         qInfo()<<"100000 match rows rendered and scrolled in"<<timer.elapsed()<<"ms; visible items"<<content->childItems().size();
         if(qEnvironmentVariableIsSet("SPENTIT_MATCH_SCREENSHOT"))QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_MATCH_SCREENSHOT")));
     }
+    void previewMatchScrollbarDrags(){
+        Session s;createDocument(s,"Preview scrollbar");
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QVariantList rows;rows.reserve(40);
+        for(int i=0;i<40;++i)rows.push_back(QVariantMap{{"date","2026-08-10"},{"account","Checking"},{"payee",QString("Synthetic match %1").arg(i)},{"amount","-1.00 CAD"}});
+        auto state=s.model.state();state["rulePreview"]=QVariantMap{{"label","This rule"},{"summaryText","40 matching transactions"},{"records",rows},{"matched",40}};
+        QVERIFY(s.root->setProperty("s",state));
+        QVariant previewKey;QVERIFY(QMetaObject::invokeMethod(s.root,"rulesPreviewKey",Q_RETURN_ARG(QVariant,previewKey)));
+        QVERIFY(s.root->setProperty("rulePreviewKey",previewKey));QTest::qWait(50);
+        auto* list=qobject_cast<QQuickItem*>(object(s.root,"ruleMatches"));QVERIFY(list);
+        QTRY_VERIFY(list->isVisible());QVERIFY(list->property("contentHeight").toDouble()>list->height()+36);
+        auto* page=qobject_cast<QQuickItem*>(object(s.root,"rulesPage"));QVERIFY(page);
+        auto* flick=page->property("contentItem").value<QQuickItem*>();QVERIFY(flick);
+        auto* content=flick->property("contentItem").value<QQuickItem*>();QVERIFY(content);
+        flick->setProperty("contentY",qMax(0.0,list->mapToItem(content,QPointF(0,0)).y()-8));QTest::qWait(50);
+        auto* bar=qobject_cast<QQuickItem*>(object(s.root,"ruleMatchesScrollBar"));QVERIFY(bar);
+        QTRY_VERIFY(bar->isVisible());QVERIFY(bar->property("interactive").toBool());QVERIFY(bar->property("size").toDouble()<0.999);
+        QQuickItem* pageBar=nullptr;
+        for(auto* child:page->childItems()){
+            if(child==bar || child->property("orientation").toInt()!=int(Qt::Vertical))continue;
+            if(!pageBar || child->height()>pageBar->height())pageBar=child;
+        }
+        QVERIFY(pageBar);
+        QTRY_VERIFY(bar->mapToScene(QPointF(bar->width()-1,bar->height()/2)).x()<=pageBar->mapToScene(QPointF(1,0)).x()+1);
+        const auto pageY=flick->property("contentY").toDouble();
+        auto* thumb=bar->property("contentItem").value<QQuickItem*>();QVERIFY(thumb);QVERIFY(thumb->isVisible());
+        const auto start=thumb->mapToScene(QPointF(thumb->width()/2,thumb->height()/2)).toPoint();
+        const auto end=bar->mapToScene(QPointF(bar->width()/2,bar->height()-4)).toPoint();
+        QCOMPARE(list->property("contentY").toDouble(),0.0);
+        QTest::mousePress(s.window,Qt::LeftButton,Qt::NoModifier,start);
+        QVERIFY2(bar->property("pressed").toBool(),"The match scrollbar did not receive the press");
+        QTest::mouseMove(s.window,end,50);
+        QTest::mouseRelease(s.window,Qt::LeftButton,Qt::NoModifier,end);
+        QTRY_VERIFY(list->property("contentY").toDouble()>20);
+        QCOMPARE(flick->property("contentY").toDouble(),pageY);
+    }
     void busyPreviewIgnoresSave(){
         Session s;createDocument(s,"Synthetic busy rules");
         QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);

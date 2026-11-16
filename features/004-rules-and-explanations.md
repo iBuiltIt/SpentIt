@@ -61,7 +61,9 @@ The Apply section has the account box and the Transactions control. It opens
 on All accounts. Choosing All accounts does not change the ledger account.
 Choosing one account selects it, stays in Rules, keeps drafts, and clears the
 preview. Each visit to Rules opens on All accounts. A narrowed choice stays
-until it is changed or Rules is left.
+until it is changed or Rules is left. When the match list is taller than its
+area, dragging its scrollbar moves through the matches. The Rules page
+scrollbar still moves the page. The wheel still scrolls the match list.
 
 The ledger **Create rule…** command needs exactly one eligible selection. It
 does not open the transaction editor. An open transaction does not list which

@@ -61,6 +61,21 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Rule preview scrollbar — 2026-11-16
+
+When a rule preview has more matches than fit in the list, that list's
+scrollbar can be pressed and dragged. Dragging it moves the matches. The
+wheel still scrolls the list. The Rules page scrollbar still moves the page.
+A preview that fits does not shift its columns. See
+[rules](../features/004-rules-and-explanations.md).
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release rule UI tests
+`previewMatchScrollbarDrags`, `largeMatchListIsVirtualized`, and
+`enabledPreviewOnlyShowsMatchingRows` passed offscreen. The drag check presses
+the match scrollbar, moves the list, and leaves the page scroll where it was.
+`./build/SpentIt` was rebuilt. No full rule UI suite, live window drag,
+sanitizer run, or other-platform run is claimed.
+
 ## Report account sort and cross-account edits — 2026-11-16
 
 The Account heading in a report's transaction list sorts that list. Rows from
