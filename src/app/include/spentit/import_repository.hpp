@@ -353,6 +353,7 @@ public:
     virtual std::string unmerge_notice(const std::vector<imports::Occurrence>&) const {return {};}
     virtual ReviewReceipt unmerge(std::string_view,const std::vector<imports::Occurrence>&) {throw std::logic_error("Unmerge unavailable");}
     virtual ReviewReceipt merge_review_batch(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Batch Review unavailable");}
+    virtual ReviewReceipt link_review_group(std::string_view,const ReviewAnswer&,const OperationContext&) {throw std::logic_error("Automatic follow-on links unavailable");}
     virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}
     virtual ReviewReceipt assign_categories(std::string_view,const CategorySelection&,const OperationContext&) {throw std::logic_error("Category assignment unavailable");}
     virtual ReviewReceipt assign_transfer_batch(std::string_view,const std::vector<TransferRequest>&,const OperationContext&) {throw std::logic_error("Transfer assignment unavailable");}

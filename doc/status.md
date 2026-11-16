@@ -39,7 +39,9 @@ passed unless you ran it.
   own Undo steps. Undo of the import removes them. Unmerge still breaks one
   pair. Cancel during automatic matching saves none of those pairs; the import
   stays. Automatic results on accepted rows
-  stay marked until the next Accept. See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+  stay marked until the next Accept. With Auto Link enabled, a manual Review
+  Link also resolves remaining unambiguous pairs in the same suggestion group,
+  as one atomic save and one ordinary Undo step. See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 - Manual transactions, ledger editing, splits, amount expressions, amount
   formatting, Set memo, Rename payee, and Restore imported values.
 - Categories with an Income flag, rules that assign an explicit category to
@@ -88,6 +90,34 @@ Text extraction verified the final category in all three wide-table column
 groups and the final comparison. Changed-document links and diff whitespace
 checks passed. No native Browse-picker interaction, Windows/Linux run, full
 repository suite, leak check, or physical disk-full test is claimed.
+
+## Follow-on links after a manual Link — 2026-11-16
+
+With Auto Link enabled, manually linking a Review pair also links remaining
+mutually unique pairs in the original connected suggestion group. The manual
+Link and follow-ons are one atomic save and one ordinary Undo step. Redo replays
+exactly those pairs. Unrelated groups and remaining ambiguity stay manual;
+acceptance remains explicit. Unused splits on the selected rows still count as
+competitors, and other splits are unchanged. Cancel restores both data and the
+Review choices. The UI reports additional pairs and grouped Undo. No schema
+change. Manual work is MAN-063; see [follow-on links](review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
+
+The macOS arm64 rules-enabled Release app was rebuilt and its offscreen smoke
+launch passed. The offscreen `manualLinkFollowsAutoSetting`,
+`automaticReviewSettings`, and `automaticReviewCancelStopsBeforeNextPair` cases
+passed with Qt 6.12.0. They cover the setting off/on, cancelling before the second
+link, restored Review choices, retry, grouped Undo and the additional-pair summary.
+`import.follow_link`, `import.follow_link_faults`, `import.automatic_review`,
+`import.review_sheet`, `import.adjacent_day`, `storage.action_redo`, and
+`storage.action_redo_faults` passed.
+The new fault sweep covers simulated disk-full/I/O failures, exact retries,
+reopen recovery, and process exits before/after commit, checking both links,
+split totals and the Undo head together. Functional cases cover 2:2 resolution,
+3:3 and 2:3 ambiguity, unrelated groups, competing unused splits, one-step
+Undo/Redo and individual Unmerge. The follow-on and automatic-review suites also
+passed address and undefined-behavior sanitizers with leak detection disabled.
+Changed-document relative links and diff whitespace checks passed. No full
+repository suite, private-file reproduction or other-platform run is claimed.
 
 ## Automatic links for unique split pairs — 2026-11-16
 

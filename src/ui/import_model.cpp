@@ -450,7 +450,7 @@ struct ImportModel::Worker {
     QVariantMap importUndoPreview;
     QVariantMap importDateQuestion;
     QVariantList importPlan,importMappingArgs;
-    QString importTarget,cleanupNoticePath,importFeedback;bool importDestination=false,startupCleanupNotice=false;
+    QString importTarget,cleanupNoticePath,importFeedback,reviewFeedback;bool importDestination=false,startupCleanupNotice=false;
     std::optional<std::vector<app::ImportAccountMapping>> preparedMappings;
 
     std::optional<app::BulkPreview> preparedBulk;
@@ -1249,7 +1249,7 @@ struct ImportModel::Worker {
         state["canUndoManual"]=false;state["canUndoEdit"]=state["canUndoAction"];state["groupEditUndo"]=false;
         state["editUndoLabel"]=actionUndo.isEmpty()?QString("Undo"):QString("Undo %1…").arg(actionUndo.value("label").toString());state["ledgerEditGeneration"]=QString::number(repo.ledger_edit_generation());
         state["importUndoPreview"]=importUndoPreview;
-        state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
+        state["reviewFeedback"]=reviewFeedback;state["importFeedback"]=importFeedback;state["importDestination"]=importDestination;state["importPlan"]=importPlan;state["importDateQuestion"]=importDateQuestion;
         QVariantList aliasList;for(const auto& alias:repo.account_aliases())aliasList.push_back(QVariantMap{{"name",text(alias.name)},{"accountId",QString::number(alias.account)}});
         state["accountAliases"]=aliasList;
         state["accountCategories"]=categoryById.value("@accounts");
@@ -1659,6 +1659,7 @@ struct ImportModel::Worker {
             diagnosticSaved=true;selected.clear();return;
         }
         if(action=="review_answer" || action=="review_link_preview") {
+            reviewFeedback.clear();
             app::ReviewAnswer answer;answer.generation=a.value("generation").toString().toLongLong();answer.question=str(a.value("question"));
             const auto kind=a.value("answer").toString();answer.action=kind=="accept_missing"?app::ReviewAction::accept_missing:kind=="merge"?app::ReviewAction::merge:kind=="link"?app::ReviewAction::link:kind=="not_linked"?app::ReviewAction::not_linked:app::ReviewAction::separate;
             for(const auto& item:a.value("selected").toList()){const auto row=item.toMap();answer.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
@@ -1677,7 +1678,11 @@ struct ImportModel::Worker {
                     reviewLinkPreview={{"args",a},{"common",money(Money(static_cast<std::int64_t>(minimum),left.currency()),amountFormat)},{"remainder",money(Money(static_cast<std::int64_t>(difference),left.currency()),amountFormat)}};return;
                 }
             }
-            const auto op=identity();try{repo.answer_review(op,answer);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            const auto op=identity();app::ReviewReceipt receipt;
+            const bool follow=answer.action==app::ReviewAction::link && QSettings().value(sortDocument+"/AutoLink",false).toBool();
+            if(follow){auto sealed=app::OperationContext::sealed;if(context.state.compare_exchange_strong(sealed,app::OperationContext::available))context.observeState();}
+            try{receipt=follow?repo.link_review_group(op,answer,context):repo.answer_review(op,answer);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);receipt=*outcome;}
+            if(receipt.linked_pairs>1)reviewFeedback=QString("Linked the selected pair and %1 additional %2. Undo reverses them together.").arg(receipt.linked_pairs-1).arg(receipt.linked_pairs==2?"pair":"pairs");
             diagnosticSaved=true;reviewLinkPreview.clear();selected.clear();
             if(answer.action==app::ReviewAction::merge && answer.survivor){selection={*answer.survivor};selectionFocus=answer.survivor;selectionAnchor=answer.survivor;}
             return;
@@ -2836,7 +2841,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         const auto label=text(value);
         // Automatic matching reports one pair at a time. Wait until the window
         // has shown that line so Cancel is seen before the next pair starts.
-        const bool wait=label.startsWith(QStringLiteral("Merging duplicate suggestions")) || label.startsWith(QStringLiteral("Linking transfer suggestions")) || label==QStringLiteral("Checking duplicate and transfer suggestions");
+        const bool wait=label.startsWith(QStringLiteral("Merging duplicate suggestions")) || label.startsWith(QStringLiteral("Linking transfer suggestions")) || label==QStringLiteral("Checking duplicate and transfer suggestions") || label.startsWith(QStringLiteral("Linking transfers, "));
         QMetaObject::invokeMethod(this,[this,operation,label]{
             if(busy_ && operation_==operation && !cancellationRequested() && phase_!=label) {phase_=label;emit changed();}
         },wait && QThread::currentThread()!=thread()?Qt::BlockingQueuedConnection:Qt::QueuedConnection);

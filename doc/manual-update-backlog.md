@@ -18,12 +18,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-063. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-064. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-063 (2026-11-16) — Follow-on links after a manual Link. Contract:
+  [follow-on links](review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
+  Chapters: [Duplicates and transfers](../manual/review-duplicates-transfers.md)
+  and Undo guidance. With Auto Link enabled, manually linking one pair also
+  resolves remaining unique pairs in the same group. Explain one save/Undo,
+  exact Redo, unchanged acceptance, remaining ambiguity and cancellation.
+  Describe the additional-pair summary. Text only; no new pictures required.
 
 - MAN-062 (2026-11-16) — Automatic links for unique split pairs. Contract:
   [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).

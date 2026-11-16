@@ -186,6 +186,7 @@ public:
     app::ReviewReceipt save_link_exclusion(std::string_view,const app::LinkExclusion&,std::int64_t) override;
     app::ReviewSheet review_sheet() const override;
     std::vector<app::ReviewAnswer> automatic_review_plan(const std::vector<std::string>&,bool,bool) const override;
+    app::ReviewReceipt link_review_group(std::string_view,const app::ReviewAnswer&,const app::OperationContext&) override;
     app::ReviewReceipt answer_automatic_review(std::string_view,const app::ReviewAnswer&) override;
     void save_automatic_import_review(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&) override;
     void local_preferences_changed() override;
@@ -250,7 +251,7 @@ private:
     void finish(const std::function<void()>&,bool compatible=false);
     void require_account_name(std::string_view,std::int64_t) const;
     std::optional<std::string> transfer_name(std::string_view) const;
-    std::optional<std::pair<std::string,std::string>> automatic_link_allocations(const app::ReviewTransaction&,const app::ReviewTransaction&,const std::vector<app::TransferView>&) const;
+    std::optional<std::pair<std::string,std::string>> automatic_link_allocations(const app::ReviewTransaction&,const app::ReviewTransaction&,const std::vector<app::TransferView>&,bool unique=true) const;
     bool review_link_category(std::string_view,std::int64_t counterpart_account) const;
     void require_qif_transfers(const imports::Occurrence&,const imports::DraftRow&,const std::set<std::tuple<std::string,std::size_t,std::string>>&) const;
     void resolve_group_transfers(std::string_view,const app::OperationContext&);
@@ -310,6 +311,9 @@ private:
     std::optional<Money> projected_for(std::int64_t) const;
     app::Account account_for_batch(std::string_view) const;
     void require_account(std::string_view) const;
+    std::vector<app::ReviewAnswer> automatic_review_plan(const app::ReviewSheet&,const std::vector<std::string>&,bool,bool,const std::set<imports::Occurrence>&) const;
+    app::ReviewReceipt write_automatic_review(std::string_view,const app::ReviewAnswer&,std::string_view parent);
+    app::ReviewReceipt write_review_batch(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&);
     app::ReviewReceipt write_review_answer(std::string_view,const app::ReviewAnswer&,const app::ReviewSheet&,std::string_view parent={});
     void restore_review_answer(std::string_view operation,std::string_view answer);
     struct ReviewRestore {std::int64_t prior,result;std::string child;};

@@ -53,6 +53,10 @@ distinct.
   differences stay manual. Other suggestions require
   an explicit choice. The links are one save inside the import. Cancel saves none
   of them. Unmerge still breaks one link.
+  With Auto Link enabled, a manual Review Link also links remaining mutually
+  unique pairs in its original connected suggestion group. The manual choice
+  and follow-ons are one atomic save and one Undo step; unresolved choices stay
+  manual. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
   See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 
 ## Committed edits

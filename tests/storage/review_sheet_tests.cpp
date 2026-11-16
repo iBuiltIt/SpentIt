@@ -1059,6 +1059,61 @@ void adjacent_day_tests(const std::filesystem::path& dir) {
     }
     std::cout<<"Adjacent-day duplicate review passed\n";
 }
+ReviewAnswer follow_link_fixture(ImportStore& s,int outgoing=2,int incoming=2,int splits=0) {
+    const Currency cad("CAD");s.opening(0,"2026-01-01",Money(0,cad));s.create_account(2,"Savings",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));
+    std::string in="!Type:Bank\n";for(int n=0;n<incoming;++n)in+="D01/01/2026\nT10.00\nPIncoming "+std::to_string(n)+"\n^\n";
+    in+="D01/01/2026\nT20.00\nPUnrelated\n^\n";s.ingest("in",in,qif::DateOrder::dmy);s.select_account(1);
+    std::string out="!Type:Bank\n";for(int n=0;n<outgoing;++n)out+=std::string("D01/01/2026\nT")+(splits==2 && n==0?"-20.00":splits?"-11.50":"-10.00")+"\nPOutgoing "+std::to_string(n)+(splits==2 && n==0?"\nSUncategorized\n$-10.00\nSUncategorized\n$-10.00":splits?"\nSUncategorized\n$-10.00\nSOther\nEKeep\n$-1.50":"")+"\n^\n";
+    out+="D01/01/2026\nT-20.00\nPUnrelated\n^\n";s.ingest("out",out,qif::DateOrder::dmy);
+    const auto sheet=s.review_sheet();const auto q=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& q){return q.kind==ReviewKind::link && q.rows.front().identity==imports::Occurrence{"out",0};});check(q!=sheet.questions.end(),"Repeated transfer group exists");
+    ReviewAnswer answer;answer.action=ReviewAction::link;answer.question=q->key;answer.generation=sheet.generation;answer.selected={{"out",0},{"in",0}};if(splits)answer.left_allocation="source-0";return answer;
+}
+void follow_link_tests(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    for(int mode=0;mode<6;++mode){
+        auto s=ImportStore::create(dir/("follow-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");
+        const auto answer=follow_link_fixture(s,mode==1?3:2,mode==1 || mode==2?3:2,mode==5?2:mode==4?1:0);
+        const auto before=s.balance();const auto head=s.action_head()->id;
+        if(mode==3){s.answer_review("manual-only",answer);check(s.pending_review_links().empty(),"Manual-only link has no automatic result mark");check(s.transfers().size()==1,"Auto Link off leaves remaining pair");s.verify();continue;}
+        OperationContext cancelled;cancelled.progress=[&](auto phase){if(phase=="Linking transfers, 2 of 2")cancelled.request();};
+        if(mode==0){bool stopped=false;try{s.link_review_group("cancel-follow",answer,cancelled);}catch(const OperationCancelled&){stopped=true;}check(stopped && !s.review_outcome("cancel-follow") && s.transfers().empty() && s.action_head()->id==head,"Cancellation rolls back manual and automatic links");s.verify();}
+        OperationContext context;const auto result=s.link_review_group("follow",answer,context);const auto count=mode==1 || mode==2 || mode==5?1u:2u;
+        check(result.linked_pairs==count && s.review_outcome("follow")->linked_pairs==count && s.transfers().size()==count,"Only newly unambiguous pairs in the original component link");
+        check(s.balance()==before && s.action_head()->id=="follow","Group keeps balance and one Undo head");
+        OperationContext retry;s.link_review_group("follow",answer,retry);check(s.transfers().size()==count,"Exact retry does not relink");
+        auto changed=answer;changed.selected[1]={"in",1};bool refused=false;try{OperationContext c;s.link_review_group("follow",changed,c);}catch(const std::exception&){refused=true;}check(refused,"Changed retry refused");
+        s.verify();
+        s.undo_action("undo-follow",s.preview_undo("follow",s.action_token()));check(s.action_head()->id==head && s.balance()==before,"One Undo restores the previous head and balance");
+        for(const auto& t:s.transfers())check(t.link.origin.state==transfers::State::removed || t.link.destination.state==transfers::State::removed,"One Undo removes every link");s.verify();
+        UndoPreview redo;redo.token=s.action_token();redo.action=s.redo_history().front();s.redo_action("redo-follow",redo);s.verify();
+        check(s.action_head()->id=="redo-follow" && s.review_outcome("redo-follow")->linked_pairs==count,"Redo replays exactly the saved group");
+        if(count==2){check(s.preview_unmerge({{"out",1}}).available,"Automatic child can be unmerged individually");s.unmerge("break-follow",{{"out",1}});s.verify();s.undo_action("undo-break-follow",s.preview_undo(s.action_head()->id,s.action_token()));s.verify();}
+        if(mode==4){s.select_account(1);const auto extra=s.row({"out",1}).draft->transaction.allocations()[1];check(extra.amount.units()==-150 && extra.category=="Other" && extra.memo=="Keep","Follow-on link leaves other splits unchanged");}
+    }
+    std::cout<<"Manual Link follow-on matching passed\n";
+}
+void follow_link_faults(const std::filesystem::path& dir) {
+    fault_vfs::install();const Currency cad("CAD");const auto base=dir/"follow-base";ReviewAnswer answer;
+    {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");answer=follow_link_fixture(s,2,2,true);}
+    const auto saved=[](ImportStore& s){return s.review_outcome("follow").has_value();};
+    const auto apply=[&](ImportStore& s){OperationContext context;s.link_review_group("follow",answer,context);};
+    const auto verify=[&](ImportStore& s){s.verify();const auto done=saved(s);check(s.transfers().size()==(done?2u:0u),"Manual and follow-on links are atomic");s.select_account(1);check(s.balance().units()==-4300,"Split totals survive link faults");const auto extra=s.row({"out",1}).draft->transaction.allocations()[1];check(extra.amount.units()==-150 && extra.memo=="Keep","Other split survives faults");check((s.action_head()->id=="follow")==done,"Undo publication is atomic with links");};
+    int positions=0;
+    for(int nth=1;nth<2000;++nth){const auto trial=dir/"follow-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+        {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
+        {auto s=ImportStore::open(trial,"test");verify(s);apply(s);check(saved(s),"Follow-on retry saves once");apply(s);verify(s);s.undo_action("undo",s.preview_undo("follow",s.action_token()));s.verify();}
+        if(!fired)break;++positions;
+    }
+    check(positions>0 && positions<1999,"Follow-on fault sweep completed");
+    for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
+        const auto trial=dir/"follow-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
+        const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto at){if(at==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}
+        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Follow-on commit interrupted");
+        auto s=ImportStore::open(trial,"test");check(saved(s)==(phase==storage::ImportPhase::after_commit),"Follow-on durable outcome");verify(s);apply(s);s.undo_action("undo",s.preview_undo("follow",s.action_token()));s.verify();
+    }
+    std::cout<<"Follow-on Link fault positions: "<<positions<<"\n";
+}
+
 void automatic_review_faults(const std::filesystem::path& dir) {
     fault_vfs::install();const Currency cad("CAD");
     for(int mode=0;mode<4;++mode){
@@ -1303,6 +1358,8 @@ void automatic_review_tests(const std::filesystem::path& dir) {
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
+        if(argc>1 && std::string(argv[1])=="follow"){follow_link_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="follow_faults"){follow_link_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="automatic_faults"){automatic_review_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="automatic"){automatic_review_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="acceptance_order"){acceptance_order_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

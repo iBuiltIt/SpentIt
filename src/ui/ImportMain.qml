@@ -2056,6 +2056,7 @@ ApplicationWindow {
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
             if(success && action==="resolve_import_categories") {importCategories.close();workspaceFeedback=s.importFeedback||"Imported categories applied.";Qt.callLater(showImportCategories)}
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import","open","unlock"].indexOf(action)>=0)Qt.callLater(showImportCategories)
+            if(success && (action==="review_answer" || action==="review_link_preview") && s.reviewFeedback)workspaceFeedback=s.reviewFeedback
             if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Transactions accepted."
             if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
             if(success && action==="release_transfer_batch")workspaceFeedback="Category changed. Undo is available."

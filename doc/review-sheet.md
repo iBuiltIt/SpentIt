@@ -1,6 +1,6 @@
 # Unified Review sheet
 
-Last updated: 2026-11-13
+Last updated: 2026-11-16
 
 The release rules database is version 1. Incomplete preparation is cleaned up on
 cancellation or the next open. Completed uncommitted imports remain. Accept
@@ -651,3 +651,33 @@ Automatic Review requests carry an optional `|auto` suffix in the existing
 request payload. Older requests remain unchanged and do not acquire new marks
 on accepted rows. Close retains the latest non-reversed Accept request as the
 mark boundary, without keeping its ordinary Undo stack or changing the schema.
+
+## Automatic follow-on links after a manual Link — owner Go, 2026-11-16
+
+When Automatically link one-to-one transfer suggestions is enabled, manually
+linking a Review pair also handles the remaining unambiguous pairs in that
+connected group of transfer suggestions. Overlapping cards belong to the same
+group; unrelated groups are not included. With the setting off, only the selected
+pair is linked. Import matching retains its existing behavior.
+
+Capture the group's membership before the manual decision. Within one database
+transaction, write the manual Link, refresh Review once, and plan the remaining
+pairs using the existing same-day priority and seven-day transfer window. Both
+endpoints must belong to the original group. The manually selected transactions
+cannot be selected again, but any remaining eligible splits on them still count
+as competing candidates. All amount, currency, category, destination, exclusion,
+relationship, unique-allocation and Unmerge safeguards remain. Other splits stay
+unchanged. A remaining 2:2 or 1:2 group stays manual; there is no repeated guessing
+or equal-count pairing. Automatic follow-ons do not recursively trigger discovery.
+
+The manual Link and its follow-ons commit together as one ordinary Review action,
+with one Undo step. Cancel or failure saves none of them. Redo replays exactly the
+saved pairs, regardless of preferences, without discovering more. Unmerge can
+still break one pair; Undo of that Unmerge restores it. Neither Link nor its
+follow-ons accept transactions. Automatic result marks retain their existing
+Accept behavior. A summary reports additional linked pairs and that Undo reverses
+them together. Progress and cancellation remain on the existing worker path.
+
+Existing version-1 batch parent/child receipts hold the group, including all link
+snapshots. Exact retries return the saved pair count; changed requests are refused.
+No schema change or new financial history format is introduced.

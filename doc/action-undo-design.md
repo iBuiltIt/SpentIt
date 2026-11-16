@@ -1,6 +1,6 @@
 # Unified transaction Undo and whole-import rollback
 
-Last updated: 2026-11-14
+Last updated: 2026-11-16
 
 This replacement is the Undo implementation. The release rules database is
 version 1. Do not resume generic per-row storage capture. An import must not
@@ -451,13 +451,20 @@ and Redo execute directly; import Undo confirms its non-redoable removal. Histor
 shows applied actions across the file and the available Redo sequence. Only the
 latest applied action exposes Undo; there is no branch selection.
 
-### Automatic Review decisions — 2026-11-14
+### Automatic Review decisions
 
 The opt-in [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14)
-pass runs after the import, initial category choices, and rules have completed.
-Each eligible Merge or Link is an ordinary atomic Review action on the file-wide
-stack, above the import. This differs from the import-owned initial rule and
-confirmed-mapping transfer work. Undo does not trigger the pass again. Redo uses
-the normal Review command. Local automatic-review preference saves preserve Undo
-and clear pending Redo. Accepting only outstanding result marks also records an
-Accept action, so Undo restores those marks without changing financial amounts.
+pass runs after import, initial category choices, and rules. Its pairs share the
+import's source-owned Undo and are not ordinary action steps. Individual Unmerge
+remains an ordinary action. Undo does not trigger matching again.
+
+With Auto Link enabled, a manual Review Link and its unambiguous follow-ons in
+the same suggestion group instead form one ordinary Review action. One Undo
+reverses that whole group. Redo replays precisely its recorded pairs as one new
+action, without consulting preferences or discovering additional matches. The
+version-1 batch receipts contain each child's relationship snapshots. See
+[follow-on links](review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
+
+Local automatic-review preference saves preserve Undo and clear pending Redo.
+Accepting only outstanding result marks records an Accept action, so Undo restores
+those marks without changing financial amounts.

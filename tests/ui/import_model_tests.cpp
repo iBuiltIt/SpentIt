@@ -2809,6 +2809,24 @@ private slots:
         QCOMPARE(selected(m).value("draft").toMap().value("splits").toList().size(),1);
         run(m,"undo_edit");QCOMPARE(root->property("automaticSplitIndex").toInt(),1);
     }
+    void manualLinkFollowsAutoSetting() {
+        for(const bool enabled:{false,true}){
+            QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+            run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPFirst\n^\nD2026-02-01\nT-10\nPSecond\n^\n")}});
+            run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+            run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT10\nPFirst incoming\n^\nD2026-02-01\nT10\nPSecond incoming\n^\n")}});
+            run(m,"automatic_review_settings",{{"kind","link"},{"enabled",enabled}});
+            QCOMPARE(m.state().value("reviewCount").toInt(),2);
+            const auto q=m.state().value("reviewQuestions").toList().first().toMap();const auto rows=q.value("rows").toList();QCOMPARE(rows.size(),3);
+            const QVariantMap args{{"question",q.value("key")},{"generation",m.state().value("reviewGeneration")},{"answer","link"},{"selected",QVariantList{rows[0],rows[1]}}};
+            if(enabled){bool stopped=false,couldCancel=false;const auto connection=connect(&m,&ImportModel::changed,&m,[&]{if(!stopped && m.phase()=="Linking transfers, 2 of 2"){stopped=true;couldCancel=m.canCancel();m.requestCancel();}});run(m,"review_link_preview",args,false);disconnect(connection);QVERIFY(stopped && couldCancel);QCOMPARE(m.state().value("reviewCount").toInt(),2);}
+            run(m,"review_link_preview",args);
+            QCOMPARE(m.state().value("reviewCount").toInt(),enabled?0:1);
+            QCOMPARE(m.state().value("reviewFeedback").toString().contains("1 additional pair"),enabled);
+            run(m,"review_undo");QCOMPARE(m.state().value("reviewCount").toInt(),2);
+            run(m,"close");
+        }
+    }
     void automaticReviewSettings() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

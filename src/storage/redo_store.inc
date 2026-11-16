@@ -101,11 +101,12 @@ ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& actio
         std::vector<app::ReviewAnswer> answers;
         if(question=="batch"){transfer_codec::Reader in{std::string_view(request).substr(6)};while(!in.bytes.empty())answers.push_back(redo_answer(in.text()));}else answers.push_back(redo_answer(request));
         std::vector<std::string> created_links;
-        Statement created(impl_->db,"SELECT identity FROM review_link_history WHERE answer=? AND prior_payload IS NULL");created.text(1,action.payload);while(created.row())created_links.push_back(created.bytes(0));
-        frame.replay=[answers,owner,original=action.payload,created_links](ImportStore& store,std::string_view operation){
+        Statement created(impl_->db,"SELECT identity FROM review_link_history WHERE (answer=?1 OR answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||?1)) AND prior_payload IS NULL");created.text(1,action.payload);while(created.row())created_links.push_back(created.bytes(0));
+        frame.replay=[answers,owner,grouped=question=="batch",original=action.payload,created_links](ImportStore& store,std::string_view operation){
             for(const auto& link:created_links)if(link.starts_with(original+"-"))store.impl_->redo_names["link:"+link]=std::string(operation)+link.substr(original.size());
             store.impl_->redo_names["allocation:"+original+"-remainder"]=std::string(operation)+"-remainder";
-            auto fresh=answers;for(auto& answer:fresh)answer=store.redo_review_answer(answer);store.impl_->selected_account=fresh.front().selected.empty()?owner:store.account_for_batch(fresh.front().selected.front().batch).identity;if(fresh.size()==1)store.answer_review(operation,fresh.front());else {app::OperationContext context;store.merge_review_batch(operation,fresh,context);}};return frame;
+            for(std::size_t i=0;i<answers.size();++i)store.impl_->redo_names["allocation:"+original+"-group-"+std::to_string(i+1)+"-remainder"]=std::string(operation)+"-group-"+std::to_string(i+1)+"-remainder";
+            auto fresh=answers;for(auto& answer:fresh)answer=store.redo_review_answer(answer);store.impl_->selected_account=fresh.front().selected.empty()?owner:store.account_for_batch(fresh.front().selected.front().batch).identity;if(!grouped)store.answer_review(operation,fresh.front());else {app::OperationContext context;store.write_review_batch(operation,fresh,context);}};return frame;
     }
     if(question=="unmerge" || question=="unmerge-link") {
         imports::Occurrence selected;

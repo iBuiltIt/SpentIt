@@ -62,5 +62,10 @@ also keep their result marks until the next Accept. The exact eligibility, local
 preference scope, failure behavior, and Undo contract are in the automatic-review
 section of [doc/review-sheet.md](../doc/review-sheet.md).
 
+With Auto Link enabled, a manual Review Link also resolves remaining unambiguous
+pairs in its original connected suggestion group. That manual decision and its
+follow-ons share one ordinary Undo step, separate from import Undo. Acceptance
+stays explicit. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
+
 Review behavior is in [doc/review-sheet.md](../doc/review-sheet.md). Dataset-wide
 acceptance is in [doc/import-commit-discussion.md](../doc/import-commit-discussion.md).

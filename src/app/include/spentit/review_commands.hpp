@@ -56,5 +56,5 @@ struct ReviewAnswer {
     bool automatic=false;
 };
 struct UnmergePreview { bool available=false; std::string notice; };
-struct ReviewReceipt {std::string operation;};
+struct ReviewReceipt {std::string operation;std::size_t linked_pairs=0;};
 }
