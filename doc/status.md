@@ -325,3 +325,58 @@ established by that platform.
 and `git diff --check` passed. No full-suite, sanitizer, native interactive,
 Linux, or Windows verification is claimed. Manual work was queued as MAN-056 during that implementation and is now
 included; see [Manual](#manual).
+
+
+## Large-ledger edit performance — 2026-11-16
+
+The owner authorized performance changes with the release schema unchanged.
+The implementation removes repeated category/account lookups, preserves exact
+validated rows across unrelated writes, and avoids financial refresh work for a
+rule-definition-only save or a transaction-memo-only edit. Other edits and rule
+application still refresh import readiness. Review transfer candidates only
+recompute when their actual eligibility inputs change; text exclusions remain
+current. See [ledger editing](ledger-editing.md) and
+[durable rules](durable-rules.md).
+
+The rules-enabled Release application at `./build/SpentIt` was rebuilt on
+macOS arm64 with Qt 6.12.0 and passed its offscreen startup smoke test.
+The synthetic `spentit_import_benchmark 19000 --edits` workload uses two accounts,
+15,200 rows in the selected account, default categories, encrypted durable storage,
+and transaction dates spread over multiple years. It checks New and accepted
+edits, rule saves, Save and apply, exact balance/membership, and reopen results.
+Diagnostics are enabled for both before/after measurements; the final timing run
+has no concurrent build or test workload. This is an offscreen synthetic workload,
+not a measurement of an owner's private file or native window interaction.
+
+Measured times in seconds (three memo edits per state, one of each other action):
+
+| Operation | Before command | After command | After interaction-ready |
+| --- | ---: | ---: | ---: |
+| New memo | 1.18–1.21 | 0.29–0.32 | 0.30–0.32 |
+| Accepted memo | 2.24–2.25 | 0.27–0.28 | 0.27–0.28 |
+| New rule definition | 1.18 | 0.14 | 0.14 |
+| Accepted rule definition | 2.25 | 0.10 | 0.10 |
+| New Save and apply | 2.49 | 0.82 | 0.82 |
+| Accepted Save and apply | 4.13 | 0.53 | 0.53 |
+| New payee | Not measured | 0.56 | 0.57 |
+| Accepted payee | Not measured | 0.32 | 0.32 |
+
+The half-second target is met here for memo edits, accepted payee edits and
+rule-definition saves. New payee edits and Save and apply are below one second
+but remain above half a second. No universal latency guarantee is established.
+
+Validation passed for editor/Review state and ledger caches; rule definitions,
+application, schema, validation, account/all-account application and previews;
+Undo/Redo; composed-action, rule and editor I/O/crash fault tests; and the new
+memo-cache and rule-cache failure/retry tests. These include failures before and
+after durable commit and same-connection reads after failure. The Rules UI suite
+passed after correcting six old assertions that still expected confirmation for
+ordinary Undo (the existing UI confirms import Undo only). No UI behavior was
+changed by those assertion corrections. The new edit benchmark smoke passed.
+
+ASan/UBSan checks passed for the editor/Review caches and rule application paths,
+and for the reusable rule catalog's equivalence, cancellation and resource bounds
+(leak detection disabled). The final catalog change was checked again with eight
+Release tests and four sanitizer tests. No full repository suite, physical disk
+exhaustion, native interactive timing, Linux or Windows verification is claimed.
+Database version 1, encryption and durability settings are unchanged.

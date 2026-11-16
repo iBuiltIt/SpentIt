@@ -248,7 +248,8 @@ private:
     app::Receipt publish_review(std::string_view,std::int64_t,std::string_view);
     void accept_local(std::string_view,const app::TransferRequest&);
     void prepare_review();
-    void finish(const std::function<void()>&,bool compatible=false);
+    struct RetainedRowReads {std::int64_t epoch;std::set<imports::Occurrence> changed;};
+    void finish(const std::function<void()>&,bool compatible=false,bool import_state_unchanged=false,const RetainedRowReads* retained=nullptr);
     void require_account_name(std::string_view,std::int64_t) const;
     std::optional<std::string> transfer_name(std::string_view) const;
     std::optional<std::pair<std::string,std::string>> automatic_link_allocations(const app::ReviewTransaction&,const app::ReviewTransaction&,const std::vector<app::TransferView>&,bool unique=true) const;

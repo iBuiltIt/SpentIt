@@ -1,6 +1,6 @@
 # Ledger editing and session Undo
 
-Last updated: 2026-11-12
+Last updated: 2026-11-16
 
 Manual and imported postings share transfer assignment, explicit Link, editing,
 and Undo. Rules match imported fields. The release rules database is version 1.
@@ -429,3 +429,24 @@ Undo and committed replay share a bounded revision-to-history lookup and reuse
 already-read facts, while retaining validation. The release rules database is version 1.
 The clean-marker open policy is in [fast-startup.md](fast-startup.md). Full
 audit still checks retained history. It does not run on every ordinary open.
+
+
+## Edit refresh performance — owner Go, 2026-11-16
+
+A memo-only edit still validates and saves the complete transaction and its Undo
+record atomically. When amounts, dates, allocations, other fields and transfer
+relationships are unchanged, it retains prepared import readiness and replaces
+the edited pending draft image after commit. Review text exclusions still use
+the new memo. Other edits retain their full readiness refresh.
+
+Unchanged accepted entries survive an ordinary edit without relationship changes.
+Current row reads are reusable only at the same connection change count; rollback
+clears them. Account facts are bounded to the current operation and invalidated
+by writes or rollback. Transfer candidate eligibility compares the relevant
+financial fields and the opening-balance payee classification, while text
+exclusions are evaluated separately. Category display labels are reused within
+one view build.
+
+These are in-memory optimizations. The release database remains version 1;
+commit synchronization, financial validation, recovery checks and Undo are
+unchanged. Measurements and verification limits are in [status](status.md).

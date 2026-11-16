@@ -182,7 +182,7 @@ std::vector<app::RuleTombstone> ImportStore::rule_tombstones() const {
 }
 std::optional<app::RuleSaveReceipt> ImportStore::rule_save_outcome(std::string_view operation) const {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
-    if(!impl_->verifying && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
+    if(!impl_->verifying && !impl_->composing_rule_save && !sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     session_snapshot::expired(impl_->db,operation,"rule-save");
     Statement row(impl_->db,"SELECT ruleset_before,ruleset_after FROM rule_operations WHERE id=?");row.text(1,operation);
     if(!row.row()){if(command_taken(impl_->db,operation))fail(SQLITE_CONSTRAINT,other_command);return {};}
@@ -206,6 +206,7 @@ app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const ap
     if(!impl_->composing_rule_save)context.seal();
     std::unique_ptr<Atomic> transaction;
     if(!impl_->composing_rule_save)transaction=std::make_unique<Atomic>(impl_->db);
+    const auto cache_changes=sqlite3_total_changes64(impl_->db);
     const auto current=ruleset_revision(impl_->db);
     if(current!=expected) fail(SQLITE_CONSTRAINT,refresh_rules);
     auto heads=stored_heads(impl_->db);
@@ -242,7 +243,20 @@ app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const ap
     }
     session_snapshot::completed(impl_->db,operation,"rule-save",digest);
     Statement bump(impl_->db,"UPDATE rule_state SET revision=? WHERE singleton=1 AND revision=?");bump.integer(1,current+1);bump.integer(2,current);bump.done();
-    finish([&]{if(transaction)transaction->commit();},true);
+    // Standalone definition saves do not change postings, source associations,
+    // transfer state or import readiness. The enclosing Save and apply still
+    // performs the complete financial finish after applying its transactions.
+    finish([&]{if(transaction)transaction->commit();},true,true);
+    {
+        const auto now=sqlite3_total_changes64(impl_->db);
+        for(auto& [id,epoch]:impl_->read_epochs){(void)id;if(epoch==cache_changes)epoch=now;}
+        if(impl_->review_changes==cache_changes)impl_->review_changes=now;
+        if(impl_->ledger_entry_changes==cache_changes)impl_->ledger_entry_changes=now;
+        if(impl_->sheet_cache && impl_->sheet_changes==cache_changes) {
+            impl_->sheet_cache->generation=action_token().epoch;
+            impl_->sheet_changes=now;
+        }
+    }
     return *rule_save_outcome(operation);
 }
 std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string_view operation) const {
@@ -279,6 +293,11 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
     }
     rules::RuleSet ruleset(definitions,selected);
     const auto catalog=category_catalog();
+    const auto prepared_catalog=[&] {
+        try {return app::RulePreviewCatalog(catalog,[&]{return context.state.load()==app::OperationContext::requested;});}
+        catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled)throw app::OperationCancelled();throw;}
+        catch(const std::invalid_argument&){fail(SQLITE_CONSTRAINT,rules_drift);}
+    }();
     std::map<imports::Occurrence,std::vector<std::string>> protected_allocations;
     std::size_t result_bytes=0;
     auto evaluate=[&](app::RowView viewed) {
@@ -290,7 +309,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
         std::optional<app::RuleProposal> evaluated;
         auto inputs=inputs_from({viewed},*this);
         if(const auto found=protected_allocations.find(viewed.identity);found!=protected_allocations.end())inputs.front().transfer_allocations.insert(inputs.front().transfer_allocations.end(),found->second.begin(),found->second.end());
-        try {evaluated=app::preview_rules(ruleset,catalog,inputs,request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;},true).front();}
+        try {evaluated=app::preview_rules(ruleset,prepared_catalog,inputs,request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;},true).front();}
         catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled)throw app::OperationCancelled();throw;}
         catch(const std::invalid_argument&){fail(SQLITE_CONSTRAINT,rules_drift);}
         auto proposal=std::move(*evaluated);
@@ -325,7 +344,14 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
         while(!request.new_only && accepted.row()) {
             context.checkpoint();
             imports::Occurrence id{accepted.bytes(0),static_cast<std::size_t>(accepted.integer(1))};
-            auto viewed=load_row(id,false);viewed.draft=entry_snapshot(id,accepted.integer(2)).draft;evaluate(std::move(viewed));
+            auto viewed=load_row(id,false);
+            const auto cached=impl_->ledger_entries.find(id);
+            // The preview is read-only. Reuse a previously validated immutable
+            // revision only while every connection write is accounted for. The
+            // application re-reads and validates each changed row before writing.
+            if(!impl_->verifying && impl_->ledger_entry_changes==sqlite3_total_changes64(impl_->db) && cached!=impl_->ledger_entries.end() && cached->second.revision==accepted.integer(2))viewed.draft=cached->second.draft;
+            else viewed.draft=entry_snapshot(id,accepted.integer(2)).draft;
+            evaluate(std::move(viewed));
         }
         Statement pending(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision IN(0,1) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
         while(pending.row()){context.checkpoint();evaluate(load_row({pending.bytes(0),static_cast<std::size_t>(pending.integer(1))},false));}

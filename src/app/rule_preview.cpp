@@ -16,10 +16,24 @@ FieldOwnership owner(rules::Ownership value) {
     invalid("Unknown field ownership");
 }
 }
-std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const CategoryCatalog& catalog,const std::vector<RuleInput>& inputs,bool replace,const std::function<bool()>& cancelled,bool preserve_untouched) {
-    if(inputs.size()>rules::EvaluationLimits::records)throw rules::RegexError(rules::RegexFailure::resource_limit,"Too many records in one rule preview");
+RulePreviewCatalog::RulePreviewCatalog(const CategoryCatalog& catalog,const std::function<bool()>& cancelled):revision_(catalog.revision) {
     if(catalog.categories.size()>rules::EvaluationLimits::scope_allocations)throw rules::RegexError(rules::RegexFailure::resource_limit,"Category catalog exceeds bounded rule preview limit");
-    std::size_t allocation_count=0,source_count=0,bytes=0;
+    auto checkpoint=[&]{bool stop=false;try{stop=cancelled&&cancelled();}catch(...){throw rules::RegexError(rules::RegexFailure::internal,"Rule cancellation check failed");}if(stop)throw rules::RegexError(rules::RegexFailure::cancelled,"Rule preview cancelled");};
+    auto count=[&](std::string_view value){if(value.size()>rules::EvaluationLimits::input_bytes-bytes_)throw rules::RegexError(rules::RegexFailure::resource_limit,"Rule preview text exceeds limit");bytes_+=value.size();};
+    for(const auto& c:catalog.categories){checkpoint();count(c.identity);count(c.name);count(c.parent);if(!definitions_.emplace(c.identity,c).second)invalid("Duplicate catalog identity");}
+    for(const auto& [id,c]:definitions_) {
+        if(c.deleted||c.kind!=CategoryKind::leaf)continue;
+        std::string path=c.name;bool available=!c.archived;
+        if(!c.parent.empty())invalid("Categories cannot reference parent objects");
+        paths_.emplace(id,std::move(path));if(available)active_.insert(id);
+    }
+}
+std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const CategoryCatalog& catalog,const std::vector<RuleInput>& inputs,bool replace,const std::function<bool()>& cancelled,bool preserve_untouched) {
+    return preview_rules(ruleset,RulePreviewCatalog(catalog,cancelled),inputs,replace,cancelled,preserve_untouched);
+}
+std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const RulePreviewCatalog& catalog,const std::vector<RuleInput>& inputs,bool replace,const std::function<bool()>& cancelled,bool preserve_untouched) {
+    if(inputs.size()>rules::EvaluationLimits::records)throw rules::RegexError(rules::RegexFailure::resource_limit,"Too many records in one rule preview");
+    std::size_t allocation_count=0,source_count=0,bytes=catalog.bytes_;
     auto checkpoint=[&] {bool stop=false;try{stop=cancelled&&cancelled();}catch(...){throw rules::RegexError(rules::RegexFailure::internal,"Rule cancellation check failed");}if(stop)throw rules::RegexError(rules::RegexFailure::cancelled,"Rule preview cancelled");};
     auto count=[&](std::string_view value){if(value.size()>rules::EvaluationLimits::input_bytes-bytes)throw rules::RegexError(rules::RegexFailure::resource_limit,"Rule preview text exceeds limit");bytes+=value.size();};
     // Bound before constructing engine copies, including empty-string allocations.
@@ -34,15 +48,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
         for(const auto& a:allocations){checkpoint();count(a.identity);count(a.category);count(a.memo);if(a.category_binding)count(a.category_binding->identity);}
         for(const auto& p:input.provenance){count(p.allocation);count(p.contribution.rule);}
     }
-    std::map<std::string,CategoryDefinition> definitions;
-    for(const auto& c:catalog.categories){checkpoint();count(c.identity);count(c.name);count(c.parent);if(!definitions.emplace(c.identity,c).second)invalid("Duplicate catalog identity");}
-    std::map<std::string,std::string> paths;std::set<std::string> active;
-    for(const auto& [id,c]:definitions) {
-        if(c.deleted||c.kind!=CategoryKind::leaf)continue;
-        std::string path=c.name;bool available=!c.archived;
-        if(!c.parent.empty())invalid("Categories cannot reference parent objects");
-        paths.emplace(id,std::move(path));if(available)active.insert(id);
-    }
+    const auto& definitions=catalog.definitions_;const auto& paths=catalog.paths_;const auto& active=catalog.active_;
     std::vector<rules::Record> records;records.reserve(inputs.size());std::set<imports::Occurrence> occurrences;
     for(const auto& input:inputs) {
         if(!occurrences.insert(input.identity).second)invalid("Rule scope repeats a transaction");
@@ -108,7 +114,7 @@ std::vector<RuleProposal> preview_rules(const rules::RuleSet& ruleset,const Cate
             const bool assigned_category=std::any_of(result.explanations.begin(),result.explanations.end(),[&](const auto& e){return e.field=="category" && e.allocation==j && e.effect==rules::Effect::applied;});
             if(assigned_category && fields.category.ownership!=rules::Ownership::manual) {
                 if(fields.category.value.identity.empty()) {a.category_binding.reset();a.category=fields.category.value.unmapped;}
-                else {a.category_binding=CategoryBinding{fields.category.value.identity,catalog.revision};a.category=paths.at(fields.category.value.identity);}
+                else {a.category_binding=CategoryBinding{fields.category.value.identity,catalog.revision_};a.category=paths.at(fields.category.value.identity);}
             }
             a.category_owner=owner(fields.category.ownership);a.category_rule=marked(fields.category);
             remember(RuleField::allocation_memo,a.identity,fields.memo);remember(RuleField::allocation_category,a.identity,fields.category);

@@ -70,10 +70,11 @@ int main(int argc,char** argv) {
     if(qEnvironmentVariableIsSet("SPENTIT_BENCHMARK_DIAGNOSTICS"))require(diagnostics::Collector::instance().enable(),"Diagnostics unsupported");
     try {
         const int count=argc>1?std::stoi(argv[1]):100000;
+        const bool edits=argc==3 && std::string_view(argv[2])=="--edits";
         const bool groups=argc==3 && std::string_view(argv[2])=="--groups";
         const bool duplicates=argc==3 && std::string_view(argv[2])=="--duplicates";
         const bool interactionsOnly=argc==3 && std::string_view(argv[2])=="--interactions";
-        require(argc<=3 && (argc<3 || interactionsOnly || groups || duplicates),"Optional mode is --interactions, --groups or --duplicates");
+        require(argc<=3 && (argc<3 || interactionsOnly || groups || duplicates || edits),"Optional mode is --interactions, --groups, --duplicates or --edits");
         require(count>0 && count<=200000 && (groups?count%6==0:count%10==0),"Use a multiple of 10 (six for groups) up to 200000");
         QTemporaryDir dir;require(dir.isValid(),"Temporary directory failed");
         QCoreApplication::setOrganizationName("SpentItBenchmark");QCoreApplication::setApplicationName("DurableUi");
@@ -89,7 +90,7 @@ int main(int argc,char** argv) {
         auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());require(window,"No window");
         auto* ledger=window->findChild<QQuickItem*>("durableLedger");require(ledger,"No ledger");
         std::cout<<"phase=application_startup ms="<<elapsed(startup)<<std::endl;
-        std::cout<<"rows="<<count<<" mode="<<(duplicates?"duplicates":groups?"groups":interactionsOnly?"interactions":"full")<<" platform="<<QGuiApplication::platformName().toStdString()<<" qt="<<qVersion()<<std::endl;
+        std::cout<<"rows="<<count<<" mode="<<(edits?"edits":duplicates?"duplicates":groups?"groups":interactionsOnly?"interactions":"full")<<" platform="<<QGuiApplication::platformName().toStdString()<<" qt="<<qVersion()<<std::endl;
         // Timer gaps measure UI-thread scheduling, not display frame latency.
         QElapsedTimer clock;clock.start();qint64 previous=clock.nsecsElapsed();double maxGap=0;std::size_t ticks=0;
         QTimer heartbeat;heartbeat.setTimerType(Qt::PreciseTimer);heartbeat.setInterval(5);
@@ -108,7 +109,7 @@ int main(int argc,char** argv) {
             if(model.diagnosticsEnabled()) {
                 const auto observation=diagnostics::Collector::instance().snapshot();
                 require(observation.latest.id==expectedOperation && observation.latest.delivered!=0,"Wrong diagnostic operation completed");
-                if(action=="review_answer" || action=="review_undo")for(const auto code:{diagnostics::Code::worker,diagnostics::Code::snapshot,diagnostics::Code::model_apply,diagnostics::Code::ledger,diagnostics::Code::search,diagnostics::Code::review_build,diagnostics::Code::review_write,diagnostics::Code::review_refresh,diagnostics::Code::transaction}){
+                if(edits || action=="review_answer" || action=="review_undo")for(const auto code:{diagnostics::Code::worker,diagnostics::Code::snapshot,diagnostics::Code::model_apply,diagnostics::Code::ledger,diagnostics::Code::search,diagnostics::Code::review_build,diagnostics::Code::review_write,diagnostics::Code::review_refresh,diagnostics::Code::transaction}){
                     const auto& before=metricsBefore.metrics[static_cast<unsigned>(code)];const auto& after=observation.metrics[static_cast<unsigned>(code)];
                     std::cout<<"decision_span="<<diagnostics::name(code)<<" inclusive_us="<<after.inclusive-before.inclusive<<" exclusive_us="<<after.exclusive-before.exclusive<<std::endl;
                 }
@@ -134,7 +135,47 @@ int main(int argc,char** argv) {
             std::cout<<std::endl;
         };
         const auto path=dir.path()+"/synthetic.spentit";
-        command("create","create",{{"path",path},{"protected",true},{"password","synthetic-benchmark-password"},{"confirmation","synthetic-benchmark-password"},{"name","Synthetic benchmark"},{"currency","CAD"}});
+        command("create","create",{{"path",path},{"protected",true},{"password","synthetic-benchmark-password"},{"confirmation","synthetic-benchmark-password"},{"name","Synthetic benchmark"},{"currency","CAD"},{"defaultCategories",edits}});
+        if(edits) {
+            QFile file(dir.path()+"/edits.qif");require(file.open(QIODevice::WriteOnly),"Fixture open failed");
+            for(int account=0;account<2;++account){
+                QByteArray bytes="!Account\nN"+QByteArray(account==0?"Synthetic benchmark":"Other")+"\nTBank\n^\n!Type:Bank\n";
+                const int rows=account==0?count*4/5:count-count*4/5;
+                for(int i=0;i<rows;++i)bytes+="D"+QDate(2000,1,1).addDays(i/4).toString(Qt::ISODate).toUtf8()+"\nT-"+QByteArray::number(i+1+account*count)+".00\nPMerchant "+QByteArray::number(i)+"\n^\n";
+                require(file.write(bytes)==bytes.size(),"Fixture write failed");
+            }
+            file.close();command("edit_scan","import",{{"path",file.fileName()},{"profile","DMY"}});
+            command("edit_import","map_import",{{"mappings",QVariantList{QVariantMap{{"source",0},{"account","1"},{"create",false}},QVariantMap{{"source",1},{"create",true},{"currency","CAD"},{"date","2000-01-01"},{"useReportedOpening",false}}}}});
+            command("edit_account","select_account",{{"id","1"}});
+            const auto batch=model.state().value("pending").toMap().value("id");require(!batch.toString().isEmpty(),"Missing imported batch");
+            const auto balance=model.state().value("balance");const auto rows=model.rowCount();
+            QVariantList definitions;
+            const auto category=model.state().value("categories").toList().front().toMap().value("id");
+            for(int accepted=0;accepted<2;++accepted){
+                if(accepted)command("edit_accept","commit");
+                command("edit_inspect","inspect",{{"batch",batch},{"ordinal",count*4/5-1}});
+                for(int pass=0;pass<3;++pass){
+                    auto edit=model.state().value("selected").toMap().value("draft").toMap();edit["memo"]=QString("Memo %1 %2").arg(accepted).arg(pass);
+                    command(accepted?"accepted_memo":"pending_memo",accepted?"accept_edit":"save",edit);
+                    require(model.state().value("selected").toMap().value("draft").toMap().value("memo")==edit.value("memo"),"Memo not saved");
+                    require(model.state().value("balance")==balance && model.rowCount()==rows,"Edit changed money or membership");
+                }
+                auto rename=model.state().value("selected").toMap().value("draft").toMap();rename["payee"]=QString("Edited merchant %1").arg(accepted);
+                command(accepted?"accepted_payee":"pending_payee",accepted?"accept_edit":"save",rename);
+                require(model.state().value("balance")==balance && model.rowCount()==rows,"Payee edit changed money or membership");
+                QVariantMap rule{{"id",model.newIdentity()},{"enabled",true},{"label","Synthetic restaurant"},{"scope","transaction"},{"input","payee"},{"expression",QString("^Merchant %1$").arg(accepted)},{"categoryId",category}};
+                definitions.push_back(rule);
+                command(accepted?"accepted_rule_save":"pending_rule_save","rules_save",{{"rules",definitions}});
+                rule["label"]="Apply synthetic restaurant";definitions.back()=rule;
+                command(accepted?"accepted_rule_apply":"pending_rule_apply","rules_save",{{"rules",definitions},{"rule",rule.value("id")},{"apply",true},{"allAccounts",true}});
+                require(model.state().value("balance")==balance && model.rowCount()==rows,"Rule changed money or membership");
+            }
+            command("edit_close","close");command("edit_reopen","unlock",{{"path",path},{"password","synthetic-benchmark-password"}});
+            command("edit_reinspect","inspect",{{"batch",batch},{"ordinal",count*4/5-1}});
+            require(model.state().value("selected").toMap().value("draft").toMap().value("memo")=="Memo 1 2","Saved memo lost on reopen");
+            require(model.state().value("balance")==balance && model.rowCount()==rows,"Reopen changed money or membership");
+            command("final_close","close");std::cout<<"correctness=passed scope=edits-rules-pending-accepted-reopen"<<std::endl;return 0;
+        }
         if(duplicates) {
             require(count>=19000,"Duplicate workload needs at least 19000 rows");
             QFile file(dir.path()+"/duplicate-base.qif");require(file.open(QIODevice::WriteOnly),"Fixture open failed");

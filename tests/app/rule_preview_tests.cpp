@@ -29,6 +29,18 @@ int main(){try{
     require(allocations[1].category=="Travel: Transport"&&out.provenance.size()==2,"labels and provenance");
     require(out.after.payee_owner==FieldOwnership::source && !out.after.payee_rule && !out.after.memo_rule,"payee mark");
     require(allocations[0].category_rule==RuleMark{"fee",1} && allocations[1].category_rule==RuleMark{"trip",1} && !allocations[0].memo_rule && !allocations[1].memo_rule,"allocation marks");
+    const app::RulePreviewCatalog prepared(catalog);
+    for(int pass=0;pass<2;++pass){
+        const auto streamed=app::preview_rules(rules,prepared,{{{"batch",0},source,draft,{}}}).front();
+        require(app::rule_field_diffs(out.after,streamed).empty() && streamed.provenance==out.provenance,"prepared catalog preserves assignments and provenance");
+        require(streamed.after.transaction.effective_total()==out.after.transaction.effective_total() && streamed.after.transaction.allocations()[0].category_binding==allocations[0].category_binding,"prepared catalog preserves exact money and catalog revision");
+    }
+    bool stopped=false;try{app::preview_rules(rules,prepared,{{{"batch",0},source,draft,{}}},false,[]{return true;});}catch(const rules::RegexError& e){stopped=e.kind()==rules::RegexFailure::cancelled;}require(stopped,"reused catalog retains cancellation");
+    auto duplicate_catalog=catalog;duplicate_catalog.categories.push_back(catalog.categories.front());
+    bool duplicate_rejected=false;try{app::RulePreviewCatalog invalid(duplicate_catalog);}catch(const std::invalid_argument&){duplicate_rejected=true;}require(duplicate_rejected,"prepared catalog rejects duplicate identities");
+    auto large_catalog=catalog;large_catalog.categories.resize(1);large_catalog.categories[0].name=std::string(rules::EvaluationLimits::input_bytes-100,'x');
+    const app::RulePreviewCatalog large(large_catalog);
+    bool bounded=false;try{app::preview_rules(rules,large,{{{"batch",0},source,draft,{}}});}catch(const rules::RegexError& e){bounded=e.kind()==rules::RegexFailure::resource_limit;}require(bounded,"prepared catalog bytes still count against each preview limit");
     auto again=app::preview_rules(rules,catalog,{{{"batch",0},source,out.after,out.provenance}}).front();
     require(again.after.payee_rule==out.after.payee_rule && again.after.memo_rule==out.after.memo_rule,"transaction mark round-trip");
     require(again.after.transaction.allocations()[0].category_rule==allocations[0].category_rule && again.after.transaction.allocations()[1].category_rule==allocations[1].category_rule,"allocation mark round-trip");

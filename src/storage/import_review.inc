@@ -1,7 +1,7 @@
 // Session review state belongs to the exclusively locked connection. Mutations
 // publish it before their durable boundary; the rollback hook drops speculative
 // results. It is reconstructed after verified open, never persisted as authority.
-void ImportStore::finish(const std::function<void()>& commit,bool compatible) {
+void ImportStore::finish(const std::function<void()>& commit,bool compatible,bool import_state_unchanged,const RetainedRowReads* retained) {
     if(impl_->composing_rule_save || impl_->composing_review){commit();return;}
     if(!impl_->cancelling_import.empty()) {
         ActionChain(impl_->db).finish_import(impl_->cancelling_import,true);
@@ -24,16 +24,30 @@ void ImportStore::finish(const std::function<void()>& commit,bool compatible) {
         if(!compatible)fail(SQLITE_MISUSE,"Saved command has no Undo classification");
         ActionChain(impl_->db).compatible_change(action_token());
     }
-    exec(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE state=2) OR (source_batch IN(SELECT id FROM batches WHERE state=4) AND NOT EXISTS(SELECT 1 FROM retained_transfer_rows r WHERE r.batch=source_batch AND r.ordinal=source_ordinal))");
-    for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
-        Statement active(impl_->db,"UPDATE generated_source_matches SET active=? WHERE link=? AND account=? AND active!=?");const auto live=side->state!=transfers::State::removed?1:0;active.integer(1,live);active.text(2,value.link.identity);active.integer(3,side->endpoint.account);active.integer(4,live);active.done();
+    if(!import_state_unchanged) {
+        const auto before_cleanup=sqlite3_total_changes64(impl_->db);
+        exec(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE state=2) OR (source_batch IN(SELECT id FROM batches WHERE state=4) AND NOT EXISTS(SELECT 1 FROM retained_transfer_rows r WHERE r.batch=source_batch AND r.ordinal=source_ordinal))");
+        for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
+            Statement active(impl_->db,"UPDATE generated_source_matches SET active=? WHERE link=? AND account=? AND active!=?");const auto live=side->state!=transfers::State::removed?1:0;active.integer(1,live);active.text(2,value.link.identity);active.integer(3,side->endpoint.account);active.integer(4,live);active.done();
+        }
+        // These edits name every changed row and do not change source
+        // associations or relationships. Promote only exact pre-write reads;
+        // dependent duplicate decisions and any actual cleanup force re-reading.
+        const auto now=sqlite3_total_changes64(impl_->db);
+        if(retained && now==before_cleanup)for(auto& [id,epoch]:impl_->read_epochs) {
+            const auto row=impl_->read_rows.rows.find(id);
+            if(epoch==retained->epoch && !retained->changed.contains(id) && row!=impl_->read_rows.rows.end() &&
+               (!row->second.decision.duplicate_of || !retained->changed.contains(*row->second.decision.duplicate_of)))epoch=now;
+        }
+        prepare_review();
+        const auto prepared_changes=sqlite3_total_changes64(impl_->db);
+        exec(impl_->db,"DELETE FROM import_completions");
+        for(const auto& [id,review]:impl_->reviews)if(review.included==0 && review.warning.empty()) {
+            Statement complete(impl_->db,"INSERT INTO import_completions SELECT id FROM batches WHERE id=? AND state=0 AND blocked=0 AND NOT EXISTS(SELECT 1 FROM import_group_accounts m WHERE m.batch=batches.id AND m.created=1)");complete.text(1,id);complete.done();
+        }
+        impl_->review_changes=sqlite3_total_changes64(impl_->db);
+        for(auto& [id,epoch]:impl_->read_epochs){(void)id;if(epoch==prepared_changes)epoch=impl_->review_changes;}
     }
-    prepare_review();
-    exec(impl_->db,"DELETE FROM import_completions");
-    for(const auto& [id,review]:impl_->reviews)if(review.included==0 && review.warning.empty()) {
-        Statement complete(impl_->db,"INSERT INTO import_completions SELECT id FROM batches WHERE id=? AND state=0 AND blocked=0 AND NOT EXISTS(SELECT 1 FROM import_group_accounts m WHERE m.batch=batches.id AND m.created=1)");complete.text(1,id);complete.done();
-    }
-    impl_->review_changes=sqlite3_total_changes64(impl_->db);
     if(!impl_->redo_operation.empty())verify();
     if(impl_->observer && !impl_->undo_joined)impl_->observer(ImportPhase::before_commit);
     commit();
@@ -59,6 +73,9 @@ void ImportStore::prepare_review() {
         review.included=0;review.excluded=0;review.amounts.clear();review.warning.clear();
         if(batches.integer(3))review.warning="Resolve the blocked import before committing";
         std::set<imports::Occurrence> matched;
+        std::set<std::size_t> retained_rows,removed_rows;
+        {Statement kept(impl_->db,"SELECT ordinal FROM retained_transfer_rows WHERE batch=?");kept.text(1,id);while(kept.row())retained_rows.insert(static_cast<std::size_t>(kept.integer(0)));}
+        {Statement removed(impl_->db,"SELECT m.ordinal FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.committed=0 AND a.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=m.answer)");removed.text(1,id);while(removed.row())removed_rows.insert(static_cast<std::size_t>(removed.integer(0)));}
         Statement rows(impl_->db,R"SQL(SELECT v.ordinal,v.revision,
           coalesce(h.revision,-1),coalesce(h.active,-1),
           (SELECT count(*) FROM source_associations WHERE ledger_batch=v.batch AND ledger_ordinal=v.ordinal),
@@ -70,7 +87,7 @@ void ImportStore::prepare_review() {
         while(rows.row()) {
             const auto ordinal=static_cast<std::size_t>(rows.integer(0));present.insert(ordinal);
             const imports::Occurrence identity{id,ordinal};
-            const bool retained=retained_member(impl_->db,id,ordinal) && !pending_removed(impl_->db,identity);
+            const bool retained=(retained_rows.empty() || retained_rows.contains(ordinal)) && !removed_rows.contains(ordinal);
             std::string stamp=retained?"kept":"excluded";
             for(int column=1;column<6;++column)stamp+=":"+std::to_string(rows.integer(column));
             auto found=review.rows.find(ordinal);
@@ -95,7 +112,7 @@ void ImportStore::prepare_review() {
                 if(impl_->observer)impl_->observer(ImportPhase::review_row);
             }
             auto& item=found->second;const auto& row=item.row;
-            if(!retained){if(!pending_removed(impl_->db,identity))++review.excluded;continue;}
+            if(!retained){if(!removed_rows.contains(ordinal))++review.excluded;continue;}
             if(!item.warning.empty())review.warning=item.warning;
             if(row.draft && (row.decision.disposition!=imports::Disposition::duplicate || !item.warning.empty())) {
                 auto transfer_stamp=names;

@@ -18,16 +18,21 @@ app::ReviewReceipt ImportStore::save_and_apply_rules(std::string_view operation,
     {Statement done(impl_->db,"SELECT 1 FROM command_completions WHERE id=?");done.text(1,operation);if(done.row())return {std::string(operation)};}
     if(supplied.ruleset_revision!=expected || (!supplied.all_accounts && supplied.account!=account().identity) || supplied.generation!=ledger_edit_generation() || supplied.catalog_revision!=catalog_sequence(impl_->db))fail(SQLITE_CONSTRAINT,refresh_rules);
     Atomic transaction(impl_->db);
-    struct Scope {Impl& state;bool verifying;~Scope(){state.composing_rule_save=false;state.verifying=verifying;}} scope{*impl_,impl_->verifying};
-    impl_->composing_rule_save=true;impl_->verifying=true;
+    struct Scope {Impl& state;~Scope(){state.composing_rule_save=false;}} scope{*impl_};
+    impl_->composing_rule_save=true;
     const auto saved=save_rules(std::string(operation)+"-save",definitions,expected,context);
+    const auto cache_changes=sqlite3_total_changes64(impl_->db);
     auto request=supplied;request.ruleset_revision=saved.ruleset_after;
     (void)apply_account_rules(operation,request,context);
     // The root owns the whole request, while its restoration contains only the
     // changed transactions. Saving the rule remains compatible with Undo.
     session_snapshot::completed(impl_->db,operation,"save-apply",digest);
     impl_->composing_rule_save=false;
-    finish([&]{context.seal();transaction.commit();},true);
+    std::set<imports::Occurrence> changed;
+    {Statement members(impl_->db,"SELECT batch,ordinal FROM review_members WHERE answer=?");members.text(1,operation);while(members.row())changed.insert({members.bytes(0),static_cast<std::size_t>(members.integer(1))});}
+    const RetainedRowReads retained{cache_changes,changed};
+    finish([&]{context.seal();transaction.commit();},true,false,&retained);
+    retain_review_ledger_entries(*impl_,cache_changes,changed);
     return {std::string(operation)};
 }
 app::ReviewReceipt ImportStore::apply_account_rules(std::string_view operation,const app::AccountRuleRequest& request,const app::OperationContext& context) {
@@ -57,11 +62,14 @@ app::ReviewReceipt ImportStore::apply_account_rules(std::string_view operation,c
     if(!impl_->composing_rule_save)transaction=std::make_unique<Atomic>(impl_->db);
     if(!current())fail(SQLITE_CONSTRAINT,refresh_rules);
     struct Selection { Impl& state; std::int64_t selected; ~Selection(){state.selected_account=selected;} } selection{*impl_,impl_->selected_account};
+    const auto cache_changes=sqlite3_total_changes64(impl_->db);
     Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,'rules-account',?,?)");
     receipt.text(1,operation);receipt.text(2,encoded);receipt.integer(3,request.generation);receipt.done();
+    std::set<imports::Occurrence> changed;
     std::size_t serial=0;
     for(const auto& record:preview.records){
         context.checkpoint("Applying matching rules");
+        changed.insert(record.identity);
         impl_->selected_account=account_for_batch(record.identity.batch).identity;
         const auto balance=committed_for(impl_->selected_account);
         const auto row=load_row(record.identity,false);
@@ -73,7 +81,9 @@ app::ReviewReceipt ImportStore::apply_account_rules(std::string_view operation,c
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();impl_->pending_review_action=operation;
     if(!impl_->composing_rule_save)session_snapshot::completed(impl_->db,operation,"account-rules",request_hash);
-    finish([&]{if(transaction){context.seal();transaction->commit();}});
+    const RetainedRowReads retained{cache_changes,changed};
+    finish([&]{if(transaction){context.seal();transaction->commit();}},false,false,&retained);
+    if(transaction)retain_review_ledger_entries(*impl_,cache_changes,changed);
     return {std::string(operation)};
 }
 bool ImportStore::can_undo_account_rules() const {

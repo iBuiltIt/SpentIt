@@ -1286,11 +1286,21 @@ struct ImportModel::Worker {
                     }
                 }
                 const auto ledgerAccount=repo.account().identity;
+                // Category labels depend on the name/binding and this catalog,
+                // not on the allocation's memo, amount or provenance. Build the
+                // editor map once per distinct label instead of once per row.
+                std::map<std::pair<std::string,std::string>,std::string> labels;
                 if(repo.categories_supported())for(auto& row:*cachedLedger) {
                     auto values=row.draft.transaction.allocations();
                     for(auto& value:values){
                         const auto transfer=transferCategories.find({ledgerAccount,row.identity,value.identity});
-                        value.category=transfer==transferCategories.end()?allocationMap(value,categoryById,amountFormat).value("categoryDisplay").toString().toUtf8().toStdString():transfer->second;
+                        if(transfer!=transferCategories.end())value.category=transfer->second;
+                        else {
+                            const auto key=std::make_pair(value.category,value.category_binding?value.category_binding->identity:std::string{});
+                            auto found=labels.find(key);
+                            if(found==labels.end())found=labels.emplace(key,allocationMap(value,categoryById,amountFormat).value("categoryDisplay").toString().toStdString()).first;
+                            value.category=found->second;
+                        }
                     }
                     row.draft.transaction=row.draft.transaction.corrected(row.draft.transaction.effective_total(),std::move(values));
                 }
@@ -1397,7 +1407,9 @@ struct ImportModel::Worker {
         // Income grouping changes no ledger values, labels, filters or Review facts.
         const bool incomeOnly=action=="apply_category" &&
             (a.contains("income") || (preparedCategory && preparedCategory->request.action==app::CategoryAction::set_income));
-        if(!incomeOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
+        const bool definitionOnly=action=="rules_save" && !a.value("apply").toBool();
+        if(definitionOnly){metadata.clear();rulesLoaded=false;}
+        if(!incomeOnly && !definitionOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
         if(action=="close" || action=="open" || action=="unlock" || action=="create"){exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();exchangeMessage.clear();reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportPdf.reset();reportPdfState.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");

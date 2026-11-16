@@ -108,6 +108,18 @@ namespace {
 bool review_opening_balance(const imports::DraftRow& row) {
     return app::account_name_matches(row.payee,"Opening Balance") || app::account_name_matches(row.payee,"Starting Balance");
 }
+// Raw transfer eligibility uses dates, currencies, amounts, destinations and
+// allocation identities. Text exclusions are evaluated separately on every
+// sheet build; ordinary memo/payee changes do not alter these candidate edges.
+bool same_link_inputs(const imports::DraftRow& a,const imports::DraftRow& b) {
+    if(a.date!=b.date || a.transaction.effective_total().currency()!=b.transaction.effective_total().currency() || (a.payee!=b.payee && review_opening_balance(a)!=review_opening_balance(b)))return false;
+    const auto& aa=a.transaction.allocations();const auto& bb=b.transaction.allocations();
+    if(aa.size()!=bb.size())return false;
+    for(std::size_t i=0;i<aa.size();++i)
+        if(aa[i].identity!=bb[i].identity || aa[i].amount!=bb[i].amount || aa[i].category!=bb[i].category)return false;
+    return true;
+}
+
 }
 bool ImportStore::review_link_category(std::string_view category,std::int64_t counterpart_account) const {
     if(const auto name=transfer_name(category))return resolve_account_name(*name)==counterpart_account;
@@ -471,7 +483,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     };
     if(alias_stamp!=impl_->link_alias_stamp){for(const auto& [id,row]:rows){(void)row;affected.insert(id);}}
     else {
-        for(const auto& [id,row]:rows){const auto old=impl_->link_rows.find(id);if(old==impl_->link_rows.end() || old->second.account!=row.account || !same_draft(old->second.draft,row.draft) || impl_->link_occupied[id]!=occupied[id]){neighborhood(row);if(old!=impl_->link_rows.end())neighborhood(old->second);}}
+        for(const auto& [id,row]:rows){const auto old=impl_->link_rows.find(id);if(old==impl_->link_rows.end() || old->second.account!=row.account || !same_link_inputs(old->second.draft,row.draft) || impl_->link_occupied[id]!=occupied[id]){neighborhood(row);if(old!=impl_->link_rows.end())neighborhood(old->second);}}
         for(const auto& [id,row]:impl_->link_rows)if(!rows.contains(id))neighborhood(row);
     }
     auto edges=impl_->link_edges;
@@ -1736,6 +1748,10 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
         imports::validate_draft(row.source,canonical,row.source.source_currency && *row.source.source_currency!=canonical.transaction.effective_total().currency());
     }
     const auto generation=review_generation(impl_->db);if(generation==INT64_MAX)fail(SQLITE_FULL);
+    auto without_memo=canonical;without_memo.memo=original.memo;without_memo.memo_owner=original.memo_owner;without_memo.memo_rule=original.memo_rule;
+    const auto cache_changes=sqlite3_total_changes64(impl_->db);
+    const bool prepared_current=impl_->review_changes==cache_changes;
+    const bool memo_only=prepared_current && same_draft(original,without_memo) && (!links || links->changed.empty());
     Atomic transaction(impl_->db);
     if(same_draft(original,canonical) && (!links || links->changed.empty())){
         ActionChain(impl_->db).no_change(action_token(),operation,request_hash);
@@ -1757,7 +1773,28 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();impl_->pending_review_action=operation;
     session_snapshot::completed(impl_->db,operation,"editor",request_hash);
-    finish([&]{transaction.commit();});return {std::string(operation)};
+    const RetainedRowReads retained{cache_changes,{id}};
+    finish([&]{transaction.commit();},false,memo_only,(!links || links->changed.empty())?&retained:nullptr);
+    if(memo_only) {
+        const auto now=sqlite3_total_changes64(impl_->db);
+        // A transaction memo changes no money, matching source, inclusion or
+        // transfer readiness. Keep the prepared imports, replacing only the
+        // edited draft image. Review text exclusions are rebuilt independently.
+        if(prepared_current) {
+            if(!committed) {
+                const auto batch=impl_->reviews.find(id.batch);
+                if(batch!=impl_->reviews.end()) {
+                    batch->second.revision=info.revision+1;
+                    const auto row=batch->second.rows.find(id.ordinal);
+                    if(row!=batch->second.rows.end())row->second.row.draft=canonical;
+                }
+            }
+            impl_->review_changes=now;
+        }
+        for(auto& [key,epoch]:impl_->read_epochs)if(key!=id && epoch==cache_changes)epoch=now;
+    }
+    if(!links || links->changed.empty())retain_review_ledger_entries(*impl_,cache_changes,{id});
+    return {std::string(operation)};
 }
 bool ImportStore::can_undo_transaction_edit(std::string_view edit) const {
     Statement top(impl_->db,"SELECT s.answer,s.generation,a.question FROM review_stack s JOIN review_answers a ON a.id=s.answer ORDER BY a.sequence DESC LIMIT 1");

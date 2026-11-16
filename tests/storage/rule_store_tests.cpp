@@ -245,6 +245,42 @@ void large_preview(std::size_t count,bool accepted=false){
     check(current(0).payee=="Ride" && current(1).payee=="Unrelated 1");
     if(count<=5000)s.verify();
 }
+// Compare warm presentation/preview caches with authoritative reads after both
+// sides of commit, same-connection retries, Undo and definition-only saves.
+void cache_consistency(){
+    for(const bool combined:{false,true})for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}) {
+        Directory dir("spentit-rule-cache-XXXXXX");auto s=create(dir.path/"doc");
+        s.ingest("old","D01/08/2026\nT-1\nPRide old\n^\nD02/08/2026\nT-2\nPUnchanged\n^\n",qif::DateOrder::dmy);s.accept_all("accept");
+        s.ingest("new","D03/08/2026\nT-3\nPRide new\n^\n",qif::DateOrder::dmy);
+        const auto balance=s.balance();
+        const auto compare=[&]{
+            for(const auto& row:s.current_ledger()) {
+                const auto actual=row.committed?s.committed_entry(row.identity).current.draft:*s.row(row.identity).draft;
+                check(same_fields(row.draft,actual));
+            }
+            check(s.balance()==balance);
+            check(s.review_sheet().generation==s.ledger_edit_generation());
+            check(s.acceptance_review().transactions==1);
+        };
+        compare();const auto head=s.action_token().head;
+        const auto rule=rule_of("ride","Ride",rules::Scope::transaction,rules::InputField::payee,"^Ride",{"Ruled",{},"rule-default",false});
+        const app::RuleSaveRequest definitions{{rule}};
+        const app::AccountRuleRequest request{1,s.ledger_edit_generation(),0,s.category_catalog().revision,false,false,"ride",false};
+        const auto save=[&]{app::OperationContext c;if(combined)s.save_and_apply_rules("save",definitions,0,request,c);else s.save_rules("save",definitions,0,c);};
+        bool fired=false;s.observer([&](ImportPhase p){if(p==phase){fired=true;throw std::runtime_error("Synthetic acknowledgement failure");}});
+        rejects_text(save,"");check(fired);s.observer({});compare();
+        const bool durable=phase==ImportPhase::after_commit;
+        check(s.rule_image().ordered.empty()!=durable);
+        check(s.committed_entry({"old",0}).current.draft.payee==(durable && combined?"Ruled":"Ride old"));
+        save();compare();
+        check(s.rule_image().ordered.size()==1);
+        check(s.committed_entry({"old",0}).current.draft.payee==(combined?"Ruled":"Ride old"));
+        if(combined){s.undo_account_rules("undo");compare();check(s.committed_entry({"old",0}).current.draft.payee=="Ride old");}
+        else check(s.action_token().head==head);
+        s.verify();
+    }
+}
+
 void account_apply(){
     fault_vfs::install();Directory dir("spentit-account-rules-XXXXXX");const auto path=dir.path/"doc";
     auto s=create(path);
@@ -522,4 +558,4 @@ void category_faults() {
     }
     std::cout<<"Import category resolution: "<<positions<<" write/sync faults, cancellation and both commit boundaries passed\n";
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="all_accounts")all_accounts();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="cache_consistency")cache_consistency();else if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="all_accounts")all_accounts();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
