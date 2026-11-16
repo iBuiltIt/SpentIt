@@ -53,7 +53,8 @@ Automatic recognition uses saved original facts.
 
 Two optional, initially off Settings preferences automatically Merge or Link
 mutually one-to-one Review pairs after import and rules. They leave transaction
-acceptance explicit. Ambiguous groups, adjacent-day duplicates, survivor choices,
+acceptance explicit. Same-day pairs take priority, followed by mutually unique adjacent-day pairs.
+Ambiguous relationships, survivor choices,
 split choices, and amount differences stay manual. Those pairs are one save
 inside the import, not separate Undo steps. Cancel saves none of them. Accepted survivors
 also keep their result marks until the next Accept. The exact eligibility, local

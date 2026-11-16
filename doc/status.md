@@ -33,8 +33,9 @@ passed unless you ran it.
   joins it. Merged and linked rows stay marked until they are accepted.
   Same-calendar-date duplicate suggestions. Strict bank IDs when both sides
   have them. Optional automatic one-to-one Merge and Link after import and rules,
-  with separate, initially off local settings. Ambiguous and choice-requiring
-  pairs stay manual. Automatic pairs are saved with the import, not as their
+  with separate, initially off local settings. Same-day pairs take priority; remaining mutually unique adjacent-day
+  duplicate suggestions can also merge. Transfer suggestions keep their seven-day
+  window. Ambiguous and choice-requiring pairs stay manual. Automatic pairs are saved with the import, not as their
   own Undo steps. Undo of the import removes them. Unmerge still breaks one
   pair. Cancel during automatic matching saves none of those pairs; the import
   stays. Automatic results on accepted rows
@@ -87,6 +88,30 @@ Text extraction verified the final category in all three wide-table column
 groups and the final comparison. Changed-document links and diff whitespace
 checks passed. No native Browse-picker interaction, Windows/Linux run, full
 repository suite, leak check, or physical disk-full test is claimed.
+
+## Automatic matching date priority — 2026-11-15
+
+Automatic Review plans mutually unique same-day pairs first, reserving both
+endpoints, then examines the remaining candidates once. Adjacent-day duplicate
+suggestions can merge when the original/current date and existing survivor
+checks allow it. Transfer candidates retain the seven-day window. Competing
+remaining candidates stay manual. Both passes still use one bulk save, import
+Undo, and individual Unmerge. No schema change. Manual work is MAN-061.
+
+The rules-enabled macOS arm64 Release app was rebuilt and its offscreen smoke
+launch passed. The matching, Review, and adjacent-day storage checks passed;
+the automatic matching and adjacent-day suites also passed with address and
+undefined-behavior sanitizers (leak detection disabled). The offscreen
+`automaticReviewSettings` and `automaticReviewCancelStopsBeforeNextPair` cases
+passed with Qt 6.12.0. Synthetic cases cover date priority for Merge and Link,
+ambiguity in both directions, seven/eight-day transfer boundaries, cancellation,
+exact balances, Unmerge availability, and adjacent-day import Undo.
+`import.automatic_review_faults` passed, including the new two-pass bulk-save
+case: simulated disk-full/I/O write failures, successful retries, and process
+exits before and after durable commit preserve all-or-nothing pairs and totals.
+Changed-document relative links and diff whitespace checks passed.
+No private-file reproduction, full repository suite, or other-platform run is
+claimed.
 
 ## Automatic matching with the import — 2026-11-15
 

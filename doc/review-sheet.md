@@ -590,17 +590,27 @@ starts with both off. They do not change the version-1 database format.
 Changing a preference preserves Undo and clears pending Redo.
 
 After an import finishes its category choices and rules, take one fixed Review
-snapshot. Only pairs involving that import are eligible. Both endpoints must
-have only each other as a candidate across Review. Mirror questions count as one
-pair; generated transfer entries are handled by the existing Link command.
-A group with a third row stays manual. Resolving another pair does not expand
-the original automatic plan. Opening a file, changing a setting, editing a row,
+snapshot. Only pairs involving that import are eligible. Plan mutually unique
+same-calendar-day pairs first, reserving both endpoints.
+Then inspect the remaining candidate relationships once for mutually unique
+adjacent-day duplicate pairs and transfer pairs throughout the existing seven-day
+window. The second pass counts all remaining competitors, including farther
+transfer dates; it does not repeatedly eliminate choices. Mirror questions count
+as one pair; generated transfer entries use the existing Link command.
+Ambiguous relationships stay manual. A wider question may contain a unique
+same-day pair; question size alone does not disqualify it. Both passes are planned
+from the one snapshot before any writes. Opening a file, changing a setting,
+editing a row,
 and Undo do not trigger automatic decisions.
 
-A duplicate pair needs equal known original dates and amounts, equal current
-dates and totals, and an unambiguous survivor under the existing protection and
-import-order rules. Adjacent-day questions stay manual. Rows already in a
-keep-one merge, or with transfer relationships, stay manual for duplicate Merge.
+A duplicate pair needs equal known original amounts and current totals, and an
+unambiguous survivor under the existing protection and import-order rules.
+Same-day pairs retain equal original and current date checks. Adjacent-day pairs
+must satisfy the engine's existing adjacent-day suggestion predicate, including
+bank-ID and manual-row restrictions; both current dates must still equal their
+own original dates. Duplicate suggestion discovery and its accepted-date frontier
+are unchanged. The survivor keeps its date; no date is invented or corrected.
+Rows already in a keep-one merge, or with transfer relationships, stay manual for duplicate Merge.
 Links require one allocation on each side and exact opposite, nonzero amounts
 in the same currency; split choices and amount differences stay manual. Existing
 suggestion exclusions and category/destination/date constraints still apply.

@@ -1092,6 +1092,30 @@ void automatic_review_faults(const std::filesystem::path& dir) {
         }
         std::cout<<"Automatic fault mode "<<mode<<": "<<positions<<" positions\n"<<std::flush;
     }
+    const auto base=dir/"bulk-date-base";std::vector<ReviewAnswer> plan;
+    {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+    s.ingest("old","!Type:Bank\nD02/01/2026\nT-10.00\nPOld\n^\nD04/01/2026\nT-20.00\nPOlder\n^\n",qif::DateOrder::dmy);s.accept_all("accept");
+    s.ingest("new","!Type:Bank\nD02/01/2026\nT-10.00\nPNew\n^\nD03/01/2026\nT-20.00\nPNewer\n^\n",qif::DateOrder::dmy);
+    plan=s.automatic_review_plan({"new"},true,false);check(plan.size()==2,"Bulk fault fixture includes both date passes");}
+    const auto saved=[](ImportStore& s){return s.review_outcome("bulk-1").has_value();};
+    const auto apply=[&](ImportStore& s){OperationContext context;s.save_automatic_import_review("bulk",plan,context);};
+    const auto verify=[&](ImportStore& s){const bool done=saved(s);check(s.review_outcome("bulk-2").has_value()==done && s.balance().units()==(done?-3000:-6000) && s.merge_survivors().size()==(done?2u:0u),"Both date passes are atomic");s.verify();};
+    int positions=0;
+    for(int nth=1;nth<2000;++nth){
+        const auto trial=dir/"bulk-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+        {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
+        {auto s=ImportStore::open(trial,"test");verify(s);if(!saved(s))apply(s);check(saved(s),"Failed bulk date save retries successfully");verify(s);}
+        if(!fired)break;++positions;
+    }
+    check(positions>0 && positions<1999,"Bulk date fault sweep completed");
+    for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
+        const auto trial=dir/"bulk-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
+        const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto at){if(at==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}
+        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Bulk date save boundary interrupted");
+        auto s=ImportStore::open(trial,"test");check(saved(s)==(phase==storage::ImportPhase::after_commit),"Bulk date save durable outcome");verify(s);if(!saved(s))apply(s);verify(s);
+    }
+    std::cout<<"Bulk date fault positions: "<<positions<<"\n";
+
 }
 void automatic_review_tests(const std::filesystem::path& dir) {
     const Currency cad("CAD");
@@ -1124,7 +1148,56 @@ void automatic_review_tests(const std::filesystem::path& dir) {
     check(store.automatic_review_plan({"third"},true,true).empty(),"Three-row group stays manual");
     auto adjacent=ImportStore::create(dir/"auto-adjacent","test","Checking",cad,"2026-01-01");adjacent.opening(0,"2026-01-01",Money(0,cad));
     adjacent.ingest("old","!Type:Bank\nD02/01/2026\nT-10.00\nPOld\n^\n",qif::DateOrder::dmy);adjacent.accept_all("accept");adjacent.ingest("new",source("New"),qif::DateOrder::dmy);
-    check(!adjacent.review_sheet().questions.empty() && adjacent.automatic_review_plan({"new"},true,true).empty(),"Adjacent-day pair stays manual");
+    plan=adjacent.automatic_review_plan({"new"},true,true);check(plan.size()==1,"Adjacent-day unique pair is automatic");
+    {OperationContext context;adjacent.save_automatic_import_review("adjacent-save",plan,context);}
+    check(adjacent.balance().units()==-1000 && adjacent.preview_unmerge({{"old",0}}).available,"Adjacent merge keeps exact balance and Unmerge");
+    check(adjacent.action_head() && adjacent.action_head()->kind==ActionKind::import,"Adjacent matching preserves the import Undo step");
+    adjacent.undo_import("undo-adjacent","new",adjacent.ledger_edit_generation());
+    check(adjacent.merge_survivors().empty() && adjacent.balance().units()==-1000,"Import Undo removes adjacent-day merge");adjacent.verify();
+    // One snapshot contains competing dates. Same-day endpoints are reserved
+    // before the second pass; reverse ambiguity is still counted.
+    const auto dated=[](const char* date,const char* amount,const char* payee){return std::string("D")+date+"\nT"+amount+"\nP"+payee+"\n^\n";};
+    for(int mode=0;mode<4;++mode){
+        auto s=ImportStore::create(dir/("date-priority-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.create_account(2,"Visa",cad,"2026-01-01");s.select_account(2);s.opening(0,"2026-01-01",Money(0,cad));
+        std::string incoming="!Type:Bank\n"+dated("02/01/2026","10.00","First");
+        if(mode<2)incoming+=dated("04/01/2026","10.00","Second");
+        s.ingest("in",incoming,qif::DateOrder::dmy);s.accept_all("accept-in");s.select_account(1);
+        std::string outgoing="!Type:Bank\n";
+        if(mode==0)outgoing+=dated("02/01/2026","-10.00","Exact")+dated("03/01/2026","-10.00","Adjacent");
+        if(mode==1)outgoing+=dated("03/01/2026","-10.00","Ambiguous");
+        if(mode==2)outgoing+=dated("09/01/2026","-10.00","Seven days");
+        if(mode==3)outgoing+=dated("10/01/2026","-10.00","Eight days");
+        s.ingest("out",outgoing,qif::DateOrder::dmy);
+        auto planned=s.automatic_review_plan({"out"},false,true);
+        check(planned.size()==(mode==0?2u:mode==2?1u:0u),"Same-day priority, adjacent ambiguity and seven-day boundary");
+        if(!planned.empty()){
+            if(mode==0){
+                check(planned[0].selected[0]==imports::Occurrence{"out",0} && planned[0].selected[1]==imports::Occurrence{"in",0},"Exact pair is planned first");
+                OperationContext cancelled;int count=0;cancelled.progress=[&](auto){if(++count==2)cancelled.request();};
+                bool stopped=false;try{s.save_automatic_import_review("cancel-dates",planned,cancelled);}catch(const OperationCancelled&){stopped=true;}
+                check(stopped && s.pending_review_links().empty(),"Cancellation rolls back both date passes");s.verify();
+            }
+            OperationContext context;s.save_automatic_import_review("save-dates",planned,context);
+            check(s.pending_review_links().size()==planned.size(),"Both passes bulk-save links");
+        }
+        s.verify();
+    }
+    {
+        auto s=ImportStore::create(dir/"duplicate-date-priority","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("old","!Type:Bank\n"+dated("04/01/2026","-10.00","First")+dated("02/01/2026","-10.00","Second"),qif::DateOrder::dmy);s.accept_all("accept");
+        s.ingest("new","!Type:Bank\n"+dated("02/01/2026","-10.00","Exact")+dated("03/01/2026","-10.00","Adjacent"),qif::DateOrder::dmy);
+        auto planned=s.automatic_review_plan({"new"},true,false);
+        check(planned.size()==2,"Duplicate same-day pair frees one adjacent-day pair");
+        OperationContext context;s.save_automatic_import_review("save-dates",planned,context);
+        check(s.balance().units()==-2000 && s.merge_survivors().size()==2,"Duplicate date passes save exact totals");s.verify();
+    }
+    for(int mode=0;mode<2;++mode){
+        auto s=ImportStore::create(dir/("adjacent-ambiguous-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("old","!Type:Bank\n"+dated("02/01/2026","-10.00","First")+(mode==0?dated("02/01/2026","-10.00","Second"):""),qif::DateOrder::dmy);s.accept_all("accept");
+        s.ingest("new","!Type:Bank\n"+dated("01/01/2026","-10.00","One")+(mode==1?dated("01/01/2026","-10.00","Two"):""),qif::DateOrder::dmy);
+        check(s.automatic_review_plan({"new"},true,true).empty(),"Adjacent duplicate ambiguity in either direction stays manual");s.verify();
+    }
     auto links=ImportStore::create(dir/"auto-links","test","Checking",cad,"2026-01-01");links.opening(0,"2026-01-01",Money(0,cad));links.create_account(2,"Visa",cad,"2026-01-01");links.select_account(2);links.opening(0,"2026-01-01",Money(0,cad));links.select_account(1);
     links.ingest("out",source("Payment"),qif::DateOrder::dmy);links.accept_all("accept-out");links.select_account(2);links.ingest("in",source("Receipt","10.00"),qif::DateOrder::dmy);
     plan=links.automatic_review_plan({"in"},false,true);check(plan.size()==1 && plan[0].action==ReviewAction::link,"Mutually unique link chosen");

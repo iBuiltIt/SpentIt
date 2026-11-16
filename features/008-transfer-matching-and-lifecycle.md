@@ -45,9 +45,11 @@ distinct.
   amounts. One amount must be outgoing and the other incoming. No rate is
   stored or applied. Choosing another account as the category still creates a
   same-currency counterpart and refuses a different currency.
-- Candidate ranking is not done. The optional, initially off automatic Link
+- The optional, initially off automatic Link
   setting resolves mutually one-to-one, exact-amount Review pairs after import
-  and rules, with no split choice or amount difference. Other suggestions require
+  and rules, prioritizing same-day pairs before remaining mutually unique pairs
+  throughout the existing seven-day window, with no split choice or amount
+  difference. Other suggestions require
   an explicit choice. The links are one save inside the import. Cancel saves none
   of them. Unmerge still breaks one link.
   See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).

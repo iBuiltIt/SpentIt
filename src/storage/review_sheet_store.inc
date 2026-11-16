@@ -634,51 +634,92 @@ void ImportStore::write_review_row(std::string_view answer,std::string_view chil
     if(undoing){Statement member(impl_->db,"INSERT INTO review_undo_members SELECT id,?1,?2,?4,?5 FROM review_undos WHERE answer=?3");member.text(1,child);member.text(2,known_restore->child);member.text(3,answer);member.integer(4,prior);member.integer(5,result);member.done();}
     if(!undoing){Statement member(impl_->db,"INSERT INTO review_members VALUES(?,?,?,?,?,?,?)");member.text(1,answer);member.text(2,id.batch);member.integer(3,integer(id.ordinal));member.integer(4,committed?1:0);member.integer(5,prior);member.integer(6,result);member.text(7,child);member.done();}
 }
-// Plan once; callers must not expand it after earlier pairs are resolved.
+// Keep original and current dates aligned for the new adjacent-day opt-in.
+// Same-day behavior remains unchanged; edits must not manufacture date tolerance.
+static bool automatic_duplicate_dates(const app::ReviewTransaction& a,const app::ReviewTransaction& b,
+                                      const qif::Record& x,const qif::Record& y) {
+    if(x.date.empty() || y.date.empty() || !x.original_amount || !y.original_amount || *x.original_amount!=*y.original_amount)return false;
+    if(x.date==y.date)return a.draft.date==b.draft.date;
+    return a.draft.date==x.date && b.draft.date==y.date && imports::adjacent_day_basis(x,y).has_value();
+}
+
+// Build once, reserve same-day pairs, then inspect the remaining graph once.
+// No per-pair Review rebuild or repeated elimination of ambiguous groups.
 std::vector<app::ReviewAnswer> ImportStore::automatic_review_plan(const std::vector<std::string>& batches,bool merges,bool links) const {
     if((!merges && !links) || batches.empty() || ActionChain(impl_->db).preparing())return {};
     const auto sheet=review_sheet();
-    std::map<imports::Occurrence,std::set<imports::Occurrence>> peers;
-    std::set<imports::Occurrence> blocked;
+    using Id=imports::Occurrence;
+    struct Edge {Id left,right;app::ReviewKind kind;std::string question;int distance;};
+    std::map<Id,app::ReviewTransaction> rows;
+    std::map<Id,qif::Record> originals;
+    std::vector<Edge> edges;
+    std::set<Id> blocked;
+    for(const auto& q:sheet.questions)for(const auto& r:q.rows)rows.emplace(r.identity,r);
+    const auto previous=impl_->selected_account;
+    struct Restore {std::int64_t& target;std::int64_t value;~Restore(){target=value;}} restore{impl_->selected_account,previous};
+    auto original=[&](const Id& id)->const qif::Record& {
+        if(!originals.contains(id)){impl_->selected_account=rows.at(id).account;originals.emplace(id,load_row(id,false).source);}
+        return originals.at(id);
+    };
+    std::set<std::pair<Id,Id>> seen;
+    auto add=[&](const Id& a,const Id& b,const app::ReviewQuestion& q){
+        if(!rows.contains(a) || !rows.contains(b) || a==b)return;
+        const auto pair=a<b?std::pair{a,b}:std::pair{b,a};
+        if(!seen.insert(pair).second)return;
+        int distance=0;
+        if(q.kind==app::ReviewKind::same){
+            const auto& x=original(a);const auto& y=original(b);
+            if(x.date.empty() || y.date.empty()){blocked.insert(a);blocked.insert(b);return;}
+            distance=imports::posting_distance(x.date,y.date);
+        }else distance=imports::posting_distance(rows.at(a).draft.date,rows.at(b).draft.date);
+        edges.push_back({a,b,q.kind,q.key,distance});
+    };
     for(const auto& q:sheet.questions){
         if(q.kind==app::ReviewKind::correction){for(const auto& r:q.rows)blocked.insert(r.identity);if(q.ordinal)blocked.insert({q.batch,*q.ordinal});continue;}
-        if(q.rows.size()>2){for(const auto& r:q.rows)blocked.insert(r.identity);continue;}
-        if(q.rows.size()==2){peers[q.rows[0].identity].insert(q.rows[1].identity);peers[q.rows[1].identity].insert(q.rows[0].identity);}
+        if(q.kind==app::ReviewKind::same){
+            for(const auto& r:q.rows)for(const auto& other:r.duplicate_candidates)add(r.identity,other,q);
+        }else if(q.kind==app::ReviewKind::link && !q.rows.empty()){
+            for(std::size_t i=1;i<q.rows.size();++i)add(q.rows.front().identity,q.rows[i].identity,q);
+        }
     }
-    // Do not construct a quadratic graph for large repeated-payment groups.
-    std::set<imports::Occurrence> joined;
+    std::stable_sort(edges.begin(),edges.end(),[](const auto& a,const auto& b){return a.distance<b.distance;});
+    std::set<Id> joined;
     Statement prior(impl_->db,"SELECT batch,ordinal,target_batch,target_ordinal FROM review_merges");
     while(prior.row()){joined.insert({prior.bytes(0),static_cast<std::size_t>(prior.integer(1))});joined.insert({prior.bytes(2),static_cast<std::size_t>(prior.integer(3))});}
     std::vector<app::ReviewAnswer> result;
-    std::set<imports::Occurrence> used;
-    for(const auto& q:sheet.questions){
-        if(q.rows.size()!=2 || (q.kind==app::ReviewKind::same?!merges:q.kind==app::ReviewKind::link?!links:true))continue;
-        const auto& a=q.rows[0];const auto& b=q.rows[1];
-        if(std::none_of(q.rows.begin(),q.rows.end(),[&](const auto& r){return std::find(batches.begin(),batches.end(),r.identity.batch)!=batches.end();}))continue;
-        if(blocked.contains(a.identity) || blocked.contains(b.identity) || peers[a.identity].size()!=1 || peers[b.identity].size()!=1 || used.contains(a.identity) || used.contains(b.identity))continue;
-        // A second keep-one join would make selective Unmerge unavailable.
-        if(joined.contains(a.identity) || joined.contains(b.identity))continue;
-        app::ReviewAnswer answer;answer.automatic=true;answer.generation=sheet.generation;answer.question=q.key;answer.selected={a.identity,b.identity};
-        if(q.kind==app::ReviewKind::same){
-            if(a.transfer_linked || b.transfer_linked || a.draft.date!=b.draft.date || a.draft.transaction.effective_total()!=b.draft.transaction.effective_total())continue;
-            // Review also contains conflicting-ID/date evidence and adjacent-day
-            // questions. Neither is permission to merge automatically.
-            const auto original=[&](const app::ReviewTransaction& r){return load_row(r.identity,false).source;};
-            const auto x=original(a),y=original(b);
-            if(x.date.empty() || x.date!=y.date || !x.original_amount || !y.original_amount || *x.original_amount!=*y.original_amount)continue;
-            const auto protected_row=[](const auto& r){return r.committed || r.note=="Manually entered";};
-            if(protected_row(a) && protected_row(b))continue;
-            if(protected_row(a))answer.survivor=a.identity;
-            else if(protected_row(b))answer.survivor=b.identity;
-            else if(a.import_order>0 && b.import_order>0 && a.import_order!=b.import_order)answer.survivor=a.import_order<b.import_order?a.identity:b.identity;
-            else continue;
-            answer.action=app::ReviewAction::merge;
-        }else{
-            const auto& x=a.draft.transaction.allocations();const auto& y=b.draft.transaction.allocations();
-            if(x.size()!=1 || y.size()!=1 || x[0].amount.currency()!=y[0].amount.currency() || x[0].amount.units()==INT64_MIN || y[0].amount.units()==INT64_MIN || x[0].amount.units()==0 || x[0].amount.units()!=-y[0].amount.units())continue;
-            answer.action=app::ReviewAction::link;
+    std::set<Id> used;
+    for(int pass=0;pass<2;++pass){
+        std::map<Id,std::set<Id>> peers;
+        for(const auto& edge:edges){
+            if(used.contains(edge.left) || used.contains(edge.right) || (pass==0 && edge.distance!=0))continue;
+            peers[edge.left].insert(edge.right);peers[edge.right].insert(edge.left);
         }
-        result.push_back(std::move(answer));used.insert(a.identity);used.insert(b.identity);
+        for(const auto& edge:edges){
+            if((pass==0 && edge.distance!=0) || (edge.kind==app::ReviewKind::same?!merges:!links))continue;
+            const auto& a=rows.at(edge.left);const auto& b=rows.at(edge.right);
+            if(std::find(batches.begin(),batches.end(),a.identity.batch)==batches.end() && std::find(batches.begin(),batches.end(),b.identity.batch)==batches.end())continue;
+            if(blocked.contains(a.identity) || blocked.contains(b.identity) || peers[a.identity].size()!=1 || peers[b.identity].size()!=1 || used.contains(a.identity) || used.contains(b.identity))continue;
+            // A second keep-one join would make selective Unmerge unavailable.
+            if(joined.contains(a.identity) || joined.contains(b.identity))continue;
+            app::ReviewAnswer answer;answer.automatic=true;answer.generation=sheet.generation;answer.question=edge.question;answer.selected={a.identity,b.identity};
+            if(edge.kind==app::ReviewKind::same){
+                if(a.transfer_linked || b.transfer_linked || a.draft.transaction.effective_total()!=b.draft.transaction.effective_total())continue;
+                const auto& x=originals.at(a.identity);const auto& y=originals.at(b.identity);
+                if(!automatic_duplicate_dates(a,b,x,y))continue;
+                const auto protected_row=[](const auto& r){return r.committed || r.note=="Manually entered";};
+                if(protected_row(a) && protected_row(b))continue;
+                if(protected_row(a))answer.survivor=a.identity;
+                else if(protected_row(b))answer.survivor=b.identity;
+                else if(a.import_order>0 && b.import_order>0 && a.import_order!=b.import_order)answer.survivor=a.import_order<b.import_order?a.identity:b.identity;
+                else continue;
+                answer.action=app::ReviewAction::merge;
+            }else{
+                const auto& x=a.draft.transaction.allocations();const auto& y=b.draft.transaction.allocations();
+                if(x.size()!=1 || y.size()!=1 || x[0].amount.currency()!=y[0].amount.currency() || x[0].amount.units()==INT64_MIN || y[0].amount.units()==INT64_MIN || x[0].amount.units()==0 || x[0].amount.units()!=-y[0].amount.units())continue;
+                answer.action=app::ReviewAction::link;
+            }
+            result.push_back(std::move(answer));used.insert(a.identity);used.insert(b.identity);
+        }
     }
     return result;
 }
@@ -712,9 +753,9 @@ app::ReviewReceipt ImportStore::answer_automatic_review(std::string_view operati
     const bool merge=answer.action==app::ReviewAction::merge;
     if(merge){
         const auto& a=left.first;const auto& b=right.first;
-        if(a.transfer_linked || b.transfer_linked || a.account!=b.account || a.draft.date!=b.draft.date || a.draft.transaction.effective_total()!=b.draft.transaction.effective_total())refuse();
+        if(a.transfer_linked || b.transfer_linked || a.account!=b.account || a.draft.transaction.effective_total()!=b.draft.transaction.effective_total())refuse();
         const auto& x=left.second;const auto& y=right.second;
-        if(x.date.empty() || x.date!=y.date || !x.original_amount || !y.original_amount || *x.original_amount!=*y.original_amount)refuse();
+        if(!automatic_duplicate_dates(a,b,x,y))refuse();
         const auto protected_row=[](const app::ReviewTransaction& row){return row.committed || row.note=="Manually entered";};
         std::optional<imports::Occurrence> survivor;
         if(protected_row(a) && protected_row(b))refuse();

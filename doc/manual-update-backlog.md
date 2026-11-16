@@ -18,12 +18,19 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-061. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-062. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-061 (2026-11-15) — Automatic matching date priority. Contract:
+  [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+  Chapter: [Duplicates and transfers](../manual/review-duplicates-transfers.md).
+  Explain same-day priority, then mutually unique adjacent-day duplicates;
+  transfers retain seven days. Ambiguity stays manual and both passes share
+  the import save and Undo. Text only; no picture change.
 
 - MAN-057 (2026-11-15) — Password length. Contract:
   [001](../features/001-documents-storage-security.md). Chapters:
