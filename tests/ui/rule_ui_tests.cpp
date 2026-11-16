@@ -93,6 +93,14 @@ class RuleUiTests : public QObject {
         return seen;
     }
     static bool sameEdge(QQuickItem* a,QQuickItem* b){return a && b && a->isVisible() && b->isVisible() && qAbs(a->mapToScene(QPointF()).x()-b->mapToScene(QPointF()).x())<1.0;}
+    static QQuickItem* barOn(QQuickItem* view,Qt::Orientation orientation){
+        QQuickItem* found=nullptr;if(!view)return nullptr;
+        for(auto* child:view->childItems()){
+            if(child->property("orientation").toInt()!=int(orientation))continue;
+            if(!found || child->width()*child->height()>found->width()*found->height())found=child;
+        }
+        return found;
+    }
     static void writeQif(const QString& path,const QByteArray& bytes){QFile file(path);if(!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size())qFatal("QIF fixture unavailable");}
     static QByteArray wise(){return "!Type:Bank\nD01/01/2026\nT-29.31\nPTfl Travel UK\nEWise Charges for: card\n$-0.14\nECARD-123\n$-29.17\n^\n";}
     void createDocument(Session& s,const QString& name){run(s.model,"create",{{"path",s.path()},{"protected",false},{"name",name},{"currency","CAD"}});QVERIFY(s.window);QVERIFY(QTest::qWaitForWindowExposed(s.window));QVERIFY(click(s.root,"categoryNavigation"));wait(s.model);createCategory(s.model,s.root,"Test category");QVERIFY(click(s.root,"accountNavigation"));wait(s.model);}
@@ -1176,7 +1184,7 @@ private slots:
             if(!pageBar || child->height()>pageBar->height())pageBar=child;
         }
         QVERIFY(pageBar);
-        QTRY_VERIFY(bar->mapToScene(QPointF(bar->width()-1,bar->height()/2)).x()<=pageBar->mapToScene(QPointF(1,0)).x()+1);
+        if(pageBar->isVisible()) QTRY_VERIFY(bar->mapToScene(QPointF(bar->width()-1,bar->height()/2)).x()<=pageBar->mapToScene(QPointF(1,0)).x()+1);
         const auto pageY=flick->property("contentY").toDouble();
         auto* thumb=bar->property("contentItem").value<QQuickItem*>();QVERIFY(thumb);QVERIFY(thumb->isVisible());
         const auto start=thumb->mapToScene(QPointF(thumb->width()/2,thumb->height()/2)).toPoint();
@@ -1188,6 +1196,54 @@ private slots:
         QTest::mouseRelease(s.window,Qt::LeftButton,Qt::NoModifier,end);
         QTRY_VERIFY(list->property("contentY").toDouble()>20);
         QCOMPARE(flick->property("contentY").toDouble(),pageY);
+    }
+    void unusedScrollBarsLeaveTheBottomClick() {
+        Session s;createDocument(s,"Scrollbar clicks");
+        auto* ledgerView=qobject_cast<QQuickItem*>(object(s.root,"ledgerScroll"));QVERIFY(ledgerView);
+        auto* ledgerBar=barOn(ledgerView,Qt::Horizontal);QVERIFY(ledgerBar);
+        auto* ledgerFlick=ledgerView->property("contentItem").value<QQuickItem*>();QVERIFY(ledgerFlick);
+        QTRY_VERIFY(ledgerFlick->property("contentWidth").toDouble()<=ledgerFlick->width()+1);
+        QTRY_VERIFY(!ledgerBar->isVisible());
+        const auto ledgerPoint=ledgerView->mapToScene(QPointF(ledgerView->width()/2,ledgerView->height()-4)).toPoint();
+        QTest::mousePress(s.window,Qt::LeftButton,Qt::NoModifier,ledgerPoint);
+        QVERIFY2(!ledgerBar->property("pressed").toBool(),"The unused ledger scrollbar took the bottom press");
+        QTest::mouseRelease(s.window,Qt::LeftButton,Qt::NoModifier,ledgerPoint);
+
+        s.window->resize(720,700);QTest::qWait(80);
+        QTRY_VERIFY(ledgerFlick->property("contentWidth").toDouble()>ledgerFlick->width()+20);
+        QTRY_VERIFY(ledgerBar->isVisible());
+        QVERIFY(ledgerBar->property("size").toDouble()<0.999);
+        auto* thumb=ledgerBar->property("contentItem").value<QQuickItem*>();QVERIFY(thumb);QVERIFY(thumb->isVisible());
+        const auto start=thumb->mapToScene(QPointF(thumb->width()/2,thumb->height()/2)).toPoint();
+        const auto end=ledgerBar->mapToScene(QPointF(ledgerBar->width()-4,ledgerBar->height()/2)).toPoint();
+        QCOMPARE(ledgerFlick->property("contentX").toDouble(),0.0);
+        QTest::mousePress(s.window,Qt::LeftButton,Qt::NoModifier,start);
+        QVERIFY2(ledgerBar->property("pressed").toBool(),"The ledger scrollbar did not receive the drag");
+        QTest::mouseMove(s.window,end,50);
+        QTest::mouseRelease(s.window,Qt::LeftButton,Qt::NoModifier,end);
+        QTRY_VERIFY(ledgerFlick->property("contentX").toDouble()>20);
+
+        s.window->resize(1440,700);QTest::qWait(80);
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        transactionRule(s.root,"Groceries","^Market$","Market");
+        auto* preview=qobject_cast<QQuickItem*>(object(s.root,"previewThisRule"));QVERIFY(preview);
+        QTRY_VERIFY(preview->isVisible() && preview->isEnabled());
+        auto* page=qobject_cast<QQuickItem*>(object(s.root,"rulesPage"));QVERIFY(page);
+        auto* pageBar=barOn(page,Qt::Horizontal);QVERIFY(pageBar);
+        QTRY_VERIFY(!pageBar->isVisible());
+        auto* flick=page->property("contentItem").value<QQuickItem*>();QVERIFY(flick);
+        auto* content=flick->property("contentItem").value<QQuickItem*>();QVERIFY(content);
+        QTRY_VERIFY(flick->property("contentHeight").toDouble()>flick->height()+40);
+        const auto buttonBottom=preview->mapToItem(content,QPointF(0,preview->height())).y();
+        QVERIFY(flick->setProperty("contentY",qMax(0.0,buttonBottom-flick->height()+6)));
+        QTRY_VERIFY(qAbs(flick->property("contentY").toDouble()-(buttonBottom-flick->height()+6))<2);
+        const auto lower=preview->mapToScene(QPointF(preview->width()/2,preview->height()-3)).toPoint();
+        const auto pageBottom=page->mapToScene(QPointF(0,page->height())).y();
+        QVERIFY2(lower.y()>pageBottom-16 && lower.y()<pageBottom,qPrintable(QString("lower %1 page bottom %2").arg(lower.y()).arg(pageBottom)));
+        QTest::mousePress(s.window,Qt::LeftButton,Qt::NoModifier,lower);
+        QVERIFY2(preview->property("down").toBool(),"The lower half of Preview did not receive the press");
+        QVERIFY(!pageBar->property("pressed").toBool());
+        QTest::mouseRelease(s.window,Qt::LeftButton,Qt::NoModifier,lower);
     }
     void busyPreviewIgnoresSave(){
         Session s;createDocument(s,"Synthetic busy rules");

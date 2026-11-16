@@ -61,6 +61,25 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Scrollbars that are not needed — 2026-11-16
+
+A scrollbar stays out of the way until there is something to scroll. Clicks
+then reach the bottom of a page, including the lower half of Preview and
+Apply rule, and the bottom of the ledger down to the status line. When the
+ledger row is wider than the window, its horizontal scrollbar appears and can
+be dragged. The same rule applies to a vertical scrollbar. See
+[rules](../features/004-rules-and-explanations.md) and
+[the ledger](../features/005-transaction-sheet-navigation.md).
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release checks
+`import.controls_style` (`idleScrollBarIsNotThere`) and
+`unusedScrollBarsLeaveTheBottomClick` passed offscreen. The ledger check
+presses the bottom of a fitting sheet, then drags the scrollbar after the
+window is narrowed. The Rules check presses the lower half of Preview.
+`previewMatchScrollbarDrags` passed again. `./build/SpentIt` was rebuilt.
+No full UI suite, live window drag, sanitizer run, or other-platform run
+is claimed.
+
 ## Rule preview scrollbar — 2026-11-16
 
 When a rule preview has more matches than fit in the list, that list's

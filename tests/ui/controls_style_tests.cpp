@@ -3,6 +3,7 @@
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -47,6 +48,47 @@ private slots:
         on->setProperty("enabled", false);
         QVERIFY(qAbs(off->opacity() - 1.0) < 0.001);
         QVERIFY(qAbs(on->opacity() - 0.4) < 0.001);
+    }
+    void idleScrollBarIsNotThere() {
+        QQmlEngine engine;
+        QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import QtQuick.Controls
+            ApplicationWindow {
+                width: 220; height: 220; visible: true
+                Flickable {
+                    id: flick
+                    objectName: "flick"
+                    anchors.fill: parent
+                    contentWidth: 80
+                    contentHeight: 80
+                    ScrollBar.vertical: ScrollBar { objectName: "vbar" }
+                    ScrollBar.horizontal: ScrollBar { objectName: "hbar" }
+                }
+            }
+        )", QUrl());
+        QVERIFY2(component.status() == QQmlComponent::Ready, qPrintable(component.errorString()));
+        QScopedPointer<QObject> root(component.create());
+        QVERIFY(root);
+        auto* window = qobject_cast<QQuickWindow*>(root.data());
+        QVERIFY(window);
+        window->show();
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* flick = root->findChild<QQuickItem*>("flick");
+        auto* vbar = root->findChild<QQuickItem*>("vbar");
+        auto* hbar = root->findChild<QQuickItem*>("hbar");
+        QVERIFY(flick);
+        QVERIFY(vbar);
+        QVERIFY(hbar);
+        QTRY_VERIFY(!vbar->isVisible());
+        QTRY_VERIFY(!hbar->isVisible());
+        QVERIFY(flick->setProperty("contentHeight", 800));
+        QTRY_VERIFY(vbar->isVisible());
+        QVERIFY(!hbar->isVisible());
+        QVERIFY(flick->setProperty("contentWidth", 800));
+        QTRY_VERIFY(hbar->isVisible());
+        QVERIFY(vbar->isVisible());
     }
 };
 

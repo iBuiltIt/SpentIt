@@ -1,7 +1,7 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**
-Last updated: 2026-11-13
+Last updated: 2026-11-16
 
 The durable ledger is the application sheet. Editing, Set memo, Rename payee,
 Restore, splits, expressions, and amount formatting are in
@@ -16,7 +16,9 @@ a column is dragged, the widths stay in the ratios 0.14, 0.24, 0.17, 0.15,
 0.14, and 0.16. Money is right-aligned. Dragging the right edge of a heading
 changes that column only. The other columns keep their widths, and the row
 grows to the right. A horizontal scrollbar appears when the row is wider than
-the window. Making the window wider shows more of that row and does not
+the window, and it can be dragged. When the row fits, that scrollbar is not
+there, and clicks reach the bottom of the ledger down to the status line.
+Making the window wider shows more of that row and does not
 stretch columns that have been dragged. Each column has a minimum. Date and
 the money columns stay wide enough for the heading and a normal value, and
 every heading stays visible. A column stops growing at 4,000 pixels. The drag

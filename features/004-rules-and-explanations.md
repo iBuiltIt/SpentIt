@@ -63,7 +63,9 @@ Choosing one account selects it, stays in Rules, keeps drafts, and clears the
 preview. Each visit to Rules opens on All accounts. A narrowed choice stays
 until it is changed or Rules is left. When the match list is taller than its
 area, dragging its scrollbar moves through the matches. The Rules page
-scrollbar still moves the page. The wheel still scrolls the match list.
+scrollbar still moves the page. The wheel still scrolls the match list. A
+scrollbar that is not needed does not cover the bottom or the side of the
+page, so Preview and Apply rule can be clicked on their lower half.
 
 The ledger **Create rule…** command needs exactly one eligible selection. It
 does not open the transaction editor. An open transaction does not list which

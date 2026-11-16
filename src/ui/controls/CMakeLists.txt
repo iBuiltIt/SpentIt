@@ -5,4 +5,5 @@ qt_add_qml_module(spentit_controls_style
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/SpentItControls"
     QML_FILES
         Button.qml
+        ScrollBar.qml
         ToolButton.qml)
