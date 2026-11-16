@@ -25,6 +25,12 @@ every heading stays visible. A column stops growing at 4,000 pixels. The drag
 does not sort. Clicking the heading still sorts. Each heading edge shows a
 narrow shaded notch. The edge highlights while the pointer is on it.
 
+With the account ledger or the report transaction list focused, Up and Down
+move one row. Home and End go to the first and last row. Page Up and Page
+Down move one screen and bring that row into view. The first and last rows
+stop the move. Shift extends the selection. A text field keeps Page Up and
+Page Down.
+
 Double-clicking that edge sizes the column to the longest text in the
 current list, including rows scrolled out of sight. A search limits the
 list. The column may become wider or narrower. A row that shows a split

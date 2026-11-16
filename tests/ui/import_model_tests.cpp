@@ -2284,6 +2284,56 @@ private slots:
         QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,point);
         QTRY_VERIFY(!m.busy());QCOMPARE(selected(m).value("ordinal").toInt(),0);
     }
+    void ledgerPageKeys() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        create(m,dir.path()+"/doc");
+        QByteArray bytes;
+        for(int i=0;i<60;++i) bytes+="D1/1/2026\nT-1\nPRow "+QByteArray::number(i)+"\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),bytes)},{"profile","DMY"}});
+        run(m,"query",{{"sort",0},{"descending",false}});
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
+        QVERIFY(QMetaObject::invokeMethod(root,"selectLedgerRow",Q_ARG(QVariant,0),Q_ARG(QVariant,0)));
+        QTRY_COMPARE(m.state().value("selectionIndex").toInt(),0);
+        ledger->forceActiveFocus();QTRY_VERIFY(ledger->hasActiveFocus());
+        const auto height=ledger->height();QVERIFY(height>34*3);
+        const auto y0=ledger->property("contentY").toDouble();
+        QTest::keyClick(window,Qt::Key_PageDown);QTRY_VERIFY(!m.busy());
+        const auto first=m.state().value("selectionIndex").toInt();
+        const auto y1=ledger->property("contentY").toDouble();
+        QVERIFY(first>2);QVERIFY(first<m.rowCount()-1);QVERIFY(y1>y0+34);
+        QTest::keyClick(window,Qt::Key_PageDown);QTRY_VERIFY(!m.busy());
+        const auto second=m.state().value("selectionIndex").toInt();
+        const auto y2=ledger->property("contentY").toDouble();
+        QVERIFY(second>first);QVERIFY(y2>y1);
+        QTest::keyClick(window,Qt::Key_PageUp);QTRY_VERIFY(!m.busy());
+        QVERIFY(m.state().value("selectionIndex").toInt()<second);
+        QVERIFY(ledger->property("contentY").toDouble()<y2);
+        QTest::keyClick(window,Qt::Key_End);QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.state().value("selectionIndex").toInt(),m.rowCount()-1);
+        QTest::keyClick(window,Qt::Key_PageDown);QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.state().value("selectionIndex").toInt(),m.rowCount()-1);
+        QTest::keyClick(window,Qt::Key_Home);QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.state().value("selectionIndex").toInt(),0);
+        QTest::keyClick(window,Qt::Key_PageUp);QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.state().value("selectionIndex").toInt(),0);
+        ledger->setProperty("contentY",0);
+        QTest::keyClick(window,Qt::Key_PageDown,Qt::ShiftModifier);QTRY_VERIFY(!m.busy());
+        QVERIFY(m.state().value("selectionCount").toInt()>1);
+        QVERIFY(m.state().value("selectionIndex").toInt()>0);
+        QTest::keyClick(window,Qt::Key_Home);QTRY_VERIFY(!m.busy());
+        QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());
+        auto* payee=root->findChild<QQuickItem*>("durablePayee");QVERIFY(payee);
+        payee->forceActiveFocus();QTRY_VERIFY(payee->hasActiveFocus());
+        const auto held=m.state().value("selectionIndex").toInt();
+        const auto heldY=ledger->property("contentY").toDouble();
+        QTest::keyClick(window,Qt::Key_PageDown);QTest::qWait(50);QTRY_VERIFY(!m.busy());
+        QCOMPARE(m.state().value("selectionIndex").toInt(),held);
+        QCOMPARE(ledger->property("contentY").toDouble(),heldY);
+    }
     void accessibilityAndKeyboard() {
         QAccessible::setActive(true);
         QTemporaryDir dir;ImportModel m(storage::document_gateway());

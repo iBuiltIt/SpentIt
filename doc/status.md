@@ -61,6 +61,22 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Ledger Page Up and Page Down — 2026-11-16
+
+With the account ledger or the report transaction list focused, Page Down
+selects the row one screen further down and brings it into view. Page Up does
+the same upward. The first and last rows stop the move. Shift extends the
+selection. A text field keeps the key. See
+[the ledger](../features/005-transaction-sheet-navigation.md). Manual work is
+MAN-065.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release checks
+`ledgerPageKeys` and `editableReportLedger` passed offscreen. The account
+check pages a 60-row list, stops at the ends, extends with Shift, and leaves
+a focused payee field unmoved. The report check pages its transaction list.
+`./build/SpentIt` was rebuilt. No full UI suite, live key check, sanitizer
+run, or other-platform run is claimed.
+
 ## Scrollbars that are not needed — 2026-11-16
 
 A scrollbar stays out of the way until there is something to scroll. Clicks

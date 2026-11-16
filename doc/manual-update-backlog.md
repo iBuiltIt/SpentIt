@@ -18,12 +18,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-065. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-066. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-065 (2026-11-16) — Page Up and Page Down in the ledgers. Contract:
+  [transaction sheet](../features/005-transaction-sheet-navigation.md). Chapters:
+  [Keyboard and mouse](../manual/keyboard-mouse.md) and
+  [Find transactions](../manual/find-transactions.md). With the account ledger
+  or the report transaction list focused, Page Up and Page Down move one
+  screen. Shift extends the selection. A text field keeps those keys. Text
+  only.
 
 - MAN-064 (2026-11-16) — Report list account sort and cross-account edits.
   Contract: [reporting](../features/006-reporting-drill-down.md). Chapter:

@@ -1946,6 +1946,31 @@ ApplicationWindow {
     function selectLedgerRow(row, modifiers) {
         guard(function(){workflow.command("select",{row:row,range:!!(modifiers & Qt.ShiftModifier),toggle:!!(modifiers & (Qt.ControlModifier|Qt.MetaModifier)),firstSearchSelection:!!searchReturn && !searchReturn.chosen})})
     }
+    // Page keys move one screen only while the list itself has the key.
+    // A text field inside the row keeps Page Up and Page Down.
+    function pageLedger(down, modifiers) {
+        let item=window.activeFocusItem
+        let text=false
+        while(item && item!==ledger) {
+            if(item instanceof TextInput || item instanceof TextEdit) text=true
+            item=item.parent
+        }
+        if(!item || text) return false
+        let top=ledger.indexAt(1, ledger.contentY+1)
+        let bottom=ledger.indexAt(1, ledger.contentY+Math.max(1, ledger.height)-1)
+        if(top<0) top=0
+        if(bottom<0) bottom=top
+        let span=Math.max(1, bottom>top ? bottom-top : Math.floor(ledger.height/34))
+        let current=s.selectionIndex===undefined?-1:s.selectionIndex
+        let origin=current<0?0:current
+        let next=down?Math.min(ledger.count-1, origin+span):Math.max(0, origin-span)
+        if(ledger.count<1 || next<0) return true
+        selectLedgerRow(next, modifiers)
+        let limit=Math.max(0, ledger.contentHeight-ledger.height)
+        ledger.contentY=down?Math.min(limit, ledger.contentY+ledger.height):Math.max(0, ledger.contentY-ledger.height)
+        ledger.positionViewAtIndex(next, ListView.Contain)
+        return true
+    }
     function restoreImportedValues() {
         if (!editEnabled || workflow.busy) return
         let fields=selected.sourceFields||[]
@@ -4457,7 +4482,7 @@ ApplicationWindow {
                 MouseArea {parent:ledger;anchors.fill:parent;z:-1;acceptedButtons:Qt.RightButton;enabled:!workflow.busy;onClicked:openLedgerContext(-1)}
                 Accessible.role:Accessible.List
                 Accessible.name:"Transactions in "+(s.name||"account")
-                Accessible.description:"Use Up and Down to select, Shift to extend selection, and Enter to review a transaction."
+                Accessible.description:"Use Up and Down to move one row. Page Up and Page Down move one screen. Shift extends the selection. Enter reviews a transaction."
                 activeFocusOnTab:true
                 Keys.onPressed: function(event) {
                     // Keep text fields and modal dialogs in charge of their own keys.
@@ -4475,6 +4500,8 @@ ApplicationWindow {
                         let current=s.selectionIndex===undefined?-1:s.selectionIndex
                         let next=event.key===Qt.Key_Home?0:event.key===Qt.Key_End?count-1:Math.max(0,Math.min(count-1,current+(event.key===Qt.Key_Down?1:-1)))
                         if(next>=0 && next<count){selectLedgerRow(next,event.modifiers);positionViewAtIndex(next,ListView.Contain)}
+                        event.accepted=true
+                    } else if((event.key===Qt.Key_PageUp || event.key===Qt.Key_PageDown) && pageLedger(event.key===Qt.Key_PageDown, event.modifiers)) {
                         event.accepted=true
                     } else if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter) {
                         let id=workflow.rowIdentity(s.selectionIndex===undefined?-1:s.selectionIndex)

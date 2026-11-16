@@ -303,6 +303,16 @@ private slots:
         run(model,"report_drill",{{"currency",0},{"period",0},{"row",0}});
         QCOMPARE(model.rowCount(),3);QVERIFY(model.state().value("reportLedgerActive").toBool());QCOMPARE(workspace->property("mode").toString(),"detail");
         QTRY_VERIFY(object(root,"durableLedger")->property("visible").toBool());
+        auto* reportLedger=qobject_cast<QQuickItem*>(object(root,"durableLedger"));QVERIFY(reportLedger);
+        QVERIFY(QMetaObject::invokeMethod(workspace,"load"));
+        QVERIFY(!workspace->property("dirty").toBool());
+        run(model,"select",{{"row",0}});
+        QCOMPARE(model.state().value("selectionIndex").toInt(),0);
+        reportLedger->forceActiveFocus();QTRY_VERIFY(reportLedger->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_PageDown);QTRY_VERIFY(!model.busy());
+        QCOMPARE(model.state().value("selectionIndex").toInt(),model.rowCount()-1);
+        QTest::keyClick(window,Qt::Key_PageUp);QTRY_VERIFY(!model.busy());
+        QCOMPARE(model.state().value("selectionIndex").toInt(),0);
         QCOMPARE(model.rowRecord(0).value("reportAccount").toString(),"Checking");
         QTest::qWait(50);window->grabWindow().save("/tmp/spentit-report-ledger.png");
         const auto splitRow=model.rowRecord(model.occurrenceIndex(first.toString(),2));QCOMPARE(splitRow.value("reportIncluded").toString(),"30.00");QCOMPARE(splitRow.value("reportAllocations").toStringList().size(),2);
