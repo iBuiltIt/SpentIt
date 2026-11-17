@@ -1,6 +1,6 @@
 # Unified Review sheet
 
-Last updated: 2026-11-16
+Last updated: 2026-11-17
 
 The release rules database is version 1. Incomplete preparation is cleaned up on
 cancellation or the next open. Completed uncommitted imports remain. Accept
@@ -236,8 +236,15 @@ fixtures. Record measurements and limitations in [status](status.md).
 
 Review is above Categories as the first sidebar action. Review and Commit open
 the same compact dataset-wide workspace,
-grouped by account. Import does not automatically open Review. Inline rows expose
-full transaction editing, splits and original-source inspection. Link questions
+grouped by account. Import does not automatically open Review. A row can show its splits.
+**Inspect** opens that transaction in its account ledger, among the surrounding
+transactions, and leaves the transaction editor closed. **Back** returns to
+Review with the question that was on screen. If an edit removes that question,
+Review shows the next question that remains. Inspect keeps Include match and
+checked rows for that return. Leaving Review another way clears them. A ledger
+search that would hide the transaction is cleared. **Correct** still opens the
+transaction panel on Review, including **Close inspection**. Enter on a question
+and double-clicking a payee use Inspect. Link questions
 stay in Review. Ledger Link joins two existing transactions. The count is outstanding questions, including correction tasks, rather
 than candidate transactions. Changing account/import, inspecting a record or
 attempting Commit does not resolve a question. The selected-import summary is
@@ -299,8 +306,9 @@ which row to keep when none is chosen automatically. Changing the
 checked rows clears that question's Include match staging. Zero or multiple
 committed selections on a two-row question require choosing a survivor; one
 committed selection keeps that row automatically. Numbered selected-group labels
-correspond to validation errors. Leaving Review or a changed dataset generation
-clears selections; read-only inspection retains them. No selections persist
+correspond to validation errors. Leaving Review clears selections. Inspect keeps Include match and checked rows
+until Review is shown again, or until that ledger visit is left for another
+workspace. A changed dataset generation clears them. No selections persist
 across restarts. Link is not batched and matching eligibility is unchanged.
 
 Two rows left after **Merge pairs** come back as a two-row question, with

@@ -519,9 +519,29 @@ private slots:
         auto* button=visualItem(window->contentItem(),"reviewNavigation");QVERIFY(button && button->isVisible());QVERIFY(QMetaObject::invokeMethod(button,"clicked"));
         auto* dialog=window->findChild<QObject*>("reviewSheet");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_WORKSPACE_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_WORKSPACE_CAPTURE")));}
+        QVERIFY(QMetaObject::invokeMethod(window,"selectReviewGroup",Q_ARG(QVariant,QVariant(question)),Q_ARG(QVariant,question.value("rows"))));
+        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),1);
+        run(m,"query",{{"filter","payee:no-such-row"}});QCOMPARE(m.rowCount(),0);
         QVERIFY(QMetaObject::invokeMethod(window,"inspectReviewTransaction",Q_ARG(QVariant,rows.last())));
-        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(window->property("currentPage").toString(),"review");
-        QVERIFY(visualItem(window->contentItem(),"transactionEditor")->isVisible());
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(window->property("currentPage").toString(),"ledger");
+        QVERIFY(window->property("editorClosed").toBool());QVERIFY(!window->property("reviewInspecting").toBool());
+        QVERIFY(m.state().value("filter").toString().isEmpty());QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),1);
+        const auto inspected=rows.last().toMap();const auto shown=m.occurrenceIndex(inspected.value("batch").toString(),inspected.value("ordinal").toInt());
+        QVERIFY(shown>=0);QCOMPARE(m.state().value("selectionIndex").toInt(),shown);
+        auto* ledger=visualItem(window->contentItem(),"durableLedger");QVERIFY(ledger);
+        const auto rowName="ledgerRow_"+QString::number(shown);QTRY_VERIFY(visualItem(ledger,rowName));
+        QTRY_VERIFY(visualItem(ledger,rowName)->y()>=ledger->property("contentY").toReal()-1);
+        QTRY_VERIFY(visualItem(ledger,rowName)->y()+visualItem(ledger,rowName)->height()<=ledger->property("contentY").toReal()+ledger->height()+1);
+        auto* editor=visualItem(window->contentItem(),"transactionEditor");QVERIFY(!editor || !editor->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"navigationBack"),"clicked"));
+        QTRY_COMPARE(window->property("currentPage").toString(),"review");QTRY_VERIFY(dialog->property("visible").toBool());
+        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),1);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"rulesNavigation"),"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(window->property("currentPage").toString(),"rules");
+        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
+        QTRY_COMPARE(window->property("currentPage").toString(),"review");
         QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
         const auto row=rows.last().toMap();run(m,"inspect",{{"batch",row.value("batch")},{"ordinal",row.value("ordinal")}});QCOMPARE(m.state().value("reviewCount").toInt(),1);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"commitImport"),"clicked"));QTRY_VERIFY(window->findChild<QObject*>("acceptanceDialog")->property("visible").toBool());QCOMPARE(m.state().value("reviewCount").toInt(),1);
@@ -1999,7 +2019,14 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
         QTRY_COMPARE(window->property("currentPage").toString(),"review");
         auto* list=visualItem(window->contentItem(),"reviewQuestions");QVERIFY(list);QVERIFY(QMetaObject::invokeMethod(list,"positionViewAtEnd"));QTRY_VERIFY(list->property("contentY").toDouble()>20);
-        QVERIFY(QMetaObject::invokeMethod(window,"inspectReviewTransaction",Q_ARG(QVariant,target)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(window->property("currentPage").toString(),"review");QVERIFY(visualItem(window->contentItem(),"transactionEditor")->isVisible());
+        const auto reviewOffset=list->property("contentY").toDouble();
+        QVERIFY(QMetaObject::invokeMethod(window,"inspectReviewTransaction",Q_ARG(QVariant,target)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QCOMPARE(window->property("currentPage").toString(),"ledger");QVERIFY(window->property("editorClosed").toBool());QVERIFY(!window->property("reviewInspecting").toBool());
+        const auto shown=m.occurrenceIndex(target.value("batch").toString(),target.value("ordinal").toInt());
+        QVERIFY(shown>=0);QCOMPARE(m.state().value("selectionIndex").toInt(),shown);
+        auto* back=visualItem(window->contentItem(),"navigationBack");QVERIFY(back && back->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(back,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(window->property("currentPage").toString(),"review");
+        QTRY_VERIFY(qAbs(list->property("contentY").toDouble()-reviewOffset)<1.0);
     }
 
     void mappingOpeningInvalidReport() {

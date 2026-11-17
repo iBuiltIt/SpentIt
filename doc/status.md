@@ -61,6 +61,26 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Inspect opens the ledger — 2026-11-17
+
+Inspect on a Review row opens that transaction in its account ledger, among
+the surrounding transactions, and leaves the transaction editor closed. Back
+returns to Review with the question that was on screen. If an edit removes
+that question, Review shows the next question that remains. Include match and
+checked rows stay for that return. Leaving Review another way clears them. A
+search that would hide the row is cleared. Correct still opens the transaction
+panel. See [Review](review-sheet.md). Manual work is MAN-070.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release functions
+`unifiedReviewSheet`, `mappedTransferBlockers`, and
+`removedReimportRequiresReview` passed offscreen. The first keeps Include
+match, clears a search that hides the row, shows that row in the ledger with
+the editor closed, returns with Back, and clears the match when Rules is
+opened. The second returns to the same Review scroll position. Correct still
+shows Include as separate transaction and Keep removed. `./build/SpentIt` was
+rebuilt. No full UI suite, live pointer check, sanitizer run, or
+other-platform run is claimed.
+
 ## Amount and category Tab — 2026-11-17
 
 Tab or Shift+Tab into the transaction amount or a split amount selects the

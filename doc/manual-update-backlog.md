@@ -18,12 +18,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-070. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-071. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-070 (2026-11-17) — Inspect opens the ledger. Contract:
+  [Review](review-sheet.md). Chapter:
+  [Review duplicates and link transfers](../manual/review-duplicates-transfers.md),
+  the Inspect bullet under "Is it the same purchase?". **Inspect** opens that
+  transaction in its account ledger, among the surrounding transactions, and
+  does not answer the question. **Back** returns to Review with that question
+  still on screen. Text only. No picture shows the old inspection panel.
 
 - MAN-069 (2026-11-17) — Amount selection and category Tab. Contract:
   [ledger editing](ledger-editing.md). Chapters:

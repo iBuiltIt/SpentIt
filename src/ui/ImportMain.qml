@@ -943,7 +943,7 @@ ApplicationWindow {
         ShaderEffectSource {anchors.fill:parent;sourceItem:accountDragRow;live:true}
     }
     function resetNavigation() {
-        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMissingDestination=null;pendingMerge=null;mergeHint="";currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
+        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMissingDestination=null;pendingMerge=null;mergeHint="";pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;reviewInspecting=false;pendingReviewInspection=false;currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
     }
     function navigate(page) {
         if(workflow.busy || !s.active || page===currentPage) return
@@ -2129,7 +2129,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save_manual" || action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {if(!rulesLeaving)pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {acceptanceDialog.close();mappedTransferConfirm.close();importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);ledgerRuleDraftId="";returnAfterRuleApply=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {acceptanceDialog.close();mappedTransferConfirm.close();importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);ledgerRuleDraftId="";returnAfterRuleApply=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -2158,18 +2158,29 @@ ApplicationWindow {
                 categorySaving=false
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
-            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewInspection=false;pendingDuplicateReveal=null;switchingRulesAccount=false}
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewInspection=false;pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;pendingDuplicateReveal=null;switchingRulesAccount=false}
             if(success) {
                 if(action==="correct_opening")correctAmount.text=s.opening
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
-                    if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
+                    if(pendingReviewLedger)++accountViewportRestoreSerial
+                    else if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
                     else if(accountViewports[s.accountId])restoreAccountViewport()
                     if(switchingRulesAccount) {currentPage="rules";let accounts=navigationAccounts.slice();accounts[navigationIndex]=s.accountId;navigationAccounts=accounts}
                     else if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
                     if(pendingReviewInspection){currentPage="review";pendingReviewInspection=false}
                     loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false
+                    if(pendingReviewLedger){
+                        const request=pendingReviewLedger;pendingReviewLedger=null
+                        editorClosed=true;reviewInspecting=false
+                        Qt.callLater(function(){
+                            const index=workflow.occurrenceIndex(request.batch,request.ordinal)
+                            if(index<0)return
+                            ledger.currentIndex=index
+                            ledger.positionViewAtIndex(index,ListView.Contain)
+                        })
+                    }
                     if(pendingDuplicateReveal){
                         const request=pendingDuplicateReveal;pendingDuplicateReveal=null
                         duplicateOriginKey=request.origin.key;duplicateCandidateKey=request.row.key===request.origin.key?"":request.row.key
@@ -3241,8 +3252,21 @@ ApplicationWindow {
     }
     property bool reviewInspecting: false
     property bool pendingReviewInspection: false
+    // Inspect leaves Review. Keep staged matches until Back returns, or until a later page leaves that trip.
+    property bool suppressReviewSelectionClear: false
+    property bool reviewReturnPending: false
+    property var pendingReviewLedger: null
     function inspectReviewTransaction(row) {
-        guard(function(){pendingReviewInspection=true;reviewInspecting=true;workflow.command("select_account",{id:row.account,reveal:true,batch:row.batch,ordinal:row.ordinal})})
+        guard(function(){
+            captureReviewView()
+            reviewScrollPosition=reviewQuestions.contentY
+            reviewReturnPending=true
+            suppressReviewSelectionClear=true
+            reviewInspecting=false
+            editorClosed=true
+            pendingReviewLedger={batch:row.batch,ordinal:row.ordinal}
+            workflow.command("select_account",{id:row.account,reveal:true,batch:row.batch,ordinal:row.ordinal})
+        })
     }
     property real reviewScrollPosition: 0
     property var reviewPending: ({})
@@ -3253,8 +3277,11 @@ ApplicationWindow {
     onReviewSelectionGenerationChanged: {reviewBatch=({});reviewRowChoices=({});reviewSurvivor.close()}
     onCurrentPageChanged: {
         categoryVisitAdditions=[];categorySort="ascending"
-        if(currentPage!=="review") {reviewBatch=({});reviewRowChoices=({});if(reviewPending.batchIntent)reviewSurvivor.close()}
-        else if(s.reviewReady===false && !workflow.busy)workflow.command("review_load")
+        if(currentPage==="review") {
+            if(reviewReturnPending){reviewReturnPending=false;reviewViewRestoring=true;Qt.callLater(function(){restoreReviewView();reviewViewRestoring=false})}
+            if(s.reviewReady===false && !workflow.busy)workflow.command("review_load")
+        } else if(suppressReviewSelectionClear) suppressReviewSelectionClear=false
+        else {reviewBatch=({});reviewRowChoices=({});reviewReturnPending=false;if(reviewPending.batchIntent)reviewSurvivor.close()}
     }
     property var reviewViewport: ({})
     property bool reviewViewRestoring: false
