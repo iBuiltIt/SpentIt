@@ -2407,28 +2407,41 @@ ApplicationWindow {
         contentItem:ColumnLayout {
             Label {text:"Choose an existing account or create one for each account found in the import data.";wrapMode:Text.Wrap;Layout.fillWidth:true}
             ListView {
-                id:mappingList;objectName:"sourceAccountMappingList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:12;model:s.importPlan||[]
+                id:mappingList;objectName:"sourceAccountMappingList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:0;model:s.importPlan||[]
                 delegate:ColumnLayout {
                     required property var modelData;required property int index
-                    id:mappingDelegate; width:mappingList.width
-                    Label {text:modelData.name+" · "+modelData.type+(modelData.warning?"\n"+modelData.warning:"")+" · reported balance: "+modelData.reported;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
-                    UsableComboBox {objectName:"sourceAccountChoice_"+index;model:importMapping.choices;textRole:"label";currentIndex:importMapping.choices.findIndex(function(c){return c.id===(importMapping.mappings[mappingDelegate.index]||{}).account});Layout.fillWidth:true;Accessible.name:"Destination for "+modelData.name
-                        onActivated:function(choiceIndex){let item=importMapping.choices[choiceIndex];importMapping.update(mappingDelegate.index,"account",item.id);importMapping.update(mappingDelegate.index,"create",item.id==="new")}}
-                    RowLayout {
-                        visible:!!importMapping.mappings[index] && importMapping.mappings[index].create
-                        Label {text:"Currency"}
-                        UsableComboBox {objectName:"sourceCurrency_"+index;model:workflow.currencies;currentIndex:workflow.currencies.indexOf((importMapping.mappings[mappingDelegate.index]||{}).currency);Accessible.name:"Currency for "+modelData.name;onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"currency",currentText)}}
-                        Label {text:"Opening date"}
-                        NavigableTextField {id:sourceOpeningDate;objectName:"sourceOpeningDate_"+index;Layout.fillWidth:true;text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
-                        CalendarPicker {objectName:"sourceOpeningCalendar_"+index;workflow:window.workflowBackend;field:sourceOpeningDate;onSelected:function(value){importMapping.update(mappingDelegate.index,"date",value)}}
+                    id:mappingDelegate; width:mappingList.width; spacing:0
+                    TextMetrics {id:accountLineSize;font:accountHeading.font;text:"Ag"}
+                    Item {
+                        objectName:"sourceAccountDivider_"+index
+                        visible:index>0
+                        readonly property int lineHeight:Math.max(0,Math.round(accountLineSize.height))
+                        readonly property int accountDividerGap:Math.max(1,Math.ceil(lineHeight/2))
+                        Layout.fillWidth:true
+                        Layout.preferredHeight:visible?accountDividerGap+1+accountDividerGap:0
+                        Rectangle {anchors.left:parent.left;anchors.right:parent.right;y:parent.accountDividerGap;height:1;color:theme.border}
                     }
-                    RowLayout {
-                        visible:!!importMapping.mappings[index] && importMapping.mappings[index].create
-                        Label {text:"Opening balance"}
-                        UsableComboBox {objectName:"sourceOpeningBalance_"+index;Layout.fillWidth:true;Accessible.name:"Opening balance for "+modelData.name
-                            model:modelData.offerReportedOpening?["0.00","Use reported balance as opening: "+modelData.reported]:["0.00"]
-                            currentIndex:(importMapping.mappings[mappingDelegate.index]||{}).useReportedOpening?1:0
-                            onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"useReportedOpening",choiceIndex===1)}
+                    ColumnLayout {
+                        Layout.fillWidth:true
+                        Label {id:accountHeading;text:modelData.name+" · "+modelData.type+(modelData.warning?"\n"+modelData.warning:"")+" · reported balance: "+modelData.reported;textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.Wrap}
+                        UsableComboBox {objectName:"sourceAccountChoice_"+index;model:importMapping.choices;textRole:"label";currentIndex:importMapping.choices.findIndex(function(c){return c.id===(importMapping.mappings[mappingDelegate.index]||{}).account});Layout.fillWidth:true;Accessible.name:"Destination for "+modelData.name
+                            onActivated:function(choiceIndex){let item=importMapping.choices[choiceIndex];importMapping.update(mappingDelegate.index,"account",item.id);importMapping.update(mappingDelegate.index,"create",item.id==="new")}}
+                        RowLayout {
+                            visible:!!importMapping.mappings[index] && importMapping.mappings[index].create
+                            Label {text:"Currency"}
+                            UsableComboBox {objectName:"sourceCurrency_"+index;model:workflow.currencies;currentIndex:workflow.currencies.indexOf((importMapping.mappings[mappingDelegate.index]||{}).currency);Accessible.name:"Currency for "+modelData.name;onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"currency",currentText)}}
+                            Label {text:"Opening date"}
+                            NavigableTextField {id:sourceOpeningDate;objectName:"sourceOpeningDate_"+index;Layout.fillWidth:true;text:importMapping.mappings[index]?importMapping.mappings[index].date:"";placeholderText:s.dateFormat||"YYYY-MM-DD";Accessible.name:"Opening date for "+modelData.name;onTextEdited:importMapping.update(mappingDelegate.index,"date",text)}
+                            CalendarPicker {objectName:"sourceOpeningCalendar_"+index;workflow:window.workflowBackend;field:sourceOpeningDate;onSelected:function(value){importMapping.update(mappingDelegate.index,"date",value)}}
+                        }
+                        RowLayout {
+                            visible:!!importMapping.mappings[index] && importMapping.mappings[index].create
+                            Label {text:"Opening balance"}
+                            UsableComboBox {objectName:"sourceOpeningBalance_"+index;Layout.fillWidth:true;Accessible.name:"Opening balance for "+modelData.name
+                                model:modelData.offerReportedOpening?["0.00","Use reported balance as opening: "+modelData.reported]:["0.00"]
+                                currentIndex:(importMapping.mappings[mappingDelegate.index]||{}).useReportedOpening?1:0
+                                onActivated:function(choiceIndex){importMapping.update(mappingDelegate.index,"useReportedOpening",choiceIndex===1)}
+                            }
                         }
                     }
                 }

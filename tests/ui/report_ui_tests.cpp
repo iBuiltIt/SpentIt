@@ -159,6 +159,16 @@ private slots:
         file.write("!Account\nNCard\nTCCard\n^\n!Type:CCard\nD2026-01-15\nT-42.18\nPMarket\nLNovel category\n^\n!Account\nNCash\nTCash\n^\n!Type:Cash\nD2026-01-18\nT-5.00\nPBakery\nLNovel category\n^\n");file.close();
         run(model,"import",{{"path",file.fileName()},{"account",""}});
         auto* mapping=object(root,"importAccountMapping");QVERIFY(mapping);QTRY_VERIFY(mapping->property("visible").toBool());
+        auto* theme=object(root,"applicationTheme");QVERIFY(theme);
+        auto* firstDivider=object(root,"sourceAccountDivider_0");QVERIFY(firstDivider);QVERIFY(!firstDivider->property("visible").toBool());
+        auto* divider=qobject_cast<QQuickItem*>(object(root,"sourceAccountDivider_1"));QVERIFY(divider);
+        QTRY_VERIFY(divider->isVisible());
+        QTRY_VERIFY_WITH_TIMEOUT([&]{
+            const int gap=divider->property("accountDividerGap").toInt();
+            const int line=divider->property("lineHeight").toInt();
+            auto* rule=divider->childItems().isEmpty()?nullptr:divider->childItems().constFirst();
+            return line>0 && gap*2>=line && rule && qFuzzyCompare(divider->height(),qreal(gap*2+1)) && qFuzzyCompare(rule->y(),qreal(gap)) && qFuzzyCompare(rule->height(),1.0) && rule->property("color").value<QColor>()==theme->property("border").value<QColor>();
+        }(),1000);
         for(const char* name:{"sourceAccountChoice_0","sourceAccountChoice_1"}){QTRY_VERIFY(object(root,name));auto* choice=object(root,name);choice->setProperty("currentIndex",1);QVERIFY(QMetaObject::invokeMethod(choice,"activated",Q_ARG(int,1)));}
         auto* calendar=object(root,"sourceOpeningCalendar_0");QVERIFY(calendar);
         QVERIFY(QMetaObject::invokeMethod(calendar,"choose",Q_ARG(QVariant,QVariant("2024-02-29"))));

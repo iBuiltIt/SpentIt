@@ -18,12 +18,19 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-068. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-069. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-068 (2026-11-16) — Line between accounts in the import mapping dialog.
+  Contract: [QIF account imports](qif-account-imports.md). Chapter:
+  [Import transactions](../manual/import-transactions.md), section "Match the
+  accounts". The words still match. Recapture
+  [import-mapping.png](../manual/images/import-mapping.png) so the line between
+  the two accounts is visible. No caption change.
 
 - MAN-067 (2026-11-16) — Category change on a created transfer entry. Contract:
   [categories](../features/010-categories-and-selection.md). Chapter:

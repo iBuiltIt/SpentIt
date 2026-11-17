@@ -56,7 +56,7 @@ Investment/security/price sections, class catalog imports, two-digit years, loca
 
 ## Mapping and evidence
 
-The mapping dialog requires an explicit choice for every named source account, including empty accounts. Choose an existing account or explicitly create one using its exact imported name, a visible currency code, and an opening date. New accounts default to the initial setup account's currency. Every source account maps to a distinct target account; combining multiple differently named source accounts into one pending account is refused visibly. Repeated sections of the same source account already share its mapping.
+The mapping dialog requires an explicit choice for every named source account, including empty accounts. When more than one source account is listed, a line separates each account's choices. Choose an existing account or explicitly create one using its exact imported name, a visible currency code, and an opening date. New accounts default to the initial setup account's currency. Every source account maps to a distinct target account; combining multiple differently named source accounts into one pending account is refused visibly. Repeated sections of the same source account already share its mapping.
 
 Capture atomically stores one whole-file source, the complete mapping, explicit account creations and every captured account draft. Each batch references that source and its stable source-account index. Resume atomically materializes all account drafts. Cancellation or failure before that transaction completes leaves the captured group available for Resume or Abort. Reopening and restored backups retain the same group and evidence.
 
