@@ -28,6 +28,9 @@ class ImportModel final : public QAbstractListModel {
     Q_PROPERTY(bool diagnosticsEnabled READ diagnosticsEnabled CONSTANT)
     Q_PROPERTY(qulonglong diagnosticGeneration READ diagnosticGeneration NOTIFY changed)
     Q_PROPERTY(bool launchHeld READ launchHeld NOTIFY launchHeldChanged)
+    Q_PROPERTY(QString pendingStatement READ pendingStatement NOTIFY pendingStatementChanged)
+    Q_PROPERTY(QString pendingStatementName READ pendingStatementName NOTIFY pendingStatementChanged)
+    Q_PROPERTY(QString statementNotice READ statementNotice NOTIFY statementNoticeChanged)
 public:
     AboutInfo* aboutInformation() { return &aboutInformation_; }
     bool rememberWindowPosition() const {return rememberWindowPosition_;}
@@ -42,9 +45,11 @@ public:
     qulonglong diagnosticGeneration() const { return spentit::diagnostics::Collector::instance().generation(); }
     Q_INVOKABLE void observeUi(const QVariantMap&);
     explicit ImportModel(std::unique_ptr<spentit::app::DocumentGateway>,QObject* parent=nullptr);
-    // A file passed on the command line, including a double-clicked .spentit file.
-    // Empty error means no document argument. A message means SpentIt must not start.
+    // A .spentit file passed on the command line. A QIF, OFX, QFX, QBO, or ASO
+    // file is reported by launchStatementPath and is not a document path.
+    // Empty with no error means no document argument. A message means SpentIt must not start.
     static QString launchDocumentPath(const QStringList& arguments, QString* error);
+    static QString launchStatementPath(const QStringList& arguments, QString* error);
     void setLaunchDocument(const QString& path);
     // Finder can deliver the file after startup has begun. Hold the remembered-file
     // open until that delivery, or until releaseLaunchHold when no file arrived.
@@ -53,6 +58,18 @@ public:
     void holdLaunch();
     void releaseLaunchHold();
     LaunchDelivery deliverLaunchDocument(const QString& path);
+    // A statement delivered by Finder, the Dock, or the command line. The open
+    // SpentIt file stays open. The statement waits until that file is open.
+    LaunchDelivery deliverLaunchStatement(const QString& path);
+    Q_INVOKABLE QString launchFileKind(const QString& path) const;
+    QString pendingStatement() const { return pendingStatement_; }
+    QString pendingStatementName() const;
+    QString statementNotice() const { return statementNotice_; }
+    Q_INVOKABLE void setStatementNotice(const QString& message);
+    Q_INVOKABLE void refuseStatement(const QString& reason);
+    Q_INVOKABLE bool holdStatement(const QString& path);
+    Q_INVOKABLE void clearPendingStatement();
+    Q_INVOKABLE void acceptExternalDocument(const QString& path) { deliverLaunchDocument(path); }
     ~ImportModel() override;
     QVariantMap state() const { return state_; }
     bool busy() const { return busy_; }
@@ -95,7 +112,7 @@ public:
     Q_INVOKABLE QVariantMap rowIdentity(int row) const;
     Q_INVOKABLE int occurrenceIndex(const QString& batch, int ordinal) const;
     Q_INVOKABLE QVariantMap rowRecord(int row) const;
-signals: void windowPreferencesChanged(); void changed(); void completed(QString action,bool success); void launchHeldChanged(); void launchSettled(); void externalDocument();
+signals: void windowPreferencesChanged(); void changed(); void completed(QString action,bool success); void launchHeldChanged(); void launchSettled(); void externalDocument(); void externalStatement(); void pendingStatementChanged(); void statementNoticeChanged();
 private:
     AboutInfo aboutInformation_{this};
     struct Worker;
@@ -107,6 +124,8 @@ private:
     bool rememberWindowPosition_=false;
     bool launchHeld_=false;
     QString pendingLaunchPath_;
+    QString pendingStatement_;
+    QString statementNotice_;
     bool busy_=false;
     QString error_,phase_;
     QString activeAction_;

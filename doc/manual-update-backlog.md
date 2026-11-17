@@ -18,12 +18,25 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-072. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-073. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-072 (2026-11-17) — Open a statement from the desktop or drop it on
+  SpentIt. Contract: [003](../features/003-qif-import-review.md) and
+  [007](../features/007-licensing-and-distribution.md). Chapters:
+  [Bring in transactions](../manual/import-transactions.md) (Choose an export)
+  and [Where do I find…](../manual/where-to-find.md) (Bring in a bank export).
+  Double-click, Open With, and a Dock drop start sidebar **Import…**. A drop
+  on a sidebar account or the open account ledger uses that account's
+  **Import…**. A drop on a report or another page uses sidebar **Import…**.
+  One statement at a time. A statement waits until a SpentIt file is open.
+  An archived account asks to be reactivated. Other files are refused.
+  macOS lists the statement types in Open With and still owns only `.spentit`.
+  Text only; no picture change.
 
 - MAN-071 (2026-11-17) — Searchable Change category. Contract:
   [Categories and selection](../features/010-categories-and-selection.md).

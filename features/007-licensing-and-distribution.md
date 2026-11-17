@@ -1,7 +1,7 @@
 # 007 — Licensing and distribution
 
 Status: **active**
-Last updated: 2026-11-15
+Last updated: 2026-11-17
 
 The owner selected the Unlicense for SpentIt. The text is [LICENSE](../LICENSE).
 It permits any use, including selling copies. That choice replaces the earlier
@@ -31,7 +31,11 @@ with light as the fallback. Installed icons use the light variant. The macOS
 app registers `.spentit`. Opening that file in Finder starts SpentIt and opens
 it. A password-protected file stays on the welcome screen with that file
 selected and asks for the password. If a file is already open, SpentIt brings
-its window forward and leaves that file open. See
+its window forward and leaves that file open. The same app also offers to open
+`.qif`, `.ofx`, `.qfx`, `.qbo`, and `.aso` files. Those types stay alternate
+handlers. SpentIt does not own them. Opening one starts the statement import
+described in [feature 003](003-qif-import-review.md). Windows and Linux
+installers register `.spentit` only. See
 [packaging/README.md](../packaging/README.md).
 
 On Windows the same command writes a per-user installer,

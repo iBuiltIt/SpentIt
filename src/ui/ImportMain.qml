@@ -34,6 +34,10 @@ ApplicationWindow {
     palette.disabled.text: theme.disabled
     palette.disabled.buttonText: theme.disabled
     palette.disabled.highlightedText: theme.disabled
+    DropArea {
+        id:statementWindowDrop;objectName:"statementWindowDrop";anchors.fill:parent;z:-1;keys:["text/uri-list"]
+        onDropped:function(drop){acceptStatementDrop(drop,"")}
+    }
     // The header Help action never accepts/rejects the dialog or takes pointer
     // focus from an editor. Keyboard users can still Tab to it.
     // Enabled commands use the normal text colour. Disabled commands use the
@@ -900,6 +904,7 @@ ApplicationWindow {
     }
     // Navigation is local to this document; pages stay alive to retain ledger view state.
     readonly property bool reportLedger: currentPage==="reports" && reportsWorkspace.mode==="detail"
+    readonly property string ledgerStatementAccount: currentPage==="ledger" && !reportLedger ? (s.accountId||"") : ""
     property var pendingReportNavigation:null
     property string currentPage: "ledger"
     property string historyOpenId: ""
@@ -2286,6 +2291,8 @@ ApplicationWindow {
                 if(action==="rules_prefill") acceptPrefill()
                 if((action==="create" || action==="open" || action==="unlock") && !rulesDirty) loadRulesForm()
                 if(action==="create" || action==="unlock") {password.text="";confirmation.text="";unlockPassword.text=""}
+                if(s.active && (action==="create" || action==="open" || action==="unlock") && (workflow.pendingStatement||"").length)
+                    startStatementImport(workflow.pendingStatement,"")
                 if(action==="close") {settingUp=false;probeTimer.restart();if(closingRequested){allowClose=true;Qt.callLater(function(){window.close();Qt.quit()})} search.clear();splitModel.clear();editDate.clear();editPayee.clear();editMemo.clear();editTotal.clear();dirty=false}
             }
             if(success && ["history","entry_history","select_account","create_account","undo_action","redo_action","undo_edit"].indexOf(action)>=0) syncHistoryOpen()
@@ -2304,6 +2311,8 @@ ApplicationWindow {
         function onChanged() {Qt.callLater(window.clampLedgerColumns)}
         function onLaunchSettled() {if(s.active || settingUp)return;startupPending=!!s.startup;probeTimer.restart()}
         function onExternalDocument() {if(s.active || workflow.busy)return;settingUp=false;location.text=s.path;startupPending=true;probeTimer.restart()}
+        function onExternalStatement() {if(!s.active)return;const path=workflow.pendingStatement;Qt.callLater(function(){startStatementImport(path,"")})}
+        function onStatementNoticeChanged() {if((workflow.statementNotice||"").length)workspaceFeedback=workflow.statementNotice}
     }
     Timer {
         id:probeTimer;interval:startupPending?0:350
@@ -2550,6 +2559,43 @@ ApplicationWindow {
         onRejected:workflow.command("cancel_import_destination")
     }
     property string importTarget: ""
+    function externalPath(value) {
+        if(typeof value==="string" && !value.startsWith("file:"))return value
+        return workflow.localPath(value)
+    }
+    function accountIsArchived(id) { return (s.archivedAccounts||[]).some(function(account){return account.id===id}) }
+    function statementImportOpen() { return importDialog.visible || importDestinationDialog.visible || importDateOrder.visible || importMapping.visible }
+    function acceptStatementDrop(drop, accountId) {
+        if(!drop.hasUrls)return
+        requestExternalFiles(drop.urls, accountId||"")
+        drop.acceptProposedAction()
+    }
+    function startStatementImport(path, accountId) {
+        if(!path)return
+        if(!s.active){if(!workflow.holdStatement(path))workflow.refuseStatement("several");return}
+        if(workflow.busy || statementImportOpen() || pendingAction){workflow.clearPendingStatement();workflow.refuseStatement(workflow.busy || pendingAction?"busy":"several");return}
+        if(accountId && accountIsArchived(accountId)){workflow.clearPendingStatement();workflow.refuseStatement("archived");return}
+        workflow.clearPendingStatement()
+        workflow.setStatementNotice("")
+        guard(function(){importTarget=accountId||"";workflow.command("import",{path:path,account:importTarget})})
+    }
+    function requestExternalFiles(urls, accountId) {
+        if(!urls || urls.length===0)return
+        let paths=[]
+        for(let i=0;i<urls.length;++i)paths.push(externalPath(urls[i]))
+        if(paths.length>1){
+            let statement=false, documents=true
+            for(const path of paths){const kind=workflow.launchFileKind(path);if(kind==="statement")statement=true;if(kind!=="document")documents=false}
+            if(!statement && documents)workflow.setStatementNotice("Open one SpentIt file at a time.")
+            else workflow.refuseStatement("several")
+            return
+        }
+        const path=paths[0]
+        const kind=workflow.launchFileKind(path)
+        if(kind==="document"){workflow.acceptExternalDocument(path);return}
+        if(kind!=="statement"){workflow.refuseStatement("type");return}
+        startStatementImport(path, accountId||"")
+    }
     FileDialog { id:importDialog; title:"Import statement"; nameFilters:["Statement files (*.qif *.ofx *.qfx *.qbo *.aso)","QIF files (*.qif)","OFX files (*.ofx)","QFX files (*.qfx)","QBO files (*.qbo)","ASO files (*.aso)","All files (*)"]; onAccepted:workflow.command("import",{path:workflow.localPath(selectedFile),account:importTarget}) }
     property var qifExportRows: []
     property var exchangeData: ({})
@@ -3609,6 +3655,13 @@ ApplicationWindow {
                 Label {text:"Where did my money go?";font.pixelSize:18;Layout.alignment:Qt.AlignHCenter}
                 Item {Layout.preferredHeight:16}
                 Label {text:"Choose your SpentIt file";font.pixelSize:16;Layout.fillWidth:true}
+                Label {
+                    objectName:"pendingStatementNotice";Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                    visible:!settingUp && ((workflow.statementNotice||"").length>0 || (workflow.pendingStatement||"").length>0)
+                    color:(workflow.statementNotice||"").length?theme.error:theme.text
+                    text:(workflow.statementNotice||"").length ? workflow.statementNotice : (s.unlockRequired ? "After this file opens, SpentIt will import "+workflow.pendingStatementName+"." : "Open or create a file. SpentIt will then import "+workflow.pendingStatementName+".")
+                    Accessible.name:text
+                }
                 NavigableTextField {id:location;objectName:"datasetPath";text:s.path || workflow.suggestedPath;Layout.fillWidth:true;placeholderText:"File path";Accessible.name:"File path"
                     enabled:!workflow.busy
                     onTextEdited:{unlockPassword.clear();if(!settingUp)probeTimer.restart()}
@@ -3681,7 +3734,7 @@ ApplicationWindow {
                                 objectName:"accountDropIndicator"
                             }
                             Repeater {
-                                id:accountRepeater;model:s.sidebarAccounts||s.accounts||[]
+                                id:accountRepeater;objectName:"accountRepeater";model:s.sidebarAccounts||s.accounts||[]
                                 onModelChanged:cancelAccountDrag()
                                 Item {
                                     id:accountRow;required property var modelData
@@ -3713,6 +3766,11 @@ ApplicationWindow {
                                         wrapMode:Text.Wrap;textFormat:Text.PlainText;color:theme.text
                                         Accessible.name:text
                                     }
+                                    }
+                                    DropArea {
+                                        objectName:"accountStatementDrop_"+modelData.id;anchors.fill:parent;z:-1;keys:["text/uri-list"]
+                                        property string statementAccount:modelData.id
+                                        onDropped:function(drop){acceptStatementDrop(drop,modelData.id)}
                                     }
                                     MouseArea {
                                         anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton
@@ -3748,10 +3806,13 @@ ApplicationWindow {
                             Button {text:"Cancel";visible:addingAccount;enabled:!workflow.busy;onClicked:addingAccount=false}
                             Label {text:"Archived";font.bold:true;visible:(s.archivedAccounts||[]).length>0}
                             Repeater {
-                                model:s.archivedAccounts||[]
-                                ColumnLayout {
+                                id:archivedAccountRepeater;objectName:"archivedAccountRepeater";model:s.archivedAccounts||[]
+                                Item {
+                                    id:archivedRow
                                     required property var modelData
-                                    Layout.fillWidth:true;spacing:0
+                                    Layout.fillWidth:true;implicitHeight:archivedContents.implicitHeight
+                                    ColumnLayout {
+                                    id:archivedContents;width:parent.width;spacing:0
                                     Button {
                                         objectName:"archivedAccount_"+modelData.id
                                         Layout.fillWidth:true;text:modelData.name;enabled:!workflow.busy
@@ -3777,6 +3838,12 @@ ApplicationWindow {
                                         topPadding:2;bottomPadding:2;leftPadding:4;rightPadding:4
                                         wrapMode:Text.Wrap;textFormat:Text.PlainText;color:theme.text
                                         Accessible.name:text
+                                    }
+                                    }
+                                    DropArea {
+                                        objectName:"accountStatementDrop_"+modelData.id;anchors.fill:parent;z:-1;keys:["text/uri-list"]
+                                        property string statementAccount:modelData.id
+                                        onDropped:function(drop){acceptStatementDrop(drop,modelData.id)}
                                     }
                                 }
                             }
@@ -3818,6 +3885,11 @@ ApplicationWindow {
                 Item {
                     id:workspaceBody
                     anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.bottom:workspaceStatus.top;anchors.bottomMargin:4
+                    DropArea {
+                        objectName:"ledgerStatementDrop";anchors.fill:parent;z:-1;keys:["text/uri-list"]
+                        visible:currentPage==="ledger" && !window.reportLedger
+                        onDropped:function(drop){acceptStatementDrop(drop,ledgerStatementAccount)}
+                    }
                 Item {
         id:reviewSheet;objectName:"reviewSheet";anchors.fill:parent;visible:currentPage==="review"
         property string title:reviewCountText()

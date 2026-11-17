@@ -58,7 +58,16 @@ protected:
         const auto* opened=static_cast<const QFileOpenEvent*>(event);
         auto path=opened->file();
         if(path.isEmpty()) path=opened->url().toLocalFile();
-        if(model_->deliverLaunchDocument(path)!=ImportModel::LaunchDelivery::ignored) raiseSpentItWindow(window_?*window_:nullptr);
+        if(path.isEmpty()) return true;
+        const auto kind=model_->launchFileKind(path);
+        if(kind==QLatin1String("statement")) {
+            if(model_->deliverLaunchStatement(path)!=ImportModel::LaunchDelivery::ignored) raiseSpentItWindow(window_?*window_:nullptr);
+        } else if(kind==QLatin1String("document")) {
+            if(model_->deliverLaunchDocument(path)!=ImportModel::LaunchDelivery::ignored) raiseSpentItWindow(window_?*window_:nullptr);
+        } else {
+            model_->refuseStatement(QStringLiteral("type"));
+            raiseSpentItWindow(window_?*window_:nullptr);
+        }
         return true;
     }
 private:
@@ -72,6 +81,9 @@ int main(int argc,char** argv) {
     QString launchError;
     const auto launchPath=ImportModel::launchDocumentPath(app.arguments(),&launchError);
     if(!launchError.isEmpty()) {reportLaunchError(launchError);return 2;}
+    QString statementError;
+    const auto statementPath=ImportModel::launchStatementPath(app.arguments(),&statementError);
+    if(!statementError.isEmpty()) {reportLaunchError(statementError);return 2;}
     const bool diagnosticsRequested=app.arguments().contains("--diagnostics");
     if(diagnosticsRequested && !spentit::diagnostics::Collector::instance().enable()){std::cerr<<"Diagnostics unsupported in this build.\n";return 2;}
 #ifdef SPENTIT_DIAGNOSTICS
@@ -99,7 +111,7 @@ int main(int argc,char** argv) {
     const bool smoke=app.arguments().contains("--smoke");
     // Package verification. Same create command as the Create file button.
     const bool smokeCreate=app.arguments().contains("--smoke-create");
-    if(!launchPath.isEmpty() && (smoke || smokeCreate)) {reportLaunchError(QStringLiteral("SpentIt cannot open a file during a package check."));return 2;}
+    if((!launchPath.isEmpty() || !statementPath.isEmpty()) && (smoke || smokeCreate)) {reportLaunchError(QStringLiteral("SpentIt cannot open a file during a package check."));return 2;}
     if(smoke || smokeCreate) {
         smokeSettings=std::make_unique<QTemporaryDir>();
         if(!smokeSettings->isValid()) return 2;
@@ -111,6 +123,7 @@ int main(int argc,char** argv) {
     }
     ImportModel model(spentit::storage::document_gateway((QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/verification").toStdString()));
     if(!launchPath.isEmpty()) model.setLaunchDocument(launchPath);
+    if(!statementPath.isEmpty()) model.deliverLaunchStatement(statementPath);
 #ifdef Q_OS_MACOS
     // Finder delivers a double-clicked file while NSApplication finishes launching.
     // That can be after QML would already open the remembered file. Hold that open

@@ -1,7 +1,7 @@
 # 003 — Import and review
 
 Status: **active**
-Last updated: 2026-11-16
+Last updated: 2026-11-17
 
 Supported imports are the [QIF bank-v6 profile](009-qif-profile.md) and the
 [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md). Further dialects
@@ -13,6 +13,36 @@ ask about a date one day off. That question is in
 Named QIF account sections, explicit mapping, and transfer
 destinations are in [doc/qif-account-imports.md](../doc/qif-account-imports.md)
 and [doc/qif-transfers.md](../doc/qif-transfers.md).
+
+## Opening a statement file
+
+A QIF, OFX, QFX, QBO, or ASO file can start the same import as **Import…**.
+
+- Double-click, Open With, and a drop on the Dock icon use the sidebar
+  **Import…** button. No account is chosen yet.
+- A drop on a sidebar account uses that account's **Import…**, including when
+  another ledger is open. The ledger changes only if that import continues.
+- A drop on the open account ledger uses that account's **Import…**. A report's
+  transaction list, Review, Rules, Categories, Settings, and empty space use
+  the sidebar **Import…** button.
+- An archived account asks you to reactivate it and does not import.
+- One statement at a time. Several files, or a second file while an import is
+  in progress, stops with a message. A busy window asks you to wait and try
+  again. An unsaved edit asks you to save or discard first.
+- If no SpentIt file is open, or it is waiting for a password, the statement
+  waits. Opening, creating, or unlocking the file then starts the import into
+  that file. A file that is already open stays open and receives the import.
+- A `.spentit` file still opens that file, or leaves the open file in place.
+  Any other file is refused. `.spentit.json` is not a statement.
+- The command line accepts one statement path and imports it after the
+  remembered file opens. Finder uses the app bundle. macOS lists SpentIt in
+  Open With and does not take ownership of these types. Windows and Linux
+  installers do not register them.
+
+The existing import questions still apply. An unnamed file with no chosen
+account asks for a destination. A file that already matches one account uses
+that account. Several accounts open the mapping dialog. An ambiguous QIF date
+still asks for the date order.
 
 ## What import does
 

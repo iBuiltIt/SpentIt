@@ -2632,25 +2632,51 @@ QString absoluteLaunchPath(const QString& path) {
     if(path.isEmpty()) return {};
     return QFileInfo(path).absoluteFilePath();
 }
+bool statementExtension(const QString& path) {
+    const auto suffix=QFileInfo(path).suffix().toLower();
+    return suffix==QLatin1String("qif") || suffix==QLatin1String("ofx") || suffix==QLatin1String("qfx") || suffix==QLatin1String("qbo") || suffix==QLatin1String("aso");
 }
-QString ImportModel::launchDocumentPath(const QStringList& arguments, QString* error) {
-    if(error) error->clear();
+QString oneStatementMessage() { return QStringLiteral("SpentIt imports one statement at a time."); }
+QString statementRefusalText(const QString& reason) {
+    if(reason==QLatin1String("busy")) return QStringLiteral("Wait until the current action finishes, then import this statement again.");
+    if(reason==QLatin1String("several")) return oneStatementMessage();
+    if(reason==QLatin1String("archived")) return QStringLiteral("This account is archived. Reactivate it before importing.");
+    if(reason==QLatin1String("type")) return QStringLiteral("SpentIt imports QIF, OFX, QFX, QBO, and ASO statements.");
+    return {};
+}
+struct ParsedLaunch { QString document; QString statement; QString error; };
+ParsedLaunch parseLaunchArguments(const QStringList& arguments) {
+    ParsedLaunch parsed;
     QString found;
+    bool foundStatement=false;
     for(int i=1;i<arguments.size();++i) {
         const auto arg=arguments.at(i);
         if(arg=="--diagnostics" || arg=="--smoke" || arg=="--smoke-create") continue;
-        if(arg.startsWith('-')) {
-            if(error) *error=QStringLiteral("SpentIt does not recognize that command.");
-            return {};
-        }
+        if(arg.startsWith('-')) { parsed.error=QStringLiteral("SpentIt does not recognize that command."); return parsed; }
         if(arg.isEmpty()) continue;
+        const auto path=QFileInfo(arg).absoluteFilePath();
+        const bool statement=statementExtension(path);
         if(!found.isEmpty()) {
-            if(error) *error=QStringLiteral("Open one SpentIt file at a time.");
-            return {};
+            parsed.error=(foundStatement || statement) ? oneStatementMessage() : QStringLiteral("Open one SpentIt file at a time.");
+            return parsed;
         }
-        found=QFileInfo(arg).absoluteFilePath();
+        found=path;
+        foundStatement=statement;
     }
-    return found;
+    if(foundStatement) parsed.statement=found;
+    else parsed.document=found;
+    return parsed;
+}
+}
+QString ImportModel::launchDocumentPath(const QStringList& arguments, QString* error) {
+    const auto parsed=parseLaunchArguments(arguments);
+    if(error) *error=parsed.error;
+    return parsed.error.isEmpty()?parsed.document:QString();
+}
+QString ImportModel::launchStatementPath(const QStringList& arguments, QString* error) {
+    const auto parsed=parseLaunchArguments(arguments);
+    if(error) *error=parsed.error;
+    return parsed.error.isEmpty()?parsed.statement:QString();
 }
 void ImportModel::setLaunchDocument(const QString& path) {
     const auto absolute=absoluteLaunchPath(path);
@@ -2680,6 +2706,55 @@ ImportModel::LaunchDelivery ImportModel::deliverLaunchDocument(const QString& re
     setLaunchDocument(path);
     if(launchHeld_) releaseLaunchHold();
     else emit externalDocument();
+    return LaunchDelivery::open;
+}
+QString ImportModel::launchFileKind(const QString& path) const {
+    if(statementExtension(path)) return QStringLiteral("statement");
+    if(QFileInfo(path).suffix().compare(QLatin1String("spentit"),Qt::CaseInsensitive)==0) return QStringLiteral("document");
+    return QStringLiteral("other");
+}
+QString ImportModel::pendingStatementName() const { return QFileInfo(pendingStatement_).fileName(); }
+void ImportModel::setStatementNotice(const QString& message) {
+    statementNotice_=message;
+    emit statementNoticeChanged();
+}
+void ImportModel::refuseStatement(const QString& reason) {
+    const auto message=statementRefusalText(reason);
+    if(!message.isEmpty()) setStatementNotice(message);
+}
+bool ImportModel::holdStatement(const QString& requested) {
+    const auto path=absoluteLaunchPath(requested);
+    if(path.isEmpty() || !statementExtension(path)) return false;
+    if(!pendingStatement_.isEmpty() && pendingStatement_!=path) return false;
+    if(pendingStatement_!=path) { pendingStatement_=path; emit pendingStatementChanged(); }
+    if(!statementNotice_.isEmpty()) setStatementNotice({});
+    return true;
+}
+void ImportModel::clearPendingStatement() {
+    if(pendingStatement_.isEmpty()) return;
+    pendingStatement_.clear();
+    emit pendingStatementChanged();
+}
+ImportModel::LaunchDelivery ImportModel::deliverLaunchStatement(const QString& requested) {
+    const auto path=absoluteLaunchPath(requested);
+    if(path.isEmpty() || !statementExtension(path)) return LaunchDelivery::ignored;
+    if(!pendingStatement_.isEmpty()) {
+        if(pendingStatement_==path) { if(launchHeld_) releaseLaunchHold(); return LaunchDelivery::attention; }
+        refuseStatement(QStringLiteral("several"));
+        return LaunchDelivery::attention;
+    }
+    const auto question=state_.value("importDateQuestion").toMap();
+    const bool waiting=busy_ || state_.value("importDestination").toBool() || !state_.value("importPlan").toList().isEmpty() || !question.value("example").toString().isEmpty();
+    if(waiting) {
+        refuseStatement(busy_ ? QStringLiteral("busy") : QStringLiteral("several"));
+        return LaunchDelivery::attention;
+    }
+    pendingStatement_=path;
+    if(!statementNotice_.isEmpty()) statementNotice_.clear();
+    emit pendingStatementChanged();
+    emit statementNoticeChanged();
+    if(launchHeld_) releaseLaunchHold();
+    emit externalStatement();
     return LaunchDelivery::open;
 }
 ImportModel::~ImportModel() {pool_.waitForDone();worker_->gateway->close();}

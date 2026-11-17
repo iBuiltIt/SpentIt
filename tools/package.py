@@ -452,33 +452,80 @@ def highest_minos(app: Path) -> tuple[int, ...]:
     return best
 
 
+STATEMENT_EXTENSIONS = ("qif", "ofx", "qfx", "qbo", "aso")
+
+
+def statement_type_id(extension: str) -> str:
+    return f"com.stefanwessels.spentit.import.{extension}"
+
+
 def register_spentit_document(info: dict) -> None:
-    """Finder association for .spentit. packaging/macos/Info.plist.in has the same keys."""
-    info["CFBundleDocumentTypes"] = [{
+    """Finder association for .spentit and statement files.
+
+    packaging/macos/Info.plist.in has the same keys. SpentIt owns .spentit.
+    Statement types are alternate handlers, not owned types.
+    """
+    documents = [{
         "CFBundleTypeName": "SpentIt file",
         "CFBundleTypeRole": "Editor",
         "LSHandlerRank": "Owner",
         "LSItemContentTypes": ["com.stefanwessels.spentit.file"],
         "CFBundleTypeExtensions": ["spentit"],
     }]
+    imported = []
+    for extension in STATEMENT_EXTENSIONS:
+        description = f"{extension.upper()} statement"
+        type_id = statement_type_id(extension)
+        documents.append({
+            "CFBundleTypeName": description,
+            "CFBundleTypeRole": "Editor",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [type_id],
+            "CFBundleTypeExtensions": [extension],
+        })
+        imported.append({
+            "UTTypeIdentifier": type_id,
+            "UTTypeDescription": description,
+            "UTTypeConformsTo": ["public.data"],
+            "UTTypeTagSpecification": {"public.filename-extension": [extension]},
+        })
+    info["CFBundleDocumentTypes"] = documents
     info["UTExportedTypeDeclarations"] = [{
         "UTTypeIdentifier": "com.stefanwessels.spentit.file",
         "UTTypeDescription": "SpentIt file",
         "UTTypeConformsTo": ["public.data"],
         "UTTypeTagSpecification": {"public.filename-extension": ["spentit"]},
     }]
+    info["UTImportedTypeDeclarations"] = imported
 
 
 def assert_spentit_document(info: dict) -> None:
     types = info.get("CFBundleDocumentTypes") or []
     exported = info.get("UTExportedTypeDeclarations") or []
+    imported = info.get("UTImportedTypeDeclarations") or []
     extensions: list[str] = []
     for item in exported:
         tags = item.get("UTTypeTagSpecification") or {}
         extensions.extend(tags.get("public.filename-extension") or [])
-    owns = any("com.stefanwessels.spentit.file" in (item.get("LSItemContentTypes") or []) for item in types)
-    if "spentit" not in extensions or not owns:
+    owns = any(
+        "com.stefanwessels.spentit.file" in (item.get("LSItemContentTypes") or [])
+        and item.get("LSHandlerRank") == "Owner"
+        for item in types
+    )
+    imported_extensions: list[str] = []
+    for item in imported:
+        tags = item.get("UTTypeTagSpecification") or {}
+        imported_extensions.extend(tags.get("public.filename-extension") or [])
+    alternate = {
+        extension
+        for item in types
+        if item.get("LSHandlerRank") == "Alternate"
+        for extension in (item.get("CFBundleTypeExtensions") or [])
+    }
+    if extensions != ["spentit"] or not owns:
         raise SystemExit("the app did not register .spentit")
+    if set(imported_extensions) != set(STATEMENT_EXTENSIONS) or alternate != set(STATEMENT_EXTENSIONS):
+        raise SystemExit("the app did not register statement files as alternate types")
 
 
 def patch_info_plist(app: Path, version: str, minimum: tuple[int, ...]) -> None:

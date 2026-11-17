@@ -9,6 +9,7 @@
 #include <QTemporaryDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QUrl>
 #include <QSettings>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -1651,6 +1652,126 @@ private slots:
         error.clear();
         QVERIFY(ImportModel::launchDocumentPath({"SpentIt.exe","--not-a-command"},&error).isEmpty());
         QCOMPARE(error,QString("SpentIt does not recognize that command."));
+        error.clear();
+        QVERIFY(ImportModel::launchDocumentPath({"SpentIt.exe","Statement.qif"},&error).isEmpty());
+        QVERIFY(error.isEmpty());
+        QCOMPARE(ImportModel::launchStatementPath({"SpentIt.exe","Statement.QIF"},&error),QFileInfo("Statement.QIF").absoluteFilePath());
+        QVERIFY(error.isEmpty());
+        QCOMPARE(ImportModel::launchStatementPath({"SpentIt.exe","card.ofx"},&error),QFileInfo("card.ofx").absoluteFilePath());
+        QCOMPARE(ImportModel::launchDocumentPath({"SpentIt.exe","notes.txt"},&error),QFileInfo("notes.txt").absoluteFilePath());
+        QVERIFY(ImportModel::launchStatementPath({"SpentIt.exe","exchange.spentit.json"},&error).isEmpty());
+        QVERIFY(ImportModel::launchDocumentPath({"SpentIt.exe","a.qif","b.ofx"},&error).isEmpty());
+        QCOMPARE(error,QString("SpentIt imports one statement at a time."));
+        error.clear();
+        QVERIFY(ImportModel::launchStatementPath({"SpentIt.exe","Household.spentit","card.qif"},&error).isEmpty());
+        QCOMPARE(error,QString("SpentIt imports one statement at a time."));
+    }
+    void statementFileOpen() {
+        QTemporaryDir dir;
+        const auto spentit=QFileInfo(dir.path()+"/household.spentit").absoluteFilePath();
+        const auto statement=QFileInfo(dir.path()+"/january.qif").absoluteFilePath();
+        const auto second=QFileInfo(dir.path()+"/february.qif").absoluteFilePath();
+        const auto other=QFileInfo(dir.path()+"/notes.spentit.json").absoluteFilePath();
+        QFile source(statement);
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("D15/01/2026\nT-3.50\nPDropped\n^\n");
+        source.close();
+        QFile again(second);
+        QVERIFY(again.open(QIODevice::WriteOnly));
+        again.write("D16/01/2026\nT-4.00\nPOther\n^\n");
+        again.close();
+        ImportModel cold(storage::document_gateway());
+        QCOMPARE(cold.launchFileKind(statement),QString("statement"));
+        QCOMPARE(cold.launchFileKind(spentit),QString("document"));
+        QCOMPARE(cold.launchFileKind(other),QString("other"));
+        QCOMPARE(cold.launchFileKind("Card.OFX"),QString("statement"));
+        const auto remembered=cold.state().value("path").toString();
+        QCOMPARE(int(cold.deliverLaunchStatement(statement)),int(ImportModel::LaunchDelivery::open));
+        QCOMPARE(cold.pendingStatement(),statement);
+        QCOMPARE(cold.pendingStatementName(),QString("january.qif"));
+        QCOMPARE(cold.state().value("path").toString(),remembered);
+        QCOMPARE(int(cold.deliverLaunchStatement(statement)),int(ImportModel::LaunchDelivery::attention));
+        QCOMPARE(cold.statementNotice(),QString());
+        QSignalSpy refused(&cold,&ImportModel::statementNoticeChanged);
+        QCOMPARE(int(cold.deliverLaunchStatement(second)),int(ImportModel::LaunchDelivery::attention));
+        QCOMPARE(cold.pendingStatement(),statement);
+        QCOMPARE(cold.statementNotice(),QString("SpentIt imports one statement at a time."));
+        QVERIFY(refused.count()>0);
+        ImportModel openFile(storage::document_gateway());
+        create(openFile,spentit);
+        const auto first=openFile.state().value("accountId").toString();
+        const auto firstName=openFile.state().value("name").toString();
+        const auto savings=openFile.state().value("nextAccountId").toString();
+        run(openFile,"create_account",{{"id",savings},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+        QCOMPARE(openFile.state().value("accountId").toString(),savings);
+        run(openFile,"archive_account",{{"operation",openFile.newIdentity()}});
+        const auto archived=openFile.state().value("archivedAccounts").toList();
+        QVERIFY2(!archived.isEmpty(), qPrintable(openFile.state().value("name").toString()));
+        QCOMPARE(archived.front().toMap().value("id").toString(), savings);
+        QCOMPARE(int(openFile.deliverLaunchDocument(dir.path()+"/other.spentit")),int(ImportModel::LaunchDelivery::attention));
+        QCOMPARE(openFile.state().value("path").toString(),spentit);
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&openFile);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* root=engine.rootObjects().first();
+        auto invoke=[&](const QVariantList& files,const QString& account){
+            return QMetaObject::invokeMethod(root,"requestExternalFiles",Q_ARG(QVariant,QVariant(files)),Q_ARG(QVariant,QVariant(account)));
+        };
+        auto* quick=qobject_cast<QQuickWindow*>(root);
+        QVERIFY(quick && quick->contentItem());
+        auto find=[&](const QString& name){return visualItem(quick->contentItem(),name);};
+        QTRY_VERIFY(find("ledgerStatementDrop"));
+        QVERIFY(find("ledgerStatementDrop")->property("visible").toBool());
+        QTRY_VERIFY(find("accountStatementDrop_"+savings));
+        auto* archivedDrop=find("accountStatementDrop_"+savings);
+        QCOMPARE(archivedDrop->property("statementAccount").toString(),savings);
+        QVERIFY(find("accountStatementDrop_"+first));
+        QVERIFY(QMetaObject::invokeMethod(find("reportsNavigation"),"clicked"));
+        QTRY_VERIFY(!find("ledgerStatementDrop")->property("visible").toBool());
+        QCOMPARE(root->property("ledgerStatementAccount").toString(),QString());
+        QTRY_VERIFY_WITH_TIMEOUT(!openFile.busy(),30000);
+        QVERIFY(invoke(QVariantList{other},QString()));
+        QCOMPARE(openFile.statementNotice(),QString("SpentIt imports QIF, OFX, QFX, QBO, and ASO statements."));
+        QCOMPARE(root->property("workspaceFeedback").toString(),openFile.statementNotice());
+        QVERIFY(invoke(QVariantList{statement,second},first));
+        QCOMPARE(openFile.statementNotice(),QString("SpentIt imports one statement at a time."));
+        QVERIFY(invoke(QVariantList{QUrl::fromLocalFile(statement)},savings));
+        QCOMPARE(openFile.statementNotice(),QString("This account is archived. Reactivate it before importing."));
+        QVERIFY(!openFile.state().value("importDestination").toBool());
+        QVERIFY(invoke(QVariantList{statement},first));
+        QTRY_VERIFY_WITH_TIMEOUT(!openFile.busy(),30000);
+        QVERIFY2(openFile.error().isEmpty(),qPrintable(openFile.error()));
+        QCOMPARE(openFile.state().value("accountId").toString(),first);
+        QCOMPARE(openFile.state().value("name").toString(),firstName);
+        QCOMPARE(selected(openFile).value("draft").toMap().value("payee").toString(),QString("Dropped"));
+        QVERIFY(invoke(QVariantList{second},QString()));
+        QTRY_VERIFY_WITH_TIMEOUT(!openFile.busy(),30000);
+        QTRY_VERIFY(root->findChild<QObject*>("importDestinationDialog")->property("visible").toBool());
+        run(openFile,"cancel_import_destination");
+        QTRY_VERIFY(!root->findChild<QObject*>("importDestinationDialog")->property("visible").toBool());
+        QSignalSpy delivered(&openFile,&ImportModel::externalStatement);
+        QCOMPARE(int(openFile.deliverLaunchStatement(second)),int(ImportModel::LaunchDelivery::open));
+        QCOMPARE(delivered.count(),1);
+        QTRY_VERIFY_WITH_TIMEOUT(root->findChild<QObject*>("importDestinationDialog")->property("visible").toBool(),30000);
+        run(openFile,"cancel_import_destination");
+        ImportModel waiting(storage::document_gateway());
+        QCOMPARE(int(waiting.deliverLaunchStatement(statement)),int(ImportModel::LaunchDelivery::open));
+        QQmlApplicationEngine welcome;
+        welcome.rootContext()->setContextProperty("workflow",&waiting);
+        welcome.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!welcome.rootObjects().isEmpty());
+        auto* welcomeRoot=welcome.rootObjects().first();
+        QTRY_VERIFY(welcomeRoot->findChild<QObject*>("welcomeScreen")->property("visible").toBool());
+        auto* notice=welcomeRoot->findChild<QObject*>("pendingStatementNotice");
+        QVERIFY(notice);
+        QTRY_VERIFY(notice->property("visible").toBool());
+        QCOMPARE(notice->property("text").toString(),QString("Open or create a file. SpentIt will then import january.qif."));
+        const auto created=QFileInfo(dir.path()+"/created.spentit").absoluteFilePath();
+        create(waiting,created);
+        QTRY_VERIFY_WITH_TIMEOUT(!waiting.busy(),30000);
+        QVERIFY(welcomeRoot->findChild<QObject*>("importDestinationDialog")->property("visible").toBool());
+        QCOMPARE(waiting.state().value("path").toString(),created);
     }
     void launchDocument_data() {
         QTest::addColumn<QString>("kind");

@@ -47,7 +47,7 @@ Qt and PCRE2 are found from `CMAKE_PREFIX_PATH` and `SPENTIT_PCRE2_ROOT`. When t
 
 ## macOS local packages
 
-Keep using `./build/SpentIt` for the normal development executable. That executable accepts one `.spentit` path on the command line. It is not a Finder document handler. The separate `spentit_macos_bundle` target produces `local-app/SpentIt.app` inside the configured build directory, with the supplied light ICNS, a local bundle identifier, and the `.spentit` document type. Finder binds the extension to one app. Saved settings retain their existing organization/application identity.
+Keep using `./build/SpentIt` for the normal development executable. That executable accepts one `.spentit` path on the command line, or one `.qif`, `.ofx`, `.qfx`, `.qbo`, or `.aso` path. A statement path imports after the remembered file opens. The plain executable is not a Finder document handler. The separate `spentit_macos_bundle` target produces `local-app/SpentIt.app` inside the configured build directory, with the supplied light ICNS, a local bundle identifier, the owned `.spentit` document type, and alternate handlers for those statement extensions. Finder binds `.spentit` to one app. Statement files appear in Open With. Saved settings retain their existing organization/application identity.
 
 To create a fresh package from the repository root, with a Release build configured (choose an unused output name):
 

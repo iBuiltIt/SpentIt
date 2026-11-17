@@ -61,6 +61,28 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Statement drop and double-click — 2026-11-17
+
+A QIF, OFX, QFX, QBO, or ASO file can start Import. Double-click, Open With,
+and a Dock drop use sidebar Import, with no account chosen yet. A drop on a
+sidebar account or the open account ledger uses that account's Import. A drop
+on a report or another page uses sidebar Import. One statement at a time. A
+statement waits until a SpentIt file is open. An archived account asks to be
+reactivated. macOS lists the statement types in Open With and still owns only
+`.spentit`. See [import](../features/003-qif-import-review.md). Manual work is
+MAN-072.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release functions
+`statementFileOpen`, `launchDocumentArgument`, `launchDocument`,
+`externalDocument`, and `externalDocumentChoice` passed offscreen. They cover
+statement arguments, keeping the open file, one statement at a time, a drop
+onto another account, an archived account, a report page, the destination
+question, a statement delivered while the file is open, and a statement that
+waits until a file is created. `./build/SpentIt --smoke` exited 0. The built
+local app’s Info.plist registers `.spentit` as Owner and the five statement
+extensions as Alternate. No live Finder drag, full UI suite, sanitizer run, or
+other-platform run is claimed.
+
 ## Searchable Change category — 2026-11-17
 
 Change category opens a compact popup at the context-menu location. The filter
