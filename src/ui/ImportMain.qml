@@ -399,7 +399,7 @@ ApplicationWindow {
     function chooseLedgerCategory(choice) {
         if(workflow.busy || s.readOnly || !(s.selectionCount>0))return
         const rows=s.selection||[]
-        ledgerContext.close()
+        ledgerCategoryMenu.close();ledgerContext.close()
         if(rows.some(function(row){return (row.splits||[]).length!==1})) {
             pendingLedgerCategory=choice
             bulkCategoryDialog.open()
@@ -535,23 +535,81 @@ ApplicationWindow {
         LedgerMenuItem {objectName:"unmergeSelection";text:"Unmerge";enabled:!window.reportLedger && !s.readOnly && !workflow.busy && !!s.canUnmerge;onTriggered:guard(function(){pendingUnmergeNotice=s.unmergeNotice||"";if(pendingUnmergeNotice.length)unmergeConfirm.open();else{captureLedgerView("review");workflow.command("unmerge")}})}
         LedgerMenuItem {objectName:"mergeSelection";text:"Link to other account…";enabled:!window.reportLedger && !s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)===1;onTriggered:mergeSelected()}
         LedgerMenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
-        Menu {
-            id:ledgerCategoryMenu;delegate:LedgerMenuItem {}
-            objectName:"ledgerCategoryMenu";title:"Change category";popupType:Popup.Item;cascade:true
-            enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0
-            width:Math.min(categorySelectorWidth,window.width-40);height:Math.min(420,contentItem.contentHeight+topPadding+bottomPadding)
-            contentItem:ListView {
-                implicitHeight:contentHeight;model:ledgerCategoryMenu.contentModel;clip:true;spacing:0
-                currentIndex:ledgerCategoryMenu.currentIndex;boundsBehavior:Flickable.StopAtBounds
-                ScrollBar.vertical:UsableScrollBar {objectName:"ledgerCategoryScrollBar"}
+        LedgerMenuItem {
+            objectName:"openLedgerCategoryFilter";text:"Change category"
+            enabled:ledgerCategoryMenu.enabled
+            onTriggered: {
+                const point=ledgerContext.parent.mapToItem(window.contentItem,ledgerContext.x,ledgerContext.y)
+                ledgerCategoryMenu.anchorX=point.x
+                ledgerCategoryMenu.anchorY=point.y
+                ledgerContext.close();ledgerCategoryMenu.open()
             }
-            Instantiator {
-                model:ledgerCategoryChoices
+        }
+    }
+    Popup {
+        id:ledgerCategoryMenu
+        objectName:"ledgerCategoryMenu";popupType:Popup.Item
+        parent:window.contentItem;modal:true;dim:false;focus:true
+        closePolicy:Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed:ledger.forceActiveFocus()
+        property real anchorX:10
+        property real anchorY:10
+        x:Math.max(10,Math.min(anchorX,window.width-width-10))
+        y:Math.max(10,Math.min(anchorY,window.height-height-10))
+        property alias currentIndex:categoryMatches.currentIndex
+        readonly property int count:filteredChoices.length
+        function eligible(index) {const c=filteredChoices[index];return !!c && (!c.account || c.accountId!==s.accountId)}
+        function acceptChoice() {if(eligible(currentIndex))chooseLedgerCategory(filteredChoices[currentIndex])}
+        enabled:!s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)>0
+        width:Math.min(categorySelectorWidth,window.width-40);height:Math.min(420,window.height-20,contentItem.contentHeight+topPadding+bottomPadding)
+        readonly property var filteredChoices:ledgerCategoryChoices.filter(c=>c.path.toLowerCase().indexOf(ledgerCategoryFilter.text.toLowerCase())>=0)
+        function moveChoice(direction) {
+            let index=currentIndex+direction
+            while(index>=0 && index<count) {
+                if(eligible(index)){currentIndex=index;categoryMatches.positionViewAtIndex(index,ListView.Contain);return}
+                index+=direction
+            }
+        }
+        function resetChoice() {currentIndex=-1;moveChoice(1);categoryMatches.positionViewAtBeginning()}
+        onOpened: {ledgerContext.close();ledgerCategoryFilter.text="";resetChoice();ledgerCategoryFilter.forceActiveFocus()}
+        contentItem:ColumnLayout {
+            spacing:4
+            readonly property real contentHeight:ledgerCategoryFilter.implicitHeight+spacing+Math.max(categoryChoiceRowHeight,categoryMatches.contentHeight)
+            NavigableTextField {
+                id:ledgerCategoryFilter;objectName:"ledgerCategoryFilter"
+                Layout.fillWidth:true
+                placeholderText:"Filter categories…";Accessible.name:"Filter categories"
+                selectByMouse:true;maximumLength:256
+                onTextChanged:Qt.callLater(ledgerCategoryMenu.resetChoice)
+                Keys.priority:Keys.BeforeItem
+                Keys.onPressed:function(event) {
+                    if(event.key===Qt.Key_Down || event.key===Qt.Key_Up) {
+                        ledgerCategoryMenu.moveChoice(event.key===Qt.Key_Down?1:-1);event.accepted=true
+                    } else if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter) {
+                        ledgerCategoryMenu.acceptChoice()
+                        event.accepted=true
+                    } else if(event.key===Qt.Key_Escape) {
+                        ledgerCategoryMenu.close();ledgerContext.close();ledger.forceActiveFocus();event.accepted=true
+                    }
+                }
+            }
+            ListView {
+                id:categoryMatches;objectName:"ledgerCategoryMatches"
+                Layout.fillWidth:true;Layout.fillHeight:true
+                implicitHeight:Math.max(categoryChoiceRowHeight,contentHeight)
+                model:ledgerCategoryMenu.filteredChoices;clip:true;spacing:0
+                currentIndex:-1;boundsBehavior:Flickable.StopAtBounds
+                ScrollBar.vertical:UsableScrollBar {objectName:"ledgerCategoryScrollBar"}
+                Label {anchors.centerIn:parent;text:"No matches";visible:ledgerCategoryMenu.filteredChoices.length===0}
                 delegate:LedgerMenuItem {
                     id:categoryChoice
                     required property var modelData
                     required property int index
                     objectName:"ledgerCategoryChoice_"+index
+                    width:categoryMatches.width-16
+                    focusPolicy:Qt.NoFocus
+                    highlighted:index===categoryMatches.currentIndex
+                    onHoveredChanged:if(hovered)categoryMatches.currentIndex=index
                     text:modelData.path.replace(/&/g,"&&")
                     enabled:!modelData.account || modelData.accountId!==s.accountId
                     padding:0;topPadding:0;bottomPadding:0;leftPadding:8;rightPadding:8;spacing:0
@@ -565,8 +623,6 @@ ApplicationWindow {
                     }
                     onTriggered:chooseLedgerCategory(modelData)
                 }
-                onObjectAdded:(index,object)=>ledgerCategoryMenu.insertItem(index,object)
-                onObjectRemoved:(index,object)=>ledgerCategoryMenu.removeItem(object)
             }
         }
     }

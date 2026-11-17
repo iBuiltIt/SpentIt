@@ -502,7 +502,7 @@ private slots:
             run(model,"create",{{"path",path},{"overwrite",true},{"protected",false},{"name","Replacement"},{"currency","CAD"}});checkSort(model,0,true);run(model,"close");
         }
     }
-    void categorySubmenuScrolls() {
+    void categoryPopupFiltersAndScrolls() {
         ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);window->show();QVERIFY(QTest::qWaitForWindowExposed(window));
@@ -510,16 +510,63 @@ private slots:
         root->setProperty("s",QVariantMap{{"active",true},{"selectionCount",1},{"transfersSupported",true},{"categories",categories}});
         auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(showPopup(context));QTRY_VERIFY(context->property("visible").toBool());
         auto* menu=object(root,"ledgerCategoryMenu");QVERIFY(menu);
-        // Hover the parent menu entry, as the owner requested.
+        // Open the searchable popup from the context menu.
         auto* content=qvariant_cast<QQuickItem*>(context->property("contentItem"));QVERIFY(content);
         QQuickItem* entry=nullptr;for(auto* item:content->childItems())for(auto* child:item->childItems())if(child->property("text").toString()=="Change category")entry=child;
-        QVERIFY(entry);QTest::qWait(100);QTest::mouseMove(window,entry->mapToScene(QPointF(entry->width()/2,entry->height()/2)).toPoint());
+        QVERIFY(entry);QTest::qWait(100);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,entry->mapToScene(QPointF(entry->width()/2,entry->height()/2)).toPoint());
         QTRY_VERIFY(menu->property("visible").toBool());QVERIFY(menu->property("height").toReal()<=420);
         auto* firstChoice=object(root,"ledgerCategoryChoice_0");QVERIFY(firstChoice);
         QCOMPARE(firstChoice->property("height").toReal(),root->property("categoryChoiceRowHeight").toReal());
         QVERIFY(firstChoice->property("height").toReal()<28);
         auto* bar=object(root,"ledgerCategoryScrollBar");QVERIFY(bar);QVERIFY(bar->property("size").toReal()<1);QVERIFY(bar->property("interactive").toBool());
+        auto* filter=qobject_cast<QQuickItem*>(object(root,"ledgerCategoryFilter"));QVERIFY(filter);
+        QTRY_VERIFY(filter->hasActiveFocus());
+        for(char c:QByteArray("CATEGORY 7"))QTest::keyClick(window,c);
+        QCOMPARE(filter->property("text").toString().toLower(),QString("category 7"));
+        QTRY_COMPARE(menu->property("count").toInt(),10);
+        QTRY_COMPARE(menu->property("currentIndex").toInt(),0);
+        QTest::keyClick(window,Qt::Key_Down);
+        QCOMPARE(menu->property("currentIndex").toInt(),1);
+        QTest::keyClick(window,Qt::Key_Up);
+        QCOMPARE(menu->property("currentIndex").toInt(),0);
+        QVERIFY(filter->hasActiveFocus());
+        for(char c:QByteArray("xyz"))QTest::keyClick(window,c);
+        QTRY_COMPARE(menu->property("count").toInt(),0);
+        QTest::keyClick(window,Qt::Key_Return);
+        QVERIFY(menu->property("visible").toBool());
+        QTest::keyClick(window,Qt::Key_Escape);
+        QTRY_VERIFY(!menu->property("visible").toBool());
+        QTRY_VERIFY(!context->property("visible").toBool());
+        QVERIFY(showPopup(context));QVERIFY(QMetaObject::invokeMethod(menu,"open"));
+        QTRY_VERIFY(filter->hasActiveFocus());
+        QCOMPARE(filter->property("text").toString(),QString());
+        QTRY_COMPARE(menu->property("count").toInt(),81);
+        for(char c:QByteArray("79"))QTest::keyClick(window,c);QTRY_COMPARE(menu->property("count").toInt(),1);
+        QTest::keyClick(window,Qt::Key_Backspace);QTRY_COMPARE(menu->property("count").toInt(),17);
+        QTest::keyClick(window,Qt::Key_Backspace);QTRY_COMPARE(menu->property("count").toInt(),81);
+        auto* visibleChoice=qobject_cast<QQuickItem*>(object(root,"ledgerCategoryChoice_1"));QVERIFY(visibleChoice);
+        QTest::mouseMove(window,visibleChoice->mapToScene(QPointF(20,visibleChoice->height()/2)).toPoint());
+        QVERIFY(filter->hasActiveFocus());
+        for(char c:QByteArray("79"))QTest::keyClick(window,c);
+        QTRY_COMPARE(menu->property("count").toInt(),1);
+        QVERIFY(filter->hasActiveFocus());
         if(qEnvironmentVariableIsSet("SPENTIT_CATEGORY_MENU_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_CATEGORY_MENU_SCREENSHOT")));
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,QPoint(window->width()-5,window->height()-5));
+        QTRY_VERIFY(!menu->property("visible").toBool());
+        auto state=root->property("s").toMap();state["accountId"]="1";
+        state["accountCategories"]=QVariantList{
+            QVariantMap{{"account",true},{"accountId","1"},{"path","A checking"}},
+            QVariantMap{{"account",true},{"accountId","2"},{"path","B savings"}}};
+        root->setProperty("s",state);
+        QVERIFY(QMetaObject::invokeMethod(menu,"open"));QTRY_VERIFY(filter->hasActiveFocus());
+        for(char c:QByteArray("[account]"))QTest::keyClick(window,c);
+        QTRY_COMPARE(menu->property("count").toInt(),2);
+        QTRY_COMPARE(menu->property("currentIndex").toInt(),1);
+        QTest::keyClick(window,Qt::Key_Up);QCOMPARE(menu->property("currentIndex").toInt(),1);
+        QVERIFY(edit(root,"ledgerCategoryFilter","A checking"));
+        QTRY_COMPARE(menu->property("currentIndex").toInt(),-1);
+        QTest::keyClick(window,Qt::Key_Return);QVERIFY(menu->property("visible").toBool());
+        QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!menu->property("visible").toBool());
     }
     void acceptedManualTransferAssignment() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
@@ -569,7 +616,13 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(manualMenu,"open"));QTRY_VERIFY(manualMenu->property("visible").toBool());
         QObject* beforeChoice=nullptr;
         for(int i=0;i<20;++i){auto* candidate=object(root,("ledgerCategoryChoice_"+QString::number(i)).toUtf8().constData());if(candidate && candidate->property("text").toString()=="Before"){beforeChoice=candidate;break;}}
-        QVERIFY(beforeChoice);QVERIFY(QMetaObject::invokeMethod(beforeChoice,"triggered"));QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QVERIFY(beforeChoice);
+        auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);window->show();QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* filter=qobject_cast<QQuickItem*>(object(root,"ledgerCategoryFilter"));QVERIFY(filter);filter->forceActiveFocus();
+        for(char c:QByteArray("before"))QTest::keyClick(window,c);
+        QTRY_COMPARE(manualMenu->property("count").toInt(),1);
+        QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QTRY_VERIFY(!manualMenu->property("visible").toBool());QTRY_VERIFY(!manualContext->property("visible").toBool());
         QCOMPARE(model.rowRecord(model.occurrenceIndex(manualBatch,0)).value("category").toString(),QString("Before"));
         QMap<QString,QString> original;for(const auto& batch:{accepted,pending,manualBatch})original[batch]=model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString();
         run(model,"select",{{"row",model.occurrenceIndex(accepted,0)}});run(model,"select",{{"row",model.occurrenceIndex(pending,0)},{"toggle",true}});
@@ -578,7 +631,10 @@ private slots:
         auto* context=object(root,"ledgerContext");QVERIFY(context);QVERIFY(showPopup(context));QTRY_VERIFY(context->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(menu,"open"));QTRY_VERIFY(menu->property("visible").toBool());
         auto* choice=object(root,"ledgerCategoryChoice_0");QVERIFY(choice);
-        QVERIFY(QMetaObject::invokeMethod(choice,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        auto* choiceItem=qobject_cast<QQuickItem*>(choice);QVERIFY(choiceItem);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,choiceItem->mapToScene(QPointF(20,choiceItem->height()/2)).toPoint());
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QTRY_VERIFY(!menu->property("visible").toBool());
         for(const auto& batch:{accepted,pending,manualBatch})QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Uncategorized"));
         QCOMPARE(model.state().value("selectionCount").toInt(),3);
         QVERIFY(model.state().value("canUndoTransferAssignment").toBool());

@@ -61,6 +61,34 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Searchable Change category — 2026-11-17
+
+Change category opens a compact popup at the context-menu location. The filter
+at the top has keyboard focus; typing filters the scrollable list by any part
+of the displayed name, ignoring case. Up/Down moves the highlight, Enter or a
+click chooses, and Escape or an outside click dismisses. Reopening clears the
+filter. Disabled current-account destinations remain unavailable, and no
+matches assigns nothing. The cascading-menu attempt lost text focus on item
+updates, so this uses the owner-approved standalone popup. See
+[categories](../features/010-categories-and-selection.md). Manual work is MAN-071.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release native functions
+`categoryPopupFiltersAndScrolls`, `categoryMenuSavesMixedRowsAndReopens`, and
+`acceptedManualTransferAssignment` passed (5 QtTest results including setup and
+cleanup). They cover typed filtering, Backspace, arrows, focus after hover,
+empty results, Escape/outside dismissal, reset on reopening, disabled accounts,
+keyboard and mouse assignment, mixed new/accepted/manual rows, Undo and reopen.
+The same three functions passed offscreen. A synthetic native filtered-popup
+screenshot was inspected. `./build/SpentIt` was rebuilt and its offscreen
+`--smoke` launch passed.
+
+The additional offscreen `ledgerViewportSurvivesCategoryNavigation` check failed
+its initial `saved.index > 200` assertion, before opening Categories or assigning
+through the picker. That broader viewport check remains unverified; it was not
+changed here. No full suite, sanitizer, Windows/Linux or spoken screen-reader
+verification is claimed. Changed-document relative links and diff whitespace
+checks passed.
+
 ## Inspect opens the ledger — 2026-11-17
 
 Inspect on a Review row opens that transaction in its account ledger, among

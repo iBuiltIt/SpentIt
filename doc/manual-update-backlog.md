@@ -18,12 +18,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-071. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-072. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-071 (2026-11-17) — Searchable Change category. Contract:
+  [Categories and selection](../features/010-categories-and-selection.md).
+  Update Categories, Add or correct transactions, and Keyboard and mouse to
+  describe the compact popup opened by Change category: focused filter, partial
+  case-insensitive matching, Up/Down, Enter, mouse selection, Escape and outside
+  dismissal. Empty searches show the full list; no matches assigns nothing.
+  Update context-menu/category-picker pictures in the next authorized pass.
 
 - MAN-070 (2026-11-17) — Inspect opens the ledger. Contract:
   [Review](review-sheet.md). Chapter:
