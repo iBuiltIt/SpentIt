@@ -63,6 +63,13 @@ void assignment_tests(const std::filesystem::path& dir) {
     OperationContext c;s.assign_transfer_batch("assign",requests,c);s.assign_transfer_batch("assign",requests,c);assignment_check(s,true);
     auto changed=requests;changed[0].memo="changed";bool refused=false;try{s.assign_transfer_batch("assign",changed,c);}catch(const std::exception&){refused=true;}check(refused,"Changed retry refused");
     const auto links=s.transfers();check(links.size()==3,"Three separate links");for(const auto& v:links){check(v.link.destination.amount==-v.link.origin.amount && v.link.destination.date==v.link.origin.date,"Exact opposite amount and same date");}
+    s.select_account(2);imports::Occurrence created;
+    for(const auto& row:s.current_ledger())if(row.identity.batch.starts_with("~transfer-")){created=row.identity;break;}
+    check(!created.batch.empty(),"The created transfer entry is in the other account");
+    bool createdRefused=false;std::string createdMessage;
+    try{OperationContext rejected;s.assign_categories("generated-category",{s.account().identity,s.ledger_edit_generation(),"",{{created,{}}}},rejected);}catch(const std::exception& error){createdRefused=true;createdMessage=error.what();}
+    check(createdRefused && createdMessage=="Nothing was changed. This entry was created for the transfer. Change the category on the original transaction in the other account, and this entry will be removed." && !s.review_outcome("generated-category"),"Changing the created entry explains where to choose the category");
+    assignment_check(s,true);
     auto retarget=requests;for(auto& r:retarget){r.expected_sequence=s.transfer_sequence();r.kept+="-retarget";r.generated->entry.batch+="-retarget";}
     OperationContext replace;s.assign_transfer_batch("retarget",retarget,replace);assignment_check(s,true);s.undo_review("undo-retarget");assignment_check(s,true);
     check(s.can_undo_transfer_assignment(),"Undo retains preceding assignment group");

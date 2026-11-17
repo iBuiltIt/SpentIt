@@ -54,7 +54,10 @@ choice. An ambiguous multi-split selection is refused. Keep the viewport.
 
 Choosing an account assigns a transfer through the existing transfer commands.
 Choosing an ordinary category again ends the link, removes only a disposable
-generated draft, and restores both sides together on Undo. Current account
+generated draft, and restores both sides together on Undo. That choice is made
+on the original transaction. On the entry created for the transfer, the same
+choice changes nothing and says to change the category on the original
+transaction in the other account, which removes this entry. Current account
 destinations are disabled in the menu. Rules still cannot create transfers.
 
 ## Starter categories

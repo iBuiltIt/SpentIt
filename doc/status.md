@@ -61,6 +61,21 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Created transfer entry category message — 2026-11-16
+
+Choosing an ordinary category on the entry created for a transfer changes
+nothing. The message says to change the category on the original transaction
+in the other account, and that this entry will be removed. The same choice on
+the original transaction still ends the link and removes the created entry.
+See [categories](../features/010-categories-and-selection.md). Manual work is
+MAN-067.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release
+`import.transfer_assignment` check passed. It refuses the created entry with
+that message and leaves the transfer and both balances in place.
+`./build/SpentIt` was rebuilt. No UI suite, live pointer check, sanitizer
+run, or other-platform run is claimed.
+
 ## Report list shows every account's transfer — 2026-11-16
 
 After a report list assigns rows from several accounts to one other account,

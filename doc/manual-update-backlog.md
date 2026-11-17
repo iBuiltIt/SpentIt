@@ -18,12 +18,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-067. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-068. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-067 (2026-11-16) — Category change on a created transfer entry. Contract:
+  [categories](../features/010-categories-and-selection.md). Chapter:
+  [Categories](../manual/categories.md), section "An account destination makes
+  a transfer". On the entry created in the other account, choosing an ordinary
+  category changes nothing. The message says to change the category on the
+  original transaction in the other account, and that this entry will be
+  removed. Text only.
 
 - MAN-066 (2026-11-16) — Open a transaction from a visible split line.
   Contract: [transaction sheet](../features/005-transaction-sheet-navigation.md)

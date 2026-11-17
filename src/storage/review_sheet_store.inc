@@ -1598,6 +1598,7 @@ app::ReviewReceipt ImportStore::assign_categories(std::string_view operation,con
     struct OpenAccount {Impl& state;std::int64_t account;~OpenAccount(){state.selected_account=account;}} open{*impl_,open_account};
     for(const auto& target:selection.selected) {
         context.checkpoint("Reading selected transactions");
+        if(target.identity.batch.starts_with("~transfer-"))fail(SQLITE_CONSTRAINT,"Nothing was changed. This entry was created for the transfer. Change the category on the original transaction in the other account, and this entry will be removed.");
         const auto owner=account_for_batch(target.identity.batch).identity;
         impl_->selected_account=owner;require_account(target.identity.batch);
         const auto info=batch(impl_->db,target.identity.batch);const bool accepted=transaction_accepted(target.identity);

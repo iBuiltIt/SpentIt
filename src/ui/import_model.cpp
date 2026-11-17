@@ -1854,6 +1854,7 @@ struct ImportModel::Worker {
                     request.generated_currency=destination->currency.definition_id();
                     request.category_id.clear();request.category_path.clear();
                 }else if(request.mode==0){
+                    if(choice.fact.generated)throw std::invalid_argument("Nothing was changed. This entry was created for the transfer. Change the category on the original transaction in the other account, and this entry will be removed.");
                     request.category_id=str(a.value("categoryId"));request.category_path=str(a.value("categoryPath"));
                     request.generated.reset();request.generated_currency.clear();
                 }else throw std::invalid_argument("Unknown transfer command");
