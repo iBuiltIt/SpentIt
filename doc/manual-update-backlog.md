@@ -18,12 +18,22 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-073. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-074. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-073 (2026-11-17) — Link selected transfers. Contract:
+  [review sheet](review-sheet.md#link-selected--owner-go-2026-11-17). Chapter:
+  [review duplicates and transfers](../manual/review-duplicates-transfers.md),
+  "Is it a payment between accounts?". Checking a partner does not save. When
+  that leaves another card with one remaining partner, and that partner is on
+  only that card, the other card is checked too. **Link selected** links the
+  checked pairs together. Undo reverses that whole set. The card's **Link**
+  still links that card now. **Not this transfer** still decides that card now.
+  Text only. An unanswered card picture does not show the button.
 
 - MAN-072 (2026-11-17) — Open a statement from the desktop or drop it on
   SpentIt. Contract: [003](../features/003-qif-import-review.md) and

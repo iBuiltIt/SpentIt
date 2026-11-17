@@ -1527,6 +1527,11 @@ app::ReviewReceipt ImportStore::link_review_group(std::string_view operation,con
 }
 
 app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) {
+    // Link selected sends the checked pairs itself. It does not discover more.
+    if(!answers.empty() && answers.front().action==app::ReviewAction::link) {
+        for(const auto& answer:answers)if(answer.action!=app::ReviewAction::link || answer.automatic || answer.selected.size()!=2)fail(SQLITE_CONSTRAINT,"Select each transfer pair once");
+        return write_review_batch(operation,answers,context);
+    }
     for(const auto& answer:answers)if(answer.action!=app::ReviewAction::merge)fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
     return write_review_batch(operation,answers,context);
 }
@@ -1550,7 +1555,7 @@ app::ReviewReceipt ImportStore::write_review_batch(std::string_view operation,co
     const auto sheet=review_sheet();if(sheet.generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
     for(std::size_t i=0;i<answers.size();++i)if(answers[i].generation!=sheet.generation)fail(SQLITE_CONSTRAINT,("Selected match "+std::to_string(i+1)+" is stale. Review the current groups again.").c_str());
     Atomic transaction(impl_->db);
-    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),1,'batch',?,?)");receipt.text(1,operation);receipt.text(2,encoded);receipt.integer(3,sheet.generation);receipt.done();
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),?,'batch',?,?)");receipt.text(1,operation);receipt.integer(2,static_cast<int>(linking?app::ReviewAction::link:app::ReviewAction::merge));receipt.text(3,encoded);receipt.integer(4,sheet.generation);receipt.done();
     for(std::size_t i=0;i<answers.size();++i){
         context.checkpoint(linking?"Linking transfers, "+std::to_string(i+1)+" of "+std::to_string(answers.size()):"Merging selected matches");
         try{const auto child=std::string(operation)+"-group-"+std::to_string(i+1);

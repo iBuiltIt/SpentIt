@@ -689,3 +689,27 @@ them together. Progress and cancellation remain on the existing worker path.
 Existing version-1 batch parent/child receipts hold the group, including all link
 snapshots. Exact retries return the saved pair count; changed requests are refused.
 No schema change or new financial history format is introduced.
+
+## Link selected — owner Go, 2026-11-17
+
+Checking a partner on a transfer card records that pair on screen. It does not
+save. When another card is left with one partner, and that partner is left on
+only that card, that partner is checked too. The check repeats while each new
+check leaves another card in that state. A card that still has two or more
+partners stays unchecked. A partner that needs a split choice or an amount
+difference is not checked automatically.
+
+One transaction can be checked on one card. Choosing a partner that is already
+checked elsewhere does not change the selection. Clicking an automatically
+checked partner again clears that check until the next manual choice. Changing
+a manual choice clears those held cards and checks the resulting one-to-one
+pairs again.
+
+**Link selected** appears when at least one checked pair has one exact opposite
+allocation in the same currency. It writes those pairs in one save and one Undo
+step. It does not look for further pairs. Cancel or failure saves none of them.
+Redo replays the saved pairs. The per-card **Link** still saves that card
+immediately, and with Automatically link one-to-one transfer suggestions on it
+still links the remaining one-to-one pairs in that group. **Not this transfer**
+still saves immediately and clears checks that have not been saved. Leaving
+Review clears them. Inspect keeps them until Review is saved or left.

@@ -41,7 +41,9 @@ passed unless you ran it.
   stays. Automatic results on accepted rows
   stay marked until the next Accept. With Auto Link enabled, a manual Review
   Link also resolves remaining unambiguous pairs in the same suggestion group,
-  as one atomic save and one ordinary Undo step. See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+  as one atomic save and one ordinary Undo step. Link selected writes the checked
+  transfer pairs as one save and one Undo, and checks a remaining one-to-one card.
+  See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 - Manual transactions, ledger editing, splits, amount expressions, amount
   formatting, Set memo, Rename payee, and Restore imported values.
 - Categories with an Income flag, rules that assign an explicit category to
@@ -60,6 +62,24 @@ passed unless you ran it.
 The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
+
+## Link selected — 2026-11-17
+
+Checking a partner on a Review transfer card does not save. When that choice
+leaves another card with one partner, and that partner is on only that card,
+the other card is checked too. **Link selected** writes the checked exact pairs
+in one save and one Undo. It does not search for more pairs. The per-card
+**Link** still saves that card immediately. **Not this transfer** still saves
+immediately and clears checks that have not been saved. See
+[Review](review-sheet.md#link-selected--owner-go-2026-11-17). Manual work is
+MAN-073.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release tests
+`import.link_batch` and `import.link_selected_ui` passed. The same build's
+`reviewMultipleLinkCandidates`, `reviewLinkCardButtons`,
+`unifiedReviewLinkDifference`, and `import.review_batch` passed.
+`./build/SpentIt` was rebuilt. No full suite, sanitizer run, or
+other-platform run is claimed.
 
 ## Statement drop and double-click — 2026-11-17
 

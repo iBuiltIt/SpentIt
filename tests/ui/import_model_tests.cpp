@@ -21,6 +21,7 @@
 #include <QAccessible>
 #include <functional>
 #include <QJSValue>
+#include <QSet>
 #include <QStyleHints>
 #include <sqlite3.h>
 using namespace spentit;
@@ -650,6 +651,68 @@ private slots:
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo") && visualItem(window->contentItem(),"reviewNo")->isVisible());
         QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Not this transfer"));
         auto* hidden=visualItem(window->contentItem(),"acceptMissingMatch");QVERIFY(!hidden || !hidden->isVisible());
+    }
+    void reviewLinkSelected() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        const auto linkQuestions=[&]{
+            QVariantList out;const auto questions=m.state().value("reviewQuestions").toList();
+            for(const auto& item:questions){const auto question=item.toMap();if(question.value("kind").toString()=="link" && question.value("rows").toList().size()>1)out.push_back(question);}
+            return out;
+        };
+        const auto choices=[&]{return window->property("reviewLinkChoices").value<QJSValue>().toVariant().toMap();};
+        const auto chosenIds=[&]{
+            QSet<QString> out;const auto questions=linkQuestions();const auto selected=choices();
+            for(auto it=selected.cbegin();it!=selected.cend();++it){
+                const auto index=it.value().toMap().value("index").toInt();
+                const auto found=std::find_if(questions.cbegin(),questions.cend(),[&](const auto& value){return value.toMap().value("key").toString()==it.key();});
+                if(found==questions.cend())continue;
+                const auto rows=found->toMap().value("rows").toList();
+                if(index<1 || index>=rows.size())continue;
+                const auto id=[&](int row){const auto value=rows.at(row).toMap();return value.value("batch").toString()+":"+value.value("ordinal").toString();};
+                out.insert(id(0));out.insert(id(index));
+            }
+            return out;
+        };
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-01\nT10.00\nPDeposit one\n^\nD2026-02-01\nT10.00\nPDeposit two\n^\n")}});
+        run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-01\nT-10.00\nPPayment one\n^\nD2026-02-01\nT-10.00\nPPayment two\n^\n")}});
+        QCOMPARE(linkQuestions().size(),2);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTRY_COMPARE(window->property("currentPage").toString(),"review");
+        auto* linkSelected=window->findChild<QQuickItem*>("linkSelected");QVERIFY(linkSelected);QVERIFY(!linkSelected->isVisible());
+        const auto first=linkQuestions().first().toMap();
+        QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,first.value("key")),Q_ARG(QVariant,QVariant(1))));
+        QCOMPARE(choices().size(),2);
+        QCOMPARE(chosenIds().size(),4);
+        QTRY_VERIFY(linkSelected->isVisible());
+        QString autoKey;int autoIndex=-1;
+        const auto staged=choices();
+        for(auto it=staged.cbegin();it!=staged.cend();++it)if(it.value().toMap().value("auto").toBool()){autoKey=it.key();autoIndex=it.value().toMap().value("index").toInt();}
+        QVERIFY(!autoKey.isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(linkSelected,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(linkQuestions().size(),0);QCOMPARE(choices().size(),0);
+        QCOMPARE(window->property("workspaceFeedback").toString(),QString("Linked 2 pairs. Undo reverses them together."));
+        visualItem(window->contentItem(),"reviewQuestions")->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(linkQuestions().size(),2);QCOMPARE(choices().size(),0);
+        QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,first.value("key")),Q_ARG(QVariant,QVariant(1))));
+        QCOMPARE(choices().size(),2);
+        QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,autoKey),Q_ARG(QVariant,autoIndex)));
+        QCOMPARE(choices().size(),1);QTRY_VERIFY(linkSelected->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(linkSelected,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(linkQuestions().size(),1);QCOMPARE(window->property("workspaceFeedback").toString(),QString("Linked 1 pair. Undo reverses it."));
+        run(m,"close");
+        create(m,dir.path()+"/three");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-03-01\nT10.00\nPDeposit one\n^\nD2026-03-01\nT10.00\nPDeposit two\n^\n")}});
+        run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-03-01\nT-10.00\nPPayment one\n^\nD2026-03-01\nT-10.00\nPPayment two\n^\nD2026-03-01\nT-10.00\nPPayment three\n^\n")}});
+        QCOMPARE(linkQuestions().size(),3);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTRY_COMPARE(window->property("currentPage").toString(),"review");
+        const auto crowded=linkQuestions().first().toMap();
+        QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,crowded.value("key")),Q_ARG(QVariant,QVariant(1))));
+        QCOMPARE(choices().size(),1);
     }
     void ledgerSamePayment() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);

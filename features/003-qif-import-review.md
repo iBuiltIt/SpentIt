@@ -96,6 +96,9 @@ With Auto Link enabled, a manual Review Link also resolves remaining unambiguous
 pairs in its original connected suggestion group. That manual decision and its
 follow-ons share one ordinary Undo step, separate from import Undo. Acceptance
 stays explicit. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
+**Link selected** saves the checked transfer pairs together. Checking one pair
+checks the other card when that leaves a one-to-one match. See
+[Link selected](../doc/review-sheet.md#link-selected--owner-go-2026-11-17).
 
 Review behavior is in [doc/review-sheet.md](../doc/review-sheet.md). Dataset-wide
 acceptance is in [doc/import-commit-discussion.md](../doc/import-commit-discussion.md).

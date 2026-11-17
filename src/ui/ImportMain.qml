@@ -2152,7 +2152,7 @@ ApplicationWindow {
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
             if(success && action==="resolve_import_categories") {importCategories.close();workspaceFeedback=s.importFeedback||"Imported categories applied.";Qt.callLater(showImportCategories)}
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import","open","unlock"].indexOf(action)>=0)Qt.callLater(showImportCategories)
-            if(success && (action==="review_answer" || action==="review_link_preview") && s.reviewFeedback)workspaceFeedback=s.reviewFeedback
+            if(success && (action==="review_answer" || action==="review_link_preview" || action==="review_batch") && s.reviewFeedback)workspaceFeedback=s.reviewFeedback
             if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Transactions accepted."
             if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
             if(success && action==="release_transfer_batch")workspaceFeedback="Category changed. Undo is available."
@@ -3375,15 +3375,17 @@ ApplicationWindow {
     property var reviewSurvivors: []
     property var reviewBatch: ({})
     property var reviewRowChoices: ({})
+    property var reviewLinkChoices: ({})
+    property var reviewLinkHolds: ({})
     property string reviewSelectionGeneration: String(s.reviewGeneration||"")
-    onReviewSelectionGenerationChanged: {reviewBatch=({});reviewRowChoices=({});reviewSurvivor.close()}
+    onReviewSelectionGenerationChanged: {reviewBatch=({});reviewRowChoices=({});reviewLinkChoices=({});reviewLinkHolds=({});reviewSurvivor.close()}
     onCurrentPageChanged: {
         categoryVisitAdditions=[];categorySort="ascending"
         if(currentPage==="review") {
             if(reviewReturnPending){reviewReturnPending=false;reviewViewRestoring=true;Qt.callLater(function(){restoreReviewView();reviewViewRestoring=false})}
             if(s.reviewReady===false && !workflow.busy)workflow.command("review_load")
         } else if(suppressReviewSelectionClear) suppressReviewSelectionClear=false
-        else {reviewBatch=({});reviewRowChoices=({});reviewReturnPending=false;if(reviewPending.batchIntent)reviewSurvivor.close()}
+        else {reviewBatch=({});reviewRowChoices=({});reviewLinkChoices=({});reviewLinkHolds=({});reviewReturnPending=false;if(reviewPending.batchIntent)reviewSurvivor.close()}
     }
     property var reviewViewport: ({})
     property bool reviewViewRestoring: false
@@ -3511,6 +3513,111 @@ ApplicationWindow {
         if(rows.length===2)return "Merge 2 rows"
         if(!chosen || chosen.length<2)return "Select rows to merge"
         return "Merge "+chosen.length+" selected rows"+(automaticSurvivor(chosen)?"":"…")
+    }
+    function reviewRowId(row) {return row.batch+":"+row.ordinal}
+    // A checked pair claims both transactions. Another card is checked when it
+    // has one partner left and that partner remains on only that card.
+    function linkChoiceIndex(question) {
+        if(!question || question.kind!=="link" || !question.rows || question.rows.length<2)return -1
+        let staged=reviewLinkChoices[question.key]
+        if(staged && staged.index>=1 && staged.index<question.rows.length)return staged.index
+        if(question.rows.length===2)return 1
+        let matches=[]
+        for(let i=1;i<question.rows.length;++i)if(question.rows[i].sameDate)matches.push(i)
+        return matches.length===1?matches[0]:-1
+    }
+    function recomputeLinkMirrors() {
+        let questions=[]
+        for(let q of (s.reviewQuestions||[]))if(q.kind==="link" && q.rows && q.rows.length>1)questions.push(q)
+        let byKey={}
+        for(let q of questions)byKey[q.key]=q
+        let used={}, user={}
+        for(let key of Object.keys(reviewLinkChoices)) {
+            let choice=reviewLinkChoices[key]
+            if(!choice || choice.auto)continue
+            let q=byKey[key]
+            if(!q || choice.index<1 || choice.index>=q.rows.length)continue
+            user[key]=choice
+            used[reviewRowId(q.rows[0])]=true
+            used[reviewRowId(q.rows[choice.index])]=true
+        }
+        let autos={}, guard=0
+        while(guard++<questions.length+1) {
+            let degree={}, edges=[]
+            for(let q of questions) {
+                if(user[q.key] || reviewLinkHolds[q.key])continue
+                let origin=reviewRowId(q.rows[0])
+                if(used[origin])continue
+                let free=[]
+                for(let i=1;i<q.rows.length;++i){let id=reviewRowId(q.rows[i]);if(!used[id])free.push({index:i,id:id})}
+                for(let cand of free) {
+                    edges.push({key:q.key,index:cand.index,origin:origin,partner:cand.id})
+                    degree[origin]=(degree[origin]||0)+1
+                    degree[cand.id]=(degree[cand.id]||0)+1
+                }
+            }
+            let claimed={}, added=false
+            for(let edge of edges) {
+                if(degree[edge.origin]!==1 || degree[edge.partner]!==1 || claimed[edge.origin] || claimed[edge.partner])continue
+                let row=byKey[edge.key].rows[edge.index]
+                if(!(row.suggestedLeftAllocation && row.suggestedRightAllocation))continue
+                autos[edge.key]={index:edge.index,auto:true,left:row.suggestedLeftAllocation,right:row.suggestedRightAllocation}
+                claimed[edge.origin]=true
+                claimed[edge.partner]=true
+                used[edge.origin]=true
+                used[edge.partner]=true
+                added=true
+            }
+            if(!added)break
+        }
+        let next={}
+        for(let key of Object.keys(user))next[key]=user[key]
+        for(let key of Object.keys(autos))next[key]=autos[key]
+        reviewLinkChoices=next
+    }
+    function selectReviewLink(key, index) {
+        let question=null
+        for(let q of (s.reviewQuestions||[]))if(q.key===key)question=q
+        if(!question || question.kind!=="link" || index<1 || index>=question.rows.length)return
+        let current=reviewLinkChoices[key]
+        if(current && current.auto && current.index===index) {
+            let holds=Object.assign({},reviewLinkHolds);holds[key]=true;reviewLinkHolds=holds
+            recomputeLinkMirrors();return
+        }
+        let origin=reviewRowId(question.rows[0]), partner=reviewRowId(question.rows[index])
+        if(origin===partner)return
+        for(let otherKey of Object.keys(reviewLinkChoices)) {
+            if(otherKey===key)continue
+            let choice=reviewLinkChoices[otherKey]
+            if(!choice || choice.auto)continue
+            let other=null
+            for(let q of (s.reviewQuestions||[]))if(q.key===otherKey)other=q
+            if(!other || !other.rows || choice.index<1 || choice.index>=other.rows.length)continue
+            let otherOrigin=reviewRowId(other.rows[0]), otherPartner=reviewRowId(other.rows[choice.index])
+            if(otherOrigin===origin || otherOrigin===partner || otherPartner===origin || otherPartner===partner)return
+        }
+        reviewLinkHolds=({})
+        let choices=Object.assign({},reviewLinkChoices)
+        let row=question.rows[index]
+        choices[key]={index:index,auto:false,left:row.suggestedLeftAllocation||"",right:row.suggestedRightAllocation||""}
+        reviewLinkChoices=choices
+        recomputeLinkMirrors()
+    }
+    function linkSelectedGroups() {
+        let result=[]
+        for(let q of (s.reviewQuestions||[])) {
+            let choice=reviewLinkChoices[q.key]
+            if(!choice || q.kind!=="link" || choice.index<1 || choice.index>=q.rows.length || !choice.left || !choice.right)continue
+            result.push({question:q.key,generation:s.reviewGeneration,answer:"link",selected:[q.rows[0],q.rows[choice.index]],leftAllocation:choice.left,rightAllocation:choice.right})
+        }
+        return result
+    }
+    function linkSelectedTransfers() {
+        let groups=linkSelectedGroups()
+        if(!groups.length || workflow.busy)return
+        captureReviewView()
+        reviewScrollPosition=reviewQuestions.contentY
+        workflow.command("review_batch",{groups:groups})
     }
     function setReviewBatch(args) {
         let values=Object.assign({},reviewBatch);values[args.question]=args;reviewBatch=values
@@ -3894,7 +4001,7 @@ ApplicationWindow {
         id:reviewSheet;objectName:"reviewSheet";anchors.fill:parent;visible:currentPage==="review"
         property string title:reviewCountText()
         function open(){navigate("review");if(currentPage==="review" && s.reviewReady===false && !workflow.busy)workflow.command("review_load");reviewQuestions.forceActiveFocus()}
-        function close(){reviewBatch=({});reviewRowChoices=({});navigate("ledger")}
+        function close(){reviewBatch=({});reviewRowChoices=({});reviewLinkChoices=({});reviewLinkHolds=({});navigate("ledger")}
         ColumnLayout {anchors.fill:parent;spacing:4
         ColumnLayout {
             Layout.fillWidth:true
@@ -3932,6 +4039,10 @@ ApplicationWindow {
             Button {objectName:"clearMergeSelection";text:"Clear merge selection";visible:Object.keys(reviewBatch).length>0;enabled:!workflow.busy;onClicked:reviewBatch=({})}
             Button {objectName:"mergeSelectedMatches";text:"Merge pairs";visible:mergePairGroups().length>0;enabled:!workflow.busy
                 onClicked:{captureReviewView();workflow.command("review_batch",{groups:mergePairGroups()})}}
+        }
+        RowLayout {Layout.fillWidth:true;visible:linkSelectedGroups().length>0
+            Button {objectName:"linkSelected";text:"Link selected";enabled:!workflow.busy;Accessible.name:"Link the selected transfers. Undo reverses them together."
+                onClicked:linkSelectedTransfers()}
         }
         Item {Layout.fillWidth:true;Layout.preferredHeight:visible?30:0;visible:reviewQuestions.count>0;clip:true
             RowLayout {x:-reviewQuestions.contentX;
@@ -3972,27 +4083,16 @@ ApplicationWindow {
                 id:questionCard;required property var modelData;required property int index;width:reviewQuestions.contentWidth-24;height:questionContent.implicitHeight
                 property var chosen: reviewRowChoices[modelData.key]||[]
                 readonly property var mergeRows: modelData.rows.length===2?modelData.rows:chosen
-                property int counterpart: -1
+                readonly property int counterpart: linkChoiceIndex(modelData)
                 property string leftAllocation: ""
                 property string rightAllocation: ""
-                function selectCounterpart(row) {
-                    counterpart=row
-                    const candidate=row>=1?modelData.rows[row]:({})
-                    leftAllocation=candidate.suggestedLeftAllocation||""
-                    rightAllocation=candidate.suggestedRightAllocation||""
+                function resetLinkAllocations() {
+                    const row=counterpart>=1 && counterpart<modelData.rows.length?modelData.rows[counterpart]:null
+                    leftAllocation=row?(row.suggestedLeftAllocation||""):""
+                    rightAllocation=row?(row.suggestedRightAllocation||""):""
                 }
-                onModelDataChanged:{
-                    let selected=-1
-                    if(modelData.kind==="link") {
-                        if(modelData.rows.length===2)selected=1
-                        else {
-                            const matches=[]
-                            for(let i=1;i<modelData.rows.length;++i)if(modelData.rows[i].sameDate)matches.push(i)
-                            if(matches.length===1)selected=matches[0]
-                        }
-                    }
-                    selectCounterpart(selected)
-                }
+                onCounterpartChanged:resetLinkAllocations()
+                onModelDataChanged:resetLinkAllocations()
                 Rectangle {anchors.fill:parent;color:questionCard.index%2?theme.alternate:theme.surface}
                 function toggle(row, checked){let values=chosen.slice();if(checked)values.push(row);else values=values.filter(function(v){return v.key!==row.key});let choices=Object.assign({},reviewRowChoices);choices[modelData.key]=values;reviewRowChoices=choices;let groups=Object.assign({},reviewBatch);delete groups[modelData.key];reviewBatch=groups}
                 ColumnLayout {id:questionContent;width:parent.width;spacing:4
@@ -4030,7 +4130,7 @@ ApplicationWindow {
                         Layout.fillWidth:true
                         Item {Layout.preferredWidth:32;Layout.preferredHeight:36
                         CheckBox {objectName:"reviewRowSelect_"+reviewRow.index;anchors.centerIn:parent;enabled:!workflow.busy;checked:questionCard.chosen.some(row=>row.key===reviewRow.modelData.key);visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;onClicked:questionCard.toggle(reviewRow.modelData,checked);Accessible.name:"Select transaction "+reviewRow.modelData.payee}
-                        RadioButton {anchors.centerIn:parent;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;onClicked:questionCard.selectCounterpart(reviewRow.index);Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee}
+                        RadioButton {anchors.centerIn:parent;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee;onClicked:{selectReviewLink(questionCard.modelData.key,reviewRow.index);checked=Qt.binding(function(){return questionCard.counterpart===reviewRow.index})}}
                         }
                         Label {text:reviewRow.modelData.committed?"Accepted":"New";Layout.preferredWidth:65}
                         Label {text:reviewRow.modelData.date;Layout.preferredWidth:95;textFormat:Text.PlainText}

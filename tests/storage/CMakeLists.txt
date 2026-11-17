@@ -44,6 +44,7 @@ target_link_libraries(spentit_review_sheet_tests PRIVATE spentit_import_store sp
 spentit_compiler_options(spentit_review_sheet_tests)
 add_test(NAME import.review_sheet COMMAND spentit_review_sheet_tests)
 add_test(NAME import.follow_link COMMAND spentit_review_sheet_tests follow)
+add_test(NAME import.link_batch COMMAND spentit_review_sheet_tests link_batch)
 add_test(NAME import.follow_link_faults COMMAND spentit_review_sheet_tests follow_faults)
 set_tests_properties(import.follow_link_faults PROPERTIES TIMEOUT 1200)
 add_test(NAME import.automatic_review COMMAND spentit_review_sheet_tests automatic)

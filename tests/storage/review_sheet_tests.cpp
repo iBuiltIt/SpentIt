@@ -1498,10 +1498,77 @@ void cross_account_selection_tests(const std::filesystem::path& dir){
     }
     std::cout<<"Cross-account category, memo, payee, and transfer passed\n";
 }
+std::size_t active_links(ImportStore& store) {
+    std::size_t count=0;
+    for(const auto& value:store.transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed && value.link.destination.state!=transfers::State::removed)++count;
+    return count;
+}
+std::size_t open_link_questions(ImportStore& store) {
+    std::size_t count=0;
+    for(const auto& question:store.review_sheet().questions)if(question.kind==ReviewKind::link && question.rows.size()>1)++count;
+    return count;
+}
+std::vector<ReviewAnswer> disjoint_link_answers(ImportStore& store) {
+    const auto sheet=store.review_sheet();std::vector<ReviewAnswer> answers;std::set<imports::Occurrence> used;
+    for(const auto& question:sheet.questions) {
+        if(question.kind!=ReviewKind::link || question.rows.size()<2 || used.contains(question.rows.front().identity))continue;
+        const ReviewTransaction* partner=nullptr;
+        for(std::size_t i=1;i<question.rows.size();++i)if(!used.contains(question.rows[i].identity) && !question.rows[i].suggested_left_allocation.empty() && !question.rows[i].suggested_right_allocation.empty()){partner=&question.rows[i];break;}
+        if(!partner)continue;
+        ReviewAnswer answer;answer.action=ReviewAction::link;answer.generation=sheet.generation;answer.question=question.key;answer.selected={question.rows.front().identity,partner->identity};answer.left_allocation=partner->suggested_left_allocation;answer.right_allocation=partner->suggested_right_allocation;
+        used.insert(answer.selected.begin(),answer.selected.end());answers.push_back(std::move(answer));
+    }
+    return answers;
+}
+void mirror_transfer_fixture(ImportStore& store) {
+    const Currency cad("CAD");store.opening(0,"2026-01-01",Money(0,cad));store.create_account(2,"Savings",cad,"2026-01-01");store.select_account(2);store.opening(0,"2026-01-01",Money(0,cad));
+    store.ingest("in","!Type:Bank\nD01/01/2026\nT10.00\nPIncoming 0\n^\nD01/01/2026\nT10.00\nPIncoming 1\n^\n",qif::DateOrder::dmy);store.select_account(1);
+    store.ingest("out","!Type:Bank\nD01/01/2026\nT-10.00\nPOutgoing 0\n^\nD01/01/2026\nT-10.00\nPOutgoing 1\n^\n",qif::DateOrder::dmy);
+}
+void link_batch_tests(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    {
+        auto store=ImportStore::create(dir/"one","test","Checking",cad,"2026-01-01");mirror_transfer_fixture(store);
+        const auto answers=disjoint_link_answers(store);check(answers.size()==2,"Two disjoint transfer pairs");
+        const auto before=store.balance();OperationContext context;store.merge_review_batch("one",{answers.front()},context);
+        check(active_links(store)==1 && open_link_questions(store)==1 && store.balance()==before,"One selected pair leaves the other question");
+        store.verify();store.undo_review("undo-one");check(active_links(store)==0 && open_link_questions(store)==2,"Undo of one selected pair restores both questions");store.verify();
+    }
+    {
+        auto store=ImportStore::create(dir/"both","test","Checking",cad,"2026-01-01");mirror_transfer_fixture(store);
+        const auto answers=disjoint_link_answers(store);check(answers.size()==2,"Batch has both pairs");
+        const auto before=store.balance();const auto head=store.action_head()->id;OperationContext context;
+        const auto saved=store.merge_review_batch("links",answers,context);
+        check(saved.linked_pairs==2 && store.review_outcome("links")->linked_pairs==2 && active_links(store)==2 && open_link_questions(store)==0,"Both checked pairs link in one save");
+        check(store.balance()==before && store.action_head()->id=="links" && store.action_display_label(*store.action_head())=="Link","The selection is one Link action");
+        OperationContext retry;store.merge_review_batch("links",answers,retry);check(active_links(store)==2,"Exact retry does not link again");
+        auto changed=answers;changed[1].selected[1]=answers[0].selected[1];bool refused=false;try{OperationContext again;store.merge_review_batch("links",changed,again);}catch(const std::exception&){refused=true;}
+        check(refused && active_links(store)==2,"A changed retry is refused");store.verify();
+        store.undo_action("undo-links",store.preview_undo("links",store.action_token()));
+        check(store.action_head()->id==head && active_links(store)==0 && open_link_questions(store)==2 && store.balance()==before,"One Undo restores both questions");store.verify();
+        UndoPreview redo;redo.token=store.action_token();redo.action=store.redo_history().front();store.redo_action("redo-links",redo);store.verify();
+        check(store.action_head()->id=="redo-links" && active_links(store)==2 && store.review_outcome("redo-links")->linked_pairs==2,"Redo links the same pairs");
+    }
+    {
+        auto store=ImportStore::create(dir/"overlap","test","Checking",cad,"2026-01-01");mirror_transfer_fixture(store);
+        auto answers=disjoint_link_answers(store);answers[1].selected[1]=answers[0].selected[1];
+        bool refused=false;try{OperationContext context;store.merge_review_batch("overlap",answers,context);}catch(const std::exception&){refused=true;}
+        check(refused && !store.review_outcome("overlap") && active_links(store)==0 && open_link_questions(store)==2,"A shared transaction saves nothing");store.verify();
+    }
+    {
+        auto store=ImportStore::create(dir/"cancel","test","Checking",cad,"2026-01-01");mirror_transfer_fixture(store);
+        const auto answers=disjoint_link_answers(store);const auto head=store.action_head()->id;
+        OperationContext cancelled;cancelled.progress=[&](auto phase){if(phase=="Linking transfers, 2 of 2")cancelled.request();};
+        bool stopped=false;try{store.merge_review_batch("cancel-links",answers,cancelled);}catch(const OperationCancelled&){stopped=true;}
+        check(stopped && !store.review_outcome("cancel-links") && active_links(store)==0 && open_link_questions(store)==2 && store.action_head()->id==head,"Cancel saves neither pair");store.verify();
+    }
+    std::cout<<"Selected transfer links passed\n";
+}
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
         if(argc>1 && std::string(argv[1])=="follow"){follow_link_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="link_batch"){link_batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="follow_faults"){follow_link_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="automatic_faults"){automatic_review_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="automatic"){automatic_review_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

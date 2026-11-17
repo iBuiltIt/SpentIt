@@ -1718,14 +1718,21 @@ struct ImportModel::Worker {
             observedSaved();selected.clear();selectedBatch.clear();transferReceipt.clear();return;
         }
         if(action=="review_batch") {
-            std::vector<app::ReviewAnswer> answers;
+            reviewFeedback.clear();
+            std::vector<app::ReviewAnswer> answers;bool linking=false;
             for(const auto& item:a.value("groups").toList()){
-                const auto group=item.toMap();app::ReviewAnswer answer;answer.action=app::ReviewAction::merge;answer.generation=group.value("generation").toString().toLongLong();answer.question=str(group.value("question"));
+                const auto group=item.toMap();app::ReviewAnswer answer;const auto kind=group.value("answer").toString();
+                if(kind=="link"){answer.action=app::ReviewAction::link;linking=true;}else answer.action=app::ReviewAction::merge;
+                answer.generation=group.value("generation").toString().toLongLong();answer.question=str(group.value("question"));
                 for(const auto& value:group.value("selected").toList()){const auto row=value.toMap();answer.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
                 if(group.contains("survivor")){const auto row=group.value("survivor").toMap();answer.survivor=imports::Occurrence{str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())};}
+                answer.left_allocation=str(group.value("leftAllocation"));answer.right_allocation=str(group.value("rightAllocation"));
                 answers.push_back(std::move(answer));
             }
-            const auto op=identity();try{repo.merge_review_batch(op,answers,context);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            if(linking)for(const auto& answer:answers)if(answer.action!=app::ReviewAction::link)throw std::invalid_argument("Select transfer pairs on their own");
+            const auto op=identity();app::ReviewReceipt receipt;
+            try{receipt=repo.merge_review_batch(op,answers,context);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);receipt=*outcome;}
+            if(linking && receipt.linked_pairs>0)reviewFeedback=receipt.linked_pairs==1?QString("Linked 1 pair. Undo reverses it."):QString("Linked %1 pairs. Undo reverses them together.").arg(receipt.linked_pairs);
             diagnosticSaved=true;selected.clear();return;
         }
         if(action=="review_answer" || action=="review_link_preview") {

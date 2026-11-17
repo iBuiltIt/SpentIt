@@ -1,7 +1,7 @@
 # 008 — Transfer matching and lifecycle
 
 Status: **active**
-Last updated: 2026-11-16
+Last updated: 2026-11-17
 
 Transfers are explicit links between two allocations. A generated counterpart
 stays in one currency. An explicit Link may join two existing allocations in
@@ -57,6 +57,10 @@ distinct.
   unique pairs in its original connected suggestion group. The manual choice
   and follow-ons are one atomic save and one Undo step; unresolved choices stay
   manual. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
+  **Link selected** writes the pairs checked in Review as one save and one Undo
+  step, without discovering further pairs. Checking a pair also checks another
+  card when that card and its remaining partner are a one-to-one match. See
+  [Link selected](../doc/review-sheet.md#link-selected--owner-go-2026-11-17).
   See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 
 ## Committed edits
