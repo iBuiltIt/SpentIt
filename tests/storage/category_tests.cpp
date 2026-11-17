@@ -33,6 +33,9 @@ bool starter_income(ImportStore& s,const char* name){for(const auto& c:s.categor
 void check_starter_income(ImportStore& s){
  for(const char* name:{"Income: Business / Self-Employment","Income: Investment & Interest","Income: Other","Income: Pension & Retirement","Income: Salary & Wages"})check(starter_income(s,name));
  check(!starter_income(s,"Taxes: Income"));
+ check(!starter_income(s,"ATM & Cash Advance"));
+ check(!starter_income(s,"Electronics & Devices"));
+ for(const auto& c:s.category_catalog().categories)check(c.name!="Electronics & Gadgets");
  int marked=0;for(const auto& c:s.category_catalog().categories)if(c.income)++marked;check(marked==5);
  for(const auto& c:s.category_catalog().categories)if(c.name=="Income: Salary & Wages")check(c.revision==1);
 }
@@ -104,7 +107,7 @@ void income_review(){Directory dir;
 }
 void setup(){Directory dir;
  {auto s=ImportStore::create(dir.path/"doc",password,"Setup",cad,"2026-10-28",false,{"MM/DD/YYYY",true});check(s.date_format()=="MM/DD/YYYY");check_starter_income(s);for(const auto& c:s.category_catalog().categories){check(c.parent.empty() && c.kind==CategoryKind::leaf);check(s.resolve_category(c.identity).assignable);}check(s.category_catalog().categories[0].revision==0);s.verify();s.backup_to(dir.path/"backup",password);}
- {auto s=ImportStore::open(dir.path/"backup",password);check(s.date_format()=="MM/DD/YYYY");check_starter_income(s);s.verify();check(s.category_catalog().categories.size()==46);}
+ {auto s=ImportStore::open(dir.path/"backup",password);check(s.date_format()=="MM/DD/YYYY");check_starter_income(s);s.verify();check(s.category_catalog().categories.size()==59);}
  {auto s=ImportStore::create(dir.path/"empty",password,"Empty",cad,"2026-10-28",false,{"YYYYMMDD",false});check(s.date_format()=="YYYYMMDD" && s.category_catalog().categories.empty());}
  no_leaks(dir.path);
 }

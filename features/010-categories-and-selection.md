@@ -62,50 +62,71 @@ destinations are disabled in the menu. Rules still cannot create transfers.
 **Use default categories** starts checked and creates this list. Unchecked
 creates an empty catalog. Names stay editable. Each line is one category. The
 five Income names in the Income section above start checked. Taxes: Income and
-the other names start unchecked. A category added later starts unchecked.
+the other names start unchecked. ATM & Cash Advance and Electronics & Devices
+are expenses. A category added later starts unchecked. An existing file keeps
+the categories it already has. This list is written only when the file is
+created.
 
 ```text
-Housing: Rent & Mortgage
-Housing: Home Maintenance
-Housing: Home Improvement
-Housing: Furniture & Appliances
-Utilities: Electricity, Gas & Heating
-Utilities: Water, Sewer & Garbage
-Utilities: Internet
-Utilities: Phones
-Utilities: TV & Streaming
-Auto: Gas & Fuel
-Auto: Maintenance & Repair
-Auto: Insurance
-Auto: Parking & Tolls
-Auto: Payment & Other
-Transportation: Public Transit
-Transportation: Rideshare & Taxi
-Food: Groceries
-Food: Restaurants & Dining
-Food: Coffee & Fast Food
+Alcohol & Bars
 Amazon
-Shopping: Clothing
-Shopping: Electronics & General Shopping
+ATM & Cash Advance
+Auto: Fuel
+Auto: Insurance
+Auto: Maintenance & Repairs
+Auto: Other
+Auto: Parking & Tolls
+Child Expenses
+Childcare
+Clothing & Shoes
+Debt & Loan Payments
+Dining & Restaurants
+Education
+Electronics & Devices
+Entertainment
+Fast Food & Coffee
+Fees, Interest & Bank Charges
+Gifts & Donations
+Groceries
+Gym & Fitness
+Hobbies & Recreation
+Home: Furniture & Appliances
+Home: HOA, Strata & Fees
+Home: Insurance
+Home: Maintenance & Repairs
+Home: Mortgage
+Home: Rent
+Medical: Dental
 Medical: Doctor & Hospital
+Medical: Insurance
+Medical: Other
 Medical: Pharmacy
-Health & Wellness: Gym & Fitness
-Health & Wellness: Personal Care
-Entertainment & Hobbies: Entertainment
-Entertainment & Hobbies: Hobbies
+Medical: Vision
+Misc Expenses
+Personal Care
+Pets
+Professional Services
+Savings & Transfers
+Subscriptions & Memberships
+Taxes: Income
+Taxes: Property & Housing
+Transport: Other
+Transport: Public Transit
+Transport: Rideshare & Taxi
 Travel: Flights
-Travel: Hotels & Lodging
+Travel: Lodging
 Travel: Other
-Family & Education: Child Expenses & Childcare
-Family & Education: Education
-Other & Miscellaneous: Gifts & Donations
-Other & Miscellaneous: Pets
-Other & Miscellaneous: Insurance
-Other & Miscellaneous: Fees, Interest & Bank Charges
-Other & Miscellaneous: Other
-Income: Salaries & Wages
-Income: Pension
-Income: Investment Income
+Utils: Electricity
+Utils: Gas & Heating
+Utils: Internet
+Utils: Phone & Mobile
+Utils: TV, Streaming & Subscriptions
+Utils: Water, Sewer & Garbage
+Income: Business / Self-Employment
+Income: Investment & Interest
+Income: Other
+Income: Pension & Retirement
+Income: Salary & Wages
 ```
 
 Successful close keeps category history. Do not delete that history as a

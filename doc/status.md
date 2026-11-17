@@ -61,6 +61,21 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Starter categories — 2026-11-16
+
+A new file that uses default categories includes ATM & Cash Advance as an
+expense. The device category is Electronics & Devices. The five income
+categories stay the only ones checked. An existing file keeps the categories
+it already has. See [categories](../features/010-categories-and-selection.md).
+The manual does not name individual starter expenses, so no manual entry was
+added.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release checks
+`category.setup` and `import.replacement` passed. `category.setup` requires
+both names, leaves them unchecked, requires that Electronics & Gadgets is
+absent, and requires 59 categories. `./build/SpentIt` was rebuilt. No full
+suite, sanitizer run, or other-platform run is claimed.
+
 ## Ledger Page Up and Page Down — 2026-11-16
 
 With the account ledger or the report transaction list focused, Page Down

@@ -322,6 +322,7 @@ void ImportStore::initialize_categories() {
     const std::vector<std::string> names{
         "Alcohol & Bars",
         "Amazon",
+        "ATM & Cash Advance",
         "Auto: Fuel",
         "Auto: Insurance",
         "Auto: Maintenance & Repairs",
@@ -333,7 +334,7 @@ void ImportStore::initialize_categories() {
         "Debt & Loan Payments",
         "Dining & Restaurants",
         "Education",
-        "Electronics & Gadgets",
+        "Electronics & Devices",
         "Entertainment",
         "Fast Food & Coffee",
         "Fees, Interest & Bank Charges",
