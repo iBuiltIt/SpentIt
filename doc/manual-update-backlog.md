@@ -18,12 +18,23 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-066. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-067. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-066 (2026-11-16) — Open a transaction from a visible split line.
+  Contract: [transaction sheet](../features/005-transaction-sheet-navigation.md)
+  and [ledger editing](ledger-editing.md). Chapters:
+  [Find transactions](../manual/find-transactions.md) (“Look inside a row” and
+  “Select without editing”) and the splits line in
+  [Where to find things](../manual/where-to-find.md). While saved splits are
+  visible, a double-click on the “Saved splits” line or on a split line opens
+  the transaction. One click selects it. A right-click opens the ledger menu.
+  The transfer arrow still opens the other account. Closing stays a
+  double-click on the top line. Text only; no picture change.
 
 - MAN-065 (2026-11-16) — Page Up and Page Down in the ledgers. Contract:
   [transaction sheet](../features/005-transaction-sheet-navigation.md). Chapters:

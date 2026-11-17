@@ -11,7 +11,13 @@ and explicit committed-edit opt-in presentation.
 ## Accepted interaction
 
 - Double-click opens a transaction; double-clicking that same transaction closes
-  it. Double-clicking another switches the one active editor.
+  it. Double-clicking another switches the one active editor. While the saved
+  splits are visible, a double-click on the “Saved splits” line or on any split
+  line opens that transaction. One click selects it, including Shift and
+  Command or Ctrl. A right-click opens the ledger menu. The transfer arrow on
+  a split still opens the other account. The editor replaces those lines, so
+  closing stays a double-click on the top line. The account ledger and the
+  report transaction list use this row.
 - Single-click selection remains independent. The open editor stays attached to
   its transaction, with no empty reserved space or move to the bottom panel.
   Filtered-out and otherwise absent records retain the existing fallback inspector.

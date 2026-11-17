@@ -1946,6 +1946,16 @@ ApplicationWindow {
     function selectLedgerRow(row, modifiers) {
         guard(function(){workflow.command("select",{row:row,range:!!(modifiers & Qt.ShiftModifier),toggle:!!(modifiers & (Qt.ControlModifier|Qt.MetaModifier)),firstSearchSelection:!!searchReturn && !searchReturn.chosen})})
     }
+    function pressLedgerLine(index, button, modifiers) {
+        ledger.forceActiveFocus()
+        if(button===Qt.RightButton)openLedgerContext(index)
+        else selectLedgerRow(index, modifiers)
+    }
+    function openLedgerLine(record, mouse) {
+        if(mouse.button!==Qt.LeftButton)return
+        if(record.batch.length)toggleRecord(record.batch,record.ordinal)
+        else editOpening()
+    }
     // Page keys move one screen only while the list itself has the key.
     // A text field inside the row keeps Page Up and Page Down.
     function pageLedger(down, modifiers) {
@@ -4566,8 +4576,8 @@ ApplicationWindow {
                     ToolTip.text:attentionTip
                     HoverHandler {id:duplicateHover}
                     MouseArea {width:parent.width;height:ledgerRow.rowHeight;acceptedButtons:Qt.LeftButton|Qt.RightButton
-                        onClicked:function(mouse){ledger.forceActiveFocus();if(mouse.button===Qt.RightButton){openLedgerContext(ledgerRow.index)}else selectLedgerRow(ledgerRow.index,mouse.modifiers)}
-                        onDoubleClicked:function(mouse){if(mouse.button!==Qt.LeftButton)return;if(record.batch.length)toggleRecord(record.batch,record.ordinal);else editOpening()}
+                        onClicked:function(mouse){pressLedgerLine(ledgerRow.index,mouse.button,mouse.modifiers)}
+                        onDoubleClicked:function(mouse){openLedgerLine(record,mouse)}
                     }
                     Row {
                         width:parent.width;height:ledgerRow.rowHeight;spacing:0
@@ -4613,37 +4623,66 @@ ApplicationWindow {
                         sourceComponent:ListView {
                         clip:true;reuseItems:true;model:record.splits
                         ScrollBar.vertical:UsableScrollBar {}
-                        header:Label {text:"Saved splits (read-only) · "+(s.currency||"");height:26}
-                        delegate:Row {
+                        header:Label {objectName:"ledgerSplitHeader_"+record.ordinal;text:"Saved splits (read-only) · "+(s.currency||"");height:26;width:splitPreview.width;verticalAlignment:Text.AlignVCenter;textFormat:Text.PlainText}
+                        delegate:Item {
+                            id:splitLine
                             required property var modelData
                             required property int index
+                            objectName:"ledgerSplitLine_"+record.ordinal+"_"+index
                             property bool includedInReport:window.reportLedger && (record.reportAllocations||[]).indexOf(modelData.allocationId)>=0
-                            width:splitPreview.width;height:30;spacing:8
+                            width:splitPreview.width;height:30
+                            Row {
+                            anchors.fill:parent;spacing:8
                             Item {
                                 width:parent.width*0.25;height:30
-                                TransferArrow {id:splitTransfer;objectName:"splitTransferArrow_"+modelData.allocationId;destination:window.ledgerTransfer(record,modelData)}
+                                TransferArrow {id:splitTransfer;objectName:"splitTransferArrow_"+splitLine.modelData.allocationId;destination:window.ledgerTransfer(record,splitLine.modelData)}
                                 Label {
                                     id:splitCategoryText
-                                    objectName:"ledgerSplitCategory_"+ledgerRow.index+"_"+index
-                                    anchors.fill:parent;anchors.leftMargin:splitTransfer.visible?32:0;verticalAlignment:Text.AlignVCenter;textFormat:Text.PlainText;text:(includedInReport?"● ":"")+(s.categoriesSupported?modelData.categoryDisplay:(modelData.category || "Uncategorized"));elide:Text.ElideRight
+                                    objectName:"ledgerSplitCategory_"+ledgerRow.index+"_"+splitLine.index
+                                    anchors.fill:parent;anchors.leftMargin:splitTransfer.visible?32:0;verticalAlignment:Text.AlignVCenter;textFormat:Text.PlainText;text:(splitLine.includedInReport?"● ":"")+(s.categoriesSupported?splitLine.modelData.categoryDisplay:(splitLine.modelData.category || "Uncategorized"));elide:Text.ElideRight
                                 }
-                                HoverHandler {id:splitCategoryHover;onHoveredChanged:ledgerRow.setColumnTip("split-category-"+index, hovered && splitCategoryText.truncated && splitCategoryText.text.length>0)}
-                                PlainTip {objectName:"ledgerSplitCategoryTip_"+ledgerRow.index+"_"+index;visible:splitCategoryHover.hovered && splitCategoryText.truncated && splitCategoryText.text.length>0;text:window.wrappedTip(splitCategoryText.text)}
+                                HoverHandler {id:splitCategoryHover;onHoveredChanged:ledgerRow.setColumnTip("split-category-"+splitLine.index, hovered && splitCategoryText.truncated && splitCategoryText.text.length>0)}
+                                PlainTip {objectName:"ledgerSplitCategoryTip_"+ledgerRow.index+"_"+splitLine.index;visible:splitCategoryHover.hovered && splitCategoryText.truncated && splitCategoryText.text.length>0;text:window.wrappedTip(splitCategoryText.text)}
                             }
                             Item {
                                 width:parent.width*0.5;height:30
                                 Label {
                                     id:splitMemoText
-                                    objectName:"ledgerSplitMemo_"+ledgerRow.index+"_"+index
+                                    objectName:"ledgerSplitMemo_"+ledgerRow.index+"_"+splitLine.index
                                     anchors.fill:parent;verticalAlignment:Text.AlignVCenter
-                                    textFormat:Text.PlainText;text:modelData.memo;elide:Text.ElideRight
+                                    textFormat:Text.PlainText;text:splitLine.modelData.memo;elide:Text.ElideRight
                                 }
-                                HoverHandler {id:splitMemoHover;onHoveredChanged:ledgerRow.setColumnTip("split-memo-"+index, hovered && splitMemoText.truncated && splitMemoText.text.length>0)}
-                                PlainTip {objectName:"ledgerSplitMemoTip_"+ledgerRow.index+"_"+index;visible:splitMemoHover.hovered && splitMemoText.truncated && splitMemoText.text.length>0;text:window.wrappedTip(splitMemoText.text)}
+                                HoverHandler {id:splitMemoHover;onHoveredChanged:ledgerRow.setColumnTip("split-memo-"+splitLine.index, hovered && splitMemoText.truncated && splitMemoText.text.length>0)}
+                                PlainTip {objectName:"ledgerSplitMemoTip_"+ledgerRow.index+"_"+splitLine.index;visible:splitMemoHover.hovered && splitMemoText.truncated && splitMemoText.text.length>0;text:window.wrappedTip(splitMemoText.text)}
                             }
-                            Label {textFormat:Text.PlainText;text:modelData.amount;width:parent.width*0.2;horizontalAlignment:Text.AlignRight}
+                            Label {textFormat:Text.PlainText;text:splitLine.modelData.amount;width:parent.width*0.2;horizontalAlignment:Text.AlignRight;verticalAlignment:Text.AlignVCenter}
+                            }
                         }
                     }
+                    }
+                    MouseArea {
+                        id:splitClickArea
+                        // The open split lines sit in a nested list that keeps the press. This area covers them.
+                        y:ledgerRow.rowHeight;x:splitPreview.x;z:2
+                        width:parent.width-x-(splitPreview.item && splitPreview.item.contentHeight>splitPreview.height+1?18:0)
+                        height:Math.max(0,parent.height-y)
+                        visible:ledgerRow.viewingSplits && !ledgerRow.expanded
+                        function arrowAt(px,py) {
+                            function scan(item) {
+                                if(!item || !item.visible) return null
+                                if(String(item.objectName||"").indexOf("splitTransferArrow_")===0) {
+                                    const local=item.mapFromItem(splitClickArea,px,py)
+                                    if(local.x>=0 && local.y>=0 && local.x<=item.width && local.y<=item.height) return item.destination
+                                }
+                                const kids=item.visibleChildren
+                                for(let i=0;i<kids.length;++i) {const found=scan(kids[i]);if(found) return found}
+                                return null
+                            }
+                            return scan(splitPreview)
+                        }
+                        acceptedButtons:Qt.LeftButton|Qt.RightButton
+                        onClicked:function(mouse){const destination=arrowAt(mouse.x,mouse.y);if(destination && mouse.button===Qt.LeftButton){window.showCounterpart(destination);return}pressLedgerLine(ledgerRow.index,mouse.button,mouse.modifiers)}
+                        onDoubleClicked:function(mouse){if(arrowAt(mouse.x,mouse.y))return;openLedgerLine(record,mouse)}
                     }
                     Item {id:rowEditorSlot;y:ledgerRow.rowHeight;width:parent.width;height:ledgerRow.expanded?editor.height:0}
                 }

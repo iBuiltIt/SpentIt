@@ -61,6 +61,26 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Open a transaction from a split line — 2026-11-16
+
+While a transaction’s saved splits are visible, a double-click on the
+“Saved splits” line or on a split line opens that transaction. One click
+selects it, including Shift and Command or Ctrl. A right-click opens the
+ledger menu. The transfer arrow still opens the other account. The editor
+replaces those lines, so closing stays a double-click on the top line. The
+account ledger and the report list use the same row. See
+[the ledger](../features/005-transaction-sheet-navigation.md). Manual work is
+MAN-066.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release checks
+`splitLineOpensEditor`, `qifTransferResolution`, and `ledgerColumnLayout`
+passed offscreen. The first opens the editor from a split line and from the
+split heading, selects with one click, Shift-click, and Command-click, and
+opens the ledger menu on a right-click. The transfer check clicks the split
+arrow and lands in the other account. The column check still shows a cut-off
+split memo. `./build/SpentIt` was rebuilt. No full UI suite, live pointer
+check, sanitizer run, or other-platform run is claimed.
+
 ## Starter categories — 2026-11-16
 
 A new file that uses default categories includes ATM & Cash Advance as an

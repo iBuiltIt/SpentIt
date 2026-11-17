@@ -54,7 +54,15 @@ The window minimum is 720 by 560. The default size is 1440 by 850. Below
 1,080 pixels of content width, before any column is dragged, the ledger
 scrolls sideways.
 
-Double-click toggles the editor. Changing selection leaves the editor in place.
+Double-click on the top line toggles the editor. While saved splits are
+visible, a double-click on the “Saved splits” line or on a split line opens
+that transaction. One click on those lines selects it, including Shift and
+Command or Ctrl. A right-click opens the ledger menu. The transfer arrow on a
+split still opens the other account. The editor replaces those lines, so
+closing stays a double-click on the top line. The account ledger and the
+report transaction list use this row. Changing selection leaves the editor in
+place.
+
 Enter accepts a complete validated edit. Escape cancels the pending text.
 Session Undo restores a saved edit. Other dataset mutations end that Undo
 sequence.
@@ -71,7 +79,8 @@ and accepted rows. That sidebar control does not change ledger search or sort.
 Appearance follows the system, with light as the unknown fallback. There is no
 separate appearance preference. Ordinary rows alternate. New rows use their own
 pair. Selection takes priority over striping. Expanded splits stay in the
-parent stripe.
+parent stripe, and those lines accept the same click, double-click, and
+right-click as the top line.
 
 **+ New Account** reveals and focuses the name field without jumping the rest
 of the list out of view. Account drag order is a saved sidebar order.
