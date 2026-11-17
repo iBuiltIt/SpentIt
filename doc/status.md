@@ -61,6 +61,41 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Report list shows every account's transfer — 2026-11-16
+
+After a report list assigns rows from several accounts to one other account,
+every assigned row shows that account's name and the transfer arrow. The
+account that was open is not the only one repainted. Rows that were not
+assigned keep their category and have no new arrow. See
+[reporting](../features/006-reporting-drill-down.md).
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release check
+`reportTransferAcrossAccounts` passed offscreen with Checking left open.
+Checking and Savings both read `Visa [Account]` and an arrow to Visa, and one
+Undo clears both names and both arrows. `./build/SpentIt` was rebuilt. No
+full UI suite, live pointer check, sanitizer run, or other-platform run is
+claimed.
+
+## Transfer several accounts to one account — 2026-11-16
+
+In a report's transaction list, Change category can send a selection from
+several accounts to one other account. Each transaction gets its own opposite
+posting there. One Undo reverses the whole selection. A row already in the
+chosen account, or a source account in another currency, stops the save and
+changes nothing. A transaction with more than one split is still changed one
+at a time. Delete and Restore stay inside one account. See
+[reporting](../features/006-reporting-drill-down.md) and
+[ledger editing](ledger-editing.md). Manual work is an update to MAN-064.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release checks
+`reportTransferAcrossAccounts` and `import.cross_account_selection` passed.
+The report check assigns Checking and Savings to Visa, reads `Visa [Account]`
+on both rows, restores both with one Undo, and refuses a Visa row sent to
+Visa and a CAD selection sent to a USD account. The storage check covers the
+same save, a cancellation on the second account, retry, and one Undo.
+`import.transfer_assignment` passed. `./build/SpentIt` was rebuilt. No full
+UI suite, live pointer check, sanitizer run, or other-platform run is claimed.
+
 ## Transfer name in the Category column — 2026-11-16
 
 Choosing an account from Change category, or from the category field in an

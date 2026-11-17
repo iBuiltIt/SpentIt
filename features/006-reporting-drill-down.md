@@ -43,12 +43,16 @@ are an additional saved choice. Pie is available when the period is suitable.
 
 Drill-down reuses the ledger editor over the contributing transaction
 identities, with the account and the included amount. Saved edits and Undo
-refresh the report. Reopening uses current membership. Change category,
-Rename payee, and Set memo apply to the whole selection in one save, including
-rows from several accounts. One Undo reverses that selection. Delete, Restore,
-and an account destination stay inside one account. Choosing an account from
+refresh the report. Reopening uses current membership. Change category, Rename payee, Set memo, and choosing an account apply to the
+whole selection in one save, including rows from several accounts. One Undo
+reverses that selection. Choosing an account gives each transaction its own
+opposite posting in that account. A row already in the chosen account, or a
+source account in another currency, stops the save and changes nothing. A
+transaction with more than one split is still changed one at a time. Delete
+and Restore stay inside one account. Choosing an account from
 Change category, or from the category field in the open transaction, shows
 that account's name in the Category column on the transaction's top line.
+The name and the transfer arrow are shown for every account in the list.
 The name matches the category field, including while the transaction stays
 open, and the transfer arrow points at that account. Undo restores the
 previous category text. Merge, Link, and creation

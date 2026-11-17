@@ -48,9 +48,13 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   Contract: [reporting](../features/006-reporting-drill-down.md). Chapter:
   [Reports](../manual/reports.md), section "Open the transactions behind an
   amount". The Account heading sorts that list. Change category, Rename payee,
-  and Set memo can include several accounts in one save and one Undo. Delete,
-  Restore, and choosing an account destination stay inside one account. Replace
-  the sentence that group edits must concern one account at a time. Text only.
+  Set memo, and choosing an account can include several accounts in one save
+  and one Undo. Each account choice gets its own opposite posting. A row
+  already in the chosen account, or a source account in another currency,
+  stops the save and changes nothing. A transaction with more than one split
+  is still changed one at a time. Delete and Restore stay inside one account.
+  Replace the sentence that group edits must concern one account at a time.
+  Text only.
 
 - MAN-063 (2026-11-16) — Follow-on links after a manual Link. Contract:
   [follow-on links](review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).

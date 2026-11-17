@@ -641,10 +641,12 @@ struct ImportModel::Worker {
         }
         std::vector<app::LedgerRow> rows;reportRowInfo.clear();
         std::set<std::int64_t> accounts;for(const auto& [id,account]:reportMembers)accounts.insert(account);
-        const auto transferCategories=transferCategoryLabels(repo);
+        // transfers() only includes links for the open account. Collect each shown account.
+        std::map<std::tuple<std::int64_t,imports::Occurrence,std::string>,std::string> transferCategories;
         AccountRestore restore(repo);
         for(auto account:accounts){
             if(context)context->checkpoint();restore.select(account);const auto acct=repo.account();
+            const auto labels=transferCategoryLabels(repo);transferCategories.insert(labels.begin(),labels.end());
             for(auto row:repo.current_ledger()){
                 const auto member=reportMembers.find(row.identity);if(member==reportMembers.end() || member->second!=account)continue;
                 auto values=row.draft.transaction.allocations();
@@ -1186,6 +1188,32 @@ struct ImportModel::Worker {
                     }
                     items.push_back(QVariantMap{{"id",text(value.link.identity)},{"label",otherName+" · "+money(side.amount,amountFormat)+" · "+dateText(side.date)},{"amount",money(side.amount,amountFormat)},{"date",dateText(side.date)},{"committed",side.state==transfers::State::committed},{"accepted",side.accepted_unmatched},{"evidenced",side.independent_evidence || value.source_matched},{"proposed",side.proposed_evidence.has_value()},{"provisional",side.provisional_date},{"protected",transfers::protected_draft(value.link,acct.identity)},{"local",!side.ledger_entry && !side.attached_evidence && (side.manually_entered || !side.independent_evidence)},{"isOrigin",value.link.origin.endpoint.account==acct.identity},{"counterpartAccount",QString::number(target.account)},{"counterpartBatch",text(target.entry.batch)},{"counterpartOrdinal",static_cast<int>(target.entry.ordinal)}});
                 }state["transfers"]=items;state["transferNavigation"]=navigation;
+                if(reportLedgerActive){
+                    AccountRestore navigationAccounts(repo);
+                    std::set<std::int64_t> shown;for(const auto& [id,account]:reportMembers)shown.insert(account);
+                    for(auto account:shown)if(account!=acct.identity){
+                        navigationAccounts.select(account);
+                        for(const auto& value:repo.transfers()){
+                            const auto& side=value.link.origin.endpoint.account==account?value.link.origin:value.link.destination;
+                            const auto& other=value.link.origin.endpoint.account==account?value.link.destination:value.link.origin;
+                            if(side.state==transfers::State::removed || side.endpoint.account!=account || value.link.unresolved || value.link.destination_released || other.state==transfers::State::removed)continue;
+                            const auto target=other.attached_evidence?other.attached_evidence->endpoint:other.endpoint;
+                            QString otherName;const auto otherId=QString::number(other.endpoint.account);
+                            for(const auto& item:accountList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
+                            if(otherName.isEmpty())for(const auto& item:archivedList)if(item.toMap().value("id").toString()==otherId)otherName=item.toMap().value("name").toString();
+                            const QVariantMap destination{{"counterpartAccount",QString::number(target.account)},
+                                {"counterpartBatch",text(target.entry.batch)},{"counterpartOrdinal",static_cast<int>(target.entry.ordinal)},
+                                {"arrow",side.amount.units()<0?"←":side.amount.units()>0?"→":"↔"},
+                                {"description",(side.amount.units()<0?QString("Transfer to "):side.amount.units()>0?QString("Transfer from "):QString("Transfer with "))+otherName+" — show matching transaction"}};
+                            const auto addEndpoint=[&](const transfers::Endpoint& endpoint){
+                                const auto key=text(endpoint.entry.batch)+":"+QString::number(endpoint.entry.ordinal);
+                                auto splits=navigation.value(key).toMap();splits[text(endpoint.allocation)]=destination;navigation[key]=splits;
+                            };
+                            addEndpoint(side.endpoint);if(side.attached_evidence)addEndpoint(side.attached_evidence->endpoint);
+                        }
+                    }
+                    state["transferNavigation"]=navigation;
+                }
                 QVariantList journal;
                 for(const auto& entry:repo.transfer_journal()){
                     const auto accountName=[&](std::int64_t id){
@@ -1654,8 +1682,7 @@ struct ImportModel::Worker {
             const auto op=identity();try{repo.save_link_exclusion(op,*preparedLinkExclusion,linkExclusionGeneration);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
             preparedLinkExclusion.reset();linkExclusionPreview.clear();return;
         }
-        if(reportLedgerActive && action=="assign_transfer_batch")reportSelectionAccount(selection);
-        if(reportLedgerActive && action=="release_transfer_batch")reportRequireMembers(selection);
+        if(reportLedgerActive && (action=="assign_transfer_batch" || action=="release_transfer_batch"))reportRequireMembers(selection);
         if(action=="assign_transfer_batch" || action=="release_transfer_batch") {
             if(selection.empty())throw std::invalid_argument("Select at least one transaction");
             const auto destinationId=a.value("destination").toString().toLongLong();
@@ -1672,7 +1699,9 @@ struct ImportModel::Worker {
             const auto op=identity();std::vector<app::TransferRequest> requests;std::size_t serial=0;
             for(const auto& id:selection){
                 context.checkpoint("Reading selected transfers");
-                const auto choice=read_transfer_choice(repo,{{"account",QString::number(repo.account().identity)},{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"allocation",selection.size()==1?a.value("allocation"):QVariant()}},false);
+                std::int64_t owner=repo.account().identity;
+                if(reportLedgerActive){const auto found=reportMembers.find(id);if(found==reportMembers.end())throw std::invalid_argument("This transaction is not in the opened report.");owner=found->second;}
+                const auto choice=read_transfer_choice(repo,{{"account",QString::number(owner)},{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)},{"allocation",selection.size()==1?a.value("allocation"):QVariant()}},false);
                 const auto prefix=op+"-"+std::to_string(++serial);
                 app::TransferRequest request{};request.action=app::TransferAction::retarget;request.mode=1;
                 request.expected_sequence=a.value("sequence").toString().toLongLong();request.link=choice.linked?choice.link:prefix;

@@ -1634,9 +1634,10 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
         context.checkpoint("Checking transfer assignments");
         if(request.action!=app::TransferAction::retarget || (request.mode!=0 && request.mode!=1) || !request.left || (request.mode==1 && !request.generated) || request.mode!=requests.front().mode || request.expected_sequence!=sequence)
             fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
-        // An account destination still names the open account. A category can name each row's own account.
-        if(!categories && request.left->endpoint.account!=impl_->selected_account)fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
-        if(categories && account_for_batch(request.left->endpoint.entry.batch).identity!=request.left->endpoint.account)fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
+        // Each row names its own account. The open account is not the source list.
+        if(account_for_batch(request.left->endpoint.entry.batch).identity!=request.left->endpoint.account)fail(SQLITE_CONSTRAINT,"Invalid transfer assignment batch");
+        if(!categories && request.generated->account==request.left->endpoint.account)fail(SQLITE_CONSTRAINT,"One selected transaction is already in the destination account. Nothing was changed.");
+        if(!categories && request.generated_currency!=request.left->amount.currency().definition_id())fail(SQLITE_CONSTRAINT,"These accounts use different currencies. Nothing was changed.");
         if(!entries.insert(request.left->endpoint.entry).second || !link_ids.insert(request.link).second)fail(SQLITE_CONSTRAINT,"Select each transaction and relationship only once");
         const auto bytes=transfer_codec::encode(request);encoded+=std::to_string(bytes.size())+":"+bytes;
     }

@@ -1444,7 +1444,52 @@ void cross_account_selection_tests(const std::filesystem::path& dir){
     refused=false;try{OperationContext rejected;s.assign_categories("split-category",mixed,rejected);}catch(const std::exception&){refused=true;}
     s.select_account(2);check(refused && !s.review_outcome("split-category") && edit_row(s,{"visa",0}).transaction.allocations().front().category.empty(),"A split row rejects the category save for every account");
     s.select_account(1);check(s.balance().units()==checking_balance,"The failed category save leaves the balance");s.verify();
-    std::cout<<"Cross-account category, memo, and payee passed\n";
+    {
+        auto t=ImportStore::create(dir/"cross-transfer","test","Checking",cad,"2026-01-01");
+        t.opening(0,"2026-01-01",Money(0,cad));
+        t.ingest("checking",source("Market","-40.00"),qif::DateOrder::dmy);
+        t.create_account(2,"Savings",cad,"2026-01-01");t.select_account(2);t.opening(0,"2026-01-01",Money(0,cad));
+        t.ingest("savings",source("Market","-25.00"),qif::DateOrder::dmy);
+        t.create_account(3,"Visa",cad,"2026-01-01");t.select_account(3);t.opening(0,"2026-01-01",Money(0,cad));
+        t.ingest("visa",source("Market","-10.00"),qif::DateOrder::dmy);
+        t.create_account(4,"Cash",usd,"2026-01-01");t.select_account(4);t.opening(0,"2026-01-01",Money(0,usd));
+        t.ingest("cash",source("Market","-7.00"),qif::DateOrder::dmy);
+        t.select_account(1);
+        const auto request=[&](std::int64_t account,const char* batch,const char* link,std::int64_t destination){
+            t.select_account(account);
+            const auto row=*t.row({batch,0}).draft;const auto& allocation=row.transaction.allocations().front();
+            TransferRequest value{};value.action=TransferAction::retarget;value.mode=1;value.link=link;value.kept=std::string(link)+"-kept";value.expected_sequence=t.transfer_sequence();
+            value.left=transfers::AllocationFact{{account,{batch,0},allocation.identity},allocation.amount,row.date,transfers::State::draft,true,false,false};
+            value.generated=transfers::Endpoint{destination,{"~transfer-"+std::string(link),0},"generated"};
+            value.generated_currency=(destination==4?usd:cad).definition_id();value.payee=row.payee;value.memo=row.memo;
+            for(const auto& item:t.batches())if(item.id==batch)value.batch_revision=item.revision;
+            return value;
+        };
+        bool refused=false;std::string message;
+        try{OperationContext rejected;t.assign_transfer_batch("same",{request(3,"visa","same",3)},rejected);}catch(const std::exception& error){refused=true;message=error.what();}
+        t.select_account(3);check(refused && message=="One selected transaction is already in the destination account. Nothing was changed." && !t.review_outcome("same") && t.balance().units()==-1000 && t.transfers().empty(),"A destination row refuses every transfer");
+        refused=false;message.clear();
+        try{OperationContext rejected;t.assign_transfer_batch("currency",{request(1,"checking","currency-checking",3),request(4,"cash","currency-cash",3)},rejected);}catch(const std::exception& error){refused=true;message=error.what();}
+        check(refused && message=="These accounts use different currencies. Nothing was changed." && !t.review_outcome("currency"),"A currency mismatch refuses every transfer");
+        t.select_account(1);check(t.balance().units()==-4000,"Checking is unchanged");
+        t.select_account(4);check(t.balance().units()==-700,"Cash is unchanged");
+        t.select_account(3);check(t.transfers().empty() && t.balance().units()==-1000,"Visa gained nothing");
+        const auto assigned=std::vector<TransferRequest>{request(1,"checking","checking",3),request(2,"savings","savings",3)};
+        OperationContext cancel;int writes=0;cancel.progress=[&](auto phase){if(phase=="Assigning transfers" && ++writes==2)cancel.request();};
+        bool cancelled=false;try{t.assign_transfer_batch("cancel",assigned,cancel);}catch(const OperationCancelled&){cancelled=true;}
+        check(cancelled && writes==2 && !t.review_outcome("cancel"),"Cancelling the second account saves nothing");
+        t.select_account(3);check(t.balance().units()==-1000 && t.current_ledger().size()==1,"Visa keeps only its imported row");
+        OperationContext context;t.assign_transfer_batch("assign",assigned,context);t.assign_transfer_batch("assign",assigned,context);
+        t.select_account(1);check(t.balance().units()==-4000,"Checking origin stays");
+        t.select_account(2);check(t.balance().units()==-2500,"Savings origin stays");
+        t.select_account(3);check(t.balance().units()==5500 && t.transfers().size()==2,"Visa receives both opposite amounts");
+        t.select_account(1);t.undo_review("undo-cross-transfer");
+        t.select_account(3);
+        std::size_t activeLinks=0;for(const auto& value:t.transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed && value.link.destination.state!=transfers::State::removed)++activeLinks;
+        check(t.balance().units()==-1000 && t.current_ledger().size()==1 && activeLinks==0,"One Undo removes both transfers");
+        t.select_account(1);check(t.balance().units()==-4000,"Checking survives Undo");t.verify();
+    }
+    std::cout<<"Cross-account category, memo, payee, and transfer passed\n";
 }
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";

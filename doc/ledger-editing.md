@@ -59,12 +59,17 @@ Report-ledger Create rule… uses the same source inspection without opening the
 transaction editor. Save, apply and back returns to the report transactions,
 with refreshed allocations and totals. Commands unavailable in report ledgers
 (Add transaction, Merge, Unmerge, and Link) remain visible and disabled.
-Change category, Rename payee, and Set memo in that list can include several
-accounts in one save. Delete, Restore, and an account destination stay inside
-one account. Choosing an account, from the right-click menu or from the
+Change category, Rename payee, Set memo, and choosing an account in that list
+can include several accounts in one save. One Undo reverses that selection.
+Each chosen account transfer gets its own opposite posting. A row already in
+the chosen account, or a source account in another currency, stops the save
+and changes nothing. A transaction with more than one split is still changed
+one at a time. Delete and Restore stay inside one account. Choosing an account, from the right-click menu or from the
 category field in the open transaction, shows that account's name in the
 Category column on the top line. The name matches the category field without
-closing the transaction, and the transfer arrow points at that account. The
+closing the transaction, and the transfer arrow points at that account. Both
+are shown for every account in a report list, including accounts other than
+the open one. The
 account ledger uses the same column text. Undo restores the previous category
 text. The Account heading sorts the list, newest date first within
 each account.

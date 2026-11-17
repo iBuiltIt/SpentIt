@@ -55,7 +55,10 @@ The owner's follow-up Go extends the right-click account category operation to
 facts and revisions, then composes existing retarget commands inside one storage
 transaction. All child commands share the enclosing commit and cancellation gate.
 The receipt binds the full ordered request for idempotent retry. Relationships
-may occur only once in the batch. Invalid members, stale facts, unsupported
+may occur only once in the batch. Each row names its own source account, so
+one save can include several accounts. A row already in the destination
+account, or a source amount in another currency, refuses the batch before any
+write. Invalid members, stale facts, unsupported
 currencies and pre-commit cancellation leave no partial result.
 
 The group is recorded in the existing Review history as `transfer-assignment`,
