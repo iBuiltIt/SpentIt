@@ -411,6 +411,22 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
     return result;
 }
 
+// Presentation labels only. The stored category stays unchanged.
+template<class Repository>
+std::map<std::tuple<std::int64_t,imports::Occurrence,std::string>,std::string> transferCategoryLabels(const Repository& repo) {
+    std::map<std::tuple<std::int64_t,imports::Occurrence,std::string>,std::string> labels;
+    if(!repo.transfers_supported()) return labels;
+    std::map<std::int64_t,std::string> names;
+    for(const auto& account:repo.accounts()) names[account.identity]=account.name;
+    for(const auto& account:repo.archived_accounts()) names[account.identity]=account.name;
+    const auto key=[](const transfers::Endpoint& endpoint){return std::make_tuple(endpoint.account,endpoint.entry,endpoint.allocation);};
+    for(const auto& value:repo.transfers()) if(!value.link.unresolved && !value.link.destination_released && value.link.origin.state!=transfers::State::removed && value.link.destination.state!=transfers::State::removed) {
+        labels[key(value.link.origin.endpoint)]=names.at(value.link.destination.endpoint.account)+" [Account]";
+        labels[key(value.link.destination.endpoint)]=names.at(value.link.origin.endpoint.account)+" [Account]";
+    }
+    return labels;
+}
+
 }
 namespace diag = spentit::diagnostics;
 struct ImportModel::Worker {
@@ -625,13 +641,17 @@ struct ImportModel::Worker {
         }
         std::vector<app::LedgerRow> rows;reportRowInfo.clear();
         std::set<std::int64_t> accounts;for(const auto& [id,account]:reportMembers)accounts.insert(account);
+        const auto transferCategories=transferCategoryLabels(repo);
         AccountRestore restore(repo);
         for(auto account:accounts){
             if(context)context->checkpoint();restore.select(account);const auto acct=repo.account();
             for(auto row:repo.current_ledger()){
                 const auto member=reportMembers.find(row.identity);if(member==reportMembers.end() || member->second!=account)continue;
                 auto values=row.draft.transaction.allocations();
-                for(auto& allocation:values)allocation.category=allocationMap(allocation,categoryById,amountFormat).value("categoryDisplay").toString().toStdString();
+                for(auto& allocation:values){
+                    const auto transfer=transferCategories.find({account,row.identity,allocation.identity});
+                    allocation.category=transfer==transferCategories.end()?allocationMap(allocation,categoryById,amountFormat).value("categoryDisplay").toString().toStdString():transfer->second;
+                }
                 row.draft.transaction=row.draft.transaction.corrected(row.draft.transaction.effective_total(),std::move(values));
                 const auto amounts=contributions.find(row.identity);QString included="0";
                 if(amounts!=contributions.end()){
@@ -1292,15 +1312,7 @@ struct ImportModel::Worker {
                 if(newManual)cachedLedger->push_back({{newManualId,0},INT64_MAX,*newManual,false});
                 // A presentation-only copy resolves current names for both visible
                 // rows and literal filtering. Stored interpretations remain intact.
-                std::map<std::tuple<std::int64_t,imports::Occurrence,std::string>,std::string> transferCategories;
-                const auto endpointKey=[](const transfers::Endpoint& endpoint){return std::make_tuple(endpoint.account,endpoint.entry,endpoint.allocation);};
-                if(repo.transfers_supported()){
-                    std::map<std::int64_t,std::string> names;for(const auto& account:repo.accounts())names[account.identity]=account.name;for(const auto& account:repo.archived_accounts())names[account.identity]=account.name;
-                    for(const auto& value:repo.transfers())if(!value.link.unresolved && !value.link.destination_released && value.link.origin.state!=transfers::State::removed && value.link.destination.state!=transfers::State::removed){
-                        transferCategories[endpointKey(value.link.origin.endpoint)]=names.at(value.link.destination.endpoint.account)+" [Account]";
-                        transferCategories[endpointKey(value.link.destination.endpoint)]=names.at(value.link.origin.endpoint.account)+" [Account]";
-                    }
-                }
+                const auto transferCategories=transferCategoryLabels(repo);
                 const auto ledgerAccount=repo.account().identity;
                 // Category labels depend on the name/binding and this catalog,
                 // not on the allocation's memo, amount or provenance. Build the

@@ -385,6 +385,62 @@ private slots:
         for(const auto& warning:warnings){const auto list=qvariant_cast<QList<QQmlError>>(warning.front());for(const auto& item:list)qWarning().noquote()<<item.toString();}
         QCOMPARE(warnings.size(),qsizetype(0));
     }
+    void reportTransferCategoryLabel(){
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
+        run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"select_account",{{"id","1"}});
+        QFile file(dir.filePath("market.qif"));QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("D2026-01-15\nT-40.00\nPMarket\n^\n");file.close();
+        run(model,"import",{{"path",file.fileName()},{"account","1"}});
+        const auto batch=model.state().value("selected").toMap().value("batch").toString();QVERIFY(!batch.isEmpty());
+        QVariantMap definition{{"id","spending"},{"name","Synthetic spending"},{"graph","bar"},{"accounts",QVariantList{"1"}},{"categories",QVariantList{""}},
+            {"periods",QVariantList{QVariantMap{{"preset","custom"},{"start","2026-01-01"},{"end","2026-01-31"}}}}};
+        run(model,"report_save",{{"revision",model.state().value("reportRevision")},{"reports",QVariantList{definition}}});
+        run(model,"report_show",{{"id","spending"}});root->setProperty("currentPage","reports");
+        window->resize(1300,850);window->show();
+        const auto rows=model.state().value("reportResult").toMap().value("currencies").toList().front().toMap().value("rows").toList();
+        QCOMPARE(rows.size(),1);QCOMPARE(rows.front().toMap().value("name").toString(),QString("Uncategorized"));
+        run(model,"report_drill",{{"currency",0},{"period",0},{"row",0}});
+        QVERIFY(QMetaObject::invokeMethod(object(root,"reportsWorkspace"),"load"));
+        QVERIFY(!object(root,"reportsWorkspace")->property("dirty").toBool());
+        QCOMPARE(model.rowCount(),1);QCOMPARE(model.rowRecord(0).value("category").toString(),QString("Uncategorized"));
+        const auto cellText=[&](int column){
+            const QByteArray name=QString("ledgerCellText_%1_%2").arg(model.occurrenceIndex(batch,0)).arg(column).toUtf8();
+            auto* cell=object(root,name.constData());
+            return cell?cell->property("text").toString():QString();
+        };
+        QTRY_COMPARE(cellText(3),QString("Uncategorized"));
+        run(model,"select",{{"row",0}});
+        const auto choices=root->property("ledgerCategoryChoices").value<QJSValue>().toVariant().toList();
+        int savings=-1;
+        for(int i=0;i<choices.size();++i)if(choices[i].toMap().value("accountId").toString()=="2")savings=i;
+        QVERIFY(savings>=0);
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseLedgerCategory",Q_ARG(QVariant,choices[savings])));
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QCOMPARE(model.rowRecord(0).value("category").toString(),QString("Savings [Account]"));
+        QTRY_COMPARE(cellText(3),QString("Savings [Account]"));
+        run(model,"undo_transfer_assignment");
+        QCOMPARE(model.rowRecord(0).value("category").toString(),QString("Uncategorized"));
+        QTRY_COMPARE(cellText(3),QString("Uncategorized"));
+        run(model,"inspect",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(root->setProperty("pickerIndex",0));
+        QVERIFY(QMetaObject::invokeMethod(root,"chooseAccountDestination",Q_ARG(QVariant,QVariant("2"))));
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QCOMPARE(model.rowRecord(0).value("category").toString(),QString("Savings [Account]"));
+        QTRY_COMPARE(cellText(3),QString("Savings [Account]"));
+        QTRY_COMPARE(object(root,"splitCategory_0")->property("text").toString(),QString("Savings [Account]"));
+        run(model,"report_leave");root->setProperty("currentPage","ledger");
+        run(model,"select_account",{{"id","1"}});
+        QCOMPARE(model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString(),QString("Savings [Account]"));
+        QTRY_COMPARE(cellText(2),QString("Savings [Account]"));
+        for(const auto& warning:warnings){const auto list=qvariant_cast<QList<QQmlError>>(warning.front());for(const auto& item:list)qWarning().noquote()<<item.toString();}
+        QCOMPARE(warnings.size(),qsizetype(0));
+        run(model,"close");
+    }
     void reportsAndCalendar(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         QSignalSpy warnings(&engine,&QQmlEngine::warnings);

@@ -61,6 +61,26 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
+## Transfer name in the Category column — 2026-11-16
+
+Choosing an account from Change category, or from the category field in an
+open transaction, shows that account's name in the Category column on the
+transaction's top line. The name matches the category field, including while
+the transaction stays open, and the transfer arrow points at that account.
+Undo restores the previous category text. The account ledger and a report's
+transaction list use the same column. See
+[reporting](../features/006-reporting-drill-down.md) and
+[ledger editing](ledger-editing.md).
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release checks
+`reportTransferCategoryLabel`, `editableReportLedger`, `contextCategoryTransfer`,
+and `ledgerColumnLayout` passed offscreen. The new check assigns Savings from
+the report list's category menu and from the open transaction, reads
+`Savings [Account]` on the top line and in the category field, restores
+Uncategorized with Undo, and reads the same name on the account ledger.
+`./build/SpentIt` was rebuilt. No full UI suite, live pointer check, sanitizer
+run, or other-platform run is claimed.
+
 ## Open a transaction from a split line — 2026-11-16
 
 While a transaction’s saved splits are visible, a double-click on the

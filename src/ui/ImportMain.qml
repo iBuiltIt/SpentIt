@@ -4584,7 +4584,6 @@ ApplicationWindow {
                         Repeater {model:window.reportLedger?[record.date,record.payee,record.reportAccount,record.category,record.withdrawal,record.deposit,record.reportMatches?record.reportIncluded:"No longer included"]:[record.date,record.payee,record.category,record.withdrawal,record.deposit,record.balance]
                             Item {
                                 id:ledgerCell
-                                required property string modelData
                                 required property int index
                                 width:window.ledgerColumnWidth(index);height:ledgerRow.rowHeight
                                 HoverHandler {
@@ -4595,7 +4594,7 @@ ApplicationWindow {
                                 Label {
                                     id:ledgerCellText
                                     objectName:"ledgerCellText_"+ledgerRow.index+"_"+index
-                                    anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:index===0?8:0;textFormat:Text.PlainText;text:modelData;elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2
+                                    anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:index===0?8:0;textFormat:Text.PlainText;text:window.ledgerColumnText(record, index);elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2
                                 }
                                 PlainTip {
                                     objectName:"ledgerCellTip_"+ledgerRow.index+"_"+index

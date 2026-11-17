@@ -61,7 +61,12 @@ with refreshed allocations and totals. Commands unavailable in report ledgers
 (Add transaction, Merge, Unmerge, and Link) remain visible and disabled.
 Change category, Rename payee, and Set memo in that list can include several
 accounts in one save. Delete, Restore, and an account destination stay inside
-one account. The Account heading sorts the list, newest date first within
+one account. Choosing an account, from the right-click menu or from the
+category field in the open transaction, shows that account's name in the
+Category column on the top line. The name matches the category field without
+closing the transaction, and the transfer arrow points at that account. The
+account ledger uses the same column text. Undo restores the previous category
+text. The Account heading sorts the list, newest date first within
 each account.
 
 Disabled ledger menu text and submenu arrows use a distinct colour in light and

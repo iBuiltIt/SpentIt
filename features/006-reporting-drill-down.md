@@ -46,7 +46,12 @@ identities, with the account and the included amount. Saved edits and Undo
 refresh the report. Reopening uses current membership. Change category,
 Rename payee, and Set memo apply to the whole selection in one save, including
 rows from several accounts. One Undo reverses that selection. Delete, Restore,
-and an account destination stay inside one account. Merge, Link, and creation
+and an account destination stay inside one account. Choosing an account from
+Change category, or from the category field in the open transaction, shows
+that account's name in the Category column on the transaction's top line.
+The name matches the category field, including while the transaction stays
+open, and the transfer arrow points at that account. Undo restores the
+previous category text. Merge, Link, and creation
 stay in the account ledger. The Account heading sorts the list. Rows from one
 account stay together, newest date first inside that account. Other
 dataset changes mark the result stale until Refresh. Create rule… is available
