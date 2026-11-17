@@ -16,7 +16,10 @@ NavigableTextField {
     property bool choosing: false
     signal choiceAccepted(var choice)
     signal backwardRequested()
+    signal forwardRequested()
     signal escapeRequested()
+    property bool searchEdited: false
+    property bool highlightMoved: false
     property bool canUndoAssignment: false
     signal undoAssignmentRequested()
     FontMetrics { id: choiceMetrics; font: field.font }
@@ -26,7 +29,8 @@ NavigableTextField {
     maximumLength: 256
     onSavedTextChanged: resetText()
 
-    function resetText() { text=savedText; completion.close() }
+    function resetText() { searchEdited=false; highlightMoved=false; text=savedText; completion.close() }
+    function passThrough() { searchEdited=false; highlightMoved=false; completion.close(); forwardRequested() }
     function refreshChoices() {
         let query=text.toLowerCase()
         let rows=model.filter(c=>(c.path+" "+(c.aliases||"")).toLowerCase().indexOf(query)>=0)
@@ -52,6 +56,7 @@ NavigableTextField {
     }
     onActiveFocusChanged: {
         if(activeFocus) {
+            searchEdited=false; highlightMoved=false
             openChoices()
             // Run after the initial mouse press positions the caret.
             Qt.callLater(function(){if(field.activeFocus)field.selectAll()})
@@ -61,15 +66,23 @@ NavigableTextField {
         }
     }
     onPressed: openChoices()
-    onTextEdited: {refreshChoices();completion.open()}
+    onTextEdited: {searchEdited=true;refreshChoices();completion.open()}
     Keys.priority: Keys.BeforeItem
     Keys.onPressed: function(event) {
         if(event.key===Qt.Key_Backtab || (event.key===Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
             resetText();backwardRequested();event.accepted=true
-        } else if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter || event.key===Qt.Key_Tab) {
+        } else if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter) {
             if(!completion.visible)openChoices()
             acceptChoice();event.accepted=true
+        } else if(event.key===Qt.Key_Tab) {
+            if(searchEdited || highlightMoved) {
+                if(!completion.visible)openChoices()
+                if(matches.currentIndex>=0 && matches.currentIndex<choices.length)acceptChoice()
+                else {resetText();forwardRequested()}
+            } else passThrough()
+            event.accepted=true
         } else if(event.key===Qt.Key_Down || event.key===Qt.Key_Up) {
+            highlightMoved=true
             if(!completion.visible)openChoices()
             else matches.currentIndex=Math.max(0,Math.min(choices.length-1,matches.currentIndex+(event.key===Qt.Key_Down?1:-1)))
             matches.positionViewAtIndex(matches.currentIndex,ListView.Contain);event.accepted=true

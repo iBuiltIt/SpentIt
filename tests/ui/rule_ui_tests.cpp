@@ -658,6 +658,14 @@ private slots:
         auto* field=qobject_cast<QQuickItem*>(object(s.root,"ruleCategory"));QVERIFY(field);
         field->forceActiveFocus();
         QTRY_COMPARE(field->property("selectedText").toString(),QString("Utilities: Gas & Heating"));
+        const auto categoryId=s.root->property("ruleCategoryId").toString();
+        const auto dirty=s.root->property("rulesDirty").toBool();
+        QTest::keyClick(s.window,Qt::Key_Tab);
+        QTRY_VERIFY(qobject_cast<QQuickItem*>(object(s.root,"ruleTransactionScope"))->hasActiveFocus());
+        QCOMPARE(s.root->property("ruleCategoryId").toString(),categoryId);
+        QCOMPARE(s.root->property("rulesDirty").toBool(),dirty);
+        field->forceActiveFocus();
+        QTRY_COMPARE(field->property("selectedText").toString(),QString("Utilities: Gas & Heating"));
         QTest::keyClick(s.window,Qt::Key_U);
         QCOMPARE(field->property("text").toString(),QString("u"));
         QTest::keyClick(s.window,Qt::Key_T);

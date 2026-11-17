@@ -3,6 +3,11 @@ import QtQuick.Controls
 
 TextField {
     id: field
+    property bool selectAllOnFocus: false
+    onActiveFocusChanged: {
+        if (selectAllOnFocus && activeFocus)
+            Qt.callLater(function() { if (field.activeFocus) field.selectAll() })
+    }
 
     // Forward first so derived fields can retain their own Keys.onPressed
     // handlers (completion, Escape and session Undo).

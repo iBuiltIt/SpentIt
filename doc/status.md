@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-16
+Last updated: 2026-11-17
 
 SpentIt is the local rules-enabled application. The release rules database is
 version 1, and the application version is 1.0.1. A file whose number is not 1
@@ -60,6 +60,22 @@ passed unless you ran it.
 The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
+
+## Amount and category Tab — 2026-11-17
+
+Tab or Shift+Tab into the transaction amount or a split amount selects the
+whole amount. A click that enters the field does the same. Tab through a
+category field that was not edited moves to Memo and does not save. Typing,
+or Up or Down, makes the next Tab choose the highlighted suggestion. See
+[ledger editing](ledger-editing.md). Manual work is MAN-069.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release checks
+`import.category_ui` and `import.rules_ui` passed offscreen. The category
+check tabs into the amount and selects it, tabs through an unchanged category
+to Memo without saving, restores a category that matches nothing, and selects
+a split amount. The rules check tabs through an unchanged rule category
+without changing it. `./build/SpentIt` was rebuilt. No full UI suite, live
+pointer check, sanitizer run, or other-platform run is claimed.
 
 ## Created transfer entry category message — 2026-11-16
 

@@ -162,6 +162,8 @@ private slots:
         QTRY_VERIFY(category()->width()>=root->property("categorySelectorWidth").toDouble()-1);
         field("durableDate")->forceActiveFocus();QTest::keyClick(window,Qt::Key_Tab);QVERIFY(field("durablePayee")->hasActiveFocus());
         QTest::keyClick(window,Qt::Key_Tab);QVERIFY(field("durableTotal")->hasActiveFocus());
+        QTRY_COMPARE(field("durableTotal")->property("selectedText").toString(),field("durableTotal")->property("text").toString());
+        QVERIFY(!field("durableTotal")->property("text").toString().isEmpty());
         QTest::keyClick(window,Qt::Key_Tab);QVERIFY(category()->hasActiveFocus());
         QVERIFY(category()->findChild<QObject*>("categoryDropdown_0"));QTRY_VERIFY(category()->findChild<QObject*>("categoryDropdown_0")->property("visible").toBool());
         auto* uncategorizedChoice=object(root,"inlineCategoryChoice_uncategorized");QVERIFY(uncategorizedChoice);
@@ -190,6 +192,13 @@ private slots:
         QCOMPARE(category()->property("text").toString(),QString("Auto: Parking"));
         QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(category()->hasActiveFocus());
         QTRY_COMPARE(category()->property("selectedText").toString(),QString("Auto: Parking"));
+        const auto parkingId=assigned();
+        QTest::keyClick(window,Qt::Key_Tab);
+        QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
+        QCOMPARE(assigned(),parkingId);
+        QVERIFY(!root->property("dirty").toBool());
+        QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(category()->hasActiveFocus());
+        QTRY_COMPARE(category()->property("selectedText").toString(),QString("Auto: Parking"));
         category()->setProperty("text","auto: gAs");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
         QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),1);
         QTest::keyClick(window,Qt::Key_Tab);wait(model);QTRY_COMPARE(assigned(),gas);QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
@@ -200,10 +209,17 @@ private slots:
         QCOMPARE(object(root,"categoryMatches_0")->property("count").toInt(),0);
         QTest::keyClick(window,Qt::Key_Return);QVERIFY(category()->hasActiveFocus());QCOMPARE(assigned(),gas);QVERIFY(!model.busy());
         QTest::keyClick(window,Qt::Key_Escape);QCOMPARE(category()->property("text").toString(),QString("Auto: Gas"));
+        category()->setProperty("text","no such category");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
+        QTest::keyClick(window,Qt::Key_Tab);
+        QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
+        QCOMPARE(category()->property("text").toString(),QString("Auto: Gas"));
+        QCOMPARE(assigned(),gas);
+        QVERIFY(!root->property("dirty").toBool());
+        QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(category()->hasActiveFocus());
         category()->setProperty("text","");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
         QTest::keyClick(window,Qt::Key_Tab);wait(model);QTRY_VERIFY(assigned().isEmpty());QTRY_VERIFY(field("durableMemo")->hasActiveFocus());
         QCOMPARE(category()->property("text").toString(),QString());
-        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));QVERIFY(root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("confirmActionUndo"),"clicked"));wait(model);QTRY_COMPARE(assigned(),gas);
+        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));wait(model);QTRY_COMPARE(assigned(),gas);
         QTRY_VERIFY(field("durableMemo")->hasActiveFocus());QTest::qWait(50);category()->forceActiveFocus();category()->setProperty("text","Parking");QVERIFY(QMetaObject::invokeMethod(category(),"textEdited"));
         QTest::qWait(50);QVERIFY(pointer(window,root,"inlineCategoryChoice_"+parking));wait(model);QTRY_COMPARE(assigned(),parking);
         QVERIFY(file.open(QIODevice::WriteOnly|QIODevice::Truncate));file.write("D2/1/2026\nT-10\nPSynthetic splits\nS\n$-5\nS\n$-5\n^\n");file.close();
@@ -214,6 +230,8 @@ private slots:
         QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().last().toMap().value("categoryId").toString(),gas);
         QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(field("splitCategory_1")->hasActiveFocus());
         QTest::keyClick(window,Qt::Key_Backtab);QVERIFY(field("editSplitAmount_0")->hasActiveFocus());
+        QTRY_COMPARE(field("editSplitAmount_0")->property("selectedText").toString(),field("editSplitAmount_0")->property("text").toString());
+        QVERIFY(!field("editSplitAmount_0")->property("text").toString().isEmpty());
 
 
     }

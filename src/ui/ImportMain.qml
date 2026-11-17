@@ -4163,6 +4163,7 @@ ApplicationWindow {
                                 model:sortedCategories((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
                                 savedText:{let row=model.find(c=>c.id===ruleCategoryId);return row?row.path:""}
                                 onChoiceAccepted:function(choice){ruleCategoryId=choice.id;writeRule();ruleTransactionScope.forceActiveFocus()}
+                                onForwardRequested:ruleTransactionScope.forceActiveFocus()
                                 onBackwardRequested:ruleMemoTemplate.forceActiveFocus()
                                 onEscapeRequested:resetText()
                                 Accessible.name:"Rule category"
@@ -4743,7 +4744,7 @@ ApplicationWindow {
                     CalendarPicker {objectName:"transactionCalendar";workflow:window.workflowBackend;field:editDate;enabled:editEnabled;onSelected:function(value){editDate.text=value;dirty=true}}
                     NavigableTextField {id:editPayee;KeyNavigation.tab:editTotal;KeyNavigation.backtab:editDate;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
-                    NavigableTextField {id:editTotal;onEditingFinished:if(!window.helpFocusSuspended && selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
+                    NavigableTextField {id:editTotal;selectAllOnFocus:true;onEditingFinished:if(!window.helpFocusSuspended && selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Total"}
                 }
                 Repeater {
@@ -4786,6 +4787,7 @@ ApplicationWindow {
                             onBackwardRequested: {
                                 if(index>0)editorSplits.itemAt(index-1).amountField.forceActiveFocus();else editTotal.forceActiveFocus()
                             }
+                            onForwardRequested: { if(splitModel.count===1)editMemo.forceActiveFocus(); else splitMemo.forceActiveFocus() }
                             onEscapeRequested:discardEditor()
                             canUndoAssignment:!dirty && !!s.canUndoEdit
                             onUndoAssignmentRequested:undoEdit()
@@ -4794,7 +4796,7 @@ ApplicationWindow {
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"category",text);splitModel.setProperty(index,"categoryTouched",true);dirty=true} Accessible.name:"Split category"}
                         NavigableTextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
-                        NavigableTextField {id:splitAmount;onEditingFinished:{if(!window.helpFocusSuspended && selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
+                        NavigableTextField {id:splitAmount;selectAllOnFocus:true;onEditingFinished:{if(!window.helpFocusSuspended && selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1};splitEditMessage="";dirty=true} Accessible.name:"Split amount"}
                         Label {objectName:"splitRemainder_"+index;visible:!manualSplitAmounts && automaticSplitIndex===index;text:"Automatic remainder"}
                         Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && !category.startsWith("[");onClicked:{if(!enabled || splitModel.count<=1)return;window.removeEditorSplit(index)}}

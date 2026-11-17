@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-16
+Last updated: 2026-11-17
 
 The bundled manual includes MAN-001 through MAN-056 after the owner-authorized
 2026-11-14 pass. Both entries previously labelled MAN-045 are covered; the
@@ -18,12 +18,27 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-069. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-070. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-069 (2026-11-17) — Amount selection and category Tab. Contract:
+  [ledger editing](ledger-editing.md). Chapters:
+  [Keyboard and mouse](../manual/keyboard-mouse.md) (“Edit an entry”),
+  [Add or correct transactions](../manual/add-correct-transactions.md), and
+  [Categories](../manual/categories.md) (“Choose a category for a transaction”).
+  Tab or Shift+Tab into an amount selects it, so typing replaces it. A click
+  that enters the field does the same. A later click places the caret. Tab
+  into a category, then Tab again without typing, moves to the transaction
+  Memo for one split, or to that split’s memo when there are several, and does
+  not change the category. After typing, or after Up or Down, Tab still chooses
+  the highlighted suggestion. Tab with no match restores the category and moves
+  on. Enter still chooses. Enter with no match stays in the field. Shift+Tab
+  still moves back. Text only. The categories-completion picture still shows a
+  typed search.
 
 - MAN-068 (2026-11-16) — Line between accounts in the import mapping dialog.
   Contract: [QIF account imports](qif-account-imports.md). Chapter:

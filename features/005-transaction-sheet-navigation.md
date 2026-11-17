@@ -1,7 +1,7 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**
-Last updated: 2026-11-16
+Last updated: 2026-11-17
 
 The durable ledger is the application sheet. Editing, Set memo, Rename payee,
 Restore, splits, expressions, and amount formatting are in
@@ -64,8 +64,10 @@ report transaction list use this row. Changing selection leaves the editor in
 place.
 
 Enter accepts a complete validated edit. Escape cancels the pending text.
-Session Undo restores a saved edit. Other dataset mutations end that Undo
-sequence.
+Tab into an amount selects it. Tab through an unchanged category field moves
+to the next memo field without saving. The amount and category Tab rules are
+in [ledger editing](../doc/ledger-editing.md). Session Undo restores a saved
+edit. Other dataset mutations end that Undo sequence.
 
 Leaving an account records an identity and offset anchor. Back, Forward, and
 the account button restore it after layout. A hidden refresh must not replace

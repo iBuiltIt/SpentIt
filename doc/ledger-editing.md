@@ -89,15 +89,18 @@ Existing retained classifications remain visible until deliberately replaced.
 Unresolved imported transfer allocations offer account destinations only and use
 the existing explicit transfer-resolution command.
 
-Typing highlights the first match; Up/Down changes that selection. Click, Enter
-or Tab chooses it using the existing complete-edit acceptance or guarded transfer
-command. Enter/Tab moves to transaction Memo for a single allocation, or that
-split's memo for multiple allocations. Date, Payee, Amount, Category and Memo
-support forward/reverse keyboard navigation. Memo follows allocations visually.
-Add split remains a button. The dropdown has an interactive scrollbar.
+Typing highlights the first match; Up/Down changes that selection. Click or
+Enter chooses the highlighted row, using the existing complete-edit acceptance
+or guarded transfer command. Choosing moves to transaction Memo for a single
+allocation, or that split's memo for multiple allocations. Tab and amount
+selection are in
+[Amount and category Tab](#amount-and-category-tab--owner-go-2026-11-17).
+Date, Payee, Amount, Category and Memo support forward/reverse keyboard
+navigation. Memo follows allocations visually. Add split remains a button.
+The dropdown has an interactive scrollbar.
 
-No matches leaves the field open without creating or assigning a category.
-Escape closes the dropdown and restores its prior text; Escape with it closed
+Enter with no match leaves the field open without creating or assigning a
+category. Escape closes the dropdown and restores its prior text; Escape with it closed
 retains the editor's existing discard behavior. Leaving a search without choosing
 restores the saved label. Category searching alone does not mutate the edit.
 Other fields retain Enter-to-accept behavior and session Undo remains unchanged.
@@ -280,11 +283,34 @@ remain in force. Memo and amount field presentation is unchanged by this fix.
 The ledger and rule editor now share `CategoryCompletion.qml`. Gaining focus
 selects the current text for replacement; later clicks/dragging select text
 normally. Typing filters the still-open list immediately, retaining keyboard
-focus. The list renders ampersands literally. Up/Down, Enter/Tab, mouse choice,
+focus. The list renders ampersands literally. Up/Down, Enter, mouse choice,
 Escape, split-field navigation and category Undo retain their existing behavior.
+Tab through an unchanged field is specified with amount selection below.
 Ledger choices still include Uncategorized and eligible transfer accounts, and
 assignment still uses the existing immediate command. Rule choices and saves
 remain separate caller responsibilities. See [status](status.md) for checks.
+
+## Amount and category Tab — owner Go 2026-11-17
+
+Tab or Shift+Tab into the transaction amount or a split amount selects the
+whole amount. A click that gives the field focus does the same. A later click
+in the focused field places the caret. Typing replaces the selection. Leaving
+a valid amount still replaces an expression with its formatted answer.
+
+Tab into a category field opens the suggestions and selects the text. Tab
+again, without typing and without Up or Down, closes the list and moves on.
+The category stays as it is, and the transaction is not saved. One split moves
+to the transaction Memo. Several splits move to that split's memo, then its
+amount, then the next category or the transaction Memo.
+
+Typing a search, or pressing Up or Down, makes the next Tab choose the
+highlighted suggestion and then move to that same field. Enter still chooses.
+Enter with no match leaves the field open and assigns nothing. Tab with no
+match restores the saved label and moves on. Shift+Tab still abandons an open
+search and moves back. A transfer label such as `Savings [Account]`, or an
+unmapped label, is unchanged by that pass-through Tab. The rule editor uses
+the same distinction. Pass-through Tab there moves to the Transactions choice
+and does not change the rule's category.
 
 ## Split amount editing — owner Go 2026-11-03
 
