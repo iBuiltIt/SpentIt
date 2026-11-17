@@ -82,12 +82,17 @@ The same three functions passed offscreen. A synthetic native filtered-popup
 screenshot was inspected. `./build/SpentIt` was rebuilt and its offscreen
 `--smoke` launch passed.
 
-The additional offscreen `ledgerViewportSurvivesCategoryNavigation` check failed
-its initial `saved.index > 200` assertion, before opening Categories or assigning
-through the picker. That broader viewport check remains unverified; it was not
-changed here. No full suite, sanitizer, Windows/Linux or spoken screen-reader
-verification is claimed. Changed-document relative links and diff whitespace
-checks passed.
+The additional offscreen `ledgerViewportSurvivesCategoryNavigation` check initially
+failed its `saved.index > 200` assertion. Investigation reproduced the failure
+with the pre-picker UI: the test assumed ascending order, while the newest-first
+default placed transaction 260 at index 40. This was a test setup issue, not a
+picker regression. The owner-authorized follow-up explicitly selects ascending
+date order in that fixture, without changing application behavior or assertions.
+After rebuilding `spentit_import_navigation_tests`, the complete function passed
+offscreen on macOS arm64 with Qt 6.12.0 (3 QtTest results including setup and
+cleanup, 0 failures). No full suite, sanitizer, Windows/Linux or spoken
+screen-reader verification is claimed. Changed-document relative links and diff
+whitespace checks passed.
 
 ## Inspect opens the ledger — 2026-11-17
 

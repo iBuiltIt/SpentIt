@@ -674,6 +674,9 @@ private slots:
         for(int i=0;i<300;++i)rows+="D1/1/2026\nT-1\nPSynthetic "+QByteArray::number(i).rightJustified(3,'0')+"\n^\n";
         QCOMPARE(file.write(rows),rows.size());file.close();run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
         const auto account=model.state().value("accountId").toString();const auto batch=model.state().value("selected").toMap().value("batch").toString();
+        // This fixture positions late imported rows deep in the ledger.
+        // Set its order explicitly rather than relying on the newest-first default.
+        run(model,"query",{{"sort",0},{"descending",false}});
         run(model,"inspect",{{"batch",batch},{"ordinal",260}});
         auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
         auto position=[&](int index){return QMetaObject::invokeMethod(ledger,"positionViewAtIndex",Q_ARG(int,index),Q_ARG(int,0));};
