@@ -352,6 +352,8 @@ public:
     // Empty when Unmerge applies immediately. Otherwise the confirmation text.
     virtual std::string unmerge_notice(const std::vector<imports::Occurrence>&) const {return {};}
     virtual ReviewReceipt unmerge(std::string_view,const std::vector<imports::Occurrence>&) {throw std::logic_error("Unmerge unavailable");}
+    // Atomic duplicate merges, or transfer links and not-linked decisions.
+    // Exact requested answers only; one history action and idempotent receipt.
     virtual ReviewReceipt merge_review_batch(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Batch Review unavailable");}
     virtual ReviewReceipt link_review_group(std::string_view,const ReviewAnswer&,const OperationContext&) {throw std::logic_error("Automatic follow-on links unavailable");}
     virtual ReviewReceipt answer_review(std::string_view,const ReviewAnswer&) {throw std::logic_error("Review unavailable");}

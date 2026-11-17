@@ -3378,10 +3378,13 @@ ApplicationWindow {
     property var reviewLinkChoices: ({})
     property var reviewLinkHolds: ({})
     property string reviewSelectionGeneration: String(s.reviewGeneration||"")
-    onReviewSelectionGenerationChanged: {reviewBatch=({});reviewRowChoices=({});reviewLinkChoices=({});reviewLinkHolds=({});reviewSurvivor.close()}
+    onReviewSelectionGenerationChanged: {reviewSurvivor.close();Qt.callLater(reconcileReviewDecisions)}
+    readonly property var reviewDecisionQuestions: s.reviewReady===false?null:s.reviewQuestions
+    onReviewDecisionQuestionsChanged: Qt.callLater(reconcileReviewDecisions)
     onCurrentPageChanged: {
         categoryVisitAdditions=[];categorySort="ascending"
         if(currentPage==="review") {
+            Qt.callLater(reconcileReviewDecisions)
             if(reviewReturnPending){reviewReturnPending=false;reviewViewRestoring=true;Qt.callLater(function(){restoreReviewView();reviewViewRestoring=false})}
             if(s.reviewReady===false && !workflow.busy)workflow.command("review_load")
         } else if(suppressReviewSelectionClear) suppressReviewSelectionClear=false
@@ -3471,8 +3474,10 @@ ApplicationWindow {
     function reviewProblems() {return reviewProblemRows}
     readonly property var orderedReviewRows: {
         const order={same:0,link:1,correction:2}
-        // Include the original index: QML's sort does not guarantee stable ties.
-        return (s.reviewQuestions||[]).map((question,index)=>({question:question,index:index})).sort((a,b)=>order[a.question.kind]-order[b.question.kind] || a.index-b.index).map(item=>item.question)
+        const questions=s.reviewQuestions||[], components=reviewLinkComponents(questions)
+        // Keep related cards adjacent without moving inferred mirrors into the
+        // initial one-to-one section when a checkbox is clicked.
+        return questions.map((question,index)=>({question:question,index:index})).sort((a,b)=>order[a.question.kind]-order[b.question.kind] || (a.question.kind==="link"?(Number(!reviewLinkHolds[a.question.key])-Number(!reviewLinkHolds[b.question.key]) || components[a.question.key]-components[b.question.key]):0) || a.index-b.index).map(item=>item.question)
     }
     function orderedReviewQuestions() {return orderedReviewRows}
     function samePostedDate(rows) {
@@ -3515,108 +3520,161 @@ ApplicationWindow {
         return "Merge "+chosen.length+" selected rows"+(automaticSurvivor(chosen)?"":"…")
     }
     function reviewRowId(row) {return row.batch+":"+row.ordinal}
-    // A checked pair claims both transactions. Another card is checked when it
-    // has one partner left and that partner remains on only that card.
-    function linkChoiceIndex(question) {
-        if(!question || question.kind!=="link" || !question.rows || question.rows.length<2)return -1
-        let staged=reviewLinkChoices[question.key]
-        if(staged && staged.index>=1 && staged.index<question.rows.length)return staged.index
-        if(question.rows.length===2)return 1
-        let matches=[]
-        for(let i=1;i<question.rows.length;++i)if(question.rows[i].sameDate)matches.push(i)
-        return matches.length===1?matches[0]:-1
-    }
-    function recomputeLinkMirrors() {
-        let questions=[]
-        for(let q of (s.reviewQuestions||[]))if(q.kind==="link" && q.rows && q.rows.length>1)questions.push(q)
-        let byKey={}
-        for(let q of questions)byKey[q.key]=q
-        let used={}, user={}
-        for(let key of Object.keys(reviewLinkChoices)) {
-            let choice=reviewLinkChoices[key]
-            if(!choice || choice.auto)continue
-            let q=byKey[key]
-            if(!q || choice.index<1 || choice.index>=q.rows.length)continue
-            user[key]=choice
-            used[reviewRowId(q.rows[0])]=true
-            used[reviewRowId(q.rows[choice.index])]=true
+    function reviewLinkComponents(questions) {
+        const parents=questions.map((q,i)=>i), owners={}
+        function root(i) {while(parents[i]!==i){parents[i]=parents[parents[i]];i=parents[i]}return i}
+        for(let i=0;i<questions.length;++i) {
+            const q=questions[i]
+            if(q.kind!=="link")continue
+            for(const row of q.rows) {
+                const id=reviewRowId(row)
+                if(owners[id]!==undefined) {
+                    const a=root(i), b=root(owners[id]);parents[Math.max(a,b)]=Math.min(a,b)
+                } else owners[id]=i
+            }
         }
-        let autos={}, guard=0
-        while(guard++<questions.length+1) {
-            let degree={}, edges=[]
-            for(let q of questions) {
-                if(user[q.key] || reviewLinkHolds[q.key])continue
-                let origin=reviewRowId(q.rows[0])
-                if(used[origin])continue
-                let free=[]
-                for(let i=1;i<q.rows.length;++i){let id=reviewRowId(q.rows[i]);if(!used[id])free.push({index:i,id:id})}
-                for(let cand of free) {
-                    edges.push({key:q.key,index:cand.index,origin:origin,partner:cand.id})
-                    degree[origin]=(degree[origin]||0)+1
-                    degree[cand.id]=(degree[cand.id]||0)+1
+        const result={}
+        for(let i=0;i<questions.length;++i)result[questions[i].key]=root(i)
+        return result
+    }
+    function releaseRelatedMirrors(choices, key, deferCleared) {
+        const components=reviewLinkComponents(s.reviewQuestions||[])
+        for(const other of Object.keys(choices))
+            if(choices[other].auto && components[other]===components[key]) {
+                if(deferCleared)choices[other]={action:"undecided",auto:true}
+                else delete choices[other]
+            }
+    }
+    function linkChoiceIndex(question) {
+        const choice=question?reviewLinkChoices[question.key]:null
+        return choice && choice.action==="link"?choice.index:-1
+    }
+    function decisionFingerprint(rows) {return JSON.stringify(rows)}
+    function makeLinkDecision(q, index, automatic) {
+        const row=q.rows[index]
+        return {action:"link",index:index,auto:automatic,partner:reviewRowId(row),
+            left:row.suggestedLeftAllocation||"",right:row.suggestedRightAllocation||"",
+            fingerprint:decisionFingerprint([q.rows[0],row])}
+    }
+    function reconcileReviewDecisions() {
+        if(currentPage!=="review" || s.reviewReady===false)return
+        const questions=s.reviewQuestions||[]
+        const next={}, ranks=Object.assign({},reviewLinkHolds)
+        for(const q of questions) {
+            if(q.kind!=="link" || q.rows.length<2)continue
+            const old=reviewLinkChoices[q.key]
+            if(old) {
+                if(old.action==="link") {
+                    const index=q.rows.findIndex(row=>reviewRowId(row)===old.partner)
+                    next[q.key]=index>0 && decisionFingerprint([q.rows[0],q.rows[index]])===old.fingerprint?Object.assign({},old,{index:index}):{action:"changed"}
+                } else if(old.action==="not_linked") {
+                    next[q.key]=decisionFingerprint(q.rows)===old.fingerprint?old:{action:"changed"}
+                } else next[q.key]=old
+            }
+        }
+        // Preserve duplicate selections by identity too; a saved answer only
+        // removes its own question. Submit with the current generation.
+        const merges={}, rows={}
+        for(const q of questions) {
+            const ids=q.rows.map(reviewRowId)
+            const chosen=reviewRowChoices[q.key]
+            if(chosen && chosen.every(row=>ids.indexOf(reviewRowId(row))>=0))rows[q.key]=chosen
+            const batch=reviewBatch[q.key]
+            if(batch && batch.selected.every(row=>ids.indexOf(reviewRowId(row))>=0))merges[q.key]=Object.assign({},batch,{generation:s.reviewGeneration})
+        }
+        reviewRowChoices=rows;reviewBatch=merges
+        reviewLinkChoices=next;
+        if(JSON.stringify(reviewLinkHolds)!==JSON.stringify(ranks))reviewLinkHolds=ranks
+        recomputeLinkMirrors(false)
+    }
+    function recomputeLinkMirrors(followChoices) {
+        const questions=(s.reviewQuestions||[]).filter(q=>q.kind==="link" && q.rows.length>1)
+        const next=Object.assign({},reviewLinkChoices), ranks=Object.assign({},reviewLinkHolds), used={}
+        for(const q of questions) {
+            const choice=next[q.key]
+            if(choice && choice.action==="link") {
+                used[reviewRowId(q.rows[0])]=true;used[choice.partner]=true
+            }
+        }
+        let added=true
+        while(added) {
+            added=false
+            const degree={}, edges=[]
+            for(const q of questions) {
+                if(next[q.key] || used[reviewRowId(q.rows[0])])continue
+                const origin=reviewRowId(q.rows[0])
+                for(let i=1;i<q.rows.length;++i) {
+                    const partner=reviewRowId(q.rows[i])
+                    if(used[partner])continue
+                    edges.push({q:q,index:i,origin:origin,partner:partner})
+                    degree[origin]=(degree[origin]||0)+1;degree[partner]=(degree[partner]||0)+1
                 }
             }
-            let claimed={}, added=false
-            for(let edge of edges) {
-                if(degree[edge.origin]!==1 || degree[edge.partner]!==1 || claimed[edge.origin] || claimed[edge.partner])continue
-                let row=byKey[edge.key].rows[edge.index]
-                if(!(row.suggestedLeftAllocation && row.suggestedRightAllocation))continue
-                autos[edge.key]={index:edge.index,auto:true,left:row.suggestedLeftAllocation,right:row.suggestedRightAllocation}
-                claimed[edge.origin]=true
-                claimed[edge.partner]=true
-                used[edge.origin]=true
-                used[edge.partner]=true
-                added=true
+            for(const edge of edges) {
+                const q=edge.q, row=q.rows[edge.index]
+                if((!followChoices && q.rows.length!==2) || degree[edge.origin]!==1 || degree[edge.partner]!==1 || used[edge.origin] || used[edge.partner])continue
+                if(!row.suggestedLeftAllocation || !row.suggestedRightAllocation)continue
+                next[q.key]=makeLinkDecision(q,edge.index,true);
+                if(!followChoices && q.rows.length===2)ranks[q.key]=true
+                used[edge.origin]=true;used[edge.partner]=true;added=true
             }
-            if(!added)break
         }
-        let next={}
-        for(let key of Object.keys(user))next[key]=user[key]
-        for(let key of Object.keys(autos))next[key]=autos[key]
-        reviewLinkChoices=next
+        reviewLinkChoices=next;
+        if(JSON.stringify(reviewLinkHolds)!==JSON.stringify(ranks))reviewLinkHolds=ranks
+    }
+    function stageTransferDecision(q, action) {
+        const choices=Object.assign({},reviewLinkChoices)
+        releaseRelatedMirrors(choices,q.key,true)
+        const components=reviewLinkComponents(s.reviewQuestions||[])
+        for(const other of (s.reviewQuestions||[]))
+            if(other.kind==="link" && components[other.key]===components[q.key] && !choices[other.key])
+                choices[other.key]={action:"undecided",auto:true}
+        choices[q.key]={action:action,fingerprint:decisionFingerprint(q.rows)}
+        // Cleared automatic suggestions stay undecided across refreshes. Only
+        // a subsequent positive partner choice can infer new mirrors.
+        reviewLinkChoices=choices
     }
     function selectReviewLink(key, index) {
-        let question=null
-        for(let q of (s.reviewQuestions||[]))if(q.key===key)question=q
-        if(!question || question.kind!=="link" || index<1 || index>=question.rows.length)return
-        let current=reviewLinkChoices[key]
-        if(current && current.auto && current.index===index) {
-            let holds=Object.assign({},reviewLinkHolds);holds[key]=true;reviewLinkHolds=holds
-            recomputeLinkMirrors();return
+        const q=(s.reviewQuestions||[]).find(q=>q.key===key)
+        if(!q || index<1 || index>=q.rows.length)return
+        const current=reviewLinkChoices[key]
+        if(current && current.action==="link" && current.index===index) {
+            stageTransferDecision(q,"not_linked");return
         }
-        let origin=reviewRowId(question.rows[0]), partner=reviewRowId(question.rows[index])
-        if(origin===partner)return
-        for(let otherKey of Object.keys(reviewLinkChoices)) {
-            if(otherKey===key)continue
-            let choice=reviewLinkChoices[otherKey]
-            if(!choice || choice.auto)continue
-            let other=null
-            for(let q of (s.reviewQuestions||[]))if(q.key===otherKey)other=q
-            if(!other || !other.rows || choice.index<1 || choice.index>=other.rows.length)continue
-            let otherOrigin=reviewRowId(other.rows[0]), otherPartner=reviewRowId(other.rows[choice.index])
-            if(otherOrigin===origin || otherOrigin===partner || otherPartner===origin || otherPartner===partner)return
+        const choices=Object.assign({},reviewLinkChoices)
+        releaseRelatedMirrors(choices,key)
+        const origin=reviewRowId(q.rows[0]), partner=reviewRowId(q.rows[index])
+        for(const other of (s.reviewQuestions||[])) {
+            const choice=choices[other.key]
+            if(other.key===key || !choice || choice.action!=="link")continue
+            const otherOrigin=reviewRowId(other.rows[0])
+            if(otherOrigin===origin || otherOrigin===partner || choice.partner===origin || choice.partner===partner) {
+                workspaceFeedback="That transaction already has a pending link. Change that decision first.";return
+            }
         }
-        reviewLinkHolds=({})
-        let choices=Object.assign({},reviewLinkChoices)
-        let row=question.rows[index]
-        choices[key]={index:index,auto:false,left:row.suggestedLeftAllocation||"",right:row.suggestedRightAllocation||""}
-        reviewLinkChoices=choices
-        recomputeLinkMirrors()
+        choices[key]=makeLinkDecision(q,index,false);reviewLinkChoices=choices
+        recomputeLinkMirrors(true)
     }
     function linkSelectedGroups() {
-        let result=[]
-        for(let q of (s.reviewQuestions||[])) {
-            let choice=reviewLinkChoices[q.key]
-            if(!choice || q.kind!=="link" || choice.index<1 || choice.index>=q.rows.length || !choice.left || !choice.right)continue
-            result.push({question:q.key,generation:s.reviewGeneration,answer:"link",selected:[q.rows[0],q.rows[choice.index]],leftAllocation:choice.left,rightAllocation:choice.right})
+        const result=[]
+        for(const q of (s.reviewQuestions||[])) {
+            const choice=reviewLinkChoices[q.key]
+            if(!choice || q.kind!=="link")continue
+            if(choice.action==="not_linked")result.push({question:q.key,generation:s.reviewGeneration,answer:"not_linked",selected:[]})
+            else if(choice.action==="link" && choice.left && choice.right && !choice.requiresImmediate)
+                result.push({question:q.key,generation:s.reviewGeneration,answer:"link",selected:[q.rows[0],q.rows[choice.index]],leftAllocation:choice.left,rightAllocation:choice.right})
         }
         return result
     }
+    function transferDecisionSummary() {
+        const groups=linkSelectedGroups(), links=groups.filter(g=>g.answer==="link").length
+        const rejected=groups.length-links
+        return links+" "+(links===1?"link":"links")+", "+rejected+" not "+(rejected===1?"a transfer":"transfers")
+    }
     function linkSelectedTransfers() {
-        let groups=linkSelectedGroups()
+        const groups=linkSelectedGroups()
         if(!groups.length || workflow.busy)return
-        captureReviewView()
-        reviewScrollPosition=reviewQuestions.contentY
+        captureReviewView();reviewScrollPosition=reviewQuestions.contentY
         workflow.command("review_batch",{groups:groups})
     }
     function setReviewBatch(args) {
@@ -4009,6 +4067,11 @@ ApplicationWindow {
                 Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true;Accessible.name:reviewCountAccessibleName()}
                 Flow {Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredHeight:childrenRect.height;spacing:6;layoutDirection:Qt.RightToLeft
                     Button {objectName:"chooseImportUndo";text:"Undo import…";visible:(s.undoableImports||[]).length>0;enabled:!workflow.busy;onClicked:guard(openImportUndoPicker)}
+                    RowLayout {spacing:6;visible:linkSelectedGroups().length>0
+                        Label {objectName:"transferDecisionSummary";text:transferDecisionSummary();textFormat:Text.PlainText}
+                        Button {objectName:"linkSelected";text:"Apply decisions";enabled:!workflow.busy;Accessible.name:"Apply pending transfer decisions. Undo reverses them together."
+                            onClicked:linkSelectedTransfers()}
+                    }
                 }
             }
         }
@@ -4039,10 +4102,6 @@ ApplicationWindow {
             Button {objectName:"clearMergeSelection";text:"Clear merge selection";visible:Object.keys(reviewBatch).length>0;enabled:!workflow.busy;onClicked:reviewBatch=({})}
             Button {objectName:"mergeSelectedMatches";text:"Merge pairs";visible:mergePairGroups().length>0;enabled:!workflow.busy
                 onClicked:{captureReviewView();workflow.command("review_batch",{groups:mergePairGroups()})}}
-        }
-        RowLayout {Layout.fillWidth:true;visible:linkSelectedGroups().length>0
-            Button {objectName:"linkSelected";text:"Link selected";enabled:!workflow.busy;Accessible.name:"Link the selected transfers. Undo reverses them together."
-                onClicked:linkSelectedTransfers()}
         }
         Item {Layout.fillWidth:true;Layout.preferredHeight:visible?30:0;visible:reviewQuestions.count>0;clip:true
             RowLayout {x:-reviewQuestions.contentX;
@@ -4088,8 +4147,9 @@ ApplicationWindow {
                 property string rightAllocation: ""
                 function resetLinkAllocations() {
                     const row=counterpart>=1 && counterpart<modelData.rows.length?modelData.rows[counterpart]:null
-                    leftAllocation=row?(row.suggestedLeftAllocation||""):""
-                    rightAllocation=row?(row.suggestedRightAllocation||""):""
+                    const choice=reviewLinkChoices[modelData.key]
+                    leftAllocation=choice && choice.action==="link"?choice.left:row?(row.suggestedLeftAllocation||""):""
+                    rightAllocation=choice && choice.action==="link"?choice.right:row?(row.suggestedRightAllocation||""):""
                 }
                 onCounterpartChanged:resetLinkAllocations()
                 onModelDataChanged:resetLinkAllocations()
@@ -4115,12 +4175,24 @@ ApplicationWindow {
                     Label {text:questionCard.modelData.reason;wrapMode:Text.Wrap;Layout.fillWidth:true}
                     Button {text:reviewMergeLabel(questionCard.modelData.kind,questionCard.modelData.rows,questionCard.chosen);objectName:"reviewYes";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy && (questionCard.modelData.kind==="same"?questionCard.mergeRows.length>=2:questionCard.counterpart>=1);onClicked:{
                         if(questionCard.modelData.kind==="same")answerReview(questionCard.modelData,"merge",questionCard.mergeRows)
-                        else {reviewScrollPosition=reviewQuestions.contentY;workflow.command("review_link_preview",{question:questionCard.modelData.key,generation:s.reviewGeneration,answer:"link",selected:[questionCard.modelData.rows[0],questionCard.modelData.rows[questionCard.counterpart]],leftAllocation:questionCard.leftAllocation,rightAllocation:questionCard.rightAllocation})}
+                        else {reviewScrollPosition=reviewQuestions.contentY;workflow.command("review_link_preview",{question:questionCard.modelData.key,generation:s.reviewGeneration,answer:"link",onlyThisPair:true,selected:[questionCard.modelData.rows[0],questionCard.modelData.rows[questionCard.counterpart]],leftAllocation:questionCard.leftAllocation,rightAllocation:questionCard.rightAllocation})}
                     }}
                     Button {text:questionCard.modelData.kind==="same"?"Keep separate":"Not this transfer";objectName:"reviewNo";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,questionCard.modelData.kind==="same"?"separate":"not_linked",[])}
                     Button {objectName:"reviewShowLedger";text:"Show in ledger";visible:questionCard.modelData.kind==="same";enabled:!workflow.busy;onClicked:showDuplicateInLedger(questionCard.modelData.rows.find(row=>!row.committed)||questionCard.modelData.rows[0])}
                     Button {text:"Accept without bank match";objectName:"acceptMissingMatch";visible:!!questionCard.modelData.waitingLink && questionCard.modelData.rows.length<=1;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,"accept_missing",[])}
                     Button {objectName:"reviewCorrect";text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}
+                }
+                RowLayout {
+                    visible:questionCard.modelData.kind==="link" && questionCard.modelData.rows.length>1
+                    Label {Layout.fillWidth:true;wrapMode:Text.Wrap;text:{
+                        const choice=reviewLinkChoices[questionCard.modelData.key]
+                        if(!choice || choice.action==="undecided")return "No pending decision"
+                        if(choice.action==="changed")return "This pending decision changed. Choose again before applying it."
+                        if(choice.action==="not_linked")return "Pending: Not this transfer"
+                        return choice.left && choice.right && !choice.requiresImmediate?(choice.auto?"Pending: Link (suggested)":"Pending: Link") : "Choose the splits or amount difference with Link before saving."
+                    }}
+                    Button {text:"Mark not a transfer";enabled:!workflow.busy;onClicked:stageTransferDecision(questionCard.modelData,"not_linked")}
+                    Button {text:"Decide later";enabled:!workflow.busy;onClicked:stageTransferDecision(questionCard.modelData,"undecided")}
                 }
                 Repeater {model:questionCard.modelData.rows;delegate:ColumnLayout {
                     id:reviewRow;required property var modelData;required property int index;Layout.fillWidth:true
@@ -4130,7 +4202,7 @@ ApplicationWindow {
                         Layout.fillWidth:true
                         Item {Layout.preferredWidth:32;Layout.preferredHeight:36
                         CheckBox {objectName:"reviewRowSelect_"+reviewRow.index;anchors.centerIn:parent;enabled:!workflow.busy;checked:questionCard.chosen.some(row=>row.key===reviewRow.modelData.key);visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;onClicked:questionCard.toggle(reviewRow.modelData,checked);Accessible.name:"Select transaction "+reviewRow.modelData.payee}
-                        RadioButton {anchors.centerIn:parent;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee;onClicked:{selectReviewLink(questionCard.modelData.key,reviewRow.index);checked=Qt.binding(function(){return questionCard.counterpart===reviewRow.index})}}
+                        CheckBox {anchors.centerIn:parent;enabled:!workflow.busy;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee;onClicked:{selectReviewLink(questionCard.modelData.key,reviewRow.index);checked=Qt.binding(function(){return questionCard.counterpart===reviewRow.index})}}
                         }
                         Label {text:reviewRow.modelData.committed?"Accepted":"New";Layout.preferredWidth:65}
                         Label {text:reviewRow.modelData.date;Layout.preferredWidth:95;textFormat:Text.PlainText}
@@ -4158,7 +4230,17 @@ ApplicationWindow {
                             model:reviewRow.modelData.splits;textRole:"reviewLabel"
                             currentIndex:model.findIndex(part=>part.allocationId===(reviewRow.index===0?questionCard.leftAllocation:questionCard.rightAllocation))
                             displayText:currentIndex<0?"Select split":currentText
-                            onActivated:function(index){if(reviewRow.index===0)questionCard.leftAllocation=model[index].allocationId;else questionCard.rightAllocation=model[index].allocationId}
+                            onActivated:function(index){
+                                if(reviewRow.index===0)questionCard.leftAllocation=model[index].allocationId;else questionCard.rightAllocation=model[index].allocationId
+                                const q=questionCard.modelData, row=q.rows[questionCard.counterpart]
+                                const choice=reviewLinkChoices[q.key]
+                                if(choice && choice.action==="link" && row) {
+                                    const choices=Object.assign({},reviewLinkChoices)
+                                    choices[q.key]=Object.assign({},choice,{left:questionCard.leftAllocation,right:questionCard.rightAllocation,
+                                        requiresImmediate:questionCard.leftAllocation!==row.suggestedLeftAllocation || questionCard.rightAllocation!==row.suggestedRightAllocation})
+                                    reviewLinkChoices=choices
+                                }
+                            }
                         }
                         Item {Layout.fillWidth:true}
                     }

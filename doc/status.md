@@ -39,10 +39,10 @@ passed unless you ran it.
   own Undo steps. Undo of the import removes them. Unmerge still breaks one
   pair. Cancel during automatic matching saves none of those pairs; the import
   stays. Automatic results on accepted rows
-  stay marked until the next Accept. With Auto Link enabled, a manual Review
-  Link also resolves remaining unambiguous pairs in the same suggestion group,
-  as one atomic save and one ordinary Undo step. Link selected writes the checked
-  transfer pairs as one save and one Undo, and checks a remaining one-to-one card.
+  stay marked until the next Accept. Apply decisions saves staged transfer links
+  and rejections as one operation and one Undo. One-to-one suggestions start
+  checked and sort first. Individual Review Link and Not this transfer preserve
+  unrelated pending decisions; Review Link applies only its chosen pair.
   See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 - Manual transactions, ledger editing, splits, amount expressions, amount
   formatting, Set memo, Rename payee, and Restore imported values.
@@ -63,23 +63,62 @@ The feature documents and the contracts they name are the behavior. This page
 does not repeat them. The [release plan](first-release-plan.md) says what
 release 1 does not add.
 
-## Link selected — 2026-11-17
+## Pending transfer decisions — 2026-11-17
 
-Checking a partner on a Review transfer card does not save. When that choice
-leaves another card with one partner, and that partner is on only that card,
-the other card is checked too. **Link selected** writes the checked exact pairs
-in one save and one Undo. It does not search for more pairs. The per-card
-**Link** still saves that card immediately. **Not this transfer** still saves
-immediately and clears checks that have not been saved. See
-[Review](review-sheet.md#link-selected--owner-go-2026-11-17). Manual work is
-MAN-073.
+Review stages Link, Not this transfer, or Decide later separately. Automatically
+checked one-to-one cards sort first and keep their place when unchecked.
+Multiple-choice cards start undecided; selecting a pair can still check a
+remaining one-to-one partner. Related cards stay adjacent, and inferred mirrors
+do not jump to the initial one-to-one section. Changing or unchecking a choice
+clears its group’s automatic suggestions while preserving explicit and
+unrelated decisions. Only positively choosing a partner infers new checks;
+rejection and Decide later never do. Cleared checks stay undecided through
+refreshes. The header places the counts, Apply decisions, then Undo import
+from left to right. Apply decisions saves the pending links and
+rejections atomically, with one Undo. Individual Review Link applies only its
+pair, even with Auto Link enabled. Individual Link and Not this transfer retain
+unrelated pending decisions. Changed choices on remaining cards are flagged
+and omitted until chosen again. Inspect preserves pending choices; leaving
+Review clears them. See [Review](review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).
+Manual work is MAN-073; the manual has not been edited.
 
-On macOS arm64 with Qt 6.12.0, the rules-enabled Release tests
-`import.link_batch` and `import.link_selected_ui` passed. The same build's
-`reviewMultipleLinkCandidates`, `reviewLinkCardButtons`,
-`unifiedReviewLinkDifference`, and `import.review_batch` passed.
-`./build/SpentIt` was rebuilt. No full suite, sanitizer run, or
-other-platform run is claimed.
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release UI functions
+`reviewMultipleLinkCandidates` (four cases), `reviewLinkCardButtons`,
+`unifiedReviewLinkDifference`, `reviewLinkSelected`, and
+`reviewPendingDecisions` passed offscreen (10 QtTest results including setup
+and cleanup). They cover sorting, staged rejection, Decide later, preservation
+of pending links and rejections through individual saves, failed-save retention,
+split selection, and amount differences. The older candidate test now locates
+the current card after sorting instead of retaining a recreated delegate.
+A synthetic Review screenshot was inspected.
+
+The mirror-switching follow-up reran those five UI functions successfully
+(10 QtTest results). The expanded `reviewPendingDecisions` also passed with
+assertions for direct partner replacement, uncheck then replacement, mirror
+recalculation, unchanged card order, explicit mirror rejection and deferral,
+preservation of unrelated pending decisions, and no save during selection.
+The rebuilt `./build/SpentIt --smoke` passed offscreen. This follow-up changes
+QML selection and ordering only; it does not change the storage commands.
+
+The rejection/header refinement reran the same five UI functions successfully
+(10 QtTest results) and passed the Release smoke launch. The regression now
+checks that rejecting a contender never checks the remaining possible partner,
+and that cleared mirrors remain undecided after a Review refresh. A synthetic
+screenshot verified counts, Apply decisions, and Undo import in that order on
+the header. No storage commands changed in this refinement.
+
+Release CTest `import.link_batch`, `import.decision_batch_faults`,
+`import.review_batch`, and `import.link_selected_ui` passed. The fault sweep
+injects disk-full and write failures, reopens and retries, and interrupts both
+sides of durable commit to verify that rejections, links, and Undo publish
+together. The initial sandboxed run could not access the required document-lock
+directory; these passing runs had that access.
+
+The rules-enabled ASan/UBSan `link_batch` run passed with leak detection disabled.
+It covers mixed and rejection-only saves, cancellation, stale requests, exact
+and changed retries, Undo, and Redo. `./build/SpentIt` was rebuilt and its
+offscreen `--smoke` launch exited 0. No full suite, physical disk-exhaustion,
+spoken screen-reader, Linux, or Windows verification is claimed.
 
 ## Statement drop and double-click — 2026-11-17
 

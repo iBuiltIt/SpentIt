@@ -57,10 +57,14 @@ distinct.
   unique pairs in its original connected suggestion group. The manual choice
   and follow-ons are one atomic save and one Undo step; unresolved choices stay
   manual. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
-  **Link selected** writes the pairs checked in Review as one save and one Undo
-  step, without discovering further pairs. Checking a pair also checks another
-  card when that card and its remaining partner are a one-to-one match. See
-  [Link selected](../doc/review-sheet.md#link-selected--owner-go-2026-11-17).
+  **Apply decisions** saves staged links and Not this transfer answers as one
+  atomic operation and one Undo. One-to-one suggestions sort first and start
+  checked; untouched multiple-choice cards stay out. Review card Link saves
+  only its pair and preserves unrelated pending decisions, as does individual
+  Not this transfer. Inferred mirrors stay beside related cards; changing a
+  partner recalculates automatic choices without overriding explicit decisions.
+  This refines the prior follow-on behavior for Review cards.
+  See [pending decisions](../doc/review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).
   See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
 
 ## Committed edits

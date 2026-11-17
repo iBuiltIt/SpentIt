@@ -1722,17 +1722,18 @@ struct ImportModel::Worker {
             std::vector<app::ReviewAnswer> answers;bool linking=false;
             for(const auto& item:a.value("groups").toList()){
                 const auto group=item.toMap();app::ReviewAnswer answer;const auto kind=group.value("answer").toString();
-                if(kind=="link"){answer.action=app::ReviewAction::link;linking=true;}else answer.action=app::ReviewAction::merge;
+                if(kind=="link" || kind=="not_linked"){answer.action=kind=="link"?app::ReviewAction::link:app::ReviewAction::not_linked;linking=true;}else if(kind.isEmpty() || kind=="merge")answer.action=app::ReviewAction::merge;else throw std::invalid_argument("Choose a Review decision");
                 answer.generation=group.value("generation").toString().toLongLong();answer.question=str(group.value("question"));
                 for(const auto& value:group.value("selected").toList()){const auto row=value.toMap();answer.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
                 if(group.contains("survivor")){const auto row=group.value("survivor").toMap();answer.survivor=imports::Occurrence{str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())};}
                 answer.left_allocation=str(group.value("leftAllocation"));answer.right_allocation=str(group.value("rightAllocation"));
                 answers.push_back(std::move(answer));
             }
-            if(linking)for(const auto& answer:answers)if(answer.action!=app::ReviewAction::link)throw std::invalid_argument("Select transfer pairs on their own");
+            if(linking)for(const auto& answer:answers)if(answer.action!=app::ReviewAction::link && answer.action!=app::ReviewAction::not_linked)throw std::invalid_argument("Select transfer pairs on their own");
             const auto op=identity();app::ReviewReceipt receipt;
             try{receipt=repo.merge_review_batch(op,answers,context);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);receipt=*outcome;}
             if(linking && receipt.linked_pairs>0)reviewFeedback=receipt.linked_pairs==1?QString("Linked 1 pair. Undo reverses it."):QString("Linked %1 pairs. Undo reverses them together.").arg(receipt.linked_pairs);
+            if(linking && std::any_of(answers.begin(),answers.end(),[](const auto& answer){return answer.action==app::ReviewAction::not_linked;}))reviewFeedback="Transfer decisions saved. Undo reverses them together.";
             diagnosticSaved=true;selected.clear();return;
         }
         if(action=="review_answer" || action=="review_link_preview") {
@@ -1756,7 +1757,7 @@ struct ImportModel::Worker {
                 }
             }
             const auto op=identity();app::ReviewReceipt receipt;
-            const bool follow=answer.action==app::ReviewAction::link && QSettings().value(sortDocument+"/AutoLink",false).toBool();
+            const bool follow=answer.action==app::ReviewAction::link && !a.value("onlyThisPair").toBool() && QSettings().value(sortDocument+"/AutoLink",false).toBool();
             if(follow){auto sealed=app::OperationContext::sealed;if(context.state.compare_exchange_strong(sealed,app::OperationContext::available))context.observeState();}
             try{receipt=follow?repo.link_review_group(op,answer,context):repo.answer_review(op,answer);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);receipt=*outcome;}
             if(receipt.linked_pairs>1)reviewFeedback=QString("Linked the selected pair and %1 additional %2. Undo reverses them together.").arg(receipt.linked_pairs-1).arg(receipt.linked_pairs==2?"pair":"pairs");

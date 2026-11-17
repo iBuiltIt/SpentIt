@@ -867,7 +867,7 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
     return write_review_answer(operation,answer,sheet);
 }
 app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,const app::ReviewAnswer& answer,const app::ReviewSheet& sheet,std::string_view parent) {
-    if(!parent.empty() && (sqlite3_get_autocommit(impl_->db) || (answer.action!=app::ReviewAction::merge && answer.action!=app::ReviewAction::link)))fail(SQLITE_MISUSE,"A batch child requires its enclosing Review transaction");
+    if(!parent.empty() && (sqlite3_get_autocommit(impl_->db) || (answer.action!=app::ReviewAction::merge && answer.action!=app::ReviewAction::link && answer.action!=app::ReviewAction::not_linked)))fail(SQLITE_MISUSE,"A batch child requires its enclosing Review transaction");
     if(impl_->enclosing_automatic_review && (parent.empty()==false || sqlite3_get_autocommit(impl_->db)))fail(SQLITE_MISUSE,"Automatic import review requires its enclosing transaction");
     const auto cache_changes=sqlite3_total_changes64(impl_->db);
     const auto encoded=review_request(answer);
@@ -1527,9 +1527,9 @@ app::ReviewReceipt ImportStore::link_review_group(std::string_view operation,con
 }
 
 app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) {
-    // Link selected sends the checked pairs itself. It does not discover more.
-    if(!answers.empty() && answers.front().action==app::ReviewAction::link) {
-        for(const auto& answer:answers)if(answer.action!=app::ReviewAction::link || answer.automatic || answer.selected.size()!=2)fail(SQLITE_CONSTRAINT,"Select each transfer pair once");
+    // Apply the staged transfer decisions exactly; do not discover more pairs.
+    if(!answers.empty() && (answers.front().action==app::ReviewAction::link || answers.front().action==app::ReviewAction::not_linked)) {
+        for(const auto& answer:answers)if((answer.action!=app::ReviewAction::link && answer.action!=app::ReviewAction::not_linked) || answer.automatic || (answer.action==app::ReviewAction::link && answer.selected.size()!=2))fail(SQLITE_CONSTRAINT,"Select each transfer pair once");
         return write_review_batch(operation,answers,context);
     }
     for(const auto& answer:answers)if(answer.action!=app::ReviewAction::merge)fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
@@ -1540,12 +1540,12 @@ app::ReviewReceipt ImportStore::write_review_batch(std::string_view operation,co
     diag::Span span(diag::Code::review_write);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     if(answers.empty())fail(SQLITE_CONSTRAINT,"Select at least one match group");
-    const bool linking=answers.front().action==app::ReviewAction::link;
+    const bool linking=answers.front().action==app::ReviewAction::link || answers.front().action==app::ReviewAction::not_linked;
     std::string encoded="batch:";
     std::set<std::string> questions;std::set<imports::Occurrence> selected;
     for(const auto& answer:answers){
         context.checkpoint("Checking selected matches");
-        if(answer.action!=(linking?app::ReviewAction::link:app::ReviewAction::merge) || answer.question=="selected")fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
+        if((linking?(answer.action!=app::ReviewAction::link && answer.action!=app::ReviewAction::not_linked):answer.action!=app::ReviewAction::merge) || answer.question=="selected")fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
         if(!questions.insert(answer.question).second)fail(SQLITE_CONSTRAINT,"Select each match group only once");
         for(const auto& id:answer.selected)if(!selected.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once in a batch");
         const auto request=review_request(answer);encoded+=std::to_string(request.size())+":"+request;
@@ -1554,19 +1554,33 @@ app::ReviewReceipt ImportStore::write_review_batch(std::string_view operation,co
     context.checkpoint("Checking selected matches");
     const auto sheet=review_sheet();if(sheet.generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
     for(std::size_t i=0;i<answers.size();++i)if(answers[i].generation!=sheet.generation)fail(SQLITE_CONSTRAINT,("Selected match "+std::to_string(i+1)+" is stale. Review the current groups again.").c_str());
+    // A rejection covers the origin and every partner shown on that card.
+    // Refuse a batch that also links one of those same pairs.
+    if(linking)for(const auto& rejected:answers)if(rejected.action==app::ReviewAction::not_linked) {
+        const auto q=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& value){return value.key==rejected.question;});
+        if(q==sheet.questions.end() || q->kind!=app::ReviewKind::link || q->rows.size()<2)fail(SQLITE_CONSTRAINT,"This transfer question changed. Review it again.");
+        for(const auto& linked:answers)if(linked.action==app::ReviewAction::link && linked.selected.size()==2) {
+            const auto origin=q->rows.front().identity;
+            for(std::size_t i=1;i<q->rows.size();++i) {
+                const auto partner=q->rows[i].identity;
+                if((linked.selected[0]==origin && linked.selected[1]==partner) || (linked.selected[1]==origin && linked.selected[0]==partner))
+                    fail(SQLITE_CONSTRAINT,"A pair is marked both Link and Not this transfer. Choose one decision.");
+            }
+        }
+    }
     Atomic transaction(impl_->db);
     Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),?,'batch',?,?)");receipt.text(1,operation);receipt.integer(2,static_cast<int>(linking?app::ReviewAction::link:app::ReviewAction::merge));receipt.text(3,encoded);receipt.integer(4,sheet.generation);receipt.done();
     for(std::size_t i=0;i<answers.size();++i){
-        context.checkpoint(linking?"Linking transfers, "+std::to_string(i+1)+" of "+std::to_string(answers.size()):"Merging selected matches");
+        context.checkpoint(linking?"Applying transfer decisions, "+std::to_string(i+1)+" of "+std::to_string(answers.size()):"Merging selected matches");
         try{const auto child=std::string(operation)+"-group-"+std::to_string(i+1);
             if(answers[i].automatic)write_automatic_review(child,answers[i],operation);
             else write_review_answer(child,answers[i],sheet,operation);}
         catch(const storage::ImportError& error){fail(error.code(),("Selected match "+std::to_string(i+1)+": "+error.what()).c_str());}
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,sheet.generation+1);stack.done();impl_->pending_review_action=operation;
-    context.checkpoint(linking?"Saving linked transfers":"Validating merged matches");
+    context.checkpoint(linking?"Saving transfer decisions":"Validating merged matches");
     finish([&]{context.seal();transaction.commit();});
-    return {std::string(operation),linking?answers.size():0};
+    return {std::string(operation),static_cast<std::size_t>(std::count_if(answers.begin(),answers.end(),[](const auto& answer){return answer.action==app::ReviewAction::link;}))};
 }
 
 // Category assignment uses the same durable relationship snapshots and mutation

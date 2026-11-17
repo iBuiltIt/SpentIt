@@ -577,7 +577,7 @@ private slots:
         QTest::newRow("ambiguous-split")<<"2026-02-01"<<"2026-02-02"<<true<<true;
     }
     void reviewMultipleLinkCandidates() {
-        QFETCH(QString,firstDate);QFETCH(QString,secondDate);QFETCH(bool,ambiguousSplits);QFETCH(bool,preselected);
+        QFETCH(QString,firstDate);QFETCH(QString,secondDate);QFETCH(bool,ambiguousSplits);
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
@@ -586,29 +586,38 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPOutgoing\n^\nD2026-03-01\nT-30\nPAnother transfer\n^\n")}});
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_2"));
-        QCOMPARE(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool(),preselected);
-        QVERIFY(!visualItem(window->contentItem(),"reviewLinkCandidate_2")->property("checked").toBool());
-        QCOMPARE(visualItem(window->contentItem(),"reviewYes")->isEnabled(),preselected);
-        QTRY_VERIFY(visualItem(window->contentItem(),"reviewSplit_1"));
-        if(preselected)QCOMPARE(visualItem(window->contentItem(),"reviewSplit_1")->property("currentIndex").toInt(),1);
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_2"),"clicked"));
-        QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
-        QVERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_2")->property("checked").toBool());
-        QVERIFY(!visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());
-        QTRY_VERIFY(visualItem(window->contentItem(),"reviewSplit_2")->isVisible());
-        QCOMPARE(visualItem(window->contentItem(),"reviewSplit_2")->property("currentIndex").toInt(),ambiguousSplits?-1:0);
-        if(ambiguousSplits){QCOMPARE(visualItem(window->contentItem(),"reviewSplit_2")->property("displayText").toString(),QString("Select split"));return;}
-        QVERIFY(!visualItem(window->contentItem(),"reviewSplit_1")->isVisible());
-        auto* split=visualItem(window->contentItem(),"reviewSplit_2");
+        auto* card=visualItem(window->contentItem(),"reviewLinkCandidate_2");
+        while(card && !card->property("counterpart").isValid())card=card->parentItem();
+        QVERIFY(card);
+        const auto reviewItem=[&](const QString& name){
+            auto* current=visualItem(window->contentItem(),"reviewLinkCandidate_2");
+            while(current && !current->property("counterpart").isValid())current=current->parentItem();
+            return current?visualItem(current,name):nullptr;
+        };
+        QCOMPARE(reviewItem("reviewLinkCandidate_1")->property("checked").toBool(),false);
+        QVERIFY(!reviewItem("reviewLinkCandidate_2")->property("checked").toBool());
+        QCOMPARE(reviewItem("reviewYes")->isEnabled(),false);
+        QTRY_VERIFY(reviewItem("reviewSplit_1"));
+        QVERIFY(QMetaObject::invokeMethod(reviewItem("reviewLinkCandidate_2"),"clicked"));
+        QTRY_VERIFY(reviewItem("reviewYes")->isEnabled());
+        QVERIFY(reviewItem("reviewLinkCandidate_2")->property("checked").toBool());
+        QVERIFY(!reviewItem("reviewLinkCandidate_1")->property("checked").toBool());
+        QTRY_VERIFY(reviewItem("reviewSplit_2")->isVisible());
+        QCOMPARE(reviewItem("reviewSplit_2")->property("currentIndex").toInt(),ambiguousSplits?-1:0);
+        if(ambiguousSplits){QCOMPARE(reviewItem("reviewSplit_2")->property("displayText").toString(),QString("Select split"));return;}
+        QVERIFY(!reviewItem("reviewSplit_1")->isVisible());
+        auto* split=reviewItem("reviewSplit_2");
         QVERIFY(QMetaObject::invokeMethod(split,"activated",Q_ARG(int,1)));
         QCOMPARE(split->property("currentIndex").toInt(),1);
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_1"),"clicked"));
-        QCOMPARE(visualItem(window->contentItem(),"reviewSplit_1")->property("currentIndex").toInt(),1);
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_2"),"clicked"));
-        QCOMPARE(split->property("currentIndex").toInt(),0);
+        QVERIFY(QMetaObject::invokeMethod(reviewItem("reviewLinkCandidate_1"),"clicked"));
+        QCOMPARE(reviewItem("reviewSplit_1")->property("currentIndex").toInt(),1);
+        QVERIFY(QMetaObject::invokeMethod(reviewItem("reviewLinkCandidate_2"),"clicked"));
+        QCOMPARE(reviewItem("reviewSplit_2")->property("currentIndex").toInt(),0);
         if(qEnvironmentVariableIsSet("SPENTIT_REVIEW_SELECTION_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_REVIEW_SELECTION_CAPTURE")));}
-        const auto linkedRows=m.state().value("reviewQuestions").toList().first().toMap().value("rows").toList();
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));
+        QVariantList linkedRows;
+        for(const auto& value:m.state().value("reviewQuestions").toList())if(value.toMap().value("rows").toList().size()>2)linkedRows=value.toMap().value("rows").toList();
+        QCOMPARE(linkedRows.size(),3);
+        QVERIFY(QMetaObject::invokeMethod(reviewItem("reviewYes"),"clicked"));
         QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         // Both editor endpoints use the actual relationship, including the accepted
         // imported split whose stored category is still empty.
@@ -699,9 +708,9 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,first.value("key")),Q_ARG(QVariant,QVariant(1))));
         QCOMPARE(choices().size(),2);
         QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,autoKey),Q_ARG(QVariant,autoIndex)));
-        QCOMPARE(choices().size(),1);QTRY_VERIFY(linkSelected->isVisible());
+        QCOMPARE(choices().size(),2);QCOMPARE(choices().value(autoKey).toMap().value("action").toString(),QString("not_linked"));QTRY_VERIFY(linkSelected->isVisible());
         QVERIFY(QMetaObject::invokeMethod(linkSelected,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        QCOMPARE(linkQuestions().size(),1);QCOMPARE(window->property("workspaceFeedback").toString(),QString("Linked 1 pair. Undo reverses it."));
+        QCOMPARE(linkQuestions().size(),0);QCOMPARE(window->property("workspaceFeedback").toString(),QString("Transfer decisions saved. Undo reverses them together."));
         run(m,"close");
         create(m,dir.path()+"/three");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
@@ -713,6 +722,94 @@ private slots:
         const auto crowded=linkQuestions().first().toMap();
         QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,crowded.value("key")),Q_ARG(QVariant,QVariant(1))));
         QCOMPARE(choices().size(),1);
+        // Rejecting a third contender must not check the remaining mirror.
+        const auto third=linkQuestions().last().toMap();
+        QVERIFY(QMetaObject::invokeMethod(window,"stageTransferDecision",Q_ARG(QVariant,QVariant(third)),Q_ARG(QVariant,QVariant("not_linked"))));
+        QCOMPARE(choices().size(),3);
+        QCOMPARE(choices().value(third.value("key").toString()).toMap().value("action").toString(),QString("not_linked"));
+        QVERIFY(QMetaObject::invokeMethod(window,"reconcileReviewDecisions"));
+        QCOMPARE(choices().size(),3);
+        const auto middle=linkQuestions()[1].toMap();
+        QCOMPARE(choices().value(middle.value("key").toString()).toMap().value("action").toString(),QString("undecided"));
+    }
+    void reviewPendingDecisions() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        const auto choices=[&]{return window->property("reviewLinkChoices").value<QJSValue>().toVariant().toMap();};
+        const auto questions=[&]{return m.state().value("reviewQuestions").toList();};
+        const auto choose=[&](const QVariantMap& q,int index){return QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,q.value("key")),Q_ARG(QVariant,QVariant(index)));};
+        const auto stage=[&](const QVariantMap& q,const QString& action){return QMetaObject::invokeMethod(window,"stageTransferDecision",Q_ARG(QVariant,QVariant(q)),Q_ARG(QVariant,QVariant(action)));};
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-01\nT10.00\nPA\n^\nD2026-02-01\nT10.00\nPB\n^\nD2026-02-01\nT20.00\nPC\n^\nD2026-02-01\nT30.00\nPD\n^\n")}});
+        run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-01\nT-10.00\nPE\n^\nD2026-02-01\nT-10.00\nPF\n^\nD2026-02-01\nT-20.00\nPG\n^\nD2026-02-01\nT-30.00\nPH\n^\n")}});
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTRY_COMPARE(window->property("currentPage").toString(),QString("review"));
+        QTRY_COMPARE(choices().size(),2);
+        if(qEnvironmentVariableIsSet("SPENTIT_PENDING_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_PENDING_CAPTURE")));}
+        auto ordered=window->property("orderedReviewRows").value<QJSValue>().toVariant().toList();QCOMPARE(ordered.size(),4);
+        const auto single=ordered[0].toMap(), other=ordered[1].toMap(), multi=ordered[2].toMap();
+        QCOMPARE(single.value("rows").toList().size(),2);QCOMPARE(other.value("rows").toList().size(),2);QCOMPARE(multi.value("rows").toList().size(),3);
+        QVERIFY(choose(single,1));QCOMPARE(choices().value(single.value("key").toString()).toMap().value("action").toString(),QString("not_linked"));
+        ordered=window->property("orderedReviewRows").value<QJSValue>().toVariant().toList();QCOMPARE(ordered[0].toMap().value("key"),single.value("key"));
+        QVERIFY(stage(single,"undecided"));QVERIFY(choose(multi,1));
+        const auto mirror=ordered[3].toMap();
+        const auto multiKey=multi.value("key").toString(), mirrorKey=mirror.value("key").toString();
+        const auto independent=choices().value(other.value("key").toString());
+        const auto deferred=choices().value(single.value("key").toString());
+        const auto orderKeys=[&]{QStringList keys;for(const auto& value:window->property("orderedReviewRows").value<QJSValue>().toVariant().toList())keys.push_back(value.toMap().value("key").toString());return keys;};
+        const auto initialOrder=orderKeys();
+        QStringList beforeSelection;for(const auto& value:ordered)beforeSelection.push_back(value.toMap().value("key").toString());
+        QCOMPARE(initialOrder,beforeSelection);
+        const auto generationBeforeSwitch=m.state().value("reviewGeneration");
+        QCOMPARE(choices().value(mirrorKey).toMap().value("index").toInt(),2);
+        QVERIFY(choose(multi,2)); // Directly replace the partner claimed by the inferred mirror.
+        QCOMPARE(choices().value(multiKey).toMap().value("index").toInt(),2);
+        QCOMPARE(choices().value(mirrorKey).toMap().value("index").toInt(),1);
+        QCOMPARE(orderKeys(),initialOrder);
+        QVERIFY(choose(multi,2)); // Uncheck, then choose the other partner.
+        QCOMPARE(choices().value(multiKey).toMap().value("action").toString(),QString("not_linked"));
+        QCOMPARE(choices().value(mirrorKey).toMap().value("action").toString(),QString("undecided"));
+        QVERIFY(QMetaObject::invokeMethod(window,"reconcileReviewDecisions"));
+        QCOMPARE(choices().value(mirrorKey).toMap().value("action").toString(),QString("undecided"));
+        QVERIFY(choose(multi,1));
+        QCOMPARE(choices().value(multiKey).toMap().value("index").toInt(),1);
+        QCOMPARE(choices().value(mirrorKey).toMap().value("index").toInt(),2);
+        QCOMPARE(choices().value(other.value("key").toString()),independent);
+        QCOMPARE(choices().value(single.value("key").toString()),deferred);
+        QCOMPARE(orderKeys(),initialOrder);
+        // An explicit rejection of the mirror must survive subsequent changes.
+        QVERIFY(stage(mirror,"not_linked"));QVERIFY(choose(multi,2));
+        QCOMPARE(choices().value(mirrorKey).toMap().value("action").toString(),QString("not_linked"));
+        QVERIFY(stage(mirror,"undecided"));QVERIFY(choose(multi,1));
+        QCOMPARE(choices().value(mirrorKey).toMap().value("action").toString(),QString("undecided"));
+        // Explicitly choose this partner for the later preservation checks.
+        QVERIFY(choose(mirror,2));
+        QCOMPARE(m.state().value("reviewGeneration"),generationBeforeSwitch);
+        const auto selected=choices().value(multi.value("key").toString()).toMap();QCOMPARE(selected.value("action").toString(),QString("link"));
+        QVariantMap remaining;
+        for(const auto& value:questions()){const auto q=value.toMap();if(q.value("key")!=multi.value("key") && q.value("rows").toList().size()>2)remaining=q;}
+        QVERIFY(!remaining.isEmpty());QVERIFY(choose(remaining,choices().value(remaining.value("key").toString()).toMap().value("index").toInt()));
+        const auto rejection=choices().value(remaining.value("key").toString()).toMap();
+        QCOMPARE(rejection.value("action").toString(),QString("not_linked"));
+        // Immediate rejection retains unrelated staged links and rejections.
+        QVERIFY(QMetaObject::invokeMethod(window,"answerReview",Q_ARG(QVariant,QVariant(single)),Q_ARG(QVariant,QVariant("not_linked")),Q_ARG(QVariant,QVariant(QVariantList{}))));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QTRY_VERIFY(!choices().contains(single.value("key").toString()));
+        QCOMPARE(choices().value(multi.value("key").toString()).toMap(),selected);
+        QCOMPARE(choices().value(remaining.value("key").toString()).toMap(),rejection);
+        run(m,"automatic_review_settings",{{"kind","link"},{"enabled",true}});
+        // Immediate Link is explicitly one pair even with Auto Link enabled.
+        const auto rows=other.value("rows").toList();const auto partner=rows[1].toMap();
+        run(m,"review_link_preview",{{"question",other.value("key")},{"generation",m.state().value("reviewGeneration")},{"answer","link"},{"onlyThisPair",true},{"selected",rows},{"leftAllocation",partner.value("suggestedLeftAllocation")},{"rightAllocation",partner.value("suggestedRightAllocation")}});
+        QTRY_VERIFY(!choices().contains(other.value("key").toString()));QCOMPARE(choices().value(multi.value("key").toString()).toMap(),selected);
+        QCOMPARE(choices().value(remaining.value("key").toString()).toMap(),rejection);
+        const auto beforeFailure=choices();
+        QVariantList invalid{QVariantMap{{"question",multi.value("key")},{"generation","-1"},{"answer","not_linked"}}};
+        run(m,"review_batch",{{"groups",invalid}},false);
+        QCOMPARE(choices(),beforeFailure);
+        QVERIFY(QMetaObject::invokeMethod(window,"reconcileReviewDecisions"));
+        QCOMPARE(choices().value(remaining.value("key").toString()).toMap().value("action").toString(),QString("not_linked"));
+        QVERIFY(QMetaObject::invokeMethod(window,"linkSelectedTransfers"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QTRY_COMPARE(questions().size(),0);
     }
     void ledgerSamePayment() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
@@ -772,7 +869,7 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10.40\nPTransfer\nL[Wise]\n^\n")}});
         run(m,"create_account",{{"id","2"},{"name","Wise"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT10.00\nPTransfer\n^\n")}});
         QCOMPARE(m.state().value("reviewCount").toInt(),1);QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
-        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1"));QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_1"),"clicked"));QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo"));QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Not this transfer"));
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         auto* popup=window->findChild<QObject*>("reviewDifference");QVERIFY(popup);QTRY_VERIFY(popup->property("visible").toBool());QCOMPARE(m.state().value("reviewLinkPreview").toMap().value("common").toString(),"10.00");QCOMPARE(m.state().value("reviewLinkPreview").toMap().value("remainder").toString(),"0.40");

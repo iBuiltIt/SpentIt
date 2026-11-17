@@ -71,6 +71,11 @@ std::string ImportStore::action_display_label(const app::ActionSummary& action) 
     // merge and link. Only a review question is renamed here.
     const bool review_decision=!question.starts_with("ledger-") && !question.starts_with("rules-") && question!="acceptance" && question!="transfer-assignment" && question!="review-exclusion" && question!="unmerge";
     if(review_decision && review_action==static_cast<int>(app::ReviewAction::merge))return "Merge";
+    if(question=="batch") {
+        Statement rejected(impl_->db,"SELECT 1 FROM review_answers WHERE question=? AND action=? LIMIT 1");
+        rejected.text(1,"batch-child:"+action.id);rejected.integer(2,static_cast<int>(app::ReviewAction::not_linked));
+        if(rejected.row())return "Transfer decisions";
+    }
     // Same-payment Merge removes the extra entry. A link that leaves both transactions in place stays Link.
     if(review_decision && review_action==static_cast<int>(app::ReviewAction::link))return retired_generated_link(impl_->db,action.id)?"Merge":"Link";
     return action.label;

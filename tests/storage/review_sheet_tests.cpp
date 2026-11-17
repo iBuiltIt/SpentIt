@@ -1558,16 +1558,61 @@ void link_batch_tests(const std::filesystem::path& dir) {
     {
         auto store=ImportStore::create(dir/"cancel","test","Checking",cad,"2026-01-01");mirror_transfer_fixture(store);
         const auto answers=disjoint_link_answers(store);const auto head=store.action_head()->id;
-        OperationContext cancelled;cancelled.progress=[&](auto phase){if(phase=="Linking transfers, 2 of 2")cancelled.request();};
+        OperationContext cancelled;cancelled.progress=[&](auto phase){if(phase=="Applying transfer decisions, 2 of 2")cancelled.request();};
         bool stopped=false;try{store.merge_review_batch("cancel-links",answers,cancelled);}catch(const OperationCancelled&){stopped=true;}
         check(stopped && !store.review_outcome("cancel-links") && active_links(store)==0 && open_link_questions(store)==2 && store.action_head()->id==head,"Cancel saves neither pair");store.verify();
     }
+    for(int mode=0;mode<2;++mode) {
+        auto store=ImportStore::create(dir/("decisions-"+std::to_string(mode)),"test","Checking",cad,"2026-01-01");mirror_transfer_fixture(store);
+        auto answers=disjoint_link_answers(store);answers[0].action=ReviewAction::not_linked;answers[0].selected.clear();
+        if(mode){answers[1].action=ReviewAction::not_linked;answers[1].selected.clear();}
+        const auto before=store.balance();const auto head=store.action_head()->id;
+        OperationContext cancelled;cancelled.progress=[&](auto phase){if(phase=="Applying transfer decisions, 2 of 2")cancelled.request();};
+        bool stopped=false;try{store.merge_review_batch("cancel-decisions",answers,cancelled);}catch(const OperationCancelled&){stopped=true;}
+        check(stopped && !store.review_outcome("cancel-decisions") && open_link_questions(store)==2 && active_links(store)==0 && store.action_head()->id==head,"Cancellation restores rejections and links together");
+        auto stale=answers;stale.back().generation--;
+        bool refused=false;try{OperationContext c;store.merge_review_batch("stale-decisions",stale,c);}catch(const std::exception&){refused=true;}
+        check(refused && open_link_questions(store)==2 && !store.review_outcome("stale-decisions"),"Stale decision saves nothing");
+        OperationContext context;const auto saved=store.merge_review_batch("decisions",answers,context);
+        check(saved.linked_pairs==(mode?0u:1u) && store.review_outcome("decisions")->linked_pairs==saved.linked_pairs && open_link_questions(store)==0 && store.balance()==before,"Mixed or rejection-only batch applies exactly the decisions");
+        store.verify();OperationContext retry;store.merge_review_batch("decisions",answers,retry);
+        auto changed=answers;changed.front().action=ReviewAction::link;
+        refused=false;try{OperationContext c;store.merge_review_batch("decisions",changed,c);}catch(const std::exception&){refused=true;}
+        check(refused,"Changed decision retry refused");
+        store.undo_action("undo-decisions",store.preview_undo("decisions",store.action_token()));store.verify();
+        check(store.action_head()->id==head && open_link_questions(store)==2 && active_links(store)==0,"One Undo restores all decisions");
+        UndoPreview redo;redo.token=store.action_token();redo.action=store.redo_history().front();store.redo_action("redo-decisions",redo);store.verify();
+        check(open_link_questions(store)==0 && active_links(store)==(mode?0u:1u),"Redo replays rejections as well as links");
+    }
     std::cout<<"Selected transfer links passed\n";
 }
+void decision_batch_faults(const std::filesystem::path& dir) {
+    fault_vfs::install();const Currency cad("CAD");const auto base=dir/"decisions-base";std::vector<ReviewAnswer> answers;
+    {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");mirror_transfer_fixture(s);answers=disjoint_link_answers(s);answers.front().action=ReviewAction::not_linked;answers.front().selected.clear();}
+    const auto saved=[](ImportStore& s){return s.review_outcome("follow").has_value();};
+    const auto apply=[&](ImportStore& s){OperationContext context;s.merge_review_batch("follow",answers,context);};
+    const auto verify=[&](ImportStore& s){s.verify();const auto done=saved(s);check(active_links(s)==(done?1u:0u) && open_link_questions(s)==(done?0u:2u),"Rejection and link are atomic");s.select_account(1);check(s.balance().units()==-2000,"Money survives decision faults");check((s.action_head()->id=="follow")==done,"Undo publication is atomic with decisions");};
+    int positions=0;
+    for(int nth=1;nth<2000;++nth){const auto trial=dir/"decisions-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+        {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
+        {auto s=ImportStore::open(trial,"test");verify(s);apply(s);check(saved(s),"Decision batch retry saves once");apply(s);verify(s);s.undo_action("undo",s.preview_undo("follow",s.action_token()));s.verify();}
+        if(!fired)break;++positions;
+    }
+    check(positions>0 && positions<1999,"Decision batch fault sweep completed");
+    for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
+        const auto trial=dir/"decisions-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
+        const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto at){if(at==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}
+        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Decision batch commit interrupted");
+        auto s=ImportStore::open(trial,"test");check(saved(s)==(phase==storage::ImportPhase::after_commit),"Decision batch durable outcome");verify(s);apply(s);s.undo_action("undo",s.preview_undo("follow",s.action_token()));s.verify();
+    }
+    std::cout<<"Decision batch Link fault positions: "<<positions<<"\n";
+}
+
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
         if(argc>1 && std::string(argv[1])=="follow"){follow_link_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="decision_faults"){decision_batch_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="link_batch"){link_batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="follow_faults"){follow_link_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="automatic_faults"){automatic_review_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}

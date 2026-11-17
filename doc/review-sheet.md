@@ -692,24 +692,48 @@ No schema change or new financial history format is introduced.
 
 ## Link selected — owner Go, 2026-11-17
 
-Checking a partner on a transfer card records that pair on screen. It does not
-save. When another card is left with one partner, and that partner is left on
-only that card, that partner is checked too. The check repeats while each new
-check leaves another card in that state. A card that still has two or more
-partners stays unchecked. A partner that needs a split choice or an amount
-difference is not checked automatically.
+Superseded by the staged-decision refinement below. The initial implementation
+batched links only and cleared unsaved checks after an individual save.
 
-One transaction can be checked on one card. Choosing a partner that is already
-checked elsewhere does not change the selection. Clicking an automatically
-checked partner again clears that check until the next manual choice. Changing
-a manual choice clears those held cards and checks the resulting one-to-one
-pairs again.
+## Pending transfer decisions — owner Go, 2026-11-17
 
-**Link selected** appears when at least one checked pair has one exact opposite
-allocation in the same currency. It writes those pairs in one save and one Undo
-step. It does not look for further pairs. Cancel or failure saves none of them.
-Redo replays the saved pairs. The per-card **Link** still saves that card
-immediately, and with Automatically link one-to-one transfer suggestions on it
-still links the remaining one-to-one pairs in that group. **Not this transfer**
-still saves immediately and clears checks that have not been saved. Leaving
-Review clears them. Inspect keeps them until Review is saved or left.
+Review keeps three separate states: undecided, Link to a chosen partner, and
+Not this transfer. Checkboxes show the actual pending partner. Unchecking a
+chosen partner stages Not this transfer; it does not save. **Mark not a
+transfer** stages that answer for the card, including every suggested partner
+on a multiple-choice card. **Decide later** leaves the card out of the batch.
+Each card states its pending decision.
+
+Mutually unique one-to-one exact-allocation suggestions start checked. They
+sort before multiple-choice cards, retaining their place when unchecked or
+set aside. Other cards start undecided, including a multiple-choice card with
+one same-day suggestion. Choosing a partner can check a remaining mutually
+unique partner on another card. Related cards stay adjacent in their original
+suggestion group; inferred
+mirrors do not move into the initial one-to-one section. Their pending label
+identifies them as suggestions. Choosing a different partner releases and
+recalculates automatic choices in that connected group, so a mirror cannot
+block switching partners. Mark not a transfer, unchecking a partner, and Decide
+later only clear dependent automatic checks; they never create new checks.
+Cleared suggestions stay undecided across refreshes until a positive partner
+choice permits inference again. Explicit choices, rejection, and Decide later are
+never overwritten by this convenience; unrelated pending decisions stay intact.
+A transaction can have only one pending link.
+
+**Apply decisions** sits immediately left of Undo import in the Review header,
+with the pending link and rejection counts immediately left of Apply decisions. It saves
+exactly those decisions in one atomic operation and one Undo step. Untouched
+multiple-choice cards and Decide later cards are omitted. Split choices and
+amount differences still require the per-card Link workflow. Failure or
+cancellation saves none of the batch. Redo replays the saved decisions without
+finding new pairs. Database version 1 is unchanged.
+
+The per-card **Link** and **Not this transfer** still save immediately. Review
+card Link applies only that pair, even with Auto Link enabled, so other staged
+decisions remain pending. Other existing manual-link entry points retain their
+Auto Link behavior. A refreshed Review preserves unrelated decisions by stable
+transaction identity and unchanged row facts; a changed pending decision on a
+remaining card is flagged for a new choice and excluded from Apply decisions.
+Resolved cards leave the pending set. Inspect preserves the pending set;
+leaving Review by another route clears it. These are in-memory choices, not
+saved drafts that survive closing or restarting.
