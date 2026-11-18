@@ -336,6 +336,7 @@ void ImportStore::initialize_categories() {
         "Hobbies & Recreation",
         "Home: Furniture & Appliances",
         "Home: HOA, Strata & Fees",
+        "Home: Household",
         "Home: Insurance",
         "Home: Maintenance & Repairs",
         "Home: Mortgage",

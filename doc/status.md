@@ -13,6 +13,39 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Tab selects a category — 2026-11-18
+
+Tab chooses the highlighted entry in the shared ledger and report category
+picker, just like Enter. With no eligible entry, the picker stays open. See
+[category selection](../features/010-categories-and-selection.md).
+Manual work is MAN-080.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release navigation tests
+`categoryPopupFiltersAndScrolls` and `categoryMenuSavesMixedRowsAndReopens`
+passed offscreen, along with `./build/SpentIt --smoke`.
+
+## Change category menu label — 2026-11-18
+
+The shared ledger and report context menu says Change category… to indicate
+that it opens the category picker. See
+[categories and selection](../features/010-categories-and-selection.md).
+Manual work is MAN-079.
+
+The rules-enabled Release navigation test `categoryPopupFiltersAndScrolls`
+and `./build/SpentIt --smoke` passed offscreen on macOS arm64 with Qt 6.12.0.
+
+## Home: Household starter category — 2026-11-18
+
+New files created with Use default categories include Home: Household as an
+expense. Existing files keep their catalogs. See
+[starter categories](../features/010-categories-and-selection.md#starter-categories).
+Manual work is MAN-078.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release build passed
+`category.setup`, `import.replacement`, and `configuredDatesAndCategories`
+with access to the application-data locks. `./build/SpentIt --smoke` passed
+offscreen. The 60 starter names match the feature list.
+
 ## Keyboard edits on imported splits — 2026-11-18
 
 The inline category picker now offers ordinary categories and Uncategorized

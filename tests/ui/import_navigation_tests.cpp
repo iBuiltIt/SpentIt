@@ -514,7 +514,7 @@ private slots:
         auto* menu=object(root,"ledgerCategoryMenu");QVERIFY(menu);
         // Open the searchable popup from the context menu.
         auto* content=qvariant_cast<QQuickItem*>(context->property("contentItem"));QVERIFY(content);
-        QQuickItem* entry=nullptr;for(auto* item:content->childItems())for(auto* child:item->childItems())if(child->property("text").toString()=="Change category")entry=child;
+        QQuickItem* entry=nullptr;for(auto* item:content->childItems())for(auto* child:item->childItems())if(child->property("text").toString()==QStringLiteral("Change category…"))entry=child;
         QVERIFY(entry);QTest::qWait(100);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,entry->mapToScene(QPointF(entry->width()/2,entry->height()/2)).toPoint());
         QTRY_VERIFY(menu->property("visible").toBool());QVERIFY(menu->property("height").toReal()<=420);
         auto* firstChoice=object(root,"ledgerCategoryChoice_0");QVERIFY(firstChoice);
@@ -536,6 +536,9 @@ private slots:
         QTRY_COMPARE(menu->property("count").toInt(),0);
         QTest::keyClick(window,Qt::Key_Return);
         QVERIFY(menu->property("visible").toBool());
+        QTest::keyClick(window,Qt::Key_Tab);
+        QVERIFY(menu->property("visible").toBool());
+        QVERIFY(filter->hasActiveFocus());
         QTest::keyClick(window,Qt::Key_Escape);
         QTRY_VERIFY(!menu->property("visible").toBool());
         QTRY_VERIFY(!context->property("visible").toBool());
@@ -623,7 +626,7 @@ private slots:
         auto* filter=qobject_cast<QQuickItem*>(object(root,"ledgerCategoryFilter"));QVERIFY(filter);filter->forceActiveFocus();
         for(char c:QByteArray("before"))QTest::keyClick(window,c);
         QTRY_COMPARE(manualMenu->property("count").toInt(),1);
-        QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QTest::keyClick(window,Qt::Key_Tab);QTRY_VERIFY(!model.busy());QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         QTRY_VERIFY(!manualMenu->property("visible").toBool());QTRY_VERIFY(!manualContext->property("visible").toBool());
         QCOMPARE(model.rowRecord(model.occurrenceIndex(manualBatch,0)).value("category").toString(),QString("Before"));
         QMap<QString,QString> original;for(const auto& batch:{accepted,pending,manualBatch})original[batch]=model.rowRecord(model.occurrenceIndex(batch,0)).value("category").toString();

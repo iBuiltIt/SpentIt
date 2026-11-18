@@ -540,7 +540,7 @@ ApplicationWindow {
         LedgerMenuItem {objectName:"mergeSelection";text:"Link to other account…";enabled:!window.reportLedger && !s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)===1;onTriggered:mergeSelected()}
         LedgerMenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
         LedgerMenuItem {
-            objectName:"openLedgerCategoryFilter";text:"Change category"
+            objectName:"openLedgerCategoryFilter";text:"Change category…"
             enabled:ledgerCategoryMenu.enabled
             onTriggered: {
                 const point=ledgerContext.parent.mapToItem(window.contentItem,ledgerContext.x,ledgerContext.y)
@@ -589,7 +589,7 @@ ApplicationWindow {
                 Keys.onPressed:function(event) {
                     if(event.key===Qt.Key_Down || event.key===Qt.Key_Up) {
                         ledgerCategoryMenu.moveChoice(event.key===Qt.Key_Down?1:-1);event.accepted=true
-                    } else if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter) {
+                    } else if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter || event.key===Qt.Key_Tab) {
                         ledgerCategoryMenu.acceptChoice()
                         event.accepted=true
                     } else if(event.key===Qt.Key_Escape) {

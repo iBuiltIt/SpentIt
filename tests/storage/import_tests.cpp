@@ -575,13 +575,13 @@ void replacement(){
     fails([&]{ImportStore::create(path,password,"Replacement",cad,"2026-10-28",true,{"YYYY-MM",true});});check(bytes(path)==original);
     const auto alias=d.path/"alias";fs::create_symlink(path,alias);
     fails([&]{ImportStore::create(alias,password,"Replacement",cad,"2026-10-28",true);});check(bytes(path)==original);
-    {auto s=replace();check(s.batches().empty() && s.account().name=="Replacement" && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==59);s.verify();}
-    {auto s=ImportStore::open(path,password);check(s.batches().empty() && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==59);s.verify();}
+    {auto s=replace();check(s.batches().empty() && s.account().name=="Replacement" && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==60);s.verify();}
+    {auto s=ImportStore::open(path,password);check(s.batches().empty() && s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==60);s.verify();}
     fault_vfs::install();fault_vfs::arm(100000);{auto s=replace();}const int count=fault_vfs::seen;fault_vfs::disarm();check(count>0);
     for(int error:{SQLITE_FULL,SQLITE_IOERR_WRITE})for(int position:{1,std::max(1,count/2),count}) {
         fault_vfs::arm(position,error);bool failed=false;try{auto s=replace();}catch(const ImportError&){failed=true;}
         const bool fired=fault_vfs::fired;fault_vfs::disarm();check(fired && failed);
-        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==59);}
+        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==60);}
         catch(const ImportError&) {} // An interrupted destructive creation may be incomplete, never partially usable.
         // Overwrite is destructive by owner choice. Failure must be reported;
         // an explicit retry must replace any incomplete database and journals.
@@ -591,13 +591,13 @@ void replacement(){
     for(int position:{1,std::max(1,count/2),count}) {
         const auto child=replacement_child(path,position);
         int status=0;const auto waited=waitpid(child,&status,0);if(waited!=child || !WIFEXITED(status) || WEXITSTATUS(status)!=71)std::cerr<<"Creation interruption position "<<position<<" of "<<count<<", process status "<<status<<"\n";check(waited==child && WIFEXITED(status) && WEXITSTATUS(status)==71);
-        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==59);}
+        try {auto recovered=ImportStore::open(path,password);check(recovered.date_format()=="DD/MM/YYYY" && recovered.category_catalog().categories.size()==60);}
         catch(const ImportError&) {}
         {auto s=replace();s.verify();}
     }
     const auto child=replacement_child(path,0);
     int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
-    {auto s=ImportStore::open(path,password);s.verify();check(s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==59);}
+    {auto s=ImportStore::open(path,password);s.verify();check(s.date_format()=="DD/MM/YYYY" && s.category_catalog().categories.size()==60);}
     no_leaks(d.path);
 }
 void benchmark(std::size_t n){

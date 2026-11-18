@@ -2099,7 +2099,7 @@ private slots:
         QTemporaryDir dir;const auto path=dir.path()+"/dates.spentit";
         ImportModel m(storage::document_gateway());
         run(m,"create",{{"path",path},{"name","Dates"},{"currency","CAD"},{"protected",false},{"dateFormat","DD/MM/YYYY"},{"defaultCategories",true}});
-        QCOMPARE(m.state().value("dateFormat").toString(),QString("DD/MM/YYYY"));QCOMPARE(m.state().value("categories").toList().size(),59);
+        QCOMPARE(m.state().value("dateFormat").toString(),QString("DD/MM/YYYY"));QCOMPARE(m.state().value("categories").toList().size(),60);
         run(m,"opening",{{"date","28/10/2026"},{"amount","0.00"}});
         QCOMPARE(m.state().value("openingDate").toString(),QString("28/10/2026"));
         QFile source(dir.path()+"/dates.qif");QVERIFY(source.open(QIODevice::WriteOnly));source.write("D10/11/2026\nT-1.00\nPSynthetic date\n^\n");source.close();

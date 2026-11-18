@@ -21,12 +21,34 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-078. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-081. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+### MAN-080 — Tab selects a category · 2026-11-18
+
+In [Categories](../manual/categories.md) and
+[Keyboard and mouse](../manual/keyboard-mouse.md), explain that Tab selects
+the highlighted entry just like Enter in the right-click picker. See
+[category selection](../features/010-categories-and-selection.md).
+
+### MAN-079 — Change category ellipsis · 2026-11-18
+
+Use **Change category…** when quoting the right-click label in
+[Categories](../manual/categories.md), [Reports](../manual/reports.md),
+[Where do I find…?](../manual/where-to-find.md), and
+[Keyboard and mouse](../manual/keyboard-mouse.md). The category picture shows
+the picker after it opens. See [categories and selection](../features/010-categories-and-selection.md).
+
+### MAN-078 — Add Home: Household to default categories · 2026-11-18
+
+In [Organize spending with categories](../manual/categories.md), consider
+mentioning Home: Household as an example for alarm monitoring or household
+supplies. The existing setup picture shows the default-categories checkbox and
+needs no recapture for this change. See [starter categories](../features/010-categories-and-selection.md#starter-categories).
 
 ### MAN-077 — Correct an unresolved transfer split · 2026-11-18
 

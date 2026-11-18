@@ -54,7 +54,7 @@ only. Owner Go: 2026-11-17; the version-1 format stays unchanged.
 Sort choices last for the visit, not as a saved preference. Selectors always
 use the grouped alphabetical order above, sized to the current labels.
 
-The ledger **Change category** picker applies immediately to the selection
+The ledger **Change category…** picker applies immediately to the selection
 through the atomic assignment command, with one Undo. A report list can include
 several accounts in that one save. Ordinary category changes
 preserve an unresolved duplicate decision. A split transaction needs a split
@@ -62,7 +62,7 @@ choice. An ambiguous multi-split selection is refused. Keep the viewport.
 
 ### Searchable Change category — owner Go 2026-11-17
 
-Choosing **Change category** from the ledger context menu opens a compact popup
+Choosing **Change category…** from the ledger context menu opens a compact popup
 at that location, with **Filter categories…** focused above the scrollable list.
 An empty filter shows the complete existing grouped order. Typing matches any
 part of the displayed category or account name, ignoring case. Clearing the
@@ -70,9 +70,10 @@ field restores the full list; reopening starts with an empty filter.
 
 The first eligible match is highlighted after filtering. Up/Down moves the
 highlight, skips disabled destinations, and scrolls it into view while typing
-remains available. Enter or a mouse click chooses the highlighted/clicked item
-and closes the picker. Escape or a click outside dismisses it without assigning.
-No matches shows **No matches**, and Enter does nothing. The current account
+remains available. Enter or Tab chooses the highlighted item. A mouse click
+chooses the clicked item. Both close the picker. Escape or a click outside
+dismisses it without assigning. No matches shows **No matches**, and Enter and
+Tab leave the picker open. The current account
 remains disabled. The existing split-choice step still follows where required.
 The account ledger and report transaction list share this picker.
 
@@ -119,6 +120,7 @@ Gym & Fitness
 Hobbies & Recreation
 Home: Furniture & Appliances
 Home: HOA, Strata & Fees
+Home: Household
 Home: Insurance
 Home: Maintenance & Repairs
 Home: Mortgage
