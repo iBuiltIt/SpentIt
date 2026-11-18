@@ -1131,25 +1131,49 @@ private slots:
     void undoSelectedImport() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
-        auto* last=window->findChild<QObject*>("undoLastImport");QVERIFY(last);QVERIFY(!last->property("enabled").toBool());
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT1\nPFirst\n^\n")}});
+        run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-02\nT2\nPWrong account\n^\n")}});
-        QCOMPARE(m.state().value("undoableImports").toList().size(),2);QVERIFY(last->property("enabled").toBool());
-        QVERIFY(QMetaObject::invokeMethod(last,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        auto* confirm=window->findChild<QObject*>("importUndoConfirm");QVERIFY(confirm);QTRY_VERIFY(confirm->property("visible").toBool());
-        QCOMPARE(m.state().value("importUndoPreview").toMap().value("transactions").toInt(),1);
-        QVERIFY(QMetaObject::invokeMethod(confirm,"close"));QCOMPARE(m.state().value("balance").toString(),"3.00");
-        QVERIFY(QMetaObject::invokeMethod(last,"triggered"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QTRY_VERIFY(confirm->property("visible").toBool());
-        if(qEnvironmentVariableIsSet("SPENTIT_UNDO_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_UNDO_CAPTURE")));}
-        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmImportUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),"1.00");QCOMPARE(m.state().value("undoableImports").toList().size(),1);
+        QCOMPARE(m.state().value("balance").toString(),"2.00");
+        const auto savingsBatch=m.state().value("selected").toMap().value("batch");
+        QVERIFY(!savingsBatch.toString().isEmpty());
+        run(m,"inspect",{{"batch",savingsBatch},{"ordinal",0}});
+        QCOMPARE(m.state().value("selectionCount").toInt(),1);
+        run(m,"select_account",{{"id","1"}});
+        QCOMPARE(m.state().value("undoableImports").toList().size(),2);
+        QVERIFY(window->findChild<QObject*>("accountContextMenu"));
+        QVERIFY(!window->findChild<QObject*>("undoLastImport"));
+        auto* undo=window->findChild<QObject*>("editUndo");QVERIFY(undo);QVERIFY(undo->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(undo,"triggered"));
+        auto* actionConfirm=window->findChild<QObject*>("actionUndoConfirm");QVERIFY(actionConfirm);QTRY_VERIFY(actionConfirm->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(actionConfirm,"close"));
+        QCOMPARE(m.state().value("undoableImports").toList().size(),2);
+        QVERIFY(QMetaObject::invokeMethod(undo,"triggered"));
+        QTRY_VERIFY(actionConfirm->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("balance").toString(),"1.00");QCOMPARE(m.state().value("undoableImports").toList().size(),1);
+        QVERIFY(QMetaObject::invokeMethod(window,"chooseAccount",Q_ARG(QVariant,QString("2"))));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("accountId").toString(),"2");
+        QCOMPARE(m.state().value("balance").toString(),"0.00");
+        QVERIFY(m.state().value("selected").toMap().isEmpty());
+        QCOMPARE(m.state().value("selectionCount").toInt(),0);
+        QVERIFY(m.state().value("selectionFocusKey").toString().isEmpty());
+        run(m,"select_account",{{"id","1"}});
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-03\nT3\nPThird\n^\n")}});
         endUndoSession(m);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
         QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("chooseImportUndo"),"clicked"));QTRY_VERIFY(window->findChild<QObject*>("importUndoPicker")->property("visible").toBool());
         QCOMPARE(window->findChild<QObject*>("importUndoList")->property("count").toInt(),2);
         QTRY_VERIFY(visualItem(window->contentItem(),"importUndoChoice_1"));
+        auto* confirm=window->findChild<QObject*>("importUndoConfirm");QVERIFY(confirm);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"importUndoChoice_1"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QTRY_VERIFY(confirm->property("visible").toBool());
+        QCOMPARE(m.state().value("importUndoPreview").toMap().value("transactions").toInt(),1);
+        if(qEnvironmentVariableIsSet("SPENTIT_UNDO_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_UNDO_CAPTURE")));}
         QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmImportUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("balance").toString(),"3.00");
-        run(m,"commit");QVERIFY(!last->property("enabled").toBool());QVERIFY(m.state().value("undoableImports").toList().isEmpty());
+        run(m,"commit");QVERIFY(m.state().value("undoableImports").toList().isEmpty());
     }
     void importUndoOutcomes() {
         for(int mode=0;mode<4;++mode){

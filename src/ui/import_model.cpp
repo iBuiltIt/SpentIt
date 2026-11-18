@@ -1033,13 +1033,17 @@ struct ImportModel::Worker {
         }
         current["splits"]=splits;selected["draft"]=current;
     }
-    void inspect(std::string batch,std::size_t ordinal,app::OperationContext& context) {
+    enum class Inspection { requested, restore_account };
+    void inspect(std::string batch,std::size_t ordinal,app::OperationContext& context,
+                 Inspection inspection=Inspection::requested) {
         if(newManual && batch==newManualId)return;
+        const bool restoring=inspection==Inspection::restore_account;
         PresentationRead observation{diagnosticPresentationFailed};
         if(reportLedgerActive)reportSelectAccount({batch,ordinal});
         auto& repo=gateway->repository(); const auto acct=repo.account();catalog();
         if(batch.starts_with("~transfer-")){
             for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.account==acct.identity && side->endpoint.entry==imports::Occurrence{batch,ordinal}){
+                if(restoring && (side->state==transfers::State::removed || side->proposed_evidence))continue;
                 selectedBatch=batch;selectedOrdinal=ordinal;selectedCommittedToken.reset();
                 Allocation allocation{"Transfer",value.memo,side->amount,{},side->endpoint.allocation};
                 selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById,dateFormat,amountFormat)}};
@@ -1047,12 +1051,18 @@ struct ImportModel::Worker {
                 if(!value.link.unresolved && side==&value.link.origin)origins.push_back(QVariantMap{{"allocation",text(side->endpoint.allocation)},{"link",text(value.link.identity)}});
                 selected["transferOrigins"]=origins;decorateSelectedTransfers(repo,repo.transfers());return;
             }
+            if(restoring)return;
             throw std::invalid_argument("Transfer entry is unavailable");
         }
         const auto all=repo.batches();
         const auto found=std::find_if(all.begin(),all.end(),[&](const auto& b){return b.id==batch;});
-        if(found==all.end() || ordinal>=found->count) throw std::invalid_argument("Choose a record in this import");
+        if(found==all.end() || ordinal>=found->count) {
+            if(restoring)return;
+            throw std::invalid_argument("Choose a record in this import");
+        }
+        if(restoring && found->state==app::BatchState::discarded)return;
         auto row=repo.row({batch,ordinal});
+        if(restoring && row.excluded_by_clear)return;
         const auto original=repo.imported_original({batch,ordinal});
         const auto source=original?repo.row(*original).source:row.source;
         const auto raw=original?repo.record_evidence(*original):std::string{};
@@ -2085,7 +2095,15 @@ struct ImportModel::Worker {
             if(priorAccount) accountViews.insert_or_assign(*priorAccount,std::move(*priorView));
             if(const auto saved=accountViews.find(id);saved!=accountViews.end()){
                 const auto& view=saved->second;filter=view.filter;projected=view.projected;sort=view.sort;descending=view.descending;selection=view.selection;selectionAnchor=view.anchor;selectionFocus=view.focus;
-                if(!view.batch.empty())inspect(view.batch,view.ordinal,context);
+                if(!view.batch.empty()) {
+                    inspect(view.batch,view.ordinal,context,Inspection::restore_account);
+                    if(selectedBatch.empty()) {
+                        const imports::Occurrence unavailable{view.batch,view.ordinal};
+                        selection.erase(unavailable);
+                        if(selectionAnchor==unavailable)selectionAnchor.reset();
+                        if(selectionFocus==unavailable)selectionFocus.reset();
+                    }
+                }
             }
             if(!a.value("reviewBatch").toString().isEmpty()){selectedBatch=str(a.value("reviewBatch"));selected={{"batch",a.value("reviewBatch")}};}
             if(a.value("reveal").toBool()){filter.clear();projected=true;selection.clear();selectionAnchor.reset();selectionFocus.reset();inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);selection.insert({selectedBatch,selectedOrdinal});selectionFocus=imports::Occurrence{selectedBatch,selectedOrdinal};}

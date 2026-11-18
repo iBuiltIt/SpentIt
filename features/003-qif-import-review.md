@@ -61,9 +61,11 @@ still asks for the date order.
   Undo chain.
 - Incomplete preparation is cleaned up on cancellation or the next open.
   Completed uncommitted imports survive restart. Closing is not acceptance.
-- **Undo last import…** and Review **Undo import…** roll back one whole source.
-  Accepted transactions are not deleted. Created accounts, categories, aliases,
-  and openings remain. See [doc/import-undo.md](../doc/import-undo.md).
+- File-wide **Undo** reverses the latest saved action, including a whole import
+  when it is the latest action. Review **Undo import…** can remove an eligible
+  older import when the Undo stack is empty. Accepted transactions are not
+  deleted. Created accounts, categories, aliases, and openings remain.
+  See [import Undo](../doc/import-undo.md).
 
 ## Matching
 

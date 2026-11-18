@@ -1637,11 +1637,18 @@ private slots:
         mouse("confirmImportMappings"); wait(session.model);
         QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
         // Undo the duplicate-only import first, then preview the original multi-account import.
-        mouse("accountNavigation", Qt::RightButton); mouse("undoLastImport"); wait(session.model);
-        QTRY_VERIFY(object(session.root, "importUndoConfirm")->property("visible").toBool());
-        mouse("confirmImportUndo"); wait(session.model);
+        QVERIFY(QMetaObject::invokeMethod(session.root, "undoEdit"));
+        QTRY_VERIFY(object(session.root, "actionUndoConfirm")->property("visible").toBool());
+        mouse("confirmActionUndo"); wait(session.model);
         QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
-        mouse("accountNavigation", Qt::RightButton); mouse("undoLastImport"); wait(session.model);
+        run(session.model, "close");
+        run(session.model, "open", {{"path", session.path("Household.spentit")}});
+        run(session.model, "select_account", {{"id", "2"}});
+        mouse("reviewNavigation");
+        wait(session.model);
+        mouse("chooseImportUndo");
+        QTRY_VERIFY(object(session.root, "importUndoChoice_0"));
+        mouse("importUndoChoice_0"); wait(session.model);
         QTRY_VERIFY(object(session.root, "importUndoConfirm")->property("visible").toBool());
         QCOMPARE(session.model.state().value("importUndoPreview").toMap().value("transactions").toInt(), 3);
         capture("import-undo");

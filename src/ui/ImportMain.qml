@@ -1051,7 +1051,6 @@ ApplicationWindow {
     Menu {
         id:accountContext;objectName:"accountContextMenu"
         LedgerMenuItem {objectName:"accountImport";text:"Import…";enabled:!s.readOnly && !workflow.busy;onTriggered:{importTarget=s.accountId;importDialog.open()}}
-        LedgerMenuItem {objectName:"undoLastImport";text:"Undo last import…";enabled:!s.readOnly && !workflow.busy && accountImports(s.accountId||"").length>0;onTriggered:guard(function(){let items=accountImports(s.accountId||"");if(items.length)requestImportUndo(items[0])})}
         LedgerMenuItem {objectName:"discardImport";text:"Discard new transactions…";enabled:!s.readOnly && !workflow.busy;onTriggered:guard(function(){discardDialog.open()})}
         parent:window.contentItem
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"renameAccount";text:"Rename…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){renameField.text=s.name||"";renameDialog.open()})}

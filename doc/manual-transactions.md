@@ -31,7 +31,7 @@ Show original imported transaction is disabled for an unmatched manual entry,
 with **Manually entered** beside it. A later confirmed import match makes the
 attached original available. Restore imported values remains unavailable on a
 manual survivor; its manual allocations have no imported split identities.
-Manual creation is excluded from Undo last import;
+Manual creation is excluded from Review **Undo import…**;
 account-wide Discard applies to unaccepted manual work as well as imported work.
 The standard Undo shortcut (Cmd+Z on macOS, Ctrl+Z on Windows/Linux) in a clean
 editor removes the just-created row until another dataset mutation. Per the

@@ -56,6 +56,9 @@ The reusable PCRE2 adapter now has its own `spentit_regex` target. Import-workfl
 
 Click selects a row; Shift selects a displayed range; Cmd/Ctrl toggles individual rows. Arrow, Page Up, Page Down, Home, and End move selection. Page Up and Page Down move one screen. Enter opens the focused record. A text field keeps Page Up and Page Down. Double-click still opens the inline editor. Identity-based selection survives sorting and delegate recycling. Searches remember pre-search multiselection; clearing without an explicit result choice restores it, while choosing results retains those choices. Removed identities drop from selection. Dataset changes clear it. Selection has no fixed row count ceiling under the 2026-11-06 follow-up above.
 
+Returning to an account skips its remembered transaction if Undo removed it.
+The account opens with its saved view settings and any surviving selection.
+
 Delete and Change category are available from the ledger context menu; Change category opens a separate category-list dialog; Delete also has a keyboard action. Opening Balance and draft/mixed selections are refused by the repository, regardless of UI selection. Dirty-editor navigation retains Save / Discard / Stay guards.
 
 ## Atomic bulk operations

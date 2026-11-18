@@ -1,20 +1,19 @@
 # Undo an uncommitted import
 
 Accepted owner Go: 2026-11-03. Implementation and verification are recorded in
-[status](status.md). Formats remain **46 with rules / 45 without**.
+[status](status.md). The owner approved removing account-menu Undo on 2026-11-18.
 
 ## Accepted behavior
 
-- Account context menu **Undo last import…** targets the newest eligible source
-  imported into that account. It is disabled when there is no eligible import;
-  generated transactions alone do not enable it. A duplicate-only or failed import
-  can still have contributions worth undoing.
+- File-wide **Undo** reverses the latest saved action. When that action is an
+  import, Undo rolls back the whole source regardless of the selected account.
+  A duplicate-only or failed import can still have contributions worth undoing.
 - Review **Undo import…** opens an account selector and newest-first import list.
   Choose an import, inspect its affected accounts and removal counts, then confirm
-  **Undo import**. Cancel changes nothing.
-- Both entry points undo the entire selected file import, including a file mapped
-  to several accounts. The existing **Discard new transactions…** remains a
-  different, account-wide operation.
+  **Undo import**. An older import requires an empty file-wide Undo stack.
+  Cancel changes nothing. See [older imports](action-undo-design.md#older-imports-and-discard).
+- Both commands affect the entire file import, including a file mapped to several
+  accounts. **Discard new transactions…** operates on the account.
 - Earlier imports and their edits remain. Undo removes only this source's
   contributions, failures and exclusively owned new transactions. A transaction
   supported by another source remains; removing its final source later collects
@@ -81,4 +80,5 @@ duplicate-only imports against accepted records, mapped multi-account files,
 invalid rows, stale previews, retries, original draft edits, generated counterparts,
 committed transfer matches, explicit Review Link reversal, reopen and restored
 backup. Exercise disk-full/write failures and process exits before/after durability.
-Check both UI entry points, empty-list/disabled behavior and account filtering.
+Check file-wide Undo across accounts and the Review picker, including
+empty-list behavior and account filtering.

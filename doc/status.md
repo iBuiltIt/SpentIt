@@ -13,6 +13,29 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Switch accounts after Undo — 2026-11-18
+
+Returning to an account after Undo skips a remembered transaction that
+Undo removed. The account opens in the same session. See
+[ledger selection](search-ledger.md#selection-and-interactions).
+
+On macOS arm64 with Qt 6.12.0, the cross-account import Undo regression
+reproduced the stale-selection error before the fix and passed afterward.
+Five other import UI cases, three navigation cases, and
+`./build/SpentIt --smoke` passed offscreen in the rules-enabled Release build.
+
+## Remove account-menu Undo last import — 2026-11-18
+
+The account right-click menu drops **Undo last import…**. File-wide **Undo**
+still reverses the latest saved action. Review **Undo import…** still removes
+eligible older imports when the stack is empty. See [import Undo](import-undo.md).
+Manual work is MAN-087.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release passed four focused
+offscreen UI cases and the import Help walkthrough. The cases cover file-wide
+Undo across accounts, older-import removal from Review, and a multi-account
+import. `./build/SpentIt --smoke` passed offscreen.
+
 ## Redo automatic follow-on links — 2026-11-18
 
 Redo of a manual Link group restores the selected pair and the recorded
@@ -287,8 +310,8 @@ repository, Linux and Windows suites were not run. Manual work remains MAN-075.
   [statement profile](../features/003-ofx-profile.md). New-account mappings must
   choose zero or the reported opening literally.
 - One balance that includes new and accepted transactions. Accept applies to
-  new transactions across the file. Undo last import rolls back one source and
-  leaves accepted transactions in place.
+  new transactions across the file. File-wide Undo can reverse the latest saved
+  import. Review can remove eligible older imports when the Undo stack is empty.
 - Review for duplicates, transfers, and import problems, plus ledger duplicate
   resolution. A payment shown twice in one account is marked there, and Merge
   joins it. Merged and linked rows stay marked until they are accepted.

@@ -21,12 +21,24 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-087. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-088. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+### MAN-087 — Remove account-menu Undo last import · 2026-11-18
+
+Update [Bring in transactions](../manual/import-transactions.md#undo-a-mistaken-import),
+[Add and correct transactions](../manual/add-correct-transactions.md),
+[Where to find things](../manual/where-to-find.md), and the
+[manual outline](../manual/outline.md). Direct readers to file-wide **Undo**
+for the latest saved import and to Review **Undo import…** to remove eligible
+older imports after the stack is empty. Refresh the account-menu picture in
+[Set up your accounts](../manual/accounts.md). See [import Undo](import-undo.md).
+In the Undo example, show that the affected account can be opened immediately
+after Undo, including when the previously selected transaction was removed.
 
 ### MAN-086 — Show reciprocal transfer choices once · 2026-11-18
 
