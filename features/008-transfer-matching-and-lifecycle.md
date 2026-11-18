@@ -45,8 +45,9 @@ distinct.
   amounts. One amount must be outgoing and the other incoming. No rate is
   stored or applied. Choosing another account as the category still creates a
   same-currency counterpart and refuses a different currency.
-- The optional, initially off automatic Link
-  setting resolves mutually one-to-one, exact-amount Review pairs after import
+- The automatic Link
+  setting starts on when this file path has no saved choice, and a saved off
+  choice stays off. It resolves mutually one-to-one, exact-amount Review pairs after import
   and rules, prioritizing same-day pairs before remaining mutually unique pairs
   throughout the existing seven-day window. Exactly one eligible allocation pair
   may link even when other splits exist; those splits stay unchanged. Multiple eligible allocation pairs and amount

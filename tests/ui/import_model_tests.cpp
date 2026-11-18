@@ -16,6 +16,7 @@
 #include <QQuickWindow>
 #include <QQuickItem>
 #include "controls_style.hpp"
+#include "manual_review_preferences.h"
 #include <QFont>
 #include <QRegularExpression>
 #include <QAccessible>
@@ -208,6 +209,7 @@ class ImportUiTests : public QObject {
             QVERIFY(observed.metrics[static_cast<unsigned>(diagnostics::Code::import_category_resolution)].calls>0);
         }
         if(success && (action=="import" || action=="map_import"))for(const auto& item:model.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(model,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}
+        if(success && (action=="create" || action=="open" || action=="unlock")) {const auto pinned=pinUnsavedAutomaticReviewOff(model);QVERIFY2(pinned.isEmpty(),qPrintable(pinned));}
     }
     void endUndoSession(ImportModel& m) {
         const auto path=m.state().value("path"),account=m.state().value("accountId");
@@ -3241,13 +3243,24 @@ private slots:
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
         QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->show();
-        const auto path=dir.path()+"/doc";create(m,path);
-        QVERIFY(!m.state().value("autoMerge").toBool());QVERIFY(!m.state().value("autoLink").toBool());
-        window->setProperty("currentPage","settings");
-        auto* merge=visualItem(window->contentItem(),"autoMergeReview");auto* link=visualItem(window->contentItem(),"autoLinkReview");auto* hidden=visualItem(window->contentItem(),"hiddenTransferSuggestions");
-        QVERIFY(merge && link && hidden);QVERIFY(merge->y()<link->y() && link->y()<hidden->y());
-        run(m,"automatic_review_settings",{{"kind","merge"},{"enabled",true}});
+        const auto path=dir.path()+"/doc";
+        {
+            ObserveAutomaticReviewDefault observe;
+            create(m,path);
+            QVERIFY(m.state().value("autoMerge").toBool());QVERIFY(m.state().value("autoLink").toBool());
+            window->setProperty("currentPage","settings");
+            auto* merge=visualItem(window->contentItem(),"autoMergeReview");auto* link=visualItem(window->contentItem(),"autoLinkReview");auto* hidden=visualItem(window->contentItem(),"hiddenTransferSuggestions");
+            QVERIFY(merge && link && hidden);QVERIFY(merge->property("checked").toBool());QVERIFY(link->property("checked").toBool());
+            QVERIFY(merge->y()<link->y() && link->y()<hidden->y());
+            run(m,"close");const auto copy=dir.path()+"/doc-copy";QVERIFY(QFile::copy(path,copy));
+            run(m,"open",{{"path",copy}});
+            QVERIFY(m.state().value("autoMerge").toBool());QVERIFY(m.state().value("autoLink").toBool());
+            run(m,"close");run(m,"open",{{"path",path}});
+            QVERIFY(m.state().value("autoMerge").toBool());QVERIFY(m.state().value("autoLink").toBool());
+        }
+        run(m,"automatic_review_settings",{{"kind","link"},{"enabled",false}});
         QVERIFY(m.state().value("autoMerge").toBool());QVERIFY(!m.state().value("autoLink").toBool());
+        run(m,"automatic_review_settings",{{"kind","merge"},{"enabled",true}});
         run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-15\nT-10.00\nPOld\n^\n")}});
         run(m,"commit",{{"ignoreWarnings",true}});
         run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-15\nT-10.00\nPNew\n^\n")}});
@@ -3260,7 +3273,7 @@ private slots:
         QTRY_VERIFY(visualItem(window->contentItem(),"ledgerRow_"+QString::number(row))->property("mergedMark").toBool());
         QVERIFY(m.state().value("reviewQuestions").toList().isEmpty());
         run(m,"close");run(m,"open",{{"path",path},{"password",""}});
-        QVERIFY(m.state().value("autoMerge").toBool());QCOMPARE(m.state().value("mergedRows").toMap().size(),1);
+        QVERIFY(m.state().value("autoMerge").toBool());QVERIFY(!m.state().value("autoLink").toBool());QCOMPARE(m.state().value("mergedRows").toMap().size(),1);
         run(m,"commit",{{"ignoreWarnings",true}});QVERIFY(m.state().value("mergedRows").toMap().isEmpty());
         run(m,"automatic_review_settings",{{"kind","link"},{"enabled",true}});
         run(m,"create_account",{{"id","2"},{"name","Visa"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"select_account",{{"id","1"}});

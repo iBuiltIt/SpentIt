@@ -81,8 +81,9 @@ Automatic recognition uses saved original facts.
   stay in the balance until the user decides.
 - Reimport of a removed transaction stays unresolved for an explicit decision.
 
-Two optional, initially off Settings preferences automatically Merge or Link
-mutually one-to-one Review pairs after import and rules. They leave transaction
+Two Settings preferences automatically Merge or Link
+mutually one-to-one Review pairs after import and rules. They start on when
+this file path has no saved choice. A saved off choice stays off. They leave transaction
 acceptance explicit. Same-day pairs take priority, followed by mutually unique adjacent-day pairs.
 Ambiguous relationships, survivor choices,
 multiple eligible split pairs, and amount differences stay manual. A unique

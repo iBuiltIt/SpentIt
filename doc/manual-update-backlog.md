@@ -18,12 +18,24 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-074. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-075. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-074 (2026-11-17) — Automatic matching starts on. Contract:
+  [review sheet](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+  Chapters: [review duplicates and transfers](../manual/review-duplicates-transfers.md)
+  ("Let SpentIt handle straightforward matches") and
+  [backup and recovery](../manual/backup-recovery.md) (Current file settings).
+  Both checkboxes start on. A choice saved for a file path stays with that path.
+  A copy opened from another location starts with both on. Turning a box off
+  applies to later imports. The introduction can say these run unless turned off.
+  The settings picture caption still says both boxes are unchecked. Recapture
+  `images/settings.png` with both boxes checked and update that caption, plus
+  the two "start off" sentences, in a future owner-authorized manual pass.
 
 - MAN-073 (2026-11-17) — Pending transfer decisions. Contract:
   [review sheet](review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).

@@ -11,12 +11,13 @@
 #include <QQuickWindow>
 #include <QQuickItem>
 #include "controls_style.hpp"
+#include "manual_review_preferences.h"
 #include <QGuiApplication>
 using namespace spentit;
 class ReportUiTests:public QObject {
     Q_OBJECT
     QTemporaryDir settings;
-    void run(ImportModel& m,const QString& action,const QVariantMap& args={}){m.command(action,args);QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));}
+    void run(ImportModel& m,const QString& action,const QVariantMap& args={}){m.command(action,args);QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));if(action=="create" || action=="open" || action=="unlock") {const auto pinned=pinUnsavedAutomaticReviewOff(m);QVERIFY2(pinned.isEmpty(),qPrintable(pinned));}}
     static QQuickItem* visual(QQuickItem* item,const QString& name){if(item->objectName()==name)return item;for(auto* child:item->childItems())if(auto* found=visual(child,name))return found;return nullptr;}
     static QObject* object(QObject* root,const char* name){if(auto* found=root->findChild<QObject*>(QString::fromLatin1(name)))return found;auto* window=qobject_cast<QQuickWindow*>(root);return window?visual(window->contentItem(),QString::fromLatin1(name)):nullptr;}
     static bool click(QObject* root,const char* name){auto* item=object(root,name);return item && QMetaObject::invokeMethod(item,"clicked");}

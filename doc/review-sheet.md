@@ -592,9 +592,10 @@ of the same amount, triggering the existing adjacent-date review guard from
 
 Settings has two checkboxes immediately above **Hidden transfer matches…**:
 **Automatically merge one-to-one duplicate suggestions** and **Automatically
-link one-to-one transfer suggestions**. Both default off. These opt-ins are
-local preferences for this file path on this computer; a copy at another path
-starts with both off. They do not change the version-1 database format.
+link one-to-one transfer suggestions**. Both default on (owner Go, 2026-11-17).
+These preferences are local to this file path on this computer. A path with no
+saved choice, including a copy opened from another path, starts with both on.
+A saved choice stays with that path. They do not change the version-1 database format.
 Changing a preference preserves Undo and clears pending Redo.
 
 After an import finishes its category choices and rules, take one fixed Review

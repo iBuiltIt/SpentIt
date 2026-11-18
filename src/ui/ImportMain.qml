@@ -4691,9 +4691,9 @@ ApplicationWindow {
                         }
                         Label {text:"Use this style when entering amounts and calculations. Thousands separators are optional.";Layout.fillWidth:true;wrapMode:Text.Wrap}
                         CheckBox {objectName:"autoMergeReview";text:"Automatically merge one-to-one duplicate suggestions";checked:!!s.autoMerge
-                            onToggled:guard(function(){workflow.command("automatic_review_settings",{kind:"merge",enabled:checked})})}
+                            onToggled:if(checked!==!!s.autoMerge)guard(function(){workflow.command("automatic_review_settings",{kind:"merge",enabled:checked})})}
                         CheckBox {objectName:"autoLinkReview";text:"Automatically link one-to-one transfer suggestions";checked:!!s.autoLink
-                            onToggled:guard(function(){workflow.command("automatic_review_settings",{kind:"link",enabled:checked})})}
+                            onToggled:if(checked!==!!s.autoLink)guard(function(){workflow.command("automatic_review_settings",{kind:"link",enabled:checked})})}
                         Label {text:"Applies after import in this file on this computer. Matches stay marked until you choose Accept transactions. Uncertain matches stay in Review.";Layout.fillWidth:true;wrapMode:Text.Wrap}
                         Button {objectName:"hiddenTransferSuggestions";text:"Hidden transfer matches…";onClicked:transferSuggestionSettings.open()}
 

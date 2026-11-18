@@ -32,8 +32,9 @@ passed unless you ran it.
   resolution. A payment shown twice in one account is marked there, and Merge
   joins it. Merged and linked rows stay marked until they are accepted.
   Same-calendar-date duplicate suggestions. Strict bank IDs when both sides
-  have them. Optional automatic one-to-one Merge and Link after import and rules,
-  with separate, initially off local settings. Same-day pairs take priority; remaining mutually unique adjacent-day
+  have them. Automatic one-to-one Merge and Link after import and rules,
+  with separate local settings that start on. A saved off choice stays off.
+  Same-day pairs take priority; remaining mutually unique adjacent-day
   duplicate suggestions can also merge. Transfer suggestions keep their seven-day
   window. Ambiguous and choice-requiring pairs stay manual. Automatic pairs are saved with the import, not as their
   own Undo steps. Undo of the import removes them. Unmerge still breaks one

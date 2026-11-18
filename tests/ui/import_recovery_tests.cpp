@@ -8,6 +8,7 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 #include "controls_style.hpp"
+#include "manual_review_preferences.h"
 #include <QFont>
 using namespace spentit;
 
@@ -17,6 +18,7 @@ class RecoveryUiTests : public QObject {
     void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {
         auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
         QVERIFY2(model.error().isEmpty()==success,qPrintable(action+": "+model.error()));
+        if(success && (action=="create" || action=="open" || action=="unlock")) {const auto pinned=pinUnsavedAutomaticReviewOff(model);QVERIFY2(pinned.isEmpty(),qPrintable(pinned));}
     }
     void retained(const QString& path,std::string_view bytes) {
         auto gateway=storage::document_gateway();
@@ -45,9 +47,10 @@ private slots:
         ImportModel model(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);
         engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();
-        run(model,"open",{{"path",path}});
+        model.command("open",{{"path",path}});QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         QVERIFY(model.state().value("startupImportCleanup").toBool());QVERIFY(model.state().value("batches").toList().isEmpty());
         QVERIFY(root->property("workspaceFeedback").toString().contains("incomplete import has been removed"));
+        const auto pinned=pinUnsavedAutomaticReviewOff(model);QVERIFY2(pinned.isEmpty(),qPrintable(pinned));
         QVERIFY(!root->findChild<QObject*>("resumeImport"));QCOMPARE(model.state().value("balance").toString(),"0.00");
         QFile source(dir.path()+"/synthetic.qif");QVERIFY(source.open(QIODevice::WriteOnly));QCOMPARE(source.write(bytes),bytes.size());source.close();
         run(model,"import",{{"path",source.fileName()},{"profile","DMY"}});QCOMPARE(model.state().value("balance").toString(),"-7.00");

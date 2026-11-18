@@ -10,6 +10,7 @@
 #include <QQuickWindow>
 #include <QQuickItem>
 #include "controls_style.hpp"
+#include "manual_review_preferences.h"
 #include <QFont>
 #include <QJSValue>
 using namespace spentit;
@@ -128,7 +129,7 @@ class CommittedUiTests : public QObject {
     }
     static bool edit(QObject* root,const char* name,const QString& value) {auto* item=object(root,QString::fromLatin1(name));return item && item->setProperty("text",value) && QMetaObject::invokeMethod(item,"textEdited");}
     void wait(ImportModel& model,bool success=true) {QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty()==success,qPrintable(model.error()));}
-    void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);wait(model,success);if(success && action=="import"){for(const auto& item:model.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(model,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}}}
+    void run(ImportModel& model,const QString& action,const QVariantMap& args={},bool success=true) {auto request=args;if(action=="import" && !request.contains("account"))request["account"]=model.state().value("accountId");model.command(action,request);wait(model,success);if(success && action=="import"){for(const auto& item:model.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(model,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}}if(success && (action=="create" || action=="open" || action=="unlock")) {const auto pinned=pinUnsavedAutomaticReviewOff(model);QVERIFY2(pinned.isEmpty(),qPrintable(pinned));}}
     static QVariantMap selected(const ImportModel& model){return model.state().value("selected").toMap();}
     QString prepare(ImportModel& model,const QString& dir) {
         run(model,"create",{{"path",dir+"/document"},{"protected",false},{"name","Synthetic corrections"},{"currency","CAD"}});

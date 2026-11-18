@@ -15,6 +15,7 @@
 #include <QQuickWindow>
 #include <QQuickItem>
 #include "controls_style.hpp"
+#include "manual_review_preferences.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -35,7 +36,7 @@ class FileExchangeTests:public QObject {
     }
     static QVariantMap choose(bool rules=true){return {{"rules",rules?QVariantList{0}:QVariantList{}},{"reports",QVariantList{0}},{"categories",QVariantList{0,1}}};}
     static imports::DraftRow manual(const char* date,const char* payee,std::int64_t amount){const Currency cad("CAD");return {date,payee,"",Transaction::manual(Money(amount,cad),{{"","",Money(amount,cad)}})};}
-    void run(ImportModel& model,const QString& command,const QVariantMap& args={}){model.command(command,args);QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));}
+    void run(ImportModel& model,const QString& command,const QVariantMap& args={}){model.command(command,args);QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));if(command=="create" || command=="open" || command=="unlock") {const auto pinned=pinUnsavedAutomaticReviewOff(model);QVERIFY2(pinned.isEmpty(),qPrintable(pinned));}}
 private slots:
     void initTestCase(){
 #ifndef _WIN32

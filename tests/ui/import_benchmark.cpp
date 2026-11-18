@@ -136,6 +136,8 @@ int main(int argc,char** argv) {
         };
         const auto path=dir.path()+"/synthetic.spentit";
         command("create","create",{{"path",path},{"protected",true},{"password","synthetic-benchmark-password"},{"confirmation","synthetic-benchmark-password"},{"name","Synthetic benchmark"},{"currency","CAD"},{"defaultCategories",edits}});
+        command("pin_merge","automatic_review_settings",{{"kind","merge"},{"enabled",false}});
+        command("pin_link","automatic_review_settings",{{"kind","link"},{"enabled",false}});
         if(edits) {
             QFile file(dir.path()+"/edits.qif");require(file.open(QIODevice::WriteOnly),"Fixture open failed");
             for(int account=0;account<2;++account){

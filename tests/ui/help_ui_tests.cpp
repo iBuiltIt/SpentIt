@@ -17,6 +17,7 @@
 #include <QQmlContext>
 #include <QQuickItem>
 #include "controls_style.hpp"
+#include "manual_review_preferences.h"
 #include <QQuickTextDocument>
 #include <QQuickWindow>
 #include <QSettings>
@@ -87,6 +88,10 @@ class HelpUiTests : public QObject {
     void run(ImportModel& model, const QString& action, const QVariantMap& args = {}, bool success = true) {
         model.command(action, args);
         wait(model, success);
+        if (success && (action == "create" || action == "open" || action == "unlock")) {
+            const auto pinned = pinUnsavedAutomaticReviewOff(model);
+            QVERIFY2(pinned.isEmpty(), qPrintable(pinned));
+        }
     }
     void createCategory(ImportModel& model, QObject* root, const QString& name) {
         QVERIFY(click(root, "newCategory"));
@@ -1183,12 +1188,13 @@ private slots:
             mouseItem(item);
         };
         auto undoLatest = [&] {
-            auto* ledger = qobject_cast<QQuickItem*>(object(session.root, "durableLedger"));
-            if (!ledger) return false;
-            ledger->forceActiveFocus();
-            QTest::keySequence(session.window, QKeySequence::Undo);
-            wait(session.model);
-            return true;
+            // The date field keeps focus after the edit, and its own Undo eats the
+            // window shortcut. Call the same action the shortcut calls.
+            const auto epoch = session.model.state().value("actionUndo").toMap().value("epoch").toString();
+            if (!QMetaObject::invokeMethod(session.root, "undoEdit")) return false;
+            return QTest::qWaitFor([&] {
+                return !session.model.busy() && session.model.state().value("actionUndo").toMap().value("epoch").toString() != epoch;
+            }, 30000);
         };
         std::function<QQuickItem*(QQuickItem*, const QString&)> byText = [&](QQuickItem* parent, const QString& text) -> QQuickItem* {
             if (parent->isVisible() && parent->property("text").toString() == text && parent->metaObject()->indexOfSignal("clicked()") >= 0) return parent;
@@ -1218,6 +1224,10 @@ private slots:
         QVERIFY(object(session.root, "confirmDatasetPassword")->setProperty("text", "synthetic-guide-password"));
         mouse("createDataset");
         QVERIFY(session.model.state().value("active").toBool());
+        // This file is created from the welcome screen, so pin the unsaved
+        // automatic matching choice off before the manual review steps.
+        const auto pinned = pinUnsavedAutomaticReviewOff(session.model);
+        QVERIFY2(pinned.isEmpty(), qPrintable(pinned));
         if (alternateFormat) {
             mouse("sidebarSettings");
             auto* style = object(session.root, "amountFormatStyle"); QVERIFY(style);

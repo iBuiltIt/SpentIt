@@ -485,6 +485,11 @@ struct ImportModel::Worker {
         const auto location=canonical.isEmpty()?file.absoluteFilePath():canonical;
         return "LedgerSort/"+QString::fromLatin1(QCryptographicHash::hash(location.toUtf8(),QCryptographicHash::Sha256).toHex());
     }
+    // A file path with no saved choice merges and links one-to-one suggestions.
+    // A saved false stays off. Callers pass the leaf AutoMerge or AutoLink.
+    bool automaticReviewPreference(const QString& leaf) const {
+        return QSettings().value(sortDocument+"/"+leaf,true).toBool();
+    }
     void restoreAccountSort() {
         if(reportLedgerActive)return;
         auto& repo=gateway->repository();
@@ -721,9 +726,8 @@ struct ImportModel::Worker {
     }
     void automaticReview(const std::vector<std::string>& batches,app::OperationContext& context) {
         auto& repo=gateway->repository();
-        const QSettings settings;
-        const bool merges=settings.value(sortDocument+"/AutoMerge",false).toBool();
-        const bool links=settings.value(sortDocument+"/AutoLink",false).toBool();
+        const bool merges=automaticReviewPreference("AutoMerge");
+        const bool links=automaticReviewPreference("AutoLink");
         if(!merges && !links)return;
         // The import is already saved. These pairs share its Undo step, so they
         // commit together. Cancel rolls the pairs back and leaves the import.
@@ -1294,8 +1298,8 @@ struct ImportModel::Worker {
         if(!reportsLoaded)loadReports();
         state["exchangePreview"]=exchangePreview;state["qifExportAccounts"]=qifExportAccounts;state["exchangeMessage"]=exchangeMessage;state["actionPreparing"]=repo.action_preparing();
         state["reportPdf"]=reportPdfState;state["reports"]=reportDefinitions;state["reportRevision"]=QString::number(reportCatalog.revision);state["reportResult"]=reportResult;state["reportDetails"]=reportDetails;state["reportLedgerActive"]=reportLedgerActive;state["reportRowInfo"]=reportRowInfo;
-        state["autoMerge"]=QSettings().value(sortDocument+"/AutoMerge",false).toBool();
-        state["autoLink"]=QSettings().value(sortDocument+"/AutoLink",false).toBool();
+        state["autoMerge"]=automaticReviewPreference("AutoMerge");
+        state["autoLink"]=automaticReviewPreference("AutoLink");
         state["sidebarAccounts"]=sidebarAccounts(state.value("accounts").toList(),sortDocument+"/SidebarOrder");
         QVariantMap actionUndo;
         if(const auto head=repo.action_head();head && !repo.action_preparing()) {
@@ -1757,7 +1761,7 @@ struct ImportModel::Worker {
                 }
             }
             const auto op=identity();app::ReviewReceipt receipt;
-            const bool follow=answer.action==app::ReviewAction::link && !a.value("onlyThisPair").toBool() && QSettings().value(sortDocument+"/AutoLink",false).toBool();
+            const bool follow=answer.action==app::ReviewAction::link && !a.value("onlyThisPair").toBool() && automaticReviewPreference("AutoLink");
             if(follow){auto sealed=app::OperationContext::sealed;if(context.state.compare_exchange_strong(sealed,app::OperationContext::available))context.observeState();}
             try{receipt=follow?repo.link_review_group(op,answer,context):repo.answer_review(op,answer);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);receipt=*outcome;}
             if(receipt.linked_pairs>1)reviewFeedback=QString("Linked the selected pair and %1 additional %2. Undo reverses them together.").arg(receipt.linked_pairs-1).arg(receipt.linked_pairs==2?"pair":"pairs");

@@ -12,6 +12,7 @@
 #include <QQuickWindow>
 #include <QQuickItem>
 #include "controls_style.hpp"
+#include "manual_review_preferences.h"
 #include <QFont>
 #include <QStyleHints>
 #include <QPalette>
@@ -27,6 +28,7 @@ class NavigationTests : public QObject {
         else QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
         QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         if(action=="import")for(const auto& item:model.state().value("importCategoryDecisions").toList()){const auto d=item.toMap();run(model,"resolve_import_categories",{{"source",d.value("source")},{"selected",d.value("names")}});}
+        if(action=="create" || action=="open" || action=="unlock") {const auto pinned=pinUnsavedAutomaticReviewOff(model);QVERIFY2(pinned.isEmpty(),qPrintable(pinned));}
     }
     static QQuickItem* visual(QQuickItem* item,const QString& name){if(item->objectName()==name)return item;for(auto* child:item->childItems())if(auto* found=visual(child,name))return found;return nullptr;}
     static QObject* object(QObject* root,const char* name){if(auto* found=root->findChild<QObject*>(QString::fromLatin1(name)))return found;auto* window=qobject_cast<QQuickWindow*>(root);return window?visual(window->contentItem(),QString::fromLatin1(name)):nullptr;}
@@ -480,8 +482,8 @@ private slots:
             QFile file(dir.filePath("sort.qif"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-1\nPAlpha\n^\nD2/1/2026\nT-2\nPZulu\n^\n");file.close();
             run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Zulu"));
             run(model,"query",{{"sort",1},{"descending",true}});checkSort(model,1,true);QCOMPARE(model.rowRecord(0).value("payee").toString(),QString("Zulu"));
-            QSettings preferences;preferences.sync();const auto keys=preferences.allKeys().filter("LedgerSort/");QCOMPARE(keys.size(),1);
-            QCOMPARE(preferences.value(keys.first()).toList(),(QVariantList{1,true})); // saved before quitting
+            QSettings preferences;preferences.sync();QStringList sorts;for(const auto& key:preferences.allKeys())if(key.contains("LedgerSort/") && !key.endsWith("/AutoMerge") && !key.endsWith("/AutoLink"))sorts.push_back(key);QCOMPARE(sorts.size(),1);
+            QCOMPARE(preferences.value(sorts.first()).toList(),(QVariantList{1,true})); // saved before quitting
             run(model,"create_account",{{"id","2"},{"name","Second"},{"currency","CAD"},{"date","2026-01-01"}});checkSort(model,0,true);
             run(model,"query",{{"sort",0},{"descending",true}});checkSort(model,0,true);
             run(model,"select_account",{{"id","1"}});checkSort(model,1,true);
