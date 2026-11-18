@@ -1,6 +1,6 @@
 # Unified Review sheet
 
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 The release rules database is version 1. Incomplete preparation is cleaned up on
 cancellation or the next open. Completed uncommitted imports remain. Accept
@@ -86,18 +86,21 @@ while one of these warnings remains. A destination that names an account already
 in the file, and an ambiguous account name, stay on their existing review path.
 **Set up imported transfers…** stays available.
 
-## One question per transfer — owner Go, 2026-11-12
+## One question per transfer — owner Go, 2026-11-12 and 2026-11-18
 
-Before Review is published, two link questions that name the same two
-imported lines are one transfer. The published question is the one that
-starts from the outgoing line. The other line stays on that question. The
-other question is not published, and it does not come back as its own
-unmatched card.
+Review shows each candidate pair once, including on cards with several
+possible partners. When both directions offer the same pair, keep its
+outgoing card's choice. If both rows or neither row have an outgoing
+allocation, use occurrence order. A choice offered in only one direction
+stays on its original card, including when it starts from a deposit. A card
+that loses all its choices disappears. An imported row still offered as a
+partner does not get its own unmatched card for the generated entry.
 
-A second payment stays a second question. A question that names a third
-line stays. When only one of the two lines has a created entry, that
-question stays, including when it starts from the deposit. When neither
-line is outgoing, the earlier occurrence is the one that stays.
+Separate payments retain their own choices. For two indistinguishable
+withdrawals and two indistinguishable deposits, Review starts with two
+outgoing cards. Checking one pair stages that link and checks the remaining
+mutually unique exact pair. The existing pending-decision and allocation
+checks still apply.
 
 **Not this transfer** on the kept question records the pair, so the other
 direction does not return. **Link** is unchanged. The Review count is the
@@ -715,12 +718,11 @@ sort before multiple-choice cards, retaining their place when unchecked or
 set aside. Other cards start undecided, including a multiple-choice card with
 one same-day suggestion. Choosing a partner can check a remaining mutually
 unique partner on another card. Related cards stay adjacent in their original
-suggestion group; inferred
-mirrors do not move into the initial one-to-one section. Their pending label
-identifies them as suggestions. Choosing a different partner releases and
-recalculates automatic choices in that connected group, so a mirror cannot
-block switching partners. Mark not a transfer, unchecking a partner, and Decide
-later only clear dependent automatic checks; they never create new checks.
+suggestion group. Inferred links do not move into the initial one-to-one
+section, and their pending label identifies them as suggestions. Choosing a
+different partner releases and recalculates automatic choices in that connected
+group. Mark not a transfer, unchecking a partner, and Decide later only clear
+dependent automatic checks.
 Cleared suggestions stay undecided across refreshes until a positive partner
 choice permits inference again. Explicit choices, rejection, and Decide later are
 never overwritten by this convenience; unrelated pending decisions stay intact.

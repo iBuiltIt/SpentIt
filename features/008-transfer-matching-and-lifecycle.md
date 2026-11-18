@@ -62,10 +62,13 @@ distinct.
   checked **Accept without bank match** decisions as one atomic operation
   and one Undo. Waiting-only cards can be selected by the account holding
   the generated entries. See [batch acceptance without a bank match](../doc/review-sheet.md#batch-accept-without-a-bank-match--owner-go-2026-11-18).
+  Review shows a reciprocal candidate pair once, on its outgoing card when
+  possible. A choice offered only from the other side stays available.
+  See [one question per transfer](../doc/review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18).
   One-to-one suggestions sort first and start
   checked; untouched multiple-choice cards stay out. Review card Link saves
   only its pair and preserves unrelated pending decisions, as does individual
-  Not this transfer. Inferred mirrors stay beside related cards; changing a
+  Not this transfer. Inferred links stay beside related cards; changing a
   partner recalculates automatic choices without overriding explicit decisions.
   This refines the prior follow-on behavior for Review cards.
   See [pending decisions](../doc/review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).

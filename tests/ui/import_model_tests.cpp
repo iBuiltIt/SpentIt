@@ -696,7 +696,12 @@ private slots:
         click(item("selectWaitingTransfers"));QTRY_VERIFY(decisions().isEmpty());
         click(item("selectWaitingTransfers"));QTRY_COMPARE(decisions().size(),2);
         QCOMPARE(m.state().value("reviewCount").toInt(),3);
-        click(item("linkSelected"));QTRY_COMPARE(m.state().value("reviewCount").toInt(),1);
+        auto* apply=item("linkSelected");
+        QVERIFY(apply);
+        auto* content=window->contentItem();
+        QTRY_VERIFY(apply->isVisible() && apply->isEnabled() &&
+                    content->boundingRect().contains(apply->mapRectToItem(content,apply->boundingRect())));
+        click(apply);QTRY_COMPARE(m.state().value("reviewCount").toInt(),1);
         QCOMPARE(m.state().value("reviewQuestions").toList().front().toMap().value("waitingAccount").toString(),QString("3"));
         QCOMPARE(m.state().value("balance"),balance);
         run(m,"review_undo");QTRY_COMPARE(m.state().value("reviewCount").toInt(),3);
@@ -958,6 +963,93 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(window,"reconcileReviewDecisions"));
         QCOMPARE(choices().value(remaining.value("key").toString()).toMap().value("action").toString(),QString("not_linked"));
         QVERIFY(QMetaObject::invokeMethod(window,"linkSelectedTransfers"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QTRY_COMPARE(questions().size(),0);
+    }
+    void reviewReciprocalTransferChoices() {
+        QTemporaryDir dir;
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+
+        create(model,dir.path()+"/review");
+        const auto importAccount=[&](const QByteArray& name,const QByteArray& other,bool outgoing) {
+            QByteArray data="!Account\nN"+name+"\nTBank\n^\n!Type:Bank\n";
+            const QByteArray sign=outgoing?"-":"";
+            const QByteArray destination="L["+other+"]\n";
+            for(const auto* date:{"2026-01-22","2026-02-01","2026-02-03","2026-02-05"}){
+                for(int occurrence=0;occurrence<2;++occurrence)
+                    data+="D"+QByteArray(date)+"\nT"+sign+"10\nPTransfer\n"+destination+"^\n";
+            }
+            data+="D2026-03-01\nT"+sign+"20\nPFirst\n"+destination+"^\n";
+            data+="D2026-03-01\nT"+sign+"20\nPSecond\n"+(outgoing?QByteArray{}:destination)+"^\n";
+            run(model,"import",{{"path",fixture(dir.path(),data)}});
+            run(model,"map_import",{{"mappings",QVariantList{QVariantMap{
+                {"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}}}});
+        };
+        importAccount("Checking","Savings",true);
+        importAccount("Savings","Checking",false);
+        QCOMPARE(model.state().value("balance").toString(),QString("220.00"));
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
+        QTRY_COMPARE(window->property("currentPage").toString(),QString("review"));
+
+        const auto reviewQuestions=[&]{return model.state().value("reviewQuestions").toList();};
+        QTRY_COMPARE(reviewQuestions().size(),11);
+        QList<QVariantMap> repeated,nearby,partlyReciprocal;
+        for(const auto& value:reviewQuestions()){
+            const auto question=value.toMap();
+            QCOMPARE(question.value("kind").toString(),QString("link"));
+            const auto rows=question.value("rows").toList();
+            const auto first=rows.front().toMap();
+            const auto date=first.value("date").toString();
+            if(date=="2026-01-22"){
+                QCOMPARE(first.value("accountName").toString(),QString("Checking"));
+                QCOMPARE(rows.size(),3);
+                repeated.push_back(question);
+            }else if(date.startsWith("2026-02-")){
+                QCOMPARE(first.value("accountName").toString(),QString("Checking"));
+                QCOMPARE(rows.size(),7);
+                nearby.push_back(question);
+            }else{
+                // The uncategorized withdrawal is only offered from the deposits.
+                // Keep both of those choices while suppressing their reciprocal ones.
+                if(first.value("accountName")=="Savings"){
+                    QCOMPARE(rows.size(),2);
+                    QCOMPARE(rows[1].toMap().value("payee").toString(),QString("Second"));
+                }else{
+                    QCOMPARE(rows.size(),3);
+                }
+                partlyReciprocal.push_back(question);
+            }
+        }
+        QCOMPARE(repeated.size(),2);
+        QCOMPARE(nearby.size(),6);
+        QCOMPARE(partlyReciprocal.size(),3);
+
+        QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",
+            Q_ARG(QVariant,repeated.front().value("key")),Q_ARG(QVariant,QVariant(1))));
+        const auto pending=window->property("reviewLinkChoices").value<QJSValue>().toVariant().toMap();
+        QCOMPARE(pending.size(),2);
+        const auto inferred=pending.value(repeated.back().value("key").toString()).toMap();
+        QCOMPARE(inferred.value("action").toString(),QString("link"));
+        QCOMPARE(inferred.value("index").toInt(),2);
+        QVERIFY(inferred.value("auto").toBool());
+
+        QVERIFY(QMetaObject::invokeMethod(window,"linkSelectedTransfers"));
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QTRY_COMPARE(reviewQuestions().size(),9);
+        for(const auto& value:reviewQuestions())
+            QVERIFY(value.toMap().value("rows").toList().front().toMap().value("date")!="2026-01-22");
+        QCOMPARE(model.state().value("balance").toString(),QString("200.00"));
+        run(model,"undo_action",model.state().value("actionUndo").toMap());
+        QCOMPARE(reviewQuestions().size(),11);
+        QCOMPARE(model.state().value("balance").toString(),QString("220.00"));
+        run(model,"redo_action",model.state().value("actionRedo").toMap());
+        QCOMPARE(reviewQuestions().size(),9);
+        QCOMPARE(model.state().value("balance").toString(),QString("200.00"));
     }
     void ledgerSamePayment() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
@@ -3404,6 +3496,9 @@ private slots:
             QCOMPARE(m.state().value("reviewCount").toInt(),enabled?0:1);
             QCOMPARE(m.state().value("reviewFeedback").toString().contains("1 additional pair"),enabled);
             run(m,"review_undo");QCOMPARE(m.state().value("reviewCount").toInt(),2);
+            QVERIFY(m.state().value("canRedoAction").toBool());
+            run(m,"redo_action",m.state().value("actionRedo").toMap());
+            QCOMPARE(m.state().value("reviewCount").toInt(),enabled?0:1);
             run(m,"close");
         }
     }

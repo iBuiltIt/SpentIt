@@ -511,7 +511,14 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     impl_->link_rows=rows;impl_->link_edges=std::move(edges);impl_->link_alias_stamp=alias_stamp;impl_->link_occupied=occupied;
     const auto reopened=reopened_link_pairs(impl_->db);
     const auto pair_closed=[&](const imports::Occurrence& a,const imports::Occurrence& b){if(!review_pair(impl_->db,1,a,b))return false;const auto key=a<b?std::pair{a,b}:std::pair{b,a};return !reopened.contains(key);};
-    std::set<imports::Occurrence> link_sources;
+    const auto outgoing=[](const app::ReviewTransaction& row){
+        return std::any_of(row.draft.transaction.allocations().begin(),row.draft.transaction.allocations().end(),[](const auto& part){return part.amount.units()<0;});
+    };
+    const auto prefer_origin=[&](const app::ReviewTransaction& a,const app::ReviewTransaction& b){
+        const bool a_out=outgoing(a),b_out=outgoing(b);
+        return a_out!=b_out?a_out:a.identity<b.identity;
+    };
+    std::map<imports::Occurrence,std::size_t> link_sources;
     for(const auto& [id,left]:rows){
         if(suppressed.contains(id) || linked.contains(id) || duplicate_rows.contains(id) || (left.committed && !repair_origins.contains(id)))continue;
         auto source=left;if(repair_origins.contains(id))source.note=repair_origins.at(id);
@@ -522,11 +529,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
             const auto target=rows.find(other);if(target==rows.end())continue;const auto& right=target->second;
             if(suppressed.contains(other) || linked.contains(other) || duplicate_rows.contains(other) || pair_closed(id,other))continue;
             if(repair_origins.contains(other) && !repair_origins.contains(id))continue;
-            if(!right.committed && !repair_origins.contains(id)){
-                const auto outgoing=[](const app::ReviewTransaction& row){return std::any_of(row.draft.transaction.allocations().begin(),row.draft.transaction.allocations().end(),[](const auto& part){return part.amount.units()<0;});};
-                const bool left_outgoing=outgoing(left),right_outgoing=outgoing(right);
-                if(left_outgoing!=right_outgoing?!left_outgoing:other<id)continue;
-            }
+            if(!right.committed && !repair_origins.contains(id) && !prefer_origin(left,right))continue;
             auto candidate=right;
             candidate.note=(difference?"Explicit transfer destination; outgoing difference at most 4%; ":"Equal opposite allocation amounts; ")+std::to_string(std::abs(days.at(id)-days.at(other)))+" calendar day(s) apart";
             if(repair_origins.contains(other))candidate.note+=". "+repair_origins.at(other);
@@ -541,27 +544,24 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
             if(exact_pairs!=1){candidate.suggested_left_allocation.clear();candidate.suggested_right_allocation.clear();}
             candidates.push_back(std::move(candidate));
         }
-        if(candidates.size()>1){link_sources.insert(id);result.questions.push_back({"link:"+review_key(id),app::ReviewKind::link,left.account,left.account_name,"Does this link with any of these?",id.batch,id.ordinal,std::move(candidates)});}
+        if(candidates.size()>1){link_sources.emplace(id,result.questions.size());result.questions.push_back({"link:"+review_key(id),app::ReviewKind::link,left.account,left.account_name,"Does this link with any of these?",id.batch,id.ordinal,std::move(candidates)});}
     }
-    // Two questions that name the same two imported lines are one transfer.
-    // Keep the outgoing line. When neither line is outgoing, keep the earlier
-    // occurrence, matching the candidate filter above.
-    {
-        const auto outgoing=[](const app::ReviewTransaction& row){return std::any_of(row.draft.transaction.allocations().begin(),row.draft.transaction.allocations().end(),[](const auto& part){return part.amount.units()<0;});};
-        std::set<std::string> dropped;
-        for(std::size_t i=0;i<result.questions.size();++i)for(std::size_t j=i+1;j<result.questions.size();++j){
-            const auto& a=result.questions[i];const auto& b=result.questions[j];
-            if(a.kind!=app::ReviewKind::link || b.kind!=app::ReviewKind::link || a.rows.size()!=2 || b.rows.size()!=2)continue;
-            const bool mirrored=a.rows[0].identity==b.rows[1].identity && a.rows[1].identity==b.rows[0].identity;
-            const bool identical=a.rows[0].identity==b.rows[0].identity && a.rows[1].identity==b.rows[1].identity;
-            if(!mirrored && !identical)continue;
-            const bool a_out=outgoing(a.rows[0]),b_out=outgoing(b.rows[0]);
-            if(a_out!=b_out)dropped.insert(a_out?b.key:a.key);
-            else if(a.rows[0].identity!=b.rows[0].identity)dropped.insert(a.rows[0].identity<b.rows[0].identity?b.key:a.key);
-            else dropped.insert(b.key);
-        }
-        if(!dropped.empty())std::erase_if(result.questions,[&](const auto& q){return dropped.contains(q.key);});
+    // Remove reciprocal choices only after both directions pass the existing
+    // eligibility filters. A card can still have choices found only from its side.
+    for(const auto& [id,index]:link_sources){
+        auto& choices=result.questions[index].rows;
+        const auto& origin=choices.front();
+        choices.erase(std::remove_if(choices.begin()+1,choices.end(),[&](const auto& candidate){
+            const auto reverse=link_sources.find(candidate.identity);
+            if(reverse==link_sources.end() || prefer_origin(origin,candidate))return false;
+            // Candidate rows are in occurrence order. Preferred copies are never removed.
+            const auto& other=result.questions[reverse->second].rows;
+            const auto match=std::lower_bound(other.begin()+1,other.end(),id,
+                [](const auto& row,const auto& identity){return row.identity<identity;});
+            return match!=other.end() && match->identity==id;
+        }),choices.end());
     }
+    std::erase_if(result.questions,[](const auto& q){return q.kind==app::ReviewKind::link && q.rows.size()==1;});
     for(const auto& value:all_transfers()){
         const auto& link=value.link;
         if(link.unresolved || link.destination_released || link.destination.state==transfers::State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.attached_evidence || link.destination.proposed_evidence || link.destination.accepted_unmatched)continue;
@@ -1545,15 +1545,16 @@ app::ReviewReceipt ImportStore::write_review_batch(std::string_view operation,co
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     if(answers.empty())fail(SQLITE_CONSTRAINT,"Select at least one match group");
     const bool linking=answers.front().action!=app::ReviewAction::merge;
+    const bool replaying=impl_->redo_operation==operation;
     std::string encoded="batch:";
     std::set<std::string> questions;std::set<imports::Occurrence> selected;
     for(const auto& answer:answers){
         context.checkpoint("Checking selected matches");
         if(linking){
-            // Apply only the staged transfer decisions.
+            // Only Redo can supply automatic links from a saved follow-on batch.
             const bool valid=answer.action==app::ReviewAction::link?answer.selected.size()==2:
                 answer.action==app::ReviewAction::not_linked || answer.action==app::ReviewAction::accept_missing;
-            if(!valid || answer.automatic || answer.question=="selected")
+            if(!valid || answer.question=="selected" || (answer.automatic && (!replaying || answer.action!=app::ReviewAction::link)))
                 fail(SQLITE_CONSTRAINT,"Choose a valid transfer decision");
         }else if(answer.action!=app::ReviewAction::merge || answer.question=="selected"){
             fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");

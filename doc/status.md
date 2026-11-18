@@ -13,6 +13,45 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Redo automatic follow-on links — 2026-11-18
+
+Redo of a manual Link group restores the selected pair and the recorded
+automatic follow-ons in one save. The internal replay uses the saved pairs
+and allocation identities, with the existing automatic-link validation.
+The unmatched-transfer UI test waits for **Apply decisions** to be inside
+the window before simulating a click. The bundled manual already describes
+the intended Redo behavior.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release follow-on Link,
+Review sheet, selected link batch, automatic Review, and action Redo tests
+passed. The follow-on case checks exact endpoints and balances, refusal of
+automatic links submitted as staged decisions, rollback and retry before
+commit, and recovery of a lost acknowledgement after commit. The focused
+offscreen Review UI cases and ten isolated offscreen unmatched-transfer runs
+passed, as did one native run and `./build/SpentIt --smoke` offscreen.
+The existing follow-on Link and decision batch sweeps passed 157 injected
+write and sync positions each. The action Redo sweep passed 145 I/O and 145
+crash positions.
+
+## Show reciprocal transfer choices once — 2026-11-18
+
+Review shows a pair offered in both directions on the outgoing card when
+possible. Choices offered in only one direction stay on their original cards.
+Choosing one of two indistinguishable same-day pairs checks the remaining
+exact pair. See [Review](review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18).
+Manual work is MAN-086.
+
+The rules-enabled Release build on macOS arm64 with Qt 6.12.0 passed the new
+offscreen UI case for the same-day and seven-day groups, partial reciprocity,
+Apply decisions, exact balances, Undo, and Redo. The named-account QIF group,
+Review policy, link batch, automatic Review, generated batch, transfer
+assignment, and Review sheet tests passed. The transfer-decision batch fault
+sweep passed 157 write and sync positions. The Release executable passed
+`./build/SpentIt --smoke` offscreen. The existing `import.follow_link` test
+failed at Redo both before and after this change. The offscreen unmatched
+transfer UI test passed once and later failed when its simulated Apply
+decisions click fell outside the window.
+
 ## Accounts that don’t need bank matches — 2026-11-18
 
 Owner Go adds a Settings list of accounts where waiting-only generated

@@ -21,12 +21,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-086. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-087. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+### MAN-086 — Show reciprocal transfer choices once · 2026-11-18
+
+In [Review duplicates and transfers](../manual/review-duplicates-transfers.md),
+explain that a pair offered from both accounts appears on the outgoing card,
+and that choosing one pair can check the only remaining exact pair. Keep the
+example for a choice offered only from a deposit. Update pictures that show
+both directions of the same choice. See [One question per transfer](review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18).
 
 ### MAN-085 — Forward reopens report transactions · 2026-11-18
 

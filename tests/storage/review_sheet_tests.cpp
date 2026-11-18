@@ -1135,11 +1135,50 @@ void follow_link_tests(const std::filesystem::path& dir) {
         check(s.balance()==before && s.action_head()->id=="follow","Group keeps balance and one Undo head");
         OperationContext retry;s.link_review_group("follow",answer,retry);check(s.transfers().size()==count,"Exact retry does not relink");
         auto changed=answer;changed.selected[1]={"in",1};bool refused=false;try{OperationContext c;s.link_review_group("follow",changed,c);}catch(const std::exception&){refused=true;}check(refused,"Changed retry refused");
+        const auto linked_endpoints=[&]{
+            std::vector<std::pair<transfers::Endpoint,transfers::Endpoint>> endpoints;
+            for(const auto& transfer:s.transfers())
+                if(transfer.link.origin.state!=transfers::State::removed && transfer.link.destination.state!=transfers::State::removed)
+                    endpoints.emplace_back(transfer.link.origin.endpoint,transfer.link.destination.endpoint);
+            return endpoints;
+        };
+        const auto original_links=linked_endpoints();
+        const auto original_mark_count=s.pending_review_links().size();
         s.verify();
         s.undo_action("undo-follow",s.preview_undo("follow",s.action_token()));check(s.action_head()->id==head && s.balance()==before,"One Undo restores the previous head and balance");
         for(const auto& t:s.transfers())check(t.link.origin.state==transfers::State::removed || t.link.destination.state==transfers::State::removed,"One Undo removes every link");s.verify();
-        UndoPreview redo;redo.token=s.action_token();redo.action=s.redo_history().front();s.redo_action("redo-follow",redo);s.verify();
-        check(s.action_head()->id=="redo-follow" && s.review_outcome("redo-follow")->linked_pairs==count,"Redo replays exactly the saved group");
+        UndoPreview redo;redo.token=s.action_token();redo.action=s.redo_history().front();
+        if(mode==0){
+            auto automatic=answer;automatic.automatic=true;automatic.generation=s.review_sheet().generation;
+            OperationContext staged;
+            bool rejected=false;
+            try{s.merge_review_batch("staged-automatic",{automatic},staged);}catch(const storage::ImportError&){rejected=true;}
+            check(rejected && !s.review_outcome("staged-automatic"),"A staged batch cannot submit automatic links");
+            bool interrupted=false;
+            s.observer([&](auto phase){
+                if(phase==storage::ImportPhase::before_commit){interrupted=true;throw std::runtime_error("Synthetic pre-commit failure");}
+            });
+            bool failed=false;try{s.redo_action("redo-follow",redo);}catch(const std::runtime_error&){failed=true;}
+            s.observer({});
+            check(interrupted && failed && linked_endpoints().empty() && s.action_token()==redo.token &&
+                  !s.redo_action_outcome("redo-follow",redo) && s.redo_history().size()==1,
+                  "A failed Redo rolls back both links and retains the recipe");
+            s.verify();
+            interrupted=false;
+            s.observer([&](auto phase){
+                if(phase==storage::ImportPhase::after_commit){interrupted=true;throw std::runtime_error("Synthetic lost acknowledgement");}
+            });
+            failed=false;try{s.redo_action("redo-follow",redo);}catch(const std::runtime_error&){failed=true;}
+            s.observer({});
+            check(interrupted && failed && s.redo_action_outcome("redo-follow",redo) && s.redo_history().empty(),
+                  "A lost acknowledgement retains both saved links and consumes Redo");
+        }
+        s.redo_action("redo-follow",redo);s.verify();
+        const auto outcome=s.review_outcome("redo-follow");
+        check(s.action_head()->id=="redo-follow" && outcome && outcome->linked_pairs==count &&
+              linked_endpoints()==original_links && s.balance()==before &&
+              s.pending_review_links().size()==original_mark_count,
+              "Redo restores exactly the saved links, balance, and automatic marks");
         if(count==2){check(s.preview_unmerge({{"out",1}}).available,"Automatic child can be unmerged individually");s.unmerge("break-follow",{{"out",1}});s.verify();s.undo_action("undo-break-follow",s.preview_undo(s.action_head()->id,s.action_token()));s.verify();}
         if(mode==4){s.select_account(1);const auto extra=s.row({"out",1}).draft->transaction.allocations()[1];check(extra.amount.units()==-150 && extra.category=="Other" && extra.memo=="Keep","Follow-on link leaves other splits unchanged");}
     }
