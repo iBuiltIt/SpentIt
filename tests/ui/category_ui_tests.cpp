@@ -114,8 +114,22 @@ private slots:
         run(model,"correct_opening",{{"operation",model.newIdentity()},{"date","2026-01-01"},{"amount","1.00"}});
         run(model,"correct_opening",{{"operation",model.newIdentity()},{"date","2026-01-01"},{"amount","0.00"}});
         run(model,"preview_account_deletion");auto* accountDialog=object(root,"deleteAccountDialog");QTRY_VERIFY(accountDialog->property("visible").toBool());QVERIFY(model.state().value("accountDeletionClearsHistory").toBool());
-        QVERIFY(QMetaObject::invokeMethod(accountDialog,"reject"));wait(model);QVERIFY(model.state().value("canUndoAction").toBool());
-        run(model,"preview_account_deletion");QVERIFY(QMetaObject::invokeMethod(accountDialog,"accept"));wait(model);
+        auto* cancelAccount=qobject_cast<QQuickItem*>(object(root,"cancelDeleteAccount"));auto* confirmAccount=qobject_cast<QQuickItem*>(object(root,"confirmDeleteAccount"));
+        auto* accountSurface=accountDialog->property("background").value<QQuickItem*>();
+        QTRY_VERIFY(cancelAccount && cancelAccount->isVisible() && confirmAccount && confirmAccount->isVisible() && accountSurface);
+        const auto accountWidth=accountDialog->property("width").toReal();
+        QVERIFY(accountWidth<=520);QVERIFY(cancelAccount->width()>=80 && cancelAccount->width()<=180);QVERIFY(confirmAccount->width()>=80 && confirmAccount->width()<=180);
+        QVERIFY(qAbs(cancelAccount->width()-confirmAccount->width())<80);
+        const auto cancelLeft=cancelAccount->mapToItem(accountSurface,QPointF(0,0)).x();
+        const auto confirmLeft=confirmAccount->mapToItem(accountSurface,QPointF(0,0)).x();
+        const auto rightEdge=qMax(cancelAccount->mapToItem(accountSurface,QPointF(cancelAccount->width(),0)).x(),confirmAccount->mapToItem(accountSurface,QPointF(confirmAccount->width(),0)).x());
+        const auto leftEdge=qMin(cancelLeft,confirmLeft);
+        const auto innerLeft=cancelLeft<confirmLeft?confirmLeft:cancelLeft;
+        const auto innerRight=cancelLeft<confirmLeft?cancelLeft+cancelAccount->width():confirmLeft+confirmAccount->width();
+        QVERIFY(rightEdge>accountWidth-36);QVERIFY(leftEdge>accountWidth*0.3);
+        QVERIFY(qAbs(innerLeft-innerRight-8)<2);QVERIFY(cancelAccount->width()<accountWidth*0.4);
+        QVERIFY(click(root,"cancelDeleteAccount"));wait(model);QVERIFY(model.state().value("canUndoAction").toBool());
+        run(model,"preview_account_deletion");QTRY_VERIFY(accountDialog->property("visible").toBool());QVERIFY(click(root,"confirmDeleteAccount"));wait(model);
         QVERIFY(!model.state().value("canUndoAction").toBool());QCOMPARE(model.state().value("accountId").toString(),"1");
     }
     void incomeRefreshWorkload() {

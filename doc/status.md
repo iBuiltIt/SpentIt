@@ -13,6 +13,24 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Delete-account confirmation layout — 2026-11-18
+
+Owner Go balances the empty-account confirmation. The dialog is at most 520
+wide. Cancel and Delete account sit together on the right, each sized to its
+label. The wording stays the same. Cancel leaves the account and history in
+place. Delete account still retires the account, and still clears file-wide
+Undo and Redo when the confirmation says so.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release
+`deletionConfirmations` function passed offscreen (3 QtTest results, including
+setup and cleanup). It checks the button widths, the right-hand pair, Cancel,
+and Delete account. The same function passed again on the native macOS
+platform, and a screenshot of the history-clearing confirmation was inspected.
+`./build/SpentIt --smoke` passed offscreen. `git diff --check` passed. The
+category confirmation is unchanged. Manual work remains MAN-075; manual text
+and pictures have not been edited. No full category suite, sanitizer, Linux or
+Windows run is claimed.
+
 ## Differing transfer amounts require a choice — 2026-11-18
 
 Owner Go replaces automatic checking of differing-amount candidates. They start

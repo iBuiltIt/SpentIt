@@ -3005,9 +3005,13 @@ ApplicationWindow {
     }
     HelpDialog {
         helpTarget: "help:set-up-accounts#delete-an-unused-account"
-        id:deleteAccountDialog;objectName:"deleteAccountDialog";title:"Delete empty account?";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640);standardButtons:Dialog.Ok|Dialog.Cancel
+        id:deleteAccountDialog;objectName:"deleteAccountDialog";title:"Delete empty account?";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,520)
         Label {width:deleteAccountDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.accountDeletionClearsHistory?"Deleting this account will clear Undo and Redo for this file. This cannot be undone.":"Delete this empty account? This cannot be undone."}
-        onOpened:standardButton(Dialog.Ok).text="Delete account"
+        footer:DialogButtonBox {
+            alignment:Qt.AlignRight;spacing:8
+            Button {objectName:"cancelDeleteAccount";text:"Cancel";DialogButtonBox.buttonRole:DialogButtonBox.RejectRole}
+            Button {objectName:"confirmDeleteAccount";text:"Delete account";DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole}
+        }
         onAccepted:workflow.command("delete_account",{operation:workflow.newIdentity(),confirmedHistory:!!s.accountDeletionClearsHistory})
     }
     HelpDialog {

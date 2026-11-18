@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 The bundled manual includes MAN-001 through MAN-056 after the owner-authorized
 2026-11-14 pass. Both entries previously labelled MAN-045 are covered; the
@@ -43,7 +43,9 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   Update account setup and category organization text: current use prevents
   deletion, historical use alone does not. Explain zero opening, current rule
   and report references, and confirmation when file-wide Undo/Redo must expire.
-  Capture the conditional deletion confirmation using synthetic data. Manual
+  The empty-account confirmation is at most 520 wide. Cancel and Delete account
+  sit together on the right, each sized to its label. Capture that confirmation,
+  and the category confirmation, using synthetic data. Manual
   text and images have not been edited.
 
 - MAN-074 (2026-11-17) — Automatic matching starts on. Contract:
