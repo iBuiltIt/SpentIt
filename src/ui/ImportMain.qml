@@ -906,13 +906,13 @@ ApplicationWindow {
     readonly property bool reportLedger: currentPage==="reports" && reportsWorkspace.mode==="detail"
     readonly property string ledgerStatementAccount: currentPage==="ledger" && !reportLedger ? (s.accountId||"") : ""
     property var pendingReportNavigation:null
+    property int pendingReportIndex: -1
     property string currentPage: "ledger"
     property string historyOpenId: ""
     property string historySelectedKey: ""
     property string historyAccountSeen: ""
-    property var navigation: ["ledger"]
+    property var navigation: [{page:"ledger",account:""}]
     property int navigationIndex: 0
-    property var navigationAccounts: [""]
     property var pendingAccountNavigation: null
     property bool addingAccount: false
     property string accountCreationId: ""
@@ -1004,15 +1004,22 @@ ApplicationWindow {
         ShaderEffectSource {anchors.fill:parent;sourceItem:accountDragRow;live:true}
     }
     function resetNavigation() {
-        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMissingDestination=null;pendingMerge=null;mergeHint="";pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;reviewInspecting=false;pendingReviewInspection=false;currentPage="ledger"; navigation=["ledger"]; navigationAccounts=[s.accountId||""]; navigationIndex=0;pendingAccountNavigation=null
+        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMissingDestination=null;pendingMerge=null;mergeHint="";pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;reviewInspecting=false;pendingReviewInspection=false;currentPage="ledger"
+        navigation=[{page:"ledger",account:s.accountId||""}];navigationIndex=0
+        pendingAccountNavigation=null;pendingReportNavigation=null;pendingReportIndex=-1
+    }
+    function pushNavigation(page, reportId, drill) {
+        navigation=navigation.slice(0,navigationIndex+1).concat([{page:page,account:s.accountId,reportId:reportId,drill:drill}])
+        navigationIndex=navigation.length-1
+        if(page==="reports" && !reportId)reportsWorkspace.mode="workspace"
+        currentPage=page
     }
     function navigate(page) {
         if(workflow.busy || !s.active || page===currentPage) return
         guard(function(){
             if(s.reportLedgerActive){pendingReportNavigation=function(){navigate(page)};workflow.command("report_leave");return}
             rememberAccountViewport()
-            let entries=navigation.slice(0,navigationIndex+1)
-            entries.push(page);navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage=page
+            pushNavigation(page)
             if(page==="ledger")restoreAccountViewport()
             if(page==="rules"){ruleApplyAllAccounts=true;rulePreviewKey=""}
         })
@@ -1107,22 +1114,35 @@ ApplicationWindow {
         historySelectedKey=""
     }
     function traverseNavigation(delta) {
-        if(currentPage==="reports" && reportsWorkspace.mode!=="workspace" && delta<0){reportsWorkspace.back();return}
-        let destination=navigationIndex+delta
+        const destination=navigationIndex+delta
         if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
-        guard(function(){
-            // A rule opened from report transactions retains that report session.
-            if(s.reportLedgerActive && currentPage==="rules" && navigation[destination]==="reports") {
-                navigationIndex=destination;currentPage="reports";return
+        guard(function(){restoreNavigation(destination)})
+    }
+    function restoreNavigation(index) {
+        const destination=navigation[index]
+        // Return from a rule to the still-open drill-down, including rows changed by the rule.
+        if(s.reportLedgerActive && currentPage==="rules" && destination.drill) {
+            navigationIndex=index;currentPage="reports";return
+        }
+        if(s.reportLedgerActive) {
+            pendingReportNavigation=function(){restoreNavigation(index)}
+            workflow.command("report_leave");return
+        }
+        rememberAccountViewport()
+        if(destination.page==="reports") {
+            if(destination.drill || (destination.reportId && destination.reportId!==(s.reportResult||{}).id)) {
+                pendingReportIndex=index
+                const args={id:destination.reportId,history:true}
+                if(destination.drill)args.drill=destination.drill
+                workflow.command("report_show",args);return
             }
-            if(s.reportLedgerActive){pendingReportNavigation=function(){traverseNavigation(delta)};workflow.command("report_leave");return}
-            rememberAccountViewport()
-            if(navigationAccounts[destination]!==s.accountId) {
-                rememberAccountViewport()
-                pendingAccountNavigation={index:destination,page:navigation[destination]}
-                workflow.command("select_account",{id:navigationAccounts[destination]})
-            } else {navigationIndex=destination;currentPage=navigation[destination];if(currentPage==="ledger")restoreAccountViewport()}
-        })
+            reportsWorkspace.mode=destination.reportId?"result":"workspace"
+        } else if(destination.account!==s.accountId) {
+            pendingAccountNavigation={index:index,page:destination.page}
+            workflow.command("select_account",{id:destination.account});return
+        }
+        navigationIndex=index;currentPage=destination.page
+        if(currentPage==="ledger")restoreAccountViewport()
     }
     Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
     Shortcut {objectName:"duplicateMergeShortcut";sequence:"Alt+M";enabled:!window.reportLedger && !!s.active && !workflow.busy && !s.readOnly && ledgerMergeEnabled();onActivated:guard(ledgerMerge)}
@@ -1671,7 +1691,7 @@ ApplicationWindow {
         if(currentPage==="rules") return
         ruleApplyAllAccounts=true;rulePreviewKey=""
         rememberAccountViewport()
-        let entries=navigation.slice(0,navigationIndex+1); entries.push("rules"); navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts; navigationIndex=entries.length-1; currentPage="rules"
+        pushNavigation("rules")
     }
     function rulesImage() {
         let rows=[]
@@ -2129,7 +2149,18 @@ ApplicationWindow {
                 if(action==="map_import" && !(s.importPlan||[]).length)importMapping.retainChoices=false
                 if(!success && action==="resolve_import_categories" && (s.importCategoryDecisions||[]).some(function(d){return d.source===importCategories.source}))importCategories.open()
             }
-            if(success && action==="report_drill"){search.clearSearch();editorClosed=true}
+            if(success && (action==="report_drill" || (action==="report_show" && pendingReportIndex>=0 && s.reportLedgerActive))) {
+                search.clearSearch();editorClosed=true
+            }
+            if(action==="report_show" && pendingReportIndex>=0) {
+                const index=pendingReportIndex;pendingReportIndex=-1
+                if(success){navigationIndex=index;currentPage="reports"}
+            } else if(success && currentPage==="reports" && action==="report_show") {
+                const id=s.reportResult.id
+                if(navigation[navigationIndex].reportId!==id || navigation[navigationIndex].drill)pushNavigation("reports",id)
+            } else if(success && currentPage==="reports" && action==="report_drill") {
+                pushNavigation("reports",s.reportResult.id,s.reportDetails.cell)
+            }
             if(success && action==="report_leave"){search.text=s.filter||"";editorClosed=true}
             if(action==="report_leave" && pendingReportNavigation){let next=pendingReportNavigation;pendingReportNavigation=null;if(success)Qt.callLater(next)}
             if(success && action==="preview_import_undo")importUndoConfirm.open()
@@ -2227,9 +2258,9 @@ ApplicationWindow {
                     if(pendingReviewLedger)++accountViewportRestoreSerial
                     else if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
                     else if(accountViewports[s.accountId])restoreAccountViewport()
-                    if(switchingRulesAccount) {currentPage="rules";let accounts=navigationAccounts.slice();accounts[navigationIndex]=s.accountId;navigationAccounts=accounts}
+                    if(switchingRulesAccount) {currentPage="rules";let entries=navigation.slice();entries[navigationIndex]={page:"rules",account:s.accountId};navigation=entries}
                     else if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
-                    else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
+                    else pushNavigation("ledger")
                     if(pendingReviewInspection){currentPage="review";editorClosed=false;pendingReviewInspection=false}
                     loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false
                     if(pendingReviewLedger){
@@ -3035,6 +3066,10 @@ ApplicationWindow {
                 CalendarPicker {objectName:"correctOpeningCalendar";workflow:window.workflowBackend;field:correctDate;onSelected:function(value){correctDate.text=value}}
             }
             NavigableTextField {id:correctAmount;onEditingFinished:if(!window.helpFocusSuspended)resolveAmount(correctAmount);objectName:"correctOpeningAmount";placeholderText:"Amount";Accessible.name:"Corrected opening amount";onAccepted:acceptDialog(correctOpeningDialog)}
+        }
+        onOpened: {
+            correctAmount.forceActiveFocus()
+            correctAmount.selectAll()
         }
         onAccepted:workflow.command("correct_opening",{operation:workflow.newIdentity(),date:correctDate.text,amount:correctAmount.text})
     }
@@ -4432,7 +4467,7 @@ ApplicationWindow {
                         }
                     }
                 }
-                ReportsWorkspace {id:reportsWorkspace;anchors.fill:parent;workflow:window.workflowBackend;guardAction:window.guard;visible:currentPage==="reports"}
+                ReportsWorkspace {id:reportsWorkspace;anchors.fill:parent;workflow:window.workflowBackend;visible:currentPage==="reports"}
                 UsableScrollView {
                     id:rulesPage;objectName:"rulesPage";anchors.fill:parent;visible:currentPage==="rules";contentWidth:availableWidth;enabled:!workflow.busy && !deleteRuleDialog.visible
                     ColumnLayout {

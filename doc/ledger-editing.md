@@ -143,6 +143,8 @@ warnings describe transfer problems without asking for opening confirmation.
 
 Double-clicking the ledger Opening Balance row opens the existing date/amount
 dialog. The account menu offers the same correction command from creation onward.
+When the dialog opens, Amount has focus and its entire value is selected.
+Typing or pasting replaces the selected amount.
 A successful edit is atomic and historied; account Undo restores the prior amount
 and date under its existing later-change checks. Transaction values and source
 facts stay unchanged. Existing exact-money, overflow, archived-account and

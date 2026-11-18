@@ -6,7 +6,6 @@ import QtQuick.Window
 Item {
     id:root;objectName:"reportsWorkspace"
     required property var workflow
-    property var guardAction: function(action) { action() }
     property alias ledgerHost: detailLedgerHost
     property alias pdfWindow: pdfDialog
     readonly property bool canSavePdf: visible && mode === "result" && !!result.id && !workflow.busy && !pdfDialog.visible
@@ -135,7 +134,6 @@ Item {
     function requestLeave(action){leaveAction=action;leaving=true;leaveShown()}
     function stay(){if(leaving)leaveHiding();leaving=false;leaveAction=null}
     function proceed(){if(leaving)leaveHiding();let action=leaveAction;leaveAction=null;leaving=false;if(action)action()}
-    function back(){guardAction(function(){if(root.mode==="detail")root.workflow.command("report_leave");else root.mode="workspace"})}
     function drill(currency,period,row){workflow.command("report_drill",{currency:currency,period:period,row:row})}
     Connections {
         target:root.workflow
@@ -163,10 +161,11 @@ Item {
             if(action==="report_show" && success){
                 const definition=root.savedDefinitions.find(r=>r.id===root.result.id)
                 root.resultAccountNames=definition?definition.accounts.map(id=>{const account=root.accountChoices.find(a=>a.id===id);return account?account.name+" · "+account.currency:"Unavailable account"}):[]
-                root.mode="result"
+                root.mode=root.state.reportLedgerActive?"detail":"result"
             }
             if(action==="report_drill" && success)root.mode="detail"
             if(action==="report_leave" && success)root.mode="result"
+            if(success && (action==="select_account" || action==="create_account") && root.mode==="detail" && !root.state.reportLedgerActive)root.mode="result"
         }
     }
     Window {
@@ -217,7 +216,6 @@ Item {
         anchors.fill:parent;anchors.margins:12;spacing:8
         RowLayout {
             Label {textFormat:Text.PlainText;text:root.mode==="workspace"?"Reports":root.mode==="detail"?"Report transactions":root.result.name||"Report";font.pixelSize:22;Layout.fillWidth:true;Layout.minimumWidth:80;elide:Text.ElideRight}
-            Button {visible:root.mode==="detail";text:"Back to report";onClicked:root.back()}
             Button {visible:root.mode==="result";text:"Refresh report";enabled:!root.workflow.busy;onClicked:root.workflow.command("report_show",{id:root.result.id})}
             Button {objectName:"saveReportPdf";visible:root.mode==="result";text:"Save as PDF…";enabled:root.canSavePdf;onClicked:root.savePdf()}
         }

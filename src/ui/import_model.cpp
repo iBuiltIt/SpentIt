@@ -594,8 +594,10 @@ struct ImportModel::Worker {
         reportCatalog=gateway->repository().report_catalog();reportDefinitions.clear();
         for(const auto& d:reportCatalog.definitions)reportDefinitions.push_back(reportMap(d));reportsLoaded=true;
     }
-    void showReport(const reports::Definition& d,app::OperationContext& context){
-        reportPdf.reset();reportPdfState.clear();
+    QVariantMap reportPeriodKey(const reports::Period& period) const {
+        return {{"preset",text(period.preset)},{"start",text(period.start)},{"end",text(period.end)}};
+    }
+    void showReport(const reports::Definition& d,app::OperationContext& context,const QVariantMap& drill={}){
         auto& repo=gateway->repository();
         auto accounts=repo.accounts();const auto archived=repo.archived_accounts();accounts.insert(accounts.end(),archived.begin(),archived.end());
         std::vector<Currency> currencies;
@@ -603,6 +605,30 @@ struct ImportModel::Worker {
         std::vector<reports::Category> labels{{"","Uncategorized"}};
         for(const auto& category:repo.category_catalog().categories)if(!category.deleted)labels.push_back({category.identity,category.name});
         auto calculated=reports::calculate(d,QDate::currentDate().toString(Qt::ISODate).toStdString(),repo.report_entries(d.accounts,context),labels,currencies,[&]{context.checkpoint();});
+        int drillPeriod=-1;
+        const reports::Result* drillCurrency=nullptr;
+        const reports::Category* drillCategory=nullptr;
+        const reports::Cell* drillCell=nullptr;
+        if(!drill.isEmpty()){
+            drillPeriod=drill.value("period",-1).toInt();
+            if(drillPeriod<0 || static_cast<std::size_t>(drillPeriod)>=d.periods.size()
+               || reportPeriodKey(d.periods[static_cast<std::size_t>(drillPeriod)])!=drill.value("periodKey").toMap())
+                throw std::invalid_argument("This report period changed. Open the report and choose an amount again.");
+            const auto currencyId=str(drill.value("currency"));
+            const auto currency=std::find_if(calculated.currencies.begin(),calculated.currencies.end(),[&](const auto& c){return c.currency.definition_id()==currencyId;});
+            if(currency==calculated.currencies.end())throw std::invalid_argument("This report currency is no longer available. Open the report and choose an amount again.");
+            drillCurrency=&*currency;
+            if(drill.value("total").toBool())drillCell=&currency->totals.at(static_cast<std::size_t>(drillPeriod));
+            else {
+                const auto categoryId=str(drill.value("category"));
+                const auto category=std::find_if(labels.begin(),labels.end(),[&](const auto& label){return label.id==categoryId;});
+                if(category==labels.end() || std::find(d.categories.begin(),d.categories.end(),categoryId)==d.categories.end())
+                    throw std::invalid_argument("This report category is no longer available. Open the report and choose an amount again.");
+                drillCategory=&*category;
+                const auto row=std::find_if(currency->rows.begin(),currency->rows.end(),[&](const auto& r){return r.category.id==categoryId;});
+                if(row!=currency->rows.end())drillCell=&row->cells.at(static_cast<std::size_t>(drillPeriod));
+            }
+        }
         QVariantList ranges,results;
         for(const auto& p:calculated.periods)ranges.push_back(QVariantMap{{"label",text(p.label)},{"start",dateText(p.start)},{"end",dateText(p.end)}});
         for(const auto& currency:calculated.currencies){
@@ -619,8 +645,10 @@ struct ImportModel::Worker {
             results.push_back(QVariantMap{{"currency",text(currency.currency.code())},{"definition",text(currency.currency.definition_id())},{"rows",rows},{"totals",totals},{"minimum",static_cast<double>(minimum)},{"maximum",static_cast<double>(maximum)},{"minimumLabel",money(Money(minimum,currency.currency),amountFormat)},{"maximumLabel",money(Money(maximum,currency.currency),amountFormat)}});
         }
         QStringList accountNames;for(auto id:d.accounts)for(const auto& account:accounts)if(account.identity==id)accountNames.push_back(text(account.name));
+        reportPdf.reset();reportPdfState.clear();
         reportSnapshot=std::move(calculated);if(!reportLedgerActive)reportDetails.clear();
         reportResult={{"id",text(d.id)},{"name",text(d.name)},{"graph",text(d.graph)},{"periods",ranges},{"currencies",results},{"stale",false},{"accountNames",accountNames}};
+        if(drillCurrency)openReportDrill(*drillCurrency,drillPeriod,drillCategory,drillCell);
     }
     void reportDrill(const QVariantMap& args){
         if(!reportSnapshot || reportResult.value("stale").toBool())throw std::invalid_argument("Refresh this report before opening its transactions.");
@@ -628,22 +656,29 @@ struct ImportModel::Worker {
         if(currency<0 || static_cast<std::size_t>(currency)>=reportSnapshot->currencies.size() || period<0 || static_cast<std::size_t>(period)>=reportSnapshot->periods.size())throw std::invalid_argument("Choose a report amount.");
         const auto& c=reportSnapshot->currencies[static_cast<std::size_t>(currency)];
         if(row< -1 || (row>=0 && static_cast<std::size_t>(row)>=c.rows.size()))throw std::invalid_argument("Choose a report category.");
-        const auto& cell=row<0?c.totals[static_cast<std::size_t>(period)]:c.rows[static_cast<std::size_t>(row)].cells[static_cast<std::size_t>(period)];
+        const auto* category=row<0?nullptr:&c.rows[static_cast<std::size_t>(row)];
+        const auto& cell=category?category->cells[static_cast<std::size_t>(period)]:c.totals[static_cast<std::size_t>(period)];
+        openReportDrill(c,period,category?&category->category:nullptr,&cell);
+    }
+    void openReportDrill(const reports::Result& currency,int period,const reports::Category* category,const reports::Cell* cell){
         if(!reportLedgerActive){reportPriorFilter=filter;reportPriorSort=sort;reportPriorDescending=descending;reportPriorAccount=gateway->repository().account().identity;}
         reportMembers.clear();reportRowInfo.clear();
-        reportLedgerActive=true;reportPeriod=period;reportTotal=row<0;reportCategory=row<0?"":c.rows[static_cast<std::size_t>(row)].category.id;reportCurrency=c.currency.definition_id();
+        reportLedgerActive=true;reportPeriod=period;reportTotal=!category;reportCategory=category?category->id:"";reportCurrency=currency.currency.definition_id();
         filter.clear();cachedView.reset();selection.clear();selectionAnchor.reset();selectionFocus.reset();selected.clear();selectedBatch.clear();
         QVariantList details;
-        for(auto index:cell.entries){const auto& e=reportSnapshot->entries[index];
+        if(cell)for(auto index:cell->entries){const auto& e=reportSnapshot->entries[index];
             reportMembers.insert_or_assign(imports::Occurrence{e.batch,e.ordinal},e.account);
             // Negation may overflow even when cancellation makes a cell valid.
             // Format signed spending directly from the decimal string in that case.
             auto amount=money(e.amount,amountFormat);if(e.amount.units()<0)amount.remove(0,1);else if(e.amount.units()>0)amount.prepend('-');
-            QString label="Uncategorized";for(const auto& category:c.rows)if(category.category.id==e.category){label=text(category.category.name);break;}
+            QString label="Uncategorized";for(const auto& row:currency.rows)if(row.category.id==e.category){label=text(row.category.name);break;}
             details.push_back(QVariantMap{{"date",dateText(e.date)},{"account",text(e.account_name)},{"payee",text(e.payee)},{"memo",text(e.memo)},{"category",label},{"amount",amount},{"accepted",e.committed}});
         }
         const auto& range=reportSnapshot->periods[static_cast<std::size_t>(period)];
-        reportDetails={{"title",row<0?QString("Total"):text(c.rows[static_cast<std::size_t>(row)].category.name)},{"period",text(range.label)+" · "+dateText(range.start)+" – "+dateText(range.end)},{"currency",text(c.currency.code())},{"total",money(cell.amount,amountFormat)},{"rows",details}};
+        const QVariantMap key{{"currency",text(reportCurrency)},{"category",text(reportCategory)},{"total",reportTotal},
+            {"period",period},{"periodKey",reportPeriodKey(reportSnapshot->definition.periods[static_cast<std::size_t>(period)])}};
+        reportDetails={{"title",category?text(category->name):QString("Total")},{"period",text(range.label)+" · "+dateText(range.start)+" – "+dateText(range.end)},
+            {"currency",text(currency.currency.code())},{"total",money(cell?cell->amount:Money(0,currency.currency),amountFormat)},{"rows",details},{"cell",key}};
     }
 
     void buildReportLedger(app::OperationContext* context) {
@@ -1651,13 +1686,14 @@ struct ImportModel::Worker {
             if(!reportsLoaded)loadReports();
             const auto id=str(a.value("id"));const auto found=std::find_if(reportCatalog.definitions.begin(),reportCatalog.definitions.end(),[&](const auto& d){return d.id==id;});
             if(found==reportCatalog.definitions.end())throw std::invalid_argument("Save the report before showing it.");
-            reportResult["stale"]=true;reportDetails.clear();showReport(*found,context);return;
+            if(!a.value("history").toBool()){reportResult["stale"]=true;reportDetails.clear();}
+            showReport(*found,context,a.value("drill").toMap());return;
         }
         if(action=="report_drill"){reportDrill(a);return;}
         if(reportLedgerActive && action=="begin_manual")throw std::invalid_argument("Open an account ledger to add a transaction.");
         if(action=="report_leave"){
-            reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportDetails.clear();
             if(reportPriorAccount)repo.select_account(reportPriorAccount);
+            reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportDetails.clear();
             filter=reportPriorFilter;sort=reportPriorSort;descending=reportPriorDescending;metadata.clear();cachedAccount.reset();cachedLedger.reset();cachedView.reset();selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();return;
         }
         if(action=="automatic_review_settings") {

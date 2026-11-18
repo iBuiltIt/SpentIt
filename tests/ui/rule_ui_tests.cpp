@@ -242,6 +242,12 @@ private slots:
         QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"2.00");
         run(s.model,"redo_action",s.model.state().value("actionRedo").toMap());
         QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"0.00");
+        QVERIFY(click(s.root,"navigationBack"));wait(s.model);
+        QTRY_COMPARE(object(s.root,"reportsWorkspace")->property("mode").toString(),"result");
+        QVERIFY(click(s.root,"navigationForward"));wait(s.model);
+        QTRY_COMPARE(object(s.root,"reportsWorkspace")->property("mode").toString(),"detail");
+        QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"0.00");
+        QCOMPARE(s.model.rowCount(),0);
     }
     void ledgerCreatedRuleReturnsAfterSaveAndApply(){
         Session s;createDocument(s,"Ledger rule return");

@@ -397,7 +397,10 @@ private slots:
         QVariantMap definition{{"id","comparison"},{"name","Synthetic comparison"},{"graph","grouped_bar"},{"accounts",QVariantList{"1","2"}},{"categories",categoryIds},
             {"periods",QVariantList{QVariantMap{{"preset","custom"},{"start","2026-01-01"},{"end","2026-01-31"}},QVariantMap{{"preset","custom"},{"start","2026-01-02"},{"end","2026-01-31"}}}}};
         run(model,"report_save",{{"revision",model.state().value("reportRevision")},{"reports",QVariantList{definition}}});
-        run(model,"report_show",{{"id","comparison"}});root->setProperty("currentPage","reports");
+        QVERIFY(QMetaObject::invokeMethod(workspace,"load"));
+        QVERIFY(click(root,"reportsNavigation"));QTRY_VERIFY(!model.busy());
+        QTRY_COMPARE(root->property("currentPage").toString(),QString("reports"));
+        run(model,"report_show",{{"id","comparison"}});
         auto* window=qobject_cast<QQuickWindow*>(root);window->resize(1300,850);window->show();QTest::qWait(100);
         auto* table=object(root,"reportCategoryTable");QVERIFY(table);
         const auto chartRows=model.state().value("reportResult").toMap().value("currencies").toList().front().toMap().value("rows").toList();
@@ -439,7 +442,7 @@ private slots:
         // Unsaved report edits use the same Save / Discard / Stay navigation guard.
         run(model,"inspect",{{"batch",first},{"ordinal",0}});
         auto* payee=object(root,"durablePayee");QVERIFY(payee);payee->setProperty("text","Unsaved correction");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
-        QVERIFY(QMetaObject::invokeMethod(workspace,"back"));QVERIFY(object(root,"unsavedDialog")->property("visible").toBool());QVERIFY(click(root,"guardStay"));QCOMPARE(workspace->property("mode").toString(),"detail");
+        QVERIFY(click(root,"navigationBack"));QVERIFY(object(root,"unsavedDialog")->property("visible").toBool());QVERIFY(click(root,"guardStay"));QCOMPARE(workspace->property("mode").toString(),"detail");
         QVERIFY(QMetaObject::invokeMethod(root,"discardEditor",Q_ARG(QVariant,QVariant())));
         // The current account is Savings; inspecting Checking routes the existing editor.
         run(model,"inspect",{{"batch",first},{"ordinal",0}});QCOMPARE(model.state().value("accountId").toString(),"1");
@@ -500,7 +503,20 @@ private slots:
         model.command("delete_selection",{{"account",model.state().value("accountId")},{"generation",model.state().value("ledgerEditGeneration")},{"selected",model.state().value("selection")}});
         QTRY_VERIFY(!model.busy());QVERIFY(model.error().contains("one account"));
         QCOMPARE(model.rowCount(),3);
-        run(model,"report_leave");QVERIFY(!model.state().value("reportLedgerActive").toBool());QCOMPARE(model.state().value("accountId").toString(),"2");
+        QVERIFY(click(root,"navigationBack"));QTRY_VERIFY(!model.busy());
+        QTRY_COMPARE(workspace->property("mode").toString(),QString("result"));
+        QVERIFY(!model.state().value("reportLedgerActive").toBool());QCOMPARE(model.state().value("accountId").toString(),"2");
+        const auto resultIndex=root->property("navigationIndex").toInt();
+        auto periods=definition.value("periods").toList();
+        periods.swapItemsAt(0,1);
+        definition["periods"]=periods;
+        run(model,"report_save",{{"revision",model.state().value("reportRevision")},{"reports",QVariantList{definition}}});
+        QVERIFY(QMetaObject::invokeMethod(workspace,"load"));
+        QVERIFY(click(root,"navigationForward"));QTRY_VERIFY(!model.busy());
+        QVERIFY(model.error().contains("report period changed"));
+        QCOMPARE(root->property("navigationIndex").toInt(),resultIndex);
+        QCOMPARE(workspace->property("mode").toString(),QString("result"));
+        QVERIFY(!model.state().value("reportLedgerActive").toBool());
         run(model,"close");run(model,"open",{{"path",dir.filePath("document")}});QCOMPARE(model.state().value("reports").toList().front().toMap().value("graph").toString(),"grouped_bar");
         for(const auto& warning:warnings){const auto list=qvariant_cast<QList<QQmlError>>(warning.front());for(const auto& item:list)qWarning().noquote()<<item.toString();}
         QCOMPARE(warnings.size(),qsizetype(0));
@@ -647,7 +663,9 @@ private slots:
         QVERIFY(click(root,"showReport"));QTRY_VERIFY_WITH_TIMEOUT(!model.busy() && workspace->property("mode").toString()=="result",30000);QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
         auto result=model.state().value("reportResult").toMap();auto currency=result.value("currencies").toList().front().toMap();QCOMPARE(currency.value("totals").toList().front().toString(),"80.00");
         run(model,"report_drill",{{"currency",0},{"period",0},{"row",-1}});QCOMPARE(model.state().value("reportDetails").toMap().value("rows").toList().size(),2);
-        QVERIFY(QMetaObject::invokeMethod(workspace,"back"));QTRY_VERIFY(!model.busy());QVERIFY(QMetaObject::invokeMethod(workspace,"back"));
+        QVERIFY(click(root,"navigationBack"));QTRY_VERIFY(!model.busy());
+        QTRY_COMPARE(workspace->property("mode").toString(),QString("result"));
+        QVERIFY(click(root,"navigationBack"));QCOMPARE(workspace->property("mode").toString(),QString("workspace"));
         const auto id=model.state().value("reports").toList().front().toMap().value("id");
         QVERIFY(click(root,"newReport"));QVERIFY(QMetaObject::invokeMethod(workspace,"setField",Q_ARG(QVariant,QVariant("name")),Q_ARG(QVariant,QVariant(""))));
         QVERIFY(QMetaObject::invokeMethod(root,"navigate",Q_ARG(QVariant,QVariant("ledger"))));QVERIFY(workspace->property("leaving").toBool());QVERIFY(QMetaObject::invokeMethod(workspace,"stay"));QCOMPARE(root->property("currentPage").toString(),"reports");

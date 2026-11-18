@@ -21,12 +21,32 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-083. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-086. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+### MAN-085 — Forward reopens report transactions · 2026-11-18
+
+In [Answer questions with reports](../manual/reports.md#open-the-transactions-behind-an-amount),
+explain that Forward reopens the same report amount with its current transactions.
+See [Reporting and drill-down](../features/006-reporting-drill-down.md).
+
+### MAN-084 — Use top-bar Back from report transactions · 2026-11-18
+
+In [Answer questions with reports](../manual/reports.md#open-the-transactions-behind-an-amount),
+direct readers to the top-bar **Back** to return to the results. Update the
+report transactions and report transaction menu pictures to show the new header.
+See [Reporting and drill-down](../features/006-reporting-drill-down.md).
+
+### MAN-083 — Replace the opening amount directly · 2026-11-18
+
+In [Set up your accounts](../manual/accounts.md#set-the-starting-balance),
+explain that the entire opening amount is selected when the correction dialog
+opens, so typing or pasting replaces it. The existing picture shows the dialog
+after entering the new amount. See [opening balance editing](ledger-editing.md#opening-balance-editing--owner-go-2026-11-01).
 
 ### MAN-082 — Accounts that don’t need bank matches · 2026-11-18
 

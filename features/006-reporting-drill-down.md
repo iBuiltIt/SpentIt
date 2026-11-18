@@ -1,13 +1,19 @@
 # 006 — Reporting and drill-down
 
 Status: **active**
-Last updated: 2026-11-16
+Last updated: 2026-11-18
 
 Reports is one sidebar entry below Rules. It lists saved definitions and edits
-the selected one. Show opens the result. The top-bar Back returns to the list.
-Refresh report recalculates the open result. The transaction list keeps Back
-to report. There is no separate report-creation dialog and no per-report
-sidebar entry.
+the selected one. Show opens the result. The top-bar Back returns from Report
+transactions to the result, and from the result to the saved definitions.
+Forward reopens each of those views in order. A drill-down remembers the report,
+currency, period, and category or total. Returning recalculates its membership,
+including an empty list if the category now has no contributing transactions.
+If the period was changed or the currency or category is unavailable, the
+application explains why the previous amount cannot reopen.
+Opening a new report result or drill-down replaces Forward history from that point.
+Refresh report recalculates the open result. There is no separate
+report-creation dialog and no per-report sidebar entry.
 
 ## Money
 
